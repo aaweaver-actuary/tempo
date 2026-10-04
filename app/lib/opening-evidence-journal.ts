@@ -3,9 +3,10 @@ import type { AssistanceKind, OpeningDecisionEvent, OpeningEvidenceCheckpoint } 
 import { openingEvidenceCheckpointSchema, openingDecisionEventSchema } from "../domain/opening-evidence";
 import { API_URL } from "../const";
 import { offlineTrainingDatabase } from "./offline-training-storage";
-import { confirmOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
+import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { publishNotification } from "./notifications";
-import { backgroundFetch } from "./background-fetch";
+import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError } from "./opening-evidence-recovery-policy";
+import { subscribeOperationStatusChange } from "./operation-status-events";
 
 type AttemptHeader = Omit<OpeningEvidenceCheckpoint, "events">;
 type SavedAttempt = AttemptHeader & { owner_session_id: string; final_sequence: number;
@@ -21,6 +22,18 @@ let activeDeliverySlice: Promise<void> | undefined;
 type RecoverySliceResult = { moreWork: boolean };
 let activeRecovery: Promise<RecoverySliceResult> | undefined;
 const leasedRecoveryAttempts = new Set<string>();
+const blockedRecoveryAttempts = new Map<string, string>();
+
+/** Only a status observation for this exact operation can release its deferral. */
+export function subscribeOpeningEvidenceOperationResume(listener: () => void): () => void {
+  return subscribeOperationStatusChange(operationId => {
+    let resumed = false;
+    for (const [attemptId, blockedOperationId] of blockedRecoveryAttempts) {
+      if (blockedOperationId === operationId) { blockedRecoveryAttempts.delete(attemptId); resumed = true; }
+    }
+    if (resumed) listener();
+  });
+}
 const leaseReleaseListeners = new Set<() => void>();
 const leaseWaiters = new Map<string, AbortController>();
 
@@ -221,10 +234,12 @@ async function savedJournal(attemptId?: string): Promise<{ attempt: SavedAttempt
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(["opening_attempts", "opening_events"]);
     const attempts = transaction.objectStore("opening_attempts");
-    const request = attemptId ? attempts.get(attemptId) : attempts.index("delivery_state").get("pending");
+    const request = attemptId ? attempts.get(attemptId) : attempts.openCursor();
     request.onsuccess = () => {
-      const attempt = request.result as SavedAttempt | undefined;
-      if (!attempt || attempt.delivery_state !== "pending") { resolve(undefined); return; }
+      const cursor = attemptId ? undefined : request.result as IDBCursorWithValue | null;
+      const attempt = (attemptId ? request.result : cursor?.value) as SavedAttempt | undefined;
+      if (cursor && (attempt?.delivery_state !== "pending" || blockedRecoveryAttempts.has(attempt.attempt_id))) { cursor.continue(); return; }
+      if (!attempt || blockedRecoveryAttempts.has(attempt.attempt_id) || attempt.delivery_state !== "pending") { resolve(undefined); return; }
       const events = transaction.objectStore("opening_events").index("attempt_id").getAll(attempt.attempt_id, 256);
       events.onsuccess = () => resolve({ attempt, events: events.result as SavedEvent[] });
       events.onerror = () => reject(events.error);
@@ -298,7 +313,7 @@ export function retainOpeningEvidenceForStorageFallback(completion: OpeningEvide
 }
 
 async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
-  if (typeof indexedDB === "undefined" || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+  if (typeof indexedDB === "undefined" || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
   await writeTail.catch(() => undefined);
   for (;;) {
     const saved = await savedJournal(attemptId);
@@ -333,11 +348,11 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
     const timeout = setTimeout(() => controller.abort(), 15_000);
     let receipt: { persisted?: boolean; attempt_id?: string; received_sequences?: number[]; contiguous_sequence?: number };
     try {
-      let response = await confirmOperationResponse(await fetch(`${API_URL}/api/opening-evidence/checkpoints`, {
+      let response = await confirmOperationResponse(await openingEvidenceFetch(`${API_URL}/api/opening-evidence/checkpoints`, {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": operationKey,
           "X-Tempo-Work-Class": "background" },
         body: JSON.stringify(checkpoint), signal: controller.signal,
-      }), { background: true, signal: controller.signal });
+      }), { background: true, signal: controller.signal, fetch: openingEvidenceFetch });
       if (!response.ok) {
         if (response.status === 409 || response.status === 422) {
           await rejectOpeningEvidence(checkpoint.attempt_id, await response.text());
@@ -346,12 +361,13 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
         }
         // HTTP failure alone is ambiguous. Resolve the frozen command, just as
         // a deferred response does, before quarantining or accepting evidence.
-        response = await readOperationResponse(operationKey, { background: true, signal: controller.signal });
+        response = await readOperationResponse(operationKey, { background: true, signal: controller.signal, fetch: openingEvidenceFetch });
       }
       receipt = await response.json();
       if (!receipt.persisted || receipt.attempt_id !== checkpoint.attempt_id || !Array.isArray(receipt.received_sequences))
         throw new Error("Opening evidence persistence was not confirmed.");
     } catch (error) {
+      markOpeningEvidenceTimeout(error, controller.signal);
       if (error instanceof FailedOperationError) {
         await rejectOpeningEvidence(checkpoint.attempt_id, error.message);
         if (attemptId) return;
@@ -401,7 +417,7 @@ function recoveryCandidate(database: IDBDatabase, pendingAggregateIds: Set<strin
       const cursor = request.result;
       if (!cursor) { resolve(undefined); return; }
       const attempt = cursor.value as SavedAttempt;
-      const eligible = attempt.final_sequence && !leasedRecoveryAttempts.has(attempt.attempt_id) &&
+      const eligible = attempt.final_sequence && !leasedRecoveryAttempts.has(attempt.attempt_id) && !blockedRecoveryAttempts.has(attempt.attempt_id) &&
         !["rejected", "retained"].includes(attempt.delivery_state) &&
         !(attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id)) &&
         ((attempt.delivery_state === "pending" && (attempt.owner_session_id !== sessionId || attempt.terminal?.state === "partial")) ||
@@ -415,7 +431,7 @@ function recoveryCandidate(database: IDBDatabase, pendingAggregateIds: Set<strin
 
 /** Claim and deliver one journal, then yield to the hook's next idle opportunity. */
 async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
-  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks) return { moreWork: false };
+  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || navigator.onLine === false || !navigator.locks) return { moreWork: false };
   await writeTail.catch(() => undefined);
   const unsaved = [...captures.values()].find(journal => journal.storageError);
   if (unsaved) await storeAppend(unsaved, undefined, false);
@@ -452,12 +468,12 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 15_000);
           try {
-            const response = await backgroundFetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`, { signal: controller.signal });
+            const response = await openingEvidenceFetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`, { signal: controller.signal });
             if (response.ok) {
               const persisted = await response.json() as { state?: string };
               if (persisted.state === "complete") { await acknowledgeOpeningReview(attempt.attempt_id); deliver = false; return; }
-            } else if (response.status !== 404) throw new Error("Could not verify an orphaned opening completion. Its journal remains saved for recovery.");
-          } finally { clearTimeout(timeout); }
+            } else if (response.status !== 404) throw new OpeningEvidenceHttpError(response.status);
+          } catch (error) { markOpeningEvidenceTimeout(error, controller.signal); throw error; } finally { clearTimeout(timeout); }
         }
         await new Promise<void>((resolve, reject) => {
           const transaction = database.transaction("opening_attempts", "readwrite");
@@ -479,7 +495,11 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
       if (activeFlush) await activeFlush.catch(() => undefined);
       if (!activeFlush) {
         activeDeliverySlice = deliverOpeningEvidence(attempt.attempt_id).finally(() => { activeDeliverySlice = undefined; });
-        await activeDeliverySlice;
+        try { await activeDeliverySlice; }
+        catch (error) {
+          if (error instanceof PendingOperationError && error.blocked) blockedRecoveryAttempts.set(attempt.attempt_id, error.operationId);
+          throw error;
+        }
       }
     }
   }
