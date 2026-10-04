@@ -167,8 +167,7 @@ def fail_threat_analysis(database: PostgresConnection, payload: dict[str, Any]) 
 def release_threat_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict:
     changed = database.execute_native(
         "UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,"
-        "attempts=CASE WHEN NOT " + search_admission_sql("threat_analysis_requests.id") +
-        " THEN GREATEST(0,attempts-1) ELSE attempts END,"
+        "attempts=GREATEST(0,attempts-1),"
         "lease_expires_at=NULL,updated_at=%s "
         "WHERE id=%s AND state='leased' AND lease_id=%s RETURNING id",
         (_now(), str(payload["request_id"]), str(payload["lease_id"])),

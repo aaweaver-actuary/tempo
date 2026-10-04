@@ -5,7 +5,7 @@ import pytest
 from app.services.database_executor import database_writer
 
 from app import database, main, settings_commands
-from app.models import Settings
+from app.models import Settings, GameAnalysisLeaseRequest, ThreatAnalysisFailureRequest
 from app.services import durable_tasks, background_activity, threat_pipeline
 from app.services.threat_detection import find_defensive_knight_forks
 from app.services.threat_models import GameSnapshot, SourceLine
@@ -235,3 +235,86 @@ def test_defensive_engine_control_preempts_foreground_without_waiting_for_databa
     with main.activity_gate.foreground():
         assert main.defensive_engine_control('request', 'lease') == {
             'foreground_active': True, 'search_allowed': False}
+
+
+def isolate_retry_request():
+    request_id = seed_exercise_requests()
+    with database.connection() as connection:
+        connection.execute("UPDATE threat_analysis_requests SET state='complete' WHERE id!=?", (request_id,))
+        connection.execute('UPDATE settings SET defensive_analysis_enabled=1')
+    return request_id
+
+
+@pytest.mark.parametrize('shared_recommendation', [False, True])
+def test_delayed_defensive_release_refunds_one_claim_after_resume_and_fences_newer_lease(
+    tmp_path, monkeypatch, shared_recommendation,
+):
+    initialize_pause_database(tmp_path, monkeypatch)
+    request_id = isolate_retry_request()
+    if shared_recommendation:
+        attach_recommendation(request_id)
+    failed_claim = threat_pipeline.claim_analysis_request()
+    assert main.fail_defensive_threat_analysis(request_id, ThreatAnalysisFailureRequest(
+        lease_id=failed_claim['lease_id'], error='genuine engine failure')) == {'status': 'retrying'}
+    with database.connection() as connection:
+        connection.execute('UPDATE threat_analysis_requests SET report_json=? WHERE id=?',
+                           ('{"retained":"completed evidence"}', request_id))
+    cancelled = threat_pipeline.claim_analysis_request()
+    with database.connection() as connection:
+        connection.execute('UPDATE settings SET defensive_analysis_enabled=0')
+    # The worker decided to cancel now; the lease-only callback is delivered after resume.
+    with database.connection() as connection:
+        connection.execute('UPDATE settings SET defensive_analysis_enabled=1')
+    release = GameAnalysisLeaseRequest(lease_id=cancelled['lease_id'])
+    assert main.release_defensive_threat_analysis(request_id, release) == {'status': 'queued'}
+    with database.read_connection() as connection:
+        state = connection.execute('SELECT state,attempts,lease_id,lease_expires_at,report_json,last_error '
+                                   'FROM threat_analysis_requests WHERE id=?', (request_id,)).fetchone()
+    assert tuple(state) == ('queued', 1, None, None, '{"retained":"completed evidence"}', 'genuine engine failure')
+    assert main.release_defensive_threat_analysis(request_id, release) == {'status': 'stale'}
+    newer_claim = threat_pipeline.claim_analysis_request()
+    assert newer_claim['lease_id'] != cancelled['lease_id']
+    assert main.release_defensive_threat_analysis(request_id, release) == {'status': 'stale'}
+    with database.read_connection() as connection:
+        current = connection.execute('SELECT state,attempts,lease_id FROM threat_analysis_requests WHERE id=?',
+                                     (request_id,)).fetchone()
+        assert tuple(current) == ('leased', 2, newer_claim['lease_id'])
+        assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 0
+
+
+def test_cancellation_cycles_preserve_genuine_failure_threshold_and_prior_failures(tmp_path, monkeypatch):
+    initialize_pause_database(tmp_path, monkeypatch)
+    request_id = isolate_retry_request()
+    for _ in range(4):
+        claimed = threat_pipeline.claim_analysis_request()
+        assert main.release_defensive_threat_analysis(request_id, GameAnalysisLeaseRequest(
+            lease_id=claimed['lease_id'])) == {'status': 'queued'}
+        with database.read_connection() as connection:
+            assert connection.execute('SELECT attempts FROM threat_analysis_requests WHERE id=?',
+                                      (request_id,)).fetchone()[0] == 0
+    for failure_count in range(1, 4):
+        failed_claim = threat_pipeline.claim_analysis_request()
+        assert main.fail_defensive_threat_analysis(request_id, ThreatAnalysisFailureRequest(
+            lease_id=failed_claim['lease_id'], error='genuine failure')) == {
+                'status': 'failed' if failure_count == 3 else 'retrying'}
+        if failure_count < 3:
+            cancellation = threat_pipeline.claim_analysis_request()
+            main.release_defensive_threat_analysis(request_id, GameAnalysisLeaseRequest(
+                lease_id=cancellation['lease_id']))
+        with database.read_connection() as connection:
+            assert connection.execute('SELECT attempts FROM threat_analysis_requests WHERE id=?',
+                                      (request_id,)).fetchone()[0] == failure_count
+    assert threat_pipeline.claim_analysis_request() is None
+
+
+def test_defensive_release_counter_never_becomes_negative(tmp_path, monkeypatch):
+    initialize_pause_database(tmp_path, monkeypatch)
+    request_id = isolate_retry_request()
+    claimed = threat_pipeline.claim_analysis_request()
+    with database.connection() as connection:
+        connection.execute('UPDATE threat_analysis_requests SET attempts=0 WHERE id=?', (request_id,))
+    assert main.release_defensive_threat_analysis(request_id, GameAnalysisLeaseRequest(
+        lease_id=claimed['lease_id'])) == {'status': 'queued'}
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT attempts FROM threat_analysis_requests WHERE id=?',
+                                  (request_id,)).fetchone()[0] == 0

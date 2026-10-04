@@ -5425,12 +5425,10 @@ def release_defensive_threat_analysis(
             {"request_id": request_id, "lease_id": request.lease_id, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
-    from .services.defensive_analysis import search_admission_sql
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
-            f"""UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
-                  attempts=CASE WHEN NOT {search_admission_sql('threat_analysis_requests.id')}
-                      THEN MAX(0,attempts-1) ELSE attempts END,
+            """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
+                  attempts=MAX(0,attempts-1),
                   lease_expires_at=NULL,updated_at=?
                WHERE id=? AND state='leased' AND lease_id=?""",
             (datetime.now(timezone.utc).isoformat(), request_id, request.lease_id),

@@ -23,6 +23,69 @@ from app.services.threat_pipeline import _upsert_seed
 ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'
 
 
+def verify_cancellation_retry_allowance(request_id):
+    """Actual committed PostgreSQL callbacks refund one cancellation, never a genuine failure."""
+    def claim():
+        with postgres_store.connection(background=True) as connection:
+            job = threat_analysis_commands.claim_threat_analysis(connection, {})['job']
+        assert job and job['id'] == request_id
+        return job['lease_id']
+
+    def release(lease_id):
+        with postgres_store.connection(background=True) as connection:
+            return threat_analysis_commands.release_threat_analysis(connection, {
+                'request_id': request_id, 'lease_id': lease_id})
+
+    def request_state():
+        with postgres_store.connection(background=True) as connection:
+            return dict(connection.execute('SELECT state,attempts,lease_id,lease_expires_at,report_json '
+                                           'FROM threat_analysis_requests WHERE id=?', (request_id,)).fetchone())
+
+    with postgres_store.connection() as connection:
+        connection.execute("UPDATE threat_analysis_requests SET state='complete' WHERE id!=?", (request_id,))
+        connection.execute('UPDATE threat_analysis_requests SET report_json=? WHERE id=?',
+                           ('{"retained":"completed evidence"}', request_id))
+        durable_before = [tuple(row) for row in connection.execute(
+            'SELECT id,state,attempt_count,generation FROM background_tasks ORDER BY id')]
+        reviews_before = connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0]
+    for _ in range(4):
+        cancelled = claim()
+        with postgres_store.connection() as connection:
+            connection.execute('UPDATE settings SET defensive_analysis_enabled=0')
+        with postgres_store.connection() as connection:
+            connection.execute('UPDATE settings SET defensive_analysis_enabled=1')
+        assert release(cancelled) == {'status': 'queued'}
+        assert request_state() == {'state': 'queued', 'attempts': 0, 'lease_id': None,
+                                   'lease_expires_at': None, 'report_json': '{"retained":"completed evidence"}'}
+        assert release(cancelled) == {'status': 'stale'}
+    newer = claim()
+    before_stale = request_state()
+    assert release(cancelled) == {'status': 'stale'}
+    assert request_state() == before_stale
+    assert release(newer) == {'status': 'queued'}
+    with postgres_store.connection() as connection:
+        connection.execute('UPDATE settings SET defensive_analysis_enabled=0')
+        connection.execute("UPDATE repertoire_opportunities SET status='active'")
+    shared = claim()
+    assert release(shared) == {'status': 'queued'}
+    assert request_state()['attempts'] == 0
+    for failure_count in range(1, 4):
+        failed_lease = claim()
+        with postgres_store.connection(background=True) as connection:
+            assert threat_analysis_commands.fail_threat_analysis(connection, {
+                'request_id': request_id, 'lease_id': failed_lease, 'error': 'genuine failure'}) == {
+                    'status': 'failed' if failure_count == 3 else 'retrying'}
+        if failure_count < 3:
+            assert release(claim()) == {'status': 'queued'}
+        assert request_state()['attempts'] == failure_count
+    with postgres_store.connection(background=True) as connection:
+        assert threat_analysis_commands.claim_threat_analysis(connection, {}) == {'job': None}
+        assert [tuple(row) for row in connection.execute(
+            'SELECT id,state,attempt_count,generation FROM background_tasks ORDER BY id')] == durable_before
+        assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == reviews_before
+    print('PASS defensive_cancel_release_after_resume_preserves_failures_and_fences_replay')
+
+
 def verify_pause():
     with postgres_store.connection() as connection:
         connection.execute('INSERT INTO settings(id) VALUES(1)')
@@ -99,6 +162,7 @@ def verify_pause():
     assert resumed['id']==queued['id']
     assert durable_tasks.complete_task(resumed['id'],resumed['generation'],resumed['lease_token'])
     assert not durable_tasks.complete_task(resumed['id'],resumed['generation'],resumed['lease_token'])
+    verify_cancellation_retry_allowance(request_id)
     print('PASS defensive_pause_postgres_restart_foreground_and_idempotent_resume')
 
 

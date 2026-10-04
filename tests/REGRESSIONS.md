@@ -1450,3 +1450,10 @@ Backend names run in the existing contracts, preparation and transport pytest fi
 - `test_pausing_engine_release_preserves_retry_budget_and_idempotent_resume` protects pause releases from consuming failure retries, including repeated release and resumed claim. The PostgreSQL proof covers the same fenced decrement.
 - `test_pending_defensive_report_delivers_while_paused_and_resume_preserves_one_review` preserves completed reports while validation waits, then resumes study with one review across report replay and restart. The worker regression `a paused engine that cannot drain releases its lease without recording failure and cleans every timer` protects the cancellation watchdog from charging a job failure.
 - `test_defensive_engine_control_preempts_foreground_without_waiting_for_database` protects immediate foreground preemption before the control endpoint opens any background database connection.
+
+### PR #83 cancellation repair — delayed release accounting
+
+- `test_delayed_defensive_release_refunds_one_claim_after_resume_and_fences_newer_lease` covers lease-only release after re-enable, shared recommendation eligibility, retained evidence/prior failure, duplicate release and old-lease replay after reclaim.
+- `test_cancellation_cycles_preserve_genuine_failure_threshold_and_prior_failures` proves four cancellations consume no failure allowance and interleaved genuine failures still exhaust the original three-attempt threshold.
+- `test_defensive_release_counter_never_becomes_negative` protects the floor at zero.
+- `scripts/check_postgres_defensive_pause.py::verify_cancellation_retry_allowance` runs actual PostgreSQL claim/release/failure handlers in separately committed transactions, including shared recommendations, delayed releases, duplicate/superseded leases, retained reports/durable tasks/reviews, and the unchanged genuine failure threshold. Its named PASS proof is `defensive_cancel_release_after_resume_preserves_failures_and_fences_replay`.
