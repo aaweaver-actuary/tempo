@@ -174,6 +174,17 @@ it("repair queue preserves legacy command payload and previously shipped queue i
   expect(localStorage.getItem("tempo-pending-integrity-repair-v1")).toBeNull();
 });
 
+it("previously shipped repair receipts preserve task generation when recovering a migrated choice", async () => {
+  const environment = fixture();
+  localStorage.setItem("tempo-pending-integrity-repairs-v2", JSON.stringify([{ ...choice, operationId: "shipped-repair", phase: "saving" }]));
+  environment.receipts.set("shipped-repair", { state: "complete", response: { ...submission(), task_generation: 2 } });
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: "shipped-repair", taskId: "graph-rep", taskGeneration: 2, phase: "validating" });
+  expect(environment.posts).toHaveLength(0);
+  environment.tasks[0].state = "complete"; environment.currentEvidence.set("rep", evidence("rep", []));
+  await flushIntegrityRepairs(); expect(pendingIntegrityRepairs()).toEqual([]);
+});
+
 it("repair journal migration preserves original data when storage writes fail", () => {
   const original = JSON.stringify([{ ...choice, operationId: "old", phase: "queued" }]);
   localStorage.setItem("tempo-pending-integrity-repairs-v2", original);

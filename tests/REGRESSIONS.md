@@ -1536,6 +1536,8 @@ The repair queue retains the existing PostgreSQL command and graph/integrity val
 
 Additional boundary regressions: `late repair evidence from the previous conflict cannot populate the next conflict` (dialog); `repair evidence with a failed scan or unrelated repertoire cannot submit a saved choice` (outbox); `repair request deadlines include stalled response bodies without losing the saved choice` (pending recovery).
 
+`previously shipped repair receipts preserve task generation when recovering a migrated choice` verifies immutable older receipt compatibility without changing today's server schema or resubmitting a migrated operation.
+
 `tests/browser/recovery.spec.ts`: `asynchronous repair validation retry survives reload without repeating the retry command` exercises the real browser observer against controlled asynchronous receipts/tasks, alongside the real PostgreSQL submission/reload regression.
 
 - `tests/unit/repertoire-integrity-dialog-regressions.test.tsx`: `repair choice advances to the next conflict while its save request remains pending` (failed on the pre-fix dialog); `repair storage failure retains the displayed conflict and selected move`; `unchanged repair status refresh preserves selection and all queued choices stay distinct from clean`; `empty repair issues during a %s scan never claim the repertoire is clean` (queued/running/retrying/failed).

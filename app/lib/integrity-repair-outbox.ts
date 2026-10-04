@@ -132,9 +132,14 @@ async function receipt(operationId: string) {
   return result;
 }
 function accepted(repair: PendingIntegrityRepair, response: unknown) {
-  const result = integrityRepairSubmissionSchema.parse(response);
+  // Previously shipped receipts are immutable and can include the removed generation field.
+  const { task_generation: legacyTaskGeneration, ...submission } = z.object({
+    task_generation: z.number().int().positive().optional(),
+  }).passthrough().parse(response);
+  const result = integrityRepairSubmissionSchema.parse(submission);
   if (result.repertoire_id !== repair.repertoireId || result.issue_id !== repair.issueId) throw new Error("Repair confirmation does not match its saved choice.");
   updateRepair(repair.operationId, current => ({ ...current, phase: "validating", taskId: result.task_id,
+    taskGeneration: legacyTaskGeneration ?? current.taskGeneration, retryTaskId: undefined,
     retry: undefined, retryOperationId: undefined, terminalOperationFailure: false,
     error: undefined, attempts: 0, nextAttemptAt: 0 }));
 }
