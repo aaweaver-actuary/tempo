@@ -16,6 +16,7 @@ import { FlipBoardButton } from "./FlipBoardButton";
 import { Button } from "../buttons/BaseButton";
 
 export const DEFAULT_BOARD_SPLIT = 46;
+const BoardHeadingTarget = createContext<HTMLDivElement | null>(null);
 const BoardToolbarTarget = createContext<HTMLDivElement | null>(null);
 
 export function BoardTools({ children }: { children: ReactNode }) {
@@ -25,6 +26,11 @@ export function BoardTools({ children }: { children: ReactNode }) {
   ) : (
     <div className="board-tools">{children}</div>
   );
+}
+
+export function BoardHeading({ children }: { children: ReactNode }) {
+  const headingTarget = useContext(BoardHeadingTarget);
+  return headingTarget ? createPortal(children, headingTarget) : <>{children}</>;
 }
 
 export function readBoardSplit(raw: string | null): number {
@@ -54,6 +60,7 @@ export function BoardWorkspace({
   const workspaceRef = useRef<HTMLElement>(null);
   const boardColumnRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const [headingTarget, setHeadingTarget] = useState<HTMLDivElement | null>(null);
   const [toolbarTarget, setToolbarTarget] = useState<HTMLDivElement | null>(
     null,
   );
@@ -143,7 +150,8 @@ export function BoardWorkspace({
         ref={boardColumnRef}
         hidden={!enabled}
       >
-        <PersistentBoardShell />
+        <div className="shared-board-heading" ref={setHeadingTarget} />
+        <PersistentBoardShell layoutAnchor={headingTarget} />
         <div className="shared-board-toolbar" ref={toolbarRef}>
           <div className="board-tools" aria-label="Board controls">
             <FlipBoardButton
@@ -152,7 +160,7 @@ export function BoardWorkspace({
                 onFlip: board.onFlip,
               }}
             />
-            <Button aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" disabled={Boolean(board.unavailable)}
+            <Button className="shared-board-keys" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" disabled={Boolean(board.unavailable)}
               onClick={event => { event.currentTarget.focus(); window.dispatchEvent(new Event("tempo:board-help")); }}>? Keys</Button>
             <div className="workspace-board-actions" ref={setToolbarTarget} />
           </div>
@@ -198,15 +206,17 @@ export function BoardWorkspace({
           onClick={() => changeSplit(DEFAULT_BOARD_SPLIT)}
         />
       </div>
-      <BoardToolbarTarget.Provider value={toolbarTarget}>
-        <div
-          className={
-            enabled ? "unified-board-shell-panel" : "application-content"
-          }
-        >
-          {children}
-        </div>
-      </BoardToolbarTarget.Provider>
+      <BoardHeadingTarget.Provider value={headingTarget}>
+        <BoardToolbarTarget.Provider value={toolbarTarget}>
+          <div
+            className={
+              enabled ? "unified-board-shell-panel" : "application-content"
+            }
+          >
+            {children}
+          </div>
+        </BoardToolbarTarget.Provider>
+      </BoardHeadingTarget.Provider>
     </section>
   );
 }

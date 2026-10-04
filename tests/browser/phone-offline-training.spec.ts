@@ -137,7 +137,7 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
   await page.reload();
   await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByText(/live count may differ until you reconnect/)).toBeVisible();
-  await expect(page.locator(".session-count strong")).toHaveText("225");
+  await expect(page.locator(".phone-session-count")).toHaveText("225 cards left");
   await expect(page.getByText("old first card")).toBeVisible();
 
   authoritativeCards = desktopCards;
@@ -156,7 +156,7 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
 
     phoneConnected = true;
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
-    await expect(page.locator(".session-count strong")).toHaveText("241");
+    await expect(page.locator(".phone-session-count")).toHaveText("241 cards left");
     await expect(page.getByText("new first card")).toBeVisible();
     await expect(page.getByText("Offline queue", { exact: true })).toHaveCount(0);
   } finally {

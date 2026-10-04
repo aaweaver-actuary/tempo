@@ -1206,3 +1206,27 @@ button {
 .keyboard-help dl > div { display: grid; grid-template-columns: 100px 1fr; gap: 12px; margin: 10px 0; }
 .keyboard-help dl > div[aria-disabled="true"] { opacity: .55; }
 .keyboard-help dd { margin: 0; }
+
+@media (max-width: 767px) {
+  .shared-board-heading:empty { display: none; }
+  .phone-study-heading { padding: 0 0 8px; }
+  .phone-study-heading h2 { margin: 0; font: bold 22px/1.2 Georgia, serif; overflow-wrap: anywhere; }
+  .phone-study-heading p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .workspace-board-column:has(.phone-study-heading) .shared-board-keys { display: none; }
+  .phone-study-actions { position: relative; margin-left: auto; }
+  .phone-study-actions > summary { min-height: 44px; display: flex; align-items: center; padding: 8px 12px; }
+  .phone-study-actions .ui-menu-content { right: 0; left: auto; min-width: 160px; z-index: 5; }
+  .phone-study-actions .ui-menu-content button,
+  .phone-study-actions .ui-menu-content a { width: 100%; }
+  .phone-opening-study .study-panel { padding-top: 0; }
+  .phone-opening-study .study-details { display: block; border-top: 1px solid var(--line); }
+  .phone-opening-study .study-details > summary { display: list-item; min-height: 44px; padding: 12px 0; cursor: pointer; font-weight: bold; }
+  .phone-opening-study .standard-study-panel .study-details-content { display: block; overflow-wrap: anywhere; }
+  .phone-session-count { margin: 8px 0; color: var(--muted); font-size: 14px; }
+  .phone-opening-study .integrity-train-notice { margin: 8px 0; padding: 10px 12px; gap: 8px; font-size: 14px; }
+  .phone-opening-study .integrity-train-notice span { font-size: 13px; }
+  .study-source, .study-date { color: var(--muted); font-size: 14px; }
+  .repair-explanation { flex-basis: 100%; }
+  .repair-explanation summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+  .repair-explanation p { margin: 0; }
+}

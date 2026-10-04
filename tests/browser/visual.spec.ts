@@ -224,6 +224,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
 for (const width of [390, 1280]) {
   test(`keyboard help and letter preference remain readable ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 }); await prepareVisualUI(page);
+    if (width === 390) await page.locator(".phone-study-actions > summary").click();
     const helpButton = page.getByRole("button", { name: "Keyboard shortcuts", exact: true });
     const buttonBounds = (await helpButton.boundingBox())!;
     expect(buttonBounds.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 36);
