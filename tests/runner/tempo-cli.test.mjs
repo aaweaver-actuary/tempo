@@ -329,6 +329,15 @@ test("failed upgraded readiness stops application writers without restoring an o
   assert(!calls.includes("commitDeployment"));
 });
 
+test("failed application identity inspection stops unconfirmed writers before database validation", async () => {
+  const { calls, handlers } = actions();
+  handlers.recordedApplicationsMatch = async () => { throw new Error("container inspection unavailable"); };
+  await assert.rejects(executeLifecycle({ recreate: false }, handlers), /container inspection unavailable/);
+  assert(calls.includes("stopApplications"));
+  assert(!calls.includes("ensureDatabase") && !calls.includes("checkSchema") && !calls.includes("startServices") && !calls.includes("commitDeployment"));
+  assert(calls.includes("recordFailure"));
+});
+
 function commandFixture(t, mode) {
   const fixture = cliFixture(mode);
   t.after(() => rmSync(fixture.directory, { recursive: true, force: true }));
@@ -712,6 +721,118 @@ test("actual CLI compatible fallback trusts immutable dependency IDs rather than
   assert(!calls.some(call => call.args.includes("stop") || call.args.includes("build")));
   const dependencies = calls.find(call => call.args.includes("up") && call.args.includes("postgres"));
   assert(dependencies.args.includes("--no-recreate"));
+});
+
+function interruptedApplicationRollout(t, partial = false) {
+  const fixture = commandFixture(t, "upgrade");
+  const receiptPath = join(fixture.stateDirectory, "deployment.json");
+  const receipt = readFixtureJson(fixture, "deployment.json", true);
+  const configuration = readFixtureJson(fixture, "fixture.json").config;
+  // A and B use identical dependencies. Only application identity can reveal
+  // the interrupted rollout; dependency correction must not mask this bug.
+  for (const name of ["postgres", "redis"]) receipt.images[name] = `sha256:${configuration.services[name].image}`;
+  writeFileSync(receiptPath, JSON.stringify(receipt));
+  editFixtureJson(fixture, "recorded-images.json", overlay => {
+    for (const name of ["postgres", "redis"]) overlay.services[name].image = receipt.images[name];
+  });
+  editFixtureJson(fixture, "machine.json", machine => {
+    for (const container of machine.containers) {
+      const name = container.Config.Labels["com.docker.compose.service"];
+      if (["postgres", "redis"].includes(name)) container.Image = receipt.images[name];
+    }
+  });
+  editFixtureJson(fixture, "fixture.json", value => { value.mode = partial ? "interrupted-workers" : "interrupted-applications"; });
+  const killed = fixture.command("start", "--no-open");
+  assert.equal(killed.signal, "SIGKILL", killed.stdout + killed.stderr);
+  assert.equal(readFileSync(receiptPath, "utf8"), JSON.stringify(receipt));
+  const machine = readFixtureJson(fixture, "machine.json");
+  assert.equal(machine.schema, 29);
+  assert.equal(assertOriginalHistory(fixture).state, "verified");
+  for (const name of ["api", "foreground-worker", "background-worker"]) {
+    assert(machine.running.includes(name));
+    assert.notEqual(machine.containers.find(container => container.Id === `container-${name}`).Image, receipt.images[name]);
+  }
+  assert.equal(machine.running.includes("web"), !partial);
+  editFixtureJson(fixture, "fixture.json", value => { value.mode = "ci-fail"; });
+  return fixture;
+}
+
+function assertIncompatibleRecovery(fixture, shouldStop) {
+  const receiptPath = join(fixture.stateDirectory, "deployment.json"), guardPath = join(fixture.stateDirectory, "migration-guard.json");
+  const receipt = readFileSync(receiptPath, "utf8"), guard = readFileSync(guardPath, "utf8");
+  const before = readFixtureJson(fixture, "machine.json"), callStart = fixture.calls().length;
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /previous deployment is incompatible with the current database/);
+  const calls = fixture.calls().slice(callStart);
+  const stopped = calls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
+  const schemaCheck = calls.findIndex(call => call.args.includes("scripts/apply_postgres_migrations.py") && call.args.includes("--check"));
+  if (shouldStop) assert(stopped >= 0 && stopped < schemaCheck, "uncommitted writers must stop before incompatible schema rejection");
+  else assert.equal(stopped, -1, "stopped containers do not require another shutdown");
+  assert(!calls.some(call => call.args.includes("up") && call.args.includes("api")), "incompatible applications cannot start");
+  assert(!calls.some(call => call.args.includes("build") || call.args.includes("pull")
+    || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))
+    || call.args.some(argument => argument.includes("pg_dump") || argument.includes("pg_restore"))));
+  const dependencies = calls.find(call => call.args.includes("up") && call.args.includes("postgres"));
+  assert(dependencies.args.includes("--no-recreate"), "matching dependencies remain intact");
+  const after = readFixtureJson(fixture, "machine.json");
+  assert.deepEqual(after.running.sort(), ["postgres", "redis"]);
+  assert.equal(after.schema, before.schema);
+  assert.equal(after.history, before.history);
+  assert.equal(after.migrations, before.migrations);
+  assert.deepEqual(after.migrationVersions, before.migrationVersions);
+  assert.equal(readFileSync(receiptPath, "utf8"), receipt);
+  assert.equal(readFileSync(guardPath, "utf8"), guard);
+  const failure = readFixtureJson(fixture, "operation.json", true);
+  assert.equal(failure.phase, "failed");
+  assert.match(failure.failure, /incompatible/);
+  assert(readdirSync(fixture.stateDirectory).some(name => name.startsWith("failure-")));
+}
+
+test("actual CLI interrupted fallback stops uncommitted candidate writers before rejecting an incompatible schema", t => {
+  assertIncompatibleRecovery(interruptedApplicationRollout(t), true);
+});
+
+test("actual CLI interrupted fallback quiesces a partially started candidate", t => {
+  assertIncompatibleRecovery(interruptedApplicationRollout(t, true), true);
+});
+
+test("actual CLI interrupted fallback stops mixed application identities", t => {
+  const fixture = interruptedApplicationRollout(t);
+  const receipt = readFixtureJson(fixture, "deployment.json", true);
+  editFixtureJson(fixture, "machine.json", machine => {
+    machine.containers.find(container => container.Id === "container-api").Image = receipt.images.api;
+  });
+  assertIncompatibleRecovery(fixture, true);
+});
+
+test("actual CLI interrupted fallback rejects application config drift despite matching immutable images", t => {
+  const fixture = interruptedApplicationRollout(t);
+  const receipt = readFixtureJson(fixture, "deployment.json", true);
+  editFixtureJson(fixture, "machine.json", machine => {
+    for (const container of machine.containers) container.Image = receipt.images[container.Config.Labels["com.docker.compose.service"]];
+    machine.containers.find(container => container.Id === "container-foreground-worker").Config.Labels["com.docker.compose.config-hash"] = "candidate-config";
+  });
+  assertIncompatibleRecovery(fixture, true);
+});
+
+test("actual CLI interrupted fallback rejects incompatible schema cleanly with no running applications", t => {
+  const fixture = interruptedApplicationRollout(t);
+  editFixtureJson(fixture, "machine.json", machine => { machine.running = ["postgres", "redis"]; });
+  assertIncompatibleRecovery(fixture, false);
+});
+
+test("actual CLI compatible fallback keeps committed applications running despite a stale rollout journal", t => {
+  const fixture = commandFixture(t, "ci-fail");
+  writeFileSync(join(fixture.stateDirectory, "operation.json"), JSON.stringify({ revision: "c".repeat(40), phase: "checking_readiness" }));
+  const receipt = readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8");
+  const before = readFixtureJson(fixture, "machine.json");
+  const result = fixture.command("start", "--no-open");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert(!fixture.calls().some(call => call.args.includes("stop") || call.args.includes("build") || call.args.includes("pull")
+    || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))));
+  assert.equal(readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8"), receipt);
+  assert.deepEqual(readFixtureJson(fixture, "machine.json").containers.map(container => container.Image), before.containers.map(container => container.Image));
 });
 
 test("actual CLI concurrent source changes block fast-forward and retain verified fallback", t => {

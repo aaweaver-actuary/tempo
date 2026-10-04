@@ -9,7 +9,7 @@ it.each([
   ...["migration guard partial", "migration guard completed", "migration guard newer", "migration guard interrupted",
     "upgrades", "dependency startup", "falls back", "read-only", "failed migration", "failed builds",
     "backup restores the prior", "blocked update", "backup restores stopped", "detects", "fallback corrects",
-    "compatible fallback", "concurrent", "backup rejects"].map(name => ({ name, pattern: `^actual CLI ${name}` })),
+    "compatible fallback", "interrupted fallback", "concurrent", "backup rejects"].map(name => ({ name, pattern: `^actual CLI ${name}` })),
 ])("Tempo lifecycle CLI safety regressions run in the regular suite: $name", ({ pattern }) => {
   const result = spawnSync(process.execPath, ["--test", `--test-name-pattern=${pattern}`, "tests/runner/tempo-cli.test.mjs"], { encoding: "utf8" });
   expect(result.status, result.stdout + result.stderr).toBe(0);

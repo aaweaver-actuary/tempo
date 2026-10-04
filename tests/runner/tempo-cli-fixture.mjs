@@ -46,11 +46,11 @@ export function cliFixture(mode = "upgrade") {
   writeFileSync(join(directory, "machine.json"), JSON.stringify({ schema: mode === "partial-fail" ? 26 : ["upgrade", "migration-fail", "history-fail", "interrupted"].includes(mode) ? 28 : 29,
     history: "preserved", migrationVersions: [],
     head: ["race-dirty", "race-head"].includes(mode) ? "c".repeat(40) : revision,
-    containers: ["postgres", "redis"].map(name => ({ Id: `container-${name}`, Image: images[name],
+    containers: names.filter(name => name !== "migration").map(name => ({ Id: `container-${name}`, Image: images[name],
       Config: { Image: `untrusted-tag-${name}`, Labels: { "com.docker.compose.project": "tempo",
         "com.docker.compose.service": name, "com.docker.compose.project.working_dir": root,
         "com.docker.compose.config-hash": `fixture-hash-${name}` } },
-      Mounts: services[name].volumes.map(volume => ({ Type: "volume", Name: volume.source, Destination: volume.target })) })),
+      Mounts: (services[name].volumes ?? []).map(volume => ({ Type: "volume", Name: volume.source, Destination: volume.target })) })),
     running: names.filter(name => name !== "migration"), migrations: 0 }));
   for (const name of ["docker", "git"]) {
     const path = join(bin, name);
@@ -94,7 +94,8 @@ async function fakeCommand() {
     output(containers.map(container => container.Id).join("\n")); process.exit(0);
   }
   if (args.includes("inspect") && !args.includes("image")) {
-    output(machine.containers.filter(container => args.includes(container.Id))); process.exit(0);
+    output(machine.containers.filter(container => args.includes(container.Id)).map(container => ({ ...container,
+      State: { Running: machine.running.includes(container.Config.Labels["com.docker.compose.service"]) } }))); process.exit(0);
   }
   if (args.includes("image") && args.includes("inspect")) {
     const image = args.at(-1); output([{ Id: image.startsWith("sha256:") ? image : `sha256:${image}`,
@@ -111,7 +112,7 @@ async function fakeCommand() {
     return config;
   };
   if (args.includes("config")) {
-    if (args.includes("--hash")) output(["postgres", "redis"].map(name => `${name} fixture-hash-${name}`).join("\n"));
+    if (args.includes("--hash")) output(fixture.names.map(name => `${name} fixture-hash-${name}`).join("\n"));
     else output(resolvedConfig());
     process.exit(0);
   }
@@ -121,7 +122,7 @@ async function fakeCommand() {
   if (args.includes("stop")) { machine.running = machine.running.filter(name => !args.includes(name)); save(); process.exit(0); }
   if (args.includes("up")) {
     if (fixture.mode === "dependency-fail" && args.includes("postgres")) { console.error("dependency startup failed"); process.exit(18); }
-    for (const name of ["postgres", "redis"].filter(name => args.includes(name))) {
+    for (const name of fixture.names.filter(name => args.includes(name))) {
       let container = machine.containers.find(container => container.Config.Labels["com.docker.compose.service"] === name);
       if (!container) { container = { Id: `container-${name}`, Config: { Labels: {} }, Mounts: [] }; machine.containers.push(container); }
       if (!args.includes("--no-recreate")) {
@@ -131,7 +132,10 @@ async function fakeCommand() {
           "com.docker.compose.project.working_dir": fixture.root, "com.docker.compose.config-hash": `fixture-hash-${name}` };
       }
     }
-    machine.running = [...new Set([...machine.running, ...fixture.names.filter(name => args.includes(name))])]; save(); process.exit(0);
+    machine.running = [...new Set([...machine.running, ...fixture.names.filter(name => args.includes(name))])]; save();
+    if ((fixture.mode === "interrupted-workers" && args.includes("foreground-worker"))
+      || (fixture.mode === "interrupted-applications" && args.includes("web"))) process.kill(process.ppid, "SIGKILL");
+    process.exit(0);
   }
   if (args.includes("ping")) { output("PONG"); process.exit(0); }
   if (args.includes("psql")) { output(Array.from({ length: machine.schema }, (_, index) => index + 1).join("\n")); process.exit(0); }

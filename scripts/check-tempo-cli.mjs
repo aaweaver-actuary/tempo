@@ -2,12 +2,12 @@
 // reused from this test invocation; no live product target is adopted.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
-import { configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
+import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision }) {
   const root = process.cwd();
@@ -149,6 +149,85 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     });
     assert.equal(child.status, 0, child.stdout + child.stderr);
     assert(child.stdout.includes("update remains blocked")); output.push(child.stdout);
+
+    // Reconstruct the pre-commit recovery boundary on this already migrated
+    // fixture: an old schema receipt, verified H0, unchanged dependency images,
+    // and real candidate workers with different Compose configuration hashes.
+    // Kill a separate lifecycle process after its first application up returns;
+    // its catch handler cannot quiesce those workers or publish a new receipt.
+    const receiptPath = join(stateDirectory, "deployment.json");
+    const committedReceipt = readFileSync(receiptPath, "utf8");
+    const historicalReceipt = { ...record, revision: "0".repeat(40), schema: record.schema - 1,
+      evidence: { commit: "0".repeat(40), disposable_runner: childProject } };
+    atomicJson(receiptPath, historicalReceipt);
+    const historicalReceiptBytes = readFileSync(receiptPath, "utf8");
+    const guardBytes = readFileSync(join(stateDirectory, "migration-guard.json"), "utf8");
+    const candidateOverride = join(directory, "uncommitted-applications.json");
+    atomicJson(candidateOverride, { services: Object.fromEntries(["api", "foreground-worker", "background-worker"]
+      .map(name => [name, { environment: { TEMPO_UNCOMMITTED_CANDIDATE: "interrupted-rollout" } }])) });
+    const candidateConfig = JSON.parse((await docker([...composeArguments, "-f", candidateOverride,
+      "--profile", "maintenance", "config", "--format", "json"])).stdout);
+    const preparedCandidate = join(directory, "uncommitted-prepared-images.json");
+    atomicJson(preparedCandidate, { ...preparedImages, configFingerprint: configurationFingerprint(candidateConfig) });
+    const interruptedLifecycle = join(directory, "interrupted-lifecycle.mjs");
+    writeFileSync(interruptedLifecycle, `
+import { readFileSync } from "node:fs";
+import { commandExecutor } from ${JSON.stringify(join(root, "scripts/tempo-deployment.mjs"))};
+import { createRuntime, executeLifecycle } from ${JSON.stringify(join(root, "scripts/tempo-runtime.mjs"))};
+const [registration, stateDirectory, override, prepared] = process.argv.slice(2);
+const target = JSON.parse(readFileSync(registration, "utf8"));
+target.composeFiles.push(override);
+const preparedImages = JSON.parse(readFileSync(prepared, "utf8"));
+const execute = commandExecutor({ root: target.root, environment: process.env });
+const run = async (command, args, options) => {
+  const result = await execute(command, args, options);
+  if (args.includes("up") && args.includes("foreground-worker")) process.kill(process.pid, "SIGKILL");
+  return result;
+};
+const runtime = createRuntime(target, { run, stateDirectory, revision: preparedImages.revision,
+  evidence: { commit: preparedImages.revision }, preparedImages });
+await runtime.inspectTarget();
+await executeLifecycle({ recreate: false }, runtime);
+`, { mode: 0o600 });
+    const interruptedChild = spawnSync(process.execPath, [interruptedLifecycle, registration, stateDirectory, candidateOverride, preparedCandidate], {
+      encoding: "utf8", env: childEnvironment, timeout: 180_000,
+    });
+    output.push(redact(interruptedChild.stdout + interruptedChild.stderr, secretValues));
+    assert.equal(interruptedChild.signal, "SIGKILL", redact(interruptedChild.stdout + interruptedChild.stderr, secretValues));
+    assert.equal(JSON.parse(readFileSync(join(stateDirectory, "operation.json"), "utf8")).phase, "starting_services");
+    const uncommittedRunning = await repeat.runningServices();
+    assert(["api", "foreground-worker", "background-worker"].every(name => uncommittedRunning.includes(name)));
+    assert(!uncommittedRunning.includes("web"), "interruption occurs before the second application startup group");
+    const recovery = createRuntime(target, { run, stateDirectory, revision: historicalReceipt.revision, previous: historicalReceipt, fallback: true });
+    await recovery.inspectTarget();
+    assert.deepEqual(await recovery.ensureImages(), { dependenciesMayChange: false });
+    assert.equal(await recovery.recordedApplicationsMatch(), false, "actual candidate config hashes differ from the saved receipt");
+    const failedFallback = spawnSync(process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
+      encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000,
+    });
+    output.push(redact(failedFallback.stdout + failedFallback.stderr, secretValues));
+    assert.notEqual(failedFallback.status, 0);
+    assert.match(failedFallback.stderr, /previous deployment is incompatible with the current database/);
+    assert(failedFallback.stdout.includes("stopping applications")
+      && failedFallback.stdout.indexOf("stopping applications") < failedFallback.stdout.indexOf("checking database"));
+    assert(!failedFallback.stdout.includes("starting services"));
+    const recoveredRunning = await recovery.runningServices();
+    assert(![...applicationServices, "postgres-backup"].some(name => recoveredRunning.includes(name)));
+    assert(["postgres", "redis"].every(name => recoveredRunning.includes(name)));
+    assert.equal(readFileSync(receiptPath, "utf8"), historicalReceiptBytes);
+    assert.equal(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"), guardBytes);
+    const recoveryFailure = JSON.parse(readFileSync(join(stateDirectory, "operation.json"), "utf8"));
+    assert.equal(recoveryFailure.phase, "failed");
+    assert.match(recoveryFailure.failure, /incompatible/);
+    assert(readdirSync(stateDirectory).includes(`failure-${recoveryFailure.id}.log`));
+    assert.deepEqual(await readHistory(), expected);
+    assert.equal(Number((await compose(["exec", "-T", "postgres", "psql", "-tA", "-U", "postgres", "-d", "tempo", "-c",
+      "SELECT MAX(version) FROM tempo_schema_migrations"])).stdout.trim()), record.schema);
+    console.log("PASS Tempo CLI interrupted uncommitted application rollout quiesces writers before incompatible fallback without database rollback");
+    // Restore only the test's legitimate current receipt; fix forward restarts
+    // the compatible application without touching PostgreSQL or migration H0.
+    writeFileSync(receiptPath, committedReceipt, { mode: 0o600 });
+    await executeLifecycle({ recreate: false }, repeat);
 
     // Simulate uncommitted candidate dependencies on these disposable volumes:
     // Redis has a different command/configuration, and PostgreSQL is absent.

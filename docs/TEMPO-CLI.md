@@ -76,6 +76,15 @@ forbid dependency recreation; they do not take a migration backup or stop the
 application. A dependency startup failure after writer shutdown leaves writers
 stopped and records no successful deployment.
 
+Before checking fallback schema compatibility, the CLI compares running
+applications (including recurring backups) with the saved deployment's immutable
+image IDs, project/service labels, and resolved Compose hashes. An uncommitted,
+partial, or mixed rollout is stopped as one application layer. If the old
+deployment cannot use the migrated schema, writers stay stopped, the receipt
+stays unchanged, and failure is recorded. PostgreSQL is preserved for a fix
+forward. Matching committed applications keep running even with a stale journal;
+stopped containers do not force another shutdown.
+
 Before writer shutdown or dependency recreation, the CLI runs `postgres --version`
 from the selected immutable PostgreSQL image without networking or study-volume
 mounts. Its actual server major must match the registered major. This applies to

@@ -1224,6 +1224,10 @@ this input adaptation.
 `tests/unit/tempo-cli-regressions.test.ts` runs the named Node cases in
 `tests/runner/tempo-cli.test.mjs` through the regular suite:
 
+- `actual CLI interrupted fallback stops uncommitted candidate writers before rejecting an incompatible schema` kills the CLI after its schema-28-to-29 migration verifies H0 and starts all application services, before receipt publication. Blocked-update fallback uses the schema-28 receipt and unchanged dependency identities; application shutdown must precede schema rejection, without application startup, database rollback, guard replacement, or receipt replacement. The failure journal and diagnostics remain available.
+- `actual CLI interrupted fallback quiesces a partially started candidate` kills the first workers/API startup group before web/engine startup. `actual CLI interrupted fallback stops mixed application identities` combines a committed API with candidate writers. `actual CLI interrupted fallback rejects application config drift despite matching immutable images` independently requires saved Compose hashes. These four unsafe recovery regressions failed against reviewed head `c89b7cb` before the fix.
+- `actual CLI interrupted fallback rejects incompatible schema cleanly with no running applications` ignores stopped candidate containers and rejects without application startup. `actual CLI compatible fallback keeps committed applications running despite a stale rollout journal` preserves the no-stop/no-build/no-migration fallback despite another revision's post-start journal. `failed application identity inspection stops unconfirmed writers before database validation` makes inspection errors fail closed and prevents startup/publication.
+
 - `deployment records fsync file contents before rename and the containing directory afterward` records real filesystem calls and their ordering on the host platform. `deployment records surface directory fsync failure and retain the renamed destination` proves fail-closed behavior and descriptor cleanup without deleting published state.
 - `deployment records clean temporary files after writeFileSync failure without replacing existing state`, `deployment records clean temporary files after fsyncSync failure without replacing existing state`, and `deployment records clean temporary files after renameSync failure without replacing existing state` retain the old destination and remove only the writer's temporary file. The existing ordinary atomic replacement regression remains required.
 - `CLI migration guard durability failure prevents migrations writer startup and deployment publication` uses the real runtime lifecycle, restore-verified backup, and H0 capture. Injected directory-fsync failure after the guard rename prevents migration invocation and writer startup, leaves the guard pending and writers stopped, and commits no deployment receipt. These regressions failed against PR head `2b6a5dc` before the durability fix.
@@ -1277,6 +1281,16 @@ restart, and stopped consumers after genuinely rejected PostgreSQL DDL.
 It also simulates an uncommitted Redis configuration and missing PostgreSQL
 container, then verifies writer shutdown before immutable fallback correction,
 the restored dependency image/config identities, and unchanged study history.
+`PASS Tempo CLI interrupted uncommitted application rollout quiesces writers before incompatible fallback without database rollback`
+reconstructs the recovery boundary with an older schema receipt and the already
+migrated, H0-verified fixture. A separate real lifecycle process is killed after
+the first workers/API `up` returns with changed application Compose hashes but
+matching dependency images/configuration. The actual CLI then rejects fallback,
+physically stops every application service before schema checking, leaves
+PostgreSQL/Redis running, preserves the old receipt and verified guard, records
+failure, and retains the current ledger/history. Only the test receipt is then
+restored to the legitimate current version for the remaining lifecycle checks;
+no database rollback or second historical image build is involved.
 The runner records ownership/diagnostics and verifies its own volume teardown.
 Its read-only production Compose check also validates the API/worker PostgreSQL,
 worker passfile/secret, and worker/scheduler Redis contracts. The existing

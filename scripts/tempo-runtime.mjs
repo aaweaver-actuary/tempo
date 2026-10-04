@@ -26,7 +26,13 @@ export async function executeLifecycle(plan, actions) {
   try {
     const imagePreparation = await actions.ensureImages();
     const allowDependencyRecreation = Boolean(plan.recreate || imagePreparation?.dependenciesMayChange);
-    if (allowDependencyRecreation) {
+    if (!allowDependencyRecreation && actions.recordedApplicationsMatch) {
+      // An identity probe failure must also leave unconfirmed writers stopped.
+      // Clear this obligation only after positively matching the saved receipt.
+      interruptedApplications = true;
+      interruptedApplications = !(await actions.recordedApplicationsMatch());
+    }
+    if (allowDependencyRecreation || interruptedApplications) {
       // Image preparation may fail without downtime. Only after it succeeds
       // may dependency changes begin, with every application consumer stopped.
       interruptedApplications = true;
@@ -203,6 +209,27 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         && container.Config?.Labels?.["com.docker.compose.service"] === service);
       return hashes.has(service) && matches.length === 1 && matches[0].Image === images[service]
         && matches[0].Config.Labels["com.docker.compose.config-hash"] === hashes.get(service);
+    });
+  }
+
+  async function recordedApplicationsMatch() {
+    // ensureImages selected the saved definitions and immutable overlay on the
+    // reusable/fallback path. A stale journal alone says nothing about what is
+    // running; inspect the actual application layer before schema rejection.
+    const services = [...applicationServices, "postgres-backup"].filter(name => configuration.services[name]);
+    const hashes = new Map((await compose(["--profile", "maintenance", "config", "--hash", "*"])).stdout.trim()
+      .split("\n").filter(Boolean).map(line => line.trim().split(/\s+/)));
+    const ids = (await compose(["ps", "-aq", ...services])).stdout.trim().split(/\s+/).filter(Boolean);
+    const applications = ids.length ? JSON.parse((await docker(["inspect", ...ids])).stdout) : [];
+    validateContainers(applications, target);
+    const running = applications.filter(container => container.State?.Running);
+    return running.every(container => {
+      const labels = container.Config?.Labels ?? {};
+      const service = labels["com.docker.compose.service"];
+      return labels["com.docker.compose.project"] === target.project && services.includes(service)
+        && running.filter(other => other.Config?.Labels?.["com.docker.compose.service"] === service).length === 1
+        && container.Image === images[service] && hashes.has(service)
+        && labels["com.docker.compose.config-hash"] === hashes.get(service);
     });
   }
 
@@ -452,7 +479,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
-  return { config, inspectTarget, compose, docker, runningServices, ensureImages, ensureDatabase,
+  return { config, inspectTarget, compose, docker, runningServices, ensureImages, recordedApplicationsMatch, ensureDatabase,
     checkSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }
