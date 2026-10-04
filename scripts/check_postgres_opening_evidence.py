@@ -507,7 +507,7 @@ def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostic
     from app.services import redis_admission_gate
     from app.services.activity_gate import activity_gate
     fixture, payload = _large_checkpoint_fixture()
-    checkpoint = payload['checkpoint']
+    checkpoint = OpeningEvidenceCheckpoint.model_validate(payload['checkpoint']).model_dump(mode='json')
     assert tasks.execute_background_command.run(fixture['card_id'] + '-get-seed', 'opening_evidence.checkpoint', payload)['persisted']
     # The maximum valid journal must round-trip; PostgreSQL also rejects an
     # out-of-bounds sequence without changing the persisted evidence.
