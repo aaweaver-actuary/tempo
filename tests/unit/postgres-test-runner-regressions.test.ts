@@ -1,11 +1,33 @@
 // @vitest-environment node
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from
   "../../scripts/postgres-test-options.mjs";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 
 const cleanEnvironment = { NODE_ENV: "test" as const };
+
+it("PostgreSQL browser and disposable API share the same day across the UTC midnight boundary", async () => {
+  vi.stubEnv("TEMPO_DOCKER_URL", "http://127.0.0.1:48124");
+  try {
+    const { default: browserConfiguration } = await import("../../playwright.config");
+    const databaseTimezones = [...readFileSync("docker-compose.postgres.test.yml", "utf8")
+      .matchAll(/TZ: (\S+)/g)].map((match) => match[1]);
+    expect(databaseTimezones.length).toBeGreaterThan(0);
+    expect(new Set(databaseTimezones)).toEqual(new Set(["America/New_York"]));
+    expect(browserConfiguration.use?.timezoneId).toBe(databaseTimezones[0]);
+    for (const project of browserConfiguration.projects ?? [])
+      expect(project.use?.timezoneId ?? browserConfiguration.use?.timezoneId).toBe(databaseTimezones[0]);
+    const afterUtcMidnight = new Date("2026-10-04T00:41:54Z");
+    const calendarDay = (timeZone: string) => new Intl.DateTimeFormat("en-CA", {
+      timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(afterUtcMidnight);
+    expect(calendarDay(browserConfiguration.use!.timezoneId!)).toBe("2026-10-03");
+    expect(calendarDay("UTC")).toBe("2026-10-04");
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 it("PostgreSQL runner selects a single unfiltered browser matrix by default", () => {
   const options = parsePostgresTestOptions([], cleanEnvironment);

@@ -28,6 +28,8 @@ export default defineConfig({
   ],
   use: {
     baseURL: postgresTestUrl,
+    // Match the disposable PostgreSQL API's calendar day on every runner host.
+    timezoneId: "America/New_York",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
