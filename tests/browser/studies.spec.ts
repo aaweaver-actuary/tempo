@@ -32,7 +32,7 @@ async function waitForPreparedPhoneShell(page: Page, localDate: string): Promise
       controller.postMessage({ type: "tempo:offline-shell-status" }, [channel.port2]);
     });
     if (!shellReady) return false;
-    const opened = indexedDB.open("tempo-offline-training", 1);
+    const opened = indexedDB.open("tempo-offline-training", 2);
     const database = await new Promise<IDBDatabase | null>((resolve) => {
       opened.onsuccess = () => resolve(opened.result);
       opened.onerror = () => resolve(null);
@@ -49,6 +49,10 @@ async function waitForPreparedPhoneShell(page: Page, localDate: string): Promise
 }
 
 test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }) => {
+  // Compose's local queue day can differ from the browser after UTC midnight.
+  // Pin this workflow to that day while its timers continue running normally.
+  const serverQueue = await (await request.get(`${api}/queue/today`)).json();
+  await page.clock.setFixedTime(new Date(`${serverQueue.local_date}T12:00:00Z`));
   const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
   expect(catalog.packs.filter((pack: { active: boolean }) => pack.active)).toEqual([]);
   await page.goto("/");
@@ -80,6 +84,11 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   await nav(page, "Train");
   await expect(page.getByText("Select the white knight square")).toBeVisible();
   await expect(page.getByText("Original synthetic study")).toHaveCount(0);
+  const browserLocalDate = await page.evaluate(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  });
+  await waitForPreparedPhoneShell(page, browserLocalDate);
   await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", fen);
   const beforeFen = await page.locator(".board-frame").first().getAttribute("data-fen");
   await page.getByLabel("Coordinates or UCI move").fill("g1");
@@ -108,7 +117,7 @@ test("prepared study response is graded offline and replayed with its actual squ
   };
   const queue = { local_date: localDate, count: 1, cards: [studyCard] };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     ...queue, prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
       updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 },
   } }));
@@ -123,7 +132,7 @@ test("prepared study response is graded offline and replayed with its actual squ
   await page.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByText("The knight starts on g1.")).toBeVisible();
   const journal = await page.evaluate(async () => {
-    const request = indexedDB.open("tempo-offline-training", 1);
+    const request = indexedDB.open("tempo-offline-training", 2);
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
@@ -206,7 +215,7 @@ test("stale study revisions retain the phone answer as a replay conflict", async
   };
   const queue = { local_date: localDate, count: 1, cards: [card] };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...queue,
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: { ...queue,
     prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
       updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
   await page.goto("/");
@@ -223,7 +232,7 @@ test("stale study revisions retain the phone answer as a replay conflict", async
     route.fulfill({ status: 409, json: { detail: "Exercise revision changed; reload before answering" } }));
   await page.reload();
   await expect.poll(async () => page.evaluate(async () => {
-    const request = indexedDB.open("tempo-offline-training", 1);
+    const request = indexedDB.open("tempo-offline-training", 2);
     const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });
     const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
     return new Promise<{ answer: unknown; conflict: string }>((resolve) => { read.onsuccess = () => resolve(read.result.attempts[0]); });
@@ -243,13 +252,13 @@ test("unknown prepared study grader versions are unavailable offline", async ({ 
         required: ["g1"], optional: [], candidate_region: null } } };
   const queue = { local_date: localDate, count: 1, cards: [card] };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...queue,
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: { ...queue,
     prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
       updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
   await page.goto("/");
   await waitForPreparedPhoneShell(page, localDate);
   await expect.poll(async () => page.evaluate(async () => {
-    const request = indexedDB.open("tempo-offline-training", 1);
+    const request = indexedDB.open("tempo-offline-training", 2);
     const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });
     const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
     return new Promise<number>((resolve) => { read.onsuccess = () => resolve(read.result?.cards?.length ?? 0); });
@@ -315,14 +324,14 @@ test("prepared explanation is self assessed offline and replayed through server 
         rubric: "The knight starts on g1." } } };
   const queue = { local_date: localDate, count: 1, cards: [card] };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...queue,
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: { ...queue,
     prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
       updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
   await page.goto("/");
   await expect(page.getByText("Explain the knight placement")).toBeVisible();
   await waitForPreparedPhoneShell(page, localDate);
   await expect.poll(async () => page.evaluate(async () => {
-    const request = indexedDB.open("tempo-offline-training", 1);
+    const request = indexedDB.open("tempo-offline-training", 2);
     const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });
     const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
     return new Promise<number>((resolve) => { read.onsuccess = () => resolve(read.result?.cards?.length ?? 0); });

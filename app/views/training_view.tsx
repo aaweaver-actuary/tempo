@@ -19,6 +19,7 @@ import FailureNote from "../components/FailureNote";
 import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
+import type { AssistanceKind } from "../domain/opening-evidence";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 import { usesLocalApi } from "../utils/local";
@@ -59,6 +60,7 @@ interface TrainingViewProps {
   setEditorCard: (card: PracticeCard | null) => void;
   onAcceptPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
+  onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
   onOpenPosition?: (target: "analysis" | "builder" | "games" | "compare") => void;
   useSharedBoard?: boolean;
@@ -88,6 +90,7 @@ function StandardTrainingView({
   onAcceptPrefixSplit = async () => { throw new Error("Prefix splitting is unavailable. Reload training."); },
   onRejectPrefixSplit = async () => { throw new Error("Prefix splitting is unavailable. Reload training."); },
   onMove,
+  onOpeningAssistance,
   onOpenPosition = () => undefined,
   onBury = async () => undefined,
   burialPending = false,
@@ -178,6 +181,11 @@ function StandardTrainingView({
   const trainingPositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${attemptGeneration}`;
   const visiblePositions = useMemo(() => positionsFromMoves(card.startingFen, card.moves, feedback === "complete" ? card.moves.length : step), [card.startingFen, card.moves, feedback, step]);
   const boardHistory = useBoardHistory(trainingPositionKey, visiblePositions, currentFenString);
+  function observeDisplayedHint(displayedFen: string) {
+    if (displayedFen === currentFenString && cardsLeft > 0 && card.kind === "opening" && showTeachingArrow && !boardHistory.viewingHistory && !isLocked && !trainingMutationBlocked) {
+      onOpeningAssistance?.(step, feedback === "wrong" ? "revealed" : attemptFailed ? "guided" : showHint ? "hint" : "teaching");
+    }
+  }
   useBoardPublisher("train", useSharedBoard && !isEndgame ? {
     keyboard: boardHistory.keyboard,
     positionKey: trainingPositionKey,
@@ -200,6 +208,7 @@ function StandardTrainingView({
         ? "readonly"
         : "legal",
     showHint: cardsLeft > 0 && !boardHistory.viewingHistory && showTeachingArrow,
+    onHintExposure: observeDisplayedHint,
     theme: boardTheme,
     pieceSet,
     orientation: card.orientation === "black" ? "black" : "white",
@@ -287,6 +296,7 @@ function StandardTrainingView({
                   cardsLeft === 0
                 }
                 showHint={!boardHistory.viewingHistory && showTeachingArrow}
+                onHintExposure={observeDisplayedHint}
                 shapes={boardHistory.viewingHistory ? [] : trainingShapes}
                 theme={boardTheme}
                 pieceSet={pieceSet}

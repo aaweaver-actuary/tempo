@@ -8,7 +8,7 @@ test.beforeEach(async ({ context }) => {
 
 async function readSavedPhoneQueue(page: Page): Promise<PreparedTraining | null> {
   return page.evaluate(() => new Promise<PreparedTraining | null>((resolve, reject) => {
-    const request = indexedDB.open("tempo-offline-training", 1);
+    const request = indexedDB.open("tempo-offline-training", 2);
     request.onupgradeneeded = () => request.transaction?.abort();
     request.onerror = () => resolve(null);
     request.onsuccess = () => {
@@ -63,7 +63,7 @@ const preparedCards = [
 test("prepared phone queue survives API outage reload and syncs its review", async ({ page }) => {
   const windowPayload = { local_date: localDate, count: 2, cards: preparedCards };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: windowPayload }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     ...windowPayload, prepared_at: new Date().toISOString(),
     projection: { state: "ready", generation: 1, updated_at: null,
       refresh_pending: 0, last_error: null, blocked_count: 0 },
@@ -128,7 +128,7 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
   await page.route("**/api/queue/window?**", (route) => phoneConnected
     ? route.fulfill({ json: { ...queuePayload(authoritativeCards), cards: authoritativeCards.slice(0, 20) } })
     : route.abort("internetdisconnected"));
-  await page.route("**/api/queue/prepared", (route) => phoneConnected
+  await page.route("**/api/queue/prepared?**", (route) => phoneConnected
     ? route.fulfill({ json: { ...queuePayload(authoritativeCards), prepared_at: new Date().toISOString() } })
     : route.abort("internetdisconnected"));
   await page.goto("/");
@@ -147,7 +147,7 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
     await desktop.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
       ...queuePayload(authoritativeCards), cards: authoritativeCards.slice(0, 20),
     } }));
-    await desktop.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    await desktop.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
       ...queuePayload(authoritativeCards), prepared_at: new Date().toISOString(),
     } }));
     await desktop.goto("/");
@@ -172,7 +172,7 @@ test("pending phone review remains saved while live training opens and a conflic
     projection: { state: "ready", generation: 1, updated_at: null,
       refresh_pending: 0, last_error: null, blocked_count: 0 } });
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload() }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     ...payload(), prepared_at: new Date().toISOString(),
   } }));
   await page.goto("/");
@@ -204,7 +204,7 @@ test("pending phone review remains saved while live training opens and a conflic
   const savedQueue = await page.evaluate(() => new Promise<{
     conflict?: string; cardIds: string[];
   }>((resolve, reject) => {
-    const opened = indexedDB.open("tempo-offline-training", 1);
+    const opened = indexedDB.open("tempo-offline-training", 2);
     opened.onerror = () => reject(opened.error);
     opened.onsuccess = () => {
       const request = opened.result.transaction("training").objectStore("training").get("prepared-daily-queue");
@@ -224,7 +224,7 @@ test("competing computer review credits the saved phone result and explains the 
     projection: { state: "ready", generation: 1, updated_at: null,
       refresh_pending: 0, last_error: null, blocked_count: 0 } };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     ...payload, prepared_at: new Date().toISOString(),
   } }));
   await page.goto("/");
@@ -244,7 +244,7 @@ test("competing computer review credits the saved phone result and explains the 
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.locator(".notification-toast").getByText(/computer schedule was kept/)).toBeVisible();
   const savedAttempt = await page.evaluate(() => new Promise<{ serverReviewId?: number; syncWarning?: string }>((resolve, reject) => {
-    const opened = indexedDB.open("tempo-offline-training", 1);
+    const opened = indexedDB.open("tempo-offline-training", 2);
     opened.onerror = () => reject(opened.error);
     opened.onsuccess = () => {
       const request = opened.result.transaction("training").objectStore("training").get("prepared-daily-queue");
@@ -260,7 +260,7 @@ test("nine phone conflicts can be inspected and discarded individually without c
   const payload = { local_date: localDate, count: preparedCards.length, cards: preparedCards,
     projection: { state: "ready", generation: 1, updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...payload, prepared_at: new Date().toISOString() } }));
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: { ...payload, prepared_at: new Date().toISOString() } }));
   await page.goto("/");
   await expectPhoneQueuePrepared(page);
   const board = page.locator(".unified-board-shell-panel");
@@ -268,7 +268,7 @@ test("nine phone conflicts can be inspected and discarded individually without c
   const cardIds = Array.from({ length: 9 }, (_, index) => `${index}`.repeat(64));
   await page.evaluate(async (ids) => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("tempo-offline-training", 1);
+      const request = indexedDB.open("tempo-offline-training", 2);
       request.onupgradeneeded = () => reject(new Error("Prepared phone queue was not saved before the conflict fixture"));
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -367,7 +367,7 @@ test("an older prepared response cannot replace a newer saved phone queue", asyn
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: currentCards().length, cards: currentCards(),
   } }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: currentCards().length, cards: currentCards(),
     prepared_at: serveOlderSnapshot ? olderPreparationTime : newerPreparationTime,
     projection: { state: "ready", generation: 1, updated_at: null,
@@ -379,7 +379,7 @@ test("an older prepared response cannot replace a newer saved phone queue", asyn
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText(/A newer phone queue is already saved/)).toBeVisible();
   const savedCardIds = await page.evaluate(() => new Promise<string[]>((resolve, reject) => {
-    const opened = indexedDB.open("tempo-offline-training", 1);
+    const opened = indexedDB.open("tempo-offline-training", 2);
     opened.onerror = () => reject(opened.error);
     opened.onsuccess = () => {
       const request = opened.result.transaction("training").objectStore("training").get("prepared-daily-queue");
@@ -398,7 +398,7 @@ test("complete queue reconciliation keeps a removed in-progress board paused unt
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: canonicalCards.length, cards: canonicalCards,
   } }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: canonicalCards.length, cards: canonicalCards,
     prepared_at: new Date().toISOString(),
     projection: { state: "ready", generation: 1, updated_at: null,
@@ -432,7 +432,7 @@ test("prepared phone queue validates study metadata beyond the live window and k
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: cards.length, cards: cards.slice(0, 20),
   } }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: cards.length, cards,
     prepared_at: new Date().toISOString(),
     projection: { state: "ready", generation: 1, updated_at: null,
@@ -449,7 +449,7 @@ test("prepared phone queue validates study metadata beyond the live window and k
 test("yesterday's prepared phone queue never becomes today's training", async ({ page }) => {
   const windowPayload = { local_date: localDate, count: 2, cards: preparedCards };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: windowPayload }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     ...windowPayload, prepared_at: new Date().toISOString(),
     projection: { state: "ready", generation: 1, updated_at: null,
       refresh_pending: 0, last_error: null, blocked_count: 0 },
@@ -466,7 +466,7 @@ test("yesterday's prepared phone queue never becomes today's training", async ({
 test("offline guided failure stays guided after reopening the phone app", async ({ page }) => {
   const windowPayload = { local_date: localDate, count: 2, cards: preparedCards };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: windowPayload }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     ...windowPayload, prepared_at: new Date().toISOString(),
     projection: { state: "ready", generation: 1, updated_at: null,
       refresh_pending: 0, last_error: null, blocked_count: 0 },
@@ -495,7 +495,7 @@ test("older computer API blocks phone preparation with an update instruction", a
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: 2, cards: preparedCards,
   } }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ status: 404, json: { detail: "Not Found" } }));
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ status: 404, json: { detail: "Not Found" } }));
   await page.goto("/");
   await expect(page.getByText(/Tempo on the computer is an older version/)).toBeVisible();
   await expect(page.getByText(/Phone queue prepared for/)).toHaveCount(0);
@@ -505,7 +505,7 @@ test("service worker update during an active phone attempt waits for a safe reop
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: 2, cards: preparedCards,
   } }));
-  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
     local_date: localDate, count: 2, cards: preparedCards,
     prepared_at: new Date().toISOString(),
     projection: { state: "ready", generation: 1, updated_at: null,
