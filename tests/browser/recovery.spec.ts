@@ -762,3 +762,53 @@ test("repair confirmation during a held training piece preserves the drag and ac
     await testInfo.attach("held-repair-confirmation", { body: JSON.stringify(result), contentType: "application/json" });
   } finally { releaseIntegrity?.(); await page.mouse.up(); }
 });
+
+test("asynchronous repair validation retry survives reload without repeating the retry command", async ({ page }) => {
+  await prepareVisualUI(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("tempo-repair-retry-fixture-initialized")) {
+      localStorage.setItem("tempo-repair-retry-fixture-initialized", "true");
+      localStorage.setItem("tempo-pending-integrity-repairs-v3:retry-repair", JSON.stringify({
+        repertoireId: "visual-repertoire", issueId: "retry-issue", signature: "retry-signature", selectedMoveUci: "e2e4",
+        operationId: "retry-repair", phase: "validating", taskId: "retry-graph", queuedAt: 1,
+      }));
+    }
+  });
+  let taskComplete = false;
+  let retryOperationId = "";
+  let retryPosts = 0;
+  let retryReads = 0;
+  await page.route("**/api/system/tasks", route => route.fulfill({ json: { tasks: [{ id: "retry-graph", kind: "opening_graph_rebuild",
+    deduplication_key: "visual-repertoire", generation: 1, state: taskComplete ? "complete" : "failed", last_error: "Worker needs retry" }] } }));
+  await page.route("**/api/system/tasks/retry-graph/retry", route => {
+    retryPosts += 1; retryOperationId = route.request().headers()["idempotency-key"];
+    return route.fulfill({ status: 202, json: { operation_id: retryOperationId, state: "pending" } });
+  });
+  await page.route("**/api/operations/*", route => {
+    const operationId = new URL(route.request().url()).pathname.split("/").at(-1);
+    if (operationId === retryOperationId) {
+      retryReads += 1;
+      return route.fulfill({ json: { state: taskComplete ? "complete" : "pending", operation_id: retryOperationId,
+        ...(taskComplete ? { response: { id: "retry-graph" } } : {}) } });
+    }
+    return route.fulfill({ json: { state: "unknown" } });
+  });
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{ id: "visual-repertoire", name: "Spanish opening",
+    source_name: "fixture.pgn", line_count: 1, card_count: 1, due_count: 1, graph_state: "ready", graph_generation: 1, integrity_status: "clean" }] } }));
+  await page.route("**/api/repertoires/*/integrity", route => route.fulfill({ json: { repertoire_id: "visual-repertoire", status: "clean",
+    issue_count: 0, first_issue_id: null, scan_status: "idle", scan_generation: "retry-scan:1",
+    scan_progress: { completed: 1, total: 1 }, last_scan_error: null, issues: [] } }));
+  await page.goto("/");
+  await page.locator(".integrity-repair-status").getByRole("button", { name: "Retry repair", exact: true }).click();
+  await expect.poll(() => retryPosts).toBe(1);
+  await expect.poll(() => retryReads).toBeGreaterThan(0);
+  await page.reload();
+  await expect.poll(() => retryReads).toBeGreaterThan(1);
+  await expect(page.locator(".integrity-repair-status")).toContainText("Validating");
+  await expect(page.locator(".integrity-repair-status").getByRole("button", { name: "Retry repair", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v3:retry-repair")!).retryOperationId)).toBe(retryOperationId);
+  taskComplete = true;
+  await expect.poll(async () => page.evaluate(() => localStorage.getItem("tempo-pending-integrity-repairs-v3:retry-repair")), { timeout: 15_000 }).toBeNull();
+  expect(retryPosts).toBe(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
