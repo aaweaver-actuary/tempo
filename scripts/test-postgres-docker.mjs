@@ -401,6 +401,27 @@ async function verifyForegroundAndStudyDurability() {
   assert(splitCard, "Study fixture includes a third multi-move prefix-split entry");
 
   run("docker", [...compose, "stop", "background-worker"]);
+  const evidenceQueue = await get("queue/today?include_opening_evidence=true");
+  const evidenceCard = evidenceQueue.cards.find(card => card.queue_entry_id === reviewCard.queue_entry_id);
+  assert(evidenceCard?.opening_decision_manifest, "Foreground fixture has authoritative evidence");
+  const manifest = evidenceCard.opening_decision_manifest;
+  const observedAt = new Date().toISOString();
+  const checkpointOperationId = `pg-background-checkpoint-${randomBytes(12).toString("hex")}`;
+  const backgroundCheckpoint = {
+    attempt_id: `pg-background-attempt-${randomBytes(12).toString("hex")}`, manifest,
+    origin_queue_entry_id: evidenceCard.queue_entry_id, queue_entry_id: evidenceCard.queue_entry_id,
+    started_at: observedAt, study_timezone: "UTC", source: "live",
+    events: [{ sequence: 1, decision_index: 0, decision_id: manifest.decisions[0].decision_id,
+      expected_uci: manifest.decisions[0].expected_uci, response_uci: manifest.decisions[0].expected_uci,
+      observed_at: observedAt, kind: "first_response", disposition: "expected" }],
+    terminal: { state: "partial", final_sequence: 1, ended_at: observedAt },
+  };
+  const queuedCheckpoint = await apiRequest("opening-evidence/checkpoints", {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": checkpointOperationId },
+    body: JSON.stringify(backgroundCheckpoint),
+  });
+  assert.equal(queuedCheckpoint.status, 202, "A stopped background worker cannot execute the checkpoint on foreground");
+  assert.equal((await queuedCheckpoint.json()).operation_id, checkpointOperationId);
   const importedBackground = await importFixture("background-publication.pgn", backgroundPublicationPgn);
   const queuedSystem = await get("system/tasks");
   assert(queuedSystem.tasks.some((task) => task.kind === "opening_graph_rebuild"
@@ -453,6 +474,20 @@ async function verifyForegroundAndStudyDurability() {
     "-Atqc", "SELECT count(*) FROM reviews; SELECT count(*) FROM queue_projections;"]);
   console.log(`PostgreSQL direct SQL probe: ${Math.round((performance.now() - sqlStartedAt) * 10) / 10}ms (review and queue-projection counts)`);
   run("docker", [...compose, "start", "background-worker"]);
+  const persistedCheckpoint = await postCommand("opening-evidence/checkpoints", backgroundCheckpoint,
+    { operationId: checkpointOperationId });
+  assert.equal(persistedCheckpoint.persisted, true);
+  assert.deepEqual(await postCommand("opening-evidence/checkpoints", backgroundCheckpoint,
+    { operationId: checkpointOperationId }), persistedCheckpoint);
+  const receiptResponse = await apiRequest(`operations/${encodeURIComponent(checkpointOperationId)}`,
+    { headers: { "X-Tempo-Work-Class": "background" } });
+  assert.equal(receiptResponse.status, 200, "Background checkpoint receipt remains readable after worker completion");
+  const checkpointReceipt = await receiptResponse.json();
+  assert.equal(checkpointReceipt.state, "complete");
+  assert.deepEqual(checkpointReceipt.response, persistedCheckpoint);
+  run("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-v", "ON_ERROR_STOP=1", "-Atqc",
+    `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM operation_receipts WHERE operation_id='${checkpointOperationId}' AND background AND state='complete') THEN RAISE EXCEPTION 'Checkpoint receipt is not background'; END IF; IF (SELECT count(*) FROM opening_evidence_events WHERE attempt_id='${backgroundCheckpoint.attempt_id}') != 1 THEN RAISE EXCEPTION 'Checkpoint replay duplicated events'; END IF; END $$;`]);
+  console.log("PASS test_postgres_background_opening_checkpoint_preserves_foreground_progress_and_replay");
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
   const savedTeaching = await get(`cards/${reviewCard.id}/teaching`);
@@ -716,6 +751,8 @@ const actions = {
           "/source/scripts/check_postgres_background_workloads.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_segmentation.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_opening_evidence.py"]);
       },
       restoreConsumers: async () => {
         run("docker", [...compose, "start", ...workloadConsumers]);
@@ -800,6 +837,8 @@ const actions = {
     const after = await get("queue/today");
     assert.deepEqual(after.cards.map(card => card.queue_entry_id),
       before.cards.map(card => card.queue_entry_id));
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_opening_evidence.py", "--verify-persisted"]);
     console.log("PASS PostgreSQL lost-response receipt replay, settings, and queue order survive container recreation");
   },
   backup_restore: async () => {
