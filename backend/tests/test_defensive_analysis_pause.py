@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 import json
 import pytest
+from fastapi.testclient import TestClient
 from app.services.database_executor import database_writer
 
 from app import database, main, settings_commands
@@ -165,6 +166,142 @@ def test_defensive_pause_activity_labels_recommendations_and_preserved_work(tmp_
     assert recommendation['paused'] is False
     other = next(item for item in items if item['source'] == 'threat_analysis' and item['id'] != request_id)
     assert other['state'] == 'paused'
+
+
+@pytest.mark.parametrize('source', ['durable', 'threat_analysis'])
+@pytest.mark.parametrize('individually_paused', [False, True])
+def test_activity_global_pause_provenance_preserves_individual_pause_and_rejects_stale_resume(
+        tmp_path, monkeypatch, source, individually_paused):
+    initialize_pause_database(tmp_path, monkeypatch)
+    request_id = seed_exercise_requests()
+    database_writer.start()
+    try:
+        work_id = (durable_tasks.enqueue_task('defensive_threat_scan', 'activity-provenance', {})['id']
+                   if source == 'durable' else request_id)
+        client = TestClient(main.app)
+        payload = {'source': source, 'id': work_id}
+        if individually_paused:
+            assert client.post('/api/system/activity/control', json={**payload, 'action': 'pause'}).status_code == 200
+        with database.read_connection() as connection:
+            controls_before = [tuple(row) for row in connection.execute('SELECT * FROM background_activity')]
+            settings_before = tuple(connection.execute('SELECT * FROM settings WHERE id=1').fetchone())
+        item = next(item for item in background_activity.list_activity()['items']
+                    if item['source'] == source and item['id'] == work_id)
+        assert (item['state'], item['paused'], item['paused_by_settings']) == ('paused', True, True)
+        assert next(item for item in background_activity.list_activity()['items']
+                    if item['source'] == source and item['id'] == work_id) == item
+        conflict = client.post('/api/system/activity/control', json={**payload, 'action': 'resume'})
+        assert conflict.status_code == 409
+        assert 'Defensive analysis' in conflict.json()['detail'] and 'Settings' in conflict.json()['detail']
+        with database.read_connection() as connection:
+            assert [tuple(row) for row in connection.execute('SELECT * FROM background_activity')] == controls_before
+            assert tuple(connection.execute('SELECT * FROM settings WHERE id=1').fetchone()) == settings_before
+        assert client.post('/api/system/activity/control', json={**payload, 'action': 'prioritize'}).status_code == 200
+        with database.connection() as connection:
+            connection.execute('UPDATE settings SET defensive_analysis_enabled=1')
+        item = next(item for item in background_activity.list_activity()['items']
+                    if item['source'] == source and item['id'] == work_id)
+        assert item['paused_by_settings'] is False
+        assert item['paused'] is individually_paused
+        assert item['state'] == ('paused' if individually_paused else 'queued')
+        assert item['promoted'] is True
+        assert client.post('/api/system/activity/control', json={**payload, 'action': 'resume'}).status_code == 200
+        with database.read_connection() as connection:
+            assert tuple(connection.execute('SELECT paused,promoted FROM background_activity '
+                                            'WHERE source=? AND work_id=?', (source, work_id)).fetchone()) == (0, 1)
+            assert connection.execute('SELECT defensive_analysis_enabled FROM settings WHERE id=1').fetchone()[0] == 1
+    finally:
+        database_writer.stop()
+
+
+@pytest.mark.parametrize('coverage', [False, True])
+def test_activity_shared_recommendation_individual_resume_remains_allowed_while_defense_is_disabled(
+        tmp_path, monkeypatch, coverage):
+    initialize_pause_database(tmp_path, monkeypatch)
+    request_id = seed_exercise_requests()
+    attach_recommendation(request_id, coverage=coverage)
+    client = TestClient(main.app)
+    payload = {'source': 'threat_analysis', 'id': request_id}
+    assert client.post('/api/system/activity/control', json={**payload, 'action': 'pause'}).status_code == 200
+    item = next(item for item in background_activity.list_activity()['items'] if item['id'] == request_id)
+    assert item['paused'] is True and item['paused_by_settings'] is False
+    assert client.post('/api/system/activity/control', json={**payload, 'action': 'resume'}).status_code == 200
+    item = next(item for item in background_activity.list_activity()['items'] if item['id'] == request_id)
+    assert item['paused'] is False and item['paused_by_settings'] is False
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT defensive_analysis_enabled FROM settings WHERE id=1').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('source', ['durable', 'threat_analysis'])
+def test_stale_activity_resume_returns_conflict_without_clearing_individual_pause(tmp_path, monkeypatch, source):
+    initialize_pause_database(tmp_path, monkeypatch)
+    request_id = seed_exercise_requests()
+    database_writer.start()
+    try:
+        work_id = (durable_tasks.enqueue_task('defensive_threat_scan', 'stale-activity-resume', {})['id']
+                   if source == 'durable' else request_id)
+        assert background_activity.set_control(source, work_id, 'pause')
+        with database.read_connection() as connection:
+            before = tuple(connection.execute('SELECT * FROM background_activity WHERE source=? AND work_id=?',
+                                              (source, work_id)).fetchone())
+        response = TestClient(main.app).post('/api/system/activity/control', json={
+            'source': source, 'id': work_id, 'action': 'resume'})
+        assert response.status_code == 409
+        assert 'Defensive analysis' in response.json()['detail'] and 'Settings' in response.json()['detail']
+        with database.read_connection() as connection:
+            assert tuple(connection.execute('SELECT * FROM background_activity WHERE source=? AND work_id=?',
+                                            (source, work_id)).fetchone()) == before
+            assert connection.execute('SELECT defensive_analysis_enabled FROM settings WHERE id=1').fetchone()[0] == 0
+    finally:
+        database_writer.stop()
+
+
+@pytest.mark.parametrize('source', ['durable', 'game_analysis'])
+def test_activity_unrelated_individual_pause_controls_ignore_defensive_setting(tmp_path, monkeypatch, source):
+    initialize_pause_database(tmp_path, monkeypatch)
+    seed_exercise_requests()
+    database_writer.start()
+    try:
+        if source == 'durable':
+            work_id = durable_tasks.enqueue_task('daily_queue', 'activity-unrelated', {})['id']
+        else:
+            work_id = 'lichess:pause-test'
+            with database.connection() as connection:
+                connection.execute('INSERT INTO game_analysis_jobs(game_id,status,updated_at) VALUES(?,?,?)',
+                                   (work_id, 'queued', datetime.now(timezone.utc).isoformat()))
+        client = TestClient(main.app)
+        for action, expected_paused in [('pause', True), ('resume', False)]:
+            assert client.post('/api/system/activity/control', json={
+                'source': source, 'id': work_id, 'action': action}).status_code == 200
+            item = next(item for item in background_activity.list_activity()['items']
+                        if item['source'] == source and item['id'] == work_id)
+            assert item['paused'] is expected_paused and item['paused_by_settings'] is False
+    finally:
+        database_writer.stop()
+
+
+@pytest.mark.parametrize('source', ['durable', 'threat_analysis'])
+@pytest.mark.parametrize('state', ['complete', 'failed'])
+def test_activity_terminal_defensive_work_keeps_existing_control_rejection(tmp_path, monkeypatch, source, state):
+    initialize_pause_database(tmp_path, monkeypatch)
+    request_id = seed_exercise_requests()
+    database_writer.start()
+    try:
+        work_id = (durable_tasks.enqueue_task('defensive_threat_scan', 'terminal-activity', {})['id']
+                   if source == 'durable' else request_id)
+        table = 'background_tasks' if source == 'durable' else 'threat_analysis_requests'
+        with database.connection() as connection:
+            connection.execute(f'UPDATE {table} SET state=? WHERE id=?', (state, work_id))
+        item = next(item for item in background_activity.list_activity()['items']
+                    if item['source'] == source and item['id'] == work_id)
+        assert item['state'] == state and item['paused_by_settings'] is True
+        assert TestClient(main.app).post('/api/system/activity/control', json={
+            'source': source, 'id': work_id, 'action': 'resume'}).status_code == 404
+        with database.read_connection() as connection:
+            assert connection.execute('SELECT 1 FROM background_activity WHERE source=? AND work_id=?',
+                                      (source, work_id)).fetchone() is None
+    finally:
+        database_writer.stop()
 
 
 def test_postgres_defensive_setting_preserves_omitted_enabled_value(monkeypatch):

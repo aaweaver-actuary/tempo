@@ -11,6 +11,7 @@ export type ActivityItem = {
   updated_at: string;
   error: string | null;
   paused: boolean;
+  paused_by_settings?: boolean;
   promoted: boolean;
 };
 

@@ -20,6 +20,67 @@ const activityResponse = {
 };
 
 describe("background activity tray", () => {
+  it.each(["durable", "threat_analysis"])("settings pause explains blocking without individual Resume (%s)", async source => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "POST" ? Response.json({ ok: true }) : Response.json({
+        ...activityResponse, items: [{ ...activityItem, source, state: "paused", paused: true, paused_by_settings: true }],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ServiceStatusPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+    expect(await screen.findByText("Paused in Settings. Enable Defensive analysis in Settings to allow this work.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pause", exact: true })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Prioritize" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/system/activity/control"),
+      expect.objectContaining({ body: JSON.stringify({ source, id: "task-1", action: "prioritize" }) }),
+    ));
+    expect(fetchMock.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+  });
+
+  it("pause provenance-only changes update controls while an individual pause stays effective", async () => {
+    let pausedBySettings = false;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "POST" ? Response.json({ ok: true }) : Response.json({
+        ...activityResponse, items: [{ ...activityItem, state: "paused", paused: true, paused_by_settings: pausedBySettings }],
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ServiceStatusPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+    expect(await screen.findByRole("button", { name: "Resume" })).toBeTruthy();
+    pausedBySettings = true;
+    fireEvent(window, new Event("focus"));
+    expect(await screen.findByText("Paused in Settings. Enable Defensive analysis in Settings to allow this work.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    pausedBySettings = false;
+    fireEvent(window, new Event("focus"));
+    fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/system/activity/control"),
+      expect.objectContaining({ body: JSON.stringify({ source: "durable", id: "task-1", action: "resume" }) }),
+    ));
+  });
+
+  it("older activity responses without pause provenance retain individual Resume", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      ...activityResponse, items: [{ ...activityItem, state: "paused", paused: true }],
+    })));
+    render(<ServiceStatusPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+    expect(await screen.findByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+
+  it.each([null, "true"])("rejects malformed pause provenance (%s)", async pausedBySettings => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      ...activityResponse, items: [{ ...activityItem, paused_by_settings: pausedBySettings }],
+    })));
+    render(<ServiceStatusPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("unexpected format"));
+    expect(screen.queryByRole("button", { name: "Pause", exact: true })).toBeNull();
+  });
+
   it("shows truthful progress and lets the user pause and prioritize eligible work", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
       init?.method === "POST" ? Response.json({ ok: true }) : Response.json(activityResponse));
@@ -56,7 +117,8 @@ describe("background activity tray", () => {
   });
 
   it("retains retry for a failed durable task", async () => {
-    const failed = { ...activityItem, state: "failed", phase: "failed", completed: null, total: null, error: "Queue refresh failed" };
+    const failed = { ...activityItem, state: "failed", phase: "failed", completed: null, total: null,
+      paused: true, paused_by_settings: true, error: "Queue refresh failed" };
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
       init?.method === "POST" ? Response.json({ state: "queued" }) : Response.json({
         items: [failed], counts: { running: 0, queued: 0, paused: 0, failed: 1 }, total: 1, next_offset: null,

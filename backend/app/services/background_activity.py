@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import logging
 import sqlite3
+from fastapi import HTTPException
 
 from ..database import connection, read_connection
 from .. import postgres_store
 
 
-from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, recommendation_sql
+from .defensive_analysis import analysis_enabled, recommendation_sql, search_admission_sql, task_admission_sql
 
 SOURCES = {
     "durable": ("background_tasks", "id"),
@@ -109,8 +110,11 @@ def set_control_in_transaction(database, source: str, work_id: str, action: str)
     table, id_column = SOURCES[source]
     state_column = "state" if source in {"durable", "threat_analysis"} else "status"
     row_lock = " FOR UPDATE" if postgres_store.configured() else ""
+    settings_admission = (task_admission_sql('kind') if source == 'durable' else
+                          search_admission_sql('threat_analysis_requests.id') if source == 'threat_analysis' else '1=1')
     work_row = database.execute(
-        f"SELECT {state_column} FROM {table} WHERE {id_column}=?{row_lock}", (work_id,)
+        f"SELECT {state_column},({settings_admission}) AS settings_admitted "
+        f"FROM {table} WHERE {id_column}=?{row_lock}", (work_id,)
     ).fetchone()
     if not work_row or work_row[0] in {"failed", "superseded"}:
         return False
@@ -121,6 +125,9 @@ def set_control_in_transaction(database, source: str, work_id: str, action: str)
             (work_id,),
         ).fetchone():
             return False
+    if action == 'resume' and not work_row[1]:
+        raise HTTPException(409, 'Defensive analysis is disabled in Settings. '
+                            'Enable Defensive analysis in Settings before resuming this work.')
     now = _now()
     database.execute(
         """INSERT INTO background_activity(source,work_id,updated_at)
@@ -168,7 +175,7 @@ def _base_item(source: str, work_id: str, title: str, state: str, updated_at: st
         "source": source, "id": work_id, "title": title, "state": state,
         "phase": phase or state, "completed": completed, "total": total,
         "updated_at": updated_at, "generation_key": generation_key,
-        "error": error, "paused": False, "promoted": False,
+        "error": error, "paused": False, "paused_by_settings": False, "promoted": False,
     }
 
 
@@ -178,13 +185,18 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     items: list[dict] = []
     with read_connection() as database:
-        defensive_enabled = analysis_enabled(database)
-        for row in database.execute("SELECT * FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,)):
+        analysis_enabled(database)
+        for row in database.execute(
+            f"SELECT *,NOT {task_admission_sql('kind')} AS paused_by_settings "
+            "FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,),
+        ):
             items.append(_base_item("durable", row["id"], row["kind"].replace("_", " ").title(), row["state"], row["updated_at"], str(row["generation"]), row["phase"], error=row["last_error"]))
-            items[-1]["paused"] = not defensive_enabled and row["kind"] in DEFENSIVE_TASK_KINDS
+            items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
+            items[-1]['paused'] = items[-1]['paused_by_settings']
         for row in database.execute(
             f"""SELECT request.id,state,attempts,last_error,updated_at,
-                      {recommendation_sql('request.id')} AS is_recommendation
+                      {recommendation_sql('request.id')} AS is_recommendation,
+                      NOT {search_admission_sql('request.id')} AS paused_by_settings
                 FROM threat_analysis_requests request
                 WHERE state!='complete' OR updated_at>=?""", (cutoff,),
         ):
@@ -194,7 +206,8 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
             items.append(_base_item("threat_analysis", row["id"], title,
                                     state, row["updated_at"], str(row["attempts"]),
                                     error=row["last_error"]))
-            items[-1]["paused"] = not defensive_enabled and not row["is_recommendation"]
+            items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
+            items[-1]['paused'] = items[-1]['paused_by_settings']
         for row in database.execute("SELECT * FROM game_sync_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
             items.append(_base_item("sync", row["id"], "Game sync", row["status"], row["updated_at"], row["id"], error=row["error"]))
         for row in database.execute("""SELECT j.*,g.provider,g.played_at FROM game_derivation_jobs j
