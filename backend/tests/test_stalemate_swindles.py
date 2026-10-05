@@ -339,13 +339,22 @@ def test_checked_in_stalemate_corpora_have_unique_legal_single_moves_and_verifie
             assert identity not in identities and metadata["candidate_key"] not in candidate_keys
             identities.add(identity)
             candidate_keys.add(metadata["candidate_key"])
+            assert metadata["candidate_key"] == swindles.candidate_key(root["fen"], identity[1])
             source_nodes = sorted((row for row in positions.values() if row["source_id"] == root["source_id"]), key=lambda row: len(row["node_path"]))
             assert len(source_nodes) == 3 and source_nodes[1]["move_uci"] == identity[1]
             assert source_nodes[2]["move_uci"] == metadata["opponent_reply_uci"]
             assert chess.Board(source_nodes[2]["fen"]).is_stalemate()
             after_swindle = chess.Board(root["fen"])
+            assert ("white" if after_swindle.turn else "black") == metadata["defender_color"]
             assert after_swindle.legal_moves.count() >= 2
             after_swindle.push_uci(identity[1])
+            assert after_swindle.fen() == source_nodes[1]["fen"]
+            historical_reply = chess.Move.from_uci(metadata["opponent_reply_uci"])
+            assert historical_reply in after_swindle.legal_moves
+            after_swindle.push(historical_reply)
+            assert after_swindle.fen() == source_nodes[2]["fen"] == metadata["terminal_fen"]
+            assert after_swindle.is_stalemate()
+            after_swindle.pop()
             legal_replies = list(after_swindle.legal_moves)
             terminal_reply_count = 0
             for reply in legal_replies:

@@ -4,6 +4,18 @@ These examples show moves that successfully produced stalemate opportunities in 
 
 Corpus distributions describe observed stalemates, not the probability that a position will end in stalemate.
 
+## September 2026 corpus
+
+The checked-in [Study bundle](../public/data/studies/stalemate-swindles-2026-09-v1.tempo-study.json) contains 300 exercises. Its [manifest](../public/data/studies/stalemate-swindles-2026-09-v1.manifest.json) records the complete, checksum-verified scan of all 89,616,462 September games: 340,842 terminal stalemates among header-eligible parsed draws, 156,637 eligible candidates, and 137,013 unique candidates. There were no parsing errors or selection shortfalls.
+
+The selected examples comprise 102 Lone king, 102 Pawns only, 35 Piece only, and 61 Mixed material exercises; 189 historical traps and 111 immediate-forced cases. King zones are 101 corner, 107 edge, and 92 interior. Speeds are 206 Blitz, 84 Rapid, and 10 Classical. The manifest includes rating and material-deficit distributions and all exclusion counters. These are selected-example distributions, not population rates.
+
+The exact bundle-byte SHA-256 is:
+
+```text
+d8fc17a79bcc5d348e9643c44737bae1958f7c284fdd543cd840c79f1d373ff1
+```
+
 ## Training and import
 
 The puzzle begins **two plies before stalemate**, with the eventual stalemated defender to move. Its single reference answer is the defender's historical trap-setting move. The opponent's historical reply is retained as the second move of the Study source tree, and the explanation shows both moves in SAN.
@@ -79,6 +91,6 @@ Study/source/node/exercise IDs use a fixed UUIDv5 namespace, corpus ID, candidat
 
 ## Validation and limitations
 
-Synthetic tests use original White/Black positions, including a three-reply immediate forced stalemate and a single-legal-move exclusion. Run `make python-file FILE=backend/tests/test_stalemate_swindles.py`; its bounded checked-in corpus test validates all available real artifacts without rescanning the dump. The regular disposable PostgreSQL durability runner also imports/reimports generated synthetic content and proves it stays draft and unscheduled.
+Synthetic tests use original White/Black positions, including a three-reply immediate forced stalemate and a single-legal-move exclusion. Run `make python-file FILE=backend/tests/test_stalemate_swindles.py`; its bounded checked-in corpus test validates all available real artifacts without rescanning the dump. The regular disposable PostgreSQL durability runner also imports/reimports generated synthetic content and each checked-in corpus, proving they stay draft and unscheduled.
 
 There is no Stockfish/LLM analysis, probability model or non-stalemate control population, personalized/adaptive curriculum, automatic refresh, new web/background service, new schema/card/grader family, or modification of the live study database. Generator implementation and canonical corpus population are separately reportable outcomes: a failed full scan must be reported as incomplete and must never be replaced with synthetic examples labeled as the September corpus.
