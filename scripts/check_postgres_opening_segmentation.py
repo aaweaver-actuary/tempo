@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 import uuid
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app import postgres_store
@@ -18,6 +20,160 @@ from app.services.opening_graph import GraphInput, build_graph
 from app.services.review_service import apply_scheduling_review
 from app.opening_segmentation_api import segmentation_list, segmentation_detail, save_preference
 from app.command_gateway import execute_command
+
+
+def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(repertoire_id, lines, product_snapshot):
+    """Maintenance seeds stay separate from the running reader-only API process."""
+    from app.services import redis_admission_gate
+
+    endpoint = f'http://api:8000/api/repertoires/{repertoire_id}/prefix-evaluation'
+    before = product_snapshot()
+    foreground_rejections = 0
+    def reader_api_response(request):
+        nonlocal foreground_rejections
+        request_deadline = time.monotonic() + 10
+        # Health probes are foreground requests too. Coordinate with their real
+        # leases; never disable admission or treat a database failure as success.
+        while time.monotonic() < request_deadline:
+            if redis_admission_gate.foreground_present():
+                time.sleep(0.01)
+                continue
+            try:
+                with urlopen(request, timeout=request_deadline - time.monotonic()) as response:
+                    assert response.status == 200
+                    return json.load(response)
+            except HTTPError as error:
+                error_body = error.read().decode()
+                detail = json.loads(error_body).get('detail', {})
+                if (error.code != 503 or detail.get('code') != 'evaluation_busy' or
+                        detail.get('message') != 'Study work is active. Retry the diagnostic when study is idle.'):
+                    raise AssertionError(f'Reader-only API returned {error.code}: {error_body}') from error
+                assert error.headers.get('Retry-After') == '1'
+                foreground_rejections += 1
+        raise AssertionError('Reader-only diagnostic never obtained foreground-idle admission within 10 seconds')
+
+    source = reader_api_response(endpoint + '/source')
+    assert source['snapshot_id'] and source['graph_generation'] == 1
+    assert {route['id'] for route in source['lines']} == {line['id'] for line in lines}
+    request = Request(endpoint + '/evaluate', method='POST', headers={'Content-Type': 'application/json'},
+        data=json.dumps({'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
+                         'candidate_depths': {lines[0]['id']: 1}}).encode())
+    result = reader_api_response(request)
+    assert result['snapshot_id'] == source['snapshot_id'] and result['status'] == 'changed'
+    assert result['selected']['current']['metrics']['distinct_cards'] == 1
+    assert result['selected']['proposed']['metrics']['distinct_cards'] == 2
+    assert result['selected']['proposed']['metrics']['learner_decision_occurrences'] == 2
+    assert result['whole_repertoire']['current']['metrics']['distinct_cards'] == 3
+    assert result['whole_repertoire']['proposed']['metrics']['distinct_cards'] == 4
+    assert product_snapshot() == before, 'Deployed reader-only prefix diagnostics wrote product state'
+    print(json.dumps({'test': 'test_issue77_reader_only_deployed_api_evaluates_without_product_writes',
+                      'source_http_status': 200, 'evaluate_http_status': 200,
+                      'current_selected_cards': 1, 'proposed_selected_cards': 2,
+                      'current_whole_cards': 3, 'proposed_whole_cards': 4,
+                      'product_state_unchanged': True, 'foreground_rejections': foreground_rejections}))
+
+
+def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids):
+    """Real primary/query-only HTTP reads, response fencing and idle traversal."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app import prefix_evaluation_api as evaluator_api
+
+    tables = ('cards', 'reviews', 'repertoire_cards', 'repertoire_lines',
+              'repertoire_line_training_depths', 'opening_graph_steps', 'opening_graph_publications',
+              'prefix_splits', 'opening_card_schedule_seeds', 'daily_queue', 'queue_projections',
+              'background_tasks', 'operation_receipts')
+    def product_snapshot():
+        with postgres_store.connection(read_only=True) as database:
+            return {table: sorted(json.dumps(dict(row), sort_keys=True, default=str) for row in
+                    database.execute_native(f'SELECT * FROM {table}').fetchall()) for table in tables}
+
+    test_issue77_reader_only_deployed_api_evaluates_without_product_writes(repertoire_id, lines, product_snapshot)
+    client = TestClient(app)  # No lifespan: the existing disposable product already owns startup.
+    base_path = f'/api/repertoires/{repertoire_id}/prefix-evaluation'
+    before = product_snapshot()
+    source_response = client.get(base_path + '/source')
+    assert source_response.status_code == 200, source_response.text
+    source = source_response.json()
+    for selection, depths in (([], None), ([lines[0]['id']], None),
+                              ([line['id'] for line in lines[:2]], {line['id']: 1 for line in lines[:2]})):
+        response = client.post(base_path + '/evaluate', json={
+            'snapshot_id': source['snapshot_id'], 'selected_line_ids': selection, 'candidate_depths': depths})
+        assert response.status_code == 200, response.text
+    assert product_snapshot() == before, 'Prefix diagnostics wrote product state'
+
+    original_connection = postgres_store.connection
+    original_calculation = evaluator_api.iter_prefix_evaluation
+    reader_pids = []
+    prepared, released = threading.Event(), threading.Event()
+    @contextmanager
+    def observed_connection(**options):
+        with original_connection(**options) as database:
+            if options.get('repeatable_read'):
+                assert options['read_only'] and not options.get('authoritative', False) and options['background']
+                settings = database.execute_native(
+                    "SELECT pg_backend_pid(),current_setting('transaction_read_only'),"
+                    "current_setting('transaction_isolation'),current_setting('transaction_timeout')").fetchone()
+                assert tuple(settings)[1:] == ('on', 'repeatable read', '50ms')
+                reader_pids.append(settings[0])
+            yield database
+    def paused_calculation(*args):
+        calculation = original_calculation(*args)
+        try:
+            next(calculation)
+            prepared.set()
+            assert released.wait(5), 'Foreground review was blocked during evaluation'
+            return (yield from calculation)
+        finally:
+            calculation.close()
+    postgres_store.connection = observed_connection
+    evaluator_api.iter_prefix_evaluation = paused_calculation
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(client.post, base_path + '/evaluate', json={
+                'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
+            assert prepared.wait(5), 'Evaluation did not reach its closed-connection calculation'
+            with original_connection(read_only=True) as database:
+                readers = database.execute_native('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
+                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers)
+            started = time.perf_counter()
+            with original_connection(read_only=False) as database:
+                database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
+                apply_scheduling_review(database, card_ids[0], 'correct', guided=False, source_kind='study',
+                    source_ref=f'prefix-evaluation:{repertoire_id}', light_first_interval_days=7,
+                    reviewed_at=datetime.now(timezone.utc), review_day=date.today())
+            review_ms = (time.perf_counter() - started) * 1000
+            after_review = product_snapshot()
+            released.set()
+            response = future.result(timeout=5)
+            assert response.status_code == 200 and response.json()['snapshot_id'] == source['snapshot_id'], response.text
+            assert product_snapshot() == after_review, 'Evaluation changed state after the foreground review'
+    finally:
+        released.set()
+        postgres_store.connection = original_connection
+        evaluator_api.iter_prefix_evaluation = original_calculation
+
+    def changed_source(*args):
+        result = yield from original_calculation(*args)
+        with original_connection(read_only=False) as database:
+            database.execute_native('UPDATE repertoire_lines SET name=%s WHERE id=%s', ('Changed during evaluation', lines[0]['id']))
+        return result
+    evaluator_api.iter_prefix_evaluation = changed_source
+    try:
+        response = client.post(base_path + '/evaluate', json={
+            'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
+        assert response.status_code == 409 and response.json()['detail']['code'] == 'stale_snapshot', response.text
+        assert 'whole_repertoire' not in response.json()
+    finally:
+        evaluator_api.iter_prefix_evaluation = original_calculation
+        with original_connection(read_only=False) as database:
+            database.execute_native('UPDATE repertoire_lines SET name=%s WHERE id=%s', (lines[0]['name'], lines[0]['id']))
+    replay = client.post(base_path + '/evaluate', json={
+        'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
+    assert replay.status_code == 200, replay.text
+    print(json.dumps({'test': 'test_issue77_readonly_snapshot_and_foreground_concurrency',
+                      'foreground_review_during_evaluation_ms': round(review_ms, 2),
+                      'source_changed_response': 409, 'background_transaction_budget_ms': 50}))
 
 
 def main():
@@ -60,6 +216,8 @@ def main():
             for line, step in zip(lines, steps):
                 database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)',
                     (line['id'], repertoire_id, line['name'], 'white', starting_fen, line['moves_json'], now))
+                database.execute_native('INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,%s)',
+                    (line['id'], line['learner_decision_count']))
                 created_card = database.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color) VALUES(%s,%s,'prefix',%s,%s,%s,'white') ON CONFLICT DO NOTHING RETURNING id",
                     (step.card_id, repertoire_id, starting_fen, line['moves_json'], date.today().isoformat())).fetchone()
                 if created_card is None:
@@ -73,6 +231,7 @@ def main():
             worker.request_segmentation_in_transaction(database, repertoire_id, 1)
         first = claim_task('opening_segmentation')
         assert first and first['payload']['repertoire_id'] == repertoire_id
+        test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids)
         worker.presentation_occurrences = delayed_traverse
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(worker.execute_segmentation_slice, first)

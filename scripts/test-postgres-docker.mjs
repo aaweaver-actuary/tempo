@@ -855,6 +855,8 @@ const actions = {
           "/source/scripts/check_postgres_background_workloads.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_defensive_pause.py"]);
+        run("docker", [...compose, "exec", "-T", "api", "python", "-c",
+          "import os; assert os.environ.get('TEMPO_DATABASE_READ_URL'); assert 'TEMPO_DATABASE_WRITE_URL' not in os.environ; print('PASS deployed prefix API has reader URL and no writer credentials')"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_segmentation.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",

@@ -1527,6 +1527,47 @@ confirmed review replay produces no duplicate effect. No additional worker-write
 infrastructure scenario is needed for these static configuration checks.
 Full and durability gates include this stage; browser-only scopes omit it.
 
+## Issue #77 — read-only structural prefix evaluation
+
+`backend/tests/test_prefix_evaluation.py` runs in the regular backend suite:
+
+- `test_issue77_current_depths_reproduce_production_graph_and_do_not_mutate_input`
+- `test_issue77_black_shortening_has_hand_checked_counts_without_alias_inflation`
+- `test_issue77_unselected_alias_retains_card_and_qgd_route_unchanged`
+- `test_issue77_mixed_depths_and_duplicate_aliases_use_saved_depths`
+- `test_issue77_custom_black_root_and_opponent_cues_count_decisions_not_plies`
+- `test_issue77_chained_saved_splits_report_effective_depth_and_honor_production`
+- `test_issue77_short_routes_empty_selection_and_no_learner_moves_are_distinct`
+- `test_issue77_cycles_and_overlapping_roles_preserve_distinct_card_accounting`
+- `test_issue77_invalid_selection_and_candidate_depths_are_actionable`
+- `test_issue77_missing_or_zero_saved_depth_never_uses_global_default`
+- `test_issue77_stale_graph_and_malformed_split_fail_without_partial_results`
+- `test_issue77_size_limits_fail_without_truncating_source`
+- `test_issue77_512_ply_line_evaluates_current_and_proposed_without_truncation` — legal knight cycles at the diagnostic ceiling reach both production graph builds intact, preserving all 512 plies and 256 learner decisions in graph steps.
+- `test_issue77_513_ply_source_is_rejected_before_any_graph_build` — direct snapshots and a fail-if-called graph sentinel prove selected, unselected and empty-selection requests reject oversized source before even a normal line that sorts earlier is built; error identifies the line and 513/512 boundary without truncation.
+- `test_issue77_snapshot_binds_depth_source_graph_and_split_revisions`
+- `test_issue77_card_revisions_membership_and_decision_versions_fence_snapshot`
+
+`backend/tests/test_prefix_evaluation_api.py` runs in the regular backend suite:
+
+- `test_issue77_http_source_and_evaluation_use_typed_snapshot_contract`
+- `test_issue77_invalid_wire_values_have_machine_readable_errors`
+- `test_issue77_stale_snapshot_is_distinct_from_no_change_and_empty_selection`
+- `test_issue77_source_change_during_calculation_rejects_entire_result`
+- `test_issue77_foreground_preemption_and_deadline_return_retryable_errors`
+- `test_issue77_non_postgres_product_never_returns_sample_result`
+- `test_issue77_temporary_database_failure_is_retryable_without_partial_metrics`
+- `test_issue77_endpoints_use_actual_reader_pool_without_writer_credentials` — source and evaluate keep the actual loader, connection helper and pool selection; only low-level pool I/O is stubbed. Reader URL present/writer URL absent failed before the repair with `TEMPO_DATABASE_WRITE_URL is missing`. Both reads retain explicitly read-only repeatable transactions and close before decoding.
+- `test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hashing`
+- `test_issue77_http_oversized_source_is_413_through_actual_loader_without_payload` — GET source and POST evaluation retain actual loading/shared source validation, with database I/O stubbed at the existing connection seam; validation runs after connection closure and both return only the 413 limit error, with no graph construction or partial source/comparison.
+- `test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics`
+- `test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_only`
+- `test_issue77_repeatable_reader_and_worker_connections_set_isolation_before_budgets` — reader-based repeats select the reader pool; authoritative worker controls retain the writer pool. Both set isolation/read-only before timeout queries.
+
+Real PostgreSQL proof: `scripts/check_postgres_opening_segmentation.py::test_issue77_readonly_snapshot_and_foreground_concurrency` runs in the regular disposable durability rehearsal. It exercises real query-only HTTP source/current/empty/candidate reads, unchanged cards/reviews/depths/queues/graph/task/receipt state, authoritative repeatable-read transactions, idle source connections and a NOWAIT foreground review during paused traversal, source invalidation during computation, and deterministic retry after a scheduling-only change. Existing graph/split/snapshot and route-contract regressions remain required.
+
+Reader-only deployment proof: `scripts/check_postgres_opening_segmentation.py::test_issue77_reader_only_deployed_api_evaluates_without_product_writes` runs in that same regular durability scenario. Separate maintenance setup seeds published source; real HTTP GET source and POST depth change hit the running API with normal startup guards. The runner verifies a reader URL and absent writer URL in the API container environment. Both return 200 with the expected selected/whole comparison, and the existing complete product-state snapshot remains unchanged. Health probes hold real foreground leases while benchmark consumers are paused: each diagnostic waits for admission within its unchanged ten-second bound and retries only the exact foreground rejection (with Retry-After), never database, deadline or other failures. The in-process concurrency proof remains additional evidence, not a substitute for deployment coverage.
+
 ### PR #69 — enforce HTTP evidence database admission
 
 - `test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api` — real HTTP route/middleware rejects API-side source reads and preserves the original checkpoint envelope, operation key and background dispatch, with and without a client header. Both baseline cases failed on the eager source read.
