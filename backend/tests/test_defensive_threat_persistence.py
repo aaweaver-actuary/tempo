@@ -18,7 +18,7 @@ from app.services.threat_pipeline import (
     _upsert_seed, claim_analysis_request, execute_threat_scan_slice, execute_threat_validation,
 )
 from app.services.background_activity import list_activity, set_control
-from app.services import threat_pipeline
+from app.services import durable_tasks, threat_pipeline
 from app.services.threat_validation import AnalysisLine, AnalysisReport, EngineScore
 
 
@@ -32,7 +32,8 @@ def seed_candidate(*, game_id: str = "lichess:defense-one", fen: str = FEN,
         game, SourceLine("engine", 1, ("b4c2", "e1d2", "c2a1", "d2c1"))
     )[0]
     with database.connection() as db:
-        db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+        # These grading/admission fixtures explicitly opt into defensive analysis.
+        db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         db.execute(
             """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,
                  result,start_fen,moves_json,analysis_state,analysis_version)
@@ -77,7 +78,8 @@ def seed_validated_control():
         game, SourceLine("engine", 1, ("b4c2", "e1d2", "c2a1", "d2c1")),
     )[0]
     with database.connection() as db:
-        db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+        # These grading/admission fixtures explicitly opt into defensive analysis.
+        db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         db.execute(
             """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,
                  result,start_fen,moves_json,analysis_state,analysis_version)
@@ -128,7 +130,8 @@ def seed_reported_rc4_candidate():
         game, SourceLine("engine", 1, ("f5e3", "g2g3", "e3c4", "f2f4")),
     )[0]
     with database.connection() as db:
-        db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+        # These grading/admission fixtures explicitly opt into defensive analysis.
+        db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         db.execute(
             """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,
                  result,start_fen,moves_json,analysis_state,analysis_version)
@@ -531,7 +534,8 @@ def test_discovery_paused_defense_can_train_now_beyond_automatic_daily_cap(tmp_p
         candidate_id = seed_candidate()
         assert client.post(f"/api/defensive-threats/candidates/{candidate_id}/pause").status_code == 200
         with database.connection() as db:
-            db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+            # These grading/admission fixtures explicitly opt into defensive analysis.
+            db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         trained = client.post(f"/api/defensive-threats/candidates/{candidate_id}/train-now")
         assert trained.status_code == 200, trained.text
         card_id = trained.json()["card_id"]
@@ -722,6 +726,60 @@ def test_issue11_analysis_report_requires_matching_lease_and_request(tmp_path, m
             assert db.execute(
                 "SELECT state FROM threat_analysis_requests WHERE id=?", (job["id"],)
             ).fetchone()[0] == "complete"
+
+
+def test_pending_defensive_report_delivers_while_paused_and_resume_preserves_one_review(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        candidate_id = seed_candidate()
+        with database.connection() as db:
+            request_row = db.execute(
+                """SELECT request.id,request.report_json FROM threat_candidate_requests relation
+                   JOIN threat_analysis_requests request ON request.id=relation.request_id
+                   WHERE relation.candidate_id=? AND relation.role='best'""", (candidate_id,),
+            ).fetchone()
+            report = json.loads(request_row["report_json"])
+            db.execute("UPDATE threat_analysis_requests SET state='queued',report_json=NULL WHERE id=?",
+                       (request_row["id"],))
+            db.execute("UPDATE threat_training_candidates SET validation_state='needs_analysis' WHERE id=?",
+                       (candidate_id,))
+        job = claim_analysis_request()
+        assert job['id'] == request_row['id']
+        with database.connection() as db:
+            db.execute('UPDATE settings SET defensive_analysis_enabled=0')
+        endpoint = f"/api/defensive-threats/analysis/{job['id']}/report"
+        delivery = {"lease_id": job['lease_id'], "report": report}
+        assert client.post(endpoint, json=delivery).status_code == 200
+        assert client.post(endpoint, json=delivery).status_code == 200
+        assert durable_tasks.claim_task('defensive_threat_validate') is None
+        with database.connection() as db:
+            assert db.execute('SELECT report_json FROM threat_analysis_requests WHERE id=?',
+                              (job['id'],)).fetchone()[0] is not None
+            assert db.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 0
+            db.execute('UPDATE settings SET defensive_analysis_enabled=1')
+        validation = durable_tasks.claim_task('defensive_threat_validate')
+        assert validation is not None
+        execute_threat_validation(validation)
+        assert client.post(endpoint, json=delivery).status_code == 200
+        card_id = client.post(f"/api/defensive-threats/candidates/{candidate_id}/approve").json()['card_id']
+        exercise = client.get(f"/api/defense-exercises/{candidate_id}").json()
+        with database.connection() as db:
+            materialize_daily_queue(db, date.today().isoformat())
+            queue_entry_id = db.execute('SELECT id FROM daily_queue WHERE card_id=? AND status=\'queued\'',
+                                        (card_id,)).fetchone()[0]
+        attempt = {"attempt_id": "pause-resumed-review", "exercise_revision": exercise['exercise_revision'],
+                   "queue_entry_id": queue_entry_id, "move_uci": "e1f2"}
+        result = client.post(f"/api/defense-exercises/{candidate_id}/attempt", json=attempt)
+        assert result.status_code == 200, result.text
+        assert result.json()['status'] == 'correct'
+        assert client.post(f"/api/defense-exercises/{candidate_id}/attempt", json=attempt).json()['idempotent']
+    # Reopen the same database, then replay the same study receipt after restart.
+    with TestClient(app) as restarted:
+        assert restarted.post(f"/api/defense-exercises/{candidate_id}/attempt", json=attempt).json()['idempotent']
+        with database.read_connection() as db:
+            assert db.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', (card_id,)).fetchone()[0] == 1
+            assert db.execute('SELECT COUNT(*) FROM defense_attempts WHERE attempt_id=?',
+                              (attempt['attempt_id'],)).fetchone()[0] == 1
 
 
 def test_discoveries_restricted_engine_report_rejects_wrong_root_and_short_depth(tmp_path, monkeypatch):

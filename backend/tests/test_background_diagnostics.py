@@ -442,6 +442,8 @@ def test_engine_defense_expired_lease_reclaim_and_claim_are_observed(monkeypatch
             return self.row
     class ClaimDatabase:
         def execute_native(self,statement,parameters=()):
+            if statement.startswith('SELECT defensive_analysis_enabled'):
+                return Cursor((1,))
             if statement.startswith("UPDATE threat_analysis_requests SET state='queued'"):
                 return Cursor({'id':'expired'})
             if statement.startswith('SELECT request.id'):
