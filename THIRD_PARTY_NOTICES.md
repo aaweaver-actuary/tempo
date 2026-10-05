@@ -1,5 +1,7 @@
 # Third-party notices
 
+The generated Stalemate Swindles Study uses games from the [Lichess standard-rated game export](https://database.lichess.org/), released under Creative Commons CC0. Source game URLs and verified monthly archive provenance are retained in the generated corpus manifest; account names are omitted. See `docs/STALEMATE-SWINDLES.md` for reproduction and limitations.
+
 Move and capture recordings are unmodified [Lichess standard chess sounds](https://github.com/lichess-org/lila/tree/a558015505da237d46c335f669cd033370a05955/public/sound/standard), distributed under AGPL-3.0-or-later. The check cue is an original synthesized recording created for Tempo. See `public/sounds/standard/NOTICE.txt` and Lichess's COPYING.md for source and attribution. The older Woodland recordings remain unused legacy assets.
 
 Tempo uses [Chessground](https://github.com/lichess-org/chessground), the chessboard UI developed for Lichess, under GPL-3.0-or-later.

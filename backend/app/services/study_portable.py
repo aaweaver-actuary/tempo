@@ -169,7 +169,11 @@ def import_bundle(database, bundle: object, *, copy: bool = False) -> dict:
     study_id = rows["studies"][0]["id"]
     existing = database.execute("SELECT 1 FROM studies WHERE id=?", (study_id,)).fetchone()
     if existing:
-        if export_bundle(database, study_id)["tables"] == rows:
+        exported = export_bundle(database, study_id)["tables"]
+        def rows_by_identity(table_name, table_rows):
+            return {(row["exercise_id"], row["revision"]) if table_name == "study_exercise_revisions" else row["id"]: row
+                    for row in table_rows}
+        if all(rows_by_identity(name, exported[name]) == rows_by_identity(name, rows[name]) for name in TABLES):
             return {"study_id": study_id, "idempotent": True}
         raise ValueError("Study IDs already exist with different content; import as a copy")
     for name in TABLES:
