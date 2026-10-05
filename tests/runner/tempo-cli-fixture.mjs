@@ -118,6 +118,13 @@ async function fakeCommand() {
   const output = value => { console.log(typeof value === "string" ? value : JSON.stringify(value)); };
   const save = () => fs.writeFileSync(machinePath, JSON.stringify(machine));
   if (command === "git") {
+    const probe = args[0] === "rev-parse" && args[1] === "HEAD" ? "head" : args[0];
+    if (machine.gitProbeFailure?.probe === probe) {
+      const failure = machine.gitProbeFailure;
+      if (failure.once) { delete machine.gitProbeFailure; save(); }
+      console.error(failure.message ?? "fatal: cannot read repository metadata");
+      process.exit(128);
+    }
     if (args[0] === "branch") output(machine.branch ?? "main");
     else if (args[0] === "status") output(machine.sourceChanges ?? (fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : ""));
     else if (args[0] === "remote") output(machine.remote ?? "https://github.com/aaweaver-actuary/tempo");

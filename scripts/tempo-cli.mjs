@@ -4,8 +4,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TempoProblem, classifyRedisReply, phaseGuidance, assertInstallationUnchanged, inspectMaintenance, installationFingerprint, recoveryAssessment, verificationProblem, waitForVerification } from "./tempo-guidance.mjs";
-import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, portsFromConfig, productVolumes,
-  redact, schemaVersionFromSource, selectCandidate, targetKey, validateTarget } from "./tempo-deployment.mjs";
+import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, portsFromConfig, productVolumes,
+  redact, schemaVersionFromSource, selectCandidate, sourceFingerprint, sourceMatchesFingerprint, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { assessMigrationRecovery, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 
 const help = `Tempo — manage the existing Docker/PostgreSQL installation
@@ -113,11 +113,19 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   detail(`Target: ${target.project} on ${target.context}\nCheckout: ${target.root}`);
   const source = await inspectCandidateSource(target, run);
   let sourceProblem = source.problem;
-  detail(`Local checkout: ${source.branch || "unknown branch"} at ${source.head || "unknown revision"}; ${source.changes ? "local changes present" : "clean"}`);
+  detail(`Local checkout: ${source.branch === null ? "unknown branch" : source.branch || "detached HEAD"} at ${source.head ?? "unknown revision"}; ${source.changes === null ? "working-tree status unavailable" : source.changes ? "local changes present" : "clean"}`);
+  detail(`Local origin: ${source.origin ?? "unavailable"}`);
+  for (const failure of source.failures) detail(`Git probe ${failure.probe}: ${failure.message}`);
   if (source.changes) detail(`Local changes:\n${source.changes}`);
   detail(`Verified deployment: ${previous?.revision ?? "not yet recorded"}`);
-  const requiredSchema = schemaVersionFromSource(readFileSync(join(target.root, "backend/app/schema_version.py"), "utf8"));
-  detail(`Required local schema: ${requiredSchema}`);
+  let localSchemaSource, requiredSchema;
+  try { localSchemaSource = readFileSync(join(target.root, "backend/app/schema_version.py"), "utf8"); }
+  catch (error) {
+    if (!["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EIO"].includes(error.code)) throw error;
+    detail(`Local schema evidence: unavailable (${error.code})`);
+  }
+  if (localSchemaSource !== undefined) requiredSchema = schemaVersionFromSource(localSchemaSource);
+  detail(`Required local schema: ${requiredSchema ?? "unavailable"}`);
   const running = await runtime.runningServices();
   detail(`Running services: ${running.join(", ") || "none"}`);
   const identity = await runtime.inspectRunningRevision();
@@ -133,12 +141,12 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
     if (result.code === 0 && applied.every(version => Number.isInteger(version) && version > 0)) {
       const newest = Math.max(0, ...applied);
       const gaps = Array.from({ length: newest }, (_, index) => index + 1).filter(version => !applied.includes(version));
-      pending = Array.from({ length: Math.max(0, requiredSchema - newest) }, (_, index) => newest + index + 1);
+      if (requiredSchema !== undefined) pending = Array.from({ length: Math.max(0, requiredSchema - newest) }, (_, index) => newest + index + 1);
       detail(`Applied schema versions: ${applied.join(", ") || "none"}`);
       detail(`Migration ledger gaps: ${gaps.join(", ") || "none"}`);
-      detail(`Pending local migrations: ${pending.join(", ") || "none"}`);
+      detail(`Pending local migrations: ${requiredSchema === undefined ? "unknown (local schema unavailable)" : pending.join(", ") || "none"}`);
       if (gaps.length) ledgerProblem = `The migration ledger has missing versions: ${gaps.join(", ")}.`;
-      if (newest > requiredSchema) ledgerProblem = `Database schema ${newest} is ahead of local source ${requiredSchema}; inspect compatible source before updating.`;
+      if (requiredSchema !== undefined && newest > requiredSchema) ledgerProblem = `Database schema ${newest} is ahead of local source ${requiredSchema}; inspect compatible source before updating.`;
       if (ledgerProblem) detail(ledgerProblem);
     } else detail("Database schema could not be read; inspect PostgreSQL logs.");
   } else detail("Applied schema versions: unavailable (PostgreSQL is not running)");
@@ -160,17 +168,23 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   }
   detail("Background completion: unverified; service state and API readiness do not prove completion of all background work.");
   let remoteRevision, verification;
+  const diagnosticSignal = AbortSignal.timeout(30_000);
   try {
-    const signal = AbortSignal.timeout(30_000);
-    const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { allowFailure: true, timeout: 15_000, signal });
+    const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { allowFailure: true, timeout: 15_000, signal: diagnosticSignal });
     remoteRevision = remote.stdout.trim().split(/\s+/)[0];
-    if (remote.code !== 0 || !/^[a-f0-9]{40}$/.test(remoteRevision ?? "")) throw new Error(`Remote main could not be read${remote.stderr.trim() ? `: ${remote.stderr.trim().slice(-400)}` : "."}`);
+    if (remote.code !== 0 || !/^[a-f0-9]{40}$/.test(remoteRevision ?? "")) {
+      remoteRevision = undefined;
+      throw new TempoProblem("verification_unavailable", `Remote main could not be read${remote.stderr.trim() ? `: ${remote.stderr.trim().slice(-400)}` : "."}`);
+    }
     detail(`Latest main: ${remoteRevision}${remoteRevision === previous?.revision ? " (matches recorded receipt)" : " (not recorded as deployed)"}`);
-    verification = await assessMainVerification(remoteRevision, undefined, { signal });
-  } catch (error) { verification = { status: "unavailable", message: error.message }; }
+    verification = await assessMainVerification(remoteRevision, undefined, { signal: diagnosticSignal });
+  } catch (error) {
+    if (!isCandidateBlocker(error) && !isOperationalGitFailure(error, diagnosticSignal)) throw error;
+    verification = { status: "unavailable", message: error.message };
+  }
   detail(`Verification: ${verification.status} — ${verification.message}`);
   let ancestry = "unknown";
-  if (source.head && remoteRevision) {
+  if (source.problem?.code !== "source_unavailable" && source.head && remoteRevision) {
     if (source.head === remoteRevision) ancestry = "compatible";
     else if ((await run("git", ["cat-file", "-e", `${remoteRevision}^{commit}`], { allowFailure: true, timeout: 5000 })).code === 0) {
       const result = await run("git", ["merge-base", "--is-ancestor", source.head, remoteRevision], { allowFailure: true, timeout: 5000 });
@@ -278,6 +292,9 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     throw new TempoProblem("invalid_continuation", "The update continuation is incomplete.", { action: "Run: tempo start in a new shell without TEMPO_CLI_CONTINUATION." });
   const installationState = continuation?.installationState ?? initialInstallationState;
   const originalSource = continuation?.source ?? await inspectCandidateSource(target, run);
+  const originalSourceFingerprint = sourceFingerprint(originalSource);
+  if (continuation && !originalSourceFingerprint)
+    throw new TempoProblem("invalid_continuation", "The update continuation has no complete source fence.", { action: "Run: tempo start in a new shell without TEMPO_CLI_CONTINUATION." });
   const now = verificationWaitOptions.now ?? (() => Number(process.hrtime.bigint() / 1_000_000n));
   const deadline = continuation?.deadline ?? now() + 30 * 60_000;
   if (!Number.isFinite(deadline)) throw new TempoProblem("invalid_continuation", "The update continuation deadline is invalid.", { action: "Run: tempo start in a new shell without TEMPO_CLI_CONTINUATION." });
@@ -286,8 +303,14 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   process.on("SIGINT", cancel);
   const checkUnchanged = () => assertInstallationUnchanged(installationState, stateDirectory, options.configPath);
   const checkSourceUnchanged = async () => {
+    // No fence can be established from an unavailable initial observation.
+    // That invocation remains fallback-only; it never adopts recovered source.
+    if (!originalSourceFingerprint) return;
     const current = await inspectCandidateSource(target, run);
-    if (JSON.stringify(current) !== JSON.stringify(originalSource)) throw new TempoProblem("source_changed",
+    if (!sourceFingerprint(current)) throw new TempoProblem("source_changed",
+      "The established source fence could not be inspected safely. Local work is preserved; this start was cancelled.",
+      { action: "Next: repair Git/repository access, then run tempo start again when you intend to start or update Tempo.", cause: current.problem });
+    if (!sourceMatchesFingerprint(current, originalSourceFingerprint)) throw new TempoProblem("source_changed",
       "Local source changed while update verification was running. Local work is preserved; this start was cancelled.",
       { action: "Run: tempo start when you intend to update and the registered checkout is clean on main." });
   };
@@ -303,20 +326,22 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     for (;;) {
       checkUnchanged();
       migrationPreflight(runtime);
-      let assessment, blockedProblem;
-      try {
-        assessment = await waitForVerification({ ...verificationWaitOptions, now, assess: signal => assessCandidate(target, run, undefined, { signal, expectedSource: originalSource }),
-          checkUnchanged: async () => { checkUnchanged(); await checkSourceUnchanged(); }, signal: cancellation.signal, deadline, noWait: options.flags.has("--no-wait"), log });
-        if (assessment.verification.status !== "verified") {
-          blockedProblem = verificationProblem(assessment.verification);
-          if (assessment.timedOut) {
-            blockedProblem.message = "Release checks are still pending after the 30-minute wait. The update has not been applied.";
-            blockedProblem.action = `Next: run tempo start later to wait again.${assessment.verification.run?.html_url ? ` Release checks: ${assessment.verification.run.html_url}` : ""}`;
+      let assessment, blockedProblem = originalSource.problem?.code === "source_unavailable" ? originalSource.problem : undefined;
+      if (!blockedProblem) {
+        try {
+          assessment = await waitForVerification({ ...verificationWaitOptions, now, assess: signal => assessCandidate(target, run, undefined, { signal, expectedSource: originalSource }),
+            checkUnchanged: async () => { checkUnchanged(); await checkSourceUnchanged(); }, signal: cancellation.signal, deadline, noWait: options.flags.has("--no-wait"), log });
+          if (assessment.verification.status !== "verified") {
+            blockedProblem = verificationProblem(assessment.verification);
+            if (assessment.timedOut) {
+              blockedProblem.message = "Release checks are still pending after the 30-minute wait. The update has not been applied.";
+              blockedProblem.action = `Next: run tempo start later to wait again.${assessment.verification.run?.html_url ? ` Release checks: ${assessment.verification.run.html_url}` : ""}`;
+            }
           }
+        } catch (error) {
+          if (!isCandidateBlocker(error)) throw error;
+          blockedProblem = error;
         }
-      } catch (error) {
-        if (["cancelled", "installation_changed", "source_changed"].includes(error.code)) throw error;
-        blockedProblem = error;
       }
       if (cancellation.signal.aborted) throw new TempoProblem("cancelled", "Waiting cancelled. No deployment was started.", { exitCode: 130 });
       checkUnchanged();
@@ -335,8 +360,11 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
               // Release the lock before any further wait and retain its deadline.
               continue;
             }
+            if (error.code === "source_unavailable") throw new TempoProblem("source_changed",
+              "The established source fence could not be inspected safely. Local work is preserved; this start was cancelled.",
+              { action: "Next: repair Git/repository access, then run tempo start again when you intend to start or update Tempo.", cause: error });
             await checkSourceUnchanged();
-            if (error.code === "source_changed") throw error;
+            if (!isCandidateBlocker(error)) throw error;
             blockedProblem = error;
           }
         }
@@ -346,7 +374,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
           // Carry the original installation fence across the unlocked relaunch.
           // Only our verified fast-forward may advance the expected source.
           commandEnvironment.TEMPO_CLI_CONTINUATION = JSON.stringify({ installationState, deadline,
-            source: { ...originalSource, head: candidate.revision } });
+            source: { ...originalSourceFingerprint, head: candidate.revision } });
           release();
           const child = await execute(process.execPath, [join(target.root, "scripts/tempo-cli.mjs"), ...argumentsList], { allowFailure: true, echo: true });
           return child.code ?? 1;
@@ -358,6 +386,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
               { action: blockedProblem.action });
           }
           log(redact(blockedProblem.message, secrets));
+          if (options.flags.has("--verbose")) for (const failure of originalSource.failures ?? []) log(redact(`Git probe ${failure.probe}: ${failure.message}`, secrets));
           if (blockedProblem.verification?.message) log(redact(`Release evidence: ${blockedProblem.verification.message}`, secrets));
           if (blockedProblem.action) log(redact(blockedProblem.action, secrets));
           log(`Attempting previously verified revision ${previous.revision}; its images, schema and readiness must still pass. The update has not been applied.`);

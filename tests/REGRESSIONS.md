@@ -1992,6 +1992,53 @@ normal refresh restores public coverage, discoveries and game-derived reads.
 
 ## CLI guided startup recovery (2026-10-05 user-reported diagnostic confusion)
 
+### PR #90 local source-inspection recovery boundary
+
+The preliminary Git observation is independent of candidate-update eligibility
+and recorded immutable fallback validation. Failed probes retain unknown fields;
+they cannot authorize fetching, updating source, or building candidate images.
+All cases below run in the normal CLI wrapper with unchanged group deadlines.
+
+- `actual CLI source inspection fallback survives ${probe} probe failure without candidate mutation`
+  table-drives branch, HEAD, status, origin and actual process launch failures.
+  Every case failed on production head `022060b` before repair. They prove
+  independently checked fallback readiness, explicit previous-version/update-deferred
+  wording, unchanged deployment receipt and local work, and no candidate mutation.
+- `actual CLI source inspection fallback stays deferred when the failed probe recovers`
+  prevents adopting newly available source during a fallback-only invocation.
+- `actual CLI source inspection no-receipt startup fails closed without changing services data or source`
+  failed before repair: it now explains both unavailable inspection and absent
+  verified fallback without creating a receipt or changing services/data/source.
+- `actual CLI source inspection migrate never substitutes the recorded fallback`
+  preserves migrate's strict candidate requirement.
+- `actual CLI source inspection diagnostics remain read-only for ${surface}` covers
+  concise/verbose doctor, status, start/restart/migrate plans, one repair action,
+  redacted Git evidence, unknown working-tree status and independent deployment,
+  running identity, schema, maintenance and release evidence. Doctor failed before
+  repair. `actual CLI source inspection diagnostics retain independent facts when Git cannot launch or local schema is unreadable`
+  also failed before repair and protects unknown branch/HEAD/schema comparisons.
+- `actual CLI source inspection safety still rejects unsafe fallback ${unsafeFallback}`
+  combines source failure with unavailable immutable images, incompatible database
+  schema and invalid migration guards; none may produce false readiness.
+- `CLI automatic start cancels when source inspection becomes unavailable after waiting begins`
+  failed before repair. Established source fencing fails closed, preserving the
+  receipt and starting neither a candidate nor fallback. Existing source-drift,
+  stop, installation-state and relaunch regressions remain unchanged.
+- `CLI automatic start cancels on programming errors during source inspection without falling back`
+  injects a one-shot internal exception into the actual waiting command and proves
+  that recovery catches cannot relabel it or start the previous deployment.
+- `CLI source inspection retains known facts and classifies only operational Git failures`,
+  `CLI source inspection preserves programming errors and cancellation instead of permitting fallback`,
+  and `CLI source inspection executor retains native process launch provenance and legacy exit behavior`
+  protect partial observations and narrow failure classification without hiding bugs.
+- `CLI source inspection evidence bounds probe failures and redacts repository URL credentials`
+  keeps detailed probe evidence bounded and secret-safe.
+- `CLI source fingerprint compares deliberate Git state and ignores diagnostic problem metadata`
+  proves equality depends only on branch/HEAD/status/origin; unknown state cannot
+  establish a fence. `CLI source inspection prevents candidate assessment waiting and selection mutations with unavailable probes`
+  proves all preliminary failures block waiting and selection before fetch, and
+  a stale expected fingerprint also blocks fetch.
+
 `tests/runner/tempo-cli.test.mjs` runs through the regular
 `tests/unit/tempo-cli-regressions.test.ts` wrapper. New groups remain disjoint,
 nonempty and within their existing deadlines; no real 30-minute wait is required.
