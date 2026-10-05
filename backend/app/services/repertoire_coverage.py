@@ -18,6 +18,8 @@ from ..database import connection
 from .. import postgres_store
 from .redis_admission_gate import client as redis_client
 from .repertoire_comparison import canonical_fen
+from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity
+from .canonical_prefix import read_prefix, scope_line
 from .activity_gate import activity_gate
 
 
@@ -135,7 +137,7 @@ def discover_opponent_positions(
         moves = json.loads(line["moves_json"])
         route: list[str] = []
         for ply in range(min(len(moves), maximum_plies) + 1):
-            if board.turn != trained_color:
+            if board.turn != trained_color and ply >= int(line.get("scope_start_ply", 0)):
                 key = fen_key(board.fen())
                 position = positions.setdefault(
                     key,
@@ -234,17 +236,19 @@ def enqueue_coverage_refresh(
         if not repertoire:
             raise KeyError("Repertoire not found")
         active = database.execute(
-            """SELECT id FROM repertoire_coverage_runs
+            """SELECT * FROM repertoire_coverage_runs
                WHERE repertoire_id=? AND status IN ('queued','running')
                ORDER BY created_at DESC LIMIT 1""",
             (repertoire_id,),
         ).fetchone()
-        if active:
+        if active and coverage_run_is_current(database, active, repertoire_id):
             return active["id"]
         settings = dict(database.execute("SELECT * FROM settings WHERE id=1").fetchone())
         cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
+        prefix = read_prefix(database, repertoire_id)
+        identity = scope_identity(database, repertoire_id)
         lines = [
-            dict(row)
+            scope_line(database, repertoire_id, dict(row))
             for row in database.execute(
                 "SELECT * FROM repertoire_lines WHERE repertoire_id=?",
                 (repertoire_id,),
@@ -254,10 +258,12 @@ def enqueue_coverage_refresh(
     nodes = discover_opponent_positions(
         lines, int(settings["coverage_horizon_fullmoves"])
     )
+    scope_pending = any(line.get('scope_pending') for line in lines)
     run_id = str(uuid.uuid4())
     now = _now()
     settings_payload = {
         "automatic_priority": automatic,
+        **identity,
         "reply_denominator": settings["coverage_reply_denominator"],
         "cumulative_target": settings["coverage_cumulative_target"] / 100,
         "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
@@ -272,26 +278,30 @@ def enqueue_coverage_refresh(
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
         database.execute("BEGIN IMMEDIATE")
+        if scope_identity(database, repertoire_id) != identity:
+            raise RuntimeError("Repertoire changed while preparing coverage; refresh again")
         active = database.execute(
-            """SELECT id FROM repertoire_coverage_runs
+            """SELECT * FROM repertoire_coverage_runs
                WHERE repertoire_id=? AND status IN ('queued','running')
                ORDER BY created_at DESC LIMIT 1""",
             (repertoire_id,),
         ).fetchone()
-        if active:
+        if active and coverage_run_is_current(database, active, repertoire_id):
             return active["id"]
         database.execute(
             """INSERT INTO repertoire_coverage_runs(
-                   id,repertoire_id,status,settings_json,total_nodes,created_at,updated_at
-               ) VALUES(?,?,?, ?,?,?,?)""",
+                   id,repertoire_id,status,settings_json,total_nodes,created_at,updated_at,last_error
+               ) VALUES(?,?,?, ?,?,?,?,?)""",
             (
                 run_id,
                 repertoire_id,
-                "queued" if nodes else "complete",
+                "failed" if scope_pending else "queued" if nodes else "failed" if prefix["moves"] else "complete",
                 json.dumps(settings_payload),
                 len(nodes),
                 now,
                 now,
+                "Saved continuation routes need verification. Check the canonical prefix again before refreshing coverage." if scope_pending else
+                "No opponent positions after the canonical prefix within the coverage horizon. Add a continuation or adjust the horizon." if not nodes and prefix["moves"] else None,
             ),
         )
         for node in nodes:
@@ -328,8 +338,8 @@ def claim_coverage_node() -> dict | None:
                       "Set TEMPO_LICHESS_EXPLORER_TOKEN for unattended Explorer coverage and restart the analysis worker.")
             with connection(background=True) as database:
                 database.execute(
-                    """UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=?
-                       WHERE id IN (SELECT run_id FROM repertoire_coverage_nodes WHERE explorer_status='queued')
+                    f"""UPDATE repertoire_coverage_runs AS r SET status='failed',last_error=?,updated_at=?
+                       WHERE {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")} AND id IN (SELECT run_id FROM repertoire_coverage_nodes WHERE explorer_status='queued')
                          AND COALESCE(last_error,'')!=?""",
                     (reason, _now(), reason),
                 )
@@ -340,7 +350,7 @@ def claim_coverage_node() -> dict | None:
         node = database.execute(
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
-               WHERE n.explorer_status='queued' AND {claimable('coverage', 'n.run_id')}
+               WHERE n.explorer_status='queued' AND r.status IN ('queued','running') AND {coverage_scope_predicate(database)} AND {claimable('coverage', 'n.run_id')}
                ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
         if not node:
@@ -521,6 +531,8 @@ def execute_coverage_node(node: dict) -> None:
         )
         ratings = str(rating_bucket)
         with connection(background=True) as database:
+            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+                return
             payload, cache_key = _cached_explorer_payload(
                 database, node["fen"], speeds, ratings
             )
@@ -542,6 +554,9 @@ def execute_coverage_node(node: dict) -> None:
         covered_replies = set(json.loads(node["covered_replies_json"]))
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
+            database.execute("BEGIN IMMEDIATE")
+            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+                return
             database.execute(
                 """INSERT INTO explorer_position_cache(
                        cache_key,fen_key,speeds,ratings,response_json,fetched_at
@@ -622,6 +637,9 @@ def execute_coverage_node(node: dict) -> None:
             _explorer_environment_token_rejected = True
         set_explorer_session_token(None)
         with connection(background=True) as database:
+            database.execute("BEGIN IMMEDIATE")
+            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+                return
             database.execute(
                 "UPDATE repertoire_coverage_nodes SET explorer_status='queued',last_error=?,updated_at=? WHERE id=?",
                 (str(error), _now(), node["id"]),
@@ -632,6 +650,9 @@ def execute_coverage_node(node: dict) -> None:
             )
     except Exception as error:
         with connection(background=True) as database:
+            database.execute("BEGIN IMMEDIATE")
+            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+                return
             database.execute(
                 "UPDATE repertoire_coverage_nodes SET explorer_status='failed',last_error=?,updated_at=? WHERE id=?",
                 (str(error), _now(), node["id"]),
@@ -648,10 +669,16 @@ def coverage_summary(repertoire_id: str) -> dict:
             "SELECT * FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1",
             (repertoire_id,),
         ).fetchone()
-        if not run:
+        prefix = read_prefix(database, repertoire_id)
+        if not coverage_run_is_current(database, run, repertoire_id):
             return {
                 "run_id": None,
-                "status": "not-started",
+                "status": "failed" if run is not None else "not-started",
+                "last_error": (
+                    "Repertoire sources changed. Recheck Canonical prefix… and refresh coverage."
+                    if prefix["moves"] else
+                    "Repertoire scope changed. Refresh coverage to analyze the current repertoire."
+                ) if run is not None else None,
                 "required_branches": 0,
                 "covered_branches": 0,
                 "probability_coverage": None,
@@ -700,10 +727,10 @@ def coverage_summary(repertoire_id: str) -> dict:
 def coverage_gaps(repertoire_id: str) -> list[dict]:
     with connection() as database:
         run = database.execute(
-            "SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id,settings_json FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1",
             (repertoire_id,),
         ).fetchone()
-        if not run:
+        if not coverage_run_is_current(database, run, repertoire_id):
             return []
         return [
             {
@@ -743,6 +770,7 @@ def claim_maia_coverage_node() -> dict | None:
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
                WHERE n.explorer_status='complete' AND n.maia_status='queued'
+               AND r.status IN ('queued','running','complete') AND {coverage_scope_predicate(database)}
                AND {claimable('coverage', 'n.run_id')}
                ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
@@ -771,12 +799,13 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
     from .background_activity import emit_progress
     repertoire_id: str | None = None
     with connection(background=activity_gate.in_background) as database:
+        database.execute("BEGIN IMMEDIATE")
         node = database.execute(
             """SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE n.id=?""",
             (node_id,),
         ).fetchone()
-        if not node or node["maia_status"] != "leased" or node["lease_id"] != lease_id:
+        if not node or node["maia_status"] != "leased" or node["lease_id"] != lease_id or not coverage_run_is_current(database, node, node["repertoire_id"]):
             raise RuntimeError("Coverage MAIA lease is no longer active")
         repertoire_id = node["repertoire_id"]
         covered_replies = set(json.loads(node["covered_replies_json"]))

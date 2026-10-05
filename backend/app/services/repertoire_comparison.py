@@ -13,6 +13,8 @@ import chess
 from ..database import background_read_connection, connection
 from .. import postgres_store
 from .activity_gate import activity_gate
+from .canonical_prefix import game_in_scope
+from .canonical_scope_freshness import game_scope_generation
 
 
 _index_lock = threading.Lock()
@@ -90,7 +92,7 @@ def _postgres_repertoire_source_signature(repertoires: list[dict]) -> str:
 def _postgres_repertoire_input_rows() -> tuple[list[dict], list[dict], list[dict]]:
     with background_read_connection() as database:
         repertoires = [dict(row) for row in database.execute(
-            "SELECT id,is_main FROM repertoires "
+            "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires "
             "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"
         )]
     line_rows: list[dict] = []
@@ -131,7 +133,7 @@ def _load_repertoire_index_snapshot(*, background: bool = False) -> tuple[str, l
     if background and postgres_store.configured():
         with background_read_connection() as database:
             repertoires = [dict(row) for row in database.execute(
-                "SELECT id,is_main FROM repertoires "
+                "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires "
                 "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"
             )]
         signature = _postgres_repertoire_source_signature(repertoires)
@@ -145,7 +147,7 @@ def _load_repertoire_index_snapshot(*, background: bool = False) -> tuple[str, l
     else:
         with connection(background=background) as database:
             repertoires = [dict(row) for row in database.execute(
-                "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"
+                "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"
             )]
             line_rows = [dict(row) for row in database.execute(
                 "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"
@@ -206,7 +208,11 @@ def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[
     player_deviation = opponent_gap = out_of_book = None
     timeline: list[dict] = []
     decision_events: list[dict] = []
+    prefix_moves = json.loads(repertoire.get("canonical_prefix_moves_json", "[]"))
     for ply, actual_uci in enumerate(game["moves"]):
+        if ply < len(prefix_moves):
+            board.push_uci(actual_uci)
+            continue
         fen = board.fen()
         key = canonical_fen(fen)
         expected = expected_by_position.get(key, set())
@@ -274,6 +280,7 @@ def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[
         "repertoire_id": repertoire["id"],
         "is_main": repertoire["is_main"],
         "classification": classification,
+        "canonical_prefix_revision": int(repertoire.get("canonical_prefix_revision", 0)),
         "matched": matched,
         "opportunities": opportunities,
         "deepest": deepest,
@@ -297,6 +304,8 @@ def compare_games(
     game_ids: list[str] | None = None, *, background: bool = False
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    with connection(background=background) as database:
+        scope_generation = game_scope_generation(database)
     repertoires, graphs_by_repertoire, colors_by_repertoire, card_positions = _load_repertoire_index(background=background)
     with connection(background=background) as database:
         where = "" if game_ids is None else f" WHERE id IN ({','.join('?' for _ in game_ids)})"
@@ -315,13 +324,18 @@ def compare_games(
             )
             for repertoire in repertoires
             if game["color"] in colors_by_repertoire.get(repertoire["id"], set())
+            and game_in_scope(game["start_fen"], game["moves"], json.loads(repertoire.get("canonical_prefix_moves_json", "[]")))
         ]
         matches.sort(key=lambda item: (-item["matched"], -item["deepest"], -item["is_main"], item["repertoire_id"]))
         computed.append((game, matches))
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
+        database.execute("BEGIN IMMEDIATE")
+        if game_scope_generation(database, lock=True) != scope_generation:
+            raise RuntimeError("Repertoire membership changed during game comparison; retry")
         for game, matches in computed:
+            database.execute("UPDATE imported_games SET repertoire_scope_generation=? WHERE id=?", (scope_generation, game["id"]))
             database.execute("DELETE FROM game_repertoire_matches WHERE game_id=?", (game["id"],))
             database.execute("DELETE FROM repertoire_decision_events WHERE game_id=?", (game["id"],))
             for index, match in enumerate(matches):

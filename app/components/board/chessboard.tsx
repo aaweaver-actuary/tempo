@@ -259,9 +259,18 @@ export function Chessboard({
         select: inputEvents.select,
       },
     });
+    // Status banners can translate the persistent board without resizing or
+    // scrolling it. Refresh cached hit-test geometry before Chessground reads
+    // the new input; clearing bounds leaves the position and held drag intact.
+    const surface = surfaceRef.current;
+    const refreshInputBounds = () => apiRef.current?.state?.dom.bounds.clear();
+    surface.addEventListener("mousedown", refreshInputBounds, true);
+    surface.addEventListener("touchstart", refreshInputBounds, { capture: true, passive: true });
     captureRef.current = installTempoDragCapture(surfaceRef.current, apiRef.current);
     const frame = requestAnimationFrame(finishReady);
     return () => {
+      surface.removeEventListener("mousedown", refreshInputBounds, true);
+      surface.removeEventListener("touchstart", refreshInputBounds, true);
       cancelAnimationFrame(frame);
       captureRef.current?.dispose();
       captureRef.current = null;

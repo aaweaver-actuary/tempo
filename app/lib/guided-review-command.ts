@@ -9,10 +9,34 @@ const sessionResult = z.object({
   current: z.unknown(), attempts: z.array(z.unknown()),
 });
 const attemptResult = z.object({
-  correct: z.boolean(), revealed: z.unknown(), session: sessionResult,
+  correct: z.boolean(), revealed: z.object({ finding_id: z.string() }).passthrough(), session: sessionResult,
 });
 
-type PendingAttempt = { operationId: string; moveUci: string };
+export class GuidedReviewChangedError extends Error {
+  constructor(message = "Guided review changed. Reloading the current finding.") {
+    super(message);
+    this.name = "GuidedReviewChangedError";
+  }
+}
+
+export async function readGuidedReviewCommand(sessionId: string) {
+  const response = await fetch(`${API_URL}/api/guided-reviews/${encodeURIComponent(sessionId)}`);
+  const session = await readJsonResponse(response, sessionResult, "reload guided review");
+  if (session.id !== sessionId) throw new Error("Guided review response did not match the session.");
+  return session;
+}
+
+const rejectedAttempt = z.object({ guided_review_error: z.object({ status_code: z.number(), detail: z.string() }) });
+function parseAttemptResult(value: unknown, sessionId: string, findingId: string) {
+  const rejected = rejectedAttempt.safeParse(value);
+  if (rejected.success) throw new GuidedReviewChangedError(rejected.data.guided_review_error.detail);
+  const result = attemptResult.parse(value);
+  if (result.session.id !== sessionId || result.revealed.finding_id !== findingId)
+    throw new GuidedReviewChangedError("Guided review response did not match the displayed finding.");
+  return result;
+}
+
+type PendingAttempt = { operationId: string; moveUci: string; findingId?: string };
 
 function readPendingAttempt(storageKey: string): PendingAttempt | null {
   const saved = localStorage.getItem(storageKey);
@@ -57,9 +81,11 @@ export async function startGuidedReviewCommand(gameId: string) {
 }
 
 export async function submitGuidedReviewCommand(
-  sessionId: string, currentIndex: number, moveUci: string,
+  sessionId: string, currentIndex: number, moveUci: string, findingId: string,
 ) {
-  const storageKey = `tempo-pending-guided-review-attempt-v1:${sessionId}:${currentIndex}`;
+  const legacyStorageKey = `tempo-pending-guided-review-attempt-v1:${sessionId}:${currentIndex}`;
+  const storageKey = localStorage.getItem(legacyStorageKey) ? legacyStorageKey
+    : `tempo-pending-guided-review-attempt-v2:${sessionId}:${findingId}`;
   let pending = readPendingAttempt(storageKey);
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
@@ -67,27 +93,34 @@ export async function submitGuidedReviewCommand(
     const receipt = await status.json() as { state?: string; response?: unknown; error?: { message?: string } };
     if (receipt.state === "complete") {
       localStorage.removeItem(storageKey);
-      return attemptResult.parse(receipt.response);
+      return parseAttemptResult(receipt.response, sessionId, findingId);
     }
     if (receipt.state === "failed") {
       localStorage.removeItem(storageKey);
       throw new Error(receipt.error?.message ?? "Correction attempt could not be saved.");
     }
-    if (receipt.state !== "pending" || pending.moveUci !== moveUci)
-      throw new PendingOperationError(pending.operationId);
+    if (receipt.state !== "pending" || pending.moveUci !== moveUci || pending.findingId !== findingId)
+      throw new PendingOperationError(pending.operationId,
+        "The earlier correction is unresolved. Check its operation before submitting another finding.");
   } else {
-    pending = { operationId: crypto.randomUUID(), moveUci };
+    pending = { operationId: crypto.randomUUID(), moveUci, findingId };
     localStorage.setItem(storageKey, JSON.stringify(pending));
   }
   let response = await fetch(`${API_URL}/api/guided-reviews/${encodeURIComponent(sessionId)}/attempt`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
-    body: JSON.stringify({ move_uci: moveUci }),
+    body: JSON.stringify({ move_uci: pending.moveUci, finding_id: pending.findingId }),
   });
   response = await confirmOperationResponse(response);
-  const result = await readJsonResponse(response, attemptResult, "save guided correction");
-  if (result.session.id !== sessionId || result.session.current_index !== currentIndex + 1)
-    throw new Error("Guided review response did not match the attempt.");
+  if (response.status === 404 || response.status === 409) {
+    localStorage.removeItem(storageKey);
+    throw new GuidedReviewChangedError();
+  }
+  if (!response.ok) return readJsonResponse(response, attemptResult, "save guided correction");
+  const value: unknown = await response.json();
+  // A committed rejection may arrive as an operation receipt after HTTP 202.
+  if (rejectedAttempt.safeParse(value).success) localStorage.removeItem(storageKey);
+  const result = parseAttemptResult(value, sessionId, findingId);
   localStorage.removeItem(storageKey);
   return result;
 }

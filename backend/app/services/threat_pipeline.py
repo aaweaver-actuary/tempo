@@ -326,7 +326,7 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed, *, prepared=Non
         "detector_version": DETECTOR_VERSION,
     }
     existing_finding = database.execute(
-        "SELECT evidence_json FROM game_findings WHERE id=?", (finding_id,)
+        "SELECT evidence_json FROM current_game_findings game_findings WHERE id=?", (finding_id,)
     ).fetchone()
     if existing_finding:
         previous = json.loads(existing_finding["evidence_json"])
@@ -588,13 +588,13 @@ def claim_analysis_request() -> dict | None:
                      AND (candidate.validation_state='needs_analysis' OR relation.role='attempt'))
                    OR EXISTS(
                      SELECT 1 FROM discovery_recommendation_requests recommendation
-                     JOIN repertoire_opportunities opportunity
+                     JOIN current_repertoire_opportunities opportunity
                        ON opportunity.id=recommendation.opportunity_id
                      WHERE recommendation.request_id=request.id
                        AND opportunity.status='active' AND opportunity.card_id IS NULL)
                    OR EXISTS(
                      SELECT 1 FROM coverage_discovery_recommendation_requests recommendation
-                     JOIN repertoire_opportunities opportunity
+                     JOIN current_repertoire_opportunities opportunity
                        ON opportunity.id=recommendation.opportunity_id
                      WHERE recommendation.request_id=request.id
                        AND opportunity.status='active' AND opportunity.card_id IS NULL))

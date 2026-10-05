@@ -1330,7 +1330,16 @@ def initialize() -> None:
                 "defensive_analysis_enabled": "INTEGER NOT NULL DEFAULT 0",
                 "discovery_window_days": "INTEGER NOT NULL DEFAULT 90",
             },
+            "repertoires": {
+                "is_main": "INTEGER NOT NULL DEFAULT 0",
+                "canonical_prefix_moves_json": "TEXT NOT NULL DEFAULT '[]'",
+                "canonical_prefix_revision": "INTEGER NOT NULL DEFAULT 0",
+                "canonical_prefix_preview_id": "TEXT",
+                "scope_source_revision": "INTEGER NOT NULL DEFAULT 0",
+                "new_cards_per_day": "INTEGER CHECK(new_cards_per_day BETWEEN 0 AND 100)",
+            },
             "repertoire_opportunities": {
+                "canonical_prefix_revision": "INTEGER NOT NULL DEFAULT 0",
                 "seen_at": "TEXT",
                 "snoozed_until": "TEXT",
                 "admission_state": "TEXT",
@@ -1410,8 +1419,6 @@ def initialize() -> None:
                 "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"
             },
             "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
-            "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0",
-                            "new_cards_per_day": "INTEGER CHECK(new_cards_per_day BETWEEN 0 AND 100)"},
             "repertoire_integrity_state": {
                 "scan_status": "TEXT NOT NULL DEFAULT 'idle'",
                 "scan_generation": "TEXT",
@@ -1473,6 +1480,8 @@ def initialize() -> None:
             database.execute("ALTER TABLE discovery_admission_intents_revisioned RENAME TO discovery_admission_intents")
         from .services.background_metrics_schema import install as install_background_metrics
         install_background_metrics(database)
+        from .services.canonical_prefix_preview import initialize_sqlite_schema
+        initialize_sqlite_schema(database)
         # Materialize the default in existing rows before a later VACUUM. Older
         # SQLite builds can report a virtual NOT NULL default as NULL afterward.
         database.execute(
@@ -1610,8 +1619,8 @@ def initialize() -> None:
                  )""",
             (now,),
         )
-        database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
-                            SELECT card.repertoire_id,card.id FROM cards card
+        database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id,canonical_route_source)
+                            SELECT card.repertoire_id,card.id,card.canonical_route_source FROM cards card
                             WHERE card.content_type='opening' AND card.archived=0
                               AND NOT EXISTS(
                                   SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id

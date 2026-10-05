@@ -10,6 +10,7 @@ import json
 
 import chess
 
+from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from ..queue_position_lock import lock_queue_date_for_position
@@ -209,6 +210,7 @@ def dismiss_defense_candidate(candidate_id: str, *, write_database=None) -> None
         )
 
 
+@refresh_game_publications_after_mutation
 def _approve_in_transaction(database, candidate, *, reports_verified: bool = False,
                             prepared_position_fen: str | None = None,
                             admission_mode: str = "manual") -> str:

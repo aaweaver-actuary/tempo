@@ -642,3 +642,39 @@ def test_background_admission_timing_excludes_diagnostic_publication(monkeypatch
         with background_runtime.admission_wait():
             clock[0]+=3
         assert measurement.sample().admission_wait_seconds==3
+
+
+def test_background_postgres_snapshot_disables_jit_before_budgeted_classification(diagnostic_database, monkeypatch):
+    """Canonical freshness predicates must not spend the snapshot budget compiling SQL."""
+    from contextlib import contextmanager
+    from app import postgres_store
+
+    statements = []
+
+    class NativeDiagnosticConnection:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute_native(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if "set_config" in statement:
+                return self.connection.execute('SELECT 1 WHERE FALSE')
+            return self.connection.execute(statement, parameters)
+
+    @contextmanager
+    def native_connection(timeout_seconds):
+        assert timeout_seconds == background_diagnostics.QUERY_BUDGET_SECONDS
+        connection = sqlite3.connect(diagnostic_database)
+        connection.row_factory = sqlite3.Row
+        try:
+            yield NativeDiagnosticConnection(connection)
+        finally:
+            connection.close()
+
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(postgres_store, 'diagnostic_read_connection', native_connection)
+    monkeypatch.setattr(postgres_store, 'postgres_sql', lambda statement: statement)
+    result = background_diagnostics.snapshot()
+    assert result.available, result
+    assert statements[0] == ("SELECT set_config('jit', 'off', true)", ())
+    assert any('FROM threat_analysis_requests' in statement for statement, _ in statements)

@@ -53,6 +53,11 @@ def snapshot() -> BackgroundDiagnostics:
         connection_context = (postgres_store.diagnostic_read_connection(QUERY_BUDGET_SECONDS)
                               if postgres_store.configured() else read_connection())
         with connection_context as database:
+            if postgres_store.configured():
+                # Expanded freshness views can trigger JIT even for a tiny queue.
+                # Compilation consumes this short operational read's budget;
+                # disable it for this transaction, preserving the deadline.
+                database.execute_native("SELECT set_config('jit', 'off', true)")
             def query(statement, parameters=()):
                 translated = postgres_store.postgres_sql(statement) if postgres_store.configured() else statement
                 remaining = QUERY_BUDGET_SECONDS-(time.monotonic()-started)

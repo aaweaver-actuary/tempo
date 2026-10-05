@@ -131,11 +131,23 @@ def copy_table(
     count = 0
     with destination.transaction():
         with destination.cursor() as cursor:
+            scope_trigger = {"repertoire_lines": "canonical_line_source", "repertoire_cards": "canonical_link_source",
+                             "cards": "canonical_card_insert_source", "repertoires": "canonical_game_scope",
+                             "imported_games": "canonical_game_insert", "game_findings": "canonical_finding_insert",
+                             "repertoire_opportunities": "canonical_opportunity_insert"}.get(table_name)
+            if scope_trigger:
+                # Copy the snapshot's source revision verbatim. Trigger state is
+                # transactional, so a failed copy also restores its protection.
+                cursor.execute(sql.SQL("ALTER TABLE {} DISABLE TRIGGER {}").format(
+                    sql.Identifier(table_name), sql.Identifier(scope_trigger)))
             with cursor.copy(statement) as copy:
                 for row in source_rows(source, table_name, primary_key_columns):
                     copy.write_row(row)
                     update_row_digest(digest, row)
                     count += 1
+            if scope_trigger:
+                cursor.execute(sql.SQL("ALTER TABLE {} ENABLE TRIGGER {}").format(
+                    sql.Identifier(table_name), sql.Identifier(scope_trigger)))
             cursor.execute(
                 "INSERT INTO tempo_migration_progress(table_name,source_count,source_sha256) "
                 "VALUES (%s,%s,%s)",
@@ -208,6 +220,11 @@ def migrate(source_path: Path, destination_dsn: str, verify_only: bool) -> None:
             target_count = destination.execute(
                 sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(table_name))
             ).fetchone()[0]
+            if table_name == "repertoire_game_scope" and target_count == 1 and not verify_only:
+                initial_generation = destination.execute("SELECT generation FROM repertoire_game_scope WHERE id=1").fetchone()[0]
+                if initial_generation == 0:
+                    destination.execute("DELETE FROM repertoire_game_scope WHERE id=1")
+                    target_count = 0
             if target_count:
                 raise RuntimeError(f"Cannot copy {table_name}: destination already has {target_count} rows")
             count, digest = copy_table(source, destination, table_name, column_names, primary_key_columns)

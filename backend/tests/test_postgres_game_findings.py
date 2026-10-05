@@ -61,6 +61,8 @@ def test_postgres_game_findings_unseen_cards_use_short_paged_reads(monkeypatch):
 
     class Database:
         def execute(self, statement, parameters=()):
+            if "SELECT repertoire_scope_generation FROM imported_games" in statement:
+                return type("ScopeCursor", (), {"fetchone": lambda self: (0,)})()
             if "FROM settings" in statement:
                 return Cursor([{"major_mistake_cp": 100, "engine_line_window_cp": 20}])
             if "FROM cards c" in statement:
@@ -106,6 +108,8 @@ def test_postgres_game_findings_stage_one_item_and_replay_after_restart(monkeypa
 
     class Database:
         def execute(self, statement, parameters=()):
+            if "SELECT repertoire_scope_generation FROM imported_games" in statement:
+                return type("ScopeCursor", (), {"fetchone": lambda self: (0,)})()
             if "FROM game_derivation_jobs" in statement:
                 return Cursor({"derivation_version": 3, "completed_phases": 2,
                                "status": "running"})
@@ -169,6 +173,8 @@ def test_postgres_game_findings_source_change_restarts_without_publication(monke
 
     class Database:
         def execute(self, statement, parameters=()):
+            if "SELECT repertoire_scope_generation FROM imported_games" in statement:
+                return type("ScopeCursor", (), {"fetchone": lambda self: (0,)})()
             updates.append((statement, parameters))
             return Cursor()
 
@@ -202,7 +208,7 @@ def test_postgres_game_findings_source_change_restarts_without_publication(monke
     assert enqueued == [
         ("game_derivation_findings", "game-one",
          {"game_id": "game-one", "derivation_version": 4,
-          "phase": "stage", "cursor": 0}, 126),
+          "phase": "stage", "cursor": 0, "game_scope_generation": 0}, 126),
     ]
     assert not any("INSERT INTO game_finding_publication_items" in statement
                    for statement, _ in updates)
@@ -238,3 +244,13 @@ def test_postgres_game_findings_publication_handoffs_versioned_misses(monkeypatc
                          {"game_id": "game-one", "derivation_version": 5,
                           "after_ply": -1, "after_id": ""}, 126)]
     assert any("completed_phases=3" in statement for statement in statements)
+
+import pytest
+
+@pytest.fixture(autouse=True)
+def stable_game_scope_double(monkeypatch):
+    """These staging tests use a fixed classification universe; real epoch races have separate regressions."""
+    from app.services import canonical_scope_freshness
+    monkeypatch.setattr(canonical_scope_freshness, "game_scope_generation", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(postgres_game_findings, "game_scope_generation", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(game_findings, "game_scope_generation", lambda *_args, **_kwargs: 0)

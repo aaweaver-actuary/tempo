@@ -16,6 +16,8 @@ from .. import postgres_store
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
 from .discovery_admission import _full_history_request, _source_game
+from .canonical_scope_freshness import coverage_run_is_current, scope_identity, coverage_scope_predicate, opportunity_is_current, game_scope_generation, opportunity_scope_predicate
+from .canonical_prefix import read_prefix, assumed_position_keys
 
 
 RECENT_DAYS = 90
@@ -61,7 +63,7 @@ def _load_decision_summary(database: sqlite3.Connection, repertoire_id: str,
                   COUNT(DISTINCT CASE WHEN event.played_at>=? AND event.outcome='success' THEN event.game_id END) recent_success_count,
                   COUNT(DISTINCT CASE WHEN event.played_at>=? AND event.outcome='miss' THEN event.game_id END) recent_miss_count,
                   MAX(event.played_at) last_encountered
-           FROM repertoire_decision_events event JOIN imported_games game ON game.id=event.game_id
+           FROM current_repertoire_decision_events event JOIN imported_games game ON game.id=event.game_id
            WHERE event.repertoire_id=? AND event.fen_key=? AND event.expected_uci=?
              AND game.adaptive_excluded=0""",
         (cutoff, cutoff, cutoff, repertoire_id, fen_key, expected_uci),
@@ -95,6 +97,10 @@ def _materially_new(evidence: dict, handled_evidence: dict) -> bool:
 def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
              fen_key: str, target: str, card_id: str | None,
              opponent_move_uci: str | None, score: float, evidence: dict) -> None:
+    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
+        database.execute("BEGIN IMMEDIATE")
+    identity = scope_identity(database, repertoire_id, lock=True)
+    game_generation = game_scope_generation(database, lock=True)
     opportunity_id = _stable_id(repertoire_id, kind, fen_key, target)
     # Serialize publication with admission completion: the read must describe
     # the row whose handled/preparing state this transaction will replace.
@@ -122,12 +128,14 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
     database.execute(
         """INSERT INTO repertoire_opportunities(
              id,repertoire_id,kind,fen_key,card_id,opponent_move_uci,status,score,
-             evidence_json,evidence_fingerprint,dismissed_evidence_json,handled_evidence_json,created_at,updated_at,resolved_at
-           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+             evidence_json,evidence_fingerprint,dismissed_evidence_json,handled_evidence_json,created_at,updated_at,resolved_at,canonical_prefix_revision,canonical_scope_source_revision,canonical_scope_preview_id,game_scope_generation
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?)
            ON CONFLICT(id) DO UPDATE SET card_id=COALESCE(excluded.card_id,
                repertoire_opportunities.card_id,repertoire_opportunities.admitted_card_id),
              opponent_move_uci=excluded.opponent_move_uci,status=excluded.status,
-             score=excluded.score,evidence_json=excluded.evidence_json,
+             score=excluded.score,evidence_json=excluded.evidence_json,canonical_prefix_revision=excluded.canonical_prefix_revision,
+             canonical_scope_source_revision=excluded.canonical_scope_source_revision,
+             canonical_scope_preview_id=excluded.canonical_scope_preview_id,game_scope_generation=excluded.game_scope_generation,
              evidence_fingerprint=excluded.evidence_fingerprint,
              dismissed_evidence_json=CASE WHEN excluded.status='active' THEN NULL
                ELSE repertoire_opportunities.dismissed_evidence_json END,
@@ -141,7 +149,7 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
         (opportunity_id, repertoire_id, kind, fen_key, card_id,
          opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
          published_fingerprint, json.dumps(previous_dismissal) if previous_dismissal else None,
-         handled_snapshot, _now(), _now(), reset_admission, reset_admission, reset_admission, reset_admission),
+         handled_snapshot, _now(), _now(), identity["canonical_prefix_revision"], identity["canonical_scope_source_revision"], identity["canonical_scope_preview_id"], game_generation, reset_admission, reset_admission, reset_admission, reset_admission),
     )
     if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active" and handled_snapshot is None:
         enqueue_task_in_transaction(
@@ -159,6 +167,8 @@ def _resolve(database: sqlite3.Connection, opportunity_id: str) -> None:
 
 
 def _route_keys(database: sqlite3.Connection, repertoire_id: str, card_id: str) -> list[list[str]]:
+    prefix = read_prefix(database, repertoire_id)
+    assumed_positions = assumed_position_keys(prefix["moves"])
     rows = database.execute(
         """SELECT step.line_id,step.card_id,step.decision_fen_keys_json,step.parent_card_id
            FROM opening_graph_steps step JOIN opening_graph_publications publication
@@ -193,7 +203,7 @@ def _route_keys(database: sqlite3.Connection, repertoire_id: str, card_id: str) 
                 break
             parent_id = parent["parent_card_id"]
         if complete and not parent_id and keys:
-            routes.append(keys)
+            routes.append([key for key in keys if key not in assumed_positions])
     return routes
 
 
@@ -214,7 +224,7 @@ def _load_card_inputs(database: sqlite3.Connection, repertoire_id: str, card_id:
         return None
     cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
     target_rows = database.execute(
-        """SELECT event.game_id FROM repertoire_decision_events event
+        """SELECT event.game_id FROM current_repertoire_decision_events event
            JOIN imported_games game ON game.id=event.game_id
            WHERE event.repertoire_id=? AND event.card_id=? AND event.played_at>=?
              AND game.adaptive_excluded=0
@@ -227,12 +237,13 @@ def _load_card_inputs(database: sqlite3.Connection, repertoire_id: str, card_id:
         return {"card_id": card_id, "card_state": card["state"], "routes": routes, "events": []}
     events = [dict(row) for row in database.execute(
         f"""SELECT event.game_id,event.fen_key,event.outcome,event.played_at,event.ply,event.card_id
-            FROM repertoire_decision_events event
+            FROM current_repertoire_decision_events event
             WHERE event.repertoire_id=? AND event.game_id IN ({','.join('?' for _ in game_ids)})
             ORDER BY event.game_id,event.ply""",
         (repertoire_id, *game_ids),
     ).fetchall()]
-    return {"card_id": card_id, "card_state": card["state"], "routes": routes, "events": events}
+    return {"card_id": card_id, "card_state": card["state"], "routes": routes, "events": events,
+            "has_assumed_history": bool(read_prefix(database, repertoire_id)["moves"])}
 
 
 def _calculate_card_evidence(inputs: dict) -> dict:
@@ -253,7 +264,7 @@ def _calculate_card_evidence(inputs: dict) -> dict:
         }
         earlier_events = [event for event in game_events if event["ply"] < target["ply"]]
         exact_route_success = any(
-            route and set(route).issubset(earlier_success_keys)
+            (route or inputs.get("has_assumed_history")) and set(route).issubset(earlier_success_keys)
             and all(event["outcome"] == "success" for event in earlier_events)
             for route in inputs["routes"]
         )
@@ -335,7 +346,7 @@ def _load_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
                    WHERE earlier.game_id=event.game_id AND earlier.ply<event.ply
                      AND {even_ply_gap} AND earlier.loss_cp>30)
                      previous_weak_count
-           FROM repertoire_decision_events event
+           FROM current_repertoire_decision_events event
            JOIN imported_games game ON game.id=event.game_id
            {analysis_joins}
            WHERE event.repertoire_id={placeholder} AND event.card_id={placeholder}
@@ -431,7 +442,7 @@ def _apply_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
 def _apply_card_opportunity(database: sqlite3.Connection, repertoire_id: str,
                             card_id: str, evidence: dict | None) -> bool:
     target = database.execute(
-        """SELECT fen_key,expected_uci FROM repertoire_decision_events
+        """SELECT fen_key,expected_uci FROM current_repertoire_decision_events repertoire_decision_events
            WHERE repertoire_id=? AND card_id=? ORDER BY played_at DESC LIMIT 1""",
         (repertoire_id, card_id),
     ).fetchone()
@@ -489,14 +500,14 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
            JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE n.id=? AND n.repertoire_id=?""",
         (node_id, repertoire_id),
     ).fetchone()
-    if not node:
+    if not coverage_run_is_current(database, node, repertoire_id):
         return None
     cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
     personal = database.execute(
         """SELECT occurrence.move_uci,COUNT(DISTINCT occurrence.game_id) encounters
            FROM game_position_occurrences occurrence
            JOIN imported_games game ON game.id=occurrence.game_id
-           JOIN game_repertoire_matches match ON match.game_id=game.id
+           JOIN current_game_repertoire_matches match ON match.game_id=game.id
              AND match.repertoire_id=?
            WHERE occurrence.fen_key=? AND occurrence.move_uci IS NOT NULL
              AND game.color=? AND game.adaptive_excluded=0 AND game.played_at>=?
@@ -504,7 +515,7 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
         (repertoire_id, node["fen_key"], node["trained_color"], cutoff),
     ).fetchall()
     relevant_games = database.execute(
-        """SELECT COUNT(DISTINCT game.id) FROM game_repertoire_matches match
+        """SELECT COUNT(DISTINCT game.id) FROM current_game_repertoire_matches match
            JOIN imported_games game ON game.id=match.game_id
            WHERE match.repertoire_id=? AND game.color=? AND game.adaptive_excluded=0
              AND game.played_at>=?""",
@@ -514,7 +525,7 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
         """SELECT json_extract(evidence_json,'$.opponent_gap_move_uci') move_uci,
                   COUNT(DISTINCT game_id) game_count,
                   MAX(CAST(json_extract(evidence_json,'$.mistake_loss_cp') AS INTEGER)) max_loss_cp
-           FROM game_findings WHERE repertoire_id=? AND kind='repertoire gap'
+           FROM current_game_findings game_findings WHERE repertoire_id=? AND kind='repertoire gap'
              AND status!='ignored' AND json_extract(evidence_json,'$.opponent_gap_fen_key')=?
            GROUP BY move_uci""",
         (repertoire_id, node["fen_key"]),
@@ -613,21 +624,27 @@ def refresh_post_gap_opportunity(database: sqlite3.Connection, repertoire_id: st
 
 def _load_post_gap_inputs(database: sqlite3.Connection, repertoire_id: str, finding_id: str) -> dict | None:
     finding = database.execute(
-        "SELECT * FROM game_findings WHERE id=? AND repertoire_id=? AND kind='repertoire gap'",
+        "SELECT * FROM current_game_findings game_findings WHERE id=? AND repertoire_id=? AND kind='repertoire gap'",
         (finding_id, repertoire_id),
     ).fetchone()
     if not finding:
+        return None
+    if read_prefix(database, repertoire_id)["revision"] and not database.execute(
+        "SELECT 1 FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=? AND repertoire_id=?", (finding["game_id"], repertoire_id),
+    ).fetchone():
         return None
     evidence = json.loads(finding["evidence_json"])
     fen_key = evidence.get("opponent_gap_fen_key")
     move_uci = evidence.get("opponent_gap_move_uci")
     if not fen_key or not move_uci:
         return None
+    scoped_findings = (" AND EXISTS(SELECT 1 FROM current_game_repertoire_matches scoped_match WHERE scoped_match.game_id=game_findings.game_id AND scoped_match.repertoire_id=game_findings.repertoire_id)"
+                       if read_prefix(database, repertoire_id)["revision"] else "")
     findings = [dict(row) for row in database.execute(
-        """SELECT id,game_id,analysis_version,card_id,evidence_json FROM game_findings
+        f"""SELECT id,game_id,analysis_version,card_id,evidence_json FROM current_game_findings game_findings
            WHERE repertoire_id=? AND kind='repertoire gap' AND status!='ignored'
              AND json_extract(evidence_json,'$.opponent_gap_fen_key')=?
-             AND json_extract(evidence_json,'$.opponent_gap_move_uci')=?
+             AND json_extract(evidence_json,'$.opponent_gap_move_uci')=? {scoped_findings}
            ORDER BY updated_at DESC,id LIMIT 200""",
         (repertoire_id, fen_key, move_uci),
     ).fetchall()]
@@ -708,9 +725,9 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
             _resolve(database, opportunity_id)
     elif opportunity["kind"] == "missing_response":
         node = database.execute(
-            """SELECT covered_replies_json FROM repertoire_coverage_nodes WHERE repertoire_id=?
-               AND fen_key=? AND run_id=(SELECT id FROM repertoire_coverage_runs
-               WHERE repertoire_id=? ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
+            f"""SELECT covered_replies_json FROM repertoire_coverage_nodes WHERE repertoire_id=?
+               AND fen_key=? AND run_id=(SELECT r.id FROM repertoire_coverage_runs r
+               WHERE repertoire_id=? AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")} ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
                created_at DESC LIMIT 1)""",
             (repertoire_id, opportunity["fen_key"], repertoire_id),
         ).fetchone()
@@ -725,9 +742,9 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
                 _resolve(database, opportunity_id)
                 return
         covered_node = database.execute(
-            """SELECT covered_replies_json FROM repertoire_coverage_nodes WHERE repertoire_id=?
-               AND fen_key=? AND run_id=(SELECT id FROM repertoire_coverage_runs
-               WHERE repertoire_id=? ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
+            f"""SELECT covered_replies_json FROM repertoire_coverage_nodes WHERE repertoire_id=?
+               AND fen_key=? AND run_id=(SELECT r.id FROM repertoire_coverage_runs r
+               WHERE repertoire_id=? AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")} ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
                created_at DESC LIMIT 1)""",
             (repertoire_id, opportunity["fen_key"], repertoire_id),
         ).fetchone()
@@ -735,7 +752,7 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
             _resolve(database, opportunity_id)
             return
         finding = database.execute(
-            """SELECT 1 FROM game_findings WHERE repertoire_id=? AND kind='repertoire gap'
+            """SELECT 1 FROM current_game_findings game_findings WHERE repertoire_id=? AND kind='repertoire gap'
                AND status!='ignored' AND json_extract(evidence_json,'$.opponent_gap_fen_key')=?
                AND json_extract(evidence_json,'$.opponent_gap_move_uci')=? LIMIT 1""",
             (repertoire_id, opportunity["fen_key"], opportunity["opponent_move_uci"]),
@@ -752,10 +769,12 @@ def execute_opportunity_slice(task: dict) -> bool:
     activity_gate.wait_for_foreground()
     read_section = background_read_connection if postgres_store.configured() else read_connection
     with read_section() as database:
+        identity = scope_identity(database, repertoire_id)
+        game_generation = game_scope_generation(database)
         if phase == "summaries":
             fen_cursor, _, move_cursor = cursor.partition("\0")
             item = database.execute(
-                """SELECT fen_key,expected_uci FROM repertoire_decision_events
+                """SELECT fen_key,expected_uci FROM current_repertoire_decision_events repertoire_decision_events
                    WHERE repertoire_id=? AND (fen_key>? OR (fen_key=? AND expected_uci>?))
                    GROUP BY fen_key,expected_uci ORDER BY fen_key,expected_uci LIMIT 1""",
                 (repertoire_id, fen_cursor, fen_cursor, move_cursor),
@@ -770,14 +789,14 @@ def execute_opportunity_slice(task: dict) -> bool:
             ).fetchone()
         elif phase == "nodes":
             item = database.execute(
-                """SELECT id FROM repertoire_coverage_nodes WHERE repertoire_id=? AND run_id=(
-                    SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=?
+                f"""SELECT id FROM repertoire_coverage_nodes WHERE repertoire_id=? AND run_id=(
+                    SELECT r.id FROM repertoire_coverage_runs r WHERE repertoire_id=? AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")}
                     ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,created_at DESC LIMIT 1)
                    AND id>? ORDER BY id LIMIT 1""", (repertoire_id, repertoire_id, cursor),
             ).fetchone()
         elif phase == "findings":
             item = database.execute(
-                """SELECT id FROM game_findings WHERE repertoire_id=? AND kind='repertoire gap'
+                """SELECT id FROM current_game_findings game_findings WHERE repertoire_id=? AND kind='repertoire gap'
                    AND id>? ORDER BY id LIMIT 1""", (repertoire_id, cursor),
             ).fetchone()
         elif phase == "cleanup":
@@ -828,6 +847,14 @@ def execute_opportunity_slice(task: dict) -> bool:
     post_gap_decision = _calculate_post_gap_opportunity(inputs) if phase == "findings" and inputs else None
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
+        # Prefix saves lock repertoire metadata before admitting refresh tasks.
+        # Keep the same order so publication cannot hold a task while waiting
+        # for the repertoire that a foreground save already holds.
+        if isinstance(database, sqlite3.Connection):
+            database.execute("BEGIN IMMEDIATE")
+        if (scope_identity(database, repertoire_id, lock=True) != identity
+                or game_scope_generation(database, lock=True) != game_generation):
+            return True
         if postgres_store.configured():
             current_slice = lock_current_slice(database, task)
         else:
@@ -855,7 +882,7 @@ def execute_opportunity_slice(task: dict) -> bool:
             database.execute(
                 """DELETE FROM repertoire_decision_gameplay_summaries WHERE repertoire_id=?
                    AND fen_key=? AND expected_uci=? AND NOT EXISTS(
-                       SELECT 1 FROM repertoire_decision_events event
+                       SELECT 1 FROM current_repertoire_decision_events event
                        WHERE event.repertoire_id=? AND event.fen_key=? AND event.expected_uci=?)""",
                 (repertoire_id, fen_key, expected_uci, repertoire_id, fen_key, expected_uci),
             )
@@ -911,6 +938,7 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                    FROM repertoire_opportunities opportunity
                    LEFT JOIN cards card ON card.id=opportunity.card_id
                    WHERE opportunity.repertoire_id=? AND opportunity.status='active'
+                     AND {opportunity_scope_predicate()}
                      AND opportunity.handled_evidence_json IS NULL
                    {identifier_clause}
                    ORDER BY opportunity.score DESC,opportunity.id{limit_clause}""",
@@ -929,7 +957,7 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                 (game_id,),
             ).fetchone()
             event = database.execute(
-                """SELECT ply FROM repertoire_decision_events WHERE repertoire_id=?
+                """SELECT ply FROM current_repertoire_decision_events repertoire_decision_events WHERE repertoire_id=?
                    AND game_id=? AND fen_key=? ORDER BY ply LIMIT 1""",
                 (repertoire_id, game_id, fen_key),
             ).fetchone()
@@ -1096,6 +1124,8 @@ def _existing_decision_training_plan(database: sqlite3.Connection, repertoire_id
         raise ValueError("Discovery evidence changed; refresh before training")
     if opportunity["admission_state"] == "queued" and opportunity["admitted_card_id"]:
         return opportunity, None
+    if not opportunity_is_current(database, opportunity):
+        raise ValueError("Opening routes or game scope changed; refresh this discovery before training")
     if opportunity["status"] != "active":
         raise ValueError("Discovery is no longer actionable")
     if not opportunity["card_id"]:

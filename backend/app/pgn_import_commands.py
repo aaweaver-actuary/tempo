@@ -12,9 +12,11 @@ import uuid
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
+from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
+from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
 from .services.opening_graph import decision_segments
 from .services.pgn import ParsedLine
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
@@ -77,6 +79,7 @@ def prepare_import_payload(
     ).model_dump(mode="json")
 
 
+@refresh_game_publications_after_mutation
 def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) -> dict[str, Any]:
     payload = ImportPayload.model_validate(raw_payload)
     source_name = payload.source_name
@@ -113,14 +116,18 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
             (repertoire_id,),
         )
     }
+    admitted_routes = {}
     lines_to_insert = []
     depths_to_upsert = []
     annotations_to_upsert = []
     for line in payload.lines:
+        validated_route = ensure_line_in_scope(database, repertoire_id, line.starting_fen, line.moves, remember=False)
         moves_json = json.dumps(line.moves)
         line_id = existing_lines.get((line.starting_fen, moves_json)) or hashlib.sha256(
             f"{repertoire_id}\0{card_id(line.starting_fen, line.moves)}".encode()
         ).hexdigest()
+        if (line.starting_fen, moves_json) not in existing_lines:
+            admitted_routes[line_id] = validated_route
         lines_to_insert.append((line_id, repertoire_id, source_name, trained_color,
                                 line.starting_fen, moves_json, now))
         depths_to_upsert.append((line_id, payload.depth))
@@ -132,9 +139,15 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     with database.raw.cursor() as cursor:
         cursor.executemany(
             "INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING",
-            lines_to_insert,
+            "VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING RETURNING id",
+            lines_to_insert, returning=True,
         )
+        inserted_line_ids = set()
+        if lines_to_insert:
+            while True:
+                inserted_line_ids.update(row[0] for row in cursor.fetchall())
+                if not cursor.nextset():
+                    break
         cursor.executemany(
             "INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) "
             "VALUES(%s,%s) ON CONFLICT(line_id) DO UPDATE SET "
@@ -148,6 +161,8 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
             "squares_json=excluded.squares_json,updated_at=excluded.updated_at",
             annotations_to_upsert,
         )
+    for line_id in inserted_line_ids:
+        certify_admitted_route(database, repertoire_id, admitted_routes[line_id])
     segment_ids = set(payload.segment_ids)
     prefix_ids = set(payload.prefix_segment_ids)
     if not prefix_ids.issubset(segment_ids):
