@@ -611,7 +611,17 @@ def main():
             before_clearing = read_prefix(database,repertoire_id)['source_revision']
             database.execute("UPDATE cards SET moves_json='[]' WHERE id=?",(repertoire_id+'-authored',))
             assert read_prefix(database,repertoire_id)['source_revision'] > before_clearing
-            generated_card = database.execute('SELECT id FROM cards WHERE repertoire_id=? AND canonical_route_source=0 LIMIT 1',(repertoire_id,)).fetchone()[0]
+            # The retained obsolete presentation is deliberately archived and
+            # unlinked by CF-2. A card's owner alone cannot select a live
+            # generated membership; this must exercise actual link promotion.
+            generated_card = database.execute(
+                'SELECT card.id FROM cards card JOIN repertoire_cards link ON link.card_id=card.id '
+                'WHERE link.repertoire_id=? AND link.canonical_route_source=0 '
+                'AND card.canonical_route_source=0 AND card.archived=0 ORDER BY card.id LIMIT 1',
+                (repertoire_id,),
+            ).fetchone()
+            assert generated_card is not None, 'Canonical fixture requires an active generated membership'
+            generated_card = generated_card[0]
             database.execute("UPDATE cards SET moves_json='[]' WHERE id=?",(generated_card,))
             assert database.execute('SELECT canonical_route_source FROM cards WHERE id=?',(generated_card,)).fetchone()[0] == 1
             assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE card_id=?',(generated_card,)).fetchone()[0] == 1

@@ -1747,3 +1747,5 @@ Run 37112651569 passed 187 regular browser cases but exposed the complementary b
 - PostgreSQL CF-11 uses real X adoption/deletion and Y graph cleanup, then a later archive; it preserves historical reviews without resurrecting Y ownership and retains the genuine unlinked-owner control.
 
 - PR #66 diagnostic freshness budget: `test_background_postgres_snapshot_disables_jit_before_budgeted_classification` ensures operational PostgreSQL snapshots disable compilation in their own transaction. `scripts/check_postgres_defensive_pause.py` proves `defensive_diagnostics_canonical_freshness_classification_within_unchanged_query_budget` on real PostgreSQL, retaining the 100 ms deadline and pause classification.
+
+- PR #66 populated PostgreSQL proof: `scripts/check_postgres_canonical_freshness.py` selects an active explicit generated membership for the clearing/promotion assertion, excluding the archived unlinked CF-2 presentation. The populated disposable gate must pass the same source-promotion assertion as the empty focused fixture.
