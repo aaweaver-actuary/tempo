@@ -306,7 +306,7 @@ def prove_generated_split_boundary(card_source=0):
         else:
             raise AssertionError('Graph fixture never reached its cleanup slice')
         candidates = prepare_obsolete_graph_cards(identifier, claimed['generation'], probe_id[:-1])
-        assert probe_id in candidates, candidates
+        assert probe_id in candidates.obsolete_card_ids, candidates
         with postgres_store.connection() as database:
             database.execute('UPDATE repertoire_cards SET canonical_route_source=1 WHERE repertoire_id=? AND card_id=?', (identifier, probe_id))
             assert cleanup_graph_cards_in_transaction(database, claimed, candidates)

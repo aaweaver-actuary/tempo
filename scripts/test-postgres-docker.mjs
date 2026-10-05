@@ -8,7 +8,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { join } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
+import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
@@ -110,7 +110,7 @@ function run(command, argumentsList, options = {}) {
     throw new Error(`${command} ${argumentsList.join(" ")} failed`);
 }
 
-const workloadConsumers = ["defense-engine", "background-worker"];
+const workloadConsumers = backgroundWorkloadConsumers;
 
 function verifyWorkloadConsumers(expectedState) {
   const result = spawnSync("docker", [...compose, "ps", "--all", "--format", "json", ...workloadConsumers],
@@ -851,7 +851,7 @@ const actions = {
           "/source/scripts/check_postgres_repertoire_limits.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_tactic_capture.py"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_background_workloads.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_defensive_pause.py"]);

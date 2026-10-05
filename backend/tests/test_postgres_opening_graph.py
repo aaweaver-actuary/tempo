@@ -257,12 +257,14 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
     )
     task = {"generation": 7, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
     assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
-        Database(), task, ("obsolete", "adopted", "current"),
+        Database(), task, postgres_opening_graph.PreparedGraphCleanupSlice(("obsolete", "adopted", "current"), "current"),
     )
     assert sum(statement.startswith("DELETE FROM repertoire_cards") for statement, _ in statements) == 1
     assert transitions[-1][0] == "cleanup"
     assert transitions[-1][1]["after_card_id"] == "current"
-    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(Database(), task, ())
+    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
+        Database(), task, postgres_opening_graph.PreparedGraphCleanupSlice((), None),
+    )
     assert transitions[-1][0] == "finalize"
 
 
@@ -417,3 +419,126 @@ def test_postgres_graph_enqueue_advances_past_imported_generation_without_task_r
     assert enqueued[0][0:2] == ("opening_graph_rebuild", "rep")
     assert enqueued[0][3]["minimum_generation"] == 31
     assert enqueued[0][2]["after_line_id"] == ""
+
+
+def test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion(monkeypatch):
+    """A no-obsolete page must advance instead of scanning the entire remaining tail."""
+    statements = []
+    read_open = False
+    candidate_rows = [(f"card-{index:04d}", False) for index in range(512)]
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class Database:
+        def execute_native(self, statement, parameters):
+            statements.append((statement, parameters))
+            if "MATERIALIZED" in statement:
+                return Cursor([row for row in candidate_rows if row[0] > parameters[1]][:parameters[2]])
+            return Cursor([])  # The old anti-join has no matching obsolete card.
+
+    @contextmanager
+    def read():
+        nonlocal read_open
+        read_open = True
+        try:
+            yield Database()
+        finally:
+            read_open = False
+
+    monkeypatch.setattr(postgres_opening_graph, "background_read_connection", read)
+    first = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, "")
+    assert not read_open
+    assert getattr(first, "checkpoint_card_id", None) == "card-0255"
+    assert first.obsolete_card_ids == ()
+    second = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, first.checkpoint_card_id)
+    assert second.checkpoint_card_id == "card-0511" and second.obsolete_card_ids == ()
+    exhausted = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, second.checkpoint_card_id)
+    assert exhausted.checkpoint_card_id is None and exhausted.obsolete_card_ids == ()
+    assert all(parameters[2] == 256 for _, parameters in statements)
+
+
+def test_postgres_graph_cleanup_page_frontier_never_skips_third_obsolete_card(monkeypatch):
+    candidate_rows = [("card-00", False), ("card-01", True), ("card-02", False),
+                      ("card-03", True), ("card-04", True), ("card-05", False)]
+
+    class Database:
+        def execute_native(self, statement, parameters):
+            if "MATERIALIZED" in statement:
+                rows = [row for row in candidate_rows if row[0] > parameters[1]][:parameters[2]]
+            else:
+                rows = [(row[0],) for row in candidate_rows if row[0] > parameters[1] and row[1]][:2]
+            return type("Cursor", (), {"fetchall": lambda _self: rows})()
+
+    @contextmanager
+    def read():
+        yield Database()
+
+    monkeypatch.setattr(postgres_opening_graph, "background_read_connection", read)
+    first = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, "")
+    assert getattr(first, "checkpoint_card_id", None) == "card-03"
+    assert first.obsolete_card_ids == ("card-01", "card-03")
+    second = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, first.checkpoint_card_id)
+    assert second.obsolete_card_ids == ("card-04",) and second.checkpoint_card_id == "card-05"
+
+
+def test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_fences_replay(monkeypatch):
+    from types import SimpleNamespace
+
+    saved_checkpoints = []
+    statements = []
+    lease_current = True
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            raise AssertionError("A current-only prepared page needs no card mutations")
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: lease_current)
+    monkeypatch.setattr(postgres_opening_graph, "advance_task_slice_in_transaction",
+                        lambda _database, _task, *, next_phase, next_payload:
+                        saved_checkpoints.append((next_phase, next_payload)) or True)
+    task = {"generation": 4, "payload": {"repertoire_id": "rep", "after_card_id": "card-0000"}}
+    prepared = SimpleNamespace(obsolete_card_ids=(), checkpoint_card_id="card-0256")
+    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(Database(), task, prepared)
+    assert saved_checkpoints == [("cleanup", {"repertoire_id": "rep", "after_card_id": "card-0256"})]
+    lease_current = False
+    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(Database(), task, prepared) is False
+    assert len(saved_checkpoints) == 1 and statements == []
+
+
+def test_postgres_graph_bounded_cleanup_page_excludes_authored_memberships(monkeypatch):
+    """Raw page progress must retain authored cards even without a current graph step."""
+    import sqlite3
+
+    connection = sqlite3.connect(':memory:')
+    connection.executescript('''
+        CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT);
+        CREATE TABLE repertoire_cards(repertoire_id TEXT,card_id TEXT,canonical_route_source INTEGER);
+        CREATE TABLE opening_graph_steps(repertoire_id TEXT,generation INTEGER,card_id TEXT);
+        INSERT INTO cards VALUES('authored','opening'),('obsolete','opening'),('tail','opening');
+        INSERT INTO repertoire_cards VALUES('rep','authored',1),('rep','obsolete',0),('rep','tail',1);
+    ''')
+
+    class NativeDatabase:
+        def execute_native(self, statement, parameters):
+            return connection.execute(statement.replace('%s', '?'), parameters)
+
+    @contextmanager
+    def read():
+        yield NativeDatabase()
+
+    monkeypatch.setattr(postgres_opening_graph, 'background_read_connection', read)
+    try:
+        prepared = postgres_opening_graph.prepare_obsolete_graph_cards('rep', 7, '')
+        assert prepared.obsolete_card_ids == ('obsolete',)
+        assert prepared.checkpoint_card_id == 'tail'
+        authored_tail = postgres_opening_graph.prepare_obsolete_graph_cards('rep', 7, 'obsolete')
+        assert authored_tail.obsolete_card_ids == ()
+        assert authored_tail.checkpoint_card_id == 'tail'
+    finally:
+        connection.close()

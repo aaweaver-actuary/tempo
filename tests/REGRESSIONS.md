@@ -1751,3 +1751,48 @@ Run 37112651569 passed 187 regular browser cases but exposed the complementary b
 - PR #66 populated PostgreSQL proof: `scripts/check_postgres_canonical_freshness.py` selects an active explicit generated membership for the clearing/promotion assertion, excluding the archived unlinked CF-2 presentation. The populated disposable gate must pass the same source-promotion assertion as the empty focused fixture.
 
 - PR #66 Builder keyboard setup: `Builder shortcuts cancel a held piece and preserve notes, selection and splitter keys` (`tests/browser/keyboard-context.spec.ts`) waits for the initial active repertoire and editable Builder owner before beginning its real held drag. CI trace37283022925 showed the old fixture beginning at “Choose repertoire” and a later worker publication correctly invalidating the board identity. The keyboard/drag/notes/splitter assertions remain intact.
+
+## Incident graph and retention timeout protection
+
+- `test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion`,
+  `test_postgres_graph_cleanup_page_frontier_never_skips_third_obsolete_card`, and
+  `test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_fences_replay`
+  in `backend/tests/test_postgres_opening_graph.py` protect bounded candidate
+  selection, resolved-prefix checkpointing, empty-page termination and stale leases.
+- `test_postgres_priority_retention_selects_exact_stale_manifest_and_keeps_locked_rows_pending`
+  in `backend/tests/test_postgres_priority_retention.py` protects exact stale
+  preparation selection and locked-row eligibility without filtering a large
+  protected generation, plus primary-key ordering through actual PostgreSQL SQL
+  translation when a large active generation becomes stale.
+- `test_postgres_graph_retention_timeout_backoff_preserves_checkpoint_and_stops_at_limit`,
+  `test_postgres_other_timeouts_and_target_lock_contention_keep_existing_yield`, and
+  `test_postgres_graph_timeout_superseded_generation_does_not_retry_or_fail_replacement`
+  in `backend/tests/test_postgres_background_timeouts.py` protect the two targeted
+  timeout retry limits, preserved phase/payload, terminal durable failure,
+  supersession, and existing behavior for other handlers and lock contention.
+- The regular disposable PostgreSQL workload stage runs
+  `test_postgres_graph_cleanup_current_pages_restart_and_shared_tail`,
+  `test_postgres_graph_cleanup_generation_replacement_rejects_stale_page`,
+  `test_postgres_priority_retention_locked_stale_rows_remain_pending`,
+  `test_postgres_priority_retention_skips_large_current_generation`,
+  `test_postgres_priority_retention_generation_transition_is_serialized`,
+  `test_postgres_priority_retention_foreground_job_lock_yields_and_replays`,
+  `test_postgres_priority_retention_timeout_rolls_back_and_replays`,
+  `test_postgres_transaction_timeout_preserves_checkpoint_and_uses_failure_backoff`,
+  and `test_postgres_transaction_timeout_exhaustion_stops_repeated_attempts`
+  in `scripts/check_postgres_graph_retention.py`. These protect large current
+  generations, bounded graph frontiers, shared cards/history, contention,
+  generation replacement, restart, rollback, durable retry eligibility and
+  replay through the actual worker entry point. Query plans and complete
+  transaction timings are recorded without exact millisecond assertions.
+- `test_incident_fixture_refuses_unmarked_database_without_writes_or_cleanup`
+  and `test_incident_fixture_refuses_schema_mismatch_without_writes_or_cleanup`
+  in `backend/tests/test_incident_fixture_safety.py` require read-only disposable
+  metadata verification before helper creation, seeding, reporting or cleanup.
+- `background workload prevents scheduler claims and restores dispatch after failure`
+  in `tests/runner/postgres-test-speedups.test.mjs` keeps the real scheduler paused
+  with background consumers during disposable workload proofs and restores
+  dispatch after failure. The regular unit gate runs this file through
+  `tests/unit/postgres-test-speedups-regressions.test.ts`.
+
+- PR #66 / #88 integration: `test_postgres_graph_bounded_cleanup_page_excludes_authored_memberships` keeps bounded raw-key progress while excluding authored membership from obsolete-card selection. Real PostgreSQL `test_postgres_graph_bounded_cleanup_preserves_authored_membership_without_step` extends the 64,000-card restart/foreground/retention rehearsal; generated fixture memberships are explicitly marked as derived, while the authored control and retained shared membership stay protected. CF-8 uses the new prepared-page shape and still proves intervening adoption and stale replay.

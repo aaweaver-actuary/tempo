@@ -19,6 +19,7 @@ from .redis_admission_gate import background_lease
 
 _STEP_BATCH_SIZE = 8
 _CLEANUP_BATCH_SIZE = 2
+_CLEANUP_CANDIDATE_PAGE_SIZE = 256
 
 
 def request_graph_rebuild_in_transaction(
@@ -378,43 +379,62 @@ def execute_graph_integrity_slice(task: dict[str, Any]) -> bool:
             return refresh_graph_integrity_in_transaction(database, task, card_ids)
 
 
+@dataclass(frozen=True)
+class PreparedGraphCleanupSlice:
+    """At most two obsolete cards and the resolved prefix of one source page."""
+
+    obsolete_card_ids: tuple[str, ...]
+    checkpoint_card_id: str | None
+
+
 def prepare_obsolete_graph_cards(
     repertoire_id: str, generation: int, after_card_id: str,
-) -> tuple[str, ...]:
-    """Find at most two old opening cards absent from the published generation."""
+) -> PreparedGraphCleanupSlice:
+    """Inspect a bounded raw-key page before deciding which old links to remove."""
 
     with background_read_connection() as database:
         rows = database.execute_native(
-            "SELECT link.card_id FROM repertoire_cards link "
-            "JOIN cards card ON card.id=link.card_id "
-            "WHERE link.repertoire_id=%s AND link.card_id>%s "
-            "AND card.content_type='opening' AND link.canonical_route_source=0 "
-            "AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step "
+            "WITH candidate_cards AS MATERIALIZED ("
+            "SELECT card_id,canonical_route_source FROM repertoire_cards "
+            "WHERE repertoire_id=%s AND card_id>%s ORDER BY card_id LIMIT %s) "
+            "SELECT candidate.card_id,CASE WHEN card.content_type='opening' "
+            "AND candidate.canonical_route_source=0 "
+            "THEN NOT EXISTS(SELECT 1 FROM opening_graph_steps step "
             "WHERE step.repertoire_id=%s AND step.generation=%s "
-            "AND step.card_id=link.card_id) "
-            "ORDER BY link.card_id LIMIT %s",
-            (repertoire_id, after_card_id, repertoire_id, generation, _CLEANUP_BATCH_SIZE),
+            "AND step.card_id=candidate.card_id) ELSE FALSE END obsolete "
+            "FROM candidate_cards candidate JOIN cards card ON card.id=candidate.card_id "
+            "ORDER BY candidate.card_id",
+            (repertoire_id, after_card_id, _CLEANUP_CANDIDATE_PAGE_SIZE, repertoire_id, generation),
         ).fetchall()
-    return tuple(str(row[0]) for row in rows)
+    obsolete_card_ids: list[str] = []
+    checkpoint_card_id = None
+    for row in rows:
+        checkpoint_card_id = str(row[0])
+        if row[1]:
+            obsolete_card_ids.append(checkpoint_card_id)
+            if len(obsolete_card_ids) == _CLEANUP_BATCH_SIZE:
+                # The suffix may contain more obsolete links; replay it next slice.
+                break
+    return PreparedGraphCleanupSlice(tuple(obsolete_card_ids), checkpoint_card_id)
 
 
 def cleanup_graph_cards_in_transaction(
     database: postgres_store.PostgresConnection,
     task: dict[str, Any],
-    card_ids: tuple[str, ...],
+    prepared: PreparedGraphCleanupSlice,
 ) -> bool:
     """Remove at most two old links, preserving cards shared by other repertoires."""
 
     if not lock_current_slice(database, task):
         return False
     payload = dict(task["payload"])
-    if not card_ids:
+    if prepared.checkpoint_card_id is None:
         return advance_task_slice_in_transaction(
             database, task, next_phase="finalize", next_payload=payload,
         )
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
-    for card_id in card_ids:
+    for card_id in prepared.obsolete_card_ids:
         # Selection happens before this write slice. An intervening foreground
         # adoption must protect the now-authored membership and its queue.
         membership = database.execute_native(
@@ -476,19 +496,19 @@ def cleanup_graph_cards_in_transaction(
         )
     return advance_task_slice_in_transaction(
         database, task, next_phase="cleanup",
-        next_payload={**payload, "after_card_id": card_ids[-1]},
+        next_payload={**payload, "after_card_id": prepared.checkpoint_card_id},
     )
 
 
 def execute_graph_cleanup_slice(task: dict[str, Any]) -> bool:
     payload = task["payload"]
-    card_ids = prepare_obsolete_graph_cards(
+    prepared = prepare_obsolete_graph_cards(
         str(payload["repertoire_id"]), int(task["generation"]),
         str(payload.get("after_card_id", "")),
     )
     with background_lease():
         with postgres_store.connection(read_only=False, background=True) as database:
-            return cleanup_graph_cards_in_transaction(database, task, card_ids)
+            return cleanup_graph_cards_in_transaction(database, task, prepared)
 
 
 def finalize_graph_in_transaction(
