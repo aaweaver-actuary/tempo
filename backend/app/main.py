@@ -420,6 +420,12 @@ def _game_analysis_threshold() -> int:
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
     request_path_parts = request.url.path.strip("/").split("/")
+    prefix_evaluation_read = (
+        len(request_path_parts) == 5 and request_path_parts[:2] == ["api", "repertoires"]
+        and request_path_parts[3] == "prefix-evaluation"
+        and ((request.method == "GET" and request_path_parts[4] == "source")
+             or (request.method == "POST" and request_path_parts[4] == "evaluate"))
+    )
     read_only_post = (
         request.method == "POST"
         and (
@@ -431,6 +437,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
             or (len(request_path_parts) == 5
                 and request_path_parts[:2] == ["api", "studies"]
                 and request_path_parts[3:] == ["import", "preview"])
+            or prefix_evaluation_read
         )
     )
     if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -706,7 +713,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
             )
     is_background = (
-        request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
         # Its receipt read uses background admission too; a foreground request
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
@@ -6385,5 +6392,7 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
 
 from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
+from .prefix_evaluation_api import router as prefix_evaluation_router
+app.include_router(prefix_evaluation_router)
 from .opening_evidence_api import router as opening_evidence_router
 app.include_router(opening_evidence_router)
