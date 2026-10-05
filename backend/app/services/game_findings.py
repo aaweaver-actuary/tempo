@@ -8,6 +8,7 @@ import json
 
 import chess
 
+from .canonical_scope_freshness import game_scope_generation
 from ..database import background_read_connection, connection
 from .activity_gate import activity_gate
 from .motif_detectors import (
@@ -91,17 +92,17 @@ def _upsert_finding(database, *, game_id: str, analysis_version: int, ply: int, 
                     source_opportunity_id: str | None = None) -> None:
     now = datetime.now(timezone.utc).isoformat()
     database.execute(
-        """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,repertoire_id,card_id,motif,source_opportunity_id,created_at,updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,repertoire_id,card_id,motif,source_opportunity_id,created_at,updated_at,game_scope_generation)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(id) DO UPDATE SET confidence=excluded.confidence,evidence_json=excluded.evidence_json,
-           repertoire_id=excluded.repertoire_id,
+           repertoire_id=excluded.repertoire_id,game_scope_generation=excluded.game_scope_generation,
            card_id=CASE WHEN excluded.kind='repertoire lapse' THEN excluded.card_id
                         ELSE COALESCE(excluded.card_id,game_findings.card_id) END,
            motif=excluded.motif,
            source_opportunity_id=excluded.source_opportunity_id,updated_at=excluded.updated_at""",
         (
             _finding_id(game_id, analysis_version, kind, ply), game_id, analysis_version, ply,
-            kind, confidence, json.dumps(evidence), repertoire_id, card_id, motif, source_opportunity_id, now, now,
+            kind, confidence, json.dumps(evidence), repertoire_id, card_id, motif, source_opportunity_id, now, now, game_scope_generation(database),
         ),
     )
 
@@ -135,12 +136,13 @@ def refresh_game_findings(
     priority_writes: list[tuple] = []
     read_context = background_read_connection() if prepare_only else connection(background=background)
     with read_context as database:
+        scope_generation = game_scope_generation(database)
         where = "WHERE g.id=?" if game_id else ""
         games = [dict(row) for row in database.execute(
             f"""SELECT g.*,m.repertoire_id,m.first_player_deviation_ply,m.first_player_deviation_fen,
                        m.first_player_deviation_expected_json,m.first_player_deviation_actual_uci,m.deviation_card_id
                        ,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json
-                FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1 {where}""",
+                FROM imported_games g LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1 {where}""",
             (game_id,) if game_id else (),
         ).fetchall()]
         settings = dict(database.execute(
@@ -436,6 +438,9 @@ def refresh_game_findings(
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
+        database.execute("BEGIN IMMEDIATE")
+        if game_scope_generation(database, lock=True) != scope_generation:
+            raise RuntimeError("Repertoire membership changed during finding preparation; retry")
         now = datetime.now(timezone.utc).isoformat()
         for opportunity_game_id, opportunity_version in opportunity_games.items():
             database.execute(

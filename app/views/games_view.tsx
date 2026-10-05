@@ -18,7 +18,7 @@ import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
 import { setGameExclusion } from "../lib/game-exclusion-command";
 import { requestGameThreatRefresh } from "../lib/game-threat-refresh-command";
-import { startGuidedReviewCommand, submitGuidedReviewCommand } from "../lib/guided-review-command";
+import { GuidedReviewChangedError, readGuidedReviewCommand, startGuidedReviewCommand, submitGuidedReviewCommand } from "../lib/guided-review-command";
 import { curateGameFinding, decideGameFinding } from "../lib/game-finding-command";
 import { prepareFindingCard } from "../lib/finding-card-command";
 import {
@@ -748,10 +748,18 @@ export default function GamesView({
       const moveUci = `${legalMove.from}${legalMove.to}${legalMove.promotion ?? ""}`;
       try {
         const result = await submitGuidedReviewCommand(
-          guidedReview.id, guidedReview.current_index, moveUci,
+          guidedReview.id, guidedReview.current_index, moveUci, guidedReview.current.finding_id,
         );
         setGuidedReveal(result as GuidedReviewAttempt);
-      } catch (reason) { setError(String(reason)); }
+      } catch (reason) {
+        if (reason instanceof GuidedReviewChangedError) {
+          try {
+            const refreshed = await readGuidedReviewCommand(guidedReview.id);
+            setGuidedReview(refreshed as GuidedReviewSession);
+            setGuidedReveal(null);
+          } catch (refreshError) { setError(String(refreshError)); }
+        } else { setError(String(reason)); }
+      }
     },
     [guidedReview, guidedReveal],
   );

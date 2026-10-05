@@ -1,3 +1,3 @@
-"""PostgreSQL schema version required by the running API and workers."""
+"""Authoritative PostgreSQL schema readiness version."""
 
-POSTGRES_SCHEMA_VERSION = 32
+POSTGRES_SCHEMA_VERSION = 35

@@ -9,6 +9,7 @@ const board = vi.hoisted(() => ({
   redrawAll: vi.fn(),
   setAutoShapes: vi.fn(),
   setShapes: vi.fn(),
+  state: { dom: { bounds: Object.assign(vi.fn(), { clear: vi.fn() }) } },
 }));
 const createBoard = vi.hoisted(() =>
   vi.fn((element: unknown, config: unknown) => {
@@ -22,6 +23,34 @@ vi.mock("../../app/lib/move-sound", () => ({
   playMoveSound: vi.fn(),
   playChessMoveSound: vi.fn(),
 }));
+
+it("board layout shifts refresh hit-test bounds before mouse and touch input without resetting a held piece", () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const view = render(<Chessboard fen={STANDARD_FEN} locked={false} showHint={false}
+    onMove={vi.fn()} theme="brown" pieceSet="cburnett" />);
+  const surface = view.container.querySelector(".cg-wrap")!;
+  let boardTop = 80;
+  let cachedTop = boardTop;
+  board.state.dom.bounds.mockImplementation(() => ({ top: cachedTop }));
+  board.state.dom.bounds.clear.mockImplementation(() => { cachedTop = boardTop; });
+  const observedTops: number[] = [];
+  const hitTest = () => { observedTops.push(board.state.dom.bounds().top); };
+  surface.addEventListener("mousedown", hitTest);
+  surface.addEventListener("touchstart", hitTest);
+  board.set.mockClear(); board.redrawAll.mockClear();
+  // A repair-status banner translates the board without a resize or scroll.
+  boardTop = 160;
+  surface.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  boardTop = 240;
+  surface.dispatchEvent(new Event("touchstart", { bubbles: true }));
+  expect(observedTops).toEqual([160, 240]);
+  expect(board.set).not.toHaveBeenCalled();
+  expect(board.redrawAll).not.toHaveBeenCalled();
+  view.unmount();
+  boardTop = 320;
+  surface.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  expect(observedTops).toEqual([160, 240, 240]);
+});
 
 it("resize and feedback locks reuse Chessground without toggling construction-only viewOnly or recalculating arrow destinations", () => {
   vi.stubGlobal(

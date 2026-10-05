@@ -1230,5 +1230,33 @@
     "handler": "defensive_engine_control",
     "treatment": "reader",
     "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/canonical-prefix",
+    "handler": "canonical_prefix_read",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/canonical-prefix/preview",
+    "handler": "canonical_prefix_preview",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/canonical-prefix/preview/{preview_id}",
+    "handler": "canonical_prefix_preview_read",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/repertoires/{identifier}/canonical-prefix",
+    "handler": "canonical_prefix_save",
+    "treatment": "foreground_command",
+    "state": "staged"
   }
 ]

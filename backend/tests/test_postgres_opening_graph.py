@@ -243,8 +243,11 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
     class Database:
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
-            current = parameters[-1] == "current" if parameters else False
-            return type("Cursor", (), {"fetchone": lambda _self: (1,) if current else None})()
+            if "FOR UPDATE OF link,card" in statement:
+                result = None if parameters[-1] == "adopted" else (0,)
+            else:
+                result = (1,) if parameters and parameters[-1] == "current" else None
+            return type("Cursor", (), {"fetchone": lambda _self: result})()
 
     monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
@@ -254,7 +257,7 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
     )
     task = {"generation": 7, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
     assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
-        Database(), task, postgres_opening_graph.PreparedGraphCleanupSlice(("obsolete", "current"), "current"),
+        Database(), task, postgres_opening_graph.PreparedGraphCleanupSlice(("obsolete", "adopted", "current"), "current"),
     )
     assert sum(statement.startswith("DELETE FROM repertoire_cards") for statement, _ in statements) == 1
     assert transitions[-1][0] == "cleanup"
@@ -280,6 +283,7 @@ def test_postgres_graph_finalization_checkpoints_integrity_scan_and_completion(m
         lambda _database, _task: events.append(("complete", None)) or True,
     )
     task = {"generation": 9, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr("app.services.durable_tasks.enqueue_compact_postgres_task_in_transaction", lambda *_args, **_kwargs: None)
     assert postgres_opening_graph.finalize_graph_in_transaction(object(), task) is False
     assert events == [("integrity", "rep", 9, "2026-09-27"), ("complete", None)]
 
@@ -505,3 +509,36 @@ def test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_
     lease_current = False
     assert postgres_opening_graph.cleanup_graph_cards_in_transaction(Database(), task, prepared) is False
     assert len(saved_checkpoints) == 1 and statements == []
+
+
+def test_postgres_graph_bounded_cleanup_page_excludes_authored_memberships(monkeypatch):
+    """Raw page progress must retain authored cards even without a current graph step."""
+    import sqlite3
+
+    connection = sqlite3.connect(':memory:')
+    connection.executescript('''
+        CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT);
+        CREATE TABLE repertoire_cards(repertoire_id TEXT,card_id TEXT,canonical_route_source INTEGER);
+        CREATE TABLE opening_graph_steps(repertoire_id TEXT,generation INTEGER,card_id TEXT);
+        INSERT INTO cards VALUES('authored','opening'),('obsolete','opening'),('tail','opening');
+        INSERT INTO repertoire_cards VALUES('rep','authored',1),('rep','obsolete',0),('rep','tail',1);
+    ''')
+
+    class NativeDatabase:
+        def execute_native(self, statement, parameters):
+            return connection.execute(statement.replace('%s', '?'), parameters)
+
+    @contextmanager
+    def read():
+        yield NativeDatabase()
+
+    monkeypatch.setattr(postgres_opening_graph, 'background_read_connection', read)
+    try:
+        prepared = postgres_opening_graph.prepare_obsolete_graph_cards('rep', 7, '')
+        assert prepared.obsolete_card_ids == ('obsolete',)
+        assert prepared.checkpoint_card_id == 'tail'
+        authored_tail = postgres_opening_graph.prepare_obsolete_graph_cards('rep', 7, 'obsolete')
+        assert authored_tail.obsolete_card_ids == ()
+        assert authored_tail.checkpoint_card_id == 'tail'
+    finally:
+        connection.close()

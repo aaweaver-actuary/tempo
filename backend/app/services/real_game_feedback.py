@@ -24,7 +24,7 @@ def prioritize_real_game_miss(database: sqlite3.Connection, event_id: str) -> bo
     """Queue one eligible studied card; replay keeps its existing queue position."""
     missed_event = database.execute(
         """SELECT event.card_id,event.played_at
-           FROM repertoire_decision_events event
+           FROM current_repertoire_decision_events event
            JOIN imported_games game ON game.id=event.game_id
            JOIN cards card ON card.id=event.card_id
            WHERE event.id=? AND event.outcome='miss' AND game.adaptive_excluded=0
@@ -78,7 +78,7 @@ def apply_real_game_misses(game_id: str, *, background: bool = False) -> None:
     """Promote valid studied-card misses; unseen cards use introduction priority."""
     with connection(background=background) as database:
         missed_event_ids = [row[0] for row in database.execute(
-            """SELECT id FROM repertoire_decision_events
+            """SELECT id FROM current_repertoire_decision_events repertoire_decision_events
                WHERE game_id=? AND outcome='miss' ORDER BY ply,id""",
             (game_id,),
         )]

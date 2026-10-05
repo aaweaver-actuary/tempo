@@ -130,8 +130,8 @@ def stage_graph_line_in_transaction(
         )
         cursor.executemany(
             "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,"
-            "due_date,content_type,trained_color,pending_validation) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,'opening',%s,0) ON CONFLICT(id) DO NOTHING",
+            "due_date,content_type,trained_color,pending_validation,canonical_route_source) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,'opening',%s,0,0) ON CONFLICT(id) DO NOTHING",
             [
                 (step.card_id, step.repertoire_id,
                  "prefix" if step.segment_kind == "prefix" else "response",
@@ -197,8 +197,8 @@ def link_graph_cards_in_transaction(
     generation = int(task["generation"])
     with database.raw.cursor() as cursor:
         cursor.executemany(
-            "INSERT INTO repertoire_cards(repertoire_id,card_id) "
-            "SELECT %s,%s WHERE EXISTS(SELECT 1 FROM opening_graph_steps "
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) "
+            "SELECT %s,%s,0 WHERE EXISTS(SELECT 1 FROM opening_graph_steps "
             "WHERE repertoire_id=%s AND generation=%s AND card_id=%s) "
             "ON CONFLICT(repertoire_id,card_id) DO NOTHING",
             [(repertoire_id, card_id, repertoire_id, generation, card_id)
@@ -300,7 +300,7 @@ def classify_graph_cards_in_transaction(
             "due_date=CASE WHEN %s='new' AND state='locked' "
             "AND introduced_at IS NULL "
             "AND NOT EXISTS(SELECT 1 FROM reviews WHERE card_id=cards.id) "
-            "THEN %s ELSE due_date END WHERE id=%s",
+            "THEN %s ELSE due_date END WHERE id=%s AND canonical_route_source=0",
             (kind, next_state, next_state, study_day, card_id),
         )
     return advance_task_slice_in_transaction(
@@ -395,9 +395,10 @@ def prepare_obsolete_graph_cards(
     with background_read_connection() as database:
         rows = database.execute_native(
             "WITH candidate_cards AS MATERIALIZED ("
-            "SELECT card_id FROM repertoire_cards "
+            "SELECT card_id,canonical_route_source FROM repertoire_cards "
             "WHERE repertoire_id=%s AND card_id>%s ORDER BY card_id LIMIT %s) "
             "SELECT candidate.card_id,CASE WHEN card.content_type='opening' "
+            "AND candidate.canonical_route_source=0 "
             "THEN NOT EXISTS(SELECT 1 FROM opening_graph_steps step "
             "WHERE step.repertoire_id=%s AND step.generation=%s "
             "AND step.card_id=candidate.card_id) ELSE FALSE END obsolete "
@@ -434,6 +435,17 @@ def cleanup_graph_cards_in_transaction(
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
     for card_id in prepared.obsolete_card_ids:
+        # Selection happens before this write slice. An intervening foreground
+        # adoption must protect the now-authored membership and its queue.
+        membership = database.execute_native(
+            "SELECT card.canonical_route_source,card.repertoire_id FROM repertoire_cards link "
+            "JOIN cards card ON card.id=link.card_id "
+            "WHERE link.repertoire_id=%s AND link.card_id=%s "
+            "AND link.canonical_route_source=0 FOR UPDATE OF link,card",
+            (repertoire_id, card_id),
+        ).fetchone()
+        if membership is None:
+            continue
         still_current = database.execute_native(
             "SELECT 1 FROM opening_graph_steps WHERE repertoire_id=%s "
             "AND generation=%s AND card_id=%s LIMIT 1",
@@ -441,9 +453,33 @@ def cleanup_graph_cards_in_transaction(
         ).fetchone()
         if still_current:
             continue
+        if not membership[0] or membership[1] == repertoire_id:
+            database.execute_native(
+                "UPDATE daily_queue SET status='superseded' "
+                "WHERE card_id=%s AND status='queued' "
+                "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
+                "WHERE retained.card_id=%s AND retained.repertoire_id<>%s)",
+                (card_id, card_id, repertoire_id),
+            )
+        # A globally authored card with only this generated owner association
+        # has no effective authored scope. Retire it before deleting that link;
+        # keep its row and history without activating unlinked owner fallback.
         database.execute_native(
-            "UPDATE daily_queue SET status='superseded' "
-            "WHERE card_id=%s AND status='queued'", (card_id,),
+            "UPDATE cards SET archived=1 WHERE id=%s AND repertoire_id=%s "
+            "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
+            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
+            (card_id, repertoire_id, repertoire_id),
+        )
+        # Move a retained card's owner while the explicit generated membership
+        # still suppresses fallback in the departing repertoire.
+        database.execute_native(
+            "UPDATE cards SET repertoire_id=("
+            "SELECT MIN(retained.repertoire_id) FROM repertoire_cards retained "
+            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s) "
+            "WHERE id=%s AND repertoire_id=%s "
+            "AND EXISTS(SELECT 1 FROM repertoire_cards retained "
+            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
+            (repertoire_id, card_id, repertoire_id, repertoire_id),
         )
         database.execute_native(
             "DELETE FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s",
@@ -454,15 +490,7 @@ def cleanup_graph_cards_in_transaction(
             "WHERE repertoire_id=%s AND card_id=%s", (repertoire_id, card_id),
         )
         database.execute_native(
-            "UPDATE cards SET repertoire_id=("
-            "SELECT MIN(link.repertoire_id) FROM repertoire_cards link "
-            "WHERE link.card_id=cards.id) "
-            "WHERE id=%s AND repertoire_id=%s "
-            "AND EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id)",
-            (card_id, repertoire_id),
-        )
-        database.execute_native(
-            "UPDATE cards SET archived=1 WHERE id=%s "
+            "UPDATE cards SET archived=1 WHERE id=%s AND canonical_route_source=0 "
             "AND NOT EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id)",
             (card_id,),
         )

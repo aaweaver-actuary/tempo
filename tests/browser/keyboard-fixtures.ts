@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { Chess } from "chess.js";
 
 export function expectedPieces(fen: string) {
@@ -30,5 +30,9 @@ export async function squareCenter(board: Locator, square: string) {
 }
 export async function playMove(page: Page, board: Locator, from: string, to: string) {
   await board.scrollIntoViewIfNeeded();
+  const positionBeforeMove = await board.getAttribute("data-fen");
   for (const square of [from, to]) { const center = await squareCenter(board, square); await page.mouse.click(center.x, center.y); }
+  // Chessground defers its move callback. Subsequent keyboard/button actions
+  // must observe the application position, rather than just moved DOM pieces.
+  await expect(board).not.toHaveAttribute("data-fen", positionBeforeMove!);
 }

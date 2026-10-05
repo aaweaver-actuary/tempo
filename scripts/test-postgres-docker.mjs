@@ -482,6 +482,18 @@ async function verifyForegroundAndStudyDurability() {
   run("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo",
     "-Atqc", "SELECT count(*) FROM reviews; SELECT count(*) FROM queue_projections;"]);
   console.log(`PostgreSQL direct SQL probe: ${Math.round((performance.now() - sqlStartedAt) * 10) / 10}ms (review and queue-projection counts)`);
+  const prefixPreview = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview`, {
+    movetext: "e4",
+  }, { operationId: `pg-study-prefix-preview-${randomBytes(10).toString("hex")}` });
+  assert.equal(prefixPreview.state, "checking");
+  const repeatedPrefixPreview = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview`, {
+    movetext: "1. e4",
+  }, { operationId: `pg-study-prefix-preview-repeat-${randomBytes(10).toString("hex")}` });
+  assert.equal(repeatedPrefixPreview.preview_id, prefixPreview.preview_id,
+    "Equivalent independent preview commands reuse the stopped worker's original scan");
+  assert((await get("system/tasks")).tasks.some(task => task.kind === "canonical_prefix_preview"
+    && task.deduplication_key === prefixPreview.preview_id && ["queued", "retrying"].includes(task.state)),
+  "Prefix compatibility remains durable while its worker is stopped");
   run("docker", [...compose, "start", "background-worker"]);
   const persistedCheckpoint = await postCommand("opening-evidence/checkpoints", backgroundCheckpoint,
     { operationId: checkpointOperationId });
@@ -508,6 +520,22 @@ async function verifyForegroundAndStudyDurability() {
   const reinforcement = reinforcementQueue.cards.find((card) => card.id === reviewCard.id);
   assert.equal(reinforcement?.attempt_state, "reinforcement");
 
+  const prefixDeadline = performance.now() + 30_000;
+  let compatibility;
+  do {
+    compatibility = await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview/${prefixPreview.preview_id}`);
+    if (compatibility.state === "ready") break;
+    assert.equal(compatibility.state, "checking", JSON.stringify(compatibility));
+    assert(performance.now() < prefixDeadline, "Prefix compatibility completes after worker restart");
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } while (true);
+  const prefixBody = { preview_id: prefixPreview.preview_id, expected_revision: 0 };
+  const prefixOperationId = `pg-study-prefix-save-${randomBytes(10).toString("hex")}`;
+  const beforePrefixStudy = stableStudyState(await get("migration/snapshot"), importedStudy.repertoire_id);
+  const savedPrefix = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`, prefixBody,
+    { method: "PUT", operationId: prefixOperationId });
+  assert.deepEqual(savedPrefix.moves_uci, ["e2e4"]);
+  assert.equal(savedPrefix.revision, 1);
   const beforeBuryQueue = await get("queue/today");
   const buriedCard = beforeBuryQueue.cards[0];
   assert(buriedCard, "Durability fixture includes an active card to bury");
@@ -523,6 +551,9 @@ async function verifyForegroundAndStudyDurability() {
     "Bury excludes all active occurrences and preserves other cards' order");
 
   const studySnapshot = await get("migration/snapshot");
+  const afterPrefixStudy = stableStudyState(studySnapshot, importedStudy.repertoire_id);
+  for (const field of ["cards", "reviews", "teaching", "annotations", "prefixSplits"])
+    assert.deepEqual(afterPrefixStudy[field], beforePrefixStudy[field], `Prefix save preserves ${field}`);
   assert.equal(studySnapshot.source, "tempo-postgres");
   assert(studySnapshot.counts.reviews > 0 && studySnapshot.counts.teaching_states > 0
     && studySnapshot.counts.position_annotations > 0 && studySnapshot.counts.prefix_splits > 0);
@@ -555,6 +586,14 @@ async function verifyForegroundAndStudyDurability() {
   const afterReplaySnapshot = await get("migration/snapshot");
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
+  assert.deepEqual(await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`), savedPrefix,
+    "Canonical prefix persists across service recreation");
+  const replayedPrefix = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`, prefixBody,
+    { method: "PUT", operationId: prefixOperationId });
+  assert.deepEqual(replayedPrefix, savedPrefix, "Lost prefix-save acknowledgement replays the original receipt");
+  assert.equal((await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`)).revision, 1);
+  assert((await get("migration/snapshot")).tables.canonical_prefix_positions.some(row => row.preview_id === prefixPreview.preview_id),
+    "Verified anchors persist across restart");
   assert.deepEqual(afterRestartSnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id),
     savedBuriedEntry, "Buried queue entry survives service recreation");
   const afterRestartQueue = await get("queue/today");
@@ -649,6 +688,71 @@ async function verifyBlockedBurialRecovery() {
   assert.deepEqual((await get("queue/today")).cards.map(card => card.queue_entry_id),
     after.cards.map(card => card.queue_entry_id), "Recovered receipt replay never buries the next card");
   console.log("PASS PostgreSQL blocked burial resumes original payload through retry endpoint without duplicate effects");
+}
+
+async function verifyCurrentCanonicalRouteAdmission() {
+  const imported = await importFixture("current-canonical-routes.pgn",
+    '[Event "Current route"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 *');
+  const repertoireId = imported.repertoire_id;
+  await waitForStudyableImport(repertoireId);
+  const checkCurrentPrefix = async () => {
+    const admitted = await postCommand(`repertoires/${repertoireId}/canonical-prefix/preview`,
+      { movetext: "e4 e5 Nf3 Nc6 Bc4" });
+    const deadline = performance.now() + 30_000;
+    while (true) {
+      const preview = await get(`repertoires/${repertoireId}/canonical-prefix/preview/${admitted.preview_id}`);
+      if (preview.state === "ready") return preview;
+      assert.equal(preview.state, "checking", JSON.stringify(preview));
+      assert(performance.now() < deadline, "Current-source compatibility finishes");
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  };
+  const preview = await checkCurrentPrefix();
+  await postCommand(`repertoires/${repertoireId}/canonical-prefix`,
+    { preview_id: preview.preview_id, expected_revision: preview.revision }, { method: "PUT" });
+  const startingFen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq - 0 4";
+  const continuation = { repertoire_id: repertoireId, name: "Anchored continuation",
+    trained_color: "white", starting_fen: startingFen, moves: ["g8f6", "d2d3"] };
+  await postCommand("repertoire/branches", continuation);
+  await postCommand("repertoire/branches/remove", { repertoire_id: repertoireId,
+    starting_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3"] });
+  await assert.rejects(() => postCommand("repertoire/branches",
+    { ...continuation, moves: ["d7d6", "d2d3"] }), /outside the repertoire.*canonical prefix/);
+  await postCommand("repertoire/branches", { ...continuation, name: "Restored current route",
+    starting_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3"] });
+  await waitForStudyableImport(repertoireId);
+  const current = await checkCurrentPrefix();
+  assert.notEqual(current.preview_id, preview.preview_id,
+    "Changed source state requires a fresh computation");
+  await postCommand("repertoire/branches", { ...continuation, moves: ["d7d6", "d2d3"] });
+  await waitForStudyableImport(repertoireId);
+  const candidates = ["", "e4", "e4 e5", "e4 e5 Nf3", "e4 e5 Nf3 Nc6",
+    "e4 e5 Nf3 Nc6 Bc4", "e4 e5 Nf3 Nc6 Bc4 Bc5", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3",
+    "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d3"];
+  const requestedPreviewIds = new Set();
+  for (const movetext of candidates) {
+    const admitted = await postCommand(`repertoires/${repertoireId}/canonical-prefix/preview`, { movetext });
+    requestedPreviewIds.add(admitted.preview_id);
+  }
+  const retentionDeadline = performance.now() + 30_000;
+  while (true) {
+    const snapshot = await get("migration/snapshot");
+    const previews = snapshot.tables.canonical_prefix_previews.filter(row => row.repertoire_id === repertoireId);
+    const pending = (await get("system/tasks")).tasks.some(task => task.kind === "canonical_prefix_preview"
+      && requestedPreviewIds.has(task.deduplication_key) && ["queued", "leased", "retrying"].includes(task.state));
+    if (previews.length <= 9 && !pending) {
+      const repertoire = snapshot.tables.repertoires.find(row => row.id === repertoireId);
+      assert(previews.some(row => row.id === repertoire.canonical_prefix_preview_id),
+        "Retention preserves the active current certificate");
+      break;
+    }
+    assert(performance.now() < retentionDeadline, "Bounded preview retention finishes and removes abandoned scans");
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
+  console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
 }
 
 const actions = {
@@ -768,6 +872,8 @@ const actions = {
           "/source/scripts/check_postgres_opening_segmentation.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_evidence.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/scripts/check_postgres_canonical_freshness.py"]);
       },
       restoreConsumers: async () => {
         run("docker", [...compose, "start", ...workloadConsumers]);
@@ -896,6 +1002,7 @@ const actions = {
   },
   study_durability: async () => {
     await verifyForegroundAndStudyDurability();
+    await verifyCurrentCanonicalRouteAdmission();
     await verifyStudyBurialRetainsQuota();
     await verifyBlockedBurialRecovery();
   },

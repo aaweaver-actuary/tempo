@@ -36,7 +36,7 @@ def admitted_attempt(tmp_path, monkeypatch):
             "VALUES('recovery-card','recovery','prefix',?,'[\"e2e4\"]','learning',?,?)",
             ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", today, today),
         )
-        connection.execute("INSERT INTO repertoire_cards VALUES('recovery','recovery-card')")
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('recovery','recovery-card')")
         queue_entry_id = connection.execute(
             "INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) "
             "VALUES(?,'recovery-card',0,'new','recovery')", (today,),
@@ -370,4 +370,4 @@ def test_queue_origin_migration_follows_current_main_without_renumbering_publish
     assert (root/'migrations/031_defensive_analysis_pause.sql').is_file()
     queue_migration = root/'migrations/032_queue_attempt_origins.sql'
     assert 'INSERT INTO tempo_schema_migrations(version) VALUES (32);' in queue_migration.read_text()
-    assert POSTGRES_SCHEMA_VERSION == 32
+    assert POSTGRES_SCHEMA_VERSION == 35

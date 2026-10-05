@@ -81,9 +81,9 @@ class IncidentFixture:
             for first_ordinal in range(0, FIXTURE_SIZE, SETUP_BATCH_SIZE):
                 last_ordinal = min(first_ordinal + SETUP_BATCH_SIZE, FIXTURE_SIZE) - 1
                 database.execute(
-                    "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) "
+                    "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,canonical_route_source) "
                     "SELECT %s||'-card-'||lpad(number::text,5,'0'),%s,'prefix',%s,'[]',%s,"
-                    "CASE WHEN number>=%s THEN 'defensive' ELSE 'opening' END "
+                    "CASE WHEN number>=%s THEN 'defensive' ELSE 'opening' END,0 "
                     "FROM generate_series(%s::integer,%s::integer) number",
                     (self.prefix, self.repertoire_id, FEN, now[:10], NON_OPENING_START,
                      first_ordinal, last_ordinal),
@@ -94,8 +94,8 @@ class IncidentFixture:
             for first_ordinal in range(0, FIXTURE_SIZE, SETUP_BATCH_SIZE):
                 last_ordinal = min(first_ordinal + SETUP_BATCH_SIZE, FIXTURE_SIZE) - 1
                 database.execute(
-                    "INSERT INTO repertoire_cards(repertoire_id,card_id) "
-                    "SELECT %s,id FROM cards WHERE repertoire_id=%s AND id>=%s AND id<=%s ORDER BY id",
+                    "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) "
+                    "SELECT %s,id,0 FROM cards WHERE repertoire_id=%s AND id>=%s AND id<=%s ORDER BY id",
                     (self.repertoire_id, self.repertoire_id, self.card_id(first_ordinal), self.card_id(last_ordinal)),
                 )
                 database.commit()
@@ -121,6 +121,13 @@ class IncidentFixture:
                      generation, GRAPH_GENERATION, list(OBSOLETE_ORDINALS),
                      generation, GRAPH_GENERATION, NON_OPENING_START),
                 )
+            # One authored membership deliberately has no current graph step.
+            # Raw-page cleanup must checkpoint past it without deriving deletion.
+            database.execute("UPDATE cards SET canonical_route_source=1 WHERE id=%s", (self.card_id(3),))
+            database.execute("UPDATE repertoire_cards SET canonical_route_source=1 "
+                             "WHERE repertoire_id=%s AND card_id=%s", (self.repertoire_id, self.card_id(3)))
+            database.execute("DELETE FROM opening_graph_steps WHERE repertoire_id=%s AND generation=%s AND card_id=%s",
+                             (self.repertoire_id, GRAPH_GENERATION, self.card_id(3)))
             self.report["setup_stages"].append({"label": "graph_generations", "seconds": time.perf_counter() - stage_started_at})
             stage_started_at = time.perf_counter()
             database.execute(
@@ -427,6 +434,9 @@ class IncidentFixture:
             else:
                 assert state["links"] == [] and state["card"]["archived"] == 1, state
         assert self.link_state(self.card_id(0))["queue"][0]["status"] == "superseded"
+        authored = self.link_state(self.card_id(3))
+        assert authored["card"]["archived"] == 0 and authored["links"] == [{"repertoire_id": self.repertoire_id}], authored
+        self.report["regressions"].append("test_postgres_graph_bounded_cleanup_preserves_authored_membership_without_step")
         for ordinal in (4, 63_487, NON_OPENING_START, FIXTURE_SIZE - 1):
             state = self.link_state(self.card_id(ordinal))
             assert state["card"]["archived"] == 0 and state["links"], state
@@ -483,7 +493,7 @@ class IncidentFixture:
 
     def restore_obsolete_head(self) -> None:
         with psycopg.connect(DATABASE_URL) as database:
-            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s) "
+            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0) "
                              "ON CONFLICT DO NOTHING", (self.repertoire_id, self.card_id(0)))
             database.execute("UPDATE cards SET archived=0,repertoire_id=%s WHERE id=%s",
                              (self.repertoire_id, self.card_id(0)))

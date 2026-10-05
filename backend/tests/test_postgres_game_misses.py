@@ -26,7 +26,7 @@ def test_postgres_game_misses_advance_one_event_then_handoff_with_version(monkey
 
     class Database:
         def execute(self, statement, parameters=()):
-            if "FROM repertoire_decision_events" in statement:
+            if "FROM current_repertoire_decision_events" in statement:
                 return Cursor({"id": "event-one", "ply": 12} if parameters[1] == -1 else None)
             if "FROM game_derivation_jobs" in statement:
                 return Cursor({"derivation_version": 8, "completed_phases": 3,
