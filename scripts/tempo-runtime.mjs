@@ -282,6 +282,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       // LOADING with exit zero. Only a real PONG permits maintenance to advance.
       const terminalReply = /^(?:\(error\)\s*)?(?:ERR|NOAUTH|WRONGPASS|NOPERM|MISCONF|WRONGTYPE|BUSY|READONLY)\b/i.test(reason);
       const transient = !terminalReply && (interrupted || /^(?:\(error\)\s*)?LOADING\b/i.test(reason)
+        || /^Error: Server closed the connection$/i.test(reason)
         || /(?:connection (?:refused|reset|closed)|could not connect to redis|timed? out|timeout|interrupted)/i.test(reason));
       if (!transient || now() >= deadline) fail();
       if (!reportedWait) { log(`Tempo: waiting for Redis: ${reason}`); reportedWait = true; }

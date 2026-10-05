@@ -516,6 +516,20 @@ test("CLI Redis readiness retries strict loading error replies and connection re
   assert(fixture.answeredPong());
 });
 
+test("CLI Redis readiness retries server EOF until PONG with bounded probes", async t => {
+  const fixture = redisRuntimeFixture(t, [
+    { code: 1, stdout: "", stderr: "Error: Server closed the connection" },
+    { code: 0, stdout: "PONG", stderr: "" },
+  ]);
+  await fixture.runtime.config(); await fixture.runtime.ensureImages();
+  await fixture.runtime.ensureDatabase();
+  assert(fixture.answeredPong());
+  assert.equal(fixture.probes.length, 2);
+  assert.deepEqual(fixture.waits, [1000]);
+  assert.deepEqual(fixture.probes.map(probe => probe.options.timeout), [5000, 5000]);
+  assert(fixture.probes.every(probe => probe.options.allowFailure));
+});
+
 test("CLI Redis readiness probes terminal errors before Docker health retries and preserves PostgreSQL readiness", async t => {
   const blocked = redisRuntimeFixture(t, [{ code: 1, stdout: "", stderr: "NOAUTH Authentication required" }]);
   await blocked.runtime.config(); await blocked.runtime.ensureImages();
@@ -561,6 +575,28 @@ test("CLI Redis readiness expires at 180 seconds and records the real loading re
   assert.equal(operation.failed_phase, "checking_redis");
   assert(!Number.isNaN(Date.parse(operation.failed_at)));
   assert.match(operation.failure, /LOADING Redis is loading/);
+});
+
+test("CLI Redis readiness expires at the configured deadline on persistent server EOF without maintenance startup or publication", async t => {
+  const fixture = redisRuntimeFixture(t, [{ code: 1, stdout: "", stderr: "Error: Server closed the connection" }], 2500);
+  const receiptPath = join(fixture.fixture.stateDirectory, "deployment.json");
+  const receiptBefore = readFileSync(receiptPath, "utf8");
+  await fixture.runtime.config();
+  const { calls, handlers } = actions();
+  Object.assign(handlers, { ensureImages: fixture.runtime.ensureImages, ensureDatabase: fixture.runtime.ensureDatabase,
+    recordFailure: fixture.runtime.recordFailure });
+  await assert.rejects(executeLifecycle({ recreate: true }, handlers), /2\.5 seconds \(checking_redis\): Error: Server closed the connection/);
+  assert.equal(fixture.elapsedMilliseconds(), 2500);
+  assert.equal(fixture.probes.length, 3);
+  assert.deepEqual(fixture.waits, [1000, 1000, 500]);
+  assert.deepEqual(fixture.probes.map(probe => probe.options.timeout), [2500, 1500, 500]);
+  assert(!calls.some(name => ["checkSchema", "backup", "migrate", "startServices", "commitDeployment"].includes(name)));
+  assert.equal(readFileSync(receiptPath, "utf8"), receiptBefore);
+  const operation = JSON.parse(readFileSync(join(fixture.fixture.stateDirectory, "operation.json"), "utf8"));
+  assert.equal(operation.phase, "failed");
+  assert.equal(operation.failed_phase, "checking_redis");
+  assert(!Number.isNaN(Date.parse(operation.failed_at)));
+  assert.match(operation.failure, /Error: Server closed the connection/);
 });
 
 for (const [name, reply] of [
