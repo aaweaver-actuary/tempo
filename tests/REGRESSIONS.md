@@ -1952,3 +1952,40 @@ The state-action invalidation matrix explicitly asserts exactly one stale identi
 PR #66 current-main integration (October 5, 2026): published `032_queue_attempt_origins.sql` remains byte-for-byte unchanged. Only unmerged canonical migrations move to 033–035; readiness is 35. `test_queue_origin_migration_follows_current_main_without_renumbering_published_versions` retains contiguous numbering and the exact published queue-migration assertion. The populated PostgreSQL upgrade proves 31 → 32 queue backfill before 32 → 35 canonical admission, preserving both branches’ evidence-context and history assertions. Both regression inventories, queue recovery, Redis readiness and the guided-repair revert remain intact.
 
 The current-main queue-recovery fixtures now name `repertoire_cards(repertoire_id,card_id)` explicitly so canonical membership provenance retains its authored default. The first integrated affected-file run reproduced 39 setup errors from the older two-column INSERT; production behavior and all recovery assertions are unchanged. The same correction applies to the real PostgreSQL queue-recovery rehearsal.
+# PR #66 canonical-prefix contracts
+
+These contracts are proved by committed domain state and product reads. The
+SQLite cases live in `backend/tests/test_canonical_repertoire_prefix.py`; real
+PostgreSQL proofs run in the mandatory canonical freshness rehearsal inside
+`make docker-durability` and the CI PostgreSQL layer.
+
+| Contract | Named regular SQLite regression | Real PostgreSQL proof |
+| --- | --- | --- |
+| CP-1 deterministic route certification | `test_canonical_route_certification_preserves_best_verified_origin_for_each_source_revision` | CF-14 `prove_deterministic_route_certification` |
+| CP-2 selected-batch closure | `test_canonical_selected_batch_connector_admits_new_fen_continuation_in_either_order`; `test_canonical_selected_batch_resolves_multi_hop_continuations` | CF-13 `prove_selected_batch_canonical_routes` |
+| CP-3 atomic rejection | `test_canonical_selected_batch_rejects_disconnected_or_prefix_conflicting_routes_atomically` | CF-13 full rollback snapshots |
+| CP-4 fail-closed freshness | `test_canonical_scope_lifecycle_hides_stale_publications_rejects_actions_and_recovers`; `test_canonical_publication_identities_advance_independently_through_product_commands` and existing isolated freshness cases | CF-1/3/4, CF-12 isolated fences, CF-15 `prove_canonical_scope_lifecycle` |
+| CP-5 stale-action immutability | `test_canonical_discovery_state_actions_reject_stale_scope_without_mutation`; connected lifecycle | CF-12 nine-case matrix and both real lock-race directions; CF-15 stale rendered actions |
+| CP-6 recoverability | Connected lifecycle and product-command identity matrix | CF-15 normal coverage, opportunity and game workers after recheck |
+| CP-7 backend parity | Certificate persistence matrix using `tests/fixtures/canonical-prefix-routes.json` | CF-14 compares committed `fen_key`, `route_json`, `ply`, `in_scope`, `source_revision` directly against SQLite for identical inputs |
+
+CP-1 first failed on SQLite for repeated forward visits, a later longer origin,
+equal-ply arrival order and an older source write. Real PostgreSQL failed with
+`ON CONFLICT DO UPDATE command cannot affect row a second time`. Storage-only
+repair left four SQLite connector-order cases failing: an already accepted FEN
+continuation kept origin11 despite a selected connector proving origin7. CF-13
+reproduced that remaining error after CF-14 passed.
+
+The strengthened CP-2/3 tests use the repeated connector in both PGN/paste input
+orders, preserve saved starts/moves, compare durable certificates, observe
+uncommitted writes from a separate reader, and snapshot rollback of lines,
+annotations, depths, certificates, source/global identities and tasks. Duplicate
+replay leaves certificate rows unchanged; selecting an existing independent
+duplicate does not recertify its stale unique endpoint.
+
+The lifecycle stubs only external Explorer transport/token inputs. Coverage and
+opportunity status come from normal bounded workers, never manual completion.
+Product-command identity tests preserve the intentional global-generation bump
+on prefix/source changes; existing isolated-fence cases still prove each
+individual publication identity. Same-prefix recheck preserves revisions and
+normal refresh restores public coverage, discoveries and game-derived reads.

@@ -1627,21 +1627,34 @@ def selected_batch_pgn(lines):
     return '\n\n'.join(rendered)
 
 
-def admit_selected_batch(admission, lines, selections=None):
+def admit_selected_batch(admission, lines, selections=None, before_commit=None):
     text = selected_batch_pgn(lines)
     if admission == 'pgn':
         import asyncio
         from io import BytesIO
         from fastapi import UploadFile
-        from app.main import import_pgn
-        return asyncio.run(import_pgn(UploadFile(filename='italian.pgn', file=BytesIO(text.encode())), 'white', 3, None))
+        from app import main
+        from contextlib import contextmanager
+        original_connection = main.connection
+        @contextmanager
+        def observed_connection(*args, **kwargs):
+            with original_connection(*args, **kwargs) as connection:
+                yield connection
+                if before_commit:
+                    before_commit(connection)
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(main, 'connection', observed_connection)
+            return asyncio.run(main.import_pgn(UploadFile(filename='italian.pgn', file=BytesIO(text.encode())), 'white', 3, None))
     from app.services.analysis_paste import build_paste_preview, parse_pasted_lines, commit_pasted_lines
     with database.connection() as connection:
         preview = build_paste_preview(connection, text, None, None)
         chosen = selections if selections is not None else [
             {'index': index, 'repertoire_id': 'italian', 'acknowledge_conflict': True}
             for index in range(len(lines))]
-        return commit_pasted_lines(connection, text, None, None, preview['preview_token'], chosen, preview, parse_pasted_lines(text, None))
+        result = commit_pasted_lines(connection, text, None, None, preview['preview_token'], chosen, preview, parse_pasted_lines(text, None))
+        if before_commit:
+            before_commit(connection)
+        return result
 
 
 def selected_batch_snapshot():
@@ -1657,26 +1670,57 @@ def canonical_route_fixture():
     return json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/canonical-prefix-routes.json').read_text())
 
 
-def selected_batch_fixture():
+def selected_batch_fixture(*, repeated=False, current_longer_origin=False):
     add_line(ITALIAN)
+    fixture = canonical_route_fixture()
+    if current_longer_origin:
+        add_line(fixture['current_longer_connector'], 'longer-current-origin')
     apply_preview(prepare_prefix())
-    connector = [*ITALIAN, 'f8c5', 'c2c3']
-    continuation = ['g8f6', 'd2d4']
+    connector = fixture['repeated_connector'] if repeated else [*ITALIAN, 'f8c5', 'c2c3']
+    continuation = fixture['continuation'] if repeated else ['g8f6', 'd2d4']
     return [(chess.STARTING_FEN, connector),
             (prefix_projection(connector)['ending_fen'], continuation)]
 
 
 @pytest.mark.parametrize('admission', ['pgn', 'paste'])
 @pytest.mark.parametrize('reverse_order', [False, True])
-def test_canonical_selected_batch_connector_admits_new_fen_continuation_in_either_order(prefix_database, quiet_prefix_writes, admission, reverse_order):
+@pytest.mark.parametrize('current_longer_origin', [False, True])
+def test_canonical_selected_batch_connector_admits_new_fen_continuation_in_either_order(prefix_database, quiet_prefix_writes, admission, reverse_order, current_longer_origin):
     from app.services.canonical_prefix import line_origin, read_prefix
-    lines = selected_batch_fixture()
-    expected_route = [*lines[0][1], *lines[1][1]]
-    admit_selected_batch(admission, list(reversed(lines)) if reverse_order else lines)
+    lines = selected_batch_fixture(repeated=True, current_longer_origin=current_longer_origin)
+    expected_origin = lines[0][1][:7]
+    expected_route = [*expected_origin, *lines[1][1]]
+    selected = list(reversed(lines)) if reverse_order else lines
+    before = selected_batch_snapshot()
+    observed = []
+    def observe_uncommitted(connection):
+        assert selected_batch_snapshot() == before
+        assert connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0] == 3 + int(current_longer_origin)
+        observed.append(True)
+    admit_selected_batch(admission, [*selected, selected[0]], before_commit=observe_uncommitted)
+    assert observed == [True]
     with database.read_connection() as connection:
         current = read_prefix(connection, 'italian')
-        assert connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0] == 3
+        assert connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0] == 3 + int(current_longer_origin)
+        assert line_origin(connection, current['preview_id'], lines[1][0]) == expected_origin
         assert line_origin(connection, current['preview_id'], prefix_projection(expected_route)['ending_fen']) == expected_route
+        for starting_fen, moves in lines:
+            assert connection.execute('SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id=? AND start_fen=? AND moves_json=?',
+                                      ('italian', starting_fen, json.dumps(moves))).fetchone()[0] == 1
+        for route in (expected_origin, expected_route):
+            stored = connection.execute('SELECT route_json,ply,in_scope,source_revision FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? AND in_scope=1',
+                                        (current['preview_id'], position_key_for_test(prefix_projection(route)['ending_fen']))).fetchone()
+            assert tuple(stored) == (json.dumps(route), len(route), 1, current['source_revision'])
+        expected_positions = {}
+        for validation in (validate_scoped_line(chess.STARTING_FEN, lines[0][1], ITALIAN, []),
+                           validate_scoped_line(lines[1][0], lines[1][1], ITALIAN, expected_origin)):
+            for position in validation['positions']:
+                key = (position['fen_key'], position['in_scope'])
+                value = (position['ply'], position['route_json'])
+                expected_positions[key] = min(expected_positions.get(key, value), value)
+        expected_rows = sorted((key[0], value[1], value[0], key[1], current['source_revision']) for key, value in expected_positions.items())
+        assert sorted(tuple(row) for row in connection.execute('SELECT fen_key,route_json,ply,in_scope,source_revision FROM canonical_prefix_positions WHERE preview_id=? AND source_revision=?',
+                                                             (current['preview_id'], current['source_revision']))) == expected_rows
 
 
 @pytest.mark.parametrize('admission', ['pgn', 'paste'])
@@ -1695,16 +1739,18 @@ def test_canonical_selected_batch_resolves_multi_hop_continuations(prefix_databa
 
 @pytest.mark.parametrize('admission', ['pgn', 'paste'])
 @pytest.mark.parametrize('invalid_kind', ['disconnected', 'prefix-conflicting'])
-def test_canonical_selected_batch_rejects_disconnected_or_prefix_conflicting_routes_atomically(prefix_database, quiet_prefix_writes, admission, invalid_kind):
+@pytest.mark.parametrize('reverse_order', [False, True])
+def test_canonical_selected_batch_rejects_disconnected_or_prefix_conflicting_routes_atomically(prefix_database, quiet_prefix_writes, admission, invalid_kind, reverse_order):
     from fastapi import HTTPException
-    lines = selected_batch_fixture()
+    lines = selected_batch_fixture(repeated=True)
     if invalid_kind == 'disconnected':
         invalid_line = (prefix_projection(['d2d4', 'd7d5', 'c2c4'])['ending_fen'], ['g8f6', 'b1c3'])
     else:
         invalid_line = (chess.STARTING_FEN, ['e2e4', 'e7e5', 'g1f3', 'd7d6', 'f1c4'])
     before = selected_batch_snapshot()
     with pytest.raises(HTTPException) as rejection:
-        admit_selected_batch(admission, [*lines, invalid_line])
+        selected = [*lines, invalid_line]
+        admit_selected_batch(admission, list(reversed(selected)) if reverse_order else selected)
     assert rejection.value.status_code == 409
     assert selected_batch_snapshot() == before
 
@@ -1756,11 +1802,12 @@ def test_canonical_selected_batch_preserves_duplicates_and_certifies_final_sourc
     unrelated_route = [*ITALIAN, 'g8f6', 'd2d3']
     add_line(unrelated_route, 'unrelated-current-route')
     apply_preview(prepare_prefix())
-    result = admit_selected_batch(admission, [*lines, lines[0]])
+    selected = [*lines, lines[0], (chess.STARTING_FEN, unrelated_route)]
+    result = admit_selected_batch(admission, selected)
     if admission == 'paste':
-        assert [item['duplicate'] for item in result['saved']] == [False, False, True]
+        assert [item['duplicate'] for item in result['saved']] == [False, False, True, True]
     else:
-        assert result.unique_lines == 2
+        assert result.unique_lines == 3
     with database.read_connection() as connection:
         current = read_prefix(connection, 'italian')
         for route in (lines[0][1], [*lines[0][1], *lines[1][1]]):
@@ -1772,12 +1819,14 @@ def test_canonical_selected_batch_preserves_duplicates_and_certifies_final_sourc
             assert connection.execute("SELECT comment FROM position_annotations WHERE repertoire_id='italian' AND fen_key=?", (position_key_for_test(prefix_projection(lines[0][1])['ending_fen']),)).fetchone()[0] == 'Selected route annotation'
         before_revision = current['source_revision']
         before_lines = connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0]
-    replayed = admit_selected_batch(admission, [*lines, lines[0]])
+        before_certificates = [tuple(row) for row in connection.execute('SELECT * FROM canonical_prefix_positions ORDER BY preview_id,fen_key,in_scope')]
+    replayed = admit_selected_batch(admission, selected)
     if admission == 'paste':
         assert all(item['duplicate'] for item in replayed['saved'])
     with database.read_connection() as connection:
         assert read_prefix(connection, 'italian')['source_revision'] == before_revision
         assert connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0] == before_lines
+        assert [tuple(row) for row in connection.execute('SELECT * FROM canonical_prefix_positions ORDER BY preview_id,fen_key,in_scope')] == before_certificates
 
 
 @pytest.mark.parametrize('reverse_order', [False, True])
@@ -1850,3 +1899,161 @@ def test_canonical_route_certification_preserves_best_verified_origin_for_each_s
             outside = connection.execute('SELECT route_json,ply,in_scope,source_revision FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? AND in_scope=0',
                                          (initial['preview_id'], target)).fetchone()
             assert tuple(outside) == (json.dumps(ITALIAN[:3]), 3, 0, initial['source_revision'])
+
+
+def seed_canonical_publication_lifecycle():
+    from datetime import datetime, timezone
+    from app import main
+    from app.services.cards import card_id
+    route = [*ITALIAN, 'f8c5', 'c2c3']
+    add_line(route)
+    identifier = card_id(chess.STARTING_FEN, ITALIAN)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,'italian','response',?,?,'2026-10-05')", (identifier, chess.STARTING_FEN, json.dumps(ITALIAN)))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian',?)", (identifier,))
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-05')")
+        connection.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('lifecycle-game','lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)", (datetime.now(timezone.utc).isoformat(), chess.STARTING_FEN, json.dumps([*route, 'a7a6', 'd2d4'])))
+    main.make_main_repertoire('italian', None)
+    apply_preview(prepare_prefix())
+    return identifier, position_key_for_test(prefix_projection(route)['ending_fen'])
+
+
+def refresh_canonical_publications():
+    """Exercise admissions and real bounded workers; only transport is stubbed."""
+    from app import main
+    from app.services import repertoire_coverage as coverage, repertoire_opportunities as opportunities
+    from app.services.repertoire_comparison import compare_all_games
+    from app.services.durable_tasks import complete_task
+    compare_all_games()
+    admitted = main.refresh_repertoire_coverage('italian', None)
+    processed_nodes = 0
+    for _ in range(30):
+        node = coverage.claim_coverage_node()
+        if node is None:
+            break
+        assert node['run_id'] == admitted['run_id']
+        coverage.execute_coverage_node(node)
+        processed_nodes += 1
+    else:
+        pytest.fail('Canonical lifecycle coverage did not finish its bounded fixture')
+    assert processed_nodes > 0
+    assert main.repertoire_coverage('italian')['status'] == 'complete'
+    main.refresh_repertoire_opportunities('italian', None)
+    for _ in range(80):
+        task = claim_task('repertoire_opportunity')
+        if task is None:
+            break
+        assert task['deduplication_key'] == 'italian'
+        if not opportunities.execute_opportunity_slice(task):
+            assert complete_task(task['id'], task['generation'], task['lease_token'])
+    else:
+        pytest.fail('Canonical lifecycle opportunity refresh did not finish')
+    return admitted['run_id']
+
+
+@pytest.fixture
+def canonical_explorer_transport(monkeypatch):
+    from app.services import repertoire_coverage as coverage
+    def response(fen, *_):
+        board = chess.Board(fen)
+        moves = [move for move in ('f8c5', 'g8f6', 'a7a6') if chess.Move.from_uci(move) in board.legal_moves]
+        assert moves
+        return {'moves': [{'uci': move, 'white': 500, 'draws': 0, 'black': 0} for move in moves]}
+    monkeypatch.setattr(coverage, '_fetch_explorer', response)
+    previous_token = coverage.get_explorer_session_token()
+    coverage.set_explorer_session_token('fixture-ephemeral-token')
+    yield
+    coverage.set_explorer_session_token(previous_token)
+
+
+def assert_canonical_publication_visible(target_key):
+    from app import main
+    from app.services.canonical_scope_freshness import scope_identity, game_scope_generation
+    visible = main.repertoire_opportunities('italian')['opportunities']
+    selected = next(item for item in visible if item['fen_key'] == target_key and item['opponent_move_uci'] == 'a7a6')
+    assert selected['id'] in {item['id'] for item in main.discoveries_feed()['discoveries']}
+    assert main.repertoire_coverage_gaps('italian')['gaps']
+    assert main.repertoire_statistics_summary('italian', 'all')['games']['matched'] == 1
+    with database.read_connection() as connection:
+        current = {**scope_identity(connection, 'italian'), 'game_scope_generation': game_scope_generation(connection)}
+        publication = dict(connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (selected['id'],)).fetchone())
+        assert all(publication[field] == value for field, value in current.items())
+        for table in ('game_repertoire_matches', 'repertoire_comparisons', 'repertoire_decision_events'):
+            assert connection.execute(f"SELECT 1 FROM current_{table} WHERE game_id='lifecycle-game'").fetchone()
+    return selected['id']
+
+
+def revise_lifecycle_source(identifier):
+    from app import main
+    from app.models import CardRevisionRequest
+    main.revise_card(identifier, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, 'f8c5'], history_mode='preserve', expected_revision=1), None)
+
+
+def test_canonical_scope_lifecycle_hides_stale_publications_rejects_actions_and_recovers(prefix_database, canonical_explorer_transport):
+    """CP-4/5/6 through public reads, actual writes and ordinary refresh."""
+    from fastapi import HTTPException
+    from app import main
+    from app.services.canonical_prefix import read_prefix
+    identifier, target_key = seed_canonical_publication_lifecycle()
+    old_run = refresh_canonical_publications()
+    opportunity_id = assert_canonical_publication_visible(target_key)
+    with database.read_connection() as connection:
+        old_prefix = read_prefix(connection, 'italian')
+        before = dict(connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone())
+    revise_lifecycle_source(identifier)
+    assert main.repertoire_coverage('italian')['run_id'] is None
+    assert main.repertoire_coverage_gaps('italian')['gaps'] == []
+    assert main.repertoire_opportunities('italian')['opportunities'] == []
+    assert main.discoveries_feed()['total'] == 0
+    assert main.repertoire_statistics_summary('italian', 'all')['games']['matched'] == 0
+    for action in (main.dismiss_repertoire_opportunity, main.acknowledge_repertoire_opportunity, main.snooze_repertoire_opportunity):
+        with pytest.raises(HTTPException) as rejection:
+            action('italian', opportunity_id, None)
+        assert rejection.value.status_code == 409 and 'refresh' in rejection.value.detail.lower()
+        with database.read_connection() as connection:
+            assert dict(connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone()) == before
+            for table in ('game_repertoire_matches', 'repertoire_comparisons', 'repertoire_decision_events'):
+                assert not connection.execute(f"SELECT 1 FROM current_{table} WHERE game_id='lifecycle-game'").fetchone()
+    apply_preview(prepare_prefix())
+    assert refresh_canonical_publications() != old_run
+    assert assert_canonical_publication_visible(target_key) == opportunity_id
+    with database.read_connection() as connection:
+        current = read_prefix(connection, 'italian')
+        assert current['revision'] == old_prefix['revision'] and current['source_revision'] > old_prefix['source_revision']
+        assert current['preview_id'] != old_prefix['preview_id']
+        assert {row[0] for row in connection.execute('SELECT source_revision FROM canonical_prefix_positions WHERE preview_id=?', (current['preview_id'],))} == {current['source_revision']}
+
+
+@pytest.mark.parametrize('dimension', ['prefix', 'source', 'global'])
+def test_canonical_publication_identities_advance_independently_through_product_commands(prefix_database, canonical_explorer_transport, dimension):
+    """Separate identity fences while preserving intentional global coupling."""
+    from app import main
+    from app.services.canonical_prefix import read_prefix
+    from app.services.canonical_scope_freshness import game_scope_generation
+    identifier, target_key = seed_canonical_publication_lifecycle()
+    refresh_canonical_publications()
+    opportunity_id = assert_canonical_publication_visible(target_key)
+    with database.read_connection() as connection:
+        before = read_prefix(connection, 'italian')
+        before_global = game_scope_generation(connection)
+    if dimension == 'prefix':
+        apply_preview(prepare_prefix([*ITALIAN, 'f8c5']))
+    elif dimension == 'source':
+        revise_lifecycle_source(identifier)
+    else:
+        main.make_main_repertoire('other', None)
+    with database.read_connection() as connection:
+        after = read_prefix(connection, 'italian')
+        assert (after['revision'] > before['revision']) == (dimension == 'prefix')
+        assert (after['source_revision'] > before['source_revision']) == (dimension == 'source')
+        assert (after['preview_id'] != before['preview_id']) == (dimension == 'prefix')
+        assert game_scope_generation(connection) > before_global
+        after_global = game_scope_generation(connection)
+    assert main.repertoire_opportunities('italian')['opportunities'] == []
+    assert main.discoveries_feed()['total'] == 0
+    apply_preview(prepare_prefix(after['moves']))
+    with database.read_connection() as connection:
+        rechecked = read_prefix(connection, 'italian')
+        assert (rechecked['revision'], rechecked['source_revision'], game_scope_generation(connection)) == (after['revision'], after['source_revision'], after_global)
+    refresh_canonical_publications()
+    assert assert_canonical_publication_visible(target_key) == opportunity_id

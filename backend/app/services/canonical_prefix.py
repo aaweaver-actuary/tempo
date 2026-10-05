@@ -180,13 +180,14 @@ def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[
     local_positions: dict[str, dict[str, dict]] = {repertoire_id: {} for repertoire_id in prefixes}
     certified_origins: dict[tuple[str, str], list[str] | None] = {}
     validated_routes: dict[int, dict] = {}
-    pending_indices = sorted(range(len(candidates)), key=lambda index: (
+    ordered_indices = sorted(range(len(candidates)), key=lambda index: (
         candidates[index][0], position_key(candidates[index][1]), tuple(candidates[index][2])))
 
-    while pending_indices:
+    while True:
         unresolved_indices = []
         failed_routes = {}
-        for candidate_index in pending_indices:
+        origins_improved = False
+        for candidate_index in ordered_indices:
             repertoire_id, starting_fen, moves = candidates[candidate_index]
             prefix = prefixes[repertoire_id]
             if not prefix["moves"]:
@@ -218,12 +219,17 @@ def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[
                 previous = local_positions[repertoire_id].get(position["fen_key"])
                 if previous is None or position_rank(position) < position_rank(previous):
                     local_positions[repertoire_id][position["fen_key"]] = position
-        if len(unresolved_indices) == len(pending_indices):
+                    origins_improved = True
+        # Already valid continuations may have used an older, longer origin.
+        # Revisit them as well until every selected route uses the best closure.
+        if origins_improved:
+            continue
+        if unresolved_indices:
             from fastapi import HTTPException
             failure = failed_routes[unresolved_indices[0]]
             raise HTTPException(409, "This line is outside the repertoire's canonical prefix. " + failure["reason"]
                                 + ". Check the canonical prefix again to verify current routes.")
-        pending_indices = unresolved_indices
+        break
     return [validated_routes[index] for index in range(len(candidates))]
 
 
