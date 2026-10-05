@@ -1011,6 +1011,388 @@ it("late integrity count refresh cannot close an explicitly opened repair dialog
   expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
 });
 
+type IntegrityOrderingRepertoire = {
+  id: string;
+  name: string;
+  source_name: string;
+  line_count: number;
+  card_count: number;
+  due_count: number;
+  graph_state: "ready";
+  graph_generation: number;
+  integrity_status: "needs_repair" | "clean";
+  integrity_issue_count: number;
+  blocked_due_count: number;
+};
+
+function integrityOrderingRepertoire(id: string, issueCount: number, blockedDue = issueCount * 3): IntegrityOrderingRepertoire {
+  return {
+    id, name: `Repair ${id}`, source_name: "fixture.pgn", line_count: 2,
+    card_count: 12, due_count: 12, graph_state: "ready", graph_generation: 2,
+    integrity_status: issueCount ? "needs_repair" : "clean",
+    integrity_issue_count: issueCount, blocked_due_count: blockedDue,
+  };
+}
+
+async function renderIntegrityOrderingHome(initialRepertoires = [integrityOrderingRepertoire("rep", 2)]) {
+  const integrityReads: {
+    passive: boolean;
+    resolve: (response: Response) => void;
+    reject: (error: Error) => void;
+  }[] = [];
+  const queueResponses: ((response: Response) => void)[] = [];
+  const integrityEvidenceReads: string[] = [];
+  let holdIntegrityReads = false;
+  let holdQueueReads = false;
+  let initialIntegrityReads = 0;
+  const queuePayload = { count: 1, cards: [{
+    id: "integrity-ordering-card", queue_entry_id: 874, start_fen: new Chess().fen(),
+    moves: ["e2e4", "e7e5", "g1f3"], trained_color: "white", content_type: "opening",
+    repertoire_id: "rep", repertoire_name: "Integrity ordering study", repertoire_source: "fixture.pgn", revision: 1,
+  }] };
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("/api/queue/window")) {
+      if (holdQueueReads) return new Promise<Response>(resolve => queueResponses.push(resolve));
+      return Promise.resolve(Response.json(queuePayload));
+    }
+    if (url.endsWith("/repertoires")) {
+      if (!holdIntegrityReads) {
+        initialIntegrityReads += 1;
+        return Promise.resolve(Response.json({ repertoires: initialRepertoires }));
+      }
+      return new Promise<Response>((resolve, reject) => integrityReads.push({
+        passive: new Headers(init?.headers).get("X-Tempo-Work-Class") === "background", resolve, reject,
+      }));
+    }
+    const integrityMatch = url.match(/\/api\/repertoires\/([^/]+)\/integrity$/);
+    if (integrityMatch) {
+      const repertoireId = decodeURIComponent(integrityMatch[1]);
+      integrityEvidenceReads.push(repertoireId);
+      return Promise.resolve(Response.json({ repertoire_id: repertoireId, status: "needs_repair", issue_count: 1,
+        first_issue_id: `${repertoireId}-ordering-issue`, scan_status: "idle", scan_generation: "scan:2",
+        scan_progress: { completed: 2, total: 2 }, last_scan_error: null,
+        issues: [{ id: `${repertoireId}-ordering-issue`, kind: "multiple_responses", signature: `${repertoireId}-ordering-signature`,
+          fen: new Chess().fen(), fen_key: new Chess().fen().split(" ").slice(0, 4).join(" "),
+          trained_color: "white", moves: [], sources: [{ type: "line", id: `${repertoireId}-ordering-source` }] }] }));
+    }
+    if (url.endsWith("/api/cards/integrity-ordering-card") && init?.method === "PUT")
+      return Promise.resolve(Response.json({ card_id: "integrity-ordering-card", replaced: false, history_mode: "preserve", revision: 2 }));
+    if (url.endsWith("/api/repertoire/lines")) return Promise.resolve(Response.json({ lines: [] }));
+    return Promise.resolve(Response.json({ providers: [], states: [], lines: [], moves: [] }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Home />);
+  await screen.findByRole("heading", { name: "Integrity ordering study" });
+  const queueReadCount = () => fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
+  // The startup check and both queue refreshes must finish before requests are held.
+  await waitFor(() => {
+    expect(queueReadCount()).toBeGreaterThanOrEqual(2);
+    expect(initialIntegrityReads).toBe(queueReadCount() + 1);
+    expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+    expect(screen.getByRole("button", { name: "Resume repair" })).not.toBeNull();
+  });
+  holdIntegrityReads = true;
+  const studyBoard = screen.getByTestId("board");
+  const studyMove = within(studyBoard).getByRole("button", { name: "e2e4" });
+  studyMove.focus();
+  return {
+    fetchMock, integrityReads, integrityEvidenceReads, queueResponses, queuePayload,
+    queueReadCount, studyBoard, studyMove,
+    holdQueueReads: () => { holdQueueReads = true; },
+    resolveIntegrity: async (index: number, repertoires: IntegrityOrderingRepertoire[]) => {
+      expect(integrityReads[index]).toBeDefined();
+      await act(async () => { integrityReads[index].resolve(Response.json({ repertoires })); });
+    },
+  };
+}
+
+type IntegrityOrderingHome = Awaited<ReturnType<typeof renderIntegrityOrderingHome>>;
+
+function captureIntegrityOrderingStudy(home: IntegrityOrderingHome) {
+  const training = useTrainingStore.getState();
+  return {
+    attempt: structuredClone(training.attempt), queueEntryId: training.getCard().queueEntryId,
+    fen: training.currentFenString, step: training.step,
+    boardFen: home.studyBoard.getAttribute("data-fen"), queueReads: home.queueReadCount(),
+  };
+}
+
+function expectIntegrityOrderingStudy(home: IntegrityOrderingHome, before: ReturnType<typeof captureIntegrityOrderingStudy>) {
+  const training = useTrainingStore.getState();
+  expect(training.attempt).toEqual(before.attempt);
+  expect(training.getCard().queueEntryId).toBe(before.queueEntryId);
+  expect(training.currentFenString).toBe(before.fen);
+  expect(training.step).toBe(before.step);
+  expect(home.studyBoard.getAttribute("data-fen")).toBe(before.boardFen);
+  expect(home.queueReadCount()).toBe(before.queueReads);
+}
+
+function expectIntegrityOrderingCounts(issueCount: number, blockedDue: number) {
+  const notice = screen.getByRole("button", { name: "Resume repair" }).closest('[role="status"]')!;
+  expect(notice.textContent).toContain(`${blockedDue} opening card${blockedDue === 1 ? "" : "s"} paused by repertoire repair.`);
+  expect(notice.textContent).toContain(`${issueCount} issue${issueCount === 1 ? "" : "s"} remaining.`);
+}
+
+async function requestIntegrityOrderingRefresh(kind: "generic" | "passive", repertoireId?: string) {
+  await act(async () => {
+    window.dispatchEvent(kind === "passive"
+      ? new CustomEvent("tempo-integrity-repair-confirmed", { detail: { repertoireId: repertoireId ?? "rep" } })
+      : new CustomEvent("tempo:integrity", { detail: repertoireId ? { repertoireId } : undefined }));
+  });
+}
+
+async function expectIntegrityOrderingDialog(repertoireId: string) {
+  const dialog = screen.queryByRole("dialog", { name: "Choose one response per position" });
+  expect(dialog).not.toBeNull();
+  await within(dialog!).findByText(`Affected sources: line ${repertoireId}-ordering-source`);
+  return dialog!;
+}
+
+describe("integrity request intent ordering regressions", () => {
+  for (const refreshKind of ["generic", "passive"] as const) {
+    for (const completionOrder of ["latest first", "older first"] as const) {
+      it(`${refreshKind === "generic"
+        ? "newer generic integrity refresh preserves an earlier preferred repair-open intent"
+        : "newer passive reconciliation preserves a current preferred repair-open intent"} (${completionOrder})`, async () => {
+        const home = await renderIntegrityOrderingHome();
+        const before = captureIntegrityOrderingStudy(home);
+        await requestIntegrityOrderingRefresh("generic", "rep");
+        await requestIntegrityOrderingRefresh(refreshKind);
+        expect(home.integrityReads.map(read => read.passive)).toEqual([false, refreshKind === "passive"]);
+        if (completionOrder === "older first") {
+          await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+          expectIntegrityOrderingCounts(2, 6);
+          expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+          expect(document.activeElement).toBe(home.studyMove);
+          expectIntegrityOrderingStudy(home, before);
+        }
+        await home.resolveIntegrity(1, [integrityOrderingRepertoire("rep", 1, 3)]);
+        expectIntegrityOrderingCounts(1, 3);
+        const dialog = await expectIntegrityOrderingDialog("rep");
+        fireEvent.click(within(dialog).getByRole("button", { name: "e2e4" }));
+        if (completionOrder === "latest first")
+          await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+        expectIntegrityOrderingCounts(1, 3);
+        expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
+        expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
+        expect(home.integrityEvidenceReads).toEqual(["rep"]);
+        expectIntegrityOrderingStudy(home, before);
+      });
+    }
+  }
+
+  for (const preferredState of ["clean", "removed"] as const) {
+    for (const refreshKind of ["generic", "passive"] as const) {
+      for (const completionOrder of ["latest first", "older first"] as const) {
+        it(`clean authoritative reconciliation retires obsolete preferred repair intent (${preferredState}, ${refreshKind}, ${completionOrder})`, async () => {
+          const home = await renderIntegrityOrderingHome();
+          const before = captureIntegrityOrderingStudy(home);
+          await requestIntegrityOrderingRefresh("generic", "rep");
+          await requestIntegrityOrderingRefresh(refreshKind);
+          if (completionOrder === "older first") {
+            await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+            expectIntegrityOrderingCounts(2, 6);
+            expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+          }
+          const latest = [integrityOrderingRepertoire("other", 1, 4)];
+          if (preferredState === "clean") latest.unshift(integrityOrderingRepertoire("rep", 0));
+          await home.resolveIntegrity(1, latest);
+          expectIntegrityOrderingCounts(1, 4);
+          if (completionOrder === "latest first")
+            await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+          expectIntegrityOrderingCounts(1, 4);
+          expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+          expect(home.integrityEvidenceReads).toEqual([]);
+          expect(document.activeElement).toBe(home.studyMove);
+          expectIntegrityOrderingStudy(home, before);
+          // A later needs-repair snapshot must not revive the retired intent.
+          await requestIntegrityOrderingRefresh("passive");
+          await home.resolveIntegrity(2, [integrityOrderingRepertoire("other", 1, 4), integrityOrderingRepertoire("rep", 1, 3)]);
+          expectIntegrityOrderingCounts(2, 7);
+          expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+          expect(document.activeElement).toBe(home.studyMove);
+          fireEvent.click(screen.getByRole("button", { name: "Resume repair" }));
+          await expectIntegrityOrderingDialog("other");
+          expect(home.integrityEvidenceReads).toEqual(["other"]);
+          expectIntegrityOrderingStudy(home, before);
+        });
+      }
+    }
+  }
+
+  for (const trailingRefresh of ["none", "generic", "passive"] as const) {
+    for (const completionOrder of ["latest first", "older first"] as const) {
+      it(`newer preferred repertoire intent cannot be replaced by an older preferred request (${trailingRefresh}, ${completionOrder})`, async () => {
+        const home = await renderIntegrityOrderingHome();
+        const before = captureIntegrityOrderingStudy(home);
+        await requestIntegrityOrderingRefresh("generic", "rep");
+        await requestIntegrityOrderingRefresh("generic", "other");
+        if (trailingRefresh !== "none") await requestIntegrityOrderingRefresh(trailingRefresh);
+        const latestIndex = trailingRefresh === "none" ? 1 : 2;
+        if (completionOrder === "older first") {
+          await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+          if (latestIndex === 2) await home.resolveIntegrity(1, [integrityOrderingRepertoire("other", 5, 10)]);
+          expectIntegrityOrderingCounts(2, 6);
+          expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+          expect(document.activeElement).toBe(home.studyMove);
+        }
+        await home.resolveIntegrity(latestIndex, [integrityOrderingRepertoire("rep", 1, 3), integrityOrderingRepertoire("other", 2, 4)]);
+        expectIntegrityOrderingCounts(3, 7);
+        const dialog = await expectIntegrityOrderingDialog("other");
+        fireEvent.click(within(dialog).getByRole("button", { name: "e2e4" }));
+        if (completionOrder === "latest first") {
+          if (latestIndex === 2) await home.resolveIntegrity(1, [integrityOrderingRepertoire("other", 5, 10)]);
+          await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+        }
+        expectIntegrityOrderingCounts(3, 7);
+        expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
+        expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
+        expect(home.integrityEvidenceReads).toEqual(["other"]);
+        expectIntegrityOrderingStudy(home, before);
+      });
+    }
+  }
+
+  for (const intentTiming of ["before manual open", "after manual open"] as const) {
+    for (const preferredStillNeedsRepair of [true, false]) {
+      it(`preferred reconciliation preserves an explicitly opened dialog and selected response (${intentTiming}, ${preferredStillNeedsRepair ? "needs repair" : "clean"})`, async () => {
+        const home = await renderIntegrityOrderingHome([integrityOrderingRepertoire("rep", 2), integrityOrderingRepertoire("other", 1, 4)]);
+        const before = captureIntegrityOrderingStudy(home);
+        if (intentTiming === "before manual open") await requestIntegrityOrderingRefresh("generic", "other");
+        fireEvent.click(screen.getByRole("button", { name: "Resume repair" }));
+        const dialog = await expectIntegrityOrderingDialog("rep");
+        fireEvent.click(within(dialog).getByRole("button", { name: "e2e4" }));
+        if (intentTiming === "after manual open") await requestIntegrityOrderingRefresh("generic", "other");
+        await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 1), integrityOrderingRepertoire("other", preferredStillNeedsRepair ? 1 : 0, preferredStillNeedsRepair ? 4 : 0)]);
+        expectIntegrityOrderingCounts(preferredStillNeedsRepair ? 2 : 1, preferredStillNeedsRepair ? 7 : 3);
+        expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
+        expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
+        expect(within(dialog).getByText("Affected sources: line rep-ordering-source")).not.toBeNull();
+        expect(home.integrityEvidenceReads).toEqual(["rep"]);
+        expectIntegrityOrderingStudy(home, before);
+      });
+    }
+  }
+
+  for (const pendingRepertoireId of ["rep", "other"]) {
+    it(`deferring an explicitly opened dialog cancels pending preferred intent until a fresh event (${pendingRepertoireId})`, async () => {
+      const home = await renderIntegrityOrderingHome([integrityOrderingRepertoire("rep", 2), integrityOrderingRepertoire("other", 1, 4)]);
+      const before = captureIntegrityOrderingStudy(home);
+      fireEvent.click(screen.getByRole("button", { name: "Resume repair" }));
+      const dialog = await expectIntegrityOrderingDialog("rep");
+      fireEvent.click(within(dialog).getByRole("button", { name: "e2e4" }));
+      await requestIntegrityOrderingRefresh("generic", pendingRepertoireId);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Defer repertoire repair" }));
+      expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+      await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 1), integrityOrderingRepertoire("other", 1, 4)]);
+      expectIntegrityOrderingCounts(2, 7);
+      expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+      expect(document.activeElement).toBe(home.studyMove);
+      expect(home.integrityEvidenceReads).toEqual(["rep"]);
+      await requestIntegrityOrderingRefresh("passive");
+      await home.resolveIntegrity(1, [integrityOrderingRepertoire("rep", 1), integrityOrderingRepertoire("other", 1, 4)]);
+      expectIntegrityOrderingCounts(2, 7);
+      expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+      expect(document.activeElement).toBe(home.studyMove);
+      expectIntegrityOrderingStudy(home, before);
+      await requestIntegrityOrderingRefresh("generic", "rep");
+      await home.resolveIntegrity(2, [integrityOrderingRepertoire("rep", 1), integrityOrderingRepertoire("other", 1, 4)]);
+      await expectIntegrityOrderingDialog("rep");
+      expectIntegrityOrderingCounts(2, 7);
+      expect(home.integrityEvidenceReads).toEqual(["rep", "rep"]);
+      expectIntegrityOrderingStudy(home, before);
+    });
+  }
+
+  for (const latestFailure of ["transport", "http", "valid-shaped HTTP error", "schema"] as const) {
+    it(`failed authoritative integrity read retains preferred intent for a later valid snapshot (${latestFailure})`, async () => {
+      const home = await renderIntegrityOrderingHome();
+      const before = captureIntegrityOrderingStudy(home);
+      await requestIntegrityOrderingRefresh("generic", "rep");
+      await requestIntegrityOrderingRefresh("generic");
+      await act(async () => {
+        if (latestFailure === "transport") home.integrityReads[1].reject(new Error("Latest integrity read unavailable"));
+        else home.integrityReads[1].resolve(latestFailure === "http"
+          ? Response.json({ detail: "Latest integrity read unavailable" }, { status: 503 })
+          : latestFailure === "valid-shaped HTTP error"
+          ? Response.json({ repertoires: [integrityOrderingRepertoire("rep", 0)] }, { status: 503 })
+          : Response.json({ repertoires: [{ ...integrityOrderingRepertoire("rep", 1), integrity_issue_count: "invalid" }] }));
+      });
+      await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+      expectIntegrityOrderingCounts(2, 6);
+      expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+      expect(document.activeElement).toBe(home.studyMove);
+      expectIntegrityOrderingStudy(home, before);
+      await requestIntegrityOrderingRefresh("passive");
+      await home.resolveIntegrity(2, [integrityOrderingRepertoire("rep", 1)]);
+      expectIntegrityOrderingCounts(1, 3);
+      await expectIntegrityOrderingDialog("rep");
+      expect(home.integrityEvidenceReads).toEqual(["rep"]);
+      expectIntegrityOrderingStudy(home, before);
+    });
+  }
+
+  for (const navigationPath of ["primary navigation", "Browse tree"] as const) {
+    it(`workspace navigation cancels pending preferred repair intent (${navigationPath})`, async () => {
+      const home = await renderIntegrityOrderingHome();
+      if (navigationPath === "Browse tree") {
+        fireEvent.click(screen.getByRole("button", { name: "Repertoire" }));
+        await waitFor(() => expect(home.integrityReads).toHaveLength(1));
+        await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 2)]);
+        await screen.findByRole("button", { name: "Browse tree" });
+      }
+      const before = captureIntegrityOrderingStudy(home);
+      await requestIntegrityOrderingRefresh("generic", "rep");
+      const preferredRead = navigationPath === "Browse tree" ? 1 : 0;
+      fireEvent.click(navigationPath === "Browse tree"
+        ? screen.getByRole("button", { name: "Browse tree" })
+        : screen.getAllByRole("button", { name: "Builder" })[0]);
+      await screen.findByRole("heading", { name: "Builder", level: 1 });
+      await home.resolveIntegrity(preferredRead, [integrityOrderingRepertoire("rep", 1)]);
+      expect(screen.getByRole("heading", { name: "Builder", level: 1 })).not.toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+      expect(home.integrityEvidenceReads).toEqual([]);
+      const training = useTrainingStore.getState();
+      expect(training.attempt).toEqual(before.attempt);
+      expect(training.getCard().queueEntryId).toBe(before.queueEntryId);
+      expect(training.currentFenString).toBe(before.fen);
+      expect(training.step).toBe(before.step);
+      expect(home.queueReadCount()).toBe(before.queueReads);
+    });
+  }
+
+  it("CardEditor save repair intent survives its later queue integrity refresh", async () => {
+    const home = await renderIntegrityOrderingHome();
+    home.holdQueueReads();
+    fireEvent.click(screen.getByRole("button", { name: /Edit card$/ }));
+    const editor = await screen.findByRole("dialog", { name: "Edit Integrity ordering study" });
+    fireEvent.click(within(editor).getByRole("button", { name: "Validate & save" }));
+    await waitFor(() => {
+      expect(home.queueResponses).toHaveLength(1);
+      expect(home.integrityReads).toHaveLength(1);
+      expect(screen.queryByRole("dialog", { name: "Edit Integrity ordering study" })).toBeNull();
+    });
+    expect(home.fetchMock.mock.calls.filter(([input, init]) => String(input).endsWith("/api/cards/integrity-ordering-card") && init?.method === "PUT")).toHaveLength(1);
+    // The real Home onSave starts its queue refresh before dispatching preferred tempo:integrity.
+    await act(async () => { home.queueResponses[0](Response.json(home.queuePayload)); });
+    await waitFor(() => expect(home.integrityReads).toHaveLength(2));
+    expect(home.integrityReads.map(read => read.passive)).toEqual([false, false]);
+    // Saving resets the line intentionally; only the subsequent integrity reads must preserve it.
+    const before = captureIntegrityOrderingStudy(home);
+    await home.resolveIntegrity(1, [integrityOrderingRepertoire("rep", 1)]);
+    expectIntegrityOrderingCounts(1, 3);
+    const dialog = await expectIntegrityOrderingDialog("rep");
+    fireEvent.click(within(dialog).getByRole("button", { name: "e2e4" }));
+    await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 5, 11)]);
+    expectIntegrityOrderingCounts(1, 3);
+    expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
+    expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
+    expect(home.integrityEvidenceReads).toEqual(["rep"]);
+    expectIntegrityOrderingStudy(home, before);
+  });
+});
+
 for (const { title, latestIssueCount, olderIssueCount, preferred } of [
   { title: "older passive integrity reconciliation cannot restore repair counts after a newer clean result",
     latestIssueCount: 0, olderIssueCount: 1, preferred: false },
