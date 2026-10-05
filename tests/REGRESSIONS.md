@@ -2045,6 +2045,26 @@ in the regular disposable PostgreSQL durability runner checks the real installed
 command's explicit fallback wording, unchanged receipt and previous-version journal.
 Its prior wording assertion failed in CI before this consumer was updated.
 
+CI also exposed a setup race in existing browser regression
+`poisoned online A becomes inspectable while B and C save and conflict retry survives reload`:
+the initial helper mount began flushing before review handlers were installed;
+the next reload interrupted B and replayed its identical request/key. Its outbox
+is now seeded only after the handlers are ready, with assertions that setup sent
+no controlled reviews. Exact B/C saves and conflict reload/retry protection remain
+unchanged; no application review behavior or timeout was altered.
+
+`actual CLI read-only container inspection refreshes a disappeared transient container once`,
+`actual CLI read-only container inspection refuses an unsafe survivor after a transient disappears`,
+and `actual CLI read-only container inspection never hides access malformed or repeated-disappearance failures`
+failed before the repair (3 named failures). A real local PostgreSQL rehearsal
+exposed auto-removal between Docker's global list and inspect. Only a matching
+missing-container response permits one immediate inventory refresh; complete
+metadata, surviving ownership checks, read-only behavior and bounded failure
+remain required. No sleep, ignored access error or empty-success substitute is used.
+`CLI target safety errors name conflicting ports and service mounts without circular doctor advice`
+failed before the repair and protects the exact port/service item and direct
+configuration correction, without a circular instruction to run doctor again.
+
 Existing exact-main CI, source preservation, Redis persisted loading,
 PostgreSQL original-history/backup/migration/restart/receipt and incompatible
 fallback regressions remain required. The concurrent-source regression now

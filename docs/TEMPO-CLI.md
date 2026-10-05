@@ -83,6 +83,11 @@ full evidence below; ordinary output is not a machine-readable API.
 | Unfinished database update | Preserve its original backup/guard, repair the named failure using detailed evidence, then explicitly run `tempo migrate --retry`. Invalid or missing recovery evidence requires the documented recovery procedure before retry. |
 | Unsafe target, missing volume/credential or PostgreSQL major mismatch | Correct the named item using the registration/environment or PostgreSQL maintenance procedure. No empty replacement database is created. |
 
+If a short-lived Docker container disappears while Tempo inspects ownership,
+Tempo refreshes that inventory once automatically. It still checks every
+surviving container and rejects access failures or incomplete metadata with a
+specific cause; it never treats failed inspection as an empty installation.
+
 A saved failure is **historical**, with its revision, phase and timestamp in
 verbose output. Older journals without these fields say they were not recorded.
 A bounded read-only Redis probe establishes current readiness independently; an

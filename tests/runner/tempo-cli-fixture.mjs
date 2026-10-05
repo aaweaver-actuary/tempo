@@ -144,9 +144,19 @@ async function fakeCommand() {
   if (args.includes("volume") && args.includes("inspect")) { output([]); process.exit(0); }
   if (args.includes("ps") && args.includes("-aq")) {
     const containers = args.includes("compose") ? machine.containers.filter(container => args.includes(container.Config.Labels["com.docker.compose.service"])) : machine.containers;
-    output(containers.map(container => container.Id).join("\n")); process.exit(0);
+    const containerIds = containers.map(container => container.Id);
+    if (!args.includes("compose") && machine.transientInventoryContainer && (!machine.transientInventoryRemoved || machine.repeatTransientRemoval))
+      containerIds.push("deaddeaddead");
+    output(containerIds.join("\n")); process.exit(0);
   }
   if (args.includes("inspect") && !args.includes("image")) {
+    if (args.includes("deaddeaddead")) {
+      machine.transientInventoryRemoved = true; save();
+      output(machine.containers.filter(container => args.includes(container.Id)));
+      console.error("error: no such object: deaddeaddead"); process.exit(1);
+    }
+    if (machine.inventoryInspectionError) { console.error(machine.inventoryInspectionError); process.exit(1); }
+    if (machine.inventoryMalformed) { output({}); process.exit(0); }
     output(machine.containers.filter(container => args.includes(container.Id)).map(container => ({ ...container,
       State: { Running: machine.running.includes(container.Config.Labels["com.docker.compose.service"]) } }))); process.exit(0);
   }

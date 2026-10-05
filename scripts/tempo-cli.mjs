@@ -253,7 +253,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   let runtime = createRuntime(target, { run, stateDirectory, previous, revision: previous?.revision ?? "unrecorded", fallback: Boolean(previous), log });
   try { await runtime.inspectTarget(); }
   catch (error) {
-    error.action ??= `Next: correct the named installation/credential conflict in ${options.configPath} or ${target.envFile}. Preserve all study volumes; storage recovery is documented in ${join(target.root, "docs/POSTGRES-MAINTENANCE.md")}.`;
+    error.action ??= `Next: correct the named installation/credential conflict in ${options.configPath}${target.envFile ? ` or ${target.envFile}` : ""}. Preserve all study volumes; storage recovery is documented in ${join(target.root, "docs/POSTGRES-MAINTENANCE.md")}.`;
     throw error;
   }
   secrets.push(...runtime.secretValues);

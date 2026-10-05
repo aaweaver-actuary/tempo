@@ -2020,3 +2020,60 @@ test("actual CLI diagnostics keep complete changed-file evidence beyond the conc
   assert.equal(detailed.status, 0, detailed.stdout + detailed.stderr);
   assert.match(detailed.stdout, /Local changes:[\s\S]*fourth-work/);
 });
+
+test("actual CLI read-only container inspection refreshes a disappeared transient container once", t => {
+  const fixture = diagnosticFixture(t, { machine: { transientInventoryContainer: true } });
+  const result = fixture.command("doctor");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Run: tempo start/);
+  assert.equal(fixture.calls().filter(call => call.args.includes("ps") && !call.args.includes("compose")).length, 2);
+  assert(!fixture.calls().some(call => ["up", "stop", "build", "fetch"].some(argument => call.args.includes(argument))));
+  assert.deepEqual(readdirSync(fixture.stateDirectory), []);
+});
+
+test("actual CLI read-only container inspection refuses an unsafe survivor after a transient disappears", t => {
+  const fixture = diagnosticFixture(t, { machine: { transientInventoryContainer: true } });
+  editFixtureJson(fixture, "machine.json", machine => machine.containers.push({ Id: "unsafe-survivor", Name: "foreign-writer",
+    Config: { Labels: { "com.docker.compose.project": "another-project" } },
+    Mounts: [{ Type: "volume", Name: "tempo-postgres-data" }] }));
+  const result = fixture.command("doctor");
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /foreign-writer.*uses Tempo's volume or port/);
+  assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
+});
+
+test("actual CLI read-only container inspection never hides access malformed or repeated-disappearance failures", t => {
+  for (const [machine, expected, attempts] of [
+    [{ inventoryInspectionError: "permission denied" }, /permission denied/, 1],
+    [{ inventoryMalformed: true }, /container metadata is incomplete or invalid/, 1],
+    [{ transientInventoryContainer: true, repeatTransientRemoval: true }, /no such object: deaddeaddead/, 2],
+  ]) {
+    const fixture = diagnosticFixture(t, { machine });
+    const result = fixture.command("doctor");
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, expected);
+    assert.equal(fixture.calls().filter(call => call.args.includes("ps") && !call.args.includes("compose")).length, attempts);
+    assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
+    assert.deepEqual(readdirSync(fixture.stateDirectory), []);
+  }
+});
+
+test("CLI target safety errors name conflicting ports and service mounts without circular doctor advice", t => {
+  const fixture = diagnosticFixture(t);
+  const original = readFixtureJson(fixture, "fixture.json").config;
+  const portConflict = structuredClone(original);
+  portConflict.services.web.ports = [{ target: 80, published: "15999", host_ip: "127.0.0.1", protocol: "tcp" }];
+  assert.throws(() => validateTarget(portConflict, fixture.target), error => {
+    assert.match(error.message, /Compose ports differ.*15999/);
+    assert(!error.message.includes("tempo doctor"));
+    return true;
+  });
+  const mountConflict = structuredClone(original);
+  mountConflict.services.redis.volumes[0].target = "/wrong";
+  assert.throws(() => validateTarget(mountConflict, fixture.target), error => {
+    assert.match(error.message, /mount ownership differs for redis/);
+    assert.match(error.message, /restore.*mount/i);
+    assert(!error.message.includes("tempo doctor"));
+    return true;
+  });
+});

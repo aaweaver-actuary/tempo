@@ -140,12 +140,35 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return configuration;
   }
 
+  async function inspectContainerInventory() {
+    const inspectionAction = `Next: restore Docker access in context ${target.context} or let the named container operation finish, then run tempo start. Keep all study volumes.`;
+    for (let inventoryAttempt = 0; inventoryAttempt < 2; inventoryAttempt++) {
+      const inventoryIds = (await docker(["ps", "-aq"], { timeout: 5000 })).stdout.trim().split(/\s+/).filter(Boolean);
+      if (!inventoryIds.length) return [];
+      const inspection = await docker(["inspect", ...inventoryIds], { allowFailure: true, timeout: 5000 });
+      if (inspection.code === 0) {
+        let inspectedContainers;
+        try { inspectedContainers = JSON.parse(inspection.stdout); } catch { /* Reject invalid metadata below. */ }
+        if (!Array.isArray(inspectedContainers) || inspectedContainers.length !== inventoryIds.length
+          || inventoryIds.some(id => !inspectedContainers.some(container => typeof container.Id === "string" && container.Id.startsWith(id))))
+          throw new TempoProblem("container_inventory_invalid", "Docker container metadata is incomplete or invalid; installation safety cannot be checked.", { action: inspectionAction });
+        return inspectedContainers;
+      }
+      const failureLines = inspection.stderr.trim().split(/\r?\n/);
+      const missingIds = failureLines.map(line => line.match(/^(?:error(?: response from daemon)?:\s*)?no such (?:object|container):\s*([a-f0-9]{12,64})\s*$/i)?.[1]);
+      // An auto-removed container can disappear between ps and inspect. Refresh
+      // once only for that exact response, then validate every surviving owner.
+      if (inventoryAttempt === 0 && inspection.code === 1 && missingIds.every(id => id && inventoryIds.includes(id))) continue;
+      throw new TempoProblem("container_inventory_failed", `Docker container inspection failed: ${redact(inspection.stderr || `inspection exited ${inspection.code ?? "interrupted"} without complete metadata`, secretValues).slice(-400)}`,
+        { action: inspectionAction });
+    }
+  }
+
   async function inspectTarget() {
     const daemonId = (await docker(["info", "--format", "{{.ID}}"])).stdout.trim();
     if (!target.daemonId || daemonId !== target.daemonId) throw new Error("Docker daemon differs from the registered Tempo target.");
     await config();
-    const ids = (await docker(["ps", "-aq"])).stdout.trim().split(/\s+/).filter(Boolean);
-    containers = ids.length ? JSON.parse((await docker(["inspect", ...ids])).stdout) : [];
+    containers = await inspectContainerInventory();
     validateContainers(containers, target);
     for (const expected of Object.values(target.volumes)) {
       const result = await docker(["volume", "inspect", expected.name], { allowFailure: true });

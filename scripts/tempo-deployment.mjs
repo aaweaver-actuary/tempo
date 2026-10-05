@@ -71,7 +71,7 @@ function validateWorkerStorageContract(serviceName, service, secrets) {
 export function validateTarget(config, target) {
   if (config.name !== target.project) throw new Error("Compose project differs from the registered Tempo target.");
   if (JSON.stringify(portsFromConfig(config)) !== JSON.stringify(target.ports))
-    throw new Error("Compose ports differ from the registered Tempo target. Run tempo doctor before changing the installation.");
+    throw new Error(`Compose ports differ from the registered Tempo target: configured ${JSON.stringify(portsFromConfig(config))}; registered ${JSON.stringify(target.ports)}. Correct the registered port mapping before maintenance.`);
   for (const [key, expected] of Object.entries(target.volumes)) {
     const actual = config.volumes?.[key];
     if (!actual || actual.name !== expected.name || Boolean(actual.external) !== Boolean(expected.external))
@@ -86,7 +86,7 @@ export function validateTarget(config, target) {
     const mounts = (service.volumes ?? []).filter(mount => mount.type === "volume");
     if (mounts.some(mount => !expected || mount.source !== source || mount.target !== expected.destination)
       || (expected && mounts.length !== 1))
-      throw new Error(`Persistent volume mount ownership differs for ${serviceName}. Inspect tempo doctor before maintenance.`);
+      throw new Error(`Persistent volume mount ownership differs for ${serviceName}. Restore its registered data mount before maintenance; preserve all volumes.`);
   }
   for (const [serviceName, expected] of Object.entries(persistentMounts)) {
     const source = target.disposable ? expected.disposableSource : expected.source;
