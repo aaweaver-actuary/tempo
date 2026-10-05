@@ -2020,6 +2020,10 @@ nonempty and within their existing deadlines; no real 30-minute wait is required
   source drift; actual SIGINT; and original state/deadline fencing through updated
   CLI relaunch. Timeout integration cases jump a controlled clock to the deadline;
   separate unit cases prove every minute boundary without expensive process loops.
+- `CLI automatic start cancels a concurrent stop during initial target inspection`
+  failed before the repair: startup accepted a new stop journal as its baseline
+  and restarted services. The installation fence now precedes Docker and target
+  inspection, preserving a concurrent stop from the beginning of startup.
 - `CLI failure evidence selects Redis logs and redacts replies without unrelated API logs`
   protects actual failing-phase log selection and saved redacted evidence.
 

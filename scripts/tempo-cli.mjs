@@ -244,9 +244,11 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   const run = (command, args, settings = {}) => execute(command, args, { ...settings,
     echo: Boolean(settings.echo && (options.flags.has("--verbose") || options.command === "logs")) });
   const readOnly = ["status", "doctor", "logs"].includes(options.command) || options.flags.has("--plan");
-  await ensureDocker(target, run, !readOnly && ["start", "restart", "migrate"].includes(options.command), log);
   const stateRoot = process.env.TEMPO_CLI_STATE_DIR ?? join(homedir(), ".local", "share", "tempo");
   const stateDirectory = join(stateRoot, targetKey(target));
+  const initialInstallationState = !readOnly && ["start", "restart", "migrate"].includes(options.command)
+    ? installationFingerprint(stateDirectory, options.configPath) : null;
+  await ensureDocker(target, run, !readOnly && ["start", "restart", "migrate"].includes(options.command), log);
   const previous = readJson(join(stateDirectory, "deployment.json"));
   let runtime = createRuntime(target, { run, stateDirectory, previous, revision: previous?.revision ?? "unrecorded", fallback: Boolean(previous), log });
   try { await runtime.inspectTarget(); }
@@ -274,7 +276,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   delete commandEnvironment.TEMPO_CLI_CONTINUATION;
   if (continuation && (!continuation.installationState || !continuation.source || !Number.isFinite(continuation.deadline)))
     throw new TempoProblem("invalid_continuation", "The update continuation is incomplete.", { action: "Run: tempo start in a new shell without TEMPO_CLI_CONTINUATION." });
-  const installationState = continuation?.installationState ?? installationFingerprint(stateDirectory, options.configPath);
+  const installationState = continuation?.installationState ?? initialInstallationState;
   const originalSource = continuation?.source ?? await inspectCandidateSource(target, run);
   const now = verificationWaitOptions.now ?? (() => Number(process.hrtime.bigint() / 1_000_000n));
   const deadline = continuation?.deadline ?? now() + 30 * 60_000;

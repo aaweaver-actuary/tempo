@@ -130,7 +130,16 @@ async function fakeCommand() {
     }
     process.exit(0);
   }
-  if (args.includes("info")) { if (args.includes("--format")) output("fixture-daemon"); process.exit(0); }
+  if (args.includes("info")) {
+    if (args.includes("--format")) {
+      if (machine.stopDuringInspection) {
+        const state = path.join(directory, "state", fs.readdirSync(path.join(directory, "state"))[0]);
+        fs.writeFileSync(path.join(state, "operation.json"), JSON.stringify({ id: "stop-during-inspection", phase: "stopped" }));
+      }
+      output("fixture-daemon");
+    }
+    process.exit(0);
+  }
   if (args.includes("volume") && args.includes("inspect")) { output([]); process.exit(0); }
   if (args.includes("ps") && args.includes("-aq")) {
     const containers = args.includes("compose") ? machine.containers.filter(container => args.includes(container.Config.Labels["com.docker.compose.service"])) : machine.containers;

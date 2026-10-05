@@ -1945,3 +1945,12 @@ test("CLI automatic start waits for advancing main instead of deploying an older
   assert.equal(receipt.evidence.commit, receipt.revision);
   assert(fixture.calls().filter(call => call.args.includes("merge")).every(call => call.args.at(-1) === receipt.revision));
 });
+
+test("CLI automatic start cancels a concurrent stop during initial target inspection", t => {
+  const fixture = diagnosticFixture(t, { machine: { stopDuringInspection: true } });
+  const result = fixture.command("start", "--no-open");
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /will not restart it/);
+  assert.equal(readFixtureJson(fixture, "operation.json", true).id, "stop-during-inspection");
+  assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("build") || call.args.includes("fetch")));
+});
