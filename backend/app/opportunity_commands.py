@@ -66,6 +66,10 @@ def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> 
         raise HTTPException(409, "Review the current evidence and train again with its evidence revision")
     repertoire_id = str(payload["repertoire_id"])
     opportunity_id = str(payload["opportunity_id"])
+    from .services.canonical_prefix import read_prefix
+    from .services.canonical_scope_freshness import game_scope_generation
+    read_prefix(database, repertoire_id, lock=True)
+    game_scope_generation(database, lock=True)
     opportunity = database.execute_native(
         "SELECT card_id FROM repertoire_opportunities "
         "WHERE id=%s AND repertoire_id=%s FOR UPDATE",

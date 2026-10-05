@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from concurrent.futures import ThreadPoolExecutor
 import sys
 from pathlib import Path
@@ -260,3 +260,13 @@ def test_postgres_repertoire_index_reads_bounded_pages_and_reuses_source_digest(
     assert state["page_reads"] == first_page_reads
     assert state["largest_page"] == 64
     assert state["active_sections"] == 0
+
+import pytest
+
+@pytest.fixture(autouse=True)
+def stable_game_scope_double(monkeypatch):
+    """These staging tests use a fixed classification universe; real epoch races have separate regressions."""
+    from app.services import canonical_scope_freshness
+    monkeypatch.setattr(canonical_scope_freshness, "game_scope_generation", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(postgres_game_repertoire, "game_scope_generation", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(postgres_game_repertoire, "background_read_connection", lambda: nullcontext(object()))

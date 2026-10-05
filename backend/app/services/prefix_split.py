@@ -8,6 +8,7 @@ import sqlite3
 
 import chess
 
+from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from ..database import card_columns
 from .cards import card_id
 from .review_service import preserve_daily_queue_order
@@ -175,6 +176,7 @@ def _queue_split_followups(
     preserve_daily_queue_order(database, today)
 
 
+@refresh_game_publications_after_mutation
 def apply_prefix_split(
     database: sqlite3.Connection,
     source_card_id: str,
@@ -205,14 +207,15 @@ def apply_prefix_split(
     today = date.today().isoformat()
     shortened_card_id = split["shortened_card_id"]
     continuation_card_id = split["continuation_card_id"]
-    linked_repertoire_ids = [
-        row[0]
+    source_memberships = [
+        (row[0], int(row[1]))
         for row in database.execute(
-            "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?",
+            "SELECT repertoire_id,canonical_route_source FROM repertoire_cards WHERE card_id=?",
             (source_card_id,),
         )
-    ] or [source_card["repertoire_id"]]
+    ] or [(source_card["repertoire_id"], int(source_card["canonical_route_source"]))]
 
+    copied_child_ids = []
     shortened_card = database.execute(
         "SELECT * FROM cards WHERE id=?", (shortened_card_id,)
     ).fetchone()
@@ -222,6 +225,9 @@ def apply_prefix_split(
             source_card,
             {
                 "id": shortened_card_id,
+                # Install membership provenance before restoring card provenance:
+                # the owner may have an explicitly generated source membership.
+                "canonical_route_source": 0,
                 "moves_json": json.dumps(split["shortened_moves"]),
                 "revision": int(source_card["revision"]) + 1,
                 "archived": 0,
@@ -231,6 +237,7 @@ def apply_prefix_split(
                 "hard_correct_streak": 0,
             },
         )
+        copied_child_ids.append(shortened_card_id)
     database.execute(
         """INSERT OR IGNORE INTO card_revisions(
                card_id,revision,start_fen,moves_json,history_mode,created_at
@@ -281,6 +288,7 @@ def apply_prefix_split(
             source_card,
             {
                 "id": continuation_card_id,
+                "canonical_route_source": 0,
                 "kind": "response",
                 "start_fen": split["continuation_starting_fen"],
                 "moves_json": json.dumps(split["continuation_moves"]),
@@ -306,20 +314,25 @@ def apply_prefix_split(
                 "trained_color": trained_color,
             },
         )
-    for repertoire_id in linked_repertoire_ids:
-        database.execute(
-            "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
-            (repertoire_id, shortened_card_id),
-        )
-        database.execute(
-            "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
-            (repertoire_id, continuation_card_id),
-        )
-    database.execute("DELETE FROM repertoire_cards WHERE card_id=?", (source_card_id,))
+        copied_child_ids.append(continuation_card_id)
+    for repertoire_id, membership_source in source_memberships:
+        for child_card_id in (shortened_card_id, continuation_card_id):
+            database.execute(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,?) "
+                "ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1 "
+                "WHERE repertoire_cards.canonical_route_source=0 AND excluded.canonical_route_source=1",
+                (repertoire_id, child_card_id, membership_source),
+            )
+    if source_card["canonical_route_source"]:
+        for child_card_id in copied_child_ids:
+            database.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (child_card_id,))
+    # Archive while the original links still describe the owner semantics.
+    # Removing a generated owner link first would activate authored owner fallback.
     database.execute(
         "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
         (shortened_card_id, source_card_id),
     )
+    database.execute("DELETE FROM repertoire_cards WHERE card_id=?", (source_card_id,))
     _queue_split_followups(database, shortened_card_id, continuation_card_id, today)
     database.execute(
         """INSERT INTO prefix_splits(

@@ -12,6 +12,7 @@ import uuid
 
 import chess
 
+from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from ..database import card_columns, read_connection
 from .database_executor import submit_background_write
 
@@ -657,7 +658,10 @@ def _transform_source(start_fen: str, moves: list[str], trained_color: str, targ
     return transformed, False
 
 
-def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[str]) -> bool:
+def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[str], *, validated_route: dict | None = None, certify: bool = True) -> bool:
+    from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
+    if validated_route is None:
+        validated_route = ensure_line_in_scope(database, row["repertoire_id"], row["start_fen"], moves, remember=False)
     new_id = hashlib.sha256(
         f"{row['repertoire_id']}\0{card_id(row['start_fen'], moves)}".encode()
     ).hexdigest()
@@ -669,10 +673,15 @@ def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[st
         (new_id, row["repertoire_id"], row["name"], row["trained_color"], row["start_fen"], json.dumps(moves), row["created_at"]),
     )
     database.execute("DELETE FROM repertoire_lines WHERE id=?", (row["id"],))
+    if certify:
+        certify_admitted_route(database, row["repertoire_id"], validated_route)
     return True
 
 
-def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3.Row, moves: list[str]) -> bool:
+def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3.Row, moves: list[str], *, validated_route: dict | None = None, certify: bool = True) -> bool:
+    from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
+    if validated_route is None:
+        validated_route = ensure_line_in_scope(database, repertoire_id, row["start_fen"], moves, remember=False)
     new_id = card_id(row["start_fen"], moves)
     if new_id == row["id"]:
         return False
@@ -680,21 +689,24 @@ def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3
     if not existing:
         columns = card_columns(database)
         values = dict(row)
-        values.update({"id": new_id, "moves_json": json.dumps(moves), "state": "new", "due_date": datetime.now(timezone.utc).date().isoformat(), "interval_days": 0, "repetitions": 0, "lapses": 0, "introduced_at": None, "archived": 0, "superseded_by": None})
+        values.update({"id": new_id, "repertoire_id": repertoire_id, "moves_json": json.dumps(moves), "state": "new", "due_date": datetime.now(timezone.utc).date().isoformat(), "interval_days": 0, "repetitions": 0, "lapses": 0, "introduced_at": None, "archived": 0, "superseded_by": None, "canonical_route_source": 1})
         database.execute(
             f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
             tuple(values.get(column) for column in columns),
         )
-    database.execute("INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (repertoire_id, new_id))
+    database.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (new_id,))
+    database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, new_id))
     database.execute("DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?", (repertoire_id, row["id"]))
     remaining = database.execute("SELECT 1 FROM repertoire_cards WHERE card_id=? LIMIT 1", (row["id"],)).fetchone()
     if not remaining:
         database.execute("UPDATE cards SET archived=1,superseded_by=? WHERE id=?", (new_id, row["id"]))
+    if certify:
+        certify_admitted_route(database, repertoire_id, validated_route)
     return True
 
 
 def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -> int:
-    """Remove opening cards whose route is no longer supported by a retained line."""
+    """Reconcile unsupported generated memberships, preserving authored routes."""
     lines = database.execute(
         "SELECT start_fen,moves_json FROM repertoire_lines WHERE repertoire_id=?",
         (repertoire_id,),
@@ -704,9 +716,10 @@ def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -
         for row in lines
     ]
     cards = database.execute(
-        """SELECT DISTINCT c.* FROM cards c LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
+        """SELECT c.* FROM cards c LEFT JOIN repertoire_cards rc
+             ON rc.card_id=c.id AND rc.repertoire_id=?
            WHERE c.content_type='opening' AND c.archived=0
-             AND (c.repertoire_id=? OR rc.repertoire_id=?)""",
+             AND (c.repertoire_id=? OR rc.repertoire_id IS NOT NULL)""",
         (repertoire_id, repertoire_id),
     ).fetchall()
     changed = 0
@@ -716,27 +729,8 @@ def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -
             and route[: len(json.loads(card["moves_json"]))] == json.loads(card["moves_json"])
             for start_key, route in line_routes
         )
-        if supported:
-            continue
-        database.execute(
-            "DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
-            (repertoire_id, card["id"]),
-        )
-        remaining = database.execute(
-            "SELECT 1 FROM repertoire_cards WHERE card_id=? LIMIT 1", (card["id"],)
-        ).fetchone()
-        if remaining:
-            if card["repertoire_id"] == repertoire_id:
-                database.execute(
-                    "UPDATE cards SET repertoire_id=? WHERE id=?",
-                    (remaining[0], card["id"]),
-                )
-        else:
-            database.execute(
-                "UPDATE cards SET archived=1,state='locked',superseded_by=NULL WHERE id=?",
-                (card["id"],),
-            )
-        changed += 1
+        if not supported:
+            changed += int(_archive_unsupported_card(database, repertoire_id, card["id"]))
     return changed
 
 
@@ -746,10 +740,18 @@ def _archive_unsupported_card(
     """Detach an already-computed unsupported card without chess traversal."""
 
     card = database.execute(
-        "SELECT repertoire_id FROM cards WHERE id=? AND archived=0",
+        "SELECT repertoire_id,canonical_route_source FROM cards WHERE id=? AND archived=0",
         (card_identifier,),
     ).fetchone()
     if not card:
+        return False
+    membership = database.execute(
+        "SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
+        (repertoire_id, card_identifier),
+    ).fetchone()
+    if membership is not None and membership["canonical_route_source"]:
+        return False
+    if membership is None and (card["repertoire_id"] != repertoire_id or card["canonical_route_source"]):
         return False
     database.execute(
         "DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
@@ -765,7 +767,7 @@ def _archive_unsupported_card(
                 "UPDATE cards SET repertoire_id=? WHERE id=?",
                 (remaining["repertoire_id"], card_identifier),
             )
-    else:
+    elif not card["canonical_route_source"]:
         database.execute(
             "UPDATE cards SET archived=1,state='locked',superseded_by=NULL WHERE id=?",
             (card_identifier,),
@@ -773,6 +775,7 @@ def _archive_unsupported_card(
     return True
 
 
+@refresh_game_publications_after_mutation
 def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: str, signature: str, selected_move: str) -> dict:
     row = database.execute(
         "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
@@ -792,7 +795,10 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
         raise ValueError("Selected move is not valid UCI") from error
     if move not in board.legal_moves:
         raise ValueError("Selected move is illegal from this position")
+    from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
     changed_lines = changed_cards = 0
+    line_changes = []
+    card_changes = []
     target_fen = row["fen_key"]
     for source in json.loads(row["sources_json"]):
         if source.get("type") == "line":
@@ -801,7 +807,7 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
                 continue
             moves, changed = _transform_source(source_row["start_fen"], json.loads(source_row["moves_json"]), source_row["trained_color"], target_fen, selected)
             if changed:
-                changed_lines += int(_rewrite_line(database, source_row, moves))
+                line_changes.append((source_row, moves, ensure_line_in_scope(database, repertoire_id, source_row["start_fen"], moves, remember=False)))
         elif source.get("type") == "card":
             source_row = database.execute("SELECT * FROM cards WHERE id=?", (source["id"],)).fetchone()
             if not source_row:
@@ -809,8 +815,19 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
             trained = source_row["trained_color"] or row["trained_color"]
             moves, changed = _transform_source(source_row["start_fen"], json.loads(source_row["moves_json"]), trained, target_fen, selected)
             if changed:
-                changed_cards += int(_rewrite_card(database, repertoire_id, source_row, moves))
+                card_changes.append((source_row, moves, ensure_line_in_scope(database, repertoire_id, source_row["start_fen"], moves, remember=False)))
+    admitted_routes = []
+    for source_row, moves, validated_route in line_changes:
+        if _rewrite_line(database, source_row, moves, validated_route=validated_route, certify=False):
+            changed_lines += 1
+            admitted_routes.append(validated_route)
+    for source_row, moves, validated_route in card_changes:
+        if _rewrite_card(database, repertoire_id, source_row, moves, validated_route=validated_route, certify=False):
+            changed_cards += 1
+            admitted_routes.append(validated_route)
     changed_cards += _reconcile_derived_cards(database, repertoire_id)
+    for validated_route in admitted_routes:
+        certify_admitted_route(database, repertoire_id, validated_route)
     summary = sweep_repertoire(database, repertoire_id)
     return {"summary": summary, "changed_line_count": changed_lines, "changed_card_count": changed_cards}
 
@@ -929,6 +946,7 @@ def execute_durable_integrity_repair(task: dict) -> None:
         payload["selected_move_uci"],
     )
 
+    @refresh_game_publications_after_mutation
     def publish(database: sqlite3.Connection) -> None:
         current = database.execute(
             "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
@@ -936,22 +954,34 @@ def execute_durable_integrity_repair(task: dict) -> None:
         ).fetchone()
         if not current or current["signature"] != prepared["signature"]:
             raise RuntimeError("This integrity issue changed; refresh and try again")
+        from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
+        line_changes = []
+        card_changes = []
         for source_id, moves in prepared["changed_lines"].items():
             source_row = database.execute(
                 "SELECT * FROM repertoire_lines WHERE id=?", (source_id,)
             ).fetchone()
             if source_row:
-                _rewrite_line(database, source_row, moves)
+                line_changes.append((source_row, moves, ensure_line_in_scope(database, prepared["repertoire_id"], source_row["start_fen"], moves, remember=False)))
         for source_id, moves in prepared["changed_cards"].items():
             source_row = database.execute(
                 "SELECT * FROM cards WHERE id=?", (source_id,)
             ).fetchone()
             if source_row:
-                _rewrite_card(database, prepared["repertoire_id"], source_row, moves)
+                card_changes.append((source_row, moves, ensure_line_in_scope(database, prepared["repertoire_id"], source_row["start_fen"], moves, remember=False)))
+        admitted_routes = []
+        for source_row, moves, validated_route in line_changes:
+            if _rewrite_line(database, source_row, moves, validated_route=validated_route, certify=False):
+                admitted_routes.append(validated_route)
+        for source_row, moves, validated_route in card_changes:
+            if _rewrite_card(database, prepared["repertoire_id"], source_row, moves, validated_route=validated_route, certify=False):
+                admitted_routes.append(validated_route)
         for card_identifier in prepared["unsupported_card_ids"]:
             _archive_unsupported_card(
                 database, prepared["repertoire_id"], card_identifier
             )
+        for validated_route in admitted_routes:
+            certify_admitted_route(database, prepared["repertoire_id"], validated_route)
 
     submit_background_write(
         publish,

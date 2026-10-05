@@ -10,16 +10,19 @@ from typing import Any
 import chess
 from fastapi import HTTPException
 
+from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from .models import BranchRequest, RemoveBranchRequest
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
+from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
 from .services.repertoire_integrity import integrity_summary
 
 
+@refresh_game_publications_after_mutation
 def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     request = BranchRequest.model_validate(payload)
     try:
@@ -41,6 +44,7 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
         "SELECT 1 FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),
     ).fetchone() is None:
         raise HTTPException(404, "Repertoire not found")
+    validated_route = ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves, remember=False)
     inserted = database.execute_native(
         "INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
         "VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING RETURNING id",
@@ -78,6 +82,8 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
             "WHERE node_id=%s AND move_uci=%s",
             (gap_node_id, gap_move_uci),
         )
+    if inserted is not None:
+        certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)
     request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
     if inserted is not None:
@@ -91,6 +97,7 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
 register_command("repertoire.branch.add", add_repertoire_branch)
 
 
+@refresh_game_publications_after_mutation
 def remove_repertoire_branch(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     request = RemoveBranchRequest.model_validate(payload)
     if not request.moves:

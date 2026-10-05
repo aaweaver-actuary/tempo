@@ -23,7 +23,7 @@ def _finding_card_inputs(database, finding_id: str, request: GameFindingCardRequ
                          *, lock: bool) -> tuple[dict, dict, str, list[str], str | None]:
     if lock:
         source = database.execute(
-            "SELECT game_id,source_opportunity_id FROM game_findings WHERE id=? FOR UPDATE",
+            "SELECT game_id,source_opportunity_id FROM current_game_findings game_findings WHERE id=? FOR UPDATE",
             (finding_id,),
         ).fetchone()
         if source is not None:
@@ -39,7 +39,7 @@ def _finding_card_inputs(database, finding_id: str, request: GameFindingCardRequ
         """SELECT f.*,g.color,g.adaptive_excluded,g.analysis_version AS game_analysis_version,
                   o.active AS opportunity_active,o.analysis_version AS opportunity_analysis_version,
                   o.accepted_moves_json,o.evidence_json AS opportunity_evidence_json
-           FROM game_findings f JOIN imported_games g ON g.id=f.game_id
+           FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id
            LEFT JOIN tactical_opportunities o ON o.id=f.source_opportunity_id WHERE f.id=?""",
         (finding_id,),
     ).fetchone()

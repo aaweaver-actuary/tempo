@@ -48,6 +48,21 @@ async function waitForPreparedPhoneShell(page: Page, localDate: string): Promise
   }, localDate)).toBe(true);
 }
 
+test("prepared study queue shares the disposable service calendar day", async ({ page, request }) => {
+  await page.goto("/");
+  const browserCalendar = await page.evaluate(() => {
+    const now = new Date();
+    return {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      localDate: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
+    };
+  });
+  expect(browserCalendar.timezone).toBe("America/New_York");
+  const prepared = await request.get(`${api}/queue/prepared`);
+  expect(prepared.ok()).toBeTruthy();
+  expect((await prepared.json()).local_date).toBe(browserCalendar.localDate);
+});
+
 test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }) => {
   // Compose's local queue day can differ from the browser after UTC midnight.
   // Pin this workflow to that day while its timers continue running normally.

@@ -374,7 +374,7 @@ def execute_game_analysis_followup_slice(task: dict[str, Any]) -> bool:
     if phase == "repertoires":
         with background_read_connection() as database:
             row = database.execute_native(
-                "SELECT DISTINCT repertoire_id FROM game_repertoire_matches "
+                "SELECT DISTINCT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches "
                 "WHERE game_id=%s AND repertoire_id>%s ORDER BY repertoire_id LIMIT 1",
                 (game_id, payload["cursor"]),
             ).fetchone()
@@ -433,7 +433,7 @@ def execute_game_analysis_followup_slice(task: dict[str, Any]) -> bool:
         if next_repertoire_id is None:
             return complete_task_slice_in_transaction(database, task)
         exists = database.execute_native(
-            "SELECT 1 FROM game_repertoire_matches WHERE game_id=%s AND repertoire_id=%s",
+            "SELECT 1 FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=%s AND repertoire_id=%s",
             (game_id, next_repertoire_id),
         ).fetchone()
         if exists is not None:

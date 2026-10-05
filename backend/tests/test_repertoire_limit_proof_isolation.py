@@ -60,7 +60,7 @@ def proof_environment(tmp_path, monkeypatch):
         stored.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('unrelated','Unrelated','synthetic',?)", (today,))
         stored.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('shared','Shared','synthetic',?)", (today,))
         stored.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES('unrelated-card','unrelated','prefix',?,'[]','learning',?,?)", (proof.chess.STARTING_FEN, today, today))
-        stored.execute("INSERT INTO repertoire_cards VALUES('shared','unrelated-card')")
+        stored.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('shared','unrelated-card')")
         stored.execute("INSERT INTO priority_repertoire_source_epochs VALUES('unrelated',37)")
         stored.execute("""CREATE TRIGGER priority_card_updated AFTER UPDATE OF state,introduced_at ON cards
             BEGIN INSERT INTO priority_repertoire_source_epochs(repertoire_id,version)

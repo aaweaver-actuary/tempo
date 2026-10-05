@@ -129,8 +129,8 @@ def stage_graph_line_in_transaction(
         )
         cursor.executemany(
             "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,"
-            "due_date,content_type,trained_color,pending_validation) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,'opening',%s,0) ON CONFLICT(id) DO NOTHING",
+            "due_date,content_type,trained_color,pending_validation,canonical_route_source) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,'opening',%s,0,0) ON CONFLICT(id) DO NOTHING",
             [
                 (step.card_id, step.repertoire_id,
                  "prefix" if step.segment_kind == "prefix" else "response",
@@ -196,8 +196,8 @@ def link_graph_cards_in_transaction(
     generation = int(task["generation"])
     with database.raw.cursor() as cursor:
         cursor.executemany(
-            "INSERT INTO repertoire_cards(repertoire_id,card_id) "
-            "SELECT %s,%s WHERE EXISTS(SELECT 1 FROM opening_graph_steps "
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) "
+            "SELECT %s,%s,0 WHERE EXISTS(SELECT 1 FROM opening_graph_steps "
             "WHERE repertoire_id=%s AND generation=%s AND card_id=%s) "
             "ON CONFLICT(repertoire_id,card_id) DO NOTHING",
             [(repertoire_id, card_id, repertoire_id, generation, card_id)
@@ -299,7 +299,7 @@ def classify_graph_cards_in_transaction(
             "due_date=CASE WHEN %s='new' AND state='locked' "
             "AND introduced_at IS NULL "
             "AND NOT EXISTS(SELECT 1 FROM reviews WHERE card_id=cards.id) "
-            "THEN %s ELSE due_date END WHERE id=%s",
+            "THEN %s ELSE due_date END WHERE id=%s AND canonical_route_source=0",
             (kind, next_state, next_state, study_day, card_id),
         )
     return advance_task_slice_in_transaction(
@@ -388,7 +388,7 @@ def prepare_obsolete_graph_cards(
             "SELECT link.card_id FROM repertoire_cards link "
             "JOIN cards card ON card.id=link.card_id "
             "WHERE link.repertoire_id=%s AND link.card_id>%s "
-            "AND card.content_type='opening' "
+            "AND card.content_type='opening' AND link.canonical_route_source=0 "
             "AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step "
             "WHERE step.repertoire_id=%s AND step.generation=%s "
             "AND step.card_id=link.card_id) "
@@ -415,6 +415,17 @@ def cleanup_graph_cards_in_transaction(
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
     for card_id in card_ids:
+        # Selection happens before this write slice. An intervening foreground
+        # adoption must protect the now-authored membership and its queue.
+        membership = database.execute_native(
+            "SELECT card.canonical_route_source FROM repertoire_cards link "
+            "JOIN cards card ON card.id=link.card_id "
+            "WHERE link.repertoire_id=%s AND link.card_id=%s "
+            "AND link.canonical_route_source=0 FOR UPDATE OF link,card",
+            (repertoire_id, card_id),
+        ).fetchone()
+        if membership is None:
+            continue
         still_current = database.execute_native(
             "SELECT 1 FROM opening_graph_steps WHERE repertoire_id=%s "
             "AND generation=%s AND card_id=%s LIMIT 1",
@@ -422,10 +433,14 @@ def cleanup_graph_cards_in_transaction(
         ).fetchone()
         if still_current:
             continue
-        database.execute_native(
-            "UPDATE daily_queue SET status='superseded' "
-            "WHERE card_id=%s AND status='queued'", (card_id,),
-        )
+        if not membership[0]:
+            database.execute_native(
+                "UPDATE daily_queue SET status='superseded' "
+                "WHERE card_id=%s AND status='queued' "
+                "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
+                "WHERE retained.card_id=%s AND retained.repertoire_id<>%s)",
+                (card_id, card_id, repertoire_id),
+            )
         database.execute_native(
             "DELETE FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s",
             (repertoire_id, card_id),
@@ -438,12 +453,12 @@ def cleanup_graph_cards_in_transaction(
             "UPDATE cards SET repertoire_id=("
             "SELECT MIN(link.repertoire_id) FROM repertoire_cards link "
             "WHERE link.card_id=cards.id) "
-            "WHERE id=%s AND repertoire_id=%s "
+            "WHERE id=%s AND repertoire_id=%s AND canonical_route_source=0 "
             "AND EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id)",
             (card_id, repertoire_id),
         )
         database.execute_native(
-            "UPDATE cards SET archived=1 WHERE id=%s "
+            "UPDATE cards SET archived=1 WHERE id=%s AND canonical_route_source=0 "
             "AND NOT EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id)",
             (card_id,),
         )
