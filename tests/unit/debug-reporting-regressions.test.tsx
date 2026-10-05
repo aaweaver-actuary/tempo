@@ -25,6 +25,17 @@ beforeEach(() => {
 });
 
 describe("frontend debug reporting", () => {
+  it("review debug export retains failed A identity and machine classification independently of the visible board", () => {
+    const identity = { source: "training-review-replay", endpoint: "/api/cards/card-a/review/reconcile",
+      cardId: "card-a", queueEntryId: 17, attemptId: "completed-a", status: 409,
+      code: "card_revision_changed", classification: "conflict" as const, retryable: false };
+    const record = reportDebugError(new Error("Earlier completed result needs review"), identity);
+    const bundle = JSON.parse(buildDebugBundle(record.id));
+    const { endpoint, ...contextIdentity } = identity;
+    expect(bundle.error.context).toMatchObject({ ...contextIdentity, endpointPath: endpoint });
+    expect(bundle.recentErrors[0]).toMatchObject({ cardId: "card-a", queueEntryId: 17,
+      attemptId: "completed-a", status: 409, code: "card_revision_changed", classification: "conflict", retryable: false });
+  });
   it("removes canary secrets from every persisted and exported incident field", () => {
     const canaries = ["canary-password-42", "canary-api-key-42", "canary-bearer-42", "canary-url-42"];
     reportDebugError(new Error(

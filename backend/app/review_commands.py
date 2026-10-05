@@ -59,3 +59,22 @@ def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict
 
 
 register_command("cards.review", submit_review)
+
+
+def reconcile_review(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    from .review_conflicts import ReviewConflict
+
+    # A handled conflict becomes a successful transport receipt, so the gateway
+    # cannot roll back its handler savepoint for us. Fence the entire ordinary
+    # review path, including evidence writes, before converting that exception.
+    database.raw.execute("SAVEPOINT reconcile_review")
+    try:
+        result = submit_review(database, payload)
+    except ReviewConflict as error:
+        database.raw.execute("ROLLBACK TO SAVEPOINT reconcile_review")
+        result = {"persisted": False, "conflict": error.information()}
+    database.raw.execute("RELEASE SAVEPOINT reconcile_review")
+    return result
+
+
+register_command("cards.review.reconcile", reconcile_review)

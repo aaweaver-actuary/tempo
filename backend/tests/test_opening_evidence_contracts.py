@@ -160,7 +160,8 @@ def test_opening_checkpoint_payload_identity_ignores_historical_preparation(chec
     assert request_digest('opening_evidence.checkpoint', changed_payload) != digest
 
 
-def test_foreground_review_http_preparation_keeps_foreground_request_lease(monkeypatch, checkpoint_http_envelope):
+@pytest.mark.parametrize("reconciling", [False, True])
+def test_foreground_review_http_preparation_keeps_foreground_request_lease(monkeypatch, checkpoint_http_envelope, reconciling):
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
     from app.services.activity_gate import activity_gate
@@ -184,10 +185,10 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(monke
         submitted.append((name, payload, options))
         return {'persisted': True}
     monkeypatch.setattr(command_dispatch, 'dispatch_command', dispatch)
-    response = TestClient(main.app).post('/api/cards/shadow-card/review', json={'outcome': 'correct',
+    response = TestClient(main.app).post('/api/cards/shadow-card/review' + ('/reconcile' if reconciling else ''), json={'outcome': 'correct',
         'attempt_id': completion['attempt_id'], 'queue_entry_id': 101, 'opening_evidence_completion': completion})
     assert response.status_code == 200
-    assert submitted[0][0] == 'cards.review' and submitted[0][1]['prepared_manifest'] == manifest
+    assert submitted[0][0] == ('cards.review.reconcile' if reconciling else 'cards.review') and submitted[0][1]['prepared_manifest'] == manifest
     assert submitted[0][2].get('background', False) is False
     assert not activity_gate.foreground_requests_active
 
@@ -395,8 +396,9 @@ def test_evidence_migration_captures_valid_scope_color_without_overwriting_conte
     (False, False, None, 0),
     (False, None, 202, 0),
 ])
+@pytest.mark.parametrize("reconciling", [False, True])
 def test_review_requeue_context_correction_only_runs_for_fresh_review(
-        monkeypatch, has_receipt, idempotent, requeue_id, expected_corrections):
+        monkeypatch, has_receipt, idempotent, requeue_id, expected_corrections, reconciling):
     from app import main, review_commands
     from app.services import postgres_opening_evidence
     manifest = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
@@ -426,7 +428,7 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
             corrections.append(parameters)
         return SimpleNamespace(fetchone=lambda:('complete',))
 
-    database = SimpleNamespace(execute=execute, execute_native=execute_native)
+    database = SimpleNamespace(execute=execute, execute_native=execute_native, raw=SimpleNamespace(execute=lambda *args:None))
     def apply_review(*arguments, **options):
         assert options['database'] is database and validation_order == ['validated']
         validation_order.append('reviewed')
@@ -441,7 +443,8 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
         validation_order.append('completed')
     monkeypatch.setattr(postgres_opening_evidence, 'persist_checkpoint', persist_completion)
     monkeypatch.setattr(postgres_opening_evidence, 'complete_review_evidence', complete_evidence)
-    assert review_commands.submit_review(database, {'card_id':manifest['card_id'],
+    handler = review_commands.reconcile_review if reconciling else review_commands.submit_review
+    assert handler(database, {'card_id':manifest['card_id'],
         'review':{'outcome':'correct', 'attempt_id':completion['attempt_id'], 'queue_entry_id':101,
                   'opening_evidence_completion':completion}, 'prepared_manifest':manifest}) == result
     assert len(corrections) == expected_corrections
@@ -473,3 +476,49 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, 
     assert response.status_code == 200
     assert response.json() == {'state': 'complete', 'response': {'persisted': True}}
     assert reads == [('opening-checkpoint:receipt', {'background': background})]
+
+
+def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint(monkeypatch):
+    from app import main, review_commands
+    from app.review_conflicts import ReviewConflict
+    from app.services import postgres_opening_evidence as evidence
+    manifest = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    completion = {'attempt_id':'atomic-reconcile', 'manifest':manifest, 'origin_queue_entry_id':101,
+        'queue_entry_id':101, 'started_at':'2026-09-30T12:00:00Z', 'study_timezone':'UTC',
+        'terminal':{'state':'complete', 'final_sequence':0, 'ended_at':'2026-09-30T12:01:00Z'}}
+    writes = ['saved-checkpoint']
+    checkpoints = []
+    operations = []
+    def transaction(statement, *arguments):
+        operations.append(statement)
+        if statement.startswith('SAVEPOINT'):
+            checkpoints[:] = writes
+        elif statement.startswith('ROLLBACK TO'):
+            writes[:] = checkpoints
+    def execute(statement, parameters):
+        row = (manifest['card_revision'],) if 'SELECT revision' in statement else ('queued',) if 'SELECT status' in statement else None
+        return SimpleNamespace(fetchone=lambda:row)
+    database = SimpleNamespace(execute=execute, execute_native=execute, raw=SimpleNamespace(execute=transaction))
+    monkeypatch.setattr(review_commands, 'lock_queue_date_for_position', lambda *args:None)
+    def persist(*args, **options):
+        writes.append('new-completion-events')
+    def conflict(*args, **options):
+        assert writes == ['saved-checkpoint', 'new-completion-events'], 'Reconciliation bypassed evidence validation/persistence'
+        raise ReviewConflict('content_changed', 'Saved content changed')
+    monkeypatch.setattr(evidence, 'persist_checkpoint', persist)
+    monkeypatch.setattr(evidence, 'complete_review_evidence', lambda *args:pytest.fail('Conflicted review completed evidence'))
+    monkeypatch.setattr(main, '_apply_review', conflict)
+    result = review_commands.reconcile_review(database, {'card_id':manifest['card_id'],
+        'review':{'outcome':'correct','attempt_id':completion['attempt_id'],'queue_entry_id':101,
+                  'opening_evidence_completion':completion},'prepared_manifest':manifest})
+    assert result == {'persisted':False,'conflict':{'code':'content_changed','message':'Saved content changed','retryable':False}}
+    assert writes == ['saved-checkpoint']
+    assert any(statement.startswith('ROLLBACK TO SAVEPOINT') for statement in operations)
+
+
+def test_reconciliation_digest_ignores_only_derived_preparation():
+    from app.command_gateway import request_digest
+    payload = {'card_id':'shadow-card','review':{'attempt_id':'same-result','outcome':'correct'}}
+    digest = request_digest('cards.review.reconcile', payload)
+    assert request_digest('cards.review.reconcile', {**payload,'prepared_manifest':{'derived':True}}) == digest
+    assert request_digest('cards.review.reconcile', {**payload,'review':{**payload['review'],'outcome':'again'}}) != digest

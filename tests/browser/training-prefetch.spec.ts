@@ -123,3 +123,102 @@ test("completed tactic advances while an earlier review save is still pending", 
   releaseFirstReview?.();
   await expect.poll(() => savedEntries).toEqual([201, 202]);
 });
+
+test("poisoned online A becomes inspectable while B and C save and conflict retry survives reload", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem("recovery-fixture-seeded")) return;
+    localStorage.setItem("recovery-fixture-seeded", "true");
+    localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
+      { backendId: "poison-a", queueEntryId: 501, outcome: "correct", guided: false, attemptId: "original-a", completedAt: "2026-09-18T15:00:00Z", expectedRevision: 1 },
+      { backendId: "valid-b", queueEntryId: 502, outcome: "correct", guided: false, attemptId: "original-b", completedAt: "2026-09-18T15:01:00Z" },
+      { backendId: "valid-c", queueEntryId: 503, outcome: "correct", guided: false, attemptId: "original-c", completedAt: "2026-09-18T15:02:00Z" },
+    ]));
+  });
+  const saved: string[] = [];
+  const reconciliations: Array<{ key: string; body: unknown }> = [];
+  let retrySucceeds = false;
+  await prepareVisualUI(page);
+  await page.route("**/api/cards/*/review", async route => {
+    const body = route.request().postDataJSON();
+    if (body.attempt_id === "original-a")
+      return route.fulfill({ status: 409, json: { detail: "Historical failed save" } });
+    saved.push(body.attempt_id);
+    return route.fulfill({ json: { persisted: true } });
+  });
+  await page.route("**/api/cards/poison-a/review/reconcile", async route => {
+    reconciliations.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON() });
+    return route.fulfill({ json: retrySucceeds ? { persisted: true } : { persisted: false,
+      conflict: { code: "queue_attempt_unprovable", message: "The original queue attempt cannot be verified.", retryable: false } } });
+  });
+  await page.reload();
+  await expect.poll(() => saved).toEqual(["original-b", "original-c"]);
+  await expect(page.getByRole("button", { name: "Review conflicts (1)" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Review conflicts (1)" }).click();
+  const dialog = page.getByRole("dialog", { name: "Review conflicts" });
+  await expect(dialog).toContainText("The original queue attempt cannot be verified.");
+  const exported = JSON.parse(await dialog.getByRole("textbox", { name: "Conflict data" }).inputValue());
+  expect(exported.onlineReviews[0]).toMatchObject({ attemptId: "original-a", completedAt: "2026-09-18T15:00:00Z", state: "conflicted" });
+  retrySucceeds = true;
+  await dialog.getByRole("button", { name: "Retry saved result" }).click();
+  await expect(page.getByRole("button", { name: /Review conflicts/ })).toHaveCount(0);
+  // Reload may resend an unacknowledged transport; it must retain its identity and result.
+  expect([...new Set(reconciliations.map(item => item.key))]).toEqual(["review-reconcile:original-a:1", "review-reconcile:original-a:2"]);
+  expect(reconciliations.filter(item => item.key === "review-reconcile:original-a:2")).toHaveLength(1);
+  for (const reconciliation of reconciliations) expect(reconciliation.body).toEqual(reconciliations[0].body);
+});
+
+for (const format of ["numeric", "object"] as const) {
+  test(`legacy ${format} guided marker blocks clean grading across reload until authoritative replay`, async ({ page }) => {
+    await prepareVisualUI(page);
+    await page.addInitScript(({ format }) => {
+      if (localStorage.getItem("legacy-marker-fixture-seeded")) return;
+      localStorage.setItem("legacy-marker-fixture-seeded", "true");
+      localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(format === "numeric"
+        ? [801] : [{ queueEntryId: 801, operationId: "legacy-browser-guided-operation" }]));
+    }, { format });
+    let serverFailed = false;
+    const markerKeys: string[] = [];
+    let releaseMarkers!: () => void;
+    const heldMarkerDelivery = new Promise<void>(resolve => { releaseMarkers = resolve; });
+    const submittedReviews: unknown[] = [];
+    await page.route("**/api/queue/window?**", route => route.fulfill({ json: {
+      count: 1, local_date: "2026-09-18", cards: [{ id: "legacy-browser-card", revision: 1, queue_entry_id: 801,
+        start_fen: startFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "Legacy saved attempt",
+        repertoire_source: "PGN", first_correct_at: "2026-09-17T12:00:00Z", attempt_failed: serverFailed }],
+    } }));
+    await page.route("**/api/queue/entries/801/fail", async route => {
+      expect(route.request().postData()).toBeNull();
+      markerKeys.push(route.request().headers()["idempotency-key"]);
+      await heldMarkerDelivery;
+      await route.fulfill({ json: { attempt_failed: true } });
+    });
+    await page.route("**/api/cards/*/review", async route => {
+      submittedReviews.push(route.request().postDataJSON());
+      await route.fulfill({ json: { persisted: true } });
+    });
+    try {
+      await page.goto("/");
+      await expect(page.getByRole("alert").filter({ hasText: "Guided attempt identity is pending" }).first()).toBeVisible();
+      const normalizedMarker = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!));
+      expect(normalizedMarker).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
+      await page.reload();
+      await expect(page.getByRole("alert").filter({ hasText: "Guided attempt identity is pending" }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Correct", exact: true }).and(page.locator(":enabled"))).toHaveCount(0);
+      await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "false");
+      await page.keyboard.press("3");
+      expect(submittedReviews).toEqual([]);
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!))).toEqual(normalizedMarker);
+      expect(markerKeys.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(markerKeys)).toEqual(new Set([normalizedMarker[0].operationId]));
+      serverFailed = true;
+      releaseMarkers();
+      await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!))).toEqual([]);
+      await page.reload();
+      await expect(page.getByText("Legacy saved attempt", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Finish on the board" })).toBeDisabled();
+      await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+      expect(submittedReviews).toEqual([]);
+    } finally { releaseMarkers(); }
+  });
+}

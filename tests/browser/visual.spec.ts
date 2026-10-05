@@ -266,4 +266,24 @@ for (const width of [390, 1280]) {
     await page.evaluate(() => document.fonts.ready);
     await expect(page.locator(".integrity-repair-status")).toHaveScreenshot(`queued-repertoire-repairs-${width}.png`);
   });
+  test(`review-conflicts-${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
+        { backendId: "changed-opening", queueEntryId: 501, outcome: "correct", guided: false,
+          attemptId: "completed-opening", completedAt: "2026-09-18T15:00:00Z", expectedRevision: 1,
+          state: "conflicted", reconciliationSequence: 1,
+          conflict: { code: "card_revision_changed", message: "The card changed after this attempt. The completed result needs review.", retryable: false } },
+      ]));
+    });
+    await prepareVisualUI(page);
+    await page.getByRole("button", { name: "Review conflicts (1)" }).click();
+    const dialog = page.getByRole("dialog", { name: "Review conflicts" });
+    await expect(dialog).toContainText("The card changed after this attempt.");
+    await dialog.getByRole("button", { name: "Retry saved result" }).click({ trial: true });
+    await dialog.getByRole("button", { name: "Discard saved result" }).click({ trial: true });
+    expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page).toHaveScreenshot(`review-conflicts-${width}.png`, { animations: "disabled", fullPage: true });
+  });
 }

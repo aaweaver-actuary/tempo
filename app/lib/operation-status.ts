@@ -12,7 +12,8 @@ export class PendingOperationError extends Error {
 }
 
 export class FailedOperationError extends Error {
-  constructor(message: string, readonly operationId: string) {
+  constructor(message: string, readonly operationId: string, readonly status?: number,
+    readonly code?: string, readonly retryable?: boolean) {
     super(message);
     this.name = "FailedOperationError";
   }
@@ -37,8 +38,8 @@ export async function readOperationResponse(operationId: string, options: Operat
   const receipt = await status.json() as {
     state?: string;
     response?: unknown;
-    error?: { message?: string };
-    last_error?: { message?: string };
+    error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
+    last_error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
     message?: string;
   };
   if (["queued", "executing", "retrying", "pending", "complete", "failed"].includes(receipt.state ?? ""))
@@ -48,7 +49,8 @@ export async function readOperationResponse(operationId: string, options: Operat
   if (receipt.state === "failed")
     throw new FailedOperationError(
       receipt.error?.message ?? "The save failed. Check the service before retrying.",
-      operationId,
+      operationId, receipt.error?.status_code, receipt.error?.code,
+      receipt.error?.retryable ?? (receipt.error?.status_code === 409 ? false : undefined),
     );
   if (receipt.state === "blocked")
     throw new PendingOperationError(operationId,

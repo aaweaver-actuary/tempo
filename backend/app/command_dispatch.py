@@ -52,11 +52,18 @@ def dispatch_command(
             background=background,
         )
     except CommandConflict as error:
+        if command_name in {"cards.review", "cards.review.reconcile"}:
+            from .review_conflicts import ReviewConflict
+            raise ReviewConflict("command_identity_reused", str(error)) from error
         raise HTTPException(409, str(error)) from error
     if receipt["state"] == "complete":
         return receipt["response"]
     if receipt["state"] == "failed":
         error = receipt["error"]
+        if error.get("code") and error.get("status_code") == 409:
+            from .review_conflicts import ReviewConflict
+            raise ReviewConflict(error["code"], error.get("detail", error["message"]),
+                                 retryable=error.get("retryable", False))
         failure = HTTPException(error.get("status_code", 500))
         # The constructor replaces None with a status phrase. Restore explicit
         # JSON null as well as other empty values from the durable receipt.

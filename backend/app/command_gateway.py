@@ -53,7 +53,7 @@ def request_digest(command_name: str, payload: dict[str, Any]) -> str:
     # A paste preview is derived from the current repertoire snapshot. After a
     # successful save that snapshot changes, but replaying the same user save
     # must still resolve to its original receipt.
-    if command_name in {"opening_evidence.checkpoint", "cards.review"}:
+    if command_name in {"opening_evidence.checkpoint", "cards.review", "cards.review.reconcile"}:
         # Preparation is authoritative derived data; retries bind the original envelope.
         identity_payload = {key: value for key, value in payload.items() if key != "prepared_manifest"}
     elif command_name == "analysis.paste.commit":
@@ -262,6 +262,7 @@ def execute_command(
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
             }
+            error_payload.update({"code": error.code, "retryable": error.retryable} if hasattr(error, "code") and hasattr(error, "retryable") else {})
             if isinstance(error, HTTPException):
                 try:
                     # Preserve message for legacy operation-status callers. New
