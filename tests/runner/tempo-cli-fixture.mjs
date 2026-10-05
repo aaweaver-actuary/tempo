@@ -71,8 +71,8 @@ function exists(path) { try { readFileSync(path); return true; } catch { return 
 async function fixtureNetwork() {
   const fs = await import("node:fs");
   const directory = process.env.TEMPO_CLI_FIXTURE_DIRECTORY;
-  const fixture = JSON.parse(fs.readFileSync(directory + "/fixture.json", "utf8"));
   globalThis.fetch = async (url, options = {}) => {
+    const fixture = JSON.parse(fs.readFileSync(directory + "/fixture.json", "utf8"));
     fs.appendFileSync(directory + "/requests.jsonl", JSON.stringify({ url: String(url), method: options.method ?? "GET" }) + "\n");
     if (String(url).includes("api.github.com")) {
       if (fixture.diagnostics?.githubError) throw new Error(fixture.diagnostics.githubError);
@@ -82,6 +82,12 @@ async function fixtureNetwork() {
       { id: 12, head_sha: fixture.revision, head_branch: "main", event: "push", status: "completed", html_url: "https://github.com/fixture/ci" },
     ] });
     if (String(url).includes("/actions/runs/")) {
+      if (fixture.diagnostics?.advanceAfterJobs) {
+        fixture.revision = "b".repeat(40);
+        delete fixture.diagnostics.advanceAfterJobs;
+        fixture.diagnostics.runs = [{ id: 13, head_sha: fixture.revision, head_branch: "main", event: "push", status: "queued", html_url: "https://github.com/fixture/next-ci" }];
+        fs.writeFileSync(directory + "/fixture.json", JSON.stringify(fixture));
+      }
       if (["race-dirty", "race-head"].includes(fixture.mode)) {
         const machinePath = directory + "/machine.json";
         const machine = JSON.parse(fs.readFileSync(machinePath, "utf8"));
@@ -178,7 +184,10 @@ async function fakeCommand() {
       || (fixture.mode === "interrupted-applications" && args.includes("web"))) process.kill(process.ppid, "SIGKILL");
     process.exit(0);
   }
-  if (args.includes("ping")) { output("PONG"); process.exit(0); }
+  if (args.includes("ping")) {
+    if (machine.redisReply) { console.error(machine.redisReply); process.exit(1); }
+    output("PONG"); process.exit(0);
+  }
   if (args.includes("psql")) {
     if (machine.ledgerReadUnavailable) process.exit(17);
     output((machine.appliedVersions ?? Array.from({ length: machine.schema }, (_, index) => index + 1)).join("\n")); process.exit(0);

@@ -1989,3 +1989,42 @@ Product-command identity tests preserve the intentional global-generation bump
 on prefix/source changes; existing isolated-fence cases still prove each
 individual publication identity. Same-prefix recheck preserves revisions and
 normal refresh restores public coverage, discoveries and game-derived reads.
+
+## CLI guided startup recovery (2026-10-05 user-reported diagnostic confusion)
+
+`tests/runner/tempo-cli.test.mjs` runs through the regular
+`tests/unit/tempo-cli-regressions.test.ts` wrapper. New groups remain disjoint,
+nonempty and within their existing deadlines; no real 30-minute wait is required.
+
+- `actual CLI diagnostics explain current blocker before historical Redis failure`
+  and `actual CLI diagnostics keep technical evidence in verbose output with legacy timestamps identified`
+  failed before the repair (missing direct recovery action and rejected verbose
+  flag). They protect a concise answer, historical/current separation and missing
+  legacy fields without inventing failure timestamps.
+- `actual CLI diagnostics explain one primary next action when source and verification are blocked`,
+  `actual CLI diagnostics explain safe recovery instead of ordinary start for an unfinished migration`,
+  `actual CLI diagnostics explain current terminal Redis errors with one repair action and redaction`,
+  and `actual CLI diagnostic safety concise and verbose modes preserve source receipts guards and services`
+  and `actual CLI diagnostics explain active maintenance before treating its migration guard as a failure`
+  protect blocker priority, explicit guarded retry, active maintenance, actual Redis errors, secrecy
+  and read-only default/detailed diagnostics.
+- `CLI pending verification` cases protect minute-spaced bounded waiting,
+  pending-to-success/failed/missing/unavailable transitions, a single deadline
+  when main advances, no-wait behavior and cancellation during request/sleep.
+- `CLI waiting installation fence` cases protect concurrent journal, receipt,
+  guard and registration changes and duplicate deployment cancellation under the
+  reacquired maintenance lock.
+- `CLI automatic start` / `CLI automatic migrate` cases execute the real command
+  against isolated fake processes: successful waiting; timeout with/without
+  compatible recorded fallback; no fallback for migrate; actual concurrent stop;
+  source drift; actual SIGINT; and original state/deadline fencing through updated
+  CLI relaunch. Timeout integration cases jump a controlled clock to the deadline;
+  separate unit cases prove every minute boundary without expensive process loops.
+- `CLI failure evidence selects Redis logs and redacts replies without unrelated API logs`
+  protects actual failing-phase log selection and saved redacted evidence.
+
+Existing exact-main CI, source preservation, Redis persisted loading,
+PostgreSQL original-history/backup/migration/restart/receipt and incompatible
+fallback regressions remain required. The concurrent-source regression now
+cancels without restarting fallback rather than silently accepting changed work.
+No live study fixture, background audit, release bypass or schema change is used.
