@@ -125,6 +125,16 @@ and temporary memory mounts are separate from persistent data.
 
 ## When something fails
 
+Redis readiness requires an actual `PONG`. Redis health checks reject loading
+and error replies; the CLI also waits up to 180 seconds for saved Redis data to
+finish loading, including deployments recorded with the older health check.
+Temporary connection failures are retried with bounded probes. Authentication,
+configuration, or unexpected replies fail immediately. A readiness failure
+records the actual redacted reply, elapsed time, `checking_redis` phase, and
+failure timestamp; schema checks and application startup have not advanced.
+Inspect `tempo logs redis`, address any reported terminal error, then run
+`tempo start` again. No Redis data is discarded to make startup succeed.
+
 Read the specific error, then use `tempo doctor` and `tempo logs api`. A missing
 volume, conflicting container, invalid history, missing credential, or failed
 restore is a stop condition. The CLI does not substitute sample data, silently

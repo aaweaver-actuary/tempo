@@ -1343,6 +1343,27 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 `tests/unit/tempo-cli-regressions.test.ts` runs the named Node cases in
 `tests/runner/tempo-cli.test.mjs` through the regular suite:
 
+- Redis restart fails during persisted loading despite a healthy container:
+  `CLI Redis readiness waits for saved legacy healthcheck loading before schema migration or application startup`
+  reproduces the user's zero-exit LOADING failure and requires actual PONG before
+  schema, backup, migration, application startup, and deployment publication.
+- `CLI Redis readiness retries strict loading error replies and connection refusal until PONG`
+  and `CLI Redis readiness retries interrupted and timed-out probes with bounded remaining deadlines`
+  cover nonzero loading replies and temporary connection/probe failures.
+- `CLI Redis readiness expires at 180 seconds and records the real loading reply without migration startup or publication`
+  uses a controlled monotonic clock, preserves the existing receipt, and verifies
+  the failed phase and timestamp. The five named `CLI Redis readiness fails ... immediately with the actual reply`
+  cases cover authentication, configuration, terminal errors containing transient
+  wording, unexpected responses, and nonzero PONG.
+- `CLI Redis readiness redacts terminal errors in thrown and saved failure evidence`
+  protects credentials. All ten Node cases are included by the regular wrapper's
+  existing disjoint `CLI` contract group.
+- `Tempo CLI waits for persisted Redis loading before migration or application startup`
+  in the regular PostgreSQL durability runner exercises strict and saved legacy
+  health checks with a small RDB AOF fixture and test-only per-key load delay.
+  It observes real LOADING/health results, explicitly releases the delay, and
+  verifies all fixture values and authoritative PostgreSQL study history survive.
+
 - `actual CLI interrupted fallback stops uncommitted candidate writers before rejecting an incompatible schema` kills the CLI after its schema-28-to-29 migration verifies H0 and starts all application services, before receipt publication. Blocked-update fallback uses the schema-28 receipt and unchanged dependency identities; application shutdown must precede schema rejection, without application startup, database rollback, guard replacement, or receipt replacement. The failure journal and diagnostics remain available.
 - `actual CLI interrupted fallback quiesces a partially started candidate` kills the first workers/API startup group before web/engine startup. `actual CLI interrupted fallback stops mixed application identities` combines a committed API with candidate writers. `actual CLI interrupted fallback rejects application config drift despite matching immutable images` independently requires saved Compose hashes. These four unsafe recovery regressions failed against reviewed head `c89b7cb` before the fix.
 - `actual CLI interrupted fallback rejects incompatible schema cleanly with no running applications` ignores stopped candidate containers and rejects without application startup. `actual CLI compatible fallback keeps committed applications running despite a stale rollout journal` preserves the no-stop/no-build/no-migration fallback despite another revision's post-start journal. `failed application identity inspection stops unconfirmed writers before database validation` makes inspection errors fail closed and prevents startup/publication.

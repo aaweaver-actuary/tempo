@@ -437,17 +437,17 @@ test("actual CLI migration guard interrupted attempts survive loss of the operat
   assert.equal(assertOriginalHistory(fixture).state, "verified");
 });
 
-function imageRuntimeFixture(t, reference, actualMajor, fallback = false, responseForCommand = () => undefined) {
+function imageRuntimeFixture(t, reference, actualMajor, fallback = false, responseForCommand = () => undefined, runtimeOptions = {}) {
   const fixture = commandFixture(t, "upgrade");
   const config = readFixtureJson(fixture, "fixture.json").config;
   config.services.postgres.image = reference;
   writeFileSync(fixture.target.composeFiles[0], JSON.stringify(config));
   const record = readFixtureJson(fixture, "deployment.json", true);
   const calls = [];
-  const run = async (_command, args) => {
+  const run = async (_command, args, options) => {
     calls.push(args);
-    const response = responseForCommand(args);
-    if (response !== undefined) return { stdout: response, stderr: "", code: 0 };
+    const response = responseForCommand(args, options);
+    if (response !== undefined) return typeof response === "string" ? { stdout: response, stderr: "", code: 0 } : response;
     let result = "";
     if (args.includes("config")) {
       const resolved = structuredClone(config);
@@ -462,9 +462,121 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false, respon
   };
   const runtime = createRuntime(fixture.target, { run, stateDirectory: fixture.stateDirectory, revision: record.revision,
     evidence: record.evidence, previous: record, fallback,
-    preparedImages: { revision: record.revision, images: record.images, configFingerprint: configurationFingerprint(config) }, log: () => {} });
+    preparedImages: { revision: record.revision, images: record.images, configFingerprint: configurationFingerprint(config) }, log: () => {}, ...runtimeOptions });
   return { runtime, calls, fixture };
 }
+
+function redisRuntimeFixture(t, replies, readinessMilliseconds = 180_000) {
+  let elapsedMilliseconds = 0;
+  let answeredPong = false;
+  const probes = [];
+  const waits = [];
+  const result = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, (args, options) => {
+    if (args.includes("--mount")) return "18";
+    if (args.includes("ping")) {
+      probes.push({ elapsedMilliseconds, options });
+      const reply = replies[Math.min(probes.length - 1, replies.length - 1)];
+      if (reply instanceof Error) { elapsedMilliseconds += 5000; throw reply; }
+      answeredPong = reply.code === 0 && reply.stdout.trim() === "PONG";
+      return reply;
+    }
+  }, { redisReadinessOptions: { timeoutMilliseconds: readinessMilliseconds, now: () => elapsedMilliseconds,
+    wait: async milliseconds => { waits.push(milliseconds); elapsedMilliseconds += milliseconds; } } });
+  return { ...result, probes, waits, answeredPong: () => answeredPong, elapsedMilliseconds: () => elapsedMilliseconds };
+}
+
+test("CLI Redis readiness waits for saved legacy healthcheck loading before schema migration or application startup", async t => {
+  const fixture = redisRuntimeFixture(t, [{ code: 0, stdout: "LOADING Redis is loading the dataset in memory\n", stderr: "" },
+    { code: 0, stdout: "PONG\n", stderr: "" }]);
+  await fixture.runtime.config();
+  const { calls, handlers } = actions();
+  handlers.ensureImages = fixture.runtime.ensureImages;
+  handlers.ensureDatabase = fixture.runtime.ensureDatabase;
+  for (const name of ["checkSchema", "backup", "migrate", "startServices", "commitDeployment"]) {
+    const original = handlers[name];
+    handlers[name] = async (...args) => { assert(fixture.answeredPong(), `${name} must wait for actual PONG`); return original(...args); };
+  }
+  await executeLifecycle({ recreate: true }, handlers);
+  assert.equal(fixture.probes.length, 2);
+  assert.deepEqual(fixture.waits, [1000]);
+  assert(calls.includes("migrate") && calls.includes("startServices") && calls.includes("commitDeployment"));
+  assert(fixture.probes.every(probe => probe.options.allowFailure && probe.options.timeout <= 5000));
+});
+
+test("CLI Redis readiness retries strict loading error replies and connection refusal until PONG", async t => {
+  const fixture = redisRuntimeFixture(t, [
+    { code: 1, stdout: "LOADING Redis is loading the dataset in memory\n", stderr: "" },
+    { code: 1, stdout: "", stderr: "Could not connect to Redis at 127.0.0.1:6379: Connection refused\n" },
+    { code: 0, stdout: "PONG\n", stderr: "" },
+  ]);
+  await fixture.runtime.config(); await fixture.runtime.ensureImages();
+  await fixture.runtime.ensureDatabase();
+  assert.equal(fixture.probes.length, 3);
+  assert.deepEqual(fixture.waits, [1000, 1000]);
+  assert(fixture.answeredPong());
+});
+
+test("CLI Redis readiness retries interrupted and timed-out probes with bounded remaining deadlines", async t => {
+  const fixture = redisRuntimeFixture(t, [new Error("Redis probe timed out"),
+    { code: null, stdout: "", stderr: "" }, { code: 0, stdout: "PONG", stderr: "" }], 8000);
+  await fixture.runtime.config(); await fixture.runtime.ensureImages();
+  await fixture.runtime.ensureDatabase();
+  assert.equal(fixture.probes.length, 3);
+  assert.deepEqual(fixture.probes.map(probe => probe.options.timeout), [5000, 2000, 1000]);
+  assert(fixture.answeredPong());
+});
+
+test("CLI Redis readiness expires at 180 seconds and records the real loading reply without migration startup or publication", async t => {
+  const fixture = redisRuntimeFixture(t, [{ code: 1, stdout: "LOADING Redis is loading the dataset in memory", stderr: "" }]);
+  const receiptPath = join(fixture.fixture.stateDirectory, "deployment.json");
+  const receiptBefore = readFileSync(receiptPath, "utf8");
+  await fixture.runtime.config();
+  const { calls, handlers } = actions();
+  Object.assign(handlers, { ensureImages: fixture.runtime.ensureImages, ensureDatabase: fixture.runtime.ensureDatabase,
+    recordFailure: fixture.runtime.recordFailure });
+  await assert.rejects(executeLifecycle({ recreate: true }, handlers), /180\.0 seconds \(checking_redis\): LOADING Redis is loading/);
+  assert.equal(fixture.elapsedMilliseconds(), 180_000);
+  assert.equal(fixture.probes.length, 180);
+  assert(!calls.some(name => ["checkSchema", "backup", "migrate", "startServices", "commitDeployment"].includes(name)));
+  assert.equal(readFileSync(receiptPath, "utf8"), receiptBefore);
+  const operation = JSON.parse(readFileSync(join(fixture.fixture.stateDirectory, "operation.json"), "utf8"));
+  assert.equal(operation.phase, "failed");
+  assert.equal(operation.failed_phase, "checking_redis");
+  assert(!Number.isNaN(Date.parse(operation.failed_at)));
+  assert.match(operation.failure, /LOADING Redis is loading/);
+});
+
+for (const [name, reply] of [
+  ["authentication", { code: 1, stdout: "NOAUTH Authentication required", stderr: "" }],
+  ["configuration", { code: 1, stdout: "ERR unknown command redis-cli", stderr: "" }],
+  ["terminal errors containing transient wording", { code: 1, stdout: "NOAUTH Authentication required before retrying a connection refused timeout", stderr: "" }],
+  ["unexpected response", { code: 0, stdout: "OK", stderr: "" }],
+  ["nonzero PONG", { code: 1, stdout: "PONG", stderr: "" }],
+]) test(`CLI Redis readiness fails ${name} immediately with the actual reply`, async t => {
+  const fixture = redisRuntimeFixture(t, [reply]);
+  await fixture.runtime.config(); await fixture.runtime.ensureImages();
+  await assert.rejects(fixture.runtime.ensureDatabase(), error => {
+    assert(error.message.includes(reply.stdout));
+    assert.match(error.message, /0\.0 seconds \(checking_redis\)/);
+    return true;
+  });
+  assert.equal(fixture.probes.length, 1);
+  assert.deepEqual(fixture.waits, []);
+});
+
+test("CLI Redis readiness redacts terminal errors in thrown and saved failure evidence", async t => {
+  const fixture = redisRuntimeFixture(t, [{ code: 1, stdout: "WRONGPASS supplied canary-redis-credential was rejected", stderr: "" }]);
+  const configuration = readFixtureJson(fixture.fixture, "fixture.json").config;
+  writeFileSync(Object.values(configuration.secrets)[0].file, "canary-redis-credential");
+  await fixture.runtime.config(); await fixture.runtime.ensureImages();
+  let failure;
+  try { await fixture.runtime.ensureDatabase(); } catch (error) { failure = error; }
+  assert(failure);
+  assert(!failure.message.includes("canary-redis-credential"));
+  assert.match(failure.message, /WRONGPASS supplied \[redacted\]/);
+  await fixture.runtime.recordFailure(failure);
+  assert(!readFileSync(join(fixture.fixture.stateDirectory, "operation.json"), "utf8").includes("canary-redis-credential"));
+});
 
 test("CLI migration guard durability failure prevents migrations writer startup and deployment publication", async t => {
   let appliedSchema = 28;
