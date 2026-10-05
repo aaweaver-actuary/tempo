@@ -18,6 +18,12 @@ def execute_priority_retention_slice(task: dict) -> bool:
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if postgres_store.configured():
+            # Producers lock the priority job before enqueueing retention work.
+            # Keep that order and protect its active generation through deletion.
+            priority_job = database.execute(
+                "SELECT generation,status FROM repertoire_priority_jobs "
+                "WHERE repertoire_id=? FOR UPDATE", (repertoire_id,),
+            ).fetchone()
             if not lock_current_slice(database, task):
                 return False
         else:
@@ -34,10 +40,11 @@ def execute_priority_retention_slice(task: dict) -> bool:
         ).fetchone()
         if publication is None and not postgres_store.configured():
             return False
-        priority_job = database.execute(
-            "SELECT generation,status FROM repertoire_priority_jobs WHERE repertoire_id=?",
-            (repertoire_id,),
-        ).fetchone()
+        if not postgres_store.configured():
+            priority_job = database.execute(
+                "SELECT generation,status FROM repertoire_priority_jobs WHERE repertoire_id=?",
+                (repertoire_id,),
+            ).fetchone()
         published_generation = int(publication["generation"]) if publication else -1
         active_generation = int(priority_job["generation"]) if priority_job else published_generation
         if postgres_store.configured():
@@ -45,13 +52,19 @@ def execute_priority_retention_slice(task: dict) -> bool:
                 active_generation if priority_job and priority_job["status"] in {"queued", "running"}
                 else -1
             )
-            prepared_keys = [
+            # Preserve PostgreSQL's primary-key ordering through SQLite SQL translation.
+            stale_preparation = database.execute(
+                "SELECT generation FROM repertoire_priority_preparations "
+                "WHERE repertoire_id=? AND generation<>? ORDER BY generation NULLS LAST LIMIT 1",
+                (repertoire_id, keep_preparation),
+            ).fetchone()
+            prepared_keys = [] if stale_preparation is None else [
                 (row["generation"], row["ordinal"])
                 for row in database.execute(
                     """SELECT generation,ordinal FROM repertoire_priority_prepared_rows
-                       WHERE repertoire_id=? AND generation<>?
-                       ORDER BY generation,ordinal LIMIT ? FOR UPDATE SKIP LOCKED""",
-                    (repertoire_id, keep_preparation, ROWS_PER_SLICE),
+                       WHERE repertoire_id=? AND generation=?
+                       ORDER BY ordinal NULLS LAST LIMIT ? FOR UPDATE SKIP LOCKED""",
+                    (repertoire_id, stale_preparation["generation"], ROWS_PER_SLICE),
                 )
             ]
             database.executemany(
@@ -60,23 +73,15 @@ def execute_priority_retention_slice(task: dict) -> bool:
                 [(repertoire_id, generation, ordinal)
                  for generation, ordinal in prepared_keys],
             )
-            removable_manifests = [
-                row["generation"] for row in database.execute(
-                    """SELECT manifest.generation FROM repertoire_priority_preparations manifest
-                       WHERE manifest.repertoire_id=? AND manifest.generation<>?
-                         AND NOT EXISTS(
-                           SELECT 1 FROM repertoire_priority_prepared_rows prepared
-                           WHERE prepared.repertoire_id=manifest.repertoire_id
-                             AND prepared.generation=manifest.generation)
-                       ORDER BY manifest.generation LIMIT ?""",
-                    (repertoire_id, keep_preparation, ROWS_PER_SLICE),
+            if stale_preparation is not None:
+                database.execute(
+                    """DELETE FROM repertoire_priority_preparations
+                       WHERE repertoire_id=? AND generation=? AND NOT EXISTS(
+                         SELECT 1 FROM repertoire_priority_prepared_rows
+                         WHERE repertoire_id=? AND generation=? LIMIT 1)""",
+                    (repertoire_id, stale_preparation["generation"],
+                     repertoire_id, stale_preparation["generation"]),
                 )
-            ]
-            database.executemany(
-                "DELETE FROM repertoire_priority_preparations "
-                "WHERE repertoire_id=? AND generation=?",
-                [(repertoire_id, generation) for generation in removable_manifests],
-            )
             stale_keys = [] if prepared_keys else [
                 (row["generation"], row["card_id"])
                 for row in database.execute(
@@ -112,11 +117,6 @@ def execute_priority_retention_slice(task: dict) -> bool:
             (repertoire_id, published_generation, active_generation),
         ).fetchone() is not None
         if postgres_store.configured():
-            more_stale_rows = more_stale_rows or database.execute(
-                """SELECT 1 FROM repertoire_priority_prepared_rows
-                   WHERE repertoire_id=? AND generation<>? LIMIT 1""",
-                (repertoire_id, keep_preparation),
-            ).fetchone() is not None
             more_stale_rows = more_stale_rows or database.execute(
                 """SELECT 1 FROM repertoire_priority_preparations
                    WHERE repertoire_id=? AND generation<>? LIMIT 1""",
