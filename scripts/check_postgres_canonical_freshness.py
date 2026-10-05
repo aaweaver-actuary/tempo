@@ -903,12 +903,13 @@ def prove_canonical_scope_lifecycle():
         selected = next(item for item in items if item['fen_key'] == target_key and item['opponent_move_uci'] == 'a7a6')
         assert selected['id'] in {item['id'] for item in api.discoveries_feed(0, 100)['discoveries']}
         assert api.repertoire_coverage_gaps(identifier)['gaps']
-        assert api.repertoire_statistics_summary(identifier, 'all')['games']['matched'] == 1
+        statistics = api.repertoire_statistics_summary(identifier, 'all')
+        assert statistics['games']['matched'] == 1, statistics['games']
         with postgres_store.connection(read_only=True) as database:
             publication = dict(database.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (selected['id'],)).fetchone())
             assert all(publication[field] == value for field, value in current_identity.items())
             for table in ('game_repertoire_matches', 'repertoire_comparisons', 'repertoire_decision_events'):
-                assert database.execute(f'SELECT 1 FROM {table} WHERE game_id=?', (game_id,)).fetchone(), table
+                assert database.execute(f'SELECT 1 FROM {table} WHERE game_id=? AND repertoire_id=?', (game_id, identifier)).fetchone(), table
         return selected['id']
     try:
         explorer._fetch_explorer = fetch
@@ -919,7 +920,9 @@ def prove_canonical_scope_lifecycle():
             game_ids.append(game_id)
             authored_moves = [*ITALIAN, 'a7a6', 'h2h3']
             authored_id = card_id(chess.STARTING_FEN, authored_moves)
-            route = [*ITALIAN, 'f8c5', 'c2c3']
+            # CF-5 has ...Bc5/c3 too. This distinct covered decision keeps our
+            # game primarily attributed here after changing the main repertoire.
+            route = [*ITALIAN, 'f8c5', 'd2d3']
             target_key = ' '.join(prefix_projection(route)['ending_fen'].split()[:4])
             with postgres_store.connection() as database:
                 for scope in (identifier, other_id):
@@ -927,7 +930,7 @@ def prove_canonical_scope_lifecycle():
                 add_repertoire_branch(database, {'repertoire_id': identifier, 'name': 'Root', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': route})
                 database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'response',?,?,'2026-10-05')", (authored_id, identifier, chess.STARTING_FEN, json.dumps(authored_moves)))
                 database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (identifier, authored_id))
-                database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)", (game_id, NOW, chess.STARTING_FEN, json.dumps([*route, 'a7a6', 'd2d4'])))
+                database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)", (game_id, NOW, chess.STARTING_FEN, json.dumps([*route, 'a7a6', 'd3d4'])))
             command('repertoires.main.select', {'repertoire_id': identifier})
             recheck(identifier, ITALIAN)
             old_run = publish(identifier, game_id)
