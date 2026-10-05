@@ -159,8 +159,9 @@ export default function Home() {
     blockedDue: number;
   }>();
   const deferredRepairIds = useRef(new Set<string>());
-  const integrityCheckGeneration = useRef(0);
-  const pendingPreferredRepairIntent = useRef<{ repertoireId: string } | undefined>(undefined);
+  const nextIntegrityRequestSequence = useRef(0);
+  const lastAcceptedIntegritySnapshotSequence = useRef(0);
+  const pendingPreferredRepairIntent = useRef<{ repertoireId: string; minimumRequestSequence: number } | undefined>(undefined);
   const openRepairRepertoireId = useRef<string | undefined>(undefined);
   // Update dialog intent before React commits so an in-flight read observes direct actions.
   const openRepairDialog = useCallback((repertoireId: string) => {
@@ -338,30 +339,35 @@ export default function Home() {
 
   const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
     if (!usesLocalApi()) return;
+    const integrityRequestSequence = ++nextIntegrityRequestSequence.current;
     if (preferred && !passive) {
       deferredRepairIds.current.delete(preferred);
-      pendingPreferredRepairIntent.current = { repertoireId: preferred };
+      pendingPreferredRepairIntent.current = { repertoireId: preferred, minimumRequestSequence: integrityRequestSequence };
     }
-    const integrityCheckRequestGeneration = ++integrityCheckGeneration.current;
     try {
       const response = await (passive ? backgroundFetch : fetch)(`${API_URL}/api/repertoires`);
       if (!response.ok) return;
       const data = await response.json();
       const parsed = repertoiresResponseSchema.parse(data);
-      if (integrityCheckRequestGeneration !== integrityCheckGeneration.current) return;
+      // Only a validated newer snapshot fences an older response; a started or failed read has no authority.
+      if (integrityRequestSequence <= lastAcceptedIntegritySnapshotSequence.current) return;
+      lastAcceptedIntegritySnapshotSequence.current = integrityRequestSequence;
       const candidate = parsed.repertoires.find(
         (item) =>
           item.integrity_status === "needs_repair" &&
           !deferredRepairIds.current.has(item.id),
       );
-      const preferredRepairIntent = pendingPreferredRepairIntent.current;
+      const currentPreferredRepairIntent = pendingPreferredRepairIntent.current;
+      const preferredRepairIntent = currentPreferredRepairIntent
+        && integrityRequestSequence >= currentPreferredRepairIntent.minimumRequestSequence
+        ? currentPreferredRepairIntent : undefined;
       const preferredCandidate = preferredRepairIntent
         ? parsed.repertoires.find(
             (item) =>
               item.id === preferredRepairIntent.repertoireId && item.integrity_status === "needs_repair",
           )
         : undefined;
-      // The latest snapshot settles the current intent, regardless of which caller read it.
+      // Accepted reads settle current intent only when they began with or after that intent.
       if (preferredRepairIntent) {
         pendingPreferredRepairIntent.current = undefined;
         if (preferredCandidate && !openRepairRepertoireId.current) openRepairDialog(preferredCandidate.id);

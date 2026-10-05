@@ -2043,3 +2043,17 @@ Product-command identity tests preserve the intentional global-generation bump
 on prefix/source changes; existing isolated-fence cases still prove each
 individual publication identity. Same-prefix recheck preserves revisions and
 normal refresh restores public coverage, discoveries and game-derived reads.
+
+
+### PR #84 validated snapshot authority
+
+Home separates request identity from the request sequence of the latest accepted authoritative snapshot. Only successful HTTP + JSON + repertoire-schema validation advances authority. A later started/failed request cannot fence a valid older response; a newer accepted response still fences older successes. Preferred intent records its minimum request sequence: an older snapshot can update counts without consuming a newer intent. Direct opening, defer, navigation, clean/removal retirement and active-dialog selection remain protected.
+
+The regular `tests/unit/study-regressions.test.tsx` suite includes:
+
+- `failed newer integrity request cannot fence an older valid preferred snapshot` and `older valid snapshot remains authoritative when a newer request later fails`: generic/passive × transport/valid-shaped non-success HTTP/malformed JSON/schema failure, 16 controlled-promise cases. Both requests alone suffice to open the preferred repair and apply its exact counts; failure after acceptance preserves dialog/choice and state. No third refresh or sleeps.
+- `pre-intent snapshot cannot retire newer preferred repair intent`: older clean/absent evidence for the newer preferred repertoire applies counts but cannot consume that newer intent (2 cases).
+- Updated `newer generic integrity refresh preserves an earlier preferred repair-open intent`, `newer passive reconciliation preserves a current preferred repair-open intent`, and `newer preferred repertoire intent cannot be replaced by an older preferred request` assert immediate application of an older valid snapshot while a newer request is pending, plus final newer-success authority in both completion orders.
+- `newer clean snapshot preserves a repair dialog opened by an earlier accepted snapshot`: clean/removal × generic/passive (4 cases). Later authoritative counts update without erasing the open dialog or selected response. Existing latest-first `clean authoritative reconciliation retires obsolete preferred repair intent` cases still retire pending intent and prevent resurrection. Existing direct-open/defer/navigation/editor and passive study protections remain.
+
+Against unchanged production head `413a8af6acf890b9365f917398acafd9f400cb8d`, the 45 selected ordering cases produced **27 failures and 18 passing controls** (5.41 s wall). All 16 newer-failure cases and both pre-intent cases failed because the request-start fence discarded the older valid snapshot before its counts could apply. Nine updated older-first success cases failed at that same boundary. All 45 pass after the authority fix (8.28 s wall). The baseline filter excluded 30 unrelated cases; those exclusions are not full-file validation. Final complete-file and current-candidate evidence is recorded in PR #84 and the dated validation bundle.
