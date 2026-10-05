@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
+import { verifyPersistedRedisReadiness } from "./check-redis-readiness.mjs";
 
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision }) {
   const root = process.cwd();
@@ -140,6 +141,10 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))));
     assert(commandLog.slice(repeatStart).filter(call => call.args.includes("up") && call.args.includes("postgres"))
       .every(call => call.args.includes("--no-recreate")));
+
+    await verifyPersistedRedisReadiness({ target, runtime: repeat, run, compose, docker, directory, revision,
+      images, readHistory, expectedHistory: expected, expectedSchema: record.schema, commandLog });
+    await executeLifecycle({ recreate: false }, repeat);
 
     // Exercise the actual installed-command entry point against PostgreSQL.
     // This checkout is a task branch, so start must explicitly retain the

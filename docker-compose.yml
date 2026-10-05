@@ -24,7 +24,7 @@ services:
     volumes:
       - tempo-redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-e", "ping"]
       interval: 3s
       timeout: 3s
       retries: 30
