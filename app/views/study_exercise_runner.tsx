@@ -6,6 +6,7 @@ import { Chess, type Square } from "chess.js";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
 import { Button } from "../components/buttons/BaseButton";
+import { SelectInput } from "../components/inputs/SelectInput";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import type { PracticeCard } from "../domain/cards";
 import { API_URL } from "../const";
@@ -47,6 +48,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const [selectedSquares, setSelectedSquares] = useState<string[]>([]);
   const [moveSequence, setMoveSequence] = useState<string[]>([]);
   const [coordinateInput, setCoordinateInput] = useState("");
+  const [selectedPromotion, setSelectedPromotion] = useState("q");
   const [choiceIds, setChoiceIds] = useState<string[]>([]);
   const [reachable, setReachable] = useState(true);
   const [answerText, setAnswerText] = useState("");
@@ -65,7 +67,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     queueMicrotask(() => {
       if (generation !== generationRef.current) return;
       setExercise(null); setLoadError(""); setSaveError(""); setSelectedSquares([]);
-      setMoveSequence([]); setCoordinateInput(""); setChoiceIds([]); setReachable(true);
+      setMoveSequence([]); setCoordinateInput(""); setSelectedPromotion("q"); setChoiceIds([]); setReachable(true);
       setAnswerText(""); setHintSeen(false); setReply(null); setFeedback(null);
     });
     pendingRef.current = null;
@@ -120,10 +122,10 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     if (!exercise || exercise.type !== "move_line" || answerLocked || blocked) return;
     try {
       const board = new Chess(currentFen);
-      const move = board.move({ from, to, promotion: "q" });
+      const move = board.move({ from, to, promotion: selectedPromotion });
       if (move) setMoveSequence((current) => [...current, `${move.from}${move.to}${move.promotion ?? ""}`]);
     } catch { setSaveError("Choose a legal move, or enter promotion coordinates below."); }
-  }, [exercise, answerLocked, blocked, currentFen]);
+  }, [exercise, answerLocked, blocked, currentFen, selectedPromotion]);
 
   const answerShapes = useMemo<DrawShape[]>(() => selectedSquares.map((square) => ({
     orig: square as Square, brush: "blue",
@@ -134,6 +136,10 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const revealedMoves = revealedReference?.success && revealedReference.data.type === "move_line" ? revealedReference.data.accepted_lines[0] : undefined;
   const visiblePositions = useMemo(() => exercise ? positionsFromMoves(exercise.fen, revealedMoves ?? (exercise.type === "move_line" ? moveSequence : [])) : [currentFen], [exercise, revealedMoves, moveSequence, currentFen]);
   const boardHistory = useBoardHistory(studyPositionKey, visiblePositions, currentFen);
+  const promotionAvailable = useMemo(() => {
+    if (exercise?.type !== "move_line") return false;
+    return new Chess(boardHistory.fen).moves({ verbose: true }).some((move) => Boolean(move.promotion));
+  }, [exercise?.type, boardHistory.fen]);
   const keyboard = { ...boardHistory.keyboard,
     reset: () => { boardHistory.keyboard.reset(); setOrientation("white"); },
     hint: !reply && exercise?.hint && !boardHistory.viewingHistory && !blocked ? () => setHintSeen(true) : undefined,
@@ -295,6 +301,11 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     {exercise.type === "knight_path" && <label><input type="checkbox" checked={!reachable} disabled={answerLocked}
       onChange={(event) => { setReachable(!event.target.checked); setSelectedSquares([]); }} />No route within the stated bound</label>}
     {(selectionMode || exercise.type === "move_line") && <div>
+      {promotionAvailable && <label>Promotion <SelectInput value={selectedPromotion}
+        disabled={answerLocked || blocked || busy || boardHistory.viewingHistory}
+        onChange={(event) => setSelectedPromotion(event.target.value)}>
+        <option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option>
+      </SelectInput></label>}
       <p>Answer: {exercise.type === "move_line" ? moveSequence.join(" ") : selectedSquares.join(" → ") || "none"}</p>
       <label>Coordinates or UCI move<input value={coordinateInput} disabled={answerLocked} onChange={(event) => setCoordinateInput(event.target.value)} /></label>
       <Button disabled={answerLocked} onClick={addCoordinates}>Add</Button>
