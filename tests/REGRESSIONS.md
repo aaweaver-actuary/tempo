@@ -1670,3 +1670,5 @@ whole affected file/wrapper; CI owns final candidate durability/complete coverag
   `tests/unit/postgres-test-speedups-regressions.test.ts`.
 
 `legacy numeric/object marker cannot be cleared by a review of replacement content sharing its queue ID` protects the review acknowledgment boundary: only exact contextual markers can be cleared by that review; queue-only markers retain their original delivery and authoritative replay. Both cases failed before the repair.
+
+`confirmed legacy numeric/object replay accepts a fresh authoritative guided queue in the same hydration` protects prompt recovery after confirmation. Both cases failed with an overly conservative initial-snapshot guard. Existing browser `reloaded prefetched guided card waits for the earlier review before marking failure` exposed this in CI and passes unchanged after the repair; unresolved markers and false/stale queue responses remain blocked.

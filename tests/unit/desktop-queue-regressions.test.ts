@@ -367,3 +367,16 @@ it.each(legacyFailureFormats)("unresolved legacy $name marker also blocks a prep
     cards: legacyMarkerQueuePayload().cards, attempts: [], nextTemporaryId: -1 } as PreparedTraining)).rejects.toThrow("identity is pending");
   expectNoCleanLegacyAttempt();
 });
+
+it.each(legacyFailureFormats)("confirmed legacy $name replay accepts a fresh authoritative guided queue in the same hydration", async ({ saved }) => {
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/fail")) return Response.json({ attempt_failed: true });
+    await flushTrainingFailures();
+    return Response.json(legacyMarkerQueuePayload("desktop-active", 1, true));
+  }));
+  await fetchAndInitializeQueue();
+  expect(pendingTrainingFailures()).toEqual([]);
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
+  expect(useTrainingStore.getState().serviceError).toBe("");
+});

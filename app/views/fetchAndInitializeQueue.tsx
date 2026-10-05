@@ -90,8 +90,16 @@ function retainPendingFailures(
 ): PracticeCard[] {
   const activeState = useTrainingStore.getState();
   const activeCard = activeState.isDatabaseQueueActive ? activeState.getCard() : undefined;
-  const unresolvedLegacy = failureContexts.find(failure => isLegacyTrainingFailure(failure) &&
-    (cards.some(card => card.queueEntryId === failure.queueEntryId) || activeCard?.queueEntryId === failure.queueEntryId));
+  const currentFailureContexts = pendingTrainingFailureContexts();
+  const unresolvedLegacy = failureContexts.find(failure => {
+    if (!isLegacyTrainingFailure(failure)) return false;
+    const queuedCard = cards.find(card => card.queueEntryId === failure.queueEntryId);
+    if (!queuedCard && activeCard?.queueEntryId !== failure.queueEntryId) return false;
+    // The request snapshot stays conservative if the queue response raced replay.
+    // Confirmed authoritative replay plus a server-guided queue can settle it now.
+    return currentFailureContexts.some(pending => pending.operationId === failure.operationId) ||
+      queuedCard?.attemptFailed !== true;
+  });
   if (unresolvedLegacy) {
     // A queue-only saved marker is not evidence about whichever card now occupies
     // that entry. Only authoritative replay followed by a fresh queue read can resolve it.

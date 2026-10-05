@@ -161,3 +161,13 @@ Automated card-lock warning disposition: no locking change is needed. Existing
 `submit_review()` executes `SELECT id FROM cards ... FOR UPDATE` before evidence
 or aggregate validation; reconciliation calls that handler inside its existing
 savepoint. This protection, evidence completion and rollback behavior are preserved.
+
+CI 37290974919 passed frontend (1,002), backend (1,134), build, visuals and
+PostgreSQL, but its existing prefetched-guided browser case exposed an overly
+conservative initial marker snapshot after confirmed delivery. The guard now
+accepts that snapshot only when the original marker is no longer unresolved and
+the fresh queue independently reports `attempt_failed=true`. A still-pending
+marker or false/stale queue remains blocked. Both named confirmation cases failed
+before the correction. All six affected unit files pass 118 cases (4.98 s wall);
+the existing failing browser and both new real reload cases pass unchanged (three
+cases, 6.6 s execution / 49.02 s wall). A fresh complete CI candidate follows.
