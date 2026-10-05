@@ -211,12 +211,14 @@ export function targetKey(target) {
     Object.values(target.volumes).map(volume => volume.name).sort()])).digest("hex").slice(0, 24);
 }
 
+const requiredVerificationJobs = ["plan", "frontend / verify", "backend / verify", "build / verify",
+  "postgres / verify", "browser / verify", "visual / verify", "quality"];
+
 export function qualityEvidence(revision, run, jobs) {
   if (run.head_sha !== revision || run.head_branch !== "main" || !["push", "workflow_dispatch", "schedule"].includes(run.event))
     throw new Error("CI evidence is for a different revision or branch.");
   if (run.status !== "completed") throw new Error("The newest main revision is still being verified.");
-  for (const name of ["plan", "frontend / verify", "backend / verify", "build / verify",
-    "postgres / verify", "browser / verify", "visual / verify", "quality"]) {
+  for (const name of requiredVerificationJobs) {
     const job = jobs.find(candidate => candidate.name === name);
     if (!job || job.status !== "completed" || job.conclusion !== "success")
       throw new Error(`Required CI job ${name} has not passed. ${run.html_url}`);
@@ -257,39 +259,80 @@ export function commandExecutor({ root, environment = process.env, output = cons
   });
 }
 
-async function githubJson(path) {
+async function githubJson(path, { signal } = {}) {
   const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
   const response = await fetch(`https://api.github.com/repos/aaweaver-actuary/tempo/${path}`, {
     headers: { Accept: "application/vnd.github+json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    signal: AbortSignal.timeout(15_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`GitHub verification unavailable (HTTP ${response.status}).`);
   return response.json();
 }
 
-async function verifiedMainEvidence(revision, fetchJson) {
-  let verificationFailure;
+export async function assessMainVerification(revision, fetchJson = githubJson, { signal } = {}) {
+  let firstAssessment, unavailableAssessment;
+  const unavailable = error => ({ status: "unavailable", revision,
+    message: error.message.startsWith("GitHub verification unavailable") ? error.message : `GitHub verification unavailable: ${error.message}` });
+  // Racing the signal also bounds injected clients which ignore cancellation.
+  const requestJson = async path => {
+    signal?.throwIfAborted();
+    if (!signal) return fetchJson(path);
+    let abortRequest;
+    const aborted = new Promise((_, reject) => {
+      abortRequest = () => reject(signal.reason);
+      signal.addEventListener("abort", abortRequest, { once: true });
+    });
+    try { return await Promise.race([fetchJson(path, { signal }), aborted]); }
+    finally { signal.removeEventListener("abort", abortRequest); }
+  };
   // Any complete successful allowed run for this exact main revision is proof.
   // A later pending/failed rerun does not invalidate immutable successful proof.
   for (let runPage = 1; ; runPage += 1) {
-    const result = await fetchJson(`actions/workflows/pages.yml/runs?head_sha=${revision}&branch=main&per_page=100&page=${runPage}`);
+    let result;
+    try { result = await requestJson(`actions/workflows/pages.yml/runs?head_sha=${revision}&branch=main&per_page=100&page=${runPage}`); }
+    catch (error) { return unavailable(error); }
+    if (!Array.isArray(result?.workflow_runs)) return unavailable(new Error("GitHub returned an invalid workflow-run response."));
     for (const workflowRun of result.workflow_runs) {
       if (workflowRun.head_sha !== revision || workflowRun.head_branch !== "main"
         || !["push", "workflow_dispatch", "schedule"].includes(workflowRun.event)) continue;
+      if (workflowRun.status !== "completed") {
+        firstAssessment ??= { status: "pending", revision, run: workflowRun,
+          message: `Main revision verification is still pending. ${workflowRun.html_url}` };
+        continue;
+      }
       try {
-        if (workflowRun.status !== "completed") throw new Error(`Main revision verification is still pending. ${workflowRun.html_url}`);
         const jobs = [];
         for (let jobPage = 1; ; jobPage += 1) {
-          const page = await fetchJson(`actions/runs/${workflowRun.id}/jobs?filter=latest&per_page=100&page=${jobPage}`);
+          const page = await requestJson(`actions/runs/${workflowRun.id}/jobs?filter=latest&per_page=100&page=${jobPage}`);
+          if (!Array.isArray(page?.jobs)) throw new Error("GitHub returned an invalid jobs response.");
           jobs.push(...page.jobs);
           if (page.jobs.length < 100) break;
         }
-        return qualityEvidence(revision, workflowRun, jobs);
-      } catch (error) { verificationFailure ??= error; }
+        try {
+          const evidence = qualityEvidence(revision, workflowRun, jobs);
+          return { status: "verified", revision, evidence, run: workflowRun, message: `Exact-main verification passed. ${evidence.url}` };
+        } catch (error) {
+          const name = requiredVerificationJobs.find(requiredName => {
+            const job = jobs.find(candidate => candidate.name === requiredName);
+            return !job || job.status !== "completed" || job.conclusion !== "success";
+          });
+          const job = jobs.find(candidate => candidate.name === name);
+          firstAssessment ??= { status: !job ? "missing" : job.status !== "completed" ? "pending" : "failed",
+            revision, run: workflowRun, job: name, conclusion: job?.conclusion ?? "missing",
+            message: `${error.message}${job ? ` (${job.conclusion ?? job.status})` : " (job missing)"}` };
+        }
+      } catch (error) { unavailableAssessment ??= unavailable(error); }
     }
     if (result.workflow_runs.length < 100) break;
   }
-  throw verificationFailure ?? new Error("No complete main CI verification exists for the candidate revision.");
+  return unavailableAssessment ?? firstAssessment ?? { status: "missing", revision,
+    message: "No complete main CI verification exists for the candidate revision." };
+}
+
+async function verifiedMainEvidence(revision, fetchJson) {
+  const assessment = await assessMainVerification(revision, fetchJson);
+  if (assessment.status !== "verified") throw new Error(assessment.message);
+  return assessment.evidence;
 }
 
 export async function selectCandidate(target, run, fetchJson = githubJson) {

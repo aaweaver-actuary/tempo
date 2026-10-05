@@ -40,15 +40,110 @@ and unrelated commands are not overwritten.
 | `tempo start --no-open` | Start without opening a browser |
 | `tempo restart` | Perform the same checks and recreate application services |
 | `tempo stop` | Gracefully stop the stack, retaining all study data |
-| `tempo status` | Show the registered target, recorded revision, schema, and services |
-| `tempo doctor` | Read-only diagnosis with the last maintenance result and API error |
+| `tempo status` | Show source, receipt, running identity, schema, and update eligibility |
+| `tempo doctor` | Read-only diagnosis plus running API readiness and next actions |
 | `tempo logs [service] [--follow]` | Inspect recent or live service logs |
 | `tempo backup` | Stop writers, take and restore-verify a backup, then restore service state |
 | `tempo migrate` | Explicitly run the checked update path without opening the browser |
-| `tempo start --plan` | Inspect and preview without updating source, services, or the database |
+| `tempo start --plan` | Assess exact-main verification and preview without changing source, services, or the database |
 
 The Mac launcher and older shell helpers use this same CLI. You no longer
 need to decide whether a merge requires a rebuild or a migration.
+
+## Reading diagnostics and a blocked update
+
+`status`, `doctor`, and `--plan` distinguish the local branch/HEAD, remote-main
+SHA, recorded verified deployment, and actual running image identity. A receipt
+matching main does not establish what is running. Running identity comes from
+immutable container image IDs and their revision labels; missing labels or
+unavailable image inspection produce `unknown`, different revisions produce
+`mixed`, and absent application services are listed as `partial`. Receipt
+consistency compares the inspected running services with saved immutable images
+and Compose hashes; it does not certify stopped or missing services.
+Partial image inspection retains available revision labels, so known conflicting
+labels still establish a mixed revision while unavailable records remain explicit.
+Receipt ID/configuration comparison remains available without image metadata;
+an identity match does not verify a running revision whose labels are unknown.
+
+The applied migration ledger is shown separately from the schema required by
+local source, with missing ledger versions, pending local migrations, and a
+database ahead of local source identified explicitly. The ledger probe is
+read-only with a one-second PostgreSQL statement limit and a 100 ms lock limit.
+These limits apply only to this diagnostic session.
+
+Verification is `verified`, `pending`, `failed`, `missing`, or `unavailable`.
+A failed designated job names the job and conclusion. Missing evidence means
+no acceptable complete allowed main run was found, or a completed run lacks a
+required job. GitHub authentication, rate-limit, network, timeout and malformed
+response errors are unavailable evidence, rather than failed tests. The remote
+lookup has a 30-second total budget, including reading remote main; an incomplete
+search cannot prove evidence is missing. Available local diagnostics remain visible.
+Ancestry is checked only against objects already present locally; otherwise it
+is `unknown`. Diagnostics never fetch or change Git refs. The actual updater
+rechecks current-main evidence, source safety, target isolation and readiness.
+
+If no deployment receipt exists and verification is pending, the update is
+waiting for that exact SHA. There is no verified fallback, and the blocked
+attempt has not applied the update. Inspect the linked workflow and its required
+jobs, then run `tempo start` once that revision is eligible. A successful run for
+an older main SHA does not verify a newer one. Earlier acceptable successful
+evidence for the **same** SHA remains acceptable despite a later pending/failed
+run. GitHub Pages publication is not an additional local deployment requirement.
+An existing recorded fallback still needs the updater's image/schema/readiness
+checks. Local source edits, divergence, unexpected registration/remote identity,
+or unresolved migration verification must be addressed without discarding work.
+
+`doctor` adds the existing API health response. HTTP 200 checks the running API's
+schema and basic worker/queue readiness, which can differ from local source; it
+does not prove all background work completed. Background completion remains
+explicitly unverified. No expensive background audit runs automatically.
+Diagnostic execution still returns zero when it reports a verification blocker;
+invalid targets and operational command failures retain their existing failure
+exit codes. `tempo logs` does not wait for GitHub verification.
+
+## Operator update and post-update evidence
+
+After this repair is merged, run diagnostics and the read-only plan first.
+Once the exact current-main revision is verified and source/maintenance blockers
+are resolved, capture the UTC start time and run the normal update:
+
+```sh
+tempo doctor
+tempo start --plan
+update_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+tempo start
+tempo doctor
+```
+
+Do not use a different checkout's global `tempo` invocation for development:
+the registered target still controls routing. A successful update records the
+selected full SHA, successful verification URL, immutable image IDs, schema and
+readiness timestamp in its deployment receipt. Confirm running application
+identity/receipt consistency and an uninterrupted applied ledger reaching the
+local required schema; inspect the normal readiness result. A basic HTTP 200
+alone is insufficient evidence for background completion or this incident's
+resolution. No live deployment is performed by this diagnostic repair.
+
+Inspect only post-update logs using the recorded timestamp and the registered
+context, project, environment and Compose files. For the standard registration,
+confirm these paths/settings against `~/.config/tempo/config.json`, then run this
+in the same shell as the update:
+
+```sh
+docker --context desktop-linux compose --project-directory /Users/andy/tempo \
+  --env-file /Users/andy/tempo/.env -p tempo \
+  -f /Users/andy/tempo/docker-compose.yml \
+  -f /Users/andy/tempo/docker-compose.postgres-maintenance.yml \
+  logs --no-color --timestamps --tail 200 --since "$update_started_at" \
+  api background-worker background-scheduler postgres
+```
+
+Verification pending/failed/missing/unavailable remains a stop condition for a
+first deployment. Failed backup/history verification, a missing volume, mixed
+target identity, unresolved migration guard or readiness failure requires
+inspection and a compatible fix forward. Preserve backups/guards/receipts and
+new study writes; do not manufacture first-deployment evidence, change verification
+policy, or restore an old backup to clear the blocker.
 
 ## What happens during an update
 
