@@ -174,9 +174,9 @@ describe("optimistic training review outbox", () => {
       backendId: "card-a", queueEntryId: 17, attemptId, status: 503, retryable: true,
     });
   });
-  it("confirmed guided review clears its earlier failure marker", async () => {
-    enqueueTrainingFailure(17);
-    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17,
+  it("confirmed guided review clears its earlier contextual failure marker", async () => {
+    enqueueTrainingFailure(17, "card-a", 1);
+    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, expectedRevision: 1,
       outcome: "again", guided: true });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ persisted: true })));
     await flushPendingReviews();

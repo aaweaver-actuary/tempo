@@ -157,4 +157,29 @@ it.each([
   await expect(flushTrainingFailures()).rejects.toThrow("Temporarily unavailable");
   expect(keys).toEqual([normalized[0].operationId, normalized[0].operationId]);
   expect(normalized).toEqual([{ queueEntryId: 42, operationId: expect.any(String) }]);
+  let releaseMarker!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+    ? new Promise<Response>(resolve => { releaseMarker = resolve; })
+    : Response.json({ persisted: true })));
+  const heldMarkerDelivery = flushTrainingFailures();
+  const heldMarkerFailure = expect(heldMarkerDelivery).rejects.toThrow("Temporarily unavailable");
+  try {
+    expect(releaseMarker).toBeDefined();
+    enqueuePendingReview({ backendId: "independent-later-card", queueEntryId: 44, outcome: "correct", guided: false });
+    expect((await flushPendingReviews()).persistedAttemptIds).toHaveLength(1);
+    expect(pendingTrainingFailureContexts()).toEqual(normalized);
+  } finally {
+    releaseMarker(Response.json({ detail: "Temporarily unavailable" }, { status: 503 }));
+    await heldMarkerFailure;
+  }
+});
+
+it.each([
+  { name: "numeric", saved: [42] },
+  { name: "object", saved: [{ queueEntryId: 42, operationId: "legacy-review-clear-key" }] },
+])("legacy $name marker cannot be cleared by a review of replacement content sharing its queue ID", ({ saved }) => {
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  const normalized = pendingTrainingFailureContexts();
+  clearTrainingFailureAfterReview(42, "replacement-card", 2);
+  expect(pendingTrainingFailureContexts()).toEqual(normalized);
 });

@@ -133,3 +133,31 @@ hydration in named unit cases, followed by focused browser reload/playability pr
 affected callers, typecheck and lint. Modern exact-context matching and authoritative
 marker validation remain intact. CI owns fresh required current-main candidate
 validation; no overlapping full local gate is planned.
+
+Unresolved legacy numeric and queue-only object markers now block affected live,
+cached and prepared/offline hydration through the existing recoverable service
+error. They never supply a guessed card/revision or a replacement card's guided
+flag. Authoritative marker replay and a subsequent fresh queue read establish the
+usable state. Definitively ambiguous/unavailable legacy markers remain saved with
+their original operation key and explicit error; matching contextual markers keep
+their prior behavior. Review acknowledgment clears only an exact contextual marker.
+A server-confirmed failure latches onto an exactly matching retained active attempt
+without changing its logical ID, board or completion result. Independent completed
+reviews can still save while legacy marker delivery is delayed or deferred.
+
+The initial four real normalization/hydration cases failed for clean playability;
+the retained-active hydration case failed for a clean flag after confirmation; both
+legacy review-clear cases failed for data removal. All named fixes are in the
+regular suite. Focused browser validation on integrated main a4b0c5e selected five
+cases and passed (12.5 s execution / 50.57 s wall), including both real reload cases,
+independent conflict delivery, phone reconnect and iPhone conflict exclusion.
+The subsequent acknowledgment-only repair is covered by 60 passing outbox/review
+cases (1.40 s wall); the final fresh CI owns complete candidate verification.
+No overlapping local full/durability/visual suite is required for this bounded
+client-state repair and unchanged published schemas. Main's runner contracts pass
+38 cases (1.00 s wall), retaining scheduler isolation and both branches' coverage.
+
+Automated card-lock warning disposition: no locking change is needed. Existing
+`submit_review()` executes `SELECT id FROM cards ... FOR UPDATE` before evidence
+or aggregate validation; reconciliation calls that handler inside its existing
+savepoint. This protection, evidence completion and rollback behavior are preserved.

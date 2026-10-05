@@ -1618,3 +1618,5 @@ PR #72 legacy-marker compatibility (2026-10-05):
   with background consumers during disposable workload proofs and restores
   dispatch after failure. The regular unit gate runs this file through
   `tests/unit/postgres-test-speedups-regressions.test.ts`.
+
+`legacy numeric/object marker cannot be cleared by a review of replacement content sharing its queue ID` protects the review acknowledgment boundary: only exact contextual markers can be cleared by that review; queue-only markers retain their original delivery and authoritative replay. Both cases failed before the repair.

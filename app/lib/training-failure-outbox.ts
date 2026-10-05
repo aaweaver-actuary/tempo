@@ -63,8 +63,10 @@ function removeTrainingFailure(queueEntryId: number, operationId?: string): void
 }
 
 export function clearTrainingFailureAfterReview(queueEntryId: number, backendId?: string, expectedRevision?: number): void {
-  const matching = savedTrainingFailures().filter((item) => item.queueEntryId === queueEntryId &&
-    (item.backendId === undefined || (item.backendId === backendId && item.expectedRevision === expectedRevision)));
+  // A completed review cannot identify a queue-only legacy marker. Its existing
+  // authoritative marker replay must resolve that missing context instead.
+  const matching = savedTrainingFailures().filter((item) => !isLegacyTrainingFailure(item) &&
+    item.queueEntryId === queueEntryId && item.backendId === backendId && item.expectedRevision === expectedRevision);
   for (const item of matching) removeTrainingFailure(queueEntryId, item.operationId);
 }
 
