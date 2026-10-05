@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { enqueueIntegrityRepair, pendingIntegrityRepairs, flushIntegrityRepairs, retryIntegrityRepair,
   INTEGRITY_REPAIR_CONFIRMED } from "../../app/lib/integrity-repair-outbox";
 
@@ -13,7 +15,7 @@ const graph = (id = "rep") => ({ id, name: id, source_name: "repair.pgn", line_c
   graph_state: "ready", graph_generation: 2 });
 const submission = (repertoireId = "rep", issueId = "first") => ({ task_id: `graph-${repertoireId}`, repertoire_id: repertoireId, issue_id: issueId, state: "queued" });
 const task = (repertoireId = "rep", state = "queued") => ({ id: `graph-${repertoireId}`, kind: "opening_graph_rebuild",
-  deduplication_key: repertoireId, generation: 2, state, last_error: null });
+  deduplication_key: repertoireId, generation: 2, state, last_error: null as string | null });
 
 function fixture() {
   const receipts = new Map<string, unknown>();
@@ -46,6 +48,199 @@ function fixture() {
   return { receipts, currentEvidence, tasks, repertoires, posts, fetchMock };
 }
 afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+const operationLifecycleCases = [
+  { state: "unknown", phase: "validating" },
+  { state: "pending", phase: "saving" },
+  { state: "queued", phase: "saving" },
+  { state: "executing", phase: "saving" },
+  { state: "retrying", phase: "saving" },
+  { state: "blocked", phase: "blocked" },
+  { state: "complete", phase: "validating" },
+  { state: "failed", phase: "failed" },
+] as const;
+const taskLifecycleStates = ["queued", "leased", "retrying", "complete", "failed", "superseded"] as const;
+
+function producerConstraintStates(tableName: "operation_receipts" | "background_tasks") {
+  const migrationDirectory = resolve("backend/migrations");
+  let stateLiterals: string | undefined;
+  for (const filename of readdirSync(migrationDirectory).filter(filename => /^\d+.*\.sql$/.test(filename)).sort()) {
+    const sql = readFileSync(resolve(migrationDirectory, filename), "utf8");
+    // Only these two table state constraints are audited; later constraint replacements win.
+    const tableConstraint = sql.match(new RegExp(`CREATE TABLE ${tableName} \\([^\\n]*?CHECK \\(state IN \\(([^)]+)\\)\\)`));
+    if (tableConstraint) stateLiterals = tableConstraint[1];
+    const replacementConstraint = sql.match(new RegExp(`ALTER TABLE ${tableName} ADD CONSTRAINT ${tableName}_state_check\\s+CHECK \\(state IN \\(([^)]+)\\)\\)`));
+    if (replacementConstraint) stateLiterals = replacementConstraint[1];
+  }
+  expect(stateLiterals, `No state constraint found for ${tableName}`).toBeDefined();
+  return Array.from(stateLiterals!.matchAll(/'([^']+)'/g), match => match[1]).sort();
+}
+
+it("repair outbox handles every backend receipt and task lifecycle state deliberately", () => {
+  expect(operationLifecycleCases.map(item => item.state).filter(state => state !== "unknown").sort())
+    .toEqual(producerConstraintStates("operation_receipts"));
+  expect([...taskLifecycleStates].sort()).toEqual(producerConstraintStates("background_tasks"));
+  const sqliteSchema = readFileSync(resolve("backend/app/database.py"), "utf8");
+  const sqliteTaskStates = sqliteSchema.match(/CREATE TABLE IF NOT EXISTS background_tasks[\s\S]*?CHECK\(state IN \(([^)]+)\)\)/);
+  expect(sqliteTaskStates).not.toBeNull();
+  expect(Array.from(sqliteTaskStates![1].matchAll(/'([^']+)'/g), match => match[1]).sort()).toEqual([...taskLifecycleStates].sort());
+  const operationProducer = readFileSync(resolve("backend/app/command_gateway.py"), "utf8");
+  expect(operationProducer.slice(operationProducer.indexOf("def read_operation("))).toContain('"state": "unknown"');
+});
+
+it.each(operationLifecycleCases)("operation receipt lifecycle $state maps to $phase without changing repair identity", async ({ state, phase }) => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  environment.receipts.set(saved.operationId, { operation_id: saved.operationId, state,
+    attempt_count: 2, retry_cycle: 1, cycle_attempt_count: 2, response: submission(),
+    error: { status_code: 500, message: "Repair save failed" }, last_error: { message: "Delivery blocked" } });
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase, attempts: 0 });
+  expect(environment.posts).toHaveLength(state === "unknown" ? 1 : 0);
+  if (["pending", "queued", "executing", "retrying", "complete", "unknown"].includes(state))
+    expect(pendingIntegrityRepairs()[0].error).toBeUndefined();
+  if (state === "blocked") expect(pendingIntegrityRepairs()[0].error).toBe("Delivery blocked");
+  if (state === "failed") expect(pendingIntegrityRepairs()[0]).toMatchObject({ error: "Repair save failed", terminalOperationFailure: true });
+});
+
+it("queued operation receipt remains pollable without resubmitting or requiring Retry", async () => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  environment.receipts.set(saved.operationId, { operation_id: saved.operationId, state: "queued", attempt_count: 3,
+    retry_cycle: 1, cycle_attempt_count: 0, next_retry_at: "2026-10-05T16:00:00+00:00" });
+  await flushIntegrityRepairs(); await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "saving", attempts: 0, nextAttemptAt: 0 });
+  expect(pendingIntegrityRepairs()[0].error).toBeUndefined();
+  expect(pendingIntegrityRepairs()[0].retry).toBeUndefined();
+  expect(environment.posts).toHaveLength(0);
+  environment.receipts.set(saved.operationId, { operation_id: saved.operationId, state: "complete", response: submission() });
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "validating", taskId: "graph-rep" });
+  expect(environment.posts).toHaveLength(0);
+});
+
+it("legacy pending receipt without payload recovers only the original saved choice", async () => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  environment.receipts.set(saved.operationId, { operation_id: saved.operationId, state: "pending",
+    message: "Legacy receipt has no saved payload. Recover only from matching journal or outbox evidence." });
+  await flushIntegrityRepairs();
+  expect(environment.posts).toEqual([expect.objectContaining({ key: saved.operationId,
+    body: { signature: choice.signature, selected_move_uci: choice.selectedMoveUci } })]);
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "validating" });
+});
+
+it.each([404, 409, 422])("terminal receipt failure %s requires review and retains the saved operation", async statusCode => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  environment.receipts.set(saved.operationId, { state: "failed", error: { status_code: statusCode, message: "Conflict changed" } });
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "stale",
+    terminalOperationFailure: true, error: "Conflict changed" });
+  expect(environment.posts).toHaveLength(0);
+});
+
+it.each(["queued", "leased", "retrying", "complete"])("unrelated superseded task cannot interrupt repair validation (%s)", async matchingState => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice); await flushIntegrityRepairs();
+  environment.tasks.unshift({ id: "retired-prefix-preview", kind: "canonical_prefix_preview", deduplication_key: "obsolete-preview",
+    generation: 7, state: "superseded", last_error: null });
+  environment.tasks[1].state = matchingState;
+  environment.currentEvidence.set("rep", evidence("rep", []));
+  const confirmed = vi.fn(); window.addEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
+  try {
+    await flushIntegrityRepairs();
+    if (matchingState === "complete") {
+      expect(pendingIntegrityRepairs()).toEqual([]);
+      expect(confirmed).toHaveBeenCalledOnce();
+    } else {
+      expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "validating", attempts: 0 });
+      expect(pendingIntegrityRepairs()[0].error).toBeUndefined();
+      expect(confirmed).not.toHaveBeenCalled();
+      environment.tasks[1].state = "complete";
+      await flushIntegrityRepairs();
+      expect(pendingIntegrityRepairs()).toEqual([]);
+      expect(confirmed).toHaveBeenCalledOnce();
+    }
+    expect(environment.posts).toHaveLength(1);
+  } finally { window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed); }
+});
+
+it.each(taskLifecycleStates)("durable task lifecycle %s has deliberate repair behavior", async state => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice); await flushIntegrityRepairs();
+  environment.tasks[0].state = state;
+  environment.tasks[0].last_error = state === "failed" ? "Task failed" : null;
+  environment.currentEvidence.set("rep", evidence("rep", []));
+  await flushIntegrityRepairs();
+  if (state === "complete") expect(pendingIntegrityRepairs()).toEqual([]);
+  else {
+    const pending = pendingIntegrityRepairs()[0];
+    expect(pending).toMatchObject({ operationId: saved.operationId, attempts: 0,
+      phase: state === "failed" ? "failed" : state === "superseded" ? "stale" : "validating" });
+    if (state === "failed") expect(pending).toMatchObject({ retryTaskId: "graph-rep", error: "Task failed" });
+    else if (state === "superseded") expect(pending.error).toContain("superseded");
+    else expect(pending.error).toBeUndefined();
+  }
+  expect(environment.posts).toHaveLength(1);
+});
+
+for (const kind of ["opening_graph_rebuild", "integrity_repair"] as const) {
+  for (const generation of [2, 3]) {
+    it(`superseded repair validation task requires review without confirming or retrying (${kind}, generation ${generation})`, async () => {
+      const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+      environment.receipts.set(saved.operationId, { state: "complete", response: { ...submission(), task_generation: 2 } });
+      await flushIntegrityRepairs();
+      enqueueIntegrityRepair({ ...choice, issueId: "second", signature: "second-signature" });
+      Object.assign(environment.tasks[0], { kind, generation, state: "superseded",
+        deduplication_key: kind === "integrity_repair" ? "rep:first-signature" : "rep" });
+      environment.currentEvidence.set("rep", evidence("rep", []));
+      const confirmed = vi.fn(); window.addEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
+      try {
+        await flushIntegrityRepairs(); await flushIntegrityRepairs();
+        expect(pendingIntegrityRepairs()[0]).toMatchObject({ ...choice, operationId: saved.operationId, phase: "stale", taskId: "graph-rep", taskGeneration: 2, attempts: 0 });
+        expect(pendingIntegrityRepairs()[0].error).toContain("superseded");
+        expect(pendingIntegrityRepairs()[0].error).toContain("Review");
+        expect(pendingIntegrityRepairs()[0].retryTaskId).toBeUndefined();
+        expect(pendingIntegrityRepairs()[1].phase).toBe("queued");
+        await expect(retryIntegrityRepair(saved.operationId)).rejects.toThrow("Review this conflict");
+        expect(environment.posts).toHaveLength(0);
+        expect(confirmed).not.toHaveBeenCalled();
+      } finally { window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed); }
+    });
+  }
+}
+
+it.each(["kind", "deduplication key", "generation"])("superseded task still enforces saved repair identity and generation (%s)", async mismatch => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  environment.receipts.set(saved.operationId, { state: "complete", response: { ...submission(), task_generation: 2 } });
+  await flushIntegrityRepairs();
+  Object.assign(environment.tasks[0], { state: "superseded", ...(mismatch === "kind" ? { kind: "integrity_scan" }
+    : mismatch === "deduplication key" ? { deduplication_key: "unrelated" } : { generation: 1 }) });
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "validating" });
+  expect(pendingIntegrityRepairs()[0].error).toContain("unrelated task or generation");
+  expect(environment.posts).toHaveLength(0);
+});
+
+it("a newer current task generation waits for matching graph publication", async () => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  environment.receipts.set(saved.operationId, { state: "complete", response: { ...submission(), task_generation: 2 } });
+  await flushIntegrityRepairs();
+  environment.tasks[0].generation = 3;
+  environment.currentEvidence.set("rep", evidence("rep", []));
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "validating" });
+  environment.tasks[0].state = "complete";
+  await flushIntegrityRepairs(); expect(pendingIntegrityRepairs()).toHaveLength(1);
+  environment.repertoires[0].graph_generation = 3;
+  await flushIntegrityRepairs(); expect(pendingIntegrityRepairs()).toEqual([]);
+  expect(environment.posts).toHaveLength(0);
+});
+
+it.each(["receipt", "task"])("unexpected backend lifecycle states remain contract failures (%s)", async contract => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  if (contract === "receipt") environment.receipts.set(saved.operationId, { operation_id: saved.operationId, state: "unexpected-state" });
+  else { await flushIntegrityRepairs(); environment.tasks[0].state = "unexpected-state"; }
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: contract === "receipt" ? "queued" : "validating", attempts: 1 });
+  expect(pendingIntegrityRepairs()[0].error).toContain(contract === "receipt" ? "Invalid repair receipt data" : "Invalid repair tasks data");
+  expect(environment.posts).toHaveLength(contract === "receipt" ? 0 : 1);
+});
 
 it("repair queue persists the complete choice before any network request and rejects duplicate choices", () => {
   const environment = fixture();
@@ -160,6 +355,12 @@ it("blocked repair retry stays pollable until the original receipt advances", as
   await flushIntegrityRepairs(); await retryIntegrityRepair(saved.operationId); await flushIntegrityRepairs();
   expect(environment.posts).toHaveLength(1); expect(environment.posts[0].url).toContain(`/operations/${saved.operationId}/retry`);
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ phase: "saving", retry: { deliveryAccepted: true } });
+  environment.receipts.set(saved.operationId, { operation_id: saved.operationId, state: "queued", retry_cycle: 2, attempt_count: 5 });
+  await flushIntegrityRepairs(); await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "saving", attempts: 0 });
+  expect(pendingIntegrityRepairs()[0].error).toBeUndefined();
+  expect(pendingIntegrityRepairs()[0].retry).toBeUndefined();
+  expect(environment.posts).toHaveLength(1);
   environment.receipts.set(saved.operationId, { state: "complete", retry_cycle: 2, response: submission() });
   await flushIntegrityRepairs();
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "validating" });
@@ -172,6 +373,13 @@ it("validation retry ignores the old failed task until its retry receipt commits
   const pending = pendingIntegrityRepairs()[0];
   expect(pending).toMatchObject({ phase: "validating", retry: { kind: "task", taskId: "graph-rep" } });
   expect(environment.posts.at(-1)?.key).toBe(pending.retryOperationId);
+  const retryDeliveryCountBeforeQueuedReceipt = environment.posts.filter(post => post.url.includes("/retry")).length;
+  environment.receipts.set(pending.retryOperationId!, { operation_id: pending.retryOperationId, state: "queued", attempt_count: 1 });
+  await flushIntegrityRepairs(); await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "validating",
+    retryOperationId: pending.retryOperationId, retry: { kind: "task", taskId: "graph-rep" }, attempts: 0 });
+  expect(pendingIntegrityRepairs()[0].error).toBeUndefined();
+  expect(environment.posts.filter(post => post.url.includes("/retry"))).toHaveLength(retryDeliveryCountBeforeQueuedReceipt);
   environment.receipts.set(pending.retryOperationId!, { state: "complete", response: { id: "graph-rep" } });
   environment.tasks[0].state = "complete"; environment.currentEvidence.set("rep", evidence("rep", []));
   await flushIntegrityRepairs(); expect(pendingIntegrityRepairs()).toEqual([]);

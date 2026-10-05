@@ -132,7 +132,13 @@ async function timedRequest(url: string, init?: RequestInit, background = true) 
   }
   finally { window.clearTimeout(timeout); }
 }
-const receiptSchema = z.object({ state: z.enum(["unknown", "pending", "executing", "retrying", "complete", "failed", "blocked"]),
+// Migration 017 defines persisted states; read_operation also returns unknown for an absent receipt.
+const receiptStateSchema = z.enum(["unknown", "pending", "queued", "executing", "retrying", "blocked", "complete", "failed"]);
+const receiptLifecycle = {
+  unknown: "absent", pending: "in_progress", queued: "in_progress", executing: "in_progress", retrying: "in_progress",
+  blocked: "attention", complete: "success", failed: "failure",
+} as const satisfies Record<z.infer<typeof receiptStateSchema>, "absent" | "in_progress" | "attention" | "success" | "failure">;
+const receiptSchema = z.object({ state: receiptStateSchema,
   operation_id: z.string().optional(), response: z.unknown().optional(), message: z.string().optional(),
   retry_cycle: z.number().int().nonnegative().default(0), attempt_count: z.number().int().nonnegative().default(0),
   error: z.object({ message: z.string().optional(), status_code: z.number().optional() }).optional(),
@@ -163,13 +169,14 @@ function fail(repair: PendingIntegrityRepair, phase: "failed" | "blocked" | "sta
 }
 async function confirmReceipt(repair: PendingIntegrityRepair, observed?: z.infer<typeof receiptSchema>) {
   const status = observed ?? await receipt(repair.operationId);
-  if (status.state === "complete") { accepted(repair, status.response); return true; }
-  if (status.state === "failed") {
+  const receiptLifecycleCategory = receiptLifecycle[status.state];
+  if (receiptLifecycleCategory === "success") { accepted(repair, status.response); return true; }
+  if (receiptLifecycleCategory === "failure") {
     fail(repair, [404, 409, 422].includes(status.error?.status_code ?? 0) ? "stale" : "failed",
       status.error?.message ?? "Repair save failed.", true); return true;
   }
-  if (status.state === "blocked") { fail(repair, "blocked", status.last_error?.message ?? "Repair delivery is blocked. Check the service, then retry."); return true; }
-  if (status.state === "unknown") return false;
+  if (receiptLifecycleCategory === "attention") { fail(repair, "blocked", status.last_error?.message ?? "Repair delivery is blocked. Check the service, then retry."); return true; }
+  if (receiptLifecycleCategory === "absent") return false;
   // The API cannot replay legacy no-payload receipts. The complete saved choice is the recovery evidence.
   if (status.state === "pending" && status.message?.startsWith("Legacy receipt has no saved payload.")) return false;
   updateRepair(repair.operationId, current => ({ ...current, phase: "saving", error: undefined }));
@@ -200,8 +207,13 @@ async function stillCurrent(repair: PendingIntegrityRepair) {
   }
   return true;
 }
+// PostgreSQL migration 001 and the SQLite compatibility schema share this complete task lifecycle.
+const taskStateSchema = z.enum(["queued", "leased", "retrying", "complete", "failed", "superseded"]);
+const taskLifecycle = {
+  queued: "active", leased: "active", retrying: "active", complete: "success", failed: "failure", superseded: "non_current",
+} as const satisfies Record<z.infer<typeof taskStateSchema>, "active" | "success" | "failure" | "non_current">;
 const tasksSchema = z.object({ tasks: z.array(z.object({ id: z.string(), kind: z.string(), deduplication_key: z.string(),
-  generation: z.number().int().positive(), state: z.enum(["queued", "leased", "retrying", "complete", "failed"]),
+  generation: z.number().int().positive(), state: taskStateSchema,
   last_error: z.string().nullable().optional() })) });
 async function validateRepair(repair: PendingIntegrityRepair) {
   const tasks = await readJsonResponse(await timedRequest(`${API_URL}/api/system/tasks`), tasksSchema, "repair tasks");
@@ -210,11 +222,15 @@ async function validateRepair(repair: PendingIntegrityRepair) {
     || task.kind === "opening_graph_rebuild" && task.deduplication_key !== repair.repertoireId
     || task.kind === "integrity_repair" && task.deduplication_key !== `${repair.repertoireId}:${repair.signature}`
     || task.generation < (repair.taskGeneration ?? 1))) throw new Error("Repair validation returned an unrelated task or generation.");
-  if (task?.state === "failed") {
+  const repairTaskLifecycleCategory = task ? taskLifecycle[task.state] : undefined;
+  if (task && repairTaskLifecycleCategory === "failure") {
     updateRepair(repair.operationId, current => ({ ...current, phase: "failed", retryTaskId: task.id,
       error: task.last_error ?? "Repair validation failed. Retry the task.", retry: undefined })); return;
   }
-  if (task && task.state !== "complete") return;
+  if (repairTaskLifecycleCategory === "non_current") {
+    fail(repair, "stale", "Repair validation task was superseded. Review the current repertoire evidence before choosing again."); return;
+  }
+  if (repairTaskLifecycleCategory === "active") return;
   const integrity = await currentIntegrity(repair);
   if (!integrity) return;
   if (integrity.scan_status === "failed") {
@@ -241,9 +257,10 @@ async function processRetry(repair: PendingIntegrityRepair) {
   const retry = repair.retry!;
   if (retry.kind === "operation") {
     const status = await receipt(repair.operationId);
+    const receiptLifecycleCategory = receiptLifecycle[status.state];
+    if (receiptLifecycleCategory === "absent") throw new Error("The original repair receipt is unavailable. Its retry is preserved.");
     const advanced = status.retry_cycle > retry.baselineRetryCycle || status.attempt_count > retry.baselineAttemptCount
-      || !["blocked", "failed"].includes(status.state);
-    if (status.state === "unknown") throw new Error("The original repair receipt is unavailable. Its retry is preserved.");
+      || (receiptLifecycleCategory !== "attention" && receiptLifecycleCategory !== "failure");
     if (advanced) {
       updateRepair(repair.operationId, current => ({ ...current, retry: undefined, retryOperationId: undefined }));
       await confirmReceipt(repair, status);
@@ -256,12 +273,13 @@ async function processRetry(repair: PendingIntegrityRepair) {
   }
   if (!retry.taskResetConfirmed) {
     const status = await receipt(repair.retryOperationId!);
-    if (status.state === "complete") {
+    const receiptLifecycleCategory = receiptLifecycle[status.state];
+    if (receiptLifecycleCategory === "success") {
       const result = z.object({ id: z.string() }).parse(status.response);
       if (result.id !== retry.taskId) throw new Error("Retry receipt does not match the saved task.");
-    } else if (["failed", "blocked"].includes(status.state)) {
+    } else if (receiptLifecycleCategory === "failure" || receiptLifecycleCategory === "attention") {
       fail(repair, "failed", status.error?.message ?? status.last_error?.message ?? "The validation retry needs attention."); return false;
-    } else if (status.state === "unknown") {
+    } else if (receiptLifecycleCategory === "absent") {
       const response = await timedRequest(`${API_URL}/api/system/tasks/${encodeURIComponent(retry.taskId)}/retry`, {
         method: "POST", headers: { "Idempotency-Key": repair.retryOperationId! },
       }, false);
@@ -329,7 +347,7 @@ export function retryIntegrityRepair(operationId: string): Promise<void> {
     if (repair.phase === "stale") throw new Error("Review this conflict before choosing again.");
     if (!repair.retry && repair.phase === "blocked") {
       const status = await receipt(operationId);
-      if (status.state !== "blocked") { await confirmReceipt(repair, status); return; }
+      if (receiptLifecycle[status.state] !== "attention") { await confirmReceipt(repair, status); return; }
       updateRepair(operationId, current => ({ ...current, phase: "saving", error: undefined, nextAttemptAt: 0,
         retry: { kind: "operation", baselineRetryCycle: status.retry_cycle, baselineAttemptCount: status.attempt_count, deliveryAccepted: false } }));
     } else if (!repair.retry && repair.retryTaskId) {
