@@ -184,8 +184,9 @@ docker --context desktop-linux compose --project-directory /Users/andy/tempo \
   api background-worker background-scheduler postgres
 ```
 
-Verification pending/failed/missing/unavailable remains a stop condition for a
-first deployment. Failed backup/history verification, a missing volume, mixed
+Pending verification makes a first deployment wait automatically, bounded by
+the original 30-minute deadline. Failed, missing or unavailable verification
+blocks it with a specific cause and next action. Failed backup/history verification, a missing volume, mixed
 target identity, unresolved migration guard or readiness failure requires
 inspection and a compatible fix forward. Preserve backups/guards/receipts and
 new study writes; do not manufacture first-deployment evidence, change verification

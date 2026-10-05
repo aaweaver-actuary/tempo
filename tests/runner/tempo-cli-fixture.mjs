@@ -76,7 +76,8 @@ async function fixtureNetwork() {
     fs.appendFileSync(directory + "/requests.jsonl", JSON.stringify({ url: String(url), method: options.method ?? "GET" }) + "\n");
     if (String(url).includes("api.github.com")) {
       if (fixture.diagnostics?.githubError) throw new Error(fixture.diagnostics.githubError);
-      if (fixture.diagnostics?.githubStatus) return new Response("access denied", { status: fixture.diagnostics.githubStatus });
+      if (fixture.diagnostics?.githubStatus) return new Response("access denied", { status: fixture.diagnostics.githubStatus,
+        headers: fixture.diagnostics.githubRateLimit ? { "x-ratelimit-remaining": "0" } : {} });
     }
     if (String(url).includes("/actions/workflows/")) return Response.json({ workflow_runs: fixture.diagnostics?.runs ?? [
       { id: 12, head_sha: fixture.revision, head_branch: "main", event: "push", status: "completed", html_url: "https://github.com/fixture/ci" },
@@ -118,7 +119,7 @@ async function fakeCommand() {
   const save = () => fs.writeFileSync(machinePath, JSON.stringify(machine));
   if (command === "git") {
     if (args[0] === "branch") output(machine.branch ?? "main");
-    else if (args[0] === "status") output(fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : "");
+    else if (args[0] === "status") output(machine.sourceChanges ?? (fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : ""));
     else if (args[0] === "remote") output(machine.remote ?? "https://github.com/aaweaver-actuary/tempo");
     else if (args[0] === "cat-file") process.exit(machine.remoteObjectMissing ? 1 : 0);
     else if (args[0] === "merge-base") process.exit(machine.ancestryCode ?? 0);

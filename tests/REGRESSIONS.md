@@ -2026,6 +2026,20 @@ nonempty and within their existing deadlines; no real 30-minute wait is required
   inspection, preserving a concurrent stop from the beginning of startup.
 - `CLI failure evidence selects Redis logs and redacts replies without unrelated API logs`
   protects actual failing-phase log selection and saved redacted evidence.
+- `actual CLI blocked update reports specific GitHub causes without a fallback or leaked credentials`,
+  `actual CLI diagnostics preserve actionable GitHub rate limit and access causes in default output`,
+  `actual CLI diagnostics identify the missing release job in default output`,
+  and `actual CLI diagnostics explain the named branch requiring preservation`
+  protect specific causes and actions without requiring verbose mode. These and
+  the changed-file assertion failed before the repair (5 named failures).
+- `actual CLI diagnostics keep complete changed-file evidence beyond the concise preview`
+  protects a bounded default file list and the complete evidence in verbose mode.
+
+The relaunch deadline fixture controls both process clocks explicitly; it does
+not assume a host uptime above thirty minutes. Interrupted fallback cases use
+separate regular-suite groups with unchanged 60-second limits and full coverage.
+The existing PostgreSQL upgrade plan regression retains its read-only guarantee
+and recognizable plan message.
 
 Existing exact-main CI, source preservation, Redis persisted loading,
 PostgreSQL original-history/backup/migration/restart/receipt and incompatible

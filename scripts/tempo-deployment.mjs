@@ -266,7 +266,13 @@ async function githubJson(path, { signal } = {}) {
     headers: { Accept: "application/vnd.github+json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`GitHub verification unavailable (HTTP ${response.status}).`);
+  if (!response.ok) {
+    const rateLimited = response.status === 429 || (response.status === 403
+      && (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after")));
+    const cause = rateLimited ? "rate limit" : [401, 403].includes(response.status)
+      ? "authentication or access denied" : response.status >= 500 ? "server unavailable" : "request rejected";
+    throw new Error(`GitHub verification unavailable: ${cause} (HTTP ${response.status}).`);
+  }
   return response.json();
 }
 
@@ -341,11 +347,12 @@ export async function inspectCandidateSource(target, run) {
   const branch = (await run("git", ["branch", "--show-current"], { timeout: 5000 })).stdout.trim();
   const head = (await run("git", ["rev-parse", "HEAD"], { timeout: 5000 })).stdout.trim();
   const changes = (await run("git", ["--no-optional-locks", "status", "--porcelain"], { timeout: 5000 })).stdout.trim();
+  const sourceChangeEntries = changes.split("\n");
   const origin = (await run("git", ["remote", "get-url", "origin"], { timeout: 5000 })).stdout.trim();
   const action = `Next: preserve your work in ${target.root}; move development work to an isolated checkout, then leave this registered checkout clean on main.`;
   let problem;
-  if (branch !== "main") problem = new TempoProblem("source_branch", "Automatic updates require the registered checkout to be on main.", { action });
-  else if (changes) problem = new TempoProblem("source_changes", "Local changes are preserved. Save them on a separate branch before updating Tempo.", { action });
+  if (branch !== "main") problem = new TempoProblem("source_branch", `Automatic updates require the registered checkout to be on main. Current branch: ${branch || "detached HEAD"}.`, { action });
+  else if (changes) problem = new TempoProblem("source_changes", `Local changes are preserved: ${sourceChangeEntries.slice(0, 3).join("; ")}${sourceChangeEntries.length > 3 ? "; more files listed in tempo doctor --verbose" : ""}. Save them on a separate branch before updating Tempo.`, { action });
   else if (!/^(?:https?:\/\/github\.com\/|git@github\.com:)aaweaver-actuary\/tempo(?:\.git)?$/.test(origin))
     problem = new TempoProblem("source_remote", "Registered checkout has an unexpected GitHub remote.",
       { action: `Next: correct the origin for ${target.root} to the verified Tempo repository before updating.` });

@@ -19,14 +19,16 @@ export function verificationProblem(verification) {
   const descriptions = {
     pending: "The update is waiting for automated release checks.",
     failed: `The new version failed required release checks${job ? ` (${job})` : ""}. Software repair is required; retrying locally cannot fix failed tests.`,
-    missing: "Required release-check evidence is missing. The release workflow must complete before this version can be installed.",
-    unavailable: "GitHub release checks could not be read. This is an access or connection problem, not a failed test.",
+    missing: `Required release-check evidence is missing${job ? ` (${job})` : " for the current main revision"}. The release workflow must complete before this version can be installed.`,
+    unavailable: `GitHub release checks could not be read. This is an access or connection problem, not a failed test.${message ? ` Cause: ${message}` : ""}`,
   };
   return new TempoProblem(`verification_${status}`, descriptions[status] ?? message, {
     verification,
     action: status === "pending" ? "Run: tempo start\nTempo will wait up to 30 minutes, then update automatically; study may pause during maintenance."
-      : status === "unavailable" ? "Next: restore GitHub connectivity/access, then run tempo start."
-      : `Next: have the release checks repaired${run?.html_url ? `: ${run.html_url}` : "."}`,
+      : status === "unavailable" ? /rate limit/i.test(message ?? "")
+        ? "Next: wait for the reported GitHub rate limit to clear, then run tempo start."
+        : "Next: restore GitHub connectivity/access, then run tempo start."
+      : `Next: ${status === "missing" ? "complete or restore the required release workflow" : "have the release checks repaired"}: ${run?.html_url ?? "https://github.com/aaweaver-actuary/tempo/actions/workflows/pages.yml"}`,
   });
 }
 

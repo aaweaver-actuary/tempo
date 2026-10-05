@@ -13,7 +13,9 @@ const regressionGroups = [
     "migration diagnostics pending", "migration diagnostics retry", "migration diagnostics normal",
     "upgrades", "dependency startup", "falls back", "read-only", "failed migration", "failed builds",
     "backup restores the prior", "blocked update", "backup restores stopped", "detects", "fallback corrects",
-    "compatible fallback", "interrupted fallback", "concurrent", "backup rejects", "diagnostics explain", "diagnostics keep", "diagnostics identify",
+    "compatible fallback", "interrupted fallback stops uncommitted", "interrupted fallback quiesces",
+    "interrupted fallback stops mixed", "interrupted fallback rejects application", "interrupted fallback rejects incompatible",
+    "concurrent", "backup rejects", "diagnostics explain", "diagnostics keep", "diagnostics identify",
     "diagnostics report", "diagnostics distinguish", "diagnostics retain", "diagnostics preserve", "diagnostic safety"].map(name => ({ name, pattern: `^actual CLI ${name}` })),
 ];
 

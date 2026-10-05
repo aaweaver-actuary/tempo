@@ -114,6 +114,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   const source = await inspectCandidateSource(target, run);
   let sourceProblem = source.problem;
   detail(`Local checkout: ${source.branch || "unknown branch"} at ${source.head || "unknown revision"}; ${source.changes ? "local changes present" : "clean"}`);
+  if (source.changes) detail(`Local changes:\n${source.changes}`);
   detail(`Verified deployment: ${previous?.revision ?? "not yet recorded"}`);
   const requiredSchema = schemaVersionFromSource(readFileSync(join(target.root, "backend/app/schema_version.py"), "utf8"));
   detail(`Required local schema: ${requiredSchema}`);
@@ -163,7 +164,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
     const signal = AbortSignal.timeout(30_000);
     const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { allowFailure: true, timeout: 15_000, signal });
     remoteRevision = remote.stdout.trim().split(/\s+/)[0];
-    if (remote.code !== 0 || !/^[a-f0-9]{40}$/.test(remoteRevision ?? "")) throw new Error("Remote main could not be read.");
+    if (remote.code !== 0 || !/^[a-f0-9]{40}$/.test(remoteRevision ?? "")) throw new Error(`Remote main could not be read${remote.stderr.trim() ? `: ${remote.stderr.trim().slice(-400)}` : "."}`);
     detail(`Latest main: ${remoteRevision}${remoteRevision === previous?.revision ? " (matches recorded receipt)" : " (not recorded as deployed)"}`);
     verification = await assessMainVerification(remoteRevision, undefined, { signal });
   } catch (error) { verification = { status: "unavailable", message: error.message }; }
@@ -216,11 +217,10 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   else emit(`Running services: ${running.length ? "present (health not checked)" : "none"}; deployment ${previous ? "recorded" : "not yet verified"}.`);
   emit(assessment.message);
   emit(assessment.action);
-  if (assessment.code === "verification_unavailable") emit(`Cause: ${verification.message}`);
   if (assessment.code === "verification_failed" && verification.run?.html_url) emit(`Release checks: ${verification.run.html_url}`);
   if (operation?.failure?.includes("Redis") && redisReady) emit("The previous Redis error is historical; Redis responds now.");
   if (pending.length && !ledgerProblem && (assessment.code === "eligible" || assessment.code.startsWith("verification_"))) emit(`${pending.length} migration${pending.length === 1 ? " is" : "s are"} pending; Tempo applies them automatically after verifying a backup.`);
-  if (options.flags.has("--plan")) emit("Plan only: no source, image, service, or database changes were made. The real command rechecks eligibility and preserves original history before startup.");
+  if (options.flags.has("--plan")) emit("Plan only: No source, image, service, or database changes were made. The real command rechecks eligibility and preserves original history before startup.");
   emit("Details: tempo doctor --verbose");
   if (options.flags.has("--verbose")) for (const message of evidence) emit(message);
 }

@@ -1701,6 +1701,7 @@ test("actual CLI diagnostics explain one primary next action when source and ver
   const result = fixture.command("doctor");
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /Local changes are preserved/);
+  assert.match(result.stdout, /personal-work/);
   assert.match(result.stdout, /isolated checkout/);
   assert(!result.stdout.includes("Tempo will wait"));
   assert.equal(result.stdout.match(/Next:/g)?.length, 1);
@@ -1877,7 +1878,7 @@ const fixturePath = ${JSON.stringify(join(fixture.directory, "fixture.json"))};
 const data = JSON.parse(readFileSync(fixturePath, "utf8"));
 data.diagnostics.runs = [{ id: 12, head_sha: data.revision, head_branch: "main", event: "push", status: "queued", html_url: "https://github.com/fixture/ci" }];
 writeFileSync(fixturePath, JSON.stringify(data));
-try { process.exitCode`));
+try { process.exitCode`).replace("await main(process.argv.slice(2))", "await main(process.argv.slice(2), console.log, { verificationWaitOptions: { now: () => continued.deadline } })"));
   const result = commandWithControlledWait(fixture, () => {});
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /30-minute wait/);
@@ -1953,4 +1954,69 @@ test("CLI automatic start cancels a concurrent stop during initial target inspec
   assert.match(result.stderr, /will not restart it/);
   assert.equal(readFixtureJson(fixture, "operation.json", true).id, "stop-during-inspection");
   assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("build") || call.args.includes("fetch")));
+});
+
+test("actual CLI blocked update reports specific GitHub causes without a fallback or leaked credentials", t => {
+  for (const [diagnostics, expected] of [
+    [{ githubStatus: 401 }, /authentication or access.*HTTP 401/i],
+    [{ githubStatus: 429 }, /rate limit.*HTTP 429/i],
+    [{ githubError: "request timed out Bearer canary-private-password" }, /request timed out Bearer \[redacted\]/],
+  ]) {
+    const fixture = diagnosticFixture(t, { diagnostics });
+    const result = fixture.command("start", "--no-wait", "--no-open");
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, expected);
+    assert.match(result.stderr, /not a failed test/);
+    assert(!result.stderr.includes("canary-private-password"));
+    assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("build")));
+  }
+});
+
+test("actual CLI diagnostics preserve actionable GitHub rate limit and access causes in default output", t => {
+  for (const [diagnostics, expected] of [
+    [{ githubStatus: 403 }, /authentication or access.*HTTP 403/i],
+    [{ githubStatus: 429 }, /rate limit.*HTTP 429/i],
+    [{ githubStatus: 403, githubRateLimit: true }, /rate limit.*HTTP 403/i],
+  ]) {
+    const fixture = diagnosticFixture(t, { diagnostics });
+    const result = fixture.command("doctor");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, expected);
+    assert.equal(result.stdout.match(/Next:/g)?.length, 1);
+    assert(!result.stdout.includes("Verification:"));
+  }
+});
+
+test("actual CLI diagnostics identify the missing release job in default output", t => {
+  for (const [diagnostics, expected, link] of [
+    [{ jobs: diagnosticJobs.filter(job => job.name !== "backend / verify") }, /evidence is missing.*backend \/ verify/, /https:\/\/github.com\/fixture\/ci/],
+    [{ runs: [] }, /evidence is missing for the current main revision/, /https:\/\/github.com\/aaweaver-actuary\/tempo\/actions\/workflows\/pages.yml/],
+  ]) {
+    const fixture = diagnosticFixture(t, { diagnostics });
+    const result = fixture.command("doctor");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, expected);
+    assert.match(result.stdout, link);
+    assert.match(result.stdout, /complete or restore the required release workflow/);
+  }
+});
+
+test("actual CLI diagnostics explain the named branch requiring preservation", t => {
+  const fixture = diagnosticFixture(t, { machine: { branch: "study-edits" } });
+  const result = fixture.command("doctor");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /branch.*study-edits/);
+  assert.match(result.stdout, /preserve your work/);
+});
+
+test("actual CLI diagnostics keep complete changed-file evidence beyond the concise preview", t => {
+  const fixture = diagnosticFixture(t, { machine: { sourceChanges: " M first-work\n M second-work\n M third-work\n?? fourth-work" } });
+  const concise = fixture.command("doctor");
+  assert.equal(concise.status, 0, concise.stdout + concise.stderr);
+  assert.match(concise.stdout, /first-work.*second-work.*third-work/);
+  assert(!concise.stdout.includes("fourth-work"));
+  assert.match(concise.stdout, /more files listed in tempo doctor --verbose/);
+  const detailed = fixture.command("doctor", "--verbose");
+  assert.equal(detailed.status, 0, detailed.stdout + detailed.stderr);
+  assert.match(detailed.stdout, /Local changes:[\s\S]*fourth-work/);
 });
