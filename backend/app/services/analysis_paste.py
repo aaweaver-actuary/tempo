@@ -265,6 +265,8 @@ def commit_pasted_lines(
     source_gap_id: str | None, preview_token: str, selections: list[dict],
     prepared_preview: dict, parsed: list[PastedLine],
 ) -> dict:
+    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
+        database.execute("BEGIN IMMEDIATE")
     if prepared_preview["preview_token"] != preview_token:
         raise StalePastePreview("Repertoires changed since the preview. Preview again before saving")
     _, _, current_signature = _snapshot(database)
@@ -296,9 +298,11 @@ def commit_pasted_lines(
                 batch_responses[key] = (move, index)
     if any(not by_index[index].get("acknowledge_conflict") for index in batch_conflict_indices):
         raise PasteInputError("Confirm conflicting trained moves between pasted lines before saving")
-    from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
-    validated_routes = {index: ensure_line_in_scope(database, selection["repertoire_id"], parsed[index].starting_fen, list(parsed[index].moves), remember=False)
-                        for index, selection in sorted(by_index.items(), key=lambda item: (item[1]["repertoire_id"], item[0]))}
+    from .canonical_prefix import ensure_batch_lines_in_scope, certify_admitted_route
+    selected_indices = sorted(by_index)
+    validated_routes = dict(zip(selected_indices, ensure_batch_lines_in_scope(database, [
+        (by_index[index]["repertoire_id"], parsed[index].starting_fen, list(parsed[index].moves))
+        for index in selected_indices])))
     admitted_routes = []
     now = datetime.now(timezone.utc).isoformat()
     saved: list[dict] = []

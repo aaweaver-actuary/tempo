@@ -146,7 +146,7 @@ from .services.repertoire_integrity import (
 )
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
-from .services.canonical_prefix import prefix_projection, ensure_line_in_scope, certify_admitted_route
+from .services.canonical_prefix import prefix_projection, ensure_line_in_scope, ensure_batch_lines_in_scope, certify_admitted_route
 from .services.repertoire_coverage import (
     claim_maia_coverage_node,
     coverage_gaps,
@@ -2050,12 +2050,14 @@ async def import_pgn(
     derived_at = time.perf_counter()
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
+        if not db.in_transaction:
+            db.execute("BEGIN IMMEDIATE")
         existing_repertoire = db.execute(
             "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
             (file.filename, trained_color),
         ).fetchone()
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
-        validated_routes = [ensure_line_in_scope(db, rid, line.starting_fen, line.moves, remember=False) for line in lines] if existing_repertoire else [{} for line in lines]
+        validated_routes = ensure_batch_lines_in_scope(db, [(rid, line.starting_fen, line.moves) for line in lines]) if existing_repertoire else [{} for line in lines]
         admitted_routes = []
         db.execute(
             "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"

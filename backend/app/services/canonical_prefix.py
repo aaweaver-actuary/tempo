@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 
 import chess
 
@@ -163,6 +164,65 @@ def certify_admitted_route(database, repertoire_id: str, validation_result: dict
     if current["moves"] and current["preview_id"]:
         store_positions(database, current["preview_id"], validation_result["positions"],
                         source_revision=current["source_revision"])
+
+
+def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[str]]]) -> list[dict]:
+    """Resolve selected routes together without persisting validation certificates."""
+    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
+        database.execute("BEGIN IMMEDIATE")
+    prefixes = {repertoire_id: read_prefix(database, repertoire_id, lock=True)
+                for repertoire_id in sorted({candidate[0] for candidate in candidates})}
+    local_positions: dict[str, dict[str, dict]] = {repertoire_id: {} for repertoire_id in prefixes}
+    certified_origins: dict[tuple[str, str], list[str] | None] = {}
+    validated_routes: dict[int, dict] = {}
+    pending_indices = sorted(range(len(candidates)), key=lambda index: (
+        candidates[index][0], position_key(candidates[index][1]), tuple(candidates[index][2])))
+
+    def position_rank(position):
+        return (-position["in_scope"], position["ply"], position["route_json"])
+
+    while pending_indices:
+        unresolved_indices = []
+        failed_routes = {}
+        for candidate_index in pending_indices:
+            repertoire_id, starting_fen, moves = candidates[candidate_index]
+            prefix = prefixes[repertoire_id]
+            if not prefix["moves"]:
+                validated_routes[candidate_index] = {"scope_start_ply": 0, "origin": None}
+                continue
+            starting_key = position_key(starting_fen)
+            if starting_key == position_key(chess.STARTING_FEN):
+                origin = []
+            else:
+                certificate_key = (repertoire_id, starting_key)
+                if certificate_key not in certified_origins:
+                    certified_origins[certificate_key] = line_origin(database, prefix["preview_id"], starting_fen)
+                available_origins = []
+                certified_origin = certified_origins[certificate_key]
+                if certified_origin is not None:
+                    available_origins.append({"in_scope": int(len(certified_origin) >= len(prefix["moves"])),
+                                              "ply": len(certified_origin), "route_json": json.dumps(certified_origin)})
+                local_origin = local_positions[repertoire_id].get(starting_key)
+                if local_origin is not None:
+                    available_origins.append(local_origin)
+                origin = json.loads(min(available_origins, key=position_rank)["route_json"]) if available_origins else None
+            validation = validate_scoped_line(starting_fen, moves, prefix["moves"], origin)
+            if validation["status"] != "valid":
+                unresolved_indices.append(candidate_index)
+                failed_routes[candidate_index] = validation
+                continue
+            validated_routes[candidate_index] = validation
+            for position in validation["positions"]:
+                previous = local_positions[repertoire_id].get(position["fen_key"])
+                if previous is None or position_rank(position) < position_rank(previous):
+                    local_positions[repertoire_id][position["fen_key"]] = position
+        if len(unresolved_indices) == len(pending_indices):
+            from fastapi import HTTPException
+            failure = failed_routes[unresolved_indices[0]]
+            raise HTTPException(409, "This line is outside the repertoire's canonical prefix. " + failure["reason"]
+                                + ". Check the canonical prefix again to verify current routes.")
+        pending_indices = unresolved_indices
+    return [validated_routes[index] for index in range(len(candidates))]
 
 
 def scope_line(database, repertoire_id: str, line: dict, prefix: dict | None = None) -> dict:

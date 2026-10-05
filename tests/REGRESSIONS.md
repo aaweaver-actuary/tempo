@@ -1856,3 +1856,17 @@ whole affected file/wrapper; CI owns final candidate durability/complete coverag
 - Real PostgreSQL **CF-12**, `prove_discovery_state_action_freshness` in `scripts/check_postgres_canonical_freshness.py`, covers all nine rejection/rollback cases, current actions, unchanged-evidence republication, scope invalidation/action contention in both directions, and completed durable receipt replay after invalidation and pool reconnect. It remains in the mandatory disposable durability/CI gate; lock waits observe actual blocking PIDs.
 
 Portable cases run in `backend/tests/test_canonical_repertoire_prefix.py`. Existing publication, admission, coverage-status and shared-membership regressions remain unchanged. This fixes stale state actions only; #7's broader dismissal transitions, #8's evidence selection and #4's umbrella requirements remain open.
+
+### PR #66 remaining review: selected batch canonical route closure
+
+Portable coverage in `backend/tests/test_canonical_repertoire_prefix.py`:
+
+- `test_canonical_selected_batch_connector_admits_new_fen_continuation_in_either_order` (PGN/paste × both orders): all four cases failed with "No verified route" before production edits.
+- `test_canonical_selected_batch_resolves_multi_hop_continuations` (PGN/paste) resolves a reversed three-line dependency chain.
+- `test_canonical_selected_batch_rejects_disconnected_or_prefix_conflicting_routes_atomically` (PGN/paste × both failures) compares lines, metadata, annotations, depths, tasks, scope and certificates.
+- `test_canonical_selected_batch_never_borrows_another_repertoires_routes` prevents selected paste routes in X from connecting Y.
+- `test_canonical_selected_batch_ignores_unselected_connectors_and_stale_certificates` rejects both invalid provenance sources without mutation.
+- `test_canonical_selected_batch_preserves_duplicates_and_certifies_final_source_revision` (PGN/paste) retains annotations/duplicate counts, current route reconstruction, final source revisions and stale unrelated certificates.
+- `test_canonical_selected_batch_validation_uses_ranked_origins_without_persisting_certificates` (both orders) ranks an in-scope selected route over a current pre-prefix stub reaching the same position; validation itself persists nothing.
+
+Real PostgreSQL **CF-13**, `prove_selected_batch_canonical_routes` in `scripts/check_postgres_canonical_freshness.py`, invokes actual import/paste commands and receipts. It covers both connector orders, multi-hop chains, disconnected/conflicting/stale/unselected/cross-repertoire atomic rejection, annotations and duplicate admission, final-revision certification, and completed receipt replay after later source mutation and pool reconnect. CF-1–12 and existing batch/downstream final-certification tests remain intact. No schema, stable ID, publication or segmentation policy changes.

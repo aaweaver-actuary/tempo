@@ -597,6 +597,139 @@ def prove_discovery_state_action_freshness():
         postgres_store.close_pools()
 
 
+
+def _selected_batch_pgn(lines):
+    import chess.pgn
+    games = []
+    for starting_fen, moves in lines:
+        game = chess.pgn.Game()
+        game.setup(chess.Board(starting_fen))
+        node = game
+        for move in moves:
+            node = node.add_variation(chess.Move.from_uci(move))
+        node.comment = 'Batch certificate annotation'
+        games.append(game.accept(chess.pgn.StringExporter(headers=True, variations=False, comments=True)))
+    return '\n\n'.join(games)
+
+
+def prove_selected_batch_canonical_routes():
+    """CF-13: selected route closure, atomic admission and final receipts."""
+    from app import analysis_paste_commands
+    from app.command_gateway import execute_command, read_operation
+    from app.services.pgn import parse_pgn
+    repertoire_ids = []
+    operation_ids = []
+    connector = [*ITALIAN, 'f8c5', 'c2c3']
+    continuation = ['g8f6', 'd2d4']
+    connected_lines = [(chess.STARTING_FEN, connector), (prefix_projection(connector)['ending_fen'], continuation)]
+    def create_scope(with_old_connector=False):
+        identifier = 'canonical-batch-' + uuid.uuid4().hex
+        repertoire_ids.append(identifier)
+        with postgres_store.connection() as database:
+            database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (identifier, identifier, identifier + '.pgn', NOW))
+            add_repertoire_branch(database, {'repertoire_id': identifier, 'name': 'Root', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': ITALIAN})
+            if with_old_connector:
+                add_repertoire_branch(database, {'repertoire_id': identifier, 'name': 'Old connector', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': connector})
+        set_prefix(identifier, ITALIAN)
+        return identifier
+    def prepare(admission, identifier, lines, selected=None):
+        text = _selected_batch_pgn(lines)
+        if admission == 'pgn':
+            games, parsed = parse_pgn(text)
+            return 'imports.pgn.admit', prepare_import_payload(identifier + '.pgn', 'white', 3, games, parsed)
+        with postgres_store.connection(read_only=True) as database:
+            preview = build_paste_preview(database, text, None, None)
+        return 'analysis.paste.commit', {'request': {'text': text, 'preview_token': preview['preview_token'],
+            'selections': selected if selected is not None else [
+                {'index': index, 'repertoire_id': identifier, 'acknowledge_conflict': True} for index in range(len(lines))]},
+            'prepared_preview': preview}
+    def admit(command, payload):
+        operation_id = 'batch-admit-' + uuid.uuid4().hex
+        operation_ids.append(operation_id)
+        return operation_id, execute_command(operation_id, command, payload)
+    def snapshot(identifiers):
+        with postgres_store.connection(read_only=True) as database:
+            state = {'main': [tuple(row) for row in database.execute('SELECT id,is_main FROM repertoires ORDER BY id')],
+                     'global': tuple(database.execute('SELECT * FROM repertoire_game_scope WHERE id=1').fetchone())}
+            for table in ('repertoires', 'repertoire_lines', 'position_annotations', 'canonical_prefix_previews'):
+                column = 'id' if table == 'repertoires' else 'repertoire_id'
+                state[table] = [dict(row) for row in database.execute_native(f'SELECT * FROM {table} WHERE {column}=ANY(%s::text[]) ORDER BY 1', (identifiers,))]
+            state['positions'] = [dict(row) for row in database.execute_native('SELECT position.* FROM canonical_prefix_positions position JOIN canonical_prefix_previews preview ON preview.id=position.preview_id WHERE preview.repertoire_id=ANY(%s::text[]) ORDER BY position.preview_id,position.fen_key,position.in_scope', (identifiers,))]
+            state['depths'] = [dict(row) for row in database.execute_native('SELECT depth.* FROM repertoire_line_training_depths depth JOIN repertoire_lines line ON line.id=depth.line_id WHERE line.repertoire_id=ANY(%s::text[]) ORDER BY depth.line_id', (identifiers,))]
+            state['tasks'] = [dict(row) for row in database.execute_native('SELECT * FROM background_tasks WHERE deduplication_key=ANY(%s::text[]) OR payload_json::jsonb->>\'repertoire_id\'=ANY(%s::text[]) ORDER BY id', (identifiers, identifiers))]
+            return state
+    def reject(admission, identifier, lines, selected=None, extra_scope=None):
+        command, payload = prepare(admission, identifier, lines, selected)
+        identifiers = [identifier, *([extra_scope] if extra_scope else [])]
+        before = snapshot(identifiers)
+        operation_id, result = admit(command, payload)
+        assert result is None
+        receipt = read_operation(operation_id)
+        assert receipt['state'] == 'failed' and receipt['error']['status_code'] == 409, receipt
+        assert snapshot(identifiers) == before, (admission, receipt)
+    try:
+        for admission in ('pgn', 'paste'):
+            for reverse_order in (False, True):
+                identifier = create_scope()
+                lines = list(reversed(connected_lines)) if reverse_order else connected_lines
+                command, payload = prepare(admission, identifier, [*lines, lines[0]])
+                operation_id, result = admit(command, payload)
+                assert result is not None, read_operation(operation_id)
+                if admission == 'paste':
+                    assert [row['duplicate'] for row in result['saved']] == [False, False, True]
+                with postgres_store.connection(read_only=True) as database:
+                    current = read_prefix(database, identifier)
+                    final_revision = current['source_revision']
+                    for route in (connector, [*connector, *continuation]):
+                        ending_fen = prefix_projection(route)['ending_fen']
+                        assert line_origin(database, current['preview_id'], ending_fen) == route
+                        assert database.execute('SELECT source_revision FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? AND in_scope=1', (current['preview_id'], ' '.join(ending_fen.split()[:4]))).fetchone()[0] == final_revision
+                    assert database.execute('SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id=?', (identifier,)).fetchone()[0] == 3
+                    if admission == 'pgn':
+                        assert database.execute('SELECT comment FROM position_annotations WHERE repertoire_id=? AND fen_key=?', (identifier, ' '.join(prefix_projection(connector)['ending_fen'].split()[:4]))).fetchone()[0] == 'Batch certificate annotation'
+                duplicate_command, duplicate_payload = prepare(admission, identifier, lines)
+                _, duplicates = admit(duplicate_command, duplicate_payload)
+                assert duplicates is not None
+                if admission == 'paste':
+                    assert all(row['duplicate'] for row in duplicates['saved'])
+                assert prefix_metadata(identifier)['source_revision'] == final_revision
+                with postgres_store.connection() as database:
+                    add_repertoire_branch(database, {'repertoire_id': identifier, 'name': 'Later source', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': [*ITALIAN, 'g8f6', 'd2d3']})
+                before_replay = snapshot([identifier])
+                postgres_store.close_pools()
+                assert execute_command(operation_id, command, payload) == result
+                assert snapshot([identifier]) == before_replay
+            identifier = create_scope()
+            full_route = [*connector, *continuation]
+            chained = [*connected_lines, (prefix_projection(full_route)['ending_fen'], ['d7d6', 'e1g1'])]
+            command, payload = prepare(admission, identifier, list(reversed(chained)))
+            operation_id, result = admit(command, payload)
+            assert result is not None, read_operation(operation_id)
+            with postgres_store.connection(read_only=True) as database:
+                current = read_prefix(database, identifier)
+                assert line_origin(database, current['preview_id'], prefix_projection([*full_route, 'd7d6', 'e1g1'])['ending_fen']) == [*full_route, 'd7d6', 'e1g1']
+            for invalid_line in ((prefix_projection(['d2d4', 'd7d5', 'c2c4'])['ending_fen'], ['g8f6', 'b1c3']),
+                                 (chess.STARTING_FEN, ['e2e4', 'e7e5', 'g1f3', 'd7d6', 'f1c4'])):
+                reject(admission, create_scope(), [*connected_lines, invalid_line])
+            stale_scope = create_scope(with_old_connector=True)
+            with postgres_store.connection() as database:
+                add_repertoire_branch(database, {'repertoire_id': stale_scope, 'name': 'Stale certificate', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': [*ITALIAN, 'g8f6', 'd2d3']})
+            reject(admission, stale_scope, [connected_lines[1]])
+        first_scope, other_scope = create_scope(), create_scope()
+        reject('paste', first_scope, connected_lines, [
+            {'index': 0, 'repertoire_id': first_scope, 'acknowledge_conflict': True},
+            {'index': 1, 'repertoire_id': other_scope, 'acknowledge_conflict': True}], other_scope)
+        unselected_scope = create_scope()
+        reject('paste', unselected_scope, connected_lines, [{'index': 1, 'repertoire_id': unselected_scope, 'acknowledge_conflict': True}])
+        print('PASS CF-13 real PG import/paste connector orders and multi-hop closure; atomic invalid/stale/unselected/cross-repertoire rejection; annotations/duplicates/final certification and completed receipt replay', flush=True)
+    finally:
+        with postgres_store.connection() as database:
+            database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s::text[])', (operation_ids,))
+            database.execute_native('DELETE FROM background_tasks WHERE deduplication_key=ANY(%s::text[]) OR payload_json::jsonb->>\'repertoire_id\'=ANY(%s::text[])', (repertoire_ids, repertoire_ids))
+            database.execute_native('DELETE FROM repertoires WHERE id=ANY(%s::text[])', (repertoire_ids,))
+        postgres_store.close_pools()
+
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Canonical freshness proof requires the runner-owned disposable PostgreSQL instance')
@@ -774,6 +907,7 @@ def main():
         prove_card_mutation_coverage_status()
         prove_last_generated_membership_cleanup()
         prove_discovery_state_action_freshness()
+        prove_selected_batch_canonical_routes()
     finally:
         opportunities._calculate_node_opportunities = saved_calculate
         with postgres_store.connection() as database:

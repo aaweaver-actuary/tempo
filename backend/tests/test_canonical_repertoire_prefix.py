@@ -1602,3 +1602,187 @@ def test_postgres_discovery_state_actions_lock_scope_before_opportunity(prefix_d
         global_lock = next(index for index, statement in enumerate(native.statements) if 'FROM repertoire_game_scope' in statement and 'FOR UPDATE' in statement)
         row_lock = next(index for index, statement in enumerate(native.statements) if 'FROM repertoire_opportunities' in statement and 'FOR UPDATE' in statement)
         assert metadata_lock < global_lock < row_lock
+
+
+def selected_batch_pgn(lines):
+    import chess.pgn
+    rendered = []
+    for line_index, (starting_fen, moves) in enumerate(lines):
+        game = chess.pgn.Game()
+        game.setup(chess.Board(starting_fen))
+        game.headers['Event'] = 'Selected batch ' + str(line_index)
+        node = game
+        for move in moves:
+            node = node.add_variation(chess.Move.from_uci(move))
+        node.comment = 'Selected route annotation'
+        rendered.append(game.accept(chess.pgn.StringExporter(headers=True, variations=False, comments=True)))
+    return '\n\n'.join(rendered)
+
+
+def admit_selected_batch(admission, lines, selections=None):
+    text = selected_batch_pgn(lines)
+    if admission == 'pgn':
+        import asyncio
+        from io import BytesIO
+        from fastapi import UploadFile
+        from app.main import import_pgn
+        return asyncio.run(import_pgn(UploadFile(filename='italian.pgn', file=BytesIO(text.encode())), 'white', 3, None))
+    from app.services.analysis_paste import build_paste_preview, parse_pasted_lines, commit_pasted_lines
+    with database.connection() as connection:
+        preview = build_paste_preview(connection, text, None, None)
+        chosen = selections if selections is not None else [
+            {'index': index, 'repertoire_id': 'italian', 'acknowledge_conflict': True}
+            for index in range(len(lines))]
+        return commit_pasted_lines(connection, text, None, None, preview['preview_token'], chosen, preview, parse_pasted_lines(text, None))
+
+
+def selected_batch_snapshot():
+    tables = ['repertoires', 'repertoire_lines', 'repertoire_line_training_depths',
+              'position_annotations', 'canonical_prefix_positions', 'repertoire_game_scope', 'background_tasks']
+    with database.read_connection() as connection:
+        return {table: sorted([dict(row) for row in connection.execute('SELECT * FROM ' + table)], key=repr)
+                for table in tables}
+
+
+def selected_batch_fixture():
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    connector = [*ITALIAN, 'f8c5', 'c2c3']
+    continuation = ['g8f6', 'd2d4']
+    return [(chess.STARTING_FEN, connector),
+            (prefix_projection(connector)['ending_fen'], continuation)]
+
+
+@pytest.mark.parametrize('admission', ['pgn', 'paste'])
+@pytest.mark.parametrize('reverse_order', [False, True])
+def test_canonical_selected_batch_connector_admits_new_fen_continuation_in_either_order(prefix_database, quiet_prefix_writes, admission, reverse_order):
+    from app.services.canonical_prefix import line_origin, read_prefix
+    lines = selected_batch_fixture()
+    expected_route = [*lines[0][1], *lines[1][1]]
+    admit_selected_batch(admission, list(reversed(lines)) if reverse_order else lines)
+    with database.read_connection() as connection:
+        current = read_prefix(connection, 'italian')
+        assert connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0] == 3
+        assert line_origin(connection, current['preview_id'], prefix_projection(expected_route)['ending_fen']) == expected_route
+
+
+@pytest.mark.parametrize('admission', ['pgn', 'paste'])
+def test_canonical_selected_batch_resolves_multi_hop_continuations(prefix_database, quiet_prefix_writes, admission):
+    from app.services.canonical_prefix import line_origin, read_prefix
+    lines = selected_batch_fixture()
+    second_route = [*lines[0][1], *lines[1][1]]
+    lines.append((prefix_projection(second_route)['ending_fen'], ['d7d6', 'e1g1']))
+    admit_selected_batch(admission, list(reversed(lines)))
+    with database.read_connection() as connection:
+        current = read_prefix(connection, 'italian')
+        full_route = [*second_route, *lines[2][1]]
+        assert line_origin(connection, current['preview_id'], prefix_projection(full_route)['ending_fen']) == full_route
+        assert connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0] == 4
+
+
+@pytest.mark.parametrize('admission', ['pgn', 'paste'])
+@pytest.mark.parametrize('invalid_kind', ['disconnected', 'prefix-conflicting'])
+def test_canonical_selected_batch_rejects_disconnected_or_prefix_conflicting_routes_atomically(prefix_database, quiet_prefix_writes, admission, invalid_kind):
+    from fastapi import HTTPException
+    lines = selected_batch_fixture()
+    if invalid_kind == 'disconnected':
+        invalid_line = (prefix_projection(['d2d4', 'd7d5', 'c2c4'])['ending_fen'], ['g8f6', 'b1c3'])
+    else:
+        invalid_line = (chess.STARTING_FEN, ['e2e4', 'e7e5', 'g1f3', 'd7d6', 'f1c4'])
+    before = selected_batch_snapshot()
+    with pytest.raises(HTTPException) as rejection:
+        admit_selected_batch(admission, [*lines, invalid_line])
+    assert rejection.value.status_code == 409
+    assert selected_batch_snapshot() == before
+
+
+def test_canonical_selected_batch_never_borrows_another_repertoires_routes(prefix_database, quiet_prefix_writes):
+    from fastapi import HTTPException
+    lines = selected_batch_fixture()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-05')")
+        connection.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('other-root','other','Root','white',?,?,'2026-10-05')", (chess.STARTING_FEN, json.dumps(ITALIAN)))
+        preview = request_preview(connection, 'other', ITALIAN)
+    for _ in range(100):
+        task = claim_task('canonical_prefix_preview')
+        if task is None:
+            break
+        execute_prefix_preview_slice(task)
+    else:
+        pytest.fail('Other destination prefix fixture did not finish')
+    with database.connection() as connection:
+        save_prefix(connection, {'repertoire_id': 'other', 'request': {'preview_id': preview['preview_id'], 'expected_revision': preview['revision']}})
+    before = selected_batch_snapshot()
+    with pytest.raises(HTTPException) as rejection:
+        admit_selected_batch('paste', lines, [
+            {'index': 0, 'repertoire_id': 'italian', 'acknowledge_conflict': True},
+            {'index': 1, 'repertoire_id': 'other', 'acknowledge_conflict': True}])
+    assert rejection.value.status_code == 409
+    assert selected_batch_snapshot() == before
+
+
+@pytest.mark.parametrize('invalid_source', ['unselected-connector', 'stale-certificate'])
+def test_canonical_selected_batch_ignores_unselected_connectors_and_stale_certificates(prefix_database, quiet_prefix_writes, invalid_source):
+    from fastapi import HTTPException
+    lines = selected_batch_fixture()
+    if invalid_source == 'stale-certificate':
+        add_line(lines[0][1], 'previous-connector')
+        apply_preview(prepare_prefix())
+        add_line([*ITALIAN, 'g8f6', 'd2d3'], 'certificate-invalidating-source')
+    before = selected_batch_snapshot()
+    with pytest.raises(HTTPException) as rejection:
+        admit_selected_batch('paste', lines, [{'index': 1, 'repertoire_id': 'italian', 'acknowledge_conflict': True}])
+    assert rejection.value.status_code == 409
+    assert selected_batch_snapshot() == before
+
+
+@pytest.mark.parametrize('admission', ['pgn', 'paste'])
+def test_canonical_selected_batch_preserves_duplicates_and_certifies_final_source_revision(prefix_database, quiet_prefix_writes, admission):
+    from app.services.canonical_prefix import line_origin, read_prefix
+    lines = selected_batch_fixture()
+    unrelated_route = [*ITALIAN, 'g8f6', 'd2d3']
+    add_line(unrelated_route, 'unrelated-current-route')
+    apply_preview(prepare_prefix())
+    result = admit_selected_batch(admission, [*lines, lines[0]])
+    if admission == 'paste':
+        assert [item['duplicate'] for item in result['saved']] == [False, False, True]
+    else:
+        assert result.unique_lines == 2
+    with database.read_connection() as connection:
+        current = read_prefix(connection, 'italian')
+        for route in (lines[0][1], [*lines[0][1], *lines[1][1]]):
+            ending_fen = prefix_projection(route)['ending_fen']
+            assert line_origin(connection, current['preview_id'], ending_fen) == route
+            assert connection.execute('SELECT source_revision FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? AND in_scope=1', (current['preview_id'], position_key_for_test(ending_fen))).fetchone()[0] == current['source_revision']
+        assert line_origin(connection, current['preview_id'], prefix_projection(unrelated_route)['ending_fen']) is None
+        if admission == 'pgn':
+            assert connection.execute("SELECT comment FROM position_annotations WHERE repertoire_id='italian' AND fen_key=?", (position_key_for_test(prefix_projection(lines[0][1])['ending_fen']),)).fetchone()[0] == 'Selected route annotation'
+        before_revision = current['source_revision']
+        before_lines = connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0]
+    replayed = admit_selected_batch(admission, [*lines, lines[0]])
+    if admission == 'paste':
+        assert all(item['duplicate'] for item in replayed['saved'])
+    with database.read_connection() as connection:
+        assert read_prefix(connection, 'italian')['source_revision'] == before_revision
+        assert connection.execute("SELECT COUNT(*) FROM repertoire_lines WHERE repertoire_id='italian'").fetchone()[0] == before_lines
+
+
+@pytest.mark.parametrize('reverse_order', [False, True])
+def test_canonical_selected_batch_validation_uses_ranked_origins_without_persisting_certificates(prefix_database, reverse_order):
+    from app.services.canonical_prefix import ensure_batch_lines_in_scope
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    connector = [*ITALIAN, 'c6b8', 'c4f1', 'g8f6', 'f3g1', 'f6g8', 'g1f3']
+    repeated_position = prefix_projection(connector)['ending_fen']
+    assert position_key_for_test(repeated_position) == position_key_for_test(prefix_projection(ITALIAN[:3])['ending_fen'])
+    candidates = [('italian', chess.STARTING_FEN, connector), ('italian', repeated_position, ['g8f6', 'f1c4'])]
+    if reverse_order:
+        candidates.reverse()
+    before = selected_batch_snapshot()
+    with database.connection() as connection:
+        validations = ensure_batch_lines_in_scope(connection, candidates)
+        continuation_index = 0 if reverse_order else 1
+        # The connector first reaches this position at ply 7; later repetitions
+        # cannot displace the shortest verified in-scope origin.
+        assert validations[continuation_index]['origin'] == connector[:7]
+    assert selected_batch_snapshot() == before

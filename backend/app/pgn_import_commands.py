@@ -16,7 +16,7 @@ from .services.repertoire_game_refresh import refresh_game_publications_after_mu
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
-from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
+from .services.canonical_prefix import ensure_batch_lines_in_scope, certify_admitted_route
 from .services.opening_graph import decision_segments
 from .services.pgn import ParsedLine
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
@@ -120,8 +120,9 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     lines_to_insert = []
     depths_to_upsert = []
     annotations_to_upsert = []
-    for line in payload.lines:
-        validated_route = ensure_line_in_scope(database, repertoire_id, line.starting_fen, line.moves, remember=False)
+    validated_routes = ensure_batch_lines_in_scope(database, [
+        (repertoire_id, line.starting_fen, line.moves) for line in payload.lines])
+    for line, validated_route in zip(payload.lines, validated_routes):
         moves_json = json.dumps(line.moves)
         line_id = existing_lines.get((line.starting_fen, moves_json)) or hashlib.sha256(
             f"{repertoire_id}\0{card_id(line.starting_fen, line.moves)}".encode()
