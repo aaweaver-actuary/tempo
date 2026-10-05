@@ -552,7 +552,8 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       );
       const activeCardStillQueued = upcomingCards.length !== practiceCards.length;
       const retainedCards = [matchingActiveCard
-        ? { ...activeCard, priorityReason: matchingActiveCard.priorityReason }
+        ? { ...activeCard, priorityReason: matchingActiveCard.priorityReason,
+            attemptFailed: activeCard.attemptFailed || matchingActiveCard.attemptFailed }
         : activeCard, ...upcomingCards];
       set({
         practiceCards: retainedCards,
@@ -562,6 +563,13 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         isDatabaseQueueActive: true,
         serviceError: "",
       });
+      if (matchingActiveCard?.attemptFailed && current.attempt.phase !== "feedbackPause") {
+        // A fresh authoritative flag may settle a saved marker while this exact
+        // attempt is retained. Keep its board and logical identity, but never grade it clean.
+        get().setAttemptFailed(true);
+        get().setShowHint(true);
+        get().setFailureFen(current.failureFen ?? current.currentFenString);
+      }
       return;
     }
     const retainedIndex = advance

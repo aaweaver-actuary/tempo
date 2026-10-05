@@ -122,3 +122,14 @@ No production recovery behavior changed. The iPhone regression also mocks mainâ€
 prepared-queue query and verifies the intended cached cards; online reload permits
 same-key unacknowledged transport replay while requiring identical result bodies
 and exactly one next-sequence explicit retry. Their focused browser runs pass.
+
+## Legacy-marker compatibility test plan (2026-10-05)
+
+Repair only unresolved queue-only markers during hydration. Risks: clean grading
+before marker replay, attributing an old failure to revised/reassigned content,
+losing saved transport identity after reload, and blocking independent saved reviews.
+Use the actual numeric/object normalization, delayed/deferred replay and queue-store
+hydration in named unit cases, followed by focused browser reload/playability proof,
+affected callers, typecheck and lint. Modern exact-context matching and authoritative
+marker validation remain intact. CI owns fresh required current-main candidate
+validation; no overlapping full local gate is planned.

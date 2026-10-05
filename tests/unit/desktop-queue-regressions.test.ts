@@ -5,9 +5,9 @@ import { useTrainingStore } from "../../app/state/training-store";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import { enqueuePendingReview } from "../../app/lib/review-outbox";
 import { localDayKey } from "../../app/utils/local";
-import { OfflineReplayError } from "../../app/lib/offline-training";
+import { OfflineReplayError, type PreparedTraining } from "../../app/lib/offline-training";
 import { clearNotificationHistory, notificationToastIds, notifications, publishNotification } from "../../app/lib/notifications";
-import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
+import { enqueueTrainingFailure, pendingTrainingFailures, flushTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { asCardId, asFenString, asQueueEntryId, asSanMove, type PracticeCard } from "../../app/types";
 
 const offlineTrainingMocks = vi.hoisted(() => ({
@@ -79,11 +79,11 @@ describe("desktop live queue isolation", () => {
 
   it("guided attempt warnings clear quietly only after pending saves are confirmed", async () => {
     const legacy = publishNotification({ severity: "warning", source: "training queue", message: "Guided attempt save pending. Tempo will retry." });
-    enqueueTrainingFailure(801);
+    enqueueTrainingFailure(801, "desktop-active", 1);
     let confirmAttempt: ((response: Response) => void) | undefined;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).endsWith("/fail")) return new Promise<Response>((resolve) => { confirmAttempt = resolve; });
-      return Response.json({ count: 1, cards: [{ id: "desktop-active", queue_entry_id: 801,
+      return Response.json({ count: 1, cards: [{ id: "desktop-active", revision: 1, queue_entry_id: 801,
         start_fen: startingFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "Desktop active", repertoire_source: "PGN" }] });
     }));
     await fetchAndInitializeQueue();
@@ -228,4 +228,142 @@ it("offline eligibility preserves only linked unchanged reinforcement while reta
     outcome: "correct", guided: false, state: "conflicted", reconciliationSequence: 1,
     conflict: { code: "card_revision_changed", message: "Content changed", retryable: false } }]));
   expect(await loadEligibleOfflineQueue(prepared)).toEqual([]);
+});
+
+const legacyFailureFormats = [
+  { name: "numeric", saved: [801] },
+  { name: "object", saved: [{ queueEntryId: 801, operationId: "legacy-guided-operation" }] },
+];
+
+function legacyMarkerQueuePayload(cardId = "desktop-active", revision = 1, attemptFailed = false) {
+  return { count: 1, cards: [{ id: cardId, revision, queue_entry_id: 801,
+    start_fen: startingFen, moves: ["e2e4"], content_type: "opening", repertoire_name: cardId,
+    repertoire_source: "PGN", attempt_failed: attemptFailed }] };
+}
+
+function expectNoCleanLegacyAttempt() {
+  const state = useTrainingStore.getState();
+  // These are the store inputs used by TrainingView and rateCard to disable grading.
+  expect(Boolean(state.serviceError && !state.isOfflineQueueActive) || state.isAttemptFailed).toBe(true);
+}
+
+it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during delayed replay and reload", async ({ saved }) => {
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  let resolveMarker!: (response: Response) => void;
+  let serverFailed = false;
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+    ? new Promise<Response>(resolve => { resolveMarker = resolve; })
+    : Response.json(legacyMarkerQueuePayload("desktop-active", 1, serverFailed)));
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    await fetchAndInitializeQueue().catch(() => undefined);
+    expect(resolveMarker).toBeDefined();
+    expectNoCleanLegacyAttempt();
+    const normalized = JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!);
+    expect(normalized).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
+    useTrainingStore.setState(useTrainingStore.getInitialState(), true);
+    await fetchAndInitializeQueue().catch(() => undefined);
+    expectNoCleanLegacyAttempt();
+    expect(JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!)).toEqual(normalized);
+    serverFailed = true;
+    resolveMarker(Response.json({ attempt_failed: true }));
+    await waitFor(() => expect(pendingTrainingFailures()).toEqual([]));
+    await fetchAndInitializeQueue();
+    expect(useTrainingStore.getState().getCard().backendId).toBe("desktop-active");
+    expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
+    expect(useTrainingStore.getState().attempt.phase).toBe("guided");
+  } finally {
+    resolveMarker?.(Response.json({ attempt_failed: true }));
+    await flushTrainingFailures();
+  }
+});
+
+it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration when replay is deferred behind another review", async ({ saved }) => {
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 41, outcome: "correct", guided: false });
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/review")
+    ? Response.json({ detail: "Review transport unavailable" }, { status: 503 })
+    : Response.json(legacyMarkerQueuePayload()));
+  vi.stubGlobal("fetch", fetcher);
+  await fetchAndInitializeQueue().catch(() => undefined);
+  expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/fail"))).toBe(false);
+  expectNoCleanLegacyAttempt();
+  const normalized = localStorage.getItem("tempo-pending-training-failures-v1");
+  useTrainingStore.setState(useTrainingStore.getInitialState(), true);
+  await fetchAndInitializeQueue().catch(() => undefined);
+  expectNoCleanLegacyAttempt();
+  expect(localStorage.getItem("tempo-pending-training-failures-v1")).toBe(normalized);
+});
+
+it("authoritative legacy marker resolution guides a retained active attempt without replacing its identity", async () => {
+  useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
+  const logicalAttempt = useTrainingStore.getState().attempt;
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify([801]));
+  let resolveMarker!: (response: Response) => void;
+  let serverFailed = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+    ? new Promise<Response>(resolve => { resolveMarker = resolve; })
+    : Response.json({ ...legacyMarkerQueuePayload("desktop-active", 1, serverFailed), cards: [{
+      ...legacyMarkerQueuePayload("desktop-active", 1, serverFailed).cards[0], moves: ["e2e4", "e7e5", "g1f3"],
+    }] })));
+  try {
+    await fetchAndInitializeQueue().catch(() => undefined);
+    expectNoCleanLegacyAttempt();
+    serverFailed = true;
+    resolveMarker(Response.json({ attempt_failed: true }));
+    await flushTrainingFailures();
+    await fetchAndInitializeQueue();
+    expect(useTrainingStore.getState().attempt).toMatchObject({ ...logicalAttempt, phase: "guided" });
+    expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
+    expect(useTrainingStore.getState().serviceError).toBe("");
+  } finally {
+    resolveMarker?.(Response.json({ attempt_failed: true }));
+    await flushTrainingFailures();
+  }
+});
+
+it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or replacement content after ambiguous validation", async ({ saved }) => {
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  for (const [cardId, revision] of [["desktop-active", 2], ["replacement-card", 1]] as const) {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      if (String(input).endsWith("/fail")) {
+        expect(options?.body).toBeUndefined();
+        return Response.json({ code: "queue_attempt_unprovable", detail: "The original attempt is ambiguous" }, { status: 409 });
+      }
+      return Response.json(legacyMarkerQueuePayload(cardId, revision));
+    });
+    vi.stubGlobal("fetch", fetcher);
+    await fetchAndInitializeQueue().catch(() => undefined);
+    await flushTrainingFailures().catch(() => undefined);
+    expectNoCleanLegacyAttempt();
+    expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
+    expect(pendingTrainingFailures()).toEqual([801]);
+    const normalized = JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!);
+    expect(normalized).toEqual([{ queueEntryId: 801, operationId: expect.any(String) }]);
+    useTrainingStore.setState(useTrainingStore.getInitialState(), true);
+  }
+});
+
+it("modern guided markers hydrate only their exact card and revision", async () => {
+  enqueueTrainingFailure(801, "desktop-active", 1);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+    ? Response.json({ detail: "Temporarily unavailable" }, { status: 503 })
+    : Response.json(legacyMarkerQueuePayload())));
+  await fetchAndInitializeQueue();
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
+  useTrainingStore.setState(useTrainingStore.getInitialState(), true);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+    ? Response.json({ detail: "Temporarily unavailable" }, { status: 503 })
+    : Response.json(legacyMarkerQueuePayload("desktop-active", 2))));
+  await fetchAndInitializeQueue();
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
+});
+
+it.each(legacyFailureFormats)("unresolved legacy $name marker also blocks a prepared offline attempt", async ({ saved }) => {
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
+  useTrainingStore.getState().setOfflineQueue(true);
+  await expect(loadEligibleOfflineQueue({ localDate: localDayKey(), preparedAt: new Date().toISOString(),
+    cards: legacyMarkerQueuePayload().cards, attempts: [], nextTemporaryId: -1 } as PreparedTraining)).rejects.toThrow("identity is pending");
+  expectNoCleanLegacyAttempt();
 });

@@ -7,7 +7,7 @@ import { reportDebugError } from "../lib/debug-reporting";
 import { conflictedReviews, flushPendingReviews, pendingReviews, ReviewReplayError, updateReviewConflictNotice } from "../lib/review-outbox";
 import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining, type OfflineAttempt, type PreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
-import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureContexts } from "../lib/training-failure-outbox";
+import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureContexts, isLegacyTrainingFailure } from "../lib/training-failure-outbox";
 import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
 
 let requestGeneration = 0;
@@ -43,7 +43,7 @@ export async function loadEligibleOfflineQueue(prepared: PreparedTraining): Prom
   const cards = await runStudyTask<PracticeCard[]>({
     kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
   });
-  return eligibleQueueCards(cards, prepared.attempts, localRepeatQueueIds);
+  return eligibleQueueCards(retainPendingFailures(cards), prepared.attempts, localRepeatQueueIds);
 }
 
 function showQueueNotice(message: string, severity: NotificationSeverity = "info") {
@@ -83,6 +83,27 @@ type QueuePayload = {
 };
 
 class QueueProcessingError extends Error {}
+class LegacyTrainingFailurePendingError extends QueueProcessingError {}
+
+function retainPendingFailures(
+  cards: PracticeCard[], failureContexts = pendingTrainingFailureContexts(),
+): PracticeCard[] {
+  const activeState = useTrainingStore.getState();
+  const activeCard = activeState.isDatabaseQueueActive ? activeState.getCard() : undefined;
+  const unresolvedLegacy = failureContexts.find(failure => isLegacyTrainingFailure(failure) &&
+    (cards.some(card => card.queueEntryId === failure.queueEntryId) || activeCard?.queueEntryId === failure.queueEntryId));
+  if (unresolvedLegacy) {
+    // A queue-only saved marker is not evidence about whichever card now occupies
+    // that entry. Only authoritative replay followed by a fresh queue read can resolve it.
+    const message = `Guided attempt identity is pending for queue entry ${unresolvedLegacy.queueEntryId}. Reconnect and retry loading the queue to validate the saved failure.`;
+    activeState.setServiceError(message);
+    activeState.setOfflineQueue(false);
+    throw new LegacyTrainingFailurePendingError(message);
+  }
+  return cards.map(card => card.queueEntryId && failureContexts.some(failure =>
+    failure.queueEntryId === card.queueEntryId && failure.backendId === String(card.backendId ?? card.id) &&
+    failure.expectedRevision === card.revision) ? { ...card, attemptFailed: true } : card);
+}
 
 async function fetchQueueWindow(signal: AbortSignal): Promise<Response> {
   const controller = new AbortController();
@@ -179,10 +200,8 @@ export async function fetchAndInitializeQueue(
     const pendingFailureContexts = pendingTrainingFailureContexts();
     const pendingFailureEntries = new Set(pendingFailureContexts.map((item) => item.queueEntryId));
     let failureSaveError: string | null = null;
-    const retainPendingFailures = (cards: PracticeCard[]) => cards.map((card) =>
-      card.queueEntryId && pendingFailureContexts.some((item) => item.queueEntryId === card.queueEntryId &&
-          item.backendId === String(card.backendId ?? card.id) && item.expectedRevision === card.revision)
-        ? { ...card, attemptFailed: true } : card);
+    try { retainPendingFailures([], pendingFailureContexts); }
+    catch (error) { if (!(error instanceof LegacyTrainingFailurePendingError)) throw error; }
     const savedPreparedQueue = typeof indexedDB === "undefined" ? null : await readPreparedTraining().catch(() => null);
     if (isIPhoneHomeScreen() && !useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length &&
         savedPreparedQueue?.localDate !== localDayKey()) {
@@ -193,14 +212,14 @@ export async function fetchAndInitializeQueue(
           if (cached.local_date === localDayKey() && cached.cards?.length) {
             const cachedCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: cached });
             if (generation === requestGeneration) {
-              const availableCards = eligibleQueueCards(retainPendingFailures(cachedCards), savedPreparedQueue?.attempts);
+              const availableCards = eligibleQueueCards(retainPendingFailures(cachedCards, pendingFailureContexts), savedPreparedQueue?.attempts);
               useTrainingStore.getState().hydrateLocalQueue(
                 availableCards, false, Math.max(0, (cached.count ?? cachedCards.length) - (cachedCards.length - availableCards.length)),
               );
             }
           }
-        } catch {
-          localStorage.removeItem(queueCacheKey);
+        } catch (error) {
+          if (!(error instanceof LegacyTrainingFailurePendingError)) localStorage.removeItem(queueCacheKey);
         }
       }
     }
@@ -279,7 +298,7 @@ export async function fetchAndInitializeQueue(
       payload: raw,
     });
     if (generation !== requestGeneration) return;
-    const availableCards = eligibleQueueCards(retainPendingFailures(cards), (replayed ?? savedPreparedQueue)?.attempts);
+    const availableCards = eligibleQueueCards(retainPendingFailures(cards, pendingFailureContexts), (replayed ?? savedPreparedQueue)?.attempts);
     useTrainingStore.getState().hydrateLocalQueue(
       availableCards, advance, Math.max(0, (raw.count ?? cards.length) - (cards.length - availableCards.length)),
     );
@@ -338,7 +357,7 @@ export async function fetchAndInitializeQueue(
             projection: payload.projection,
           } });
           if (generation !== requestGeneration) return null;
-          const availableCards = eligibleQueueCards(retainPendingFailures(completeCards), prepared.attempts);
+          const availableCards = eligibleQueueCards(retainPendingFailures(completeCards, pendingFailureContexts), prepared.attempts);
           useTrainingStore.getState().hydrateLocalQueue(
             availableCards, false, Math.max(0, prepared.cards.length - (completeCards.length - availableCards.length)),
           );

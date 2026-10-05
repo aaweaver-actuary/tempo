@@ -12,6 +12,10 @@ type QueueEntryState = {
   attempt_failed: boolean;
 };
 
+export function isLegacyTrainingFailure(failure: PendingTrainingFailure): boolean {
+  return failure.backendId === undefined || failure.expectedRevision === undefined;
+}
+
 function savedTrainingFailures(): PendingTrainingFailure[] {
   const stored = localStorage.getItem(storageKey);
   if (!stored) return [];
@@ -88,7 +92,8 @@ async function rejectedFailureState(queueEntryId: number): Promise<QueueEntrySta
 
 async function saveTrainingFailures(): Promise<void> {
   while (savedTrainingFailures().length) {
-    const { queueEntryId, operationId, backendId, expectedRevision } = savedTrainingFailures()[0];
+    const pendingFailure = savedTrainingFailures()[0];
+    const { queueEntryId, operationId, backendId, expectedRevision } = pendingFailure;
     const earlierPendingReview = pendingReviews()[0];
     if (earlierPendingReview && earlierPendingReview.queueEntryId !== queueEntryId) return;
     const controller = new AbortController();
@@ -111,7 +116,7 @@ async function saveTrainingFailures(): Promise<void> {
     if (response.status === 409) {
       const conflict = await response.clone().json().catch(() => ({})) as { code?: string; detail?: string };
       if (conflict.code === "queue_attempt_unprovable") {
-        removeTrainingFailure(queueEntryId, operationId);
+        if (!isLegacyTrainingFailure(pendingFailure)) removeTrainingFailure(queueEntryId, operationId);
         throw new Error(conflict.detail ?? "The guided attempt no longer matches this queue entry.");
       }
       const state = await rejectedFailureState(queueEntryId);
@@ -120,8 +125,11 @@ async function saveTrainingFailures(): Promise<void> {
         else rotateTrainingFailureOperation(operationId);
         return;
       }
-      removeTrainingFailure(queueEntryId, operationId);
-      if (state.state === "completed") continue;
+      if (state.state === "completed") {
+        removeTrainingFailure(queueEntryId, operationId);
+        continue;
+      }
+      if (!isLegacyTrainingFailure(pendingFailure)) removeTrainingFailure(queueEntryId, operationId);
       throw new Error("This queue attempt is no longer available. Refresh the training queue.");
     }
     if (!response.ok) {

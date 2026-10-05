@@ -90,7 +90,7 @@ it("stale failed-attempt marker cannot fail a different queued entry", async () 
     ? Response.json({ state: "unavailable", attempt_failed: false })
     : Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 })));
   await expect(flushTrainingFailures()).rejects.toThrow("no longer available");
-  expect(pendingTrainingFailures()).toEqual([]);
+  expect(pendingTrainingFailures()).toEqual([1974]);
 });
 
 
@@ -125,4 +125,36 @@ it("old completed review cannot clear a replacement card's guided marker on the 
   expect(pendingTrainingFailureContexts()).toEqual([
     expect.objectContaining({ queueEntryId: 42, backendId: "replacement-card", expectedRevision: 1 }),
   ]);
+});
+
+
+it.each([
+  { name: "numeric", saved: [42] },
+  { name: "object", saved: [{ queueEntryId: 42, operationId: "legacy-failure-key" }] },
+])("legacy $name failure replay preserves its key and missing context while independent reviews save", async ({ saved }) => {
+  localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
+  enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 41, outcome: "correct", guided: false });
+  enqueuePendingReview({ backendId: "later-card", queueEntryId: 43, outcome: "correct", guided: false });
+  const reviewIds: number[] = [];
+  const keys: string[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    if (String(input).endsWith("/review")) {
+      reviewIds.push(JSON.parse(String(options?.body)).queue_entry_id);
+      return Response.json({ persisted: true });
+    }
+    keys.push(new Headers(options?.headers).get("Idempotency-Key")!);
+    expect(options?.body).toBeUndefined();
+    return Response.json({ detail: "Temporarily unavailable" }, { status: 503 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await flushTrainingFailures();
+  expect(fetcher).not.toHaveBeenCalled();
+  const normalized = pendingTrainingFailureContexts();
+  await flushPendingReviews();
+  expect(reviewIds).toEqual([41, 43]);
+  await expect(flushTrainingFailures()).rejects.toThrow("Temporarily unavailable");
+  expect(pendingTrainingFailureContexts()).toEqual(normalized);
+  await expect(flushTrainingFailures()).rejects.toThrow("Temporarily unavailable");
+  expect(keys).toEqual([normalized[0].operationId, normalized[0].operationId]);
+  expect(normalized).toEqual([{ queueEntryId: 42, operationId: expect.any(String) }]);
 });
