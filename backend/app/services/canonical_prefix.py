@@ -166,6 +166,11 @@ def certify_admitted_route(database, repertoire_id: str, validation_result: dict
                         source_revision=current["source_revision"])
 
 
+def position_rank(position: dict) -> tuple[int, int, str]:
+    """Prefer an in-scope, shortest, then lexically stable verified origin."""
+    return (-position["in_scope"], position["ply"], position["route_json"])
+
+
 def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[str]]]) -> list[dict]:
     """Resolve selected routes together without persisting validation certificates."""
     if isinstance(database, sqlite3.Connection) and not database.in_transaction:
@@ -177,9 +182,6 @@ def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[
     validated_routes: dict[int, dict] = {}
     pending_indices = sorted(range(len(candidates)), key=lambda index: (
         candidates[index][0], position_key(candidates[index][1]), tuple(candidates[index][2])))
-
-    def position_rank(position):
-        return (-position["in_scope"], position["ply"], position["route_json"])
 
     while pending_indices:
         unresolved_indices = []
@@ -252,19 +254,33 @@ def store_positions(database, preview_id: str, positions: list[dict], *, source_
         return
     if source_revision is None:
         source_revision = database.execute("SELECT source_revision FROM canonical_prefix_previews WHERE id=?", (preview_id,)).fetchone()[0]
+    best_positions: dict[tuple[str, int], dict] = {}
+    for position in positions:
+        key = (position["fen_key"], position["in_scope"])
+        previous = best_positions.get(key)
+        if previous is None or position_rank(position) < position_rank(previous):
+            best_positions[key] = position
+    positions = [best_positions[key] for key in sorted(best_positions)]
+    # Rank only within one verified source epoch. Old short routes must not
+    # prevent recertification, and delayed old writes cannot renew stale proof.
+    replacement_guard = (
+        " WHERE excluded.source_revision>canonical_prefix_positions.source_revision OR "
+        "(excluded.source_revision=canonical_prefix_positions.source_revision AND "
+        "(excluded.ply,excluded.route_json)<(canonical_prefix_positions.ply,canonical_prefix_positions.route_json))"
+    )
     if hasattr(database, "execute_native"):
         database.execute_native(
             "INSERT INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply,source_revision) "
             "SELECT %s,fen_key,in_scope,fen,route_json,ply,%s FROM jsonb_to_recordset(%s::jsonb) "
             "AS position(fen_key text,in_scope bigint,fen text,route_json text,ply bigint) "
             "ON CONFLICT(preview_id,fen_key,in_scope) DO UPDATE SET fen=excluded.fen,route_json=excluded.route_json,"
-            "ply=excluded.ply,source_revision=excluded.source_revision",
+            "ply=excluded.ply,source_revision=excluded.source_revision" + replacement_guard,
             (preview_id, source_revision, json.dumps(positions)),
         )
     else:
         database.executemany(
             "INSERT INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply,source_revision) VALUES(?,?,?,?,?,?,?) "
             "ON CONFLICT(preview_id,fen_key,in_scope) DO UPDATE SET fen=excluded.fen,route_json=excluded.route_json,"
-            "ply=excluded.ply,source_revision=excluded.source_revision",
+            "ply=excluded.ply,source_revision=excluded.source_revision" + replacement_guard,
             [(preview_id, item["fen_key"], item["in_scope"], item["fen"], item["route_json"], item["ply"], source_revision) for item in positions],
         )

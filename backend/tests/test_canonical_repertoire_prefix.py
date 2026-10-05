@@ -1652,6 +1652,11 @@ def selected_batch_snapshot():
                 for table in tables}
 
 
+def canonical_route_fixture():
+    from pathlib import Path
+    return json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/canonical-prefix-routes.json').read_text())
+
+
 def selected_batch_fixture():
     add_line(ITALIAN)
     apply_preview(prepare_prefix())
@@ -1794,3 +1799,54 @@ def test_canonical_selected_batch_validation_uses_ranked_origins_without_persist
         # cannot displace the shortest verified in-scope origin.
         assert validations[continuation_index]['origin'] == connector[:7]
     assert selected_batch_snapshot() == before
+
+
+@pytest.mark.parametrize('scenario', [
+    'repeated-forward', 'repeated-reverse', 'short-then-long', 'long-then-short',
+    'separate-verified-routes', 'tie-forward', 'tie-reverse', 'newer-longer', 'older-shorter',
+])
+def test_canonical_route_certification_preserves_best_verified_origin_for_each_source_revision(prefix_database, scenario):
+    """CP-1/7: assert committed certificates, including epoch replacement."""
+    from app.services.canonical_prefix import read_prefix, store_positions, line_origin
+    fixture = canonical_route_fixture()
+    repeated = fixture['repeated_connector']
+    short = repeated[:7]
+    preferred_tie = repeated[:9]
+    alternative_tie = fixture['equal_ply_alternative']
+    cases = {
+        'repeated-forward': ([(repeated, False, False, 0)], short, 0),
+        'repeated-reverse': ([(repeated, True, False, 0)], short, 0),
+        'short-then-long': ([(short, False, True, 0), (repeated, False, True, 0)], short, 0),
+        'long-then-short': ([(repeated, False, True, 0), (short, False, True, 0)], short, 0),
+        'separate-verified-routes': ([(fixture['current_longer_connector'], False, True, 0), (short, False, True, 0)], short, 0),
+        'tie-forward': ([(preferred_tie, False, True, 0), (alternative_tie, False, True, 0)], preferred_tie, 0),
+        'tie-reverse': ([(alternative_tie, False, True, 0), (preferred_tie, False, True, 0)], preferred_tie, 0),
+        'newer-longer': ([(short, False, True, 0), (repeated, False, True, 1)], repeated, 1),
+        'older-shorter': ([(repeated, False, True, 1), (short, False, True, 0)], repeated, 1),
+    }
+    calls, expected_route, revision_offset = cases[scenario]
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    with database.read_connection() as connection:
+        initial = read_prefix(connection, 'italian')
+    advanced = False
+    for route, reverse_positions, endpoint_only, offset in calls:
+        if offset and not advanced:
+            add_line([*ITALIAN, 'f8c5'], 'newer-source')
+            advanced = True
+        validation = validate_scoped_line(chess.STARTING_FEN, route, ITALIAN, [])
+        assert validation['status'] == 'valid'
+        positions = validation['positions'][-1:] if endpoint_only else validation['positions']
+        with database.connection() as connection:
+            store_positions(connection, initial['preview_id'], list(reversed(positions)) if reverse_positions else positions,
+                            source_revision=initial['source_revision'] + offset)
+    target = position_key_for_test(prefix_projection(expected_route)['ending_fen'])
+    with database.read_connection() as connection:
+        stored = connection.execute('SELECT route_json,ply,in_scope,source_revision FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? AND in_scope=1',
+                                    (initial['preview_id'], target)).fetchone()
+        assert tuple(stored) == (json.dumps(expected_route), len(expected_route), 1, initial['source_revision'] + revision_offset)
+        assert line_origin(connection, initial['preview_id'], prefix_projection(expected_route)['ending_fen']) == expected_route
+        if scenario.startswith('repeated-'):
+            outside = connection.execute('SELECT route_json,ply,in_scope,source_revision FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? AND in_scope=0',
+                                         (initial['preview_id'], target)).fetchone()
+            assert tuple(outside) == (json.dumps(ITALIAN[:3]), 3, 0, initial['source_revision'])

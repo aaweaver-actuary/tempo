@@ -740,6 +740,66 @@ def prove_selected_batch_canonical_routes():
         postgres_store.close_pools()
 
 
+def prove_deterministic_route_certification():
+    """CF-14 / CP-1,7: native upserts and committed SQLite/PG parity."""
+    import sqlite3
+    from app.services.canonical_prefix import store_positions, validate_scoped_line, position_key
+    fixture = json.loads((Path(__file__).resolve().parents[1] / 'tests/fixtures/canonical-prefix-routes.json').read_text())
+    repeated = fixture['repeated_connector']
+    short, tie = repeated[:7], repeated[:9]
+    cases = {
+        'repeated-forward': ([(repeated, False, False, 0)], short, 0),
+        'repeated-reverse': ([(repeated, True, False, 0)], short, 0),
+        'short-then-long': ([(short, False, True, 0), (repeated, False, True, 0)], short, 0),
+        'long-then-short': ([(repeated, False, True, 0), (short, False, True, 0)], short, 0),
+        'separate-verified-routes': ([(fixture['current_longer_connector'], False, True, 0), (short, False, True, 0)], short, 0),
+        'tie-forward': ([(tie, False, True, 0), (fixture['equal_ply_alternative'], False, True, 0)], tie, 0),
+        'tie-reverse': ([(fixture['equal_ply_alternative'], False, True, 0), (tie, False, True, 0)], tie, 0),
+        'newer-longer': ([(short, False, True, 0), (repeated, False, True, 1)], repeated, 1),
+        'older-shorter': ([(repeated, False, True, 1), (short, False, True, 0)], repeated, 1),
+    }
+    for name, (calls, expected, offset) in cases.items():
+        identifier = 'canonical-certification-' + uuid.uuid4().hex
+        compatibility = sqlite3.connect(':memory:')
+        compatibility.execute('CREATE TABLE canonical_prefix_positions(preview_id TEXT,fen_key TEXT,in_scope INTEGER,fen TEXT,route_json TEXT,ply INTEGER,source_revision INTEGER,PRIMARY KEY(preview_id,fen_key,in_scope))')
+        try:
+            with postgres_store.connection() as database:
+                database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (identifier, identifier, identifier + '.pgn', NOW))
+                add_repertoire_branch(database, {'repertoire_id': identifier, 'name': 'Root', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': ITALIAN})
+            set_prefix(identifier, ITALIAN)
+            initial = prefix_metadata(identifier)
+            store_positions(compatibility, initial['preview_id'], validate_scoped_line(chess.STARTING_FEN, ITALIAN, ITALIAN, [])['positions'], source_revision=initial['source_revision'])
+            advanced = False
+            for route, reverse_positions, endpoint_only, source_offset in calls:
+                if source_offset and not advanced:
+                    with postgres_store.connection() as database:
+                        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,'white',?,?,?)", (identifier + '-new-source', identifier, 'New source', chess.STARTING_FEN, json.dumps([*ITALIAN, 'f8c5']), NOW))
+                    assert prefix_metadata(identifier)['source_revision'] == initial['source_revision'] + 1
+                    advanced = True
+                validation = validate_scoped_line(chess.STARTING_FEN, route, ITALIAN, [])
+                assert validation['status'] == 'valid', (name, validation)
+                positions = validation['positions'][-1:] if endpoint_only else validation['positions']
+                positions = list(reversed(positions)) if reverse_positions else positions
+                with postgres_store.connection() as database:
+                    store_positions(database, initial['preview_id'], positions, source_revision=initial['source_revision'] + source_offset)
+                store_positions(compatibility, initial['preview_id'], positions, source_revision=initial['source_revision'] + source_offset)
+                compatibility.commit()
+                postgres_store.close_pools()
+            with postgres_store.connection(read_only=True) as database:
+                persisted = [tuple(row) for row in database.execute('SELECT fen_key,route_json,ply,in_scope,source_revision FROM canonical_prefix_positions WHERE preview_id=? ORDER BY fen_key,in_scope', (initial['preview_id'],))]
+            sqlite_persisted = list(compatibility.execute('SELECT fen_key,route_json,ply,in_scope,source_revision FROM canonical_prefix_positions WHERE preview_id=? ORDER BY fen_key,in_scope', (initial['preview_id'],)))
+            assert sorted(persisted) == sorted(sqlite_persisted), (name, persisted, sqlite_persisted)
+            target = position_key(prefix_projection(expected)['ending_fen'])
+            assert next(row[1:] for row in persisted if row[0] == target and row[3] == 1) == (json.dumps(expected), len(expected), 1, initial['source_revision'] + offset), (name, persisted)
+            print('PASS CF-14 committed certificate parity ' + name, flush=True)
+        finally:
+            compatibility.close()
+            with postgres_store.connection() as database:
+                database.execute("DELETE FROM background_tasks WHERE deduplication_key=? OR json_extract(payload_json,'$.repertoire_id')=?", (identifier, identifier))
+                database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
+            postgres_store.close_pools()
+
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Canonical freshness proof requires the runner-owned disposable PostgreSQL instance')
@@ -918,6 +978,7 @@ def main():
         prove_last_generated_membership_cleanup()
         prove_discovery_state_action_freshness()
         prove_selected_batch_canonical_routes()
+        prove_deterministic_route_certification()
     finally:
         opportunities._calculate_node_opportunities = saved_calculate
         with postgres_store.connection() as database:
