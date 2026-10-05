@@ -8,6 +8,8 @@ import { expect, it } from "vitest";
 const regressionGroups = [
   { name: "contracts", pattern: "^(?:restart|CLI|blocked updates|release evidence|target maintenance|deployment records|start after merge|changed dependency|dependency recreation|repeated compatible|failed|source update)" },
   ...["migration guard partial", "migration guard completed", "migration guard newer", "migration guard interrupted",
+    "migration diagnostics applying", "migration diagnostics failed", "migration diagnostics invalid", "migration diagnostics verified",
+    "migration diagnostics pending", "migration diagnostics retry", "migration diagnostics normal",
     "upgrades", "dependency startup", "falls back", "read-only", "failed migration", "failed builds",
     "backup restores the prior", "blocked update", "backup restores stopped", "detects", "fallback corrects",
     "compatible fallback", "interrupted fallback", "concurrent", "backup rejects", "diagnostics explain", "diagnostics identify",

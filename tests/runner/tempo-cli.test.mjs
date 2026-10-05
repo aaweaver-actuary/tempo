@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey } from "../../scripts/tempo-deployment.mjs";
-import { configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
 function directory(t) {
@@ -937,6 +937,218 @@ function diagnosticFixture(t, { receipt = false, diagnostics = {}, machine = {} 
 
 const diagnosticMainRun = { id: 12, head_sha: "a".repeat(40), head_branch: "main", event: "push",
   status: "completed", html_url: "https://github.com/fixture/ci" };
+
+function validDiagnosticMigrationGuard(fixture, state = "pending") {
+  return { version: 1, target: targetKey(fixture.target),
+    database: { name: "tempo", volume: "tempo-postgres-data" }, state,
+    origin_revision: "b".repeat(40), starting_schema: 28, intended_schema: 29,
+    starting_versions: Array.from({ length: 28 }, (_, index) => index + 1),
+    study_invariants: { reviews: { columns: ["id", "rating"], count: 1, digest: "preserved" } },
+    backup: { verified: true, filename: "original.dump" } };
+}
+
+function mutationFreeMigrationDiagnostics(fixture) {
+  const backupDirectory = join(fixture.directory, "original-backups");
+  mkdirSync(backupDirectory);
+  writeFileSync(join(backupDirectory, "original.dump"), "original study backup");
+  writeFileSync(join(backupDirectory, "original.dump.sha256"), "original backup checksum");
+  writeFileSync(join(fixture.root, "study-notes"), "preserved operator work");
+  const snapshotDirectory = path => readdirSync(path, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
+    .map(entry => [entry.name, entry.isDirectory() ? snapshotDirectory(join(path, entry.name)) : readFileSync(join(path, entry.name), "utf8")]);
+  const snapshot = () => [fixture.root, fixture.stateDirectory, backupDirectory].map(snapshotDirectory)
+    .concat([fixture.registration, join(fixture.directory, "machine.json")].map(path => readFileSync(path, "utf8")));
+  const original = snapshot();
+  return (...argumentsList) => {
+    const result = fixture.command(...argumentsList);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual(snapshot(), original, "journal, guard, receipt, backups, database, services and source remain byte-for-byte unchanged");
+    for (const call of fixture.calls()) assert(!["fetch", "merge", "reset", "checkout", "switch", "build", "pull", "run", "up", "stop", "start", "restart", "rm", "down"]
+      .some(argument => call.args.includes(argument)), JSON.stringify(call));
+    for (const call of fixture.calls().filter(call => call.args.includes("psql"))) {
+      assert(call.args.some(argument => argument.includes("default_transaction_read_only=on")));
+      assert(call.args.some(argument => argument.includes("statement_timeout=1000")));
+      assert(call.args.some(argument => argument.includes("lock_timeout=100")));
+      assert.equal(call.args.at(-1), "SELECT version FROM tempo_schema_migrations ORDER BY version");
+    }
+    for (const request of readFileSync(join(fixture.directory, "requests.jsonl"), "utf8").trim().split("\n").map(JSON.parse)) {
+      assert.equal(request.method, "GET");
+      assert(request.url.includes("api.github.com") || request.url.endsWith("/api/health"));
+    }
+    return result.stdout;
+  };
+}
+
+const migrationDiagnosticSurfaces = [["status"], ["doctor"], ["start", "--plan"], ["restart", "--plan"],
+  ["migrate", "--plan"], ["migrate", "--retry", "--plan"]];
+
+test("actual CLI migration diagnostics applying journal without a durable guard blocks every read-only surface", t => {
+  const fixture = diagnosticFixture(t, { receipt: true });
+  writeFileSync(join(fixture.stateDirectory, "operation.json"), JSON.stringify({ phase: "applying_migrations" }));
+  const diagnose = mutationFreeMigrationDiagnostics(fixture);
+  for (const argumentsList of migrationDiagnosticSurfaces) {
+    const output = diagnose(...argumentsList);
+    assert.match(output, /Update eligibility: blocked/);
+    assert.doesNotMatch(output, /Update eligibility: eligible|recovery attempt.*permitted/i);
+    assert.match(output, /migration.*(?:failed|interrupted).*without a durable original guard/i);
+    assert.match(output, /Preserve.*original backup.*operation/);
+    assert.match(output, /inspect.*original history.*tempo migrate --retry/i);
+  }
+});
+
+test("actual CLI migration diagnostics failed migration journal without a durable guard blocks every read-only surface", t => {
+  const fixture = diagnosticFixture(t, { receipt: true });
+  writeFileSync(join(fixture.stateDirectory, "operation.json"), JSON.stringify({ phase: "failed", failed_phase: "applying_migrations", failure: "original migration failure" }));
+  const diagnose = mutationFreeMigrationDiagnostics(fixture);
+  for (const argumentsList of migrationDiagnosticSurfaces) {
+    const output = diagnose(...argumentsList);
+    assert.match(output, /Update eligibility: blocked/);
+    assert.doesNotMatch(output, /Update eligibility: eligible|recovery attempt.*permitted/i);
+    assert.match(output, /migration.*(?:failed|interrupted).*without a durable original guard/i);
+    assert.match(output, /Preserve.*original backup.*operation/);
+    assert.match(output, /inspect.*original history.*tempo migrate --retry/i);
+  }
+});
+
+test("actual CLI migration diagnostics invalid target and database guards remain blocked even with retry", t => {
+  for (const invalid of [{ target: "wrong-target" }, { database: { name: "another-database", volume: "tempo-postgres-data" } },
+    { database: { name: "tempo", volume: "another-volume" } }]) {
+    const fixture = diagnosticFixture(t, { receipt: true });
+    writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify({ ...validDiagnosticMigrationGuard(fixture), ...invalid }));
+    const diagnose = mutationFreeMigrationDiagnostics(fixture);
+    for (const argumentsList of [["status"], ["doctor"], ["migrate", "--retry", "--plan"]]) {
+      const output = diagnose(...argumentsList);
+      assert.match(output, /Update eligibility: blocked.*Migration guard is invalid or belongs to another database/);
+      assert.match(output, /Preserve the guard and backup.*inspect tempo doctor before recovery/);
+      assert.doesNotMatch(output, /Update eligibility: eligible|recovery attempt.*permitted/i);
+    }
+  }
+});
+
+test("actual CLI migration diagnostics verified guards cannot bypass structural or target validation", t => {
+  for (const invalid of [{ target: "wrong-target" }, { starting_versions: [28] }, { backup: { filename: "original.dump", verified: false } }]) {
+    const fixture = diagnosticFixture(t, { receipt: true });
+    writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify({ ...validDiagnosticMigrationGuard(fixture, "verified"), ...invalid }));
+    const diagnose = mutationFreeMigrationDiagnostics(fixture);
+    for (const argumentsList of [["doctor"], ["migrate", "--retry", "--plan"]]) {
+      const output = diagnose(...argumentsList);
+      assert.match(output, /Update eligibility: blocked.*Migration guard is invalid or belongs to another database/);
+      assert.doesNotMatch(output, /Update eligibility: eligible|recovery attempt.*permitted/i);
+    }
+  }
+});
+
+test("actual CLI migration diagnostics pending original verification requires an explicit inspected retry", t => {
+  const fixture = diagnosticFixture(t, { receipt: true });
+  writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify(validDiagnosticMigrationGuard(fixture)));
+  const diagnose = mutationFreeMigrationDiagnostics(fixture);
+  for (const argumentsList of migrationDiagnosticSurfaces.filter(argumentsList => !argumentsList.includes("--retry"))) {
+    const output = diagnose(...argumentsList);
+    assert.match(output, /Update eligibility: blocked/);
+    assert.match(output, /Original migration verification remains required/);
+    assert.match(output, /original backup original.dump.*tempo migrate --retry/);
+    assert.doesNotMatch(output, /Update eligibility: eligible|recovery attempt.*permitted/i);
+  }
+});
+
+test("actual CLI migration diagnostics retry plan permits only an attempt while history and startup remain unresolved", t => {
+  const fixture = diagnosticFixture(t, { receipt: true });
+  writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify(validDiagnosticMigrationGuard(fixture)));
+  const output = mutationFreeMigrationDiagnostics(fixture)("migrate", "--retry", "--plan");
+  assert.match(output, /Explicit migration recovery attempt: permitted.*planned/);
+  assert.match(output, /original.history verification remains unresolved.*lifecycle.*success/i);
+  assert.match(output, /Ordinary startup safety: not established/);
+  assert.match(output, /Update eligibility: blocked/);
+  assert.doesNotMatch(output, /Update eligibility: eligible|recovery (?:has )?succeeded/i);
+});
+
+test("actual CLI migration diagnostics normal absent or verified guards retain update eligibility", t => {
+  for (const guardState of [null, "verified"]) {
+    const fixture = diagnosticFixture(t, { receipt: true });
+    writeFileSync(join(fixture.stateDirectory, "operation.json"), JSON.stringify({ phase: "ready" }));
+    if (guardState) writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify(validDiagnosticMigrationGuard(fixture, guardState)));
+    const diagnose = mutationFreeMigrationDiagnostics(fixture);
+    for (const argumentsList of [["status"], ["doctor"], ["start", "--plan"]]) {
+      const output = diagnose(...argumentsList);
+      assert.match(output, /Verification: verified/);
+      assert.match(output, /Update eligibility: eligible/);
+      assert.doesNotMatch(output, /without a durable original guard|Original migration verification remains required|Ordinary startup safety: not established/);
+    }
+  }
+});
+
+test("CLI migration recovery assessment preserves lifecycle validation for every original guard field", async t => {
+  const fixture = diagnosticFixture(t, { receipt: true });
+  const configuration = readFixtureJson(fixture, "fixture.json").config;
+  const original = validDiagnosticMigrationGuard(fixture, "verified");
+  const invalidGuards = [{ version: 2 }, { target: "wrong-target" },
+    { database: { ...original.database, name: "another-database" } },
+    { database: { ...original.database, volume: "another-volume" } }, { state: "unknown" },
+    { starting_schema: 28.5 }, { intended_schema: 29.5 }, { starting_schema: 0 }, { intended_schema: 27 },
+    { starting_versions: null }, { starting_versions: [1] },
+    { starting_versions: original.starting_versions.map(version => version === 2 ? 3 : version) },
+    { study_invariants: null }, { backup: { ...original.backup, verified: false } },
+    { backup: { ...original.backup, filename: "" } }].map(invalid => ({ ...original, ...invalid }));
+  const cases = [
+    ...invalidGuards.map(guard => ({ guard, expected: "blocked" })),
+    ...[{ phase: "applying_migrations" }, { phase: "failed", failed_phase: "applying_migrations" }]
+      .map(operation => ({ guard: null, operation, expected: "blocked" })),
+    { guard: validDiagnosticMigrationGuard(fixture), expected: "pending" },
+    { guard: original, expected: "clear" },
+    { guard: null, operation: { phase: "failed", failed_phase: "preparing_images" }, expected: "clear" },
+    { guard: null, expected: "clear" },
+  ];
+  for (const { guard, operation = null, expected } of cases) for (const retry of [false, true]) {
+    const before = JSON.stringify({ guard, operation, target: fixture.target, configuration });
+    const assessment = assessMigrationRecovery({ guard, operation, target: fixture.target, configuration, retry });
+    assert.equal(assessment.status, expected === "pending" ? retry ? "retry-authorized" : "blocked" : expected);
+    assert.equal(JSON.stringify({ guard, operation, target: fixture.target, configuration }), before, "assessment does not mutate inputs");
+    const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+    const journalPath = join(fixture.stateDirectory, "operation.json");
+    if (guard) writeFileSync(guardPath, JSON.stringify(guard)); else rmSync(guardPath, { force: true });
+    if (operation) writeFileSync(journalPath, JSON.stringify(operation)); else rmSync(journalPath, { force: true });
+    const runtime = createRuntime(fixture.target, { run: async () => ({ stdout: JSON.stringify(configuration) }),
+      stateDirectory: fixture.stateDirectory, revision: "a".repeat(40), retry, log: () => {} });
+    await runtime.config();
+    if (assessment.status === "blocked") assert.throws(() => runtime.checkMigrationRetry(), error => error.message === assessment.message);
+    else assert.equal(runtime.checkMigrationRetry(), assessment.status === "retry-authorized");
+    assert.equal(existsSync(guardPath) ? readFileSync(guardPath, "utf8") : null, guard ? JSON.stringify(guard) : null);
+    assert.equal(existsSync(journalPath) ? readFileSync(journalPath, "utf8") : null, operation ? JSON.stringify(operation) : null);
+  }
+});
+
+test("CLI migration recovery preflight rereads guard and journal under the lock before maintenance", async t => {
+  for (const recoveryState of ["unguarded-interruption", "invalid-verified-guard", "pending-guard"]) {
+    const fixture = diagnosticFixture(t, { receipt: true });
+    const configuration = readFixtureJson(fixture, "fixture.json").config;
+    const runtime = createRuntime(fixture.target, { run: async () => ({ stdout: JSON.stringify(configuration) }),
+      stateDirectory: fixture.stateDirectory, revision: "a".repeat(40), log: () => {} });
+    await runtime.config();
+    assert.equal(runtime.checkMigrationRetry(), false, "initial inspection has no recovery debt");
+    const release = acquireTargetLock(fixture.stateDirectory);
+    try {
+      const operation = { phase: "failed", failed_phase: "applying_migrations", failure: "preserve original failure" };
+      writeFileSync(join(fixture.stateDirectory, "operation.json"), JSON.stringify(operation));
+      if (recoveryState !== "unguarded-interruption") {
+        const guard = validDiagnosticMigrationGuard(fixture, recoveryState === "pending-guard" ? "pending" : "verified");
+        if (recoveryState === "invalid-verified-guard") guard.target = "another-target";
+        writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify(guard));
+      }
+      const preservedPaths = ["operation.json", "deployment.json", ...(recoveryState !== "unguarded-interruption" ? ["migration-guard.json"] : [])]
+        .map(name => join(fixture.stateDirectory, name));
+      const before = preservedPaths.map(path => readFileSync(path, "utf8"));
+      let maintenanceStarted = false, failureRecorded = false;
+      await assert.rejects(executeLifecycle({ recreate: false }, { ...runtime,
+        ensureImages: async () => { maintenanceStarted = true; throw new Error("unexpected maintenance"); },
+        recordFailure: async () => { failureRecorded = true; },
+      }), recoveryState === "unguarded-interruption" ? /without a durable original guard/
+        : recoveryState === "invalid-verified-guard" ? /invalid or belongs to another database/ : /tempo migrate --retry/);
+      assert.equal(maintenanceStarted, false);
+      assert.equal(failureRecorded, false, "rejection cannot replace original failure evidence");
+      assert.deepEqual(preservedPaths.map(path => readFileSync(path, "utf8")), before);
+      assert.deepEqual(fixture.calls(), []);
+    } finally { release(); }
+  }
+});
 
 test("actual CLI diagnostics explain pending exact-main verification without a deployment receipt", t => {
   const fixture = diagnosticFixture(t, { diagnostics: { runs: [{ ...diagnosticMainRun, status: "in_progress" }] } });

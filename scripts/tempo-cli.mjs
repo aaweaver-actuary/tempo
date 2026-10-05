@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireTargetLock, assessMainVerification, atomicJson, commandExecutor, portsFromConfig, productVolumes,
   redact, schemaVersionFromSource, selectCandidate, targetKey, validateTarget } from "./tempo-deployment.mjs";
-import { createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
+import { assessMigrationRecovery, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 
 const help = `Tempo — manage the existing Docker/PostgreSQL installation
 
@@ -140,6 +140,13 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   if (operation) log(`Last operation: ${operation.phase}${operation.failure ? ` — ${redact(operation.failure, secrets)}` : ""}`);
   const guard = readJson(join(stateDirectory, "migration-guard.json"));
   if (guard) log(`Original migration verification: ${guard.state}; origin ${guard.origin_revision}; backup ${guard.backup?.filename ?? "unknown"}`);
+  const migrationRecovery = assessMigrationRecovery({ guard, operation, target, configuration: runtime.configuration,
+    retry: options.flags.has("--retry") && ["start", "restart", "migrate"].includes(options.command) });
+  if (migrationRecovery.status !== "clear") log(`Migration recovery: ${migrationRecovery.status} — ${migrationRecovery.message}`);
+  if (migrationRecovery.status === "retry-authorized") {
+    log("Explicit migration recovery attempt: permitted and planned; recovery has not been performed by this diagnostic.");
+    log("Ordinary startup safety: not established; original-history verification must succeed in the real lifecycle first.");
+  }
   log("Background completion: unverified; service state and API readiness do not prove completion of all background work.");
 
   // The entire diagnostic remote lookup is bounded; it never fetches Git objects.
@@ -168,7 +175,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   }
   log(`Local ancestry: ${ancestry}${ancestry === "unknown" ? "; no Git objects were fetched" : ""}`);
   if (!sourceBlocker && ancestry === "diverged") sourceBlocker = "local main has diverged; Tempo will not reset or merge your work";
-  if (!sourceBlocker && guard?.state === "pending") sourceBlocker = "original migration verification requires inspection and explicit tempo migrate --retry";
+  if (!sourceBlocker && migrationRecovery.status !== "clear") sourceBlocker = migrationRecovery.message;
   log(`Update eligibility: ${sourceBlocker ? `blocked — ${sourceBlocker}` : verification.status !== "verified" ? verification.status
     : ancestry === "unknown" ? "unknown — ancestry must be checked by the updater" : "eligible (deployment readiness still checked by tempo start)"}`);
   if (verification.status !== "verified") {

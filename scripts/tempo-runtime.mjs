@@ -29,6 +29,32 @@ export function configurationFingerprint(configured) {
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 }
 
+// Read-only classification shared by diagnostics and lock-time preflight.
+// Authorization to retry never establishes successful history verification.
+export function assessMigrationRecovery({ guard, operation, target, configuration, retry = false }) {
+  if (guard) {
+    const database = { name: configuration.services.postgres.environment.POSTGRES_DB,
+      volume: target.volumes[target.postgresVolumeKey].name };
+    if (guard.version !== 1 || guard.target !== targetKey(target)
+      || guard.database?.name !== database.name || guard.database?.volume !== database.volume
+      || !["pending", "verified"].includes(guard.state)
+      || !Number.isInteger(guard.starting_schema) || !Number.isInteger(guard.intended_schema)
+      || guard.starting_schema < 1 || guard.intended_schema < guard.starting_schema
+      || !Array.isArray(guard.starting_versions) || guard.starting_versions.length !== guard.starting_schema
+      || guard.starting_versions.some((version, index) => version !== index + 1) || !guard.study_invariants
+      || !guard.backup?.verified || !guard.backup.filename)
+      return { status: "blocked", message: "Migration guard is invalid or belongs to another database. Preserve the guard and backup; inspect tempo doctor before recovery." };
+    if (guard.state === "pending") {
+      if (!retry) return { status: "blocked", message: `Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${guard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.` };
+      return { status: "retry-authorized", message: "Original-history verification remains unresolved until the real lifecycle successfully performs it." };
+    }
+  } else if (operation?.phase === "applying_migrations"
+    || (operation?.phase === "failed" && operation.failed_phase === "applying_migrations")) {
+    return { status: "blocked", message: "Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry." };
+  }
+  return { status: "clear" };
+}
+
 export async function executeLifecycle(plan, actions) {
   // Authorization/guard failures must not replace the previous operation's
   // evidence, especially an older failed attempt without a durable guard.
@@ -333,29 +359,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     // Read under the maintenance lock, including the backup path whose runtime
     // was created during the earlier read-only inspection.
     migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
-    if (migrationGuard) {
-      const database = { name: configuration.services.postgres.environment.POSTGRES_DB,
-        volume: target.volumes[target.postgresVolumeKey].name };
-      if (migrationGuard.version !== 1 || migrationGuard.target !== targetKey(target)
-        || migrationGuard.database?.name !== database.name || migrationGuard.database?.volume !== database.volume
-        || !["pending", "verified"].includes(migrationGuard.state)
-        || !Number.isInteger(migrationGuard.starting_schema) || !Number.isInteger(migrationGuard.intended_schema)
-        || migrationGuard.starting_schema < 1 || migrationGuard.intended_schema < migrationGuard.starting_schema
-        || !Array.isArray(migrationGuard.starting_versions) || migrationGuard.starting_versions.length !== migrationGuard.starting_schema
-        || migrationGuard.starting_versions.some((version, index) => version !== index + 1) || !migrationGuard.study_invariants
-        || !migrationGuard.backup?.verified || !migrationGuard.backup.filename)
-        throw new Error("Migration guard is invalid or belongs to another database. Preserve the guard and backup; inspect tempo doctor before recovery.");
-      if (migrationGuard.state === "pending") {
-        if (!retry) throw new Error(`Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${migrationGuard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.`);
-        return true;
-      }
-    } else if (existsSync(journalPath)) {
-      const previousOperation = JSON.parse(readFileSync(journalPath, "utf8"));
-      if (previousOperation.phase === "applying_migrations"
-        || (previousOperation.phase === "failed" && previousOperation.failed_phase === "applying_migrations"))
-        throw new Error("Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry.");
-    }
-    return false;
+    const previousOperation = !migrationGuard && existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, "utf8")) : null;
+    const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
+    if (assessment.status === "blocked") throw new Error(assessment.message);
+    return assessment.status === "retry-authorized";
   }
 
   async function runningServices() {

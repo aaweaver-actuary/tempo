@@ -1479,3 +1479,22 @@ Existing source-race, dirty/diverged checkout, image/schema fallback, interrupte
 rollout and migration-guard tests remain required. These injected command tests
 prove diagnostic behavior and mutation boundaries; actual deployment/persistence
 still requires the disposable PostgreSQL durability stage and final candidate CI.
+
+### PR #87 review: migration-recovery diagnostic parity (2026-10-05)
+
+All cases are in `tests/runner/tempo-cli.test.mjs`, registered through disjoint
+`migration diagnostics ...` groups and the existing `CLI` contract group in
+`tests/unit/tempo-cli-regressions.test.ts`.
+
+- `actual CLI migration diagnostics applying journal without a durable guard blocks every read-only surface` and `actual CLI migration diagnostics failed migration journal without a durable guard blocks every read-only surface` cover both interrupted/failed journal shapes across status, doctor, start/restart/migrate plans and explicit retry plans. Preserve and inspect original backup/operation/history before recovery. Both reproduced false eligibility against PR head `937ac766`.
+- `actual CLI migration diagnostics invalid target and database guards remain blocked even with retry` covers wrong target, database name and volume. `actual CLI migration diagnostics verified guards cannot bypass structural or target validation` covers wrong target, invalid ledger structure and an unverified backup despite a verified-state claim. Both reproduced false eligibility before repair.
+- `actual CLI migration diagnostics pending original verification requires an explicit inspected retry` retains the pending guard blocker and original backup reference. `actual CLI migration diagnostics retry plan permits only an attempt while history and startup remain unresolved` distinguishes retry authorization from successful original-history verification and ordinary startup safety; retry never makes an unresolved update eligible. The retry-plan case failed before repair.
+- `actual CLI migration diagnostics normal absent or verified guards retain update eligibility` preserves normal eligibility when all other requirements pass.
+- Every diagnostic case asserts zero exit and unchanged journal/guard presence and bytes, receipt, original backup/checksum, database/history/services/virtual Git state, registration and source files. Calls prohibit source/image/service/maintenance mutations; HTTP is GET-only and SQL remains the bounded read-only ledger SELECT.
+- `CLI migration recovery assessment preserves lifecycle validation for every original guard field` covers all original structural/identity predicates, both journal shapes, pending authorization, valid verified/absent guards and a nonmigration failure. It checks pure input preservation and lifecycle agreement without changing the policy.
+- `CLI migration recovery preflight rereads guard and journal under the lock before maintenance` introduces recovery state after initial inspection. The lifecycle rejects before image work or failure-journal replacement and preserves the original evidence.
+
+Scope: shared read-only classification and diagnostic wording only. Authoritative
+lifecycle re-reading under the maintenance lock, migrations, backup/history
+verification and deployment policy are unchanged. Focused CLI proof precedes the
+whole affected file/wrapper; CI owns final candidate durability/complete coverage.
