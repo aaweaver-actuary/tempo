@@ -319,7 +319,26 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
                     kind=claimed_task["kind"],
                 )
-        except (DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
+        except TransactionTimeout as error:
+            if claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention"}:
+                retry_result = fail_task(
+                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error,
+                )
+                more_work = retry_result["state"] == "retrying"
+                # Celery completion acknowledges this delivery; durable state owns retries.
+                _LOGGER.warning(
+                    "background_slice_timeout kind=%s phase=%s outcome=%s sqlstate=%s next_attempt_at=%s",
+                    claimed_task["kind"], claimed_task.get("phase", "unknown"),
+                    retry_result["state"], error.sqlstate or "unknown",
+                    retry_result.get("next_attempt_at") if more_work else None,
+                )
+            else:
+                defer_task_for_contention(
+                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
+                    kind=claimed_task["kind"],
+                )
+                more_work = True
+        except (DeadlockDetected, LockNotAvailable, SerializationFailure):
             defer_task_for_contention(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
                 kind=claimed_task["kind"],
