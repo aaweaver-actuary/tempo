@@ -1516,14 +1516,22 @@ def invalidate_state_action_scope(invalidation):
 def test_canonical_discovery_state_actions_reject_stale_scope_without_mutation(prefix_database, action, invalidation):
     from fastapi import HTTPException
     from app import main
-    from app.services.canonical_scope_freshness import opportunity_is_current
+    from app.services.canonical_scope_freshness import opportunity_is_current, scope_identity, game_scope_generation
     opportunity_id = publish_state_action_fixture()
     with database.connection() as connection:
         connection.execute("UPDATE repertoire_opportunities SET seen_at='2026-10-01',snoozed_until='2026-10-08',dismissed_evidence_json=? WHERE id=?",
                            (json.dumps({'supporting_games': 2}), opportunity_id))
     invalidate_state_action_scope(invalidation)
+    if invalidation == 'source':
+        # Source writes also advance the global epoch. Keep that independent
+        # identity current so this case can only be rejected by the source fence.
+        with database.connection() as connection:
+            connection.execute('UPDATE repertoire_opportunities SET game_scope_generation=(SELECT generation FROM repertoire_game_scope WHERE id=1) WHERE id=?', (opportunity_id,))
     with database.read_connection() as connection:
         before = dict(connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone())
+        current_identity = {**scope_identity(connection, 'italian'), 'game_scope_generation': game_scope_generation(connection)}
+        expected_stale_field = {'prefix': 'canonical_prefix_revision', 'source': 'canonical_scope_source_revision', 'global': 'game_scope_generation'}[invalidation]
+        assert {field for field, value in current_identity.items() if before[field] != value} == {expected_stale_field}
         assert not opportunity_is_current(connection, before)
     with pytest.raises(HTTPException) as rejection:
         getattr(main, action + '_repertoire_opportunity')('italian', opportunity_id, None)

@@ -477,6 +477,7 @@ def prove_discovery_state_action_freshness():
     from threading import Event
     from app import opportunity_commands
     from app.command_gateway import execute_command, read_operation
+    from app.services.canonical_scope_freshness import scope_identity
     repertoire_id = 'canonical-state-' + uuid.uuid4().hex
     operation_ids = []
     opportunity_ids = []
@@ -519,7 +520,13 @@ def prove_discovery_state_action_freshness():
                 with postgres_store.connection() as database:
                     database.execute('UPDATE repertoire_opportunities SET seen_at=?,snoozed_until=? WHERE id=?', (NOW, NOW, payload['opportunity_id']))
                     invalidate(database, dimension)
+                    if dimension == 'source':
+                        database.execute('UPDATE repertoire_opportunities SET game_scope_generation=(SELECT generation FROM repertoire_game_scope WHERE id=1) WHERE id=?', (payload['opportunity_id'],))
                 before = snapshot(payload)
+                with postgres_store.connection(read_only=True) as database:
+                    current_identity = {**scope_identity(database, repertoire_id), 'game_scope_generation': game_scope_generation(database)}
+                    stale_field = {'prefix': 'canonical_prefix_revision', 'source': 'canonical_scope_source_revision', 'global': 'game_scope_generation'}[dimension]
+                    assert {field for field, value in current_identity.items() if before[field] != value} == {stale_field}
                 operation_id = 'state-reject-' + uuid.uuid4().hex
                 operation_ids.append(operation_id)
                 assert execute_command(operation_id, 'opportunities.' + action, payload) is None
@@ -550,6 +557,9 @@ def prove_discovery_state_action_freshness():
                     with postgres_store.connection() as invalidator:
                         invalidator_pid = invalidator.execute_native('SELECT pg_backend_pid()').fetchone()[0]
                         invalidate(invalidator, dimension)
+                        if dimension == 'source':
+                            before['game_scope_generation'] = game_scope_generation(invalidator)
+                            invalidator.execute('UPDATE repertoire_opportunities SET game_scope_generation=? WHERE id=?', (before['game_scope_generation'], payload['opportunity_id']))
                         pending = executor.submit(race_action, action, payload, announced_pid)
                         _wait_for_postgres_blocker(announced_pid.get(timeout=3), invalidator_pid)
                     pending.result(timeout=3)
