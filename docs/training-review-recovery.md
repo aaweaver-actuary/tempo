@@ -75,7 +75,7 @@ its own guided marker, leaving a replacement context's marker intact.
 
 ## PR #72 current-main integration test plan (2026-10-05)
 
-Integrate main 4a91c56 with recovery head 366e7b1. Risks: migration collisions,
+Integrate main e28bebc (including #85) with recovery head 366e7b1; the first integration used 4a91c56 before main advanced. Risks: migration collisions,
 partial evidence commits on explicit conflict, replay duplication, lost evidence
 envelopes/fallback identity, and aborted receipt polling. Start with named migration,
 review/evidence, outbox and operation-status cases, then their affected files and
@@ -112,3 +112,13 @@ The corrected pinned Linux ARM64 comparison selected exactly one
 snapshot generation. The initial short-title anchored filter selected zero tests
 and is not passing evidence. This comparison used 01659ef plus the reviewed
 baseline and fixture/documentation repairs; production inputs were unchanged.
+
+The settled-candidate durability run exposed a stale main concurrency fixture: it
+edited a card after admission and attempted to review the old queue origin. The
+fixture now admits revision 2 as a separate queue attempt while retaining revision
+1 provenance. Both paused-reduction foreground-completion cases and the complete
+opening-evidence PostgreSQL rehearsal pass (6.53 s and 7.85 s wall respectively).
+No production recovery behavior changed. The iPhone regression also mocks main’s
+prepared-queue query and verifies the intended cached cards; online reload permits
+same-key unacknowledged transport replay while requiring identical result bodies
+and exactly one next-sequence explicit retry. Their focused browser runs pass.

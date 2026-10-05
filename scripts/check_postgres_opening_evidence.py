@@ -165,6 +165,11 @@ def _large_checkpoint_fixture():
              'f1g3 d7c5 b2b4 c5d7 a2a4 d7b6 a4b5 b6d7 g3f5').split()
     with postgres_store.connection() as database:
         database.execute('UPDATE cards SET moves_json=?,revision=2 WHERE id=?', (json.dumps(moves), fixture['card_id']))
+        # Admit the edited fixture as a new attempt; the original origin must retain revision 1.
+        fixture['queue_id'] = database.execute(
+            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket,admission_repertoire_id) "
+            "VALUES(?,?,1,2000,'opening',?) RETURNING id",
+            (date.today().isoformat(), fixture['card_id'], fixture['repertoire_id'])).fetchone()[0]
     manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
     assert len(manifest['decisions']) == 20
     assert len({decision['decision_id'] for decision in manifest['decisions']}) == 20
@@ -297,6 +302,7 @@ def _paused_checkpoint_review(*, complete_same_attempt):
             review_future = workers.submit(tasks.execute_foreground_command.run, fixture['card_id']+'-review', 'cards.review', review_payload)
             review_result = review_future.result(timeout=10)
             foreground_ms = (time.perf_counter()-started)*1000
+            assert review_result is not None, _checkpoint_operation_receipt(fixture['card_id']+'-review')
             assert review_result['persisted'] and not release.is_set() and not checkpoint_future.done()
             with postgres_store.connection(read_only=True) as database:
                 scheduling = _fixture_scheduling(database, fixture)
