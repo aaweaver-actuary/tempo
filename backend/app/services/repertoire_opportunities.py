@@ -1073,11 +1073,25 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
     return result
 
 
-def dismiss_opportunity(database: sqlite3.Connection, repertoire_id: str, opportunity_id: str) -> bool:
+def active_opportunity_for_state_change(database, repertoire_id: str, opportunity_id: str):
+    """Fence a state action under the same scope/row locks as publication."""
+    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
+        database.execute("BEGIN IMMEDIATE")
+    read_prefix(database, repertoire_id, lock=True)
+    game_scope_generation(database, lock=True)
+    row_lock = " FOR UPDATE" if hasattr(database, "execute_native") else ""
     row = database.execute(
-        "SELECT evidence_json FROM repertoire_opportunities WHERE id=? AND repertoire_id=? AND status='active'",
+        "SELECT * FROM repertoire_opportunities "
+        f"WHERE id=? AND repertoire_id=? AND status='active'{row_lock}",
         (opportunity_id, repertoire_id),
     ).fetchone()
+    if row is not None and not opportunity_is_current(database, row):
+        raise ValueError("Opening routes or game scope changed; refresh this discovery before trying again.")
+    return row
+
+
+def dismiss_opportunity(database: sqlite3.Connection, repertoire_id: str, opportunity_id: str) -> bool:
+    row = active_opportunity_for_state_change(database, repertoire_id, opportunity_id)
     if not row:
         return False
     database.execute(
@@ -1089,6 +1103,8 @@ def dismiss_opportunity(database: sqlite3.Connection, repertoire_id: str, opport
 
 def acknowledge_opportunity(database: sqlite3.Connection, repertoire_id: str,
                             opportunity_id: str) -> bool:
+    if active_opportunity_for_state_change(database, repertoire_id, opportunity_id) is None:
+        return False
     result = database.execute(
         """UPDATE repertoire_opportunities SET seen_at=?,snoozed_until=NULL,updated_at=?
            WHERE id=? AND repertoire_id=? AND status='active'""",
@@ -1099,6 +1115,8 @@ def acknowledge_opportunity(database: sqlite3.Connection, repertoire_id: str,
 
 def snooze_opportunity(database: sqlite3.Connection, repertoire_id: str,
                        opportunity_id: str) -> bool:
+    if active_opportunity_for_state_change(database, repertoire_id, opportunity_id) is None:
+        return False
     until = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
     result = database.execute(
         """UPDATE repertoire_opportunities SET seen_at=COALESCE(seen_at,?),

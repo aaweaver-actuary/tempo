@@ -1487,3 +1487,118 @@ def test_canonical_last_generated_membership_cleanup_preserves_history_without_o
         if owner_scope == 'unlinked-authored-owner':
             assert _next_item(connection, {'id': 'inspection', 'repertoire_id': 'italian'}, {'phase': 'cards', 'cursor': ''})['id'] == 'orphan-source'
         assert {scope: read_prefix(connection, scope)['source_revision'] for scope in revisions} == revisions
+
+
+def publish_state_action_fixture():
+    from app.services.repertoire_opportunities import _publish
+    add_line([*ITALIAN, 'f8c5', 'c2c3'])
+    apply_preview(prepare_prefix())
+    with database.connection() as connection:
+        _publish(connection, repertoire_id='italian', kind='missing_response',
+                 fen_key=position_key_for_test(prefix_projection(ITALIAN)['ending_fen']),
+                 target='a7a6', card_id=None, opponent_move_uci='a7a6', score=1,
+                 evidence={'supporting_games': 5})
+        return connection.execute('SELECT id FROM repertoire_opportunities').fetchone()[0]
+
+
+def invalidate_state_action_scope(invalidation):
+    with database.connection() as connection:
+        if invalidation == 'prefix':
+            connection.execute("UPDATE repertoires SET canonical_prefix_revision=canonical_prefix_revision+1 WHERE id='italian'")
+        elif invalidation == 'source':
+            connection.execute("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='italian'")
+        else:
+            connection.execute('UPDATE repertoire_game_scope SET generation=generation+1 WHERE id=1')
+
+
+@pytest.mark.parametrize('action', ['dismiss', 'acknowledge', 'snooze'])
+@pytest.mark.parametrize('invalidation', ['prefix', 'source', 'global'])
+def test_canonical_discovery_state_actions_reject_stale_scope_without_mutation(prefix_database, action, invalidation):
+    from fastapi import HTTPException
+    from app import main
+    from app.services.canonical_scope_freshness import opportunity_is_current
+    opportunity_id = publish_state_action_fixture()
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoire_opportunities SET seen_at='2026-10-01',snoozed_until='2026-10-08',dismissed_evidence_json=? WHERE id=?",
+                           (json.dumps({'supporting_games': 2}), opportunity_id))
+    invalidate_state_action_scope(invalidation)
+    with database.read_connection() as connection:
+        before = dict(connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone())
+        assert not opportunity_is_current(connection, before)
+    with pytest.raises(HTTPException) as rejection:
+        getattr(main, action + '_repertoire_opportunity')('italian', opportunity_id, None)
+    assert rejection.value.status_code == 409
+    assert 'refresh' in rejection.value.detail.lower()
+    with database.read_connection() as connection:
+        assert dict(connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone()) == before
+
+
+@pytest.mark.parametrize('action', ['dismiss', 'acknowledge', 'snooze'])
+@pytest.mark.parametrize('row_state', ['current', 'missing', 'inactive', 'wrong-repertoire'])
+def test_canonical_discovery_state_actions_preserve_current_and_inactive_contracts(prefix_database, action, row_state):
+    from fastapi import HTTPException
+    from app import main
+    opportunity_id = publish_state_action_fixture()
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoire_opportunities SET snoozed_until='2026-10-08' WHERE id=?", (opportunity_id,))
+        if row_state == 'inactive':
+            connection.execute("UPDATE repertoire_opportunities SET status='resolved' WHERE id=?", (opportunity_id,))
+    handler = getattr(main, action + '_repertoire_opportunity')
+    if row_state != 'current':
+        with pytest.raises(HTTPException) as rejection:
+            handler('other' if row_state == 'wrong-repertoire' else 'italian',
+                    'absent' if row_state == 'missing' else opportunity_id, None)
+        assert rejection.value.status_code == 404
+        assert rejection.value.detail == ('Active opportunity not found' if action == 'dismiss' else 'Active discovery not found')
+        return
+    assert handler('italian', opportunity_id, None) == { {'dismiss': 'dismissed', 'acknowledge': 'acknowledged', 'snooze': 'snoozed'}[action]: True }
+    with database.read_connection() as connection:
+        saved = connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone()
+        if action == 'dismiss':
+            assert saved['status'] == 'dismissed'
+            assert saved['dismissed_evidence_json'] == saved['evidence_json']
+        elif action == 'acknowledge':
+            assert saved['seen_at'] is not None and saved['snoozed_until'] is None
+        else:
+            assert saved['seen_at'] is not None and saved['snoozed_until'] is not None
+
+
+def test_canonical_rejected_stale_dismissal_cannot_suppress_current_republication(prefix_database):
+    from fastapi import HTTPException
+    from app import main
+    from app.services.repertoire_opportunities import _publish
+    opportunity_id = publish_state_action_fixture()
+    invalidate_state_action_scope('source')
+    with pytest.raises(HTTPException) as rejection:
+        main.dismiss_repertoire_opportunity('italian', opportunity_id, None)
+    assert rejection.value.status_code == 409
+    with database.connection() as connection:
+        _publish(connection, repertoire_id='italian', kind='missing_response',
+                 fen_key=position_key_for_test(prefix_projection(ITALIAN)['ending_fen']),
+                 target='a7a6', card_id=None, opponent_move_uci='a7a6', score=1,
+                 evidence={'supporting_games': 5})
+        republished = connection.execute('SELECT * FROM repertoire_opportunities WHERE id=?', (opportunity_id,)).fetchone()
+        assert republished['status'] == 'active'
+        assert republished['dismissed_evidence_json'] is None
+    assert main.discoveries_feed()['total'] == 1
+
+
+@pytest.mark.parametrize('action', ['dismiss', 'acknowledge', 'snooze'])
+def test_postgres_discovery_state_actions_lock_scope_before_opportunity(prefix_database, action):
+    from app import opportunity_commands
+    opportunity_id = publish_state_action_fixture()
+    class NativeStateActionDatabase:
+        def __init__(self, connection):
+            self.connection = connection
+            self.statements = []
+        def execute(self, statement, parameters=()):
+            self.statements.append(statement)
+            return self.connection.execute(statement.replace('%s', '?').replace(' FOR UPDATE', ''), parameters)
+        execute_native = execute
+    with database.connection() as connection:
+        native = NativeStateActionDatabase(connection)
+        getattr(opportunity_commands, action + '_opportunity')(native, {'repertoire_id': 'italian', 'opportunity_id': opportunity_id})
+        metadata_lock = next(index for index, statement in enumerate(native.statements) if 'FROM repertoires' in statement and 'FOR UPDATE' in statement)
+        global_lock = next(index for index, statement in enumerate(native.statements) if 'FROM repertoire_game_scope' in statement and 'FOR UPDATE' in statement)
+        row_lock = next(index for index, statement in enumerate(native.statements) if 'FROM repertoire_opportunities' in statement and 'FOR UPDATE' in statement)
+        assert metadata_lock < global_lock < row_lock

@@ -12,29 +12,34 @@ from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
-from .services.repertoire_opportunities import admit_existing_decision
+from .services.repertoire_opportunities import active_opportunity_for_state_change, admit_existing_decision
 from .services.durable_tasks import enqueue_task_in_transaction
 
 
+def _active_state_action_opportunity(database: PostgresConnection, payload: dict[str, Any]):
+    try:
+        return active_opportunity_for_state_change(
+            database, str(payload["repertoire_id"]), str(payload["opportunity_id"]),
+        )
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+
+
 def dismiss_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
-    repertoire_id = str(payload["repertoire_id"])
-    opportunity_id = str(payload["opportunity_id"])
-    evidence = database.execute_native(
-        "SELECT evidence_json FROM repertoire_opportunities "
-        "WHERE id=%s AND repertoire_id=%s AND status='active' FOR UPDATE",
-        (opportunity_id, repertoire_id),
-    ).fetchone()
+    evidence = _active_state_action_opportunity(database, payload)
     if evidence is None:
         raise HTTPException(404, "Active opportunity not found")
     database.execute_native(
         "UPDATE repertoire_opportunities SET status='dismissed',"
         "dismissed_evidence_json=%s,updated_at=%s WHERE id=%s",
-        (evidence[0], datetime.now(timezone.utc).isoformat(), opportunity_id),
+        (evidence["evidence_json"], datetime.now(timezone.utc).isoformat(), str(payload["opportunity_id"])),
     )
     return {"dismissed": True}
 
 
 def acknowledge_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    if _active_state_action_opportunity(database, payload) is None:
+        raise HTTPException(404, "Active discovery not found")
     now = datetime.now(timezone.utc).isoformat()
     saved = database.execute_native(
         "UPDATE repertoire_opportunities SET seen_at=%s,snoozed_until=NULL,updated_at=%s "
@@ -47,6 +52,8 @@ def acknowledge_opportunity(database: PostgresConnection, payload: dict[str, Any
 
 
 def snooze_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    if _active_state_action_opportunity(database, payload) is None:
+        raise HTTPException(404, "Active discovery not found")
     now = datetime.now(timezone.utc)
     saved = database.execute_native(
         "UPDATE repertoire_opportunities SET seen_at=COALESCE(seen_at,%s),"

@@ -1846,3 +1846,13 @@ whole affected file/wrapper; CI owns final candidate durability/complete coverag
   `tests/unit/postgres-test-speedups-regressions.test.ts`.
 
 - PR #66 / #88 integration: `test_postgres_graph_bounded_cleanup_page_excludes_authored_memberships` keeps bounded raw-key progress while excluding authored membership from obsolete-card selection. Real PostgreSQL `test_postgres_graph_bounded_cleanup_preserves_authored_membership_without_step` extends the 64,000-card restart/foreground/retention rehearsal; generated fixture memberships are explicitly marked as derived, while the authored control and retained shared membership stay protected. CF-8 uses the new prepared-page shape and still proves intervening adoption and stale replay.
+
+### PR #66 remaining review: transactional discovery state freshness
+
+- `test_canonical_discovery_state_actions_reject_stale_scope_without_mutation` (dismiss/acknowledge/snooze × prefix/source/global invalidation) compares every stored column after actionable 409 rejection. All nine cases failed before the guard.
+- `test_canonical_discovery_state_actions_preserve_current_and_inactive_contracts` retains current actions and existing missing/inactive/wrong-repertoire 404 responses.
+- `test_canonical_rejected_stale_dismissal_cannot_suppress_current_republication` retains the same opportunity ID and unchanged supporting-game evidence; stale dismissal cannot be inherited. It failed before the guard.
+- `test_postgres_discovery_state_actions_lock_scope_before_opportunity` proves repertoire → global scope → opportunity ordering for all three native commands. All three cases failed before the guard.
+- Real PostgreSQL **CF-12**, `prove_discovery_state_action_freshness` in `scripts/check_postgres_canonical_freshness.py`, covers all nine rejection/rollback cases, current actions, unchanged-evidence republication, scope invalidation/action contention in both directions, and completed durable receipt replay after invalidation and pool reconnect. It remains in the mandatory disposable durability/CI gate; lock waits observe actual blocking PIDs.
+
+Portable cases run in `backend/tests/test_canonical_repertoire_prefix.py`. Existing publication, admission, coverage-status and shared-membership regressions remain unchanged. This fixes stale state actions only; #7's broader dismissal transitions, #8's evidence selection and #4's umbrella requirements remain open.

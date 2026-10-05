@@ -3981,8 +3981,11 @@ def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str,
             idempotency_key=idempotency_key,
         )
     with connection() as database:
-        if not dismiss_opportunity(database, identifier, opportunity_id):
-            raise HTTPException(404, "Active opportunity not found")
+        try:
+            if not dismiss_opportunity(database, identifier, opportunity_id):
+                raise HTTPException(404, "Active opportunity not found")
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
     return {"dismissed": True}
 
 
@@ -3996,8 +3999,11 @@ def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str,
             idempotency_key=idempotency_key,
         )
     with connection() as database:
-        if not acknowledge_opportunity(database, identifier, opportunity_id):
-            raise HTTPException(404, "Active discovery not found")
+        try:
+            if not acknowledge_opportunity(database, identifier, opportunity_id):
+                raise HTTPException(404, "Active discovery not found")
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
     return {"acknowledged": True}
 
 
@@ -4011,8 +4017,11 @@ def snooze_repertoire_opportunity(identifier: str, opportunity_id: str,
             idempotency_key=idempotency_key,
         )
     with connection() as database:
-        if not snooze_opportunity(database, identifier, opportunity_id):
-            raise HTTPException(404, "Active discovery not found")
+        try:
+            if not snooze_opportunity(database, identifier, opportunity_id):
+                raise HTTPException(404, "Active discovery not found")
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
     return {"snoozed": True}
 
 
