@@ -57,7 +57,7 @@ export function cliFixture(mode = "upgrade") {
     writeFileSync(path, `#!${process.execPath}\n(${fakeCommand.toString()})();\n`); chmodSync(path, 0o755);
   }
   const hook = join(directory, "network.mjs");
-  writeFileSync(hook, `import {readFileSync} from 'node:fs';\nconst fixture=JSON.parse(readFileSync(process.env.TEMPO_CLI_FIXTURE_DIRECTORY+'/fixture.json','utf8'));\nglobalThis.fetch=async(url)=>{\nif(String(url).includes('/actions/workflows/')) return Response.json({workflow_runs:[{id:12,head_sha:fixture.revision,head_branch:'main',event:'push',status:'completed',html_url:'https://github.com/fixture/ci'}]});\nif(String(url).includes('/actions/runs/')) { if(['race-dirty','race-head'].includes(fixture.mode)) { const path=process.env.TEMPO_CLI_FIXTURE_DIRECTORY+'/machine.json'; const machine=JSON.parse(readFileSync(path,'utf8')); if(fixture.mode==='race-dirty') machine.sourceEdited=true; else machine.head='d'.repeat(40); const fs=await import('node:fs'); fs.writeFileSync(path,JSON.stringify(machine)); if(fixture.mode==='race-dirty') fs.writeFileSync(fixture.root+'/personal-work','preserved study notes'); } return Response.json({jobs:['plan','frontend / verify','backend / verify','build / verify','postgres / verify','browser / verify','visual / verify','quality'].map(name=>({name,status:'completed',conclusion:fixture.mode==='ci-fail'&&name==='quality'?'failure':'success'}))}); }\nif(String(url).endsWith('/api/health')) return Response.json({status:'ok',storage:'postgresql',test_instance:false});\nreturn new Response('Tempo', {status:200});\n};\n`);
+  writeFileSync(hook, `(${fixtureNetwork.toString()})();\n`);
   const environment = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEMPO_CLI_FIXTURE_DIRECTORY: directory,
     TEMPO_CLI_STATE_DIR: stateRoot, TEMPO_CLI_CONFIG: registration };
   delete environment.TEMPO_UPGRADE_EXPECTED_PROJECT;
@@ -68,6 +68,37 @@ export function cliFixture(mode = "upgrade") {
 
 function exists(path) { try { readFileSync(path); return true; } catch { return false; } }
 
+async function fixtureNetwork() {
+  const fs = await import("node:fs");
+  const directory = process.env.TEMPO_CLI_FIXTURE_DIRECTORY;
+  const fixture = JSON.parse(fs.readFileSync(directory + "/fixture.json", "utf8"));
+  globalThis.fetch = async (url, options = {}) => {
+    fs.appendFileSync(directory + "/requests.jsonl", JSON.stringify({ url: String(url), method: options.method ?? "GET" }) + "\n");
+    if (String(url).includes("api.github.com")) {
+      if (fixture.diagnostics?.githubError) throw new Error(fixture.diagnostics.githubError);
+      if (fixture.diagnostics?.githubStatus) return new Response("access denied", { status: fixture.diagnostics.githubStatus });
+    }
+    if (String(url).includes("/actions/workflows/")) return Response.json({ workflow_runs: fixture.diagnostics?.runs ?? [
+      { id: 12, head_sha: fixture.revision, head_branch: "main", event: "push", status: "completed", html_url: "https://github.com/fixture/ci" },
+    ] });
+    if (String(url).includes("/actions/runs/")) {
+      if (["race-dirty", "race-head"].includes(fixture.mode)) {
+        const machinePath = directory + "/machine.json";
+        const machine = JSON.parse(fs.readFileSync(machinePath, "utf8"));
+        if (fixture.mode === "race-dirty") machine.sourceEdited = true;
+        else machine.head = "d".repeat(40);
+        fs.writeFileSync(machinePath, JSON.stringify(machine));
+        if (fixture.mode === "race-dirty") fs.writeFileSync(fixture.root + "/personal-work", "preserved study notes");
+      }
+      return Response.json({ jobs: fixture.diagnostics?.jobs ?? ["plan", "frontend / verify", "backend / verify", "build / verify",
+        "postgres / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed",
+          conclusion: fixture.mode === "ci-fail" && name === "quality" ? "failure" : "success" })) });
+    }
+    if (String(url).endsWith("/api/health")) return Response.json({ status: "ok", storage: "postgresql", test_instance: false });
+    return new Response("Tempo", { status: 200 });
+  };
+}
+
 async function fakeCommand() {
   const fs = await import("node:fs"); const path = await import("node:path");
   const directory = process.env.TEMPO_CLI_FIXTURE_DIRECTORY;
@@ -76,15 +107,21 @@ async function fakeCommand() {
   const machine = JSON.parse(fs.readFileSync(machinePath, "utf8"));
   const args = process.argv.slice(2); const command = path.basename(process.argv[1]);
   fs.appendFileSync(path.join(directory, "calls.jsonl"), JSON.stringify({ command, args }) + "\n");
+  if (command === "git" && args[0] === "--no-optional-locks") args.shift();
   const output = value => { console.log(typeof value === "string" ? value : JSON.stringify(value)); };
   const save = () => fs.writeFileSync(machinePath, JSON.stringify(machine));
   if (command === "git") {
-    if (args[0] === "branch") output("main");
+    if (args[0] === "branch") output(machine.branch ?? "main");
     else if (args[0] === "status") output(fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : "");
-    else if (args[0] === "remote") output("https://github.com/aaweaver-actuary/tempo");
+    else if (args[0] === "remote") output(machine.remote ?? "https://github.com/aaweaver-actuary/tempo");
+    else if (args[0] === "cat-file") process.exit(machine.remoteObjectMissing ? 1 : 0);
+    else if (args[0] === "merge-base") process.exit(machine.ancestryCode ?? 0);
     else if (args[0] === "rev-parse") output(args[1] === "HEAD" ? machine.head : fixture.revision);
     else if (args[0] === "merge") { machine.head = args.at(-1); save(); }
-    else if (args[0] === "ls-remote") output(fixture.revision + " refs/heads/main");
+    else if (args[0] === "ls-remote") {
+      if (fixture.diagnostics?.remoteFailure) process.exit(128);
+      output(fixture.revision + " refs/heads/main");
+    }
     process.exit(0);
   }
   if (args.includes("info")) { if (args.includes("--format")) output("fixture-daemon"); process.exit(0); }
@@ -98,8 +135,12 @@ async function fakeCommand() {
       State: { Running: machine.running.includes(container.Config.Labels["com.docker.compose.service"]) } }))); process.exit(0);
   }
   if (args.includes("image") && args.includes("inspect")) {
-    const image = args.at(-1); output([{ Id: image.startsWith("sha256:") ? image : `sha256:${image}`,
-      Config: { Labels: { "org.opencontainers.image.revision": fixture.revision } } }]); process.exit(0);
+    if (machine.imageInspectionUnavailable) process.exit(17);
+    const requestedImages = args.slice(args.indexOf("inspect") + 1);
+    const availableImages = requestedImages.filter(image => !machine.unavailableImageIds?.includes(image));
+    output(availableImages.map(image => ({ Id: image.startsWith("sha256:") ? image : `sha256:${image}`,
+      Config: { Labels: machine.missingImageRevision ? {} : { "org.opencontainers.image.revision": machine.imageRevisions?.[image] ?? fixture.revision } } })));
+    process.exit(availableImages.length < requestedImages.length ? 17 : 0);
   }
   if (!args.includes("compose") && args.includes("run")) { output(args.includes("--version") ? "postgres (PostgreSQL) 18.6" : fixture.mode === "empty" ? "" : "18"); process.exit(0); }
   const resolvedConfig = () => {
@@ -138,7 +179,10 @@ async function fakeCommand() {
     process.exit(0);
   }
   if (args.includes("ping")) { output("PONG"); process.exit(0); }
-  if (args.includes("psql")) { output(Array.from({ length: machine.schema }, (_, index) => index + 1).join("\n")); process.exit(0); }
+  if (args.includes("psql")) {
+    if (machine.ledgerReadUnavailable) process.exit(17);
+    output((machine.appliedVersions ?? Array.from({ length: machine.schema }, (_, index) => index + 1)).join("\n")); process.exit(0);
+  }
   if (args.includes("scripts/apply_postgres_migrations.py")) {
     if (args.includes("--check")) output({ expected_version: 29, applied_versions: Array.from({ length: machine.schema }, (_, index) => index + 1),
       pending_versions: Array.from({ length: 29 - machine.schema }, (_, index) => machine.schema + index + 1), initialized: true, roles_ready: fixture.mode !== "status-fail", credentials_ready: true });
