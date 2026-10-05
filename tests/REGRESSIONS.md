@@ -2040,6 +2040,10 @@ not assume a host uptime above thirty minutes. Interrupted fallback cases use
 separate regular-suite groups with unchanged 60-second limits and full coverage.
 The existing PostgreSQL upgrade plan regression retains its read-only guarantee
 and recognizable plan message.
+`test_tempo_cli_postgres_fallback_reports_previous_version_ready_without_applying_update`
+in the regular disposable PostgreSQL durability runner checks the real installed
+command's explicit fallback wording, unchanged receipt and previous-version journal.
+Its prior wording assertion failed in CI before this consumer was updated.
 
 Existing exact-main CI, source preservation, Redis persisted loading,
 PostgreSQL original-history/backup/migration/restart/receipt and incompatible

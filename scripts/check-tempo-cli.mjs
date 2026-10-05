@@ -149,11 +149,17 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     // Exercise the actual installed-command entry point against PostgreSQL.
     // This checkout is a task branch, so start must explicitly retain the
     // already recorded disposable deployment rather than fetching product main.
+    const fallbackReceiptBytes = readFileSync(join(stateDirectory, "deployment.json"), "utf8");
     const child = spawnSync(process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
       encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000,
     });
     assert.equal(child.status, 0, child.stdout + child.stderr);
-    assert(child.stdout.includes("update remains blocked")); output.push(child.stdout);
+    assert(child.stdout.includes("previous verified version ready, update deferred"));
+    assert(child.stdout.includes("The update has not been applied."));
+    assert.equal(readFileSync(join(stateDirectory, "deployment.json"), "utf8"), fallbackReceiptBytes);
+    assert.equal(JSON.parse(readFileSync(join(stateDirectory, "operation.json"), "utf8")).phase, "ready_previous_version");
+    output.push(child.stdout);
+    console.log("PASS test_tempo_cli_postgres_fallback_reports_previous_version_ready_without_applying_update");
 
     // Reconstruct the pre-commit recovery boundary on this already migrated
     // fixture: an old schema receipt, verified H0, unchanged dependency images,
