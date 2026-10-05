@@ -1011,9 +1011,11 @@ it("late integrity count refresh cannot close an explicitly opened repair dialog
   expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
 });
 
-for (const { title, hasRemainingConflict } of [
-  { title: "confirmed partial repair restores the deferred resume notice without changing study", hasRemainingConflict: true },
-  { title: "confirmed final repair removes the deferred resume notice without changing study", hasRemainingConflict: false },
+for (const { title, hasRemainingConflict, crossTab } of [
+  { title: "confirmed partial repair restores the deferred resume notice without changing study", hasRemainingConflict: true, crossTab: false },
+  { title: "confirmed final repair removes the deferred resume notice without changing study", hasRemainingConflict: false, crossTab: false },
+  { title: "external partial repair refreshes deferred counts and preserves active study", hasRemainingConflict: true, crossTab: true },
+  { title: "external final repair removes the deferred notice without changing active study", hasRemainingConflict: false, crossTab: true },
 ]) {
   it(title, async () => {
     const repairIssues = ["first", "second"].map(id => ({ id, kind: "multiple_responses", signature: `${id}-signature`,
@@ -1060,8 +1062,22 @@ for (const { title, hasRemainingConflict } of [
     const beforeConfirmation = useTrainingStore.getState();
     const queueReadsBeforeConfirmation = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
     await act(async () => { await flushIntegrityRepairs(); });
+    const countsBeforeCompletion = fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/repertoires")).length;
     serverIssues = hasRemainingConflict ? repairIssues.slice(1) : [];
-    await act(async () => { await flushIntegrityRepairs(); });
+    if (crossTab) {
+      const repair = pendingIntegrityRepairs()[0];
+      const storageKey = `tempo-pending-integrity-repairs-v3:${repair.operationId}`;
+      const oldValue = localStorage.getItem(storageKey);
+      await act(async () => {
+        localStorage.removeItem(storageKey);
+        window.dispatchEvent(new StorageEvent("storage", { key: storageKey, oldValue, newValue: null, storageArea: localStorage }));
+      });
+    } else {
+      await act(async () => { await flushIntegrityRepairs(); });
+    }
+    // Local validation reads publication once, then Home reconciles once; external removal only reconciles.
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/repertoires")))
+      .toHaveLength(countsBeforeCompletion + (crossTab ? 1 : 2));
     expect(pendingIntegrityRepairs()).toHaveLength(0);
     expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
     const afterConfirmation = useTrainingStore.getState();

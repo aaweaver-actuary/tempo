@@ -1909,7 +1909,7 @@ export default function Home() {
         />
       )}
       <IntegrityRepairStatus
-        onConfirmed={(repertoireId) => {
+        onReconcile={(repertoireId) => {
           deferredRepairIds.current.delete(repertoireId);
           invalidateWorkspaceData();
           invalidateTrainingQueueCache();

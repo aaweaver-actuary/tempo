@@ -6,26 +6,26 @@ import { discardStaleIntegrityRepair, flushIntegrityRepairs, pendingIntegrityRep
 import { publishNotification, notifications, resolveNotification } from "../lib/notifications";
 import { updateBrowserActivity } from "../lib/browser-activity";
 
-export function IntegrityRepairStatus({ onConfirmed, onResume }: {
-  onConfirmed: (repertoireId: string) => void; onResume: (repertoireId: string) => void;
+export function IntegrityRepairStatus({ onReconcile, onResume }: {
+  onReconcile: (repertoireId: string) => void; onResume: (repertoireId: string) => void;
 }) {
   const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
   const [error, setError] = useState("");
-  const callbacks = useRef({ onConfirmed, onResume });
-  useEffect(() => { callbacks.current = { onConfirmed, onResume }; }, [onConfirmed, onResume]);
+  const callbacks = useRef({ onReconcile, onResume });
+  useEffect(() => { callbacks.current = { onReconcile, onResume }; }, [onReconcile, onResume]);
   useEffect(() => {
     if (!usesLocalApi()) return;
     let stopped = false;
     let timer: number | undefined;
-    const observed = new Set<string>();
-    const update = () => {
+    const observed = new Map<string, PendingIntegrityRepair>();
+    const update = (externalRemoval = false) => {
       if (stopped) return;
       try {
         const next = pendingIntegrityRepairs(); setRepairs(next); setError("");
         for (const repair of next) {
           const needsAttention = ["failed", "blocked", "stale"].includes(repair.phase);
           const key = `integrity-repair:${repair.operationId}`;
-          observed.add(key);
+          observed.set(key, repair);
           updateBrowserActivity(key, "Repertoire repair", needsAttention ? "failed" : repair.phase === "queued" ? "queued" : "running",
             repair.phase, repair.error);
           const unresolved = notifications().find(record => record.key === key && !record.resolvedAt);
@@ -36,12 +36,15 @@ export function IntegrityRepairStatus({ onConfirmed, onResume }: {
             if (previous) resolveNotification(previous.id, { severity: "info", message: "Repair recovery is continuing." });
           }
         }
-        for (const key of observed) if (!next.some(repair => `integrity-repair:${repair.operationId}` === key)) {
+        const removedRepertoireIds = new Set<string>();
+        for (const [key, repair] of observed) if (!next.some(repair => `integrity-repair:${repair.operationId}` === key)) {
           observed.delete(key);
+          if (externalRemoval) removedRepertoireIds.add(repair.repertoireId);
           updateBrowserActivity(key, "Saved repair choice removed", "complete", "Removed from this device");
           const previous = notifications().find(record => record.key === key && !record.resolvedAt);
           if (previous) resolveNotification(previous.id, { severity: "info", message: "This saved repair no longer needs attention." });
         }
+        for (const repertoireId of removedRepertoireIds) callbacks.current.onReconcile(repertoireId);
       } catch (failure) { setError(failure instanceof Error ? failure.message : "Saved repairs could not be read."); }
     };
     const flush = async () => {
@@ -55,16 +58,23 @@ export function IntegrityRepairStatus({ onConfirmed, onResume }: {
       update();
       const { repertoireId, operationId } = (event as CustomEvent<{ repertoireId: string; operationId?: string }>).detail;
       if (operationId) updateBrowserActivity(`integrity-repair:${operationId}`, "Repertoire repair confirmed", "complete", "Validated");
-      callbacks.current.onConfirmed(repertoireId);
+      callbacks.current.onReconcile(repertoireId);
+    };
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key === null || event.key.startsWith("tempo-pending-integrity-repair")) update(true);
     };
     update(); wake();
-    const unsubscribe = subscribeIntegrityRepairs(update);
+    // Observe external removals before the shared subscription updates the observed journal.
+    // A missing record requires fresh evidence; only the confirmation event reports validation.
+    window.addEventListener("storage", storageChanged);
+    const unsubscribe = subscribeIntegrityRepairs(() => update());
     window.addEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
     window.addEventListener("online", wake);
     document.addEventListener("visibilitychange", wake);
     return () => {
       stopped = true; window.clearTimeout(timer);
       unsubscribe();
+      window.removeEventListener("storage", storageChanged);
       window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
       window.removeEventListener("online", wake);
       document.removeEventListener("visibilitychange", wake);
