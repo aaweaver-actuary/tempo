@@ -1745,3 +1745,5 @@ Run 37112651569 passed 187 regular browser cases but exposed the complementary b
 
 - `test_canonical_last_generated_membership_cleanup_preserves_history_without_owner_resurrection` covers graph/integrity cleanup after the last generated association: preserve card provenance/reviews, retire the orphaned presentation, prevent owner fallback, and retain a legitimate unlinked authored owner and queue. The orphan graph case failed before the fix; the legitimate fallback control passed.
 - PostgreSQL CF-11 uses real X adoption/deletion and Y graph cleanup, then a later archive; it preserves historical reviews without resurrecting Y ownership and retains the genuine unlinked-owner control.
+
+- PR #66 diagnostic freshness budget: `test_background_postgres_snapshot_disables_jit_before_budgeted_classification` ensures operational PostgreSQL snapshots disable compilation in their own transaction. `scripts/check_postgres_defensive_pause.py` proves `defensive_diagnostics_canonical_freshness_classification_within_unchanged_query_budget` on real PostgreSQL, retaining the 100 ms deadline and pause classification.
