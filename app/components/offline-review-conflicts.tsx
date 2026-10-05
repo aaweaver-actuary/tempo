@@ -5,6 +5,7 @@ import { notifications, publishNotification, resolveNotification, subscribeNotif
 import { isIPhoneHomeScreen } from "../utils/local";
 
 import { useDialogFocus } from "../hooks/use-dialog-focus";
+import { conflictedReviews, discardReviewConflict, flushPendingReviews, retryReviewConflict, type PendingReview } from "../lib/review-outbox";
 
 function ConflictDialog({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -33,6 +34,8 @@ export function OfflineReviewConflicts() {
   const records = useSyncExternalStore(subscribeNotifications, notifications);
   const conflictNoticeUpdatedAt = records.find((record) => record.key === "phone-review-conflicts")?.updatedAt;
   const [prepared, setPrepared] = useState<PreparedTraining | null>(null);
+  const [onlineConflicts, setOnlineConflicts] = useState<PendingReview[]>([]);
+  const [retrying, setRetrying] = useState<string>();
   const [open, setOpen] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -40,7 +43,7 @@ export function OfflineReviewConflicts() {
 
   useEffect(() => {
     let active = true;
-    void readPreparedTraining().then((saved) => {
+    void (typeof indexedDB === "undefined" ? Promise.resolve(null) : readPreparedTraining()).then((saved) => {
       if (active) setPrepared(saved);
     }).catch((failure) => {
       if (active) setError(`Could not read saved conflicts: ${String(failure)}`);
@@ -48,9 +51,43 @@ export function OfflineReviewConflicts() {
     return () => { active = false; };
   }, [conflictNoticeUpdatedAt]);
 
+  useEffect(() => {
+    const load = () => {
+      try { setOnlineConflicts(conflictedReviews()); }
+      catch (failure) { setError(`Could not read saved conflicts: ${String(failure)}`); }
+    };
+    load();
+    window.addEventListener("tempo:review-outbox", load);
+    window.addEventListener("storage", load);
+    return () => {
+      window.removeEventListener("tempo:review-outbox", load);
+      window.removeEventListener("storage", load);
+    };
+  }, []);
+
   const attempts = conflictAttempts(prepared);
-  if (!attempts.length && !error) return null;
-  const conflictData = JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(), attempts }, null, 2);
+  const conflictCount = attempts.length + onlineConflicts.length;
+  if (!conflictCount && !error && !retrying) return null;
+  const conflictData = JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(), attempts, onlineReviews: onlineConflicts }, null, 2);
+
+  async function retryOnline(attemptId: string) {
+    setRetrying(attemptId);
+    try {
+      retryReviewConflict(attemptId);
+      await flushPendingReviews();
+      setError("");
+    } catch (failure) {
+      setError(`The result remains saved and will retry when connected. ${String(failure)}`);
+    } finally {
+      setOnlineConflicts(conflictedReviews());
+      setRetrying(undefined);
+    }
+  }
+
+  function discardOnline(attemptId: string) {
+    try { discardReviewConflict(attemptId); setOnlineConflicts(conflictedReviews()); setError(""); }
+    catch (failure) { setError(`Could not discard the saved attempt: ${String(failure)}`); }
+  }
 
   async function discard(localEntryId: number) {
     try {
@@ -59,7 +96,7 @@ export function OfflineReviewConflicts() {
       setError("");
       const remaining = conflictAttempts(saved);
       updateConflictNotice(remaining);
-      if (!remaining.length) setOpen(false);
+      if (!remaining.length && !onlineConflicts.length) setOpen(false);
     } catch (failure) {
       setError(`Could not discard the saved attempt: ${String(failure)}`);
     }
@@ -76,20 +113,30 @@ export function OfflineReviewConflicts() {
     }
   }
 
-  return <div className="offline-conflicts-control">
+  return <div className={`offline-conflicts-control${open ? " is-open" : ""}`}>
     <Button type="button" className="offline-conflicts-trigger" onClick={event => { event.currentTarget.focus(); setOpen(true); }}>
-      Review conflicts{attempts.length ? ` (${attempts.length})` : ""}
+      Review conflicts{conflictCount ? ` (${conflictCount})` : ""}
     </Button>
     {open && <div className="offline-conflicts-backdrop" onClick={() => setOpen(false)}>
       <ConflictDialog onClose={() => setOpen(false)}>
         <header><h2>Review conflicts</h2><Button type="button" onClick={() => setOpen(false)}>Close</Button></header>
-        <p>The computer’s saved reviews take priority. These phone attempts remain on this device until you discard each one.</p>
+        <p>These completed results remain saved on this device. Retry after resolving the conflict, or copy the data before discarding a result.</p>
         {error && <p role="alert">{error}</p>}
         <Button type="button" onClick={() => void copy()}>{copied ? "Copied conflict data" : "Copy conflict data"}</Button>
         {copyFailed && <p>Clipboard access is unavailable. Select and copy the data below.</p>}
         <textarea aria-label="Conflict data" readOnly value={conflictData}
           onFocus={(event) => event.currentTarget.select()} />
         <div className="offline-conflicts-list">
+          {onlineConflicts.map((review) => <article key={review.attemptId} className="offline-conflict-item">
+            <strong>Saved training result</strong>
+            <dl>
+              <div><dt>Time</dt><dd>{review.completedAt ? <time dateTime={review.completedAt}>{new Date(review.completedAt).toLocaleString()}</time> : "Original time unavailable"}</dd></div>
+              <div><dt>Result</dt><dd>{review.outcome === "correct" ? "Correct" : "Again"}{review.guided ? " · Guided" : ""}</dd></div>
+              <div><dt>Reason</dt><dd>{review.conflict?.message}</dd></div>
+            </dl>
+            <Button type="button" disabled={Boolean(retrying)} onClick={() => void retryOnline(review.attemptId!)}>Retry saved result</Button>
+            <Button type="button" disabled={Boolean(retrying)} onClick={() => discardOnline(review.attemptId!)}>Discard saved result</Button>
+          </article>)}
           {attempts.map((attempt) => {
             const card = prepared?.cards.find((candidate) => candidate.id === attempt.cardId);
             return <article key={attempt.localEntryId} className="offline-conflict-item">

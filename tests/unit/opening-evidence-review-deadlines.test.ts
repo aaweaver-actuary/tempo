@@ -81,7 +81,7 @@ it("AS-16 guided review failure receipt shares the foreground review deadline", 
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2)); await vi.advanceTimersByTimeAsync(15_000); await failed;
   expect(receiptSignal).toBe(posts[0].signal); expect(receiptSignal?.aborted).toBe(true); expect(outbox.pendingReviews()).toEqual(original);
   retry = true; await outbox.flushPendingReviews(); expect(outbox.pendingReviews()).toEqual([]);
-  expect(posts.map(post => new Headers(post.headers).get("Idempotency-Key"))).toEqual(["queue-fail:101", "queue-fail:101", "review-attempt:guided-review"]);
+  expect(posts.map(post => new Headers(post.headers).get("Idempotency-Key"))).toEqual(["queue-fail:guided-review", "queue-fail:guided-review", "review-attempt:guided-review"]);
   await vi.advanceTimersByTimeAsync(0); // Settle cloned response-body bookkeeping.
   expect(vi.getTimerCount()).toBe(0);
 });

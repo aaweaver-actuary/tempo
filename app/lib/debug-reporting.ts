@@ -25,6 +25,11 @@ export type DebugErrorContext = {
   method?: string;
   status?: number;
   retryable?: boolean;
+  cardId?: string;
+  queueEntryId?: number;
+  attemptId?: string;
+  code?: string;
+  classification?: "conflict" | "pending" | "transient";
   script?: string;
   line?: number;
   column?: number;
@@ -44,6 +49,11 @@ export type DebugErrorRecord = {
     method?: string;
     status?: number;
     retryable?: boolean;
+    cardId?: string;
+    queueEntryId?: number;
+    attemptId?: string;
+    code?: string;
+    classification?: "conflict" | "pending" | "transient";
     scriptPath?: string;
     line?: number;
     column?: number;
@@ -132,6 +142,11 @@ export function reportDebugError(
     method: context.method ? sanitizeText(context.method) : undefined,
     status: context.status,
     retryable: context.retryable,
+    cardId: context.cardId ? sanitizeText(context.cardId) : undefined,
+    queueEntryId: context.queueEntryId,
+    attemptId: context.attemptId ? sanitizeText(context.attemptId) : undefined,
+    code: context.code ? sanitizeText(context.code) : undefined,
+    classification: context.classification,
     scriptPath: endpointPath(context.script),
     line: context.line,
     column: context.column,
@@ -258,6 +273,13 @@ export function buildDebugBundle(recordId?: string): string {
       message: record.message,
       source: record.context.source,
       endpointPath: record.context.endpointPath,
+      cardId: record.context.cardId,
+      queueEntryId: record.context.queueEntryId,
+      attemptId: record.context.attemptId,
+      code: record.context.code,
+      status: record.context.status,
+      retryable: record.context.retryable,
+      classification: record.context.classification,
       scriptPath: record.context.scriptPath,
       line: record.context.line,
       column: record.context.column,

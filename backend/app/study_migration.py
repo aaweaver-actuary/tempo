@@ -130,6 +130,10 @@ def migrate_studies() -> None:
             old_triggers = [row["sql"] for row in connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name='cards' AND sql IS NOT NULL"
             )]
+            queue_origin_triggers = connection.execute(
+                "SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name IN "
+                "('queue_attempt_origin_insert','queue_attempt_origin_update','queue_attempt_origin_delete')"
+            ).fetchall()
             card_columns = ",".join(_card_column_definition(column) for column in columns)
             connection.execute(f"""CREATE TABLE cards_study_migration (
                 {card_columns},
@@ -141,9 +145,14 @@ def migrate_studies() -> None:
             )""")
             names = ",".join(column["name"] for column in columns)
             connection.execute(f"INSERT INTO cards_study_migration({names}) SELECT {names} FROM cards")
+            # SQLite validates triggers on other tables during RENAME. Detach
+            # these card references only inside the atomic rebuild; rollback
+            # restores them and the admission ledger stays intact throughout.
+            for trigger in queue_origin_triggers:
+                connection.execute(f'DROP TRIGGER "{trigger["name"]}"')
             connection.execute("DROP TABLE cards")
             connection.execute("ALTER TABLE cards_study_migration RENAME TO cards")
-            for statement in old_indexes + old_triggers:
+            for statement in old_indexes + old_triggers + [trigger["sql"] for trigger in queue_origin_triggers]:
                 connection.execute(statement)
             connection.execute("""CREATE UNIQUE INDEX idx_study_active_card
                 ON cards(study_exercise_id) WHERE study_exercise_id IS NOT NULL AND archived=0""")
