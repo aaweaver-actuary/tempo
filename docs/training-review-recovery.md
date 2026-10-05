@@ -92,3 +92,23 @@ Both endpoints prepare evidence from authoritative immutable context, and derive
 preparation is excluded from transport digests. Aggregate-only legacy receipts retain
 their original absent evidence field. The outbox retains evidence/rejection envelopes
 while changing only the reconciliation transport identity.
+
+The first integrated durability run passed the schema31->32 rehearsal and all
+CLI lifecycle checks, then exposed a new fixture expectation: a historical failed
+transport raises its saved RuntimeError rather than returning None. The assertion
+now requires that exact failure before separately receipted reconciliation. A fresh
+minimal PostgreSQL fixture passed valid/guided/changed/unprovable evidence recovery,
+marker-first/edit-first locking, stale-marker replacement and maintenance/replay
+proofs; all owned resources were removed (6.91 s wall).
+
+CI 37277824545's pinned expected/actual/diff images were reviewed for the sole
+review-conflicts-390 failure. The dialog is identical; main #86's already-approved
+phone heading, board placement and shorter page account for the surrounding diff.
+Only that integration-owned 390 baseline changes; desktop baseline, assertions
+and screenshot tolerance remain intact. A fresh required candidate gate follows.
+
+The corrected pinned Linux ARM64 comparison selected exactly one
+`review-conflicts-390` case and passed (5.2 s Playwright / 19.06 s wall), without
+snapshot generation. The initial short-title anchored filter selected zero tests
+and is not passing evidence. This comparison used 01659ef plus the reviewed
+baseline and fixture/documentation repairs; production inputs were unchanged.
