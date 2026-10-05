@@ -40,6 +40,7 @@ export function RepertoireIntegrityDialog({
   const [lichess, setLichess] = useState<CandidateMove[]>([]);
   const [masters, setMasters] = useState<CandidateMove[]>([]);
   const [error, setError] = useState("");
+  const [integrityLoadError, setIntegrityLoadError] = useState("");
   const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
   const observedRepairs = useRef<PendingIntegrityRepair[]>([]);
   const [removedChoiceIdentities, setRemovedChoiceIdentities] = useState<Set<string>>(new Set());
@@ -73,12 +74,13 @@ export function RepertoireIntegrityDialog({
       const next = await readJsonResponse(response, repertoireIntegritySchema, "repertoire integrity");
       if (!controller.signal.aborted) {
         setPayload(next);
+        setIntegrityLoadError("");
         setRemovedChoiceIdentities(new Set());
       }
     } catch (failure) {
       if (controller.signal.aborted) return;
       reportDebugError(failure, { kind: "api", source: "repertoire-integrity", operation: "load integrity data" });
-      setError(failure instanceof Error ? failure.message : "Integrity data unavailable.");
+      setIntegrityLoadError(failure instanceof Error ? failure.message : "Integrity data unavailable.");
     }
   }, [repertoireId]);
 
@@ -168,7 +170,8 @@ export function RepertoireIntegrityDialog({
         <CloseButton onClose={onClose} ariaLabel="Defer repertoire repair" />
         <p className="eyebrow">Repertoire repair</p>
         <h2 id="integrity-title">Choose one response per position</h2>
-        {!payload && !error && <p>Checking saved lines…</p>}
+        {!payload && !error && !integrityLoadError && <p>Checking saved lines…</p>}
+        {integrityLoadError && <p className="editor-error" role="alert">{integrityLoadError}</p>}
         {error && (
           <p className="editor-error" role="alert">
             {error}

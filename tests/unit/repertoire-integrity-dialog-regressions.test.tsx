@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { RepertoireIntegrityDialog } from "../../app/components/repertoire-integrity-dialog";
 import { enqueueIntegrityRepair, discardStaleIntegrityRepair, flushIntegrityRepairs, pendingIntegrityRepairs,
-  INTEGRITY_REPAIR_CONFIRMED } from "../../app/lib/integrity-repair-outbox";
+  INTEGRITY_REPAIR_CONFIRMED, INTEGRITY_REPAIRS_CHANGED } from "../../app/lib/integrity-repair-outbox";
 import { loadExplorer, type ExplorerResult } from "../../app/lib/lichess-explorer";
 
 vi.mock("../../app/components/chessboard", () => ({ Chessboard: () => <div /> }));
@@ -65,6 +65,10 @@ it("repair storage failure retains the displayed conflict and selected move", as
   expect(screen.getByText(/line first-source/)).not.toBeNull();
   expect(screen.getByText("e2e4")).not.toBeNull();
   expect(screen.getByRole("alert").textContent).toContain("Storage full");
+  await act(async () => { window.dispatchEvent(new CustomEvent(INTEGRITY_REPAIR_CONFIRMED,
+    { detail: { repertoireId: "other" } })); });
+  expect(screen.getByRole("alert").textContent).toContain("Storage full");
+  expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
 });
 
 it("unchanged repair status refresh preserves selection and all queued choices stay distinct from clean", async () => {
@@ -194,7 +198,17 @@ for (const { title, crossTab, refreshFails, changedConflict } of [
     expect(screen.getByText(/line second-source/)).not.toBeNull();
     expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
     expect((screen.getByRole("button", { name: "Keep this response" }) as HTMLButtonElement).disabled).toBe(false);
-    if (refreshFails) expect(screen.getByRole("alert").textContent).toContain("Integrity refresh unavailable");
+    if (refreshFails) {
+      expect(screen.getByRole("alert").textContent).toContain("Integrity refresh unavailable");
+      await act(async () => { window.dispatchEvent(new CustomEvent(INTEGRITY_REPAIR_CONFIRMED,
+        { detail: { repertoireId: "other" } })); });
+      expect(pendingRefreshes).toHaveLength(1);
+      await act(async () => { pendingRefreshes.splice(0).forEach(finish => finish(Response.json(serverEvidence))); });
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText(/line first-source/)).toBeNull();
+      expect(screen.getByText(/line second-source/)).not.toBeNull();
+      expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
+    }
 });
 }
 
@@ -216,4 +230,73 @@ it("discarding a stale repair keeps its current conflict and explicit selection 
   expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Keep this response" }));
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ issueId: "first", signature: "first-changed", phase: "queued" });
+});
+
+
+it("superseded integrity loads cannot clear a current error or replace newer evidence", async () => {
+  const pendingLoads: ((response: Response) => void)[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("position-summary")) return Response.json({ moves: [] });
+    return new Promise<Response>(resolve => pendingLoads.push(resolve));
+  }));
+  const props = { repertoireId: "rep", theme: "brown" as const, pieceSet: "cburnett" as const, onClose: vi.fn() };
+  const view = render(<RepertoireIntegrityDialog {...props} />);
+  await waitFor(() => expect(pendingLoads).toHaveLength(1));
+  await act(async () => { pendingLoads.shift()!(Response.json(integrity)); });
+  fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
+  const reload = async () => { await act(async () => { window.dispatchEvent(new CustomEvent(INTEGRITY_REPAIR_CONFIRMED,
+    { detail: { repertoireId: "other" } })); }); };
+  await reload();
+  const oldLoad = pendingLoads.shift()!;
+  await reload();
+  await act(async () => { pendingLoads.shift()!(Response.json({ detail: "Current load unavailable" }, { status: 503 })); });
+  await act(async () => { oldLoad(Response.json({ ...integrity, issues: [], issue_count: 0, first_issue_id: null, status: "clean" })); });
+  expect(screen.getByRole("alert").textContent).toContain("Current load unavailable");
+  expect(screen.getByText(/line first-source/)).not.toBeNull();
+  expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
+  await reload();
+  const olderFailure = pendingLoads.shift()!;
+  await reload();
+  await act(async () => { pendingLoads.shift()!(Response.json({ ...integrity, issues: [{ ...issues[0], signature: "changed" }, issues[1]] })); });
+  await act(async () => { olderFailure(Response.json({ detail: "Obsolete failure" }, { status: 503 })); });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByText(/line first-source/)).not.toBeNull();
+  expect(screen.queryByText("e2e4", { selector: "strong" })).toBeNull();
+  await reload();
+  const abortedLoad = pendingLoads.shift()!;
+  view.rerender(<RepertoireIntegrityDialog {...props} repertoireId="new-repertoire" />);
+  await waitFor(() => expect(pendingLoads).toHaveLength(1));
+  await act(async () => { pendingLoads.shift()!(Response.json({ detail: "New repertoire unavailable" }, { status: 503 })); });
+  await act(async () => { abortedLoad(Response.json(integrity)); });
+  expect(screen.getByRole("alert").textContent).toContain("New repertoire unavailable");
+});
+
+
+it("recovered integrity load clears only its alert while a saved-choice read failure remains visible", async () => {
+  let integrityFails = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("position-summary")) return Response.json({ moves: [] });
+    return integrityFails ? Response.json({ detail: "Integrity load unavailable" }, { status: 503 }) : Response.json(integrity);
+  }));
+  render(<RepertoireIntegrityDialog repertoireId="rep" theme="brown" pieceSet="cburnett" onClose={vi.fn()} />);
+  await screen.findByText(/line first-source/);
+  fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
+  const originalGetItem = Storage.prototype.getItem;
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
+    if (key.startsWith("tempo-pending-integrity-repair")) throw new Error("Saved journal inaccessible");
+    return originalGetItem.call(this, key);
+  });
+  await act(async () => { window.dispatchEvent(new Event(INTEGRITY_REPAIRS_CHANGED)); });
+  expect(screen.getByRole("alert").textContent).toContain("Saved repair choices could not be read");
+  integrityFails = true;
+  await act(async () => { window.dispatchEvent(new CustomEvent(INTEGRITY_REPAIR_CONFIRMED,
+    { detail: { repertoireId: "other" } })); });
+  expect(screen.getAllByRole("alert")).toHaveLength(2);
+  integrityFails = false;
+  await act(async () => { window.dispatchEvent(new CustomEvent(INTEGRITY_REPAIR_CONFIRMED,
+    { detail: { repertoireId: "other" } })); });
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getByRole("alert").textContent).toContain("Saved repair choices could not be read");
+  expect(screen.queryByText("Integrity load unavailable")).toBeNull();
+  expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
 });
