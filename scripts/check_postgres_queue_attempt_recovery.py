@@ -330,9 +330,15 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
                     database.execute("UPDATE repertoire_lines SET trained_color='white' WHERE repertoire_id=?", (fixture['repertoire_id'],))
                 before_shadow = shadow_digest(database, fixture['card_id'])
                 before_scheduling = _fixture_scheduling(database, fixture)
-            assert execute_command(original_operation, 'cards.review', payload) is None
+            try:
+                execute_command(original_operation, 'cards.review', payload)
+            except RuntimeError as error:
+                assert str(error) == 'Historical queue projection was unavailable'
+            else:
+                raise AssertionError('The original failed transport receipt must remain authoritative')
             result = execute_command(reconcile_operation, 'cards.review.reconcile', payload)
-            assert result is not None and read_operation(original_operation)['state'] == 'failed'
+            assert result is not None, read_operation(reconcile_operation)
+            assert read_operation(original_operation)['state'] == 'failed'
             with postgres_store.connection() as database:
                 if scenario in {'changed','unprovable'}:
                     expected_code = 'card_revision_changed' if scenario == 'changed' else 'queue_attempt_unprovable'
