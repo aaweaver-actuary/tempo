@@ -249,6 +249,9 @@ def main() -> None:
     finally:
         postgres_store.close_pools()
         cleanup()
+    from check_postgres_graph_retention import run as check_graph_retention
+
+    check_graph_retention()
 
 
 if __name__ == "__main__":

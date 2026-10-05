@@ -1576,3 +1576,45 @@ PR #72 legacy-marker compatibility (2026-10-05):
 - `legacy numeric/object marker cannot guide revised or replacement content after ambiguous validation`, `modern guided markers hydrate only their exact card and revision`, and `unresolved legacy numeric/object marker also blocks a prepared offline attempt` protect replacement identity, definitive ambiguity, and the offline fallback boundary.
 - `legacy numeric/object failure replay preserves its key and missing context while independent reviews save` proves original delivery identity through transient replay, no fabricated card/revision, and independent completed-result delivery.
 - Browser: `legacy numeric/object guided marker blocks clean grading across reload until authoritative replay` holds real HTTP delivery, reloads, asserts disabled board/Correct/keyboard grading and no review submissions, then confirms guided hydration after authoritative replay. Existing guided marker locking, evidence/savepoint, offline-conflict and operation-status regressions remain.
+## Incident graph and retention timeout protection
+
+- `test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion`,
+  `test_postgres_graph_cleanup_page_frontier_never_skips_third_obsolete_card`, and
+  `test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_fences_replay`
+  in `backend/tests/test_postgres_opening_graph.py` protect bounded candidate
+  selection, resolved-prefix checkpointing, empty-page termination and stale leases.
+- `test_postgres_priority_retention_selects_exact_stale_manifest_and_keeps_locked_rows_pending`
+  in `backend/tests/test_postgres_priority_retention.py` protects exact stale
+  preparation selection and locked-row eligibility without filtering a large
+  protected generation, plus primary-key ordering through actual PostgreSQL SQL
+  translation when a large active generation becomes stale.
+- `test_postgres_graph_retention_timeout_backoff_preserves_checkpoint_and_stops_at_limit`,
+  `test_postgres_other_timeouts_and_target_lock_contention_keep_existing_yield`, and
+  `test_postgres_graph_timeout_superseded_generation_does_not_retry_or_fail_replacement`
+  in `backend/tests/test_postgres_background_timeouts.py` protect the two targeted
+  timeout retry limits, preserved phase/payload, terminal durable failure,
+  supersession, and existing behavior for other handlers and lock contention.
+- The regular disposable PostgreSQL workload stage runs
+  `test_postgres_graph_cleanup_current_pages_restart_and_shared_tail`,
+  `test_postgres_graph_cleanup_generation_replacement_rejects_stale_page`,
+  `test_postgres_priority_retention_locked_stale_rows_remain_pending`,
+  `test_postgres_priority_retention_skips_large_current_generation`,
+  `test_postgres_priority_retention_generation_transition_is_serialized`,
+  `test_postgres_priority_retention_foreground_job_lock_yields_and_replays`,
+  `test_postgres_priority_retention_timeout_rolls_back_and_replays`,
+  `test_postgres_transaction_timeout_preserves_checkpoint_and_uses_failure_backoff`,
+  and `test_postgres_transaction_timeout_exhaustion_stops_repeated_attempts`
+  in `scripts/check_postgres_graph_retention.py`. These protect large current
+  generations, bounded graph frontiers, shared cards/history, contention,
+  generation replacement, restart, rollback, durable retry eligibility and
+  replay through the actual worker entry point. Query plans and complete
+  transaction timings are recorded without exact millisecond assertions.
+- `test_incident_fixture_refuses_unmarked_database_without_writes_or_cleanup`
+  and `test_incident_fixture_refuses_schema_mismatch_without_writes_or_cleanup`
+  in `backend/tests/test_incident_fixture_safety.py` require read-only disposable
+  metadata verification before helper creation, seeding, reporting or cleanup.
+- `background workload prevents scheduler claims and restores dispatch after failure`
+  in `tests/runner/postgres-test-speedups.test.mjs` keeps the real scheduler paused
+  with background consumers during disposable workload proofs and restores
+  dispatch after failure. The regular unit gate runs this file through
+  `tests/unit/postgres-test-speedups-regressions.test.ts`.
