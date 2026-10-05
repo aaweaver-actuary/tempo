@@ -4429,6 +4429,8 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
         database.row_factory = sqlite3.Row
         database.executescript(BACKGROUND_METRIC_SCHEMA)
         database.executescript("""
+            CREATE TABLE settings(id INTEGER PRIMARY KEY,defensive_analysis_enabled INTEGER);
+            INSERT INTO settings VALUES(1,1);
             CREATE TABLE background_tasks(
                 id TEXT PRIMARY KEY,kind TEXT,deduplication_key TEXT,replaced_pending_generation INTEGER DEFAULT 0,
                 generation INTEGER,priority INTEGER,state TEXT,phase TEXT,
@@ -4630,15 +4632,17 @@ def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypa
                 return Cursor(row={"generation": 3})
             if "FROM repertoire_priority_jobs" in statement:
                 return Cursor(row={"generation": 4, "status": "running"})
+            if "SELECT generation FROM repertoire_priority_preparations" in statement:
+                return Cursor(row=next(({"generation": generation} for generation in sorted(manifests)
+                                        if generation != parameters[1]), None))
             if "SELECT generation,ordinal FROM repertoire_priority_prepared_rows" in statement:
                 return Cursor(rows=[{"generation": generation, "ordinal": ordinal}
                                     for generation, ordinal in sorted(prepared_rows)
-                                    if generation != parameters[1]][:parameters[2]])
-            if "SELECT manifest.generation FROM repertoire_priority_preparations" in statement:
-                return Cursor(rows=[{"generation": generation} for generation in sorted(manifests)
-                                    if generation != parameters[1]
-                                    and not any(row[0] == generation for row in prepared_rows)
-                                    ][:parameters[2]])
+                                    if generation == parameters[1]][:parameters[2]])
+            if "DELETE FROM repertoire_priority_preparations" in statement:
+                if not any(row[0] == parameters[1] for row in prepared_rows):
+                    manifests.remove(parameters[1])
+                return Cursor()
             if "SELECT generation,card_id FROM repertoire_card_priority_generations" in statement:
                 return Cursor(rows=[{"generation": generation, "card_id": card_id}
                                     for generation, card_id in sorted(generation_rows)

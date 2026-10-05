@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 import psycopg
+from psycopg import sql
 
 from apply_postgres_migrations import apply_migrations
 from provision_postgres_roles import provision
@@ -19,6 +20,9 @@ def main() -> None:
     options = parser.parse_args()
     apply_migrations(options.admin_dsn)
     with psycopg.connect(options.admin_dsn) as database:
+        database_name = database.execute("SELECT current_database()").fetchone()[0]
+        database.execute(sql.SQL("COMMENT ON DATABASE {} IS {}").format(
+            sql.Identifier(database_name), sql.Literal("tempo-disposable-postgres-test")))
         database.execute("INSERT INTO settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING")
         database.execute("INSERT INTO tactic_rotation(id) VALUES(1) ON CONFLICT(id) DO NOTHING")
     provision(

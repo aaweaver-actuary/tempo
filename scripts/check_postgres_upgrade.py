@@ -257,14 +257,15 @@ def main() -> None:
                     intent_id = "legacy-admission" if target == "matching-queued" else f"legacy:{target}"
                     database.execute("INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,created_at,updated_at) VALUES(%s,%s,'preserved-repertoire',%s,'4k3/8/8/8/8/8/8/4K3 w - - 0 1','e1d2','[\"e1d2\"]','{}','legacy-line',%s,%s,'2026-01-01','2026-01-01')",
                                      (intent_id, opportunity_id, accepted_fingerprint, intent_state, intent_card))
-            # Seed evidence inputs only after reaching the actual main schema.
+            # Seed before the evidence migration, even when later migrations are present.
+            evidence_migration_version = 30
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
-                if 16 < int(migration.name[:3]) < POSTGRES_SCHEMA_VERSION:
+                if 16 < int(migration.name[:3]) < evidence_migration_version:
                     database.execute(migration.read_text(), prepare=False)
                     database.commit()
             main_versions = [row[0] for row in database.execute(
                 "SELECT version FROM tempo_schema_migrations ORDER BY version").fetchall()]
-            assert main_versions == list(range(1, POSTGRES_SCHEMA_VERSION))
+            assert main_versions == list(range(1, evidence_migration_version))
             assert main_versions[-1] == 29
             assert database.execute("SELECT to_regclass('opening_evidence_presentations')").fetchone()[0] is None
             database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,revision,due_date) VALUES('opening-upgrade','preserved-repertoire','prefix','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1','[\"e2e4\"]','white',7,'2026-01-01')")
@@ -312,7 +313,7 @@ def main() -> None:
             assert database.execute("SELECT COUNT(*) FROM opening_evidence_queue_contexts WHERE repertoire_id='preserved-repertoire'").fetchone()[0] == 1
             assert database.execute("SELECT COUNT(*) FROM opening_evidence_observations").fetchone()[0] == 0
             assert database.execute("SELECT COUNT(*) FROM opening_evidence_attempts").fetchone()[0] == 0
-            print("PASS test_postgres_current_main_upgrade_captures_legacy_evidence_contexts schema29->30")
+            print(f"PASS test_postgres_current_main_upgrade_captures_legacy_evidence_contexts schema29->{POSTGRES_SCHEMA_VERSION}")
             assert database.execute("SELECT COUNT(*) FROM tactic_captures").fetchone()[0] == 0
             assert database.execute(
                 "SELECT COUNT(*) FROM pg_indexes WHERE indexname="

@@ -11,6 +11,7 @@ from ..database import read_connection
 from .background_metrics import BackgroundDiagnostics, COUNT_NAMES, DURATION_NAMES, KINDS
 from . import background_runtime
 from ..threat_analysis_commands import _ELIGIBLE_THREAT_REQUEST
+from .defensive_analysis import task_admission_sql, search_admission_sql
 
 QUERY_BUDGET_SECONDS = 0.1
 
@@ -70,7 +71,7 @@ def snapshot() -> BackgroundDiagnostics:
             result["collection_started_at"] = metadata[0][0] if metadata else None
             queue_rows = []
             # One mutually exclusive classification; retrying remains an underlying state.
-            classification = ("CASE WHEN t.state IN ('queued','retrying') AND COALESCE(a.paused,0)=1 THEN 'paused' "
+            classification = ("CASE WHEN t.state IN ('queued','retrying') AND (COALESCE(a.paused,0)=1 OR NOT " + task_admission_sql("t.kind") + ") THEN 'paused' "
                               "WHEN t.state IN ('queued','retrying') AND t.next_attempt_at>? THEN 'delayed' "
                               "WHEN t.state IN ('queued','retrying') AND t.kind NOT IN (" + ",".join("'"+kind+"'" for kind in sorted(KINDS-{'other','engine_game','engine_defense'})) + ") THEN 'blocked' "
                               "ELSE t.state END")
@@ -98,7 +99,8 @@ def snapshot() -> BackgroundDiagnostics:
                     blocked = "NOT EXISTS ("+eligible+" AND request.id=t.id)"
                 else:
                     blocked = "NOT EXISTS(SELECT 1 FROM imported_games g WHERE g.id=t.game_id AND g.rated=1 AND g.speed IN ('blitz','rapid','classical'))"
-                classification = f"CASE WHEN t.{state_column}='queued' AND COALESCE(a.paused,0)=1 THEN 'paused' WHEN t.{state_column}='queued' AND ({blocked}) THEN 'blocked' ELSE t.{state_column} END"
+                global_pause = "NOT " + search_admission_sql("t.id") if queue == "engine_defense" else "FALSE"
+                classification = f"CASE WHEN t.{state_column}='queued' AND (COALESCE(a.paused,0)=1 OR {global_pause}) THEN 'paused' WHEN t.{state_column}='queued' AND ({blocked}) THEN 'blocked' ELSE t.{state_column} END"
                 rows = query(f"SELECT {classification} AS diagnostic_state,COUNT(*) AS count,MIN(t.{origin}) AS origin {",SUM(t.age_origin_estimated) AS estimated,MIN(t.generation_started_at) AS generation_started_at" if queue=="engine_game" else ""} "
                              f"FROM {table} t LEFT JOIN background_activity a ON a.source=? AND a.work_id=t.{identity} "
                              "GROUP BY diagnostic_state", ('game_analysis' if queue=='engine_game' else 'threat_analysis',))

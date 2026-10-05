@@ -1421,6 +1421,47 @@ confirmed review replay produces no duplicate effect. No additional worker-write
 infrastructure scenario is needed for these static configuration checks.
 Full and durability gates include this stage; browser-only scopes omit it.
 
+## Issue #77 — read-only structural prefix evaluation
+
+`backend/tests/test_prefix_evaluation.py` runs in the regular backend suite:
+
+- `test_issue77_current_depths_reproduce_production_graph_and_do_not_mutate_input`
+- `test_issue77_black_shortening_has_hand_checked_counts_without_alias_inflation`
+- `test_issue77_unselected_alias_retains_card_and_qgd_route_unchanged`
+- `test_issue77_mixed_depths_and_duplicate_aliases_use_saved_depths`
+- `test_issue77_custom_black_root_and_opponent_cues_count_decisions_not_plies`
+- `test_issue77_chained_saved_splits_report_effective_depth_and_honor_production`
+- `test_issue77_short_routes_empty_selection_and_no_learner_moves_are_distinct`
+- `test_issue77_cycles_and_overlapping_roles_preserve_distinct_card_accounting`
+- `test_issue77_invalid_selection_and_candidate_depths_are_actionable`
+- `test_issue77_missing_or_zero_saved_depth_never_uses_global_default`
+- `test_issue77_stale_graph_and_malformed_split_fail_without_partial_results`
+- `test_issue77_size_limits_fail_without_truncating_source`
+- `test_issue77_512_ply_line_evaluates_current_and_proposed_without_truncation` — legal knight cycles at the diagnostic ceiling reach both production graph builds intact, preserving all 512 plies and 256 learner decisions in graph steps.
+- `test_issue77_513_ply_source_is_rejected_before_any_graph_build` — direct snapshots and a fail-if-called graph sentinel prove selected, unselected and empty-selection requests reject oversized source before even a normal line that sorts earlier is built; error identifies the line and 513/512 boundary without truncation.
+- `test_issue77_snapshot_binds_depth_source_graph_and_split_revisions`
+- `test_issue77_card_revisions_membership_and_decision_versions_fence_snapshot`
+
+`backend/tests/test_prefix_evaluation_api.py` runs in the regular backend suite:
+
+- `test_issue77_http_source_and_evaluation_use_typed_snapshot_contract`
+- `test_issue77_invalid_wire_values_have_machine_readable_errors`
+- `test_issue77_stale_snapshot_is_distinct_from_no_change_and_empty_selection`
+- `test_issue77_source_change_during_calculation_rejects_entire_result`
+- `test_issue77_foreground_preemption_and_deadline_return_retryable_errors`
+- `test_issue77_non_postgres_product_never_returns_sample_result`
+- `test_issue77_temporary_database_failure_is_retryable_without_partial_metrics`
+- `test_issue77_endpoints_use_actual_reader_pool_without_writer_credentials` — source and evaluate keep the actual loader, connection helper and pool selection; only low-level pool I/O is stubbed. Reader URL present/writer URL absent failed before the repair with `TEMPO_DATABASE_WRITE_URL is missing`. Both reads retain explicitly read-only repeatable transactions and close before decoding.
+- `test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hashing`
+- `test_issue77_http_oversized_source_is_413_through_actual_loader_without_payload` — GET source and POST evaluation retain actual loading/shared source validation, with database I/O stubbed at the existing connection seam; validation runs after connection closure and both return only the 413 limit error, with no graph construction or partial source/comparison.
+- `test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics`
+- `test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_only`
+- `test_issue77_repeatable_reader_and_worker_connections_set_isolation_before_budgets` — reader-based repeats select the reader pool; authoritative worker controls retain the writer pool. Both set isolation/read-only before timeout queries.
+
+Real PostgreSQL proof: `scripts/check_postgres_opening_segmentation.py::test_issue77_readonly_snapshot_and_foreground_concurrency` runs in the regular disposable durability rehearsal. It exercises real query-only HTTP source/current/empty/candidate reads, unchanged cards/reviews/depths/queues/graph/task/receipt state, authoritative repeatable-read transactions, idle source connections and a NOWAIT foreground review during paused traversal, source invalidation during computation, and deterministic retry after a scheduling-only change. Existing graph/split/snapshot and route-contract regressions remain required.
+
+Reader-only deployment proof: `scripts/check_postgres_opening_segmentation.py::test_issue77_reader_only_deployed_api_evaluates_without_product_writes` runs in that same regular durability scenario. Separate maintenance setup seeds published source; real HTTP GET source and POST depth change hit the running API with normal startup guards. The runner verifies a reader URL and absent writer URL in the API container environment. Both return 200 with the expected selected/whole comparison, and the existing complete product-state snapshot remains unchanged. Health probes hold real foreground leases while benchmark consumers are paused: each diagnostic waits for admission within its unchanged ten-second bound and retries only the exact foreground rejection (with Retry-After), never database, deadline or other failures. The in-process concurrency proof remains additional evidence, not a substitute for deployment coverage.
+
 ### PR #69 — enforce HTTP evidence database admission
 
 - `test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api` — real HTTP route/middleware rejects API-side source reads and preserves the original checkpoint envelope, operation key and background dispatch, with and without a client header. Both baseline cases failed on the eager source read.
@@ -1436,6 +1477,46 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics` — actual GET waits on real Redis foreground admission before PostgreSQL SQL; authoritative limits, ordered 256-event bound, missing/error cleanup, idle released connections and foreground control preserve evidence and scheduling.
 
 Backend names run in the existing contracts, preparation and transport pytest files; the client names remain in `tests/unit/opening-evidence-background-admission.test.ts`. Real PostgreSQL names run in the existing disposable evidence rehearsal through the regular durability runner, with its runner-owned Redis enabled. Existing preparation/stale-source/restart/review atomicity, quota, recovery and recreation/backup proofs remain required.
+
+## Independent defensive analysis pause — related #14, #43
+
+- `test_disabled_defensive_analysis_does_not_claim_exercise_search` reproduces a defensive request being leased with analysis disabled; the original claim failed this regression before the gate.
+- `test_paused_defense_keeps_shared_repertoire_recommendation_claimable` covers game-backed and coverage-backed recommendations sharing defensive requests, including stale leases and dismissed recommendations.
+- `test_defensive_control_pause_resume_and_read_only_replay`, `test_defensive_pause_setting_survives_legacy_omission_and_restart`, `test_defensive_pause_migrates_existing_sqlite_without_losing_requests`, and `test_postgres_defensive_setting_preserves_omitted_enabled_value` preserve settings, queued evidence, and compatibility.
+- `test_defensive_slices_pause_before_claim_and_redispatched_work_replays_once` covers all six defensive task kinds; `test_paused_defensive_celery_delivery_never_computes_or_wakes_retries` protects delivery-time gating without a retry storm.
+- `test_postgres_paused_claim_uses_active_recommendation_driver_without_claiming_defensive_backlog` protects sparse recommendation selection while disabled. Existing grading/admission fixtures explicitly enable analysis so their regular coverage remains meaningful.
+- `test_defensive_pause_activity_labels_recommendations_and_preserved_work` distinguishes recommendation searches from paused defensive work.
+- `tests/unit/defensive-analysis-pause-regressions.test.ts` covers active cancellation/drain, recovered claims, unresolved durable releases, shared recommendation permission, ordinary game progress, single-flight/stale control polls, control outages, fatal drain cleanup, and a pending defensive report surviving restart and delivering before another claim. Existing journal recovery/report-delivery regressions remain required.
+- `defensive analysis pause persists independently of defensive cards` in `settings-defense-toggle.spec.ts` protects the actual Settings save/reload workflow.
+- `scripts/check_postgres_defensive_pause.py`, executed by the regular PostgreSQL durability runner, proves default-off migration, mixed-purpose claims, foreground contention, snapshot classification, restart persistence, omitted-setting preservation, and idempotent resume using its own disposable database.
+- `test_pausing_engine_release_preserves_retry_budget_and_idempotent_resume` protects pause releases from consuming failure retries, including repeated release and resumed claim. The PostgreSQL proof covers the same fenced decrement.
+- `test_pending_defensive_report_delivers_while_paused_and_resume_preserves_one_review` preserves completed reports while validation waits, then resumes study with one review across report replay and restart. The worker regression `a paused engine that cannot drain releases its lease without recording failure and cleans every timer` protects the cancellation watchdog from charging a job failure.
+- `test_defensive_engine_control_preempts_foreground_without_waiting_for_database` protects immediate foreground preemption before the control endpoint opens any background database connection.
+
+### PR #83 cancellation repair — delayed release accounting
+
+- `test_delayed_defensive_release_refunds_one_claim_after_resume_and_fences_newer_lease` covers lease-only release after re-enable, shared recommendation eligibility, retained evidence/prior failure, duplicate release and old-lease replay after reclaim.
+- `test_cancellation_cycles_preserve_genuine_failure_threshold_and_prior_failures` proves four cancellations consume no failure allowance and interleaved genuine failures still exhaust the original three-attempt threshold.
+- `test_defensive_release_counter_never_becomes_negative` protects the floor at zero.
+- `scripts/check_postgres_defensive_pause.py::verify_cancellation_retry_allowance` runs actual PostgreSQL claim/release/failure handlers in separately committed transactions, including shared recommendations, delayed releases, duplicate/superseded leases, retained reports/durable tasks/reviews, and the unchanged genuine failure threshold. Its named PASS proof is `defensive_cancel_release_after_resume_preserves_failures_and_fences_replay`.
+
+### PR #83 cancellation repair — first stop cause and production callback delivery
+
+- `pause near depth deadline preserves preemption through drain (drains=true/false)` fails on the original 55-second deadline overwriting a pause accepted at 54 seconds; both delayed `bestmove` and the failed-drain watchdog retain preemption with one stop and no report/timer leak.
+- `depth deadline first remains timeout when a later outstanding control reports pause` keeps a genuine timeout; `old control response cannot stop the next search after the previous search completed` protects cross-search late controls. Existing synchronous-drain and single-flight tests remain required.
+- `production worker routes cancellation and genuine failure outcomes` runs the actual extracted worker cycle and engine search for drained pause, fatal pause, genuine timeout and actual engine fault, checking outbound callbacks and shutdown/reuse protection.
+- `fatal cancellation bounds delivery and recovers the unchanged release before claims after restart` uses the actual durable journal, hung delivery/abort and repeated cycle execution. It preserves the same payload/operation ID, forbids conflicting claims, leaves volatile delivery options outside the journal and prevents reuse of the fatal engine.
+- `a pending defensive report survives pause and restart and delivers before another claim` now also runs the production cycle: report replay is preserved and never changed into a release/failure command.
+- Current-main integration keeps `test_postgres_current_main_upgrade_captures_legacy_evidence_contexts` seeded at schema 29 before evidence migration 30, then applies every migration through current readiness 31 twice. Its exact history, preserved business rows, raw presentations, captured colors and no-inferred-observations assertions remain intact when another additive migration follows evidence capture.
+## PR #83: global and individual activity pause provenance
+
+- `backend/tests/test_defensive_analysis_pause.py::test_activity_global_pause_provenance_preserves_individual_pause_and_rejects_stale_resume` covers global-only/both pauses on durable tasks and engine requests, read-only projection, retained individual state after Settings re-enabling, explicit Resume, and unchanged priority.
+- `test_stale_activity_resume_returns_conflict_without_clearing_individual_pause` reproduces the former HTTP 200 and lost individual pause; now both shared-control route variants reject Resume with actionable HTTP 409 before mutation.
+- `test_activity_shared_recommendation_individual_resume_remains_allowed_while_defense_is_disabled`, `test_activity_unrelated_individual_pause_controls_ignore_defensive_setting`, and `test_activity_terminal_defensive_work_keeps_existing_control_rejection` retain both recommendation relations, non-defensive/game controls, and completed/failed treatment.
+- `test_activity_failed_defensive_retry_retains_existing_behavior_during_global_pause` preserves SQLite's explicit Retry behavior, matching the unchanged PostgreSQL retry handler; the settings block still applies afterward. An internal Retry pause-reset option is not exposed by the activity API, whose Resume always enforces admission.
+- `tests/unit/service-status-panel-regressions.test.tsx`: `settings pause explains blocking without individual Resume` and `pause provenance-only changes update controls while an individual pause stays effective` protect truthful presentation, priority controls and equality-triggered refresh. Older omitted fields remain compatible; malformed provenance is rejected.
+- `tests/browser/settings-defense-toggle.spec.ts::combined defensive pauses retain individual Resume until Settings allows it` exercises actual PostgreSQL-backed backfill/control/Settings APIs and the 320px panel: no ineffective Resume, retained individual pause after enabling, explicit Resume, and no daily-card setting change.
+- Disposable PostgreSQL `defensive_activity_global_and_individual_pause_provenance_stale_resume_and_restart` extends `scripts/check_postgres_defensive_pause.py` with actual activity command handlers, committed settings changes, stale-command rollback, reconnect/pause preservation, eligible shared recommendations and unrelated controls. Existing cancellation/refund proofs remain unchanged.
 
 ### Phone opening study: repertoire identity beside the board
 
@@ -1499,3 +1580,46 @@ Scope: shared read-only classification and diagnostic wording only. Authoritativ
 lifecycle re-reading under the maintenance lock, migrations, backup/history
 verification and deployment policy are unchanged. Focused CLI proof precedes the
 whole affected file/wrapper; CI owns final candidate durability/complete coverage.
+
+## Incident graph and retention timeout protection
+
+- `test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion`,
+  `test_postgres_graph_cleanup_page_frontier_never_skips_third_obsolete_card`, and
+  `test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_fences_replay`
+  in `backend/tests/test_postgres_opening_graph.py` protect bounded candidate
+  selection, resolved-prefix checkpointing, empty-page termination and stale leases.
+- `test_postgres_priority_retention_selects_exact_stale_manifest_and_keeps_locked_rows_pending`
+  in `backend/tests/test_postgres_priority_retention.py` protects exact stale
+  preparation selection and locked-row eligibility without filtering a large
+  protected generation, plus primary-key ordering through actual PostgreSQL SQL
+  translation when a large active generation becomes stale.
+- `test_postgres_graph_retention_timeout_backoff_preserves_checkpoint_and_stops_at_limit`,
+  `test_postgres_other_timeouts_and_target_lock_contention_keep_existing_yield`, and
+  `test_postgres_graph_timeout_superseded_generation_does_not_retry_or_fail_replacement`
+  in `backend/tests/test_postgres_background_timeouts.py` protect the two targeted
+  timeout retry limits, preserved phase/payload, terminal durable failure,
+  supersession, and existing behavior for other handlers and lock contention.
+- The regular disposable PostgreSQL workload stage runs
+  `test_postgres_graph_cleanup_current_pages_restart_and_shared_tail`,
+  `test_postgres_graph_cleanup_generation_replacement_rejects_stale_page`,
+  `test_postgres_priority_retention_locked_stale_rows_remain_pending`,
+  `test_postgres_priority_retention_skips_large_current_generation`,
+  `test_postgres_priority_retention_generation_transition_is_serialized`,
+  `test_postgres_priority_retention_foreground_job_lock_yields_and_replays`,
+  `test_postgres_priority_retention_timeout_rolls_back_and_replays`,
+  `test_postgres_transaction_timeout_preserves_checkpoint_and_uses_failure_backoff`,
+  and `test_postgres_transaction_timeout_exhaustion_stops_repeated_attempts`
+  in `scripts/check_postgres_graph_retention.py`. These protect large current
+  generations, bounded graph frontiers, shared cards/history, contention,
+  generation replacement, restart, rollback, durable retry eligibility and
+  replay through the actual worker entry point. Query plans and complete
+  transaction timings are recorded without exact millisecond assertions.
+- `test_incident_fixture_refuses_unmarked_database_without_writes_or_cleanup`
+  and `test_incident_fixture_refuses_schema_mismatch_without_writes_or_cleanup`
+  in `backend/tests/test_incident_fixture_safety.py` require read-only disposable
+  metadata verification before helper creation, seeding, reporting or cleanup.
+- `background workload prevents scheduler claims and restores dispatch after failure`
+  in `tests/runner/postgres-test-speedups.test.mjs` keeps the real scheduler paused
+  with background consumers during disposable workload proofs and restores
+  dispatch after failure. The regular unit gate runs this file through
+  `tests/unit/postgres-test-speedups-regressions.test.ts`.

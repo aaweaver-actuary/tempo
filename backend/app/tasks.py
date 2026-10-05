@@ -57,7 +57,7 @@ from .game_analysis_publication import (
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.background_runtime import measure_handler
-from .services.durable_tasks import current_delivery, record_stale_delivery
+from .services.durable_tasks import current_delivery, record_stale_delivery, defer_paused_defensive_task
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
@@ -291,6 +291,8 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     with measure_handler(claimed_task["kind"], (self.request.headers or {}).get("submitted_at")), \
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
+            if defer_paused_defensive_task(claimed_task):
+                return False
             if not current_delivery(claimed_task):
                 record_stale_delivery(claimed_task)
                 return False
@@ -317,7 +319,26 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
                     kind=claimed_task["kind"],
                 )
-        except (DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
+        except TransactionTimeout as error:
+            if claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention"}:
+                retry_result = fail_task(
+                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error,
+                )
+                more_work = retry_result["state"] == "retrying"
+                # Celery completion acknowledges this delivery; durable state owns retries.
+                _LOGGER.warning(
+                    "background_slice_timeout kind=%s phase=%s outcome=%s sqlstate=%s next_attempt_at=%s",
+                    claimed_task["kind"], claimed_task.get("phase", "unknown"),
+                    retry_result["state"], error.sqlstate or "unknown",
+                    retry_result.get("next_attempt_at") if more_work else None,
+                )
+            else:
+                defer_task_for_contention(
+                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
+                    kind=claimed_task["kind"],
+                )
+                more_work = True
+        except (DeadlockDetected, LockNotAvailable, SerializationFailure):
             defer_task_for_contention(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
                 kind=claimed_task["kind"],
