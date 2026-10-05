@@ -777,7 +777,7 @@ def publish_opening_graph_rebuild(
                WHERE status='queued' AND card_id IN (
                    SELECT link.card_id FROM repertoire_cards link
                    JOIN cards legacy ON legacy.id=link.card_id
-                   WHERE link.repertoire_id=? AND legacy.content_type='opening' AND link.canonical_route_source=0 AND legacy.canonical_route_source=0
+                   WHERE link.repertoire_id=? AND legacy.content_type='opening' AND link.canonical_route_source=0 AND (legacy.canonical_route_source=0 OR legacy.repertoire_id=link.repertoire_id)
                      AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained WHERE retained.card_id=legacy.id AND retained.repertoire_id<>link.repertoire_id)
                      AND NOT EXISTS(
                          SELECT 1 FROM opening_graph_steps step
@@ -786,6 +786,18 @@ def publish_opening_graph_rebuild(
                      )
                )""",
             (repertoire_id, repertoire_id, generation),
+        )
+        # Retire an orphaned generated owner association before deleting its
+        # link, retaining history without reactivating owner fallback.
+        database.execute(
+            """UPDATE cards SET archived=1 WHERE repertoire_id=? AND content_type='opening'
+                 AND EXISTS(SELECT 1 FROM repertoire_cards former
+                     WHERE former.card_id=cards.id AND former.repertoire_id=? AND former.canonical_route_source=0)
+                 AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained
+                     WHERE retained.card_id=cards.id AND retained.repertoire_id<>?)
+                 AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step
+                     WHERE step.repertoire_id=? AND step.generation=? AND step.card_id=cards.id)""",
+            (repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation),
         )
         # Reassign retained owners before deleting generated memberships, so
         # cleanup cannot reactivate a stale owner fallback.

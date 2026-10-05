@@ -269,3 +269,10 @@ ownership before removing a generated owner membership; owner-only reassignment
 invalidates only actual unlinked fallback scopes, preserving unchanged authored
 memberships and their certificates. Later card edits/archive invalidate the
 remaining authored scopes, not a repertoire whose generated link was removed.
+
+
+If no retained membership or legitimate authored owner remains, cleanup archives
+the orphaned presentation before removing its generated owner link. Its card row,
+provenance and reviews remain stored; it cannot reappear as an authored source.
+An unlinked authored owner in another repertoire remains active. Integrity cleanup
+uses the same ordering.

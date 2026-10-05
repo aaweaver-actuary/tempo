@@ -1144,7 +1144,8 @@ def test_canonical_integrity_reconciliation_respects_specific_membership_provena
         _reconcile_derived_cards(connection, 'italian')
         link = connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='italian' AND card_id='standalone'").fetchone()
         assert bool(link) == bool(link_source)
-        assert connection.execute("SELECT archived FROM cards WHERE id='standalone'").fetchone()[0] == int(not (card_source or link_source))
+        # An explicit generated owner membership must not become an authored fallback.
+        assert connection.execute("SELECT archived FROM cards WHERE id='standalone'").fetchone()[0] == int(not link_source)
 
 
 def test_canonical_generated_graph_materialization_does_not_admit_global_game_refresh(prefix_database):
@@ -1451,3 +1452,38 @@ def test_canonical_shared_card_owner_cleanup_never_resurrects_generated_source(p
         assert source_item(connection) is None
         assert read_prefix(connection, 'other')['source_revision'] == source_before
         assert read_prefix(connection, 'italian')['source_revision'] > authored_before
+
+
+@pytest.mark.parametrize("owner_scope", ["generated-owner", "unlinked-authored-owner"])
+@pytest.mark.parametrize("cleanup_path", ["graph", "integrity"])
+def test_canonical_last_generated_membership_cleanup_preserves_history_without_owner_resurrection(prefix_database, owner_scope, cleanup_path):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.canonical_prefix_preview import _next_item
+    from app.services.canonical_prefix import read_prefix
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+        owner = 'other' if owner_scope == 'generated-owner' else 'italian'
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES('orphan-source',?,'response',?,?,'2026-10-02',1)", (owner, chess.STARTING_FEN, json.dumps(ITALIAN)))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('other','orphan-source',0)")
+        connection.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('orphan-source','correct','2026-10-02',1,2)")
+        connection.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES('2026-10-03','orphan-source',0)")
+        revisions = {scope: read_prefix(connection, scope)['source_revision'] for scope in ('italian','other')}
+    if cleanup_path == 'graph':
+        enqueue_opening_graph_rebuild('other')
+        execute_opening_graph_rebuild(claim_task('opening_graph_rebuild'))
+    else:
+        from app.services.repertoire_integrity import _archive_unsupported_card
+        with database.connection() as connection:
+            assert _archive_unsupported_card(connection, 'other', 'orphan-source')
+    with database.read_connection() as connection:
+        assert not connection.execute("SELECT 1 FROM repertoire_cards WHERE card_id='orphan-source'").fetchone()
+        preserved = connection.execute("SELECT archived,canonical_route_source FROM cards WHERE id='orphan-source'").fetchone()
+        assert preserved['canonical_route_source'] == 1
+        assert preserved['archived'] == (owner_scope == 'generated-owner')
+        assert connection.execute("SELECT COUNT(*) FROM reviews WHERE card_id='orphan-source'").fetchone()[0] == 1
+        if cleanup_path == 'graph':
+            assert connection.execute("SELECT status FROM daily_queue WHERE card_id='orphan-source'").fetchone()[0] == ('superseded' if owner_scope == 'generated-owner' else 'queued')
+        assert _next_item(connection, {'id': 'inspection', 'repertoire_id': 'other'}, {'phase': 'cards', 'cursor': ''}) is None
+        if owner_scope == 'unlinked-authored-owner':
+            assert _next_item(connection, {'id': 'inspection', 'repertoire_id': 'italian'}, {'phase': 'cards', 'cursor': ''})['id'] == 'orphan-source'
+        assert {scope: read_prefix(connection, scope)['source_revision'] for scope in revisions} == revisions

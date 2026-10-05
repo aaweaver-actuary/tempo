@@ -418,7 +418,7 @@ def cleanup_graph_cards_in_transaction(
         # Selection happens before this write slice. An intervening foreground
         # adoption must protect the now-authored membership and its queue.
         membership = database.execute_native(
-            "SELECT card.canonical_route_source FROM repertoire_cards link "
+            "SELECT card.canonical_route_source,card.repertoire_id FROM repertoire_cards link "
             "JOIN cards card ON card.id=link.card_id "
             "WHERE link.repertoire_id=%s AND link.card_id=%s "
             "AND link.canonical_route_source=0 FOR UPDATE OF link,card",
@@ -433,7 +433,7 @@ def cleanup_graph_cards_in_transaction(
         ).fetchone()
         if still_current:
             continue
-        if not membership[0]:
+        if not membership[0] or membership[1] == repertoire_id:
             database.execute_native(
                 "UPDATE daily_queue SET status='superseded' "
                 "WHERE card_id=%s AND status='queued' "
@@ -441,6 +441,15 @@ def cleanup_graph_cards_in_transaction(
                 "WHERE retained.card_id=%s AND retained.repertoire_id<>%s)",
                 (card_id, card_id, repertoire_id),
             )
+        # A globally authored card with only this generated owner association
+        # has no effective authored scope. Retire it before deleting that link;
+        # keep its row and history without activating unlinked owner fallback.
+        database.execute_native(
+            "UPDATE cards SET archived=1 WHERE id=%s AND repertoire_id=%s "
+            "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
+            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
+            (card_id, repertoire_id, repertoire_id),
+        )
         # Move a retained card's owner while the explicit generated membership
         # still suppresses fallback in the departing repertoire.
         database.execute_native(

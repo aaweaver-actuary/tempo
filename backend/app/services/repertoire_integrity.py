@@ -753,25 +753,24 @@ def _archive_unsupported_card(
         return False
     if membership is None and (card["repertoire_id"] != repertoire_id or card["canonical_route_source"]):
         return False
-    database.execute(
-        "DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
-        (repertoire_id, card_identifier),
-    )
     remaining = database.execute(
-        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? LIMIT 1",
-        (card_identifier,),
+        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? AND repertoire_id<>? ORDER BY repertoire_id LIMIT 1",
+        (card_identifier, repertoire_id),
     ).fetchone()
-    if remaining:
-        if card["repertoire_id"] == repertoire_id:
-            database.execute(
-                "UPDATE cards SET repertoire_id=? WHERE id=?",
-                (remaining["repertoire_id"], card_identifier),
-            )
-    elif not card["canonical_route_source"]:
+    if remaining and card["repertoire_id"] == repertoire_id:
+        database.execute(
+            "UPDATE cards SET repertoire_id=? WHERE id=?",
+            (remaining["repertoire_id"], card_identifier),
+        )
+    elif not remaining and (not card["canonical_route_source"] or card["repertoire_id"] == repertoire_id):
         database.execute(
             "UPDATE cards SET archived=1,state='locked',superseded_by=NULL WHERE id=?",
             (card_identifier,),
         )
+    database.execute(
+        "DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
+        (repertoire_id, card_identifier),
+    )
     return True
 
 

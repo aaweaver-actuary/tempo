@@ -411,6 +411,51 @@ def prove_card_mutation_coverage_status():
                 database.execute('DELETE FROM repertoires WHERE id=?', (repertoire_id,))
     print('PASS CF-10 authored revise/archive without replacement coverage reports recheck guidance; explicit recheck and refresh recover current publication', flush=True)
 
+
+def prove_last_generated_membership_cleanup():
+    from app.services.cards import card_id
+    from app.repertoire_commands import delete_repertoire
+    route = ['d2d4', 'd7d5', 'c2c4', 'e7e6', 'b1c3', 'g8f6', 'c1g5']
+    for owner_scope in ('generated-owner', 'unlinked-authored-owner'):
+        authored_scope = 'canonical-orphan-X-' + uuid.uuid4().hex
+        generated_scope = 'canonical-orphan-Y-' + uuid.uuid4().hex
+        first_id, replacement_id = card_id(chess.STARTING_FEN, route[:5]), card_id(chess.STARTING_FEN, route)
+        try:
+            with postgres_store.connection() as database:
+                for scope_id in (authored_scope, generated_scope):
+                    database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (scope_id, scope_id, scope_id+'.pgn', NOW))
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES(?,?,'response',?,?,?,0)", (first_id, authored_scope, chess.STARTING_FEN, json.dumps(route[:5]), NOW[:10]))
+                database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,0)', (authored_scope, first_id))
+                owner = generated_scope if owner_scope == 'generated-owner' else authored_scope
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES(?,?,'response',?,?,?,?)", (replacement_id, owner, chess.STARTING_FEN, json.dumps(route), NOW[:10], int(owner_scope == 'unlinked-authored-owner')))
+                database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,0)', (generated_scope, replacement_id))
+                database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,1,2)", (replacement_id, NOW))
+                database.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,(SELECT COALESCE(MAX(position),0)+1 FROM daily_queue))", (NOW[:10], replacement_id))
+                if owner_scope == 'generated-owner':
+                    revise_card(database, {'card_id': first_id, 'request': {'starting_fen': chess.STARTING_FEN, 'moves': route, 'history_mode': 'preserve', 'expected_revision': 1}})
+                    delete_repertoire(database, {'repertoire_id': authored_scope})
+                source_before = read_prefix(database, generated_scope)['source_revision']
+                request_graph_rebuild_in_transaction(database, generated_scope, NOW[:10])
+            run_bounded_task_slices('opening_graph_rebuild', generated_scope, execute_postgres_opening_graph_slice)
+            with postgres_store.connection() as database:
+                assert not database.execute('SELECT 1 FROM repertoire_cards WHERE card_id=?', (replacement_id,)).fetchone()
+                card = database.execute('SELECT archived,canonical_route_source FROM cards WHERE id=?', (replacement_id,)).fetchone()
+                assert card['canonical_route_source'] == 1
+                assert bool(card['archived']) == (owner_scope == 'generated-owner')
+                assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', (replacement_id,)).fetchone()[0] == 1
+                assert database.execute('SELECT status FROM daily_queue WHERE card_id=?', (replacement_id,)).fetchone()[0] == ('superseded' if owner_scope == 'generated-owner' else 'queued')
+                assert _next_item(database, {'id': 'inspection', 'repertoire_id': generated_scope}, {'phase': 'cards', 'cursor': ''}) is None
+                assert read_prefix(database, generated_scope)['source_revision'] == source_before
+                if owner_scope == 'unlinked-authored-owner':
+                    assert _next_item(database, {'id': 'inspection', 'repertoire_id': authored_scope}, {'phase': 'cards', 'cursor': ''})['id'] == replacement_id
+                archive_card(database, {'card_id': replacement_id})
+                assert read_prefix(database, generated_scope)['source_revision'] == source_before
+        finally:
+            with postgres_store.connection() as database:
+                database.execute("DELETE FROM background_tasks WHERE deduplication_key IN (?,?) OR json_extract(payload_json,'$.repertoire_id') IN (?,?)", (authored_scope, generated_scope, authored_scope, generated_scope))
+                database.execute('DELETE FROM repertoires WHERE id IN (?,?)', (authored_scope, generated_scope))
+    print('PASS CF-11 deleting authored X then cleaning last generated Y retires orphan presentation with history intact; legitimate unlinked authored owner remains playable and Y stays unchanged', flush=True)
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Canonical freshness proof requires the runner-owned disposable PostgreSQL instance')
@@ -576,6 +621,7 @@ def main():
         prove_generated_split_boundary(card_source=1)
         prove_guided_review_boundary(mutation_repertoire_id)
         prove_card_mutation_coverage_status()
+        prove_last_generated_membership_cleanup()
     finally:
         opportunities._calculate_node_opportunities = saved_calculate
         with postgres_store.connection() as database:
