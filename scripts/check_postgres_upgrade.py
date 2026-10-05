@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import uuid
 import json
+import sqlite3
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
@@ -24,6 +25,36 @@ from app.services import discovery_admission
 
 
 DISCOVERY_FEN_KEY = "4k3/8/8/8/8/8/8/4K3 w - -"
+
+
+def test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates(dsn: str) -> None:
+    from scripts.migrate_sqlite_to_postgres import copy_table
+
+    with psycopg.connect(dsn, autocommit=True) as destination:
+        destination.execute("DELETE FROM daily_queue")
+        destination.execute("DELETE FROM queue_attempt_origins")
+        source = sqlite3.connect(":memory:")
+        try:
+            source.execute("CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,queue_date TEXT,card_id TEXT,position INTEGER)")
+            source.execute("INSERT INTO daily_queue VALUES(99001,'2026-01-01','known-plural',0)")
+            copy_table(source, destination, "daily_queue", ["id", "queue_date", "card_id", "position"], ["id"])
+            legacy = destination.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=99001").fetchone()
+            origin_columns = [column.name for column in destination.execute("SELECT * FROM queue_attempt_origins LIMIT 0").description]
+            assert dict(zip(origin_columns, legacy))["legacy"] == 1
+            destination.execute("DELETE FROM daily_queue")
+            destination.execute("DELETE FROM queue_attempt_origins")
+            destination.execute("DELETE FROM tempo_migration_progress WHERE table_name='daily_queue'")
+            source.execute(f"CREATE TABLE queue_attempt_origins({','.join(origin_columns)},PRIMARY KEY(queue_entry_id,card_id,revision))")
+            source.execute(f"INSERT INTO queue_attempt_origins VALUES({','.join('?' for _ in legacy)})", legacy)
+            destination.execute("UPDATE cards SET revision=revision+1 WHERE id='known-plural'")
+            copy_table(source, destination, "daily_queue", ["id", "queue_date", "card_id", "position"], ["id"])
+            assert destination.execute("SELECT COUNT(*) FROM queue_attempt_origins").fetchone()[0] == 0
+            copy_table(source, destination, "queue_attempt_origins", origin_columns, ["queue_entry_id", "card_id", "revision"])
+            assert destination.execute("SELECT * FROM queue_attempt_origins").fetchall() == [legacy]
+            assert destination.execute("SELECT tgenabled FROM pg_trigger WHERE tgname='queue_attempt_origin_insert'").fetchone()[0] == "O"
+        finally:
+            source.close()
+    print("PASS test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates")
 
 
 def test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(dsn: str) -> None:
@@ -284,14 +315,23 @@ def main() -> None:
                 database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket) VALUES('2026-01-01',%s,100,'opening')", (legacy_id,))
 
             database.commit()
-            # Reach published main first, preserving its captured evidence contexts
-            # through the subsequent canonical upgrade.
-            published_main_schema_version = 31
+        # Rehearse published schema 31 -> 32 before the unmerged canonical
+        # migrations, preserving both branches' captured evidence assertions.
+        with psycopg.connect(rehearsal_dsn) as database:
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
-                if evidence_migration_version <= int(migration.name[:3]) <= published_main_schema_version:
+                if evidence_migration_version <= int(migration.name[:3]) <= 31:
                     database.execute(migration.read_text(), prepare=False)
                     database.commit()
+            assert database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0] == 31
+            assert database.execute("SELECT to_regclass('queue_attempt_origins')").fetchone()[0] is None
+            evidence_contexts_before = database.execute("SELECT * FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,presentation_snapshot_id,repertoire_id").fetchall()
+            assert len(evidence_contexts_before) == 3
+            published_main_schema_version = 32
+            database.execute((MIGRATIONS / "032_queue_attempt_origins.sql").read_text(), prepare=False)
+            database.commit()
             assert database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0] == published_main_schema_version
+            assert database.execute("SELECT * FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,presentation_snapshot_id,repertoire_id").fetchall() == evidence_contexts_before
+            assert database.execute("SELECT COUNT(*) FROM queue_attempt_origins").fetchone()[0] == 5
             preserved_evidence_contexts = database.execute("SELECT queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,repertoire_id").fetchall()
         apply_migrations(rehearsal_dsn)
         apply_migrations(rehearsal_dsn)
@@ -325,6 +365,12 @@ def main() -> None:
             assert database.execute("SELECT COUNT(*) FROM opening_evidence_observations").fetchone()[0] == 0
             assert database.execute("SELECT COUNT(*) FROM opening_evidence_attempts").fetchone()[0] == 0
             print(f"PASS test_postgres_current_main_upgrade_captures_legacy_evidence_contexts schema29->{POSTGRES_SCHEMA_VERSION}")
+            assert database.execute("SELECT * FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,presentation_snapshot_id,repertoire_id").fetchall() == evidence_contexts_before
+            print("PASS test_postgres_current_main_schema31_upgrade_adds_queue_origins_without_changing_evidence")
+            origins = database.execute("SELECT queue_entry_id,card_id,revision,legacy,start_fen,moves_json FROM queue_attempt_origins ORDER BY card_id").fetchall()
+            assert len(origins) == 5 and all(origin[3] == 1 for origin in origins)
+            tactic_origins = [origin for origin in origins if origin[1] in {'known-plural', 'unknown-plural'}]
+            assert all(origin[2] == 1 and origin[4:] == ('4k3/8/8/8/8/8/8/4K3 w - - 0 1', '["e1d2"]') for origin in tactic_origins)
             assert database.execute("SELECT COUNT(*) FROM tactic_captures").fetchone()[0] == 0
             assert database.execute(
                 "SELECT COUNT(*) FROM pg_indexes WHERE indexname="
@@ -336,12 +382,15 @@ def main() -> None:
                 "'idx_threat_analysis_requests_state_created')"
             ).fetchone()[0] == 2
         with psycopg.connect(rehearsal_dsn) as database:
+            database.execute("DELETE FROM daily_queue WHERE id=%s", (origins[0][0],))
+            assert database.execute("SELECT queue_entry_id,card_id,revision,legacy,start_fen,moves_json FROM queue_attempt_origins ORDER BY card_id").fetchall() == origins
             assert database.execute("SELECT state,evidence_fingerprint FROM discovery_admission_intents WHERE id='legacy-admission'").fetchone() == ("queued", "A")
             database.execute("INSERT INTO discovery_admission_intents SELECT 'resurfaced-admission',opportunity_id,repertoire_id,'B',starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,last_error,created_at,updated_at FROM discovery_admission_intents WHERE id='legacy-admission' ON CONFLICT DO NOTHING")
             assert database.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE selected_move_uci='e1d2'").fetchone()[0] == 7
         test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(rehearsal_dsn)
         test_handled_discovery_postgres_upgrade_and_material_evidence_replay(rehearsal_dsn)
         test_postgres_stale_admission_and_revisioned_same_move_replay(rehearsal_dsn)
+        test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates(rehearsal_dsn)
     finally:
         with psycopg.connect(admin_dsn, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(

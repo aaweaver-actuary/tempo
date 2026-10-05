@@ -103,7 +103,8 @@ export async function executeLifecycle(plan, actions) {
 }
 
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
-  fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000 }) {
+  fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
+  redisReadinessOptions = {} }) {
   let composeFiles = fallback ? previous.composeFiles : target.composeFiles;
   let imageOverride = fallback ? previous.imageOverride : null;
   let configuration;
@@ -327,9 +328,47 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (Number(cluster.stdout.trim()) !== expectedMajor)
       throw new Error("Existing PostgreSQL cluster does not match the registered major version; a separate major-upgrade procedure is required.");
     await compose(["up", "-d", "--no-build", "--no-deps", ...(allowRecreation ? ["--force-recreate"] : ["--no-recreate"]),
-      "--wait", "--wait-timeout", "180", "postgres", "redis"], { echo: true });
-    const pong = (await compose(["exec", "-T", "redis", "redis-cli", "ping"])).stdout.trim();
-    if (pong !== "PONG") throw new Error("Redis is not ready: expected PONG.");
+      "postgres", "redis"], { echo: true });
+    // Probe immediately: Compose can exhaust its health retries before our
+    // deadline, or conceal an authentication error behind an unhealthy state.
+    await waitForRedisReady();
+    stage("checking_database");
+    await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", "--wait", "--wait-timeout", "180", "postgres"], { echo: true });
+  }
+
+  async function waitForRedisReady() {
+    stage("checking_redis");
+    const { timeoutMilliseconds = 180_000, now = () => performance.now(),
+      wait = milliseconds => new Promise(resolveWait => setTimeout(resolveWait, milliseconds)) } = redisReadinessOptions;
+    const started = now();
+    const deadline = started + timeoutMilliseconds;
+    let reason = "No Redis readiness reply was received";
+    let reportedWait = false;
+    const fail = () => {
+      throw new Error(`Redis is not ready after ${((now() - started) / 1000).toFixed(1)} seconds (checking_redis): ${reason}. Inspect tempo logs redis, then retry tempo start.`);
+    };
+    while (now() < deadline) {
+      let interrupted = false;
+      try {
+        const response = await compose(["exec", "-T", "redis", "redis-cli", "-e", "--raw", "ping"],
+          { allowFailure: true, timeout: Math.min(5000, Math.max(1, Math.ceil(deadline - now()))) });
+        if (response.code === 0 && response.stdout.trim() === "PONG" && now() <= deadline) return;
+        reason = redact(response.stdout.trim() || response.stderr.trim() || "Redis readiness probe was interrupted or timed out", secretValues).slice(-4000);
+        interrupted = response.code === null;
+      } catch (error) {
+        reason = redact(error.message, secretValues).slice(-4000);
+      }
+      // Saved deployments can contain the old healthcheck, which accepts
+      // LOADING with exit zero. Only a real PONG permits maintenance to advance.
+      const terminalReply = /^(?:\(error\)\s*)?(?:ERR|NOAUTH|WRONGPASS|NOPERM|MISCONF|WRONGTYPE|BUSY|READONLY)\b/i.test(reason);
+      const transient = !terminalReply && (interrupted || /^(?:\(error\)\s*)?LOADING\b/i.test(reason)
+        || /^Error: Server closed the connection$/i.test(reason)
+        || /(?:connection (?:refused|reset|closed)|could not connect to redis|timed? out|timeout|interrupted)/i.test(reason));
+      if (!transient || now() >= deadline) fail();
+      if (!reportedWait) { log(`Tempo: waiting for Redis: ${reason}`); reportedWait = true; }
+      await wait(Math.min(1000, deadline - now()));
+    }
+    fail();
   }
 
   async function maintenance(script, args = [], options = {}) {
@@ -503,6 +542,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
 
   async function recordFailure(error) {
     operation.failure = redact(error.message, secretValues); operation.failed_phase = operation.phase; operation.phase = "failed";
+    operation.failed_at = new Date().toISOString();
     atomicJson(journalPath, operation);
     try { const logs = await compose(["logs", "--no-color", "--tail", "60", "api", "foreground-worker", "background-worker"], { allowFailure: true });
       writeFileSync(join(stateDirectory, `failure-${operation.id}.log`), redact(logs.stdout + logs.stderr, secretValues), { mode: 0o600 }); }

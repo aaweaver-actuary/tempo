@@ -119,4 +119,4 @@ CREATE OR REPLACE VIEW repertoire_comparisons AS
       AND (staged.repertoire_id IS NULL OR EXISTS(SELECT 1 FROM repertoires scope WHERE scope.id=staged.repertoire_id AND scope.canonical_prefix_revision=0) OR EXISTS(SELECT 1 FROM game_repertoire_matches match
            WHERE match.game_id=staged.game_id AND match.repertoire_id=staged.repertoire_id));
 
-INSERT INTO tempo_schema_migrations(version) VALUES (32);
+INSERT INTO tempo_schema_migrations(version) VALUES (33);

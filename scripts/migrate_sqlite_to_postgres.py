@@ -140,6 +140,14 @@ def copy_table(
                 # transactional, so a failed copy also restores its protection.
                 cursor.execute(sql.SQL("ALTER TABLE {} DISABLE TRIGGER {}").format(
                     sql.Identifier(table_name), sql.Identifier(scope_trigger)))
+            importing_retained_origins = table_name == "daily_queue" and source.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='queue_attempt_origins'"
+            ).fetchone() is not None
+            if importing_retained_origins:
+                # The source ledger can contain older revisions/deleted entries.
+                # Do not manufacture current-card origins ahead of its exact copy.
+                # Transactional DDL restores the trigger on COPY failure as well.
+                cursor.execute("ALTER TABLE daily_queue DISABLE TRIGGER queue_attempt_origin_insert")
             with cursor.copy(statement) as copy:
                 for row in source_rows(source, table_name, primary_key_columns):
                     copy.write_row(row)
@@ -148,6 +156,10 @@ def copy_table(
             if scope_trigger:
                 cursor.execute(sql.SQL("ALTER TABLE {} ENABLE TRIGGER {}").format(
                     sql.Identifier(table_name), sql.Identifier(scope_trigger)))
+            if importing_retained_origins:
+                cursor.execute("ALTER TABLE daily_queue ENABLE TRIGGER queue_attempt_origin_insert")
+            elif table_name == "daily_queue":
+                cursor.execute("UPDATE queue_attempt_origins SET legacy=1")
             cursor.execute(
                 "INSERT INTO tempo_migration_progress(table_name,source_count,source_sha256) "
                 "VALUES (%s,%s,%s)",

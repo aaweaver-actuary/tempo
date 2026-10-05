@@ -208,6 +208,35 @@ test("contextual board keys and nested popup Escape work across browser engines"
   await page.keyboard.press("Escape"); await expect(capture).toHaveCount(0); await expect(launch).toBeFocused();
 });
 
+test("queue retirement during a held opening drag preserves active board and accepts one drop", async ({ page }) => {
+  await prepareVisualUI(page, false);
+  const board = page.locator(".board-frame");
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  const originalFen = await board.getAttribute("data-fen");
+  const surface = (await page.locator(".cg-wrap").boundingBox())!;
+  const origin = { x: surface.x + 4.5 * surface.width / 8, y: surface.y + 6.5 * surface.height / 8 };
+  const destination = { x: origin.x, y: surface.y + 4.5 * surface.height / 8 };
+  await page.mouse.move(origin.x, origin.y); await page.mouse.down();
+  await page.mouse.move(origin.x + 20, origin.y - 25, { steps: 4 });
+  await expect(page.locator("piece.dragging")).toHaveCount(1);
+  await page.locator("piece.dragging").evaluate(element => element.setAttribute("data-original-drag", "true"));
+  let refreshed = false;
+  await page.route("**/api/queue/window?**", route => {
+    refreshed = true;
+    return route.fulfill({ json: { count: 1, cards: [{ id: "future-after-limit", queue_entry_id: 901,
+      start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      moves: ["d2d4"], content_type: "opening", repertoire_name: "Future card", repertoire_source: "PGN" }] } });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(() => refreshed).toBe(true);
+  await expect(page.locator(".session-count strong")).toHaveText("2");
+  await expect(page.locator('piece.dragging[data-original-drag="true"]')).toHaveCount(1);
+  await expect(board).toHaveAttribute("data-fen", originalFen!);
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  await page.mouse.move(destination.x, destination.y, { steps: 4 }); await page.mouse.up();
+  await expect(board).toHaveAttribute("data-fen", /4p3\/4P3/);
+  await expect(page.getByText("Spanish opening", { exact: true }).first()).toBeVisible();
+});
 
 test("phone opening identity and move input work across browser engines", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

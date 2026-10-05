@@ -110,7 +110,7 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   expect(replayedEntries).toEqual([501, 502, 602]);
 });
 
-test("phone 225-card offline queue reconciles to the desktop 241-card count and next card after reconnect", async ({ page, browser }) => {
+test("phone reconnect retains its active card before advancing into the refreshed 241-card queue", async ({ page, browser }) => {
   const queueCards = (count: number, prefix: string) => Array.from({ length: count }, (_, index) => ({
     ...preparedCards[0], id: `${prefix}-${index}`, queue_entry_id: 10_000 + index,
     repertoire_name: index === 0 ? `${prefix} first card` : `${prefix} card ${index}`,
@@ -156,9 +156,18 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
 
     phoneConnected = true;
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
-    await expect(page.locator(".phone-session-count")).toHaveText("241 cards left");
-    await expect(page.getByText("new first card")).toBeVisible();
+    await expect(page.locator(".phone-session-count")).toHaveText("242 cards left");
+    await expect(page.getByText("old first card")).toBeVisible();
     await expect(page.getByText("Offline queue", { exact: true })).toHaveCount(0);
+    const submittedCards: string[] = [];
+    await page.route("**/api/cards/*/review", route => {
+      submittedCards.push(new URL(route.request().url()).pathname.split("/")[3]);
+      return route.fulfill({ json: { persisted: true } });
+    });
+    await page.getByRole("button", { name: "Correct", exact: true }).click();
+    await expect(page.getByText("new first card")).toBeVisible();
+    await expect(page.locator(".phone-session-count")).toHaveText("241 cards left");
+    await expect.poll(() => submittedCards).toEqual(["old-0"]);
   } finally {
     await desktopContext.close();
   }
@@ -390,7 +399,7 @@ test("an older prepared response cannot replace a newer saved phone queue", asyn
   expect(savedCardIds).toContain("newer-third");
 });
 
-test("complete queue reconciliation keeps a removed in-progress board paused until Retry", async ({ page }) => {
+test("complete queue reconciliation keeps a removed phone attempt playable and retains its completed conflict", async ({ page }) => {
   const activeCard = { ...preparedCards[0], moves: ["e2e4", "e7e5", "g1f3"],
     repertoire_name: "In-progress card" };
   const nextCard = { ...preparedCards[1], repertoire_name: "Next live card" };
@@ -408,12 +417,26 @@ test("complete queue reconciliation keeps a removed in-progress board paused unt
   await expect(page.getByText("In-progress card")).toBeVisible();
   await playBoardSquare(page, "e2");
   await playBoardSquare(page, "e4");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4p3\/4P3/);
+  const activeFen = await page.locator(".board-frame").getAttribute("data-fen");
+  await page.route("**/api/cards/phone-first/review", route => route.fulfill({
+    status: 409, json: { detail: "Original queue context unavailable" },
+  }));
+  await page.route("**/api/cards/phone-first/review/reconcile", route => route.fulfill({ json: {
+    persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original queue context unavailable", retryable: false },
+  } }));
   canonicalCards = [nextCard];
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.getByRole("main").getByText(/active card is no longer in today's queue/)).toBeVisible();
+  await expect(page.locator(".session-count strong")).toHaveText("2");
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.cards.map(card => card.id)).toEqual([nextCard.id]);
   await expect(page.getByText("In-progress card")).toBeVisible();
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", activeFen!);
+  await expect(page.getByRole("main").getByText(/active card is no longer in today's queue/)).toHaveCount(0);
+  await playBoardSquare(page, "g1");
+  await playBoardSquare(page, "f3");
   await expect(page.getByText("Next live card")).toBeVisible();
+  await page.getByRole("button", { name: "Review conflicts (1)" }).click();
+  await expect(page.getByRole("dialog", { name: "Review conflicts" })).toContainText("Original queue context unavailable");
 });
 
 test("prepared phone queue validates study metadata beyond the live window and keeps offline exercises", async ({ page }) => {
@@ -517,4 +540,39 @@ test("service worker update during an active phone attempt waits for a safe reop
   await page.evaluate(() => window.dispatchEvent(new Event("tempo:update-ready")));
   await expect(page.getByText(/Tempo update ready. Finish this attempt/)).toBeVisible();
   await expect(page.getByText("First phone card")).toBeVisible();
+});
+
+
+test("iphone offline fallback excludes a conflicted card across revision and queue changes", async ({ page }) => {
+  const cards = [{ ...preparedCards[0], revision: 2, queue_entry_id: 601 },
+    { ...preparedCards[1], revision: 1, first_correct_at: new Date().toISOString() }];
+  const payload = { local_date: localDate, count: cards.length, cards };
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload }));
+  await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
+    ...payload, prepared_at: new Date().toISOString(),
+    projection: { state: "ready", generation: 1, updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 },
+  } }));
+  await page.goto("/");
+  await expectPhoneQueuePrepared(page);
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.cards.map(card => card.id)).toEqual(cards.map(card => card.id));
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
+  const retainedConflict = { backendId: "phone-first", queueEntryId: 501, expectedRevision: 1,
+    attemptId: "original-conflicted-A", completedAt: "2026-10-03T12:00:00Z", outcome: "correct",
+    guided: false, state: "conflicted", reconciliationSequence: 1,
+    conflict: { code: "card_revision_changed", message: "Card changed after this result", retryable: false } };
+  await page.evaluate((conflict) => localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict])), retainedConflict);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await expect(page.getByText("Second phone card")).toBeVisible();
+  await expect(page.getByText("First phone card")).toHaveCount(0);
+  await expect(page.getByRole("main").getByText(/Offline queue prepared/)).toBeVisible();
+  expect((await readSavedPhoneQueue(page))?.attempts).toEqual([]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!))).toEqual([retainedConflict]);
+  await page.getByRole("button", { name: "Correct" }).click();
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.attempts.map((attempt) => attempt.cardId)).toEqual(["phone-second"]);
+  await expect(page.getByText("First phone card")).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!))).toEqual([retainedConflict]);
+  await page.reload();
+  await expect(page.getByText("First phone card")).toHaveCount(0);
+  expect((await readSavedPhoneQueue(page))?.attempts.map((attempt) => attempt.cardId)).toEqual(["phone-second"]);
 });
