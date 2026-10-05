@@ -162,6 +162,8 @@ test("poisoned online A becomes inspectable while B and C save and conflict retr
   retrySucceeds = true;
   await dialog.getByRole("button", { name: "Retry saved result" }).click();
   await expect(page.getByRole("button", { name: /Review conflicts/ })).toHaveCount(0);
-  expect(reconciliations.map(item => item.key)).toEqual(["review-reconcile:original-a:1", "review-reconcile:original-a:2"]);
-  expect(reconciliations[0].body).toEqual(reconciliations[1].body);
+  // Reload may resend an unacknowledged transport; it must retain its identity and result.
+  expect([...new Set(reconciliations.map(item => item.key))]).toEqual(["review-reconcile:original-a:1", "review-reconcile:original-a:2"]);
+  expect(reconciliations.filter(item => item.key === "review-reconcile:original-a:2")).toHaveLength(1);
+  for (const reconciliation of reconciliations) expect(reconciliation.body).toEqual(reconciliations[0].body);
 });
