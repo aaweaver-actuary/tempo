@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
-import { executePostgresTestPlan, postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
+import { backgroundWorkloadConsumers, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
@@ -371,6 +371,31 @@ test("timing write failure preserves the original scenario error and still permi
     return true;
   });
   assert.equal(cleaned, true);
+});
+
+test("background workload prevents scheduler claims and restores dispatch after failure", async () => {
+  const runningConsumers = new Set(["defense-engine", "background-worker", "background-scheduler"]);
+  const queuedFixture = { state: "queued" };
+  const dispatchQueuedFixture = () => {
+    if (runningConsumers.has("background-scheduler")) queuedFixture.state = "leased";
+  };
+  const measurementFailure = new Error("workload interrupted after measurement");
+  await assert.rejects(executeIsolatedBackgroundWorkload({
+    stopConsumers: () => {
+      for (const consumer of backgroundWorkloadConsumers) runningConsumers.delete(consumer);
+    },
+    measureWorkload: () => {
+      dispatchQueuedFixture();
+      assert.equal(queuedFixture.state, "queued", "scheduler must not claim measurement-owned rows");
+      throw measurementFailure;
+    },
+    restoreConsumers: () => {
+      for (const consumer of backgroundWorkloadConsumers) runningConsumers.add(consumer);
+    },
+  }), error => error === measurementFailure);
+  dispatchQueuedFixture();
+  assert.equal(queuedFixture.state, "leased", "normal dispatch resumes after fixture cleanup");
+  assert.equal(runningConsumers.size, 3);
 });
 
 for (const failWorkload of [false, true]) {
