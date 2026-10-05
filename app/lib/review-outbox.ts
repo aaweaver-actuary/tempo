@@ -3,6 +3,11 @@ import { confirmOperationResponse, FailedOperationError, PendingOperationError }
 import { publishNotification, notifications, resolveNotification } from "./notifications";
 import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 
+import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
+import { openingEvidenceCheckpointSchema } from "../domain/opening-evidence";
+import { saveEvidenceAwareReview } from "./opening-evidence-review";
+import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+
 export type ReviewConflictInformation = { code: string; message: string; retryable: boolean };
 export type PendingReview = {
   backendId: string;
@@ -11,6 +16,9 @@ export type PendingReview = {
   guided: boolean;
   attemptId?: string;
   completedAt?: string;
+  openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
+  evidenceRejected?: string;
+  evidenceFallbackReason?: "local_storage_quota";
   expectedRevision?: number;
   state?: "pending" | "reconciling" | "conflicted";
   reconciliationSequence?: number;
@@ -18,8 +26,10 @@ export type PendingReview = {
 };
 export type ReviewFlushResult = { persistedAttemptIds: string[]; conflictedAttemptIds: string[] };
 
+const rejectedOpeningReviewStorageKey = "tempo-rejected-opening-reviews-v1";
 const storageKey = "tempo-pending-training-reviews-v1";
 const reviewRequestTimeoutMs = 15_000;
+const evidenceStorageErrors = new WeakSet<object>();
 let activeFlush: Promise<ReviewFlushResult> | undefined;
 
 export class ReviewReplayError extends Error {
@@ -44,7 +54,11 @@ function logicalAttemptId(review: PendingReview): string {
 }
 
 function savedReviews(): PendingReview[] {
-  const stored = localStorage.getItem(storageKey);
+  return readStoredReviews(storageKey);
+}
+
+function readStoredReviews(key: string): PendingReview[] {
+  const stored = localStorage.getItem(key);
   if (!stored) return [];
   const parsed: unknown = JSON.parse(stored);
   if (!Array.isArray(parsed) || parsed.some((item) =>
@@ -55,6 +69,9 @@ function savedReviews(): PendingReview[] {
     typeof item.guided !== "boolean" ||
     (item.attemptId !== undefined && (typeof item.attemptId !== "string" || !item.attemptId)) ||
     (item.completedAt !== undefined && typeof item.completedAt !== "string") ||
+    (item.openingEvidenceCompletion !== undefined && !openingEvidenceCheckpointSchema.safeParse(item.openingEvidenceCompletion).success) ||
+    (item.evidenceRejected !== undefined && typeof item.evidenceRejected !== "string") ||
+    (item.evidenceFallbackReason !== undefined && item.evidenceFallbackReason !== "local_storage_quota") ||
     (item.expectedRevision !== undefined && (!Number.isSafeInteger(item.expectedRevision) || item.expectedRevision < 1)) ||
     (item.reconciliationSequence !== undefined && (!Number.isSafeInteger(item.reconciliationSequence) || item.reconciliationSequence < 1)) ||
     (item.state !== undefined && !["pending", "reconciling", "conflicted"].includes(item.state)) ||
@@ -98,8 +115,27 @@ export function enqueuePendingReview(review: PendingReview): void {
       throw new Error("This logical training attempt already has a different completed result.");
     return;
   }
-  writeReviews([...saved, { ...review, attemptId: review.attemptId ?? crypto.randomUUID(),
-    completedAt: review.completedAt ?? new Date().toISOString() }]);
+  const normalizedReview = {
+    ...review, attemptId: review.attemptId ?? crypto.randomUUID(),
+    completedAt: review.completedAt ?? new Date().toISOString(),
+  };
+  try {
+    localStorage.setItem(storageKey, JSON.stringify([...saved, normalizedReview]));
+  } catch (error) {
+    if (!(error instanceof DOMException) || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(error.name) || !normalizedReview.openingEvidenceCompletion) throw error;
+    const { openingEvidenceCompletion, ...aggregateReview } = normalizedReview;
+    // Required: commit the compact envelope and its delivery identity before advancing.
+    localStorage.setItem(storageKey, JSON.stringify([...saved, {
+      ...aggregateReview, evidenceFallbackReason: "local_storage_quota",
+    }]));
+    void retainOpeningEvidenceForStorageFallback(openingEvidenceCompletion).catch(error => {
+      try {
+        publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence-retention:${normalizedReview.attemptId}`,
+          message: `The aggregate review is saved locally. Opening evidence could not be retained for diagnosis. Existing journal data remains where browser storage succeeded; restore storage before further capture. ${String(error)}` });
+      } catch { /* Optional diagnostics cannot undo a durable aggregate review. */ }
+    });
+  }
+  window.dispatchEvent(new Event("tempo:review-outbox"));
 }
 
 export function discardReviewConflict(attemptId: string): void {
@@ -128,13 +164,20 @@ export function updateReviewConflictNotice(): void {
   }
 }
 
-async function requestReviewSave(url: string, options: RequestInit, review: PendingReview): Promise<Response> {
+async function requestReviewSave(url: string, options: RequestInit): Promise<Response> {
+  return fetch(url, options);
+}
+
+async function withReviewSaveDeadline(url: string, review: PendingReview,
+  send: (signal: AbortSignal) => Promise<Response>): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), reviewRequestTimeoutMs);
   try {
-    return await confirmOperationResponse(await fetch(url, { ...options, signal: controller.signal }), controller.signal);
+    return await send(controller.signal);
   } catch (error) {
     const receiptError = error instanceof FailedOperationError ? error : undefined;
+    // Required evidence-storage failures must propagate without initiating fallback.
+    if (error !== null && typeof error === "object" && evidenceStorageErrors.has(error)) throw error;
     throw new ReviewReplayError(controller.signal.aborted
       ? "Review save timed out after 15 seconds. Retry save."
       : error instanceof Error ? error.message : String(error), url, review,
@@ -152,15 +195,44 @@ async function sendReview(review: PendingReview): Promise<Response> {
   const attemptId = logicalAttemptId(review);
   const reconciling = review.state === "reconciling";
   const endpoint = `${API_URL}/api/cards/${encodeURIComponent(review.backendId)}/review${reconciling ? "/reconcile" : ""}`;
-  const response = await requestReviewSave(endpoint, {
-    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": reconciling
-      ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}` },
-    body: JSON.stringify({ outcome: review.outcome, guided: review.guided,
+  const response = await withReviewSaveDeadline(endpoint, review, signal => saveEvidenceAwareReview({
+    endpoint, signal, request: requestReviewSave,
+    operationKey: reconciling ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`,
+    completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
+    aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
+    onEvidenceRejected: (message) => {
+      const updated = savedReviews().map((item) =>
+        item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item);
+      // Required: a reload must retain the aggregate-only delivery identity.
+      try { localStorage.setItem(storageKey, JSON.stringify(updated)); }
+      catch (error) {
+        if (error !== null && typeof error === "object") evidenceStorageErrors.add(error);
+        throw error;
+      }
+      try {
+        const rejected = updated.find((item) => item.attemptId === attemptId);
+        const archived = readStoredReviews(rejectedOpeningReviewStorageKey);
+        // Best effort: keep the full rejected envelope after the outbox drains,
+        // even when the separate IndexedDB journal is unavailable.
+        if (rejected && !archived.some((item) => item.attemptId === attemptId))
+          localStorage.setItem(rejectedOpeningReviewStorageKey, JSON.stringify([...archived, rejected]));
+      } catch {
+        try {
+          publishNotification({ severity: "warning", source: "opening evidence",
+            key: `opening-evidence-archive:${attemptId}`,
+            message: "The normal review can still save. An extra diagnostic copy of the rejected opening evidence could not be retained.",
+            details: { cardId: review.backendId, queueEntryId: review.queueEntryId } });
+        } catch {
+          // Diagnostic warnings must not block the required review delivery.
+        }
+      }
+    },
+    body: { outcome: review.outcome, guided: review.guided,
       queue_entry_id: review.queueEntryId, attempt_id: attemptId,
       ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
       ...(review.expectedRevision ? { expected_revision: review.expectedRevision } : {}),
-    }),
-  }, review);
+    },
+  }));
   if (!response.ok) throw await responseError(response, endpoint, review);
   return response;
 }
@@ -168,7 +240,8 @@ async function sendReview(review: PendingReview): Promise<Response> {
 function retainConflict(review: PendingReview, conflict: ReviewConflictInformation, result: ReviewFlushResult): void {
   // One write changes replay state without any delete/add gap. A storage failure
   // leaves the completed result in the FIFO, so it cannot be silently discarded.
-  replaceReview(review, { ...review, state: "conflicted", conflict });
+  const saved = savedReviews().find(item => logicalAttemptId(item) === logicalAttemptId(review)) ?? review;
+  replaceReview(review, { ...saved, state: "conflicted", conflict });
   clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
   result.conflictedAttemptIds.push(logicalAttemptId(review));
   updateReviewConflictNotice();
@@ -195,10 +268,10 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
       if (review.guided && review.state !== "reconciling") {
         const failureEndpoint = `${API_URL}/api/queue/entries/${review.queueEntryId}/fail`;
         try {
-          const response = await requestReviewSave(failureEndpoint, {
+          const response = await withReviewSaveDeadline(failureEndpoint, review, async signal => confirmOperationResponse(await requestReviewSave(failureEndpoint, {
             method: "POST", headers: { "Idempotency-Key": `queue-fail:${attemptId}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }),
-          }, review);
+            body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }), signal,
+          }), { signal }));
           if (!response.ok) throw await responseError(response, failureEndpoint, review);
         } catch (error) {
           // The marker is advisory once a guided result is completed. A stale
@@ -211,7 +284,7 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
       try { response = await sendReview(review); }
       catch (error) {
         if (!(error instanceof ReviewReplayError) || error.status !== 409 || error.retryable || review.state === "reconciling") throw error;
-        review = { ...review, state: "reconciling", reconciliationSequence: 1 };
+        review = { ...savedReviews().find(item => logicalAttemptId(item) === attemptId)!, state: "reconciling", reconciliationSequence: 1 };
         replaceReview(review, review);
         response = await sendReview(review);
       }
@@ -227,6 +300,8 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
         throw new ReviewReplayError("The computer did not confirm this review. Retry saving it.",
           `${API_URL}/api/cards/${review.backendId}/review`, review);
       replaceReview(review);
+      if (review.openingEvidenceCompletion)
+        void acknowledgeOpeningReview(attemptId).catch(() => undefined);
       clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
       result.persistedAttemptIds.push(attemptId);
       if (persisted.warning) publishNotification({ severity: "warning", source: "training review", key: `review-reconciliation:${attemptId}`,
@@ -235,7 +310,7 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
         details: { cardId: review.backendId, queueEntryId: review.queueEntryId, attemptId,
           outcome: review.outcome, completedAt: review.completedAt ?? "unknown" } });
     } catch (error) {
-      if (error instanceof ReviewReplayError) throw error;
+      if (error instanceof ReviewReplayError || (error !== null && typeof error === "object" && evidenceStorageErrors.has(error))) throw error;
       throw new ReviewReplayError(error instanceof Error ? error.message : String(error),
         `${API_URL}/api/cards/${review.backendId}/review`, review, undefined, undefined, true, { cause: error });
     }

@@ -19,5 +19,5 @@ else
     echo "Schema update aborted by user."
 fi
 
-
+docker compose down
 

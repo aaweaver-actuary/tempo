@@ -55,6 +55,11 @@ export type PracticeCard = {
   orientation?: PieceColor;
   revision?: number;
   repertoireId?: RepertoireId;
+  openingDecisionManifest?: import("./opening-evidence").OpeningDecisionManifest;
+  openingEvidenceDiagnostic?: string;
+  openingEvidenceStudyTimezone?: string;
+  openingEvidenceOriginEntryId?: number;
+  openingEvidenceParentAttemptId?: string;
   editingIntent?: "standard" | "shorten-prefix";
   defenseCandidateId?: string;
   studyId?: string;

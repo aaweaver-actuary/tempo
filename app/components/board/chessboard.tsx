@@ -29,6 +29,7 @@ const DRAW_BRUSHES = {
 
 type ChessboardProps = {
   showShortcutButton?: boolean;
+  layoutAnchor?: HTMLElement | null;
   keyboard?: BoardKeyboardActions;
   owner?: string;
   fen: string;
@@ -36,6 +37,7 @@ type ChessboardProps = {
   lastMove?: readonly [string, string];
   locked: boolean;
   showHint: boolean;
+  onHintExposure?: (fen: string) => void;
   theme: BoardTheme;
   pieceSet: PieceSet;
   shapes?: DrawShape[];
@@ -54,6 +56,7 @@ type ChessboardProps = {
 
 export function Chessboard({
   showShortcutButton = true,
+  layoutAnchor,
   fen,
   keyboard,
   owner,
@@ -61,6 +64,7 @@ export function Chessboard({
   lastMove,
   locked,
   showHint,
+  onHintExposure,
   theme,
   pieceSet,
   shapes = EMPTY_SHAPES,
@@ -342,12 +346,14 @@ export function Chessboard({
 
   useLayoutEffect(() => {
     const autoShapes = hint ? [...shapes, hint] : shapes;
-    if (appliedAutoShapes.current?.version === resetVersion.current &&
-      sameBoardShapes(appliedAutoShapes.current.shapes, autoShapes)) return;
-    // Chessground may mutate drawing arrays; keep published snapshots immutable.
-    captureRef.current?.boardEvent("annotations");
-    apiRef.current?.setAutoShapes([...autoShapes]);
-    appliedAutoShapes.current = { shapes: autoShapes, version: resetVersion.current };
+    if (appliedAutoShapes.current?.version !== resetVersion.current ||
+      !sameBoardShapes(appliedAutoShapes.current.shapes, autoShapes)) {
+      // Chessground may mutate drawing arrays; keep published snapshots immutable.
+      captureRef.current?.boardEvent("annotations");
+      apiRef.current?.setAutoShapes([...autoShapes]);
+      appliedAutoShapes.current = { shapes: autoShapes, version: resetVersion.current };
+    }
+    if (hint && apiRef.current) onHintExposure?.(fen);
   });
   useLayoutEffect(() => {
     if (appliedDrawnShapes.current?.version === resetVersion.current &&
@@ -356,6 +362,17 @@ export function Chessboard({
     apiRef.current?.setShapes([...drawnShapes]);
     appliedDrawnShapes.current = { shapes: drawnShapes, version: resetVersion.current };
   });
+  useLayoutEffect(() => {
+    if (!layoutAnchor) return;
+    // A heading can move the board without resizing its surface. Invalidate only
+    // cached hit-test bounds; redrawAll would interrupt a held drag.
+    const clearInputBounds = () => apiRef.current?.state.dom.bounds.clear();
+    const observer = new ResizeObserver(clearInputBounds);
+    observer.observe(layoutAnchor);
+    clearInputBounds();
+    return () => observer.disconnect();
+  }, [layoutAnchor]);
+
   useLayoutEffect(() => {
     if (!surfaceSize) return;
     captureRef.current?.boardEvent("redraw");

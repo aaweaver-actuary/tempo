@@ -345,3 +345,29 @@ def test_sqlite_revision_trigger_replacement_rolls_back_on_install_failure(admit
         with pytest.raises(RuntimeError, match="trigger install failure"):
             initialize_sqlite_origins(FailedTriggerInstall(connection))
         assert connection.execute("SELECT sql FROM sqlite_master WHERE name='queue_attempt_origin_revision'").fetchone()[0] == original
+
+
+def test_pre_evidence_aggregate_receipt_replays_without_inventing_a_new_result(admitted_attempt):
+    queue_entry_id, request = admitted_attempt
+    result = main._apply_review('recovery-card', request)
+    with database.connection() as connection:
+        row = connection.execute('SELECT request_json FROM review_attempt_receipts WHERE attempt_id=?', (request.attempt_id,)).fetchone()
+        historical_request = json.loads(row[0])
+        historical_request.pop('opening_evidence_completion', None)
+        connection.execute('UPDATE review_attempt_receipts SET request_json=? WHERE attempt_id=?', (json.dumps(historical_request), request.attempt_id))
+    assert main._apply_review('recovery-card', request) == result
+    with database.connection() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', ('recovery-card',)).fetchone()[0] == 1
+
+
+def test_queue_origin_migration_follows_current_main_without_renumbering_published_versions():
+    from pathlib import Path
+    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    root = Path(__file__).resolve().parents[1]
+    migrations = sorted((root/'migrations').glob('[0-9][0-9][0-9]_*.sql'))
+    assert [int(path.name[:3]) for path in migrations] == list(range(1, POSTGRES_SCHEMA_VERSION+1))
+    assert (root/'migrations/030_opening_decision_evidence.sql').is_file()
+    assert (root/'migrations/031_defensive_analysis_pause.sql').is_file()
+    queue_migration = root/'migrations/032_queue_attempt_origins.sql'
+    assert 'INSERT INTO tempo_schema_migrations(version) VALUES (32);' in queue_migration.read_text()
+    assert POSTGRES_SCHEMA_VERSION == 32

@@ -64,7 +64,11 @@ def dispatch_command(
             from .review_conflicts import ReviewConflict
             raise ReviewConflict(error["code"], error.get("detail", error["message"]),
                                  retryable=error.get("retryable", False))
-        raise HTTPException(error.get("status_code", 500), error.get("detail", error.get("message", "Save failed")))
+        failure = HTTPException(error.get("status_code", 500))
+        # The constructor replaces None with a status phrase. Restore explicit
+        # JSON null as well as other empty values from the durable receipt.
+        failure.detail = error.get("detail", error.get("message", "Save failed"))
+        raise failure
     return JSONResponse(
         status_code=202,
         content={"operation_id": operation_id, "state": receipt["state"],

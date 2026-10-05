@@ -526,8 +526,8 @@ test("unknown PGN receipt recovers the same operation after reload and matching 
   await navigate(page, "Repertoire");
   await page.getByRole("button", { name: /Import PGN/ }).click();
   await page.locator('input[type="file"]').setInputFiles({ name: "recovery.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
-  await expect(page.getByRole("button", { name: "Import repertoire", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Imported", exact: true })).toBeVisible();
   expect(postedKeys).toHaveLength(2);
   expect(postedKeys[1]).toBe(postedKeys[0]);
@@ -566,8 +566,8 @@ test("legacy pending PGN import promptly shows its diagnostic and Check again on
   await navigate(page, "Repertoire");
   await page.getByRole("button", { name: /Import PGN/ }).click();
   await page.locator('input[type="file"]').setInputFiles({ name: "legacy.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
-  await expect(page.getByRole("button", { name: "Import repertoire", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
   const dialog = page.getByRole("dialog");
   // No deadline advancement: the backend diagnostic must finish checking promptly.
   await expect(dialog.getByRole("status")).toHaveText(`Import confirmation is unavailable. ${diagnostic}`);
@@ -628,3 +628,40 @@ for (const state of ["executing", "retrying"]) {
     expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
   });
 }
+
+test("discarding an unknown PGN import permits a different file after reload", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await prepareVisualUI(page);
+  await preparePgnReceiptCompletion(page);
+  const oldOperationId = "discard-original-import";
+  await page.evaluate(identity => localStorage.setItem("tempo-pending-pgn-import-v1", JSON.stringify({ operationId: identity, fingerprint: "lost.pgn:white:6:digest" })), oldOperationId);
+  let discarded = false;
+  const submittedKeys: string[] = [];
+  await page.route("**/api/imports/pgn/*/discard", async route => {
+    expect(route.request().method()).toBe("POST");
+    expect(new URL(route.request().url()).pathname).toBe(`/api/imports/pgn/${oldOperationId}/discard`);
+    discarded = true;
+    await route.fulfill({ json: { operation_id: oldOperationId, outcome: "discarded" } });
+  });
+  await page.route("**/api/operations/*", route => route.fulfill({ json: {
+    operation_id: oldOperationId, state: discarded ? "failed" : "unknown",
+    ...(discarded ? { error: { code: "import_discarded" } } : {}),
+  } }));
+  await page.route("**/api/imports/pgn", route => {
+    submittedKeys.push(route.request().headers()["idempotency-key"]);
+    return route.fulfill({ json: { repertoire_id: "visual-repertoire", source_name: "different.pgn", games_found: 1, unique_lines: 1, cards_created: 1, duplicates_merged: 0, cards_admitted_today: 0 } });
+  });
+  await page.reload();
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  await expect(page.locator('input[type="file"]')).toHaveValue("");
+  await page.getByRole("button", { name: "Discard pending import", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("status")).toContainText("Pending import discarded");
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
+  expect(submittedKeys).toEqual([]);
+  await page.locator('input[type="file"]').setInputFiles({ name: "different.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. d4 d5 2. Bf4 *") });
+  await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Imported", exact: true })).toBeVisible();
+  expect(submittedKeys).toHaveLength(1);
+  expect(submittedKeys[0]).not.toBe(oldOperationId);
+});

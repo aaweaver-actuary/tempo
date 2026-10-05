@@ -71,7 +71,7 @@ test("WebKit desktop prepared queue outage preserves the position and blocks gra
     repertoire_source: "PGN", trained_color: "black" };
   let liveRequestFails = false;
   let preparedRequests = 0;
-  await page.route("**/api/queue/prepared", (route) => {
+  await page.route("**/api/queue/prepared?**", (route) => {
     preparedRequests += 1;
     return route.fulfill({ status: 500, body: "Desktop must not prepare a phone queue" });
   });
@@ -86,7 +86,7 @@ test("WebKit desktop prepared queue outage preserves the position and blocks gra
   await expect(page.getByRole("heading", { name: "WebKit live card" })).toBeVisible();
   await page.evaluate(async (savedCard) => {
     await new Promise<void>((resolve, reject) => {
-      const opened = indexedDB.open("tempo-offline-training", 1);
+      const opened = indexedDB.open("tempo-offline-training", 2);
       opened.onupgradeneeded = () => opened.result.createObjectStore("training");
       opened.onerror = () => reject(opened.error);
       opened.onsuccess = () => {
@@ -236,4 +236,21 @@ test("queue retirement during a held opening drag preserves active board and acc
   await page.mouse.move(destination.x, destination.y, { steps: 4 }); await page.mouse.up();
   await expect(board).toHaveAttribute("data-fen", /4p3\/4P3/);
   await expect(page.getByText("Spanish opening", { exact: true }).first()).toBeVisible();
+});
+
+test("phone opening identity and move input work across browser engines", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page);
+  await expect(page.locator(".phone-study-heading h2")).toHaveText("Spanish opening");
+  const board = page.locator(".persistent-board-shell .board-frame");
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  await playMove(page, board, "e2", "e4");
+  await expect(board).toHaveAttribute("data-fen", / b KQkq /);
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(await board.getAttribute("data-fen") ?? ""));
+  const menu = page.locator(".phone-study-actions");
+  await menu.locator("summary").click();
+  await menu.getByRole("button", { name: /Restart/ }).click();
+  await expect(menu).not.toHaveAttribute("open", "");
+  await expect(menu.locator("summary")).toBeFocused();
+  await noPageOverflow(page);
 });

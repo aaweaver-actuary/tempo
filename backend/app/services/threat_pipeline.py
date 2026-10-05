@@ -13,6 +13,7 @@ from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from .activity_gate import activity_gate
 from .background_activity import claimable, control_order
+from .defensive_analysis import search_admission_sql, analysis_enabled, recommendation_request_ids_sql
 from .durable_tasks import (
     advance_task_slice_in_transaction,
     complete_task_slice_in_transaction,
@@ -567,6 +568,8 @@ def enqueue_candidate_validation(candidate_id: str, *, background: bool) -> None
 def claim_analysis_request() -> dict | None:
     now = _now()
     with connection(background=activity_gate.in_background) as database:
+        recommendation_filter = ("" if analysis_enabled(database) else
+            "AND request.id IN (" + recommendation_request_ids_sql() + ")")
         database.execute(
             """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
                   lease_expires_at=NULL,updated_at=?
@@ -575,6 +578,7 @@ def claim_analysis_request() -> dict | None:
         row = database.execute(
             f"""SELECT request.id,request.request_json FROM threat_analysis_requests request
                WHERE request.state='queued' AND {claimable('threat_analysis', 'request.id')}
+                 AND {search_admission_sql('request.id')} {recommendation_filter}
                  AND (EXISTS(
                    SELECT 1 FROM threat_candidate_requests relation
                    JOIN threat_training_candidates candidate ON candidate.id=relation.candidate_id

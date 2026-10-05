@@ -66,7 +66,7 @@ describe("review attempt reliability", () => {
     store.hydrateLocalQueue([], false, 0);
     const after = useTrainingStore.getState();
     expect(after.attempt).toEqual(before.attempt);
-    expect(after.attempt.reviewAttemptId).toBeTruthy();
+    expect(after.attempt.attemptId).toBeTruthy();
     expect(after.currentFenString).toBe(before.currentFenString);
     expect(after.getCard()).toEqual(card);
     expect(after.cardsLeft).toBe(1);

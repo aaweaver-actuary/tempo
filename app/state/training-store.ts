@@ -22,8 +22,10 @@ import {
 } from "../domain/attempt";
 import { asFenString } from "../domain/shared";
 import { STANDARD_FEN } from "../const";
+import { partialOpeningAttempt } from "../lib/opening-evidence-journal";
 
 export type TrainingStoreState = {
+  queueReadiness: "uninitialized" | "loading" | "ready" | "unavailable";
   practiceCards: PracticeCard[];
   importedRepertoires: LocalRepertoire[];
   activeCardIndex: number;
@@ -201,6 +203,7 @@ const defaultState = {
   isDatabaseQueueActive: false,
   isOfflineQueueActive: false,
   serviceError: "",
+  queueReadiness: "uninitialized" as const,
 };
 
 export const selectTrainingViewState = (state: TrainingStoreState) => ({
@@ -464,6 +467,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   resetTrainingLine: (
     nextCard = get().practiceCards[get().activeCardIndex] ?? demoCards[0],
   ) => {
+    partialOpeningAttempt(get().attempt.attemptId);
     const start = initialTrainingState(nextCard);
     set({
       currentFenString: start.fen,
@@ -474,7 +478,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(nextCard),
         generation: get().attempt.generation + 1,
-        reviewAttemptId: crypto.randomUUID(),
+        attemptId: crypto.randomUUID(),
         phase: "playerTurn",
       },
       reviewSaveError: "",
@@ -506,6 +510,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
     });
   },
   initializeCardState: (card, overrides = {}) => {
+    partialOpeningAttempt(get().attempt.attemptId);
     const start = initialTrainingState(card);
     const nextFeedback = overrides.feedback ?? "ready";
     const nextAttemptFailed =
@@ -520,7 +525,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(card),
         generation: get().attempt.generation + 1,
-        reviewAttemptId: crypto.randomUUID(),
+        attemptId: crypto.randomUUID(),
         phase: nextAttemptFailed ? "guided" : "playerTurn",
       },
       reviewSaveError: "",
@@ -576,6 +581,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
     };
     if (retainedIndex >= 0) {
       if (["feedbackPause", "complete"].includes(current.attempt.phase)) {
+        partialOpeningAttempt(current.attempt.attemptId);
         const start = card
           ? initialTrainingState(card)
           : { fen: asFenString(STANDARD_FEN), step: 0, lastMove: undefined };
@@ -597,7 +603,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
           attempt: {
             entryKey: card ? attemptEntryKey(card) : "",
             generation: current.attempt.generation + 1,
-            reviewAttemptId: crypto.randomUUID(),
+            attemptId: crypto.randomUUID(),
             phase: card ? (failed ? "guided" : "playerTurn") : "complete",
           },
         });
@@ -606,6 +612,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       set(queueState);
       return;
     }
+    partialOpeningAttempt(current.attempt.attemptId);
     const start = card
       ? initialTrainingState(card)
       : { fen: asFenString(STANDARD_FEN), step: 0, lastMove: undefined };
@@ -627,7 +634,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: card ? attemptEntryKey(card) : "",
         generation: current.attempt.generation + 1,
-        reviewAttemptId: crypto.randomUUID(),
+        attemptId: crypto.randomUUID(),
         phase: card ? (failed ? "guided" : "playerTurn") : "complete",
       },
     });

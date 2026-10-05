@@ -61,4 +61,4 @@ CREATE TRIGGER queue_attempt_origin_revision AFTER UPDATE OF revision ON cards
 FOR EACH ROW WHEN (NEW.revision IS DISTINCT FROM OLD.revision)
 EXECUTE FUNCTION retain_queue_attempt_revision();
 
-INSERT INTO tempo_schema_migrations(version) VALUES (30);
+INSERT INTO tempo_schema_migrations(version) VALUES (32);

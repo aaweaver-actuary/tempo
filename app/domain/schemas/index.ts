@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { QueueAttemptState } from "../cards";
+import { openingDecisionManifestSchema } from "../opening-evidence";
 import {
   cardIdSchema,
   colorSchema,
@@ -53,6 +54,11 @@ export const queueCardSchema = z.strictObject({
   is_main: sqliteBooleanSchema.optional(),
   trained_color: colorSchema.nullable().optional(),
   revision: z.number().int().positive().optional(),
+  opening_decision_manifest: openingDecisionManifestSchema.optional(),
+  opening_evidence_diagnostic: z.string().optional(),
+  opening_evidence_study_timezone: z.string().optional(),
+  opening_evidence_origin_queue_entry_id: z.number().int().positive().optional(),
+  opening_evidence_parent_attempt_id: z.string().optional(),
   repertoire_id: identifierSchema.nullable().optional(),
   study_id: identifierSchema.nullable().optional(),
   study_exercise_id: identifierSchema.nullable().optional(),
@@ -194,6 +200,11 @@ export const practiceCardSchema = z.strictObject({
   prefixSplitLatestFailureId: integer.optional(),
   orientation: colorSchema.optional(),
   revision: z.number().int().positive().optional(),
+  openingDecisionManifest: openingDecisionManifestSchema.optional(),
+  openingEvidenceDiagnostic: z.string().optional(),
+  openingEvidenceStudyTimezone: z.string().optional(),
+  openingEvidenceOriginEntryId: z.number().int().positive().optional(),
+  openingEvidenceParentAttemptId: z.string().optional(),
   repertoireId: repertoireIdSchema.optional(),
   editingIntent: z.enum(["standard", "shorten-prefix"]).optional(),
 });
@@ -295,6 +306,7 @@ export const settingsResponseSchema = z.strictObject({
   tactics_new_per_day: z.number().int().min(0).max(100).default(5),
   defense_new_cards_per_day: z.number().int().min(0).max(100).default(5),
   include_defensive_cards_in_daily_stack: z.boolean().default(true),
+  defensive_analysis_enabled: z.boolean().default(false),
   discovery_window_days: z.union([z.literal(30), z.literal(90)]).default(90),
   lichess_username: z.string(),
   chesscom_username: z.string(),

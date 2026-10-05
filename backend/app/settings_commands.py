@@ -36,13 +36,13 @@ def update_settings(database: PostgresConnection, payload: dict[str, Any]) -> di
            for column_name in _DEFERRED_REFRESH_COLUMNS):
         raise HTTPException(503, "Coverage and discovery settings await the analysis-worker cutover")
     values = settings.model_dump(mode="json")
-    if "include_defensive_cards_in_daily_stack" not in supplied_fields:
-        values["include_defensive_cards_in_daily_stack"] = bool(
-            existing["include_defensive_cards_in_daily_stack"]
-        )
-    stored_values = {**values, "include_defensive_cards_in_daily_stack": int(
-        values["include_defensive_cards_in_daily_stack"]
-    )}
+    for boolean_field in ("include_defensive_cards_in_daily_stack", "defensive_analysis_enabled"):
+        if boolean_field not in supplied_fields:
+            values[boolean_field] = bool(existing[boolean_field])
+    stored_values = {**values,
+        "include_defensive_cards_in_daily_stack": int(values["include_defensive_cards_in_daily_stack"]),
+        "defensive_analysis_enabled": int(values["defensive_analysis_enabled"]),
+    }
     database.execute(
         "UPDATE settings SET " + ",".join(f"{column_name}=?" for column_name in _SETTINGS_COLUMNS)
         + " WHERE id=1",

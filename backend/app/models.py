@@ -3,6 +3,7 @@ from uuid import UUID
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .opening_evidence_contracts import OpeningEvidenceCheckpoint
 
 
 class Settings(BaseModel):
@@ -13,6 +14,7 @@ class Settings(BaseModel):
     tactics_new_per_day: int = Field(default=5, ge=0, le=100)
     defense_new_cards_per_day: int = Field(default=5, ge=0, le=100)
     include_defensive_cards_in_daily_stack: bool = True
+    defensive_analysis_enabled: bool = False
     discovery_window_days: Literal[30, 90] = 90
     new_cards_per_day: int = Field(default=10, ge=0, le=100)
     study_new_per_day: int = Field(default=2, ge=0, le=100)
@@ -47,6 +49,7 @@ class ReviewRequest(BaseModel):
     expected_review_id: int | None = None
     expected_revision: int | None = None
     attempt_id: str | None = Field(default=None, min_length=1, max_length=100)
+    opening_evidence_completion: OpeningEvidenceCheckpoint | None = None
 
 
 class BranchRequest(BaseModel):

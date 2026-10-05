@@ -38,7 +38,7 @@ from .repertoire_integrity import (
     enqueue_integrity_scans,
     requeue_integrity_slice,
 )
-from .durable_tasks import claim_task, complete_task, fail_task, requeue_interrupted_tasks
+from .durable_tasks import claim_task, complete_task, fail_task, requeue_interrupted_tasks, defer_paused_defensive_task
 from .background_activity import claimable, control_order, emit_progress
 from .opening_graph import (
     calculate_opening_graph_artifacts,
@@ -490,6 +490,8 @@ class GameSyncCoordinator:
                 slice_started = time.perf_counter()
                 try:
                     if source == "durable":
+                        if await asyncio.to_thread(defer_paused_defensive_task, item):
+                            continue
                         handler = _durable_task_handlers.get(item["kind"])
                         if handler is None:
                             raise RuntimeError(f"No handler registered for task kind {item['kind']}")

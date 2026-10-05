@@ -45,6 +45,25 @@ beforeEach(() => {
 });
 
 describe("desktop live queue isolation", () => {
+  it("AS-15 only the current queue generation can settle recovery readiness", async () => {
+    let firstRead!: (value: null) => void;
+    let secondRead!: (value: null) => void;
+    offlineTrainingMocks.readPreparedTraining.mockImplementationOnce(() => new Promise(resolve => { firstRead = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { secondRead = resolve; }));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 0, cards: [] })));
+    const firstQueue = fetchAndInitializeQueue();
+    expect(useTrainingStore.getState().queueReadiness).toBe("loading");
+    const secondQueue = fetchAndInitializeQueue();
+    firstRead(null);
+    await firstQueue;
+    expect(useTrainingStore.getState().queueReadiness).toBe("loading");
+    secondRead(null);
+    await secondQueue;
+    expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Queue unavailable")));
+    await expect(fetchAndInitializeQueue()).rejects.toThrow("Queue unavailable");
+    expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
+  });
   it("guided attempt recovery clears its warning while phone conflicts remain", async () => {
     const pendingNotice = publishNotification({ severity: "warning", source: "training queue", key: "guided-attempt-save", message: "Guided attempt save pending. Tempo will retry." });
     offlineTrainingMocks.replayOfflineAttempts.mockResolvedValueOnce({

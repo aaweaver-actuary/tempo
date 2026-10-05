@@ -12,7 +12,7 @@ const receiptSchema = z.object({
   operation_id: z.string().optional(),
   state: z.enum(["unknown", "queued", "executing", "retrying", "pending", "blocked", "complete", "failed"]),
   response: z.unknown().optional(),
-  error: z.object({ message: z.string().optional() }).nullish(),
+  error: z.object({ message: z.string().optional(), code: z.string().optional() }).nullish(),
   last_error: z.object({ message: z.string().optional() }).nullish(),
   message: z.string().optional(),
 });
@@ -29,13 +29,16 @@ function blockedImport(pending: PendingImport, receipt: ImportReceipt) {
   return new PendingOperationError(pending.operationId,
     `Import is blocked: ${receipt.last_error?.message ?? receipt.message ?? "Check the local service."} After resolving the problem, retry this blocked import.`, true);
 }
-function storedImport(): PendingImport | null {
+export function readPendingPgnImport(): PendingImport | null {
   const stored = localStorage.getItem(PENDING_KEY);
   if (!stored) return null;
   try { return pendingImportSchema.parse(JSON.parse(stored)); }
   catch { throw new Error("The pending PGN import is unreadable. Restore browser data before importing another file."); }
 }
-async function inspectReceipt(pending: PendingImport, signal: AbortSignal): Promise<ImportReceipt> {
+function clearPendingImport(operationId: string) {
+  if (readPendingPgnImport()?.operationId === operationId) localStorage.removeItem(PENDING_KEY);
+}
+async function inspectReceipt(pending: PendingImport, signal: AbortSignal, discarding = false): Promise<ImportReceipt> {
   let rawReceipt: unknown;
   try {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`, { signal });
@@ -51,20 +54,20 @@ async function inspectReceipt(pending: PendingImport, signal: AbortSignal): Prom
   const receipt = parsedReceipt.data;
   if (receipt.operation_id && receipt.operation_id !== pending.operationId)
     throw new Error("The service returned a different import operation identity. Check the local service before retrying.");
-  if (receipt.state === "pending" && receipt.message?.startsWith("Legacy receipt has no saved payload."))
+  if (!discarding && receipt.state === "pending" && receipt.message?.startsWith("Legacy receipt has no saved payload."))
     throw new PendingOperationError(pending.operationId, `Import confirmation is unavailable. ${receipt.message}`);
   return receipt;
 }
 function resolveTerminal(pending: PendingImport, receipt: ImportReceipt, signal: AbortSignal): ImportResult | null {
   signal.throwIfAborted();
   if (receipt.state === "failed") {
-    localStorage.removeItem(PENDING_KEY);
+    clearPendingImport(pending.operationId);
     throw new FailedOperationError(receipt.error?.message ?? receipt.message ?? "The PGN import failed.", pending.operationId);
   }
   if (receipt.state !== "complete") return null;
   // A malformed complete response must not erase the only recovery identity.
   const result = importResultSchema.parse(receipt.response);
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingImport(pending.operationId);
   return result;
 }
 async function pausePolling(signal: AbortSignal) {
@@ -104,13 +107,13 @@ async function submitImport(pending: PendingImport, file: File, trainedColor: "w
   // The PGN route rejects these validations before command dispatch. Other
   // errors (including durable-handler 5xx) must retain identity until inspected.
   if ([400, 422].includes(response.status)) {
-    localStorage.removeItem(PENDING_KEY);
+    clearPendingImport(pending.operationId);
     await readJsonResponse(response, importResultSchema, "PGN import", { reportHttpFailure: false });
   }
   if (response.status >= 500 || [408, 429].includes(response.status)) return null;
   const result = await readJsonResponse(response, importResultSchema, "PGN import", { reportHttpFailure: false });
   signal.throwIfAborted();
-  localStorage.removeItem(PENDING_KEY);
+  clearPendingImport(pending.operationId);
   return result;
 }
 
@@ -125,7 +128,7 @@ export async function savePgnImportCommand(
   const fingerprint = [file.name, trainedColor, initialDepth,
     Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")].join(":");
   options.signal?.throwIfAborted();
-  let pending = storedImport();
+  let pending = readPendingPgnImport();
   if (options.retryBlocked && !pending) throw new Error("There is no pending blocked PGN import to retry.");
   const controller = new AbortController();
   let lastReceipt: ImportReceipt | undefined;
@@ -159,6 +162,9 @@ export async function savePgnImportCommand(
     }
     if (!pending) {
       signal.throwIfAborted();
+      const newerPendingImport = readPendingPgnImport();
+      if (newerPendingImport) throw new PendingOperationError(newerPendingImport.operationId,
+        "The pending PGN import changed. Reopen the dialog to check or discard it.");
       pending = { operationId: crypto.randomUUID(), fingerprint };
       localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
     }
@@ -193,6 +199,48 @@ export async function savePgnImportCommand(
   finally {
     clearTimeout(deadline);
     options.signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", rejectAbort);
+  }
+}
+
+export async function discardPendingPgnImport(operationId: string, options: { signal?: AbortSignal } = {}): Promise<ImportResult | null> {
+  const pending = readPendingPgnImport();
+  if (!pending || pending.operationId !== operationId) throw new Error("The pending PGN import changed. Reopen the dialog to check it.");
+  const controller = new AbortController();
+  const abort = () => controller.abort(new DOMException("Discard confirmation cancelled", "AbortError"));
+  options.signal?.throwIfAborted();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  const deadline = setTimeout(() => controller.abort(unconfirmedImport(operationId)), RESOLUTION_BUDGET_MS);
+  let rejectCancellation!: (reason: unknown) => void;
+  const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
+  const rejectAbort = () => rejectCancellation(controller.signal.reason);
+  controller.signal.addEventListener("abort", rejectAbort, { once: true });
+  const resolveDiscard = async () => {
+    const signal = controller.signal;
+    let response: Response | undefined;
+    try { response = await fetch(`${API_URL}/api/imports/pgn/${encodeURIComponent(operationId)}/discard`, { method: "POST", signal }); }
+    catch { signal.throwIfAborted(); }
+    signal.throwIfAborted();
+    if (response && response.status >= 400 && response.status < 500) {
+      const failure = await response.json().catch(() => null) as { detail?: string } | null;
+      throw new Error(failure?.detail ?? "The pending import could not be discarded.");
+    }
+    while (true) {
+      signal.throwIfAborted();
+      const receipt = await inspectReceipt(pending, signal, true);
+      if (receipt.state === "failed" && receipt.error?.code === "import_discarded") {
+        clearPendingImport(operationId);
+        return null;
+      }
+      const completed = resolveTerminal(pending, receipt, signal);
+      if (completed) return completed;
+      await pausePolling(signal);
+    }
+  };
+  try { return await Promise.race([resolveDiscard(), cancellation]); }
+  finally {
+    clearTimeout(deadline);
+    options.signal?.removeEventListener("abort", abort);
     controller.signal.removeEventListener("abort", rejectAbort);
   }
 }

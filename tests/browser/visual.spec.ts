@@ -135,6 +135,18 @@ test("import-dialog-phone", async ({ page }) => {
   await expect(page).toHaveScreenshot("import-dialog-phone.png");
 });
 
+test("pending-import-dialog-phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page);
+  await page.evaluate(() => localStorage.setItem("tempo-pending-pgn-import-v1", JSON.stringify({
+    operationId: "pending-visual-import", fingerprint: "lost.pgn:white:6:digest",
+  })));
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  await expect(page.getByRole("button", { name: "Discard pending import" })).toBeVisible();
+  await expect(page).toHaveScreenshot("pending-import-dialog-phone.png");
+});
+
 test("board-unavailable", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/queue/window?**", (route) =>
@@ -212,6 +224,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
 for (const width of [390, 1280]) {
   test(`keyboard help and letter preference remain readable ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 }); await prepareVisualUI(page);
+    if (width === 390) await page.locator(".phone-study-actions > summary").click();
     const helpButton = page.getByRole("button", { name: "Keyboard shortcuts", exact: true });
     const buttonBounds = (await helpButton.boundingBox())!;
     expect(buttonBounds.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 36);

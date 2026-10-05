@@ -2,7 +2,7 @@
 
 A displayed queue entry is an admitted attempt. A later queue refresh may retire
 its projection, but must not erase proof of its original card, content revision,
-queue date/cycle, admission kind/owner, or guided failure. PostgreSQL migration 30
+queue date/cycle, admission kind/owner, or guided failure. PostgreSQL migration 32
 and the SQLite compatibility migration retain that proof in `queue_attempt_origins`.
 Triggers capture admission and status/failure changes inside their existing short
 transactions; position-only changes do not write origins. Queue reads remain reads.
@@ -61,9 +61,9 @@ Refreshes retain a playable active card, board, move/reply state and attempt tok
 while replacing future queue data. Superseded responses remain fenced.
 
 Regression inventory: `tests/REGRESSIONS.md`. Local evidence and tested revision are
-recorded with the PR. CI owns required final candidate verification. Open PRs #66
-and #69 also change migration numbering/contracts; migration 30 must be rebased and
-renumbered if either lands first. This branch does not depend on either unmerged PR.
+recorded with the PR. CI owns required final candidate verification. Main now includes #69 opening evidence and #83 defensive analysis pause as migrations
+030 and 031. Queue origins is unpublished migration 032. Open PR #66 retains its
+own later-merge migration coordination requirement; this repair does not modify it.
 
 An active snapshot also keeps its card identity in the attempt key. An unchanged
 context may refresh its priority reason without replacing the board or logical
@@ -72,3 +72,23 @@ ID; an old card cannot hide or guide replacement content reusing that projection
 Legacy failure markers remain replayable through server validation, but cannot
 supply unproven local guidance after refresh. Completing one context clears only
 its own guided marker, leaving a replacement context's marker intact.
+
+## PR #72 current-main integration test plan (2026-10-05)
+
+Integrate main 4a91c56 with recovery head 366e7b1. Risks: migration collisions,
+partial evidence commits on explicit conflict, replay duplication, lost evidence
+envelopes/fallback identity, and aborted receipt polling. Start with named migration,
+review/evidence, outbox and operation-status cases, then their affected files and
+callers, typecheck/lint, real PostgreSQL durability and affected browser workflows.
+CI owns final required candidate validation. Preserve marker locking, offline
+conflict exclusion, evidence completion and delivery-deadline regressions.
+
+Reconciliation uses the ordinary PostgreSQL review handler, including validated
+evidence checkpoints, aggregate completion, evidence binding and fresh reinforcement
+context inheritance. A reconciliation savepoint encloses that whole handler; an
+explicit review conflict rolls back only the current operation before its transport
+receipt records the inspectable result. Existing checkpoints and saved results remain.
+Both endpoints prepare evidence from authoritative immutable context, and derived
+preparation is excluded from transport digests. Aggregate-only legacy receipts retain
+their original absent evidence field. The outbox retains evidence/rejection envelopes
+while changing only the reconciliation transport identity.

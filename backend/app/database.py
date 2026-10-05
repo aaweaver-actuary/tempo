@@ -1327,6 +1327,7 @@ def initialize() -> None:
                 "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500",
                 "defense_new_cards_per_day": "INTEGER NOT NULL DEFAULT 5",
                 "include_defensive_cards_in_daily_stack": "INTEGER NOT NULL DEFAULT 1",
+                "defensive_analysis_enabled": "INTEGER NOT NULL DEFAULT 0",
                 "discovery_window_days": "INTEGER NOT NULL DEFAULT 90",
             },
             "repertoire_opportunities": {

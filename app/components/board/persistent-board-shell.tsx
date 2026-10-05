@@ -11,7 +11,7 @@ function noopMove() {
   return;
 }
 
-export function PersistentBoardShell() {
+export function PersistentBoardShell({ layoutAnchor }: { layoutAnchor?: HTMLElement | null }) {
   const board = useBoardShellStore(useShallow((state) => state.board));
   const session = useBoardShellStore((state) => state.session);
   return (
@@ -19,12 +19,14 @@ export function PersistentBoardShell() {
       {board.unavailable && <div className="board-unavailable" role="status">{board.unavailable}</div>}
       <Chessboard
         showShortcutButton={false}
+        layoutAnchor={layoutAnchor}
         keyboard={board.keyboard}
         fen={board.fen}
         expectedSan={board.expectedSan}
         lastMove={board.lastMove}
         locked={Boolean(board.unavailable) || board.interactionMode === "readonly"}
         showHint={board.showHint}
+        onHintExposure={board.onHintExposure}
         theme={board.theme}
         pieceSet={board.pieceSet}
         shapes={board.shapes ?? EMPTY_SHAPES}

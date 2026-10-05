@@ -3,6 +3,9 @@ const postgresTestUrl = process.env.TEMPO_DOCKER_URL;
 if (!postgresTestUrl) {
   throw new Error("Regular Playwright tests require an isolated PostgreSQL stack; use make browser or scripts/test-postgres-docker.mjs");
 }
+// Keep Node-authored fixture dates and browser dates on the disposable API's clock.
+const postgresTestTimezone = "America/New_York";
+process.env.TZ = postgresTestTimezone;
 export default defineConfig({
   retries: 0,
   reporter: process.env.TEMPO_CI_REPORT ? [["line"], ["json", { outputFile: process.env.TEMPO_CI_REPORT }]] : undefined,
@@ -28,6 +31,8 @@ export default defineConfig({
   ],
   use: {
     baseURL: postgresTestUrl,
+    // Match the disposable PostgreSQL API's calendar day on every runner host.
+    timezoneId: postgresTestTimezone,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

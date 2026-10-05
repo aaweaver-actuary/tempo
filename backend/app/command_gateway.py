@@ -16,26 +16,47 @@ from fastapi import HTTPException
 from . import postgres_store
 
 
-CommandHandler = Callable[[postgres_store.PostgresConnection, dict[str, Any]], Any]
+CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
 _handlers: dict[str, CommandHandler] = {}
+_preparers: dict[str, Callable[[dict[str, Any]], Any]] = {}
 MAX_BACKGROUND_CYCLE_ATTEMPTS = 11
+MAX_HTTP_ERROR_DETAIL_BYTES = 16_384
+
+
+def _is_json_native_detail(detail: Any) -> bool:
+    if detail is None or type(detail) in {str, int, float, bool}:
+        return True
+    if type(detail) is list:
+        return all(_is_json_native_detail(item) for item in detail)
+    if type(detail) is dict:
+        return all(type(key) is str and _is_json_native_detail(value)
+                   for key, value in detail.items())
+    return False
 
 
 class CommandConflict(ValueError):
     """An operation ID was reused for a different command or payload."""
 
 
-def register_command(name: str, handler: CommandHandler) -> None:
+def register_command(
+    name: str, handler: CommandHandler, *, prepare: Callable[[dict[str, Any]], Any] | None = None,
+) -> None:
+    """Register publication and optional non-persisted preparation before its transaction."""
     if name in _handlers:
         raise ValueError(f"Duplicate command: {name}")
     _handlers[name] = handler
+    if prepare is not None:
+        _preparers[name] = prepare
 
 
 def request_digest(command_name: str, payload: dict[str, Any]) -> str:
     # A paste preview is derived from the current repertoire snapshot. After a
     # successful save that snapshot changes, but replaying the same user save
     # must still resolve to its original receipt.
-    if command_name == "analysis.paste.commit":
+    if command_name in {"opening_evidence.checkpoint", "cards.review", "cards.review.reconcile"}:
+        # Preparation is authoritative derived data; retries bind the original envelope.
+        identity_payload = {key: value for key, value in payload.items() if key != "prepared_manifest"}
+    elif command_name == "analysis.paste.commit":
         identity_payload = payload["request"]
     elif command_name == "discovery.accept":
         # Recommendation preparation can change during a retry. The accepted
@@ -78,6 +99,9 @@ def record_operation_attempt(
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         saved_payload = json.loads(receipt[3]) if receipt[3] else payload
+        # Terminal delivery must never repopulate a deliberately removed PGN.
+        if receipt[2] in {"complete", "failed"}:
+            return False, saved_payload, None, receipt[7]
         if receipt[3] is None:
             raw.execute(
                 "UPDATE operation_receipts SET payload_json=%s,background=%s WHERE operation_id=%s",
@@ -185,6 +209,20 @@ def execute_command(
     if not operation_id or len(operation_id) > 128:
         raise ValueError("Operation ID must contain 1 to 128 characters")
     request_hash = request_digest(command_name, payload)
+    # The durable receipt owns only the original source envelope. Optional
+    # bounded preparation closes its read before the publication transaction.
+    prepared = payload
+    preparation_error = None
+    if command_name in _preparers:
+        try:
+            prepared = _preparers[command_name](payload)
+        except (psycopg.OperationalError, psycopg.InterfaceError,
+                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
+            raise
+        except Exception as error:
+            # Persist definitive preparation failures through the same receipt
+            # envelope, after checking delivery identity and the attempt fence.
+            preparation_error = error
     command_connection = _writer_connection(background)
     with command_connection as database:
         raw = database.raw
@@ -210,7 +248,9 @@ def execute_command(
             return None
         raw.execute("SAVEPOINT command_handler")
         try:
-            result = _handlers[command_name](database, payload)
+            if preparation_error is not None:
+                raise preparation_error
+            result = _handlers[command_name](database, prepared)
         except (psycopg.OperationalError, psycopg.InterfaceError,
                 DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
             # The broker will redeliver; an uncertain commit must not be
@@ -218,12 +258,23 @@ def execute_command(
             raise
         except Exception as error:
             raw.execute("ROLLBACK TO SAVEPOINT command_handler")
-            error_json = json.dumps({
+            error_payload = {
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
-                **({"detail": error.detail} if isinstance(error, HTTPException) else {}),
-                **({"code": error.code, "retryable": error.retryable} if hasattr(error, "code") and hasattr(error, "retryable") else {}),
-            })
+            }
+            error_payload.update({"code": error.code, "retryable": error.retryable} if hasattr(error, "code") and hasattr(error, "retryable") else {})
+            if isinstance(error, HTTPException):
+                try:
+                    # Preserve message for legacy operation-status callers. New
+                    # receipts can also reconstruct the original HTTP detail.
+                    if _is_json_native_detail(error.detail) and len(
+                        json.dumps(error.detail, allow_nan=False).encode("utf-8")
+                    ) <= MAX_HTTP_ERROR_DETAIL_BYTES:
+                        error_payload["detail"] = error.detail
+                except (TypeError, ValueError, RecursionError):
+                    # Unsupported/cyclic detail retains the existing envelope.
+                    pass
+            error_json = json.dumps(error_payload)
             raw.execute(
                 "UPDATE operation_receipts SET state='failed',error_json=%s,"
                 "attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() "

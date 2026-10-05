@@ -1,3 +1,4 @@
+import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
@@ -93,6 +94,9 @@ import {
 } from "../lib/review-outbox";
 import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
+import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt } from "../lib/opening-evidence-journal";
+import { useOpeningEvidenceRecovery } from "../hooks/use-opening-evidence-recovery";
+import type { AssistanceKind } from "../domain/opening-evidence";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
@@ -297,6 +301,19 @@ export default function Home() {
   );
   const activeQueueEntry = useRef<number | undefined>(undefined);
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
+  const openingJournal = useCommittedCallback(() => beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
+    { offline: offlineQueue, studyTimezone: card.openingEvidenceStudyTimezone }));
+  const observeAssistance = useCommittedCallback((moveOffset: number, kind: AssistanceKind) => {
+    openingJournal()?.assistance(moveOffset, kind);
+  });
+  useEffect(() => {
+    if (currentView === "train" && cardsLeft > 0) openingJournal();
+  }, [currentView, cardsLeft, attempt.attemptId, openingJournal]);
+  const queueReadiness = useTrainingStore(state => state.queueReadiness);
+  useOpeningEvidenceRecovery(usesLocalApi(), queueReadiness === "ready",
+    pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
+    reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue" ||
+    reviewPersistenceState === "saveFailed");
   const repertoireLine = card.moves;
 
   useEffect(() => {
@@ -774,6 +791,8 @@ export default function Home() {
     try {
       move = position.move({ from, to, promotion: "q" });
     } catch {
+      const promotion = position.get(from)?.type === "p" && /[18]$/.test(to) ? "q" : "";
+      openingJournal()?.response(step, `${from}${to}${promotion}`, "illegal");
       setBoardAttempt((value) => value + 1);
       setFeedback("wrong");
       setShowHint(true);
@@ -784,7 +803,9 @@ export default function Home() {
       return;
     }
     if (!move) return;
+    const responseUci = `${move.from}${move.to}${move.promotion ?? ""}`;
     if (position.isCheckmate()) {
+      openingJournal()?.response(step, responseUci, move.san === card.moves[step] ? "expected" : "wrong");
       setLastMove([move.from, move.to]);
       setOpponentLastMove(undefined);
       setStep(card.moves.length);
@@ -793,6 +814,7 @@ export default function Home() {
     }
     if (move.san !== card.moves[step]) {
       if (usesLocalApi() && !offlineQueue && branchPositions.current === null) {
+        openingJournal()?.response(step, responseUci, "unverified");
         setBoardAttempt((value) => value + 1);
         setQueueNotice(
           "Cannot verify another repertoire move until lines load. Retry loading lines, then try again.",
@@ -818,6 +840,7 @@ export default function Home() {
               other.moves[step] === move?.san,
           );
       if (alternateBranch) {
+        openingJournal()?.response(step, responseUci, "alternate");
         setBoardAttempt((value) => value + 1);
         setFeedback("branch");
         setShowHint(true);
@@ -826,6 +849,7 @@ export default function Home() {
         );
         return;
       }
+      openingJournal()?.response(step, responseUci, "wrong");
       setFeedback("wrong");
       setBoardAttempt((value) => value + 1);
       setShowHint(true);
@@ -835,6 +859,7 @@ export default function Home() {
       persistExplicitAttemptFailure();
       return;
     }
+    openingJournal()?.response(step, responseUci, "expected");
     markMoveSeen(step);
     setCurrentFenString(asFenString(position.fen()));
     setLastMove([move.from, move.to]);
@@ -940,9 +965,13 @@ export default function Home() {
     if (!retryPending) setAttemptPhase("feedbackPause");
     if (offlineQueue && card.queueEntryId) {
       try {
+        openingJournal();
+        const attemptId = useTrainingStore.getState().attempt.attemptId;
+        const completion = completeOpeningAttempt(attemptId);
         const saved = await recordOfflineAttempt(
           card.queueEntryId, outcome,
           attemptFailed || useTrainingStore.getState().assistedThisAttempt,
+          undefined, { attemptId: attemptId ?? crypto.randomUUID(), completion },
         );
         const nextCards = await loadEligibleOfflineQueue(saved);
         useTrainingStore.getState().hydrateLocalQueue(nextCards, true, nextCards.length);
@@ -968,10 +997,13 @@ export default function Home() {
               "The active queue entry is unavailable. Refresh the queue.",
             );
           if (!recordedAtCompletion) {
+            openingJournal();
+            const attemptId = useTrainingStore.getState().attempt.attemptId;
+            const completion = completeOpeningAttempt(attemptId);
             enqueuePendingReview({
+              attemptId, openingEvidenceCompletion: completion, completedAt: completion?.terminal?.ended_at,
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
-              attemptId: useTrainingStore.getState().attempt.reviewAttemptId,
               expectedRevision: card.revision,
               outcome,
               guided:
@@ -1094,7 +1126,10 @@ export default function Home() {
     setCurrentFenString(asFenString(finalFen));
     setAttemptPhase("feedbackPause");
     setFeedback("complete");
+    openingJournal();
     const token = useTrainingStore.getState().attempt;
+    const completedAt = new Date().toISOString();
+    const completion = completeOpeningAttempt(token.attemptId, completedAt);
     const outcome = useTrainingStore.getState().isAttemptFailed
       ? "again"
       : "correct";
@@ -1102,9 +1137,9 @@ export default function Home() {
     if (databaseQueue && !offlineQueue && card.backendId && card.queueEntryId) {
       try {
         enqueuePendingReview({
+          attemptId: token.attemptId, completedAt, openingEvidenceCompletion: completion,
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
-          attemptId: token.reviewAttemptId,
           expectedRevision: card.revision,
           outcome,
           guided:
@@ -1130,6 +1165,7 @@ export default function Home() {
 
   useEffect(
     () => () => {
+      partialOpeningAttempt(useTrainingStore.getState().attempt.attemptId);
       const canceledReply = pendingOpponentReply.current;
       clearTimeout(canceledReply?.timer);
       canceledReply?.finish(true);
@@ -1302,6 +1338,7 @@ export default function Home() {
 
   function handleAttemptFailure() {
     if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
+    openingJournal()?.manualFailure(step);
     if (!attemptFailed) {
       setAttemptFailed(true);
       setQueueNotice("Again recorded · finish with guidance");
@@ -1316,7 +1353,6 @@ export default function Home() {
     if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     resetLine();
     setAttemptFailed(true);
-    setFeedback("wrong");
     setShowHint(true);
     setFailureFen(card.startingFen);
     setQueueNotice("Again recorded · restarted in guided mode");
@@ -1524,29 +1560,15 @@ export default function Home() {
                 </Button>
               </div>
             )}
-            {pausedIntegrity && (
-              <div className="integrity-train-notice" role="status">
-                <strong>
-                  {pausedIntegrity.blockedDue} opening card
-                  {pausedIntegrity.blockedDue === 1 ? "" : "s"} paused by
-                  repertoire repair.
-                </strong>
-                <span>
-                  Unaffected openings and tactics remain available ·{" "}
-                  {pausedIntegrity.issueCount} issue
-                  {pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.
-                </span>
-                <Button
-                  onClick={() => {
-                    deferredRepairIds.current.delete(pausedIntegrity.id);
-                    setRepairRepertoireId(pausedIntegrity.id);
-                  }}
-                >
-                  Resume repair
-                </Button>
-              </div>
-            )}
             <TrainingView
+              repairNotice={pausedIntegrity && <TrainingRepairNotice
+                blockedDue={pausedIntegrity.blockedDue}
+                issueCount={pausedIntegrity.issueCount}
+                onResume={() => {
+                  deferredRepairIds.current.delete(pausedIntegrity.id);
+                  setRepairRepertoireId(pausedIntegrity.id);
+                }}
+              />}
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}
               offlineQueue={offlineQueue}
@@ -1611,6 +1633,7 @@ export default function Home() {
                 invalidateTrainingQueueCache();
                 void fetchAndInitializeQueue().catch(() => undefined);
               }}
+              onOpeningAssistance={observeAssistance}
               onMove={tryMove}
               onOpenPosition={openReviewPosition}
               useSharedBoard

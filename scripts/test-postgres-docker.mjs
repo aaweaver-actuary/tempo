@@ -12,6 +12,8 @@ import { executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePos
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
+import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
+import { atomicJson, redact } from "./tempo-deployment.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
 const stages = postgresTestStages(options);
@@ -54,6 +56,7 @@ const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.y
 const environment = createIsolatedTestEnvironment(process.env, {
   TEMPO_PG_TEST_SECRETS: secretsDirectory,
   TEMPO_PG_TEST_PORT: String(testPort),
+  TEMPO_PG_MAINTENANCE_IMAGE: maintenanceImage,
   TEMPO_POSTGRES_ADMIN_PASSWORD_FILE: join(secretsDirectory, "admin_password"),
   TEMPO_POSTGRES_READER_PGPASS_FILE: join(secretsDirectory, "reader_pgpass"),
   TEMPO_POSTGRES_WRITER_PGPASS_FILE: join(secretsDirectory, "writer_pgpass"),
@@ -65,6 +68,12 @@ let maintenanceImageCreated = false;
 const timingPath = join(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance",
   `postgres-scenarios-${options.mode}-${project}.json`);
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+const candidateRevision = commitResult.stdout.trim();
+const buildLabels = join(secretsDirectory, "image-labels.json");
+writeFileSync(buildLabels, JSON.stringify({ services: Object.fromEntries([
+  "schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker",
+].map(name => [name, { build: { labels: { "org.opencontainers.image.revision": candidateRevision } } }])) }));
+compose.push("-f", buildLabels);
 const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
@@ -353,7 +362,27 @@ async function reportStudyFixtureDiagnostics(repertoireId) {
   console.error(`PostgreSQL study fixture diagnostics: ${JSON.stringify(diagnostics)}`);
 }
 
+async function verifyDiscardedPgnReplay(operationId) {
+  const receipt = await get(`operations/${operationId}`);
+  assert.equal(receipt.state, "failed");
+  assert.equal(receipt.error?.code, "import_discarded");
+  const form = new FormData();
+  form.set("file", new Blob(["1. e4 e5 2. Nf3 *"], { type: "application/x-chess-pgn" }), `${operationId}.pgn`);
+  form.set("trained_color", "white");
+  form.set("initial_depth", "6");
+  const replay = await apiRequest("imports/pgn", { method: "POST", body: form,
+    headers: { "Idempotency-Key": operationId } });
+  assert.equal(replay.status, 409, `Discard fence rejects delayed PGN admission: ${await replay.text()}`);
+  const snapshot = await get("migration/snapshot");
+  assert.equal(snapshot.tables.repertoires.filter(row => row.source_name === `${operationId}.pgn`).length, 0,
+    "Discarded PGN cannot create repertoire data before or after recreation");
+}
+
 async function verifyForegroundAndStudyDurability() {
+  const discardedPgnId = `pg-study-discard-${randomBytes(12).toString("hex")}`;
+  const discarded = await confirm(await apiRequest(`imports/pgn/${discardedPgnId}/discard`, { method: "POST" }));
+  assert.equal(discarded.outcome, "discarded");
+  await verifyDiscardedPgnReplay(discardedPgnId);
   const studySettings = await get("settings");
   await postCommand("settings", { ...studySettings, new_cards_per_day: 100, study_new_per_day: 100 }, {
     method: "PUT", label: "foreground PUT study queue allowance",
@@ -381,6 +410,27 @@ async function verifyForegroundAndStudyDurability() {
   assert(splitCard, "Study fixture includes a third multi-move prefix-split entry");
 
   run("docker", [...compose, "stop", "background-worker"]);
+  const evidenceQueue = await get("queue/today?include_opening_evidence=true");
+  const evidenceCard = evidenceQueue.cards.find(card => card.queue_entry_id === reviewCard.queue_entry_id);
+  assert(evidenceCard?.opening_decision_manifest, "Foreground fixture has authoritative evidence");
+  const manifest = evidenceCard.opening_decision_manifest;
+  const observedAt = new Date().toISOString();
+  const checkpointOperationId = `pg-background-checkpoint-${randomBytes(12).toString("hex")}`;
+  const backgroundCheckpoint = {
+    attempt_id: `pg-background-attempt-${randomBytes(12).toString("hex")}`, manifest,
+    origin_queue_entry_id: evidenceCard.queue_entry_id, queue_entry_id: evidenceCard.queue_entry_id,
+    started_at: observedAt, study_timezone: "UTC", source: "live",
+    events: [{ sequence: 1, decision_index: 0, decision_id: manifest.decisions[0].decision_id,
+      expected_uci: manifest.decisions[0].expected_uci, response_uci: manifest.decisions[0].expected_uci,
+      observed_at: observedAt, kind: "first_response", disposition: "expected" }],
+    terminal: { state: "partial", final_sequence: 1, ended_at: observedAt },
+  };
+  const queuedCheckpoint = await apiRequest("opening-evidence/checkpoints", {
+    method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": checkpointOperationId },
+    body: JSON.stringify(backgroundCheckpoint),
+  });
+  assert.equal(queuedCheckpoint.status, 202, "A stopped background worker cannot execute the checkpoint on foreground");
+  assert.equal((await queuedCheckpoint.json()).operation_id, checkpointOperationId);
   const importedBackground = await importFixture("background-publication.pgn", backgroundPublicationPgn);
   const queuedSystem = await get("system/tasks");
   assert(queuedSystem.tasks.some((task) => task.kind === "opening_graph_rebuild"
@@ -433,6 +483,20 @@ async function verifyForegroundAndStudyDurability() {
     "-Atqc", "SELECT count(*) FROM reviews; SELECT count(*) FROM queue_projections;"]);
   console.log(`PostgreSQL direct SQL probe: ${Math.round((performance.now() - sqlStartedAt) * 10) / 10}ms (review and queue-projection counts)`);
   run("docker", [...compose, "start", "background-worker"]);
+  const persistedCheckpoint = await postCommand("opening-evidence/checkpoints", backgroundCheckpoint,
+    { operationId: checkpointOperationId });
+  assert.equal(persistedCheckpoint.persisted, true);
+  assert.deepEqual(await postCommand("opening-evidence/checkpoints", backgroundCheckpoint,
+    { operationId: checkpointOperationId }), persistedCheckpoint);
+  const receiptResponse = await apiRequest(`operations/${encodeURIComponent(checkpointOperationId)}`,
+    { headers: { "X-Tempo-Work-Class": "background" } });
+  assert.equal(receiptResponse.status, 200, "Background checkpoint receipt remains readable after worker completion");
+  const checkpointReceipt = await receiptResponse.json();
+  assert.equal(checkpointReceipt.state, "complete");
+  assert.deepEqual(checkpointReceipt.response, persistedCheckpoint);
+  run("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-v", "ON_ERROR_STOP=1", "-Atqc",
+    `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM operation_receipts WHERE operation_id='${checkpointOperationId}' AND background AND state='complete') THEN RAISE EXCEPTION 'Checkpoint receipt is not background'; END IF; IF (SELECT count(*) FROM opening_evidence_events WHERE attempt_id='${backgroundCheckpoint.attempt_id}') != 1 THEN RAISE EXCEPTION 'Checkpoint replay duplicated events'; END IF; END $$;`]);
+  console.log("PASS test_postgres_background_opening_checkpoint_preserves_foreground_progress_and_replay");
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
   const savedTeaching = await get(`cards/${reviewCard.id}/teaching`);
@@ -481,6 +545,7 @@ async function verifyForegroundAndStudyDurability() {
   await waitForStudyableImport(importedBackground.repertoire_id);
   const afterRestartSnapshot = await get("migration/snapshot");
   await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
+  await verifyDiscardedPgnReplay(discardedPgnId);
   assert.deepEqual(stableStudyState(afterRestartSnapshot, importedStudy.repertoire_id), beforeRestartState,
     "Authoritative study identities, values, scheduling, annotation, queue, and split survive service recreation");
   const replayedReview = await postCommand(`cards/${reviewCard.id}/review`, reviewBody, {
@@ -632,7 +697,7 @@ const actions = {
     run("docker", [...compose, "build"]);
   },
   maintenance_cli: async () => {
-    run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "-t", maintenanceImage, "."]);
+    run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]);
     maintenanceImageCreated = true;
     for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
       run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
@@ -670,6 +735,15 @@ const actions = {
       "/source/scripts/check_postgres_priority_recovery.py"]);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_background_diagnostics.py"]);
+    const consumers = ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"];
+    run("docker", [...compose, "stop", ...consumers]);
+    try {
+      await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
+        composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+    } finally {
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...consumers]);
+      await waitForReady();
+    }
   },
   background_workloads: async () => {
     await executeIsolatedBackgroundWorkload({
@@ -686,8 +760,12 @@ const actions = {
           "/source/scripts/check_postgres_tactic_capture.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_background_workloads.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_defensive_pause.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_segmentation.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/scripts/check_postgres_opening_evidence.py"]);
       },
       restoreConsumers: async () => {
         run("docker", [...compose, "start", ...workloadConsumers]);
@@ -772,6 +850,8 @@ const actions = {
     const after = await get("queue/today");
     assert.deepEqual(after.cards.map(card => card.queue_entry_id),
       before.cards.map(card => card.queue_entry_id));
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_opening_evidence.py", "--verify-persisted"]);
     console.log("PASS PostgreSQL lost-response receipt replay, settings, and queue order survive container recreation");
   },
   backup_restore: async () => {
@@ -818,10 +898,29 @@ const actions = {
     await verifyBlockedBurialRecovery();
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
+    if (resourcesCreated) {
+      const inspect = (args) => {
+        const result = spawnSync("docker", args, { encoding: "utf8", env: environment });
+        assert.equal(result.status, 0, "Could not record disposable Docker ownership");
+        return result.stdout.trim();
+      };
+      const ids = inspect(["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`]).split(/\s+/).filter(Boolean);
+      const containers = ids.length ? JSON.parse(inspect(["inspect", ...ids])).map(container => ({
+        id: container.Id, name: container.Name, image: container.Image, created: container.Created,
+        started_at: container.State.StartedAt, project: container.Config.Labels["com.docker.compose.project"],
+        volumes: container.Mounts.filter(mount => mount.Type === "volume").map(mount => ({ name: mount.Name, destination: mount.Destination })),
+      })) : [];
+      atomicJson(`test-results/tempo-cli/${project}/ownership.json`, { checkout: process.cwd(), revision: candidateRevision,
+        project, context: inspect(["context", "show"]), containers,
+        maintenance_image: maintenanceImageCreated ? JSON.parse(inspect(["image", "inspect", maintenanceImage])).map(image => ({ id: image.Id, created: image.Created, tag: maintenanceImage })) : [],
+        teardown: ["docker", ...compose, "down", "--rmi", "local", "-v"],
+        maintenance_teardown: ["docker", "image", "rm", maintenanceImage] });
+    }
     if (process.env.TEMPO_CI_REPORT && resourcesCreated) {
       const diagnostics = spawnSync("docker", [...compose, "logs", "--no-color", "--tail=200"], { encoding: "utf8", env: environment, maxBuffer: 10 * 1024 * 1024 });
       mkdirSync("test-results/ci", { recursive: true });
-      writeFileSync(`test-results/ci/${options.mode}-${project}-services.log`, `${diagnostics.stdout ?? ""}\n${diagnostics.stderr ?? ""}`);
+      writeFileSync(`test-results/ci/${options.mode}-${project}-services.log`, redact(`${diagnostics.stdout ?? ""}\n${diagnostics.stderr ?? ""}`,
+        [administratorPassword, readerPassword, writerPassword]));
     }
   }, async () => {
     const cleanupErrors = [];
@@ -830,6 +929,11 @@ const actions = {
         const stopped = spawnSync("docker", [...compose, "down", "--rmi", "local", "-v"],
           { stdio: "inherit", env: environment });
         if (stopped.error || stopped.status !== 0) cleanupErrors.push(new Error("Disposable PostgreSQL stack cleanup failed"));
+        for (const resource of ["container", "volume"]) {
+          const remaining = spawnSync("docker", [resource === "container" ? "ps" : "volume", ...(resource === "container" ? ["-aq"] : ["ls", "-q"]),
+            "--filter", `label=com.docker.compose.project=${project}`], { encoding: "utf8", env: environment });
+          if (remaining.status !== 0 || remaining.stdout.trim()) cleanupErrors.push(new Error(`Disposable PostgreSQL ${resource} cleanup left resources`));
+        }
       }
       if (maintenanceImageCreated) {
         const removedMaintenanceImage = spawnSync("docker", ["image", "rm", maintenanceImage],

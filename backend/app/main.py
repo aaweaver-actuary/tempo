@@ -478,6 +478,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         card_review_command = (path_parts[:2] == ["api", "cards"]
                                and path_parts[3:] in (["review"], ["review", "reconcile"])
                                and request.method == "POST")
+        opening_evidence_command = (path_parts == ["api", "opening-evidence", "checkpoints"]
+                                    and request.method == "POST")
         card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
                                  and request.method == "PUT")
         card_archive_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
@@ -637,8 +639,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                               and request.method == "POST")
         branch_remove_command = (path_parts == ["api", "repertoire", "branches", "remove"]
                                  and request.method == "POST")
-        pgn_import_command = (path_parts == ["api", "imports", "pgn"]
-                              and request.method == "POST")
+        pgn_import_command = (request.method == "POST" and (
+            path_parts == ["api", "imports", "pgn"] or
+            (len(path_parts) == 5 and path_parts[:3] == ["api", "imports", "pgn"]
+             and path_parts[4] == "discard")))
         analysis_paste_command = (path_parts == ["api", "repertoire", "paste", "commit"]
                                   and request.method == "POST")
         integrity_resolution_command = (
@@ -696,13 +700,16 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     pgn_import_command,
                     analysis_paste_command,
                     integrity_resolution_command,
-                    card_validation, prefix_split_command, segmentation_command)):
+                    card_validation, prefix_split_command, segmentation_command, opening_evidence_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
             )
     is_background = (
         request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        # Its receipt read uses background admission too; a foreground request
+        # lease would wait on itself, including for older clients without headers.
+        or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
     )
     request_scope = query_only_request() if request.method == "GET" or read_only_post else None
     if request_scope is not None:
@@ -901,7 +908,8 @@ def retry_system_task(task_id: str,
     retried = retry_task(task_id)
     if retried is None:
         raise HTTPException(404, "Terminal task not found")
-    set_control("durable", task_id, "resume")
+    # Explicit Retry keeps its existing pause reset, like the PostgreSQL retry handler.
+    set_control("durable", task_id, "resume", allow_settings_blocked_resume=True)
     coordinator.wake()
     return retried
 
@@ -915,7 +923,7 @@ def capabilities():
 def get_settings():
     with read_connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -939,14 +947,15 @@ def put_settings(s: Settings,
     )
     def persist_settings(db):
         previous_settings = db.execute(
-            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,defensive_analysis_enabled=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
                 s.defense_new_cards_per_day,
                 int(s.include_defensive_cards_in_daily_stack) if "include_defensive_cards_in_daily_stack" in s.model_fields_set else previous_settings["include_defensive_cards_in_daily_stack"],
+                int(s.defensive_analysis_enabled) if "defensive_analysis_enabled" in s.model_fields_set else previous_settings["defensive_analysis_enabled"],
                 s.discovery_window_days,
                 s.initial_depth,
                 s.timezone,
@@ -1678,6 +1687,10 @@ register_maintenance_handler(_ensure_current_daily_queue)
 
 
 def _ensure_daily_defense_admission() -> None:
+    from .services.defensive_analysis import analysis_enabled
+    with background_read_connection(authoritative=True) as database:
+        if not analysis_enabled(database):
+            return
     today = date.today().isoformat()
     with read_connection() as database:
         existing = database.execute(
@@ -1738,9 +1751,10 @@ def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
     return task
 
 
-def _queue_payload(limit: int | None = None):
+def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
     day = date.today().isoformat()
     with read_connection() as db:
+        evidence_timezone = db.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0] if include_opening_evidence and postgres_store.configured() else None
         projection_row = db.execute(
             "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
         ).fetchone()
@@ -1899,6 +1913,12 @@ def _queue_payload(limit: int | None = None):
     for card in cards:
         card.pop("moves_json", None)
         card["trained_color"] = card.pop("effective_trained_color")
+    if include_opening_evidence and postgres_store.configured():
+        from .services.postgres_opening_evidence import queue_manifests
+        queue_manifests(cards)
+        for card in cards:
+            if "opening_decision_manifest" in card:
+                card["opening_evidence_study_timezone"] = evidence_timezone or "local"
     return {
         "local_date": day,
         "cards": cards,
@@ -1920,13 +1940,13 @@ def _queue_payload(limit: int | None = None):
 
 
 @app.get("/api/queue/today")
-def queue_today():
-    return _queue_payload()
+def queue_today(include_opening_evidence: bool = False):
+    return _queue_payload(include_opening_evidence=include_opening_evidence)
 
 
 @app.get("/api/queue/prepared")
-def prepared_queue():
-    payload = _queue_payload()
+def prepared_queue(include_opening_evidence: bool = False):
+    payload = _queue_payload(include_opening_evidence=include_opening_evidence)
     study_cards = [card for card in payload["cards"] if card["content_type"] == "study_exercise"]
     if study_cards:
         with read_connection() as database:
@@ -1950,10 +1970,24 @@ def prepared_queue():
 
 
 @app.get("/api/queue/window")
-def queue_window(limit: int = 20):
+def queue_window(limit: int = 20, include_opening_evidence: bool = False):
     if not 1 <= limit <= 20:
         raise HTTPException(422, "Queue window limit must be between 1 and 20")
-    return _queue_payload(limit)
+    return _queue_payload(limit, include_opening_evidence=include_opening_evidence)
+
+
+@app.post("/api/imports/pgn/{operation_id}/discard")
+def discard_pending_pgn(operation_id: str):
+    if not postgres_store.configured():
+        raise HTTPException(404, "PGN discard is available after PostgreSQL cutover")
+    if not 1 <= len(operation_id) <= 128:
+        raise HTTPException(422, "Invalid PGN operation identity")
+    from .command_dispatch import dispatch_command
+    discard_operation_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"tempo:pgn-discard:{operation_id}"))
+    if read_operation(discard_operation_id)["state"] == "blocked":
+        return JSONResponse(status_code=202, content=retry_blocked_operation(discard_operation_id))
+    return dispatch_command("imports.pgn.discard", {"operation_id": operation_id},
+                            idempotency_key=discard_operation_id)
 
 
 @app.post("/api/imports/pgn", response_model=ImportResult)
@@ -2789,10 +2823,21 @@ def review(identifier: str, request: ReviewRequest,
            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
+        # Preserve the exact legacy dispatch shape and existing durable receipt hash.
+        review_payload = request.model_dump(mode="json", exclude={"opening_evidence_completion"}
+                                            if request.opening_evidence_completion is None else set())
+        command_payload = {"card_id": identifier, "review": review_payload}
+        if request.opening_evidence_completion:
+            from .services.postgres_opening_evidence import prepare_checkpoint
+            command_payload["prepared_manifest"] = prepare_checkpoint(request.opening_evidence_completion)
         return dispatch_command(
-            "cards.review", {"card_id": identifier, "review": request.model_dump(mode="json")},
+            "cards.review", command_payload,
             idempotency_key=idempotency_key,
         )
+    if request.opening_evidence_completion:
+        from .services.postgres_opening_evidence import evidence_error
+        raise evidence_error("Opening shadow evidence requires PostgreSQL; save the aggregate review through the compatible path",
+                             "opening_evidence_unavailable")
     return _apply_review(identifier, request)
 
 
@@ -2803,9 +2848,18 @@ def reconcile_review(identifier: str, request: ReviewRequest,
         raise HTTPException(422, "Reconciliation requires the original attempt and queue entry IDs")
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command("cards.review.reconcile",
-                                {"card_id": identifier, "review": request.model_dump(mode="json")},
+        review_payload = request.model_dump(mode="json", exclude={"opening_evidence_completion"}
+                                            if request.opening_evidence_completion is None else set())
+        command_payload = {"card_id": identifier, "review": review_payload}
+        if request.opening_evidence_completion:
+            from .services.postgres_opening_evidence import prepare_checkpoint
+            command_payload["prepared_manifest"] = prepare_checkpoint(request.opening_evidence_completion)
+        return dispatch_command("cards.review.reconcile", command_payload,
                                 idempotency_key=idempotency_key)
+    if request.opening_evidence_completion:
+        from .services.postgres_opening_evidence import evidence_error
+        raise evidence_error("Opening shadow evidence requires PostgreSQL; save the aggregate review through the compatible path",
+                             "opening_evidence_unavailable")
     return _reconcile_review(identifier, request)
 
 
@@ -2830,7 +2884,8 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
             raise HTTPException(422, "Review timestamp must include a timezone and cannot be in the future")
         now = recorded_at.astimezone(timezone.utc)
     day = date.today().isoformat()
-    original_payload = request.model_dump(mode="json")
+    original_payload = request.model_dump(mode="json", exclude={"opening_evidence_completion"}
+                                              if request.opening_evidence_completion is None else set())
     if request.recorded_at:
         original_payload["recorded_at"] = now.isoformat()
     request_json = json.dumps(original_payload, sort_keys=True)
@@ -5338,6 +5393,27 @@ def save_game_analysis(
     return result
 
 
+@app.get("/api/defensive-threats/analysis/{request_id}/control")
+def defensive_engine_control(request_id: str, lease_id: str):
+    """One authoritative, read-only request probe; never traverse the engine backlog."""
+    from .services.defensive_analysis import search_admission_sql
+    from .services.background_activity import claimable
+
+    # Foreground demand must stop the engine without waiting for background DB admission.
+    if activity_gate.foreground_waiting:
+        return {"foreground_active": True, "search_allowed": False}
+    with background_read_connection(authoritative=True) as database:
+        row = database.execute(
+            f"""SELECT state,lease_id,
+                    ({search_admission_sql('request.id')} AND
+                     {claimable('threat_analysis', 'request.id')}) AS search_allowed
+                FROM threat_analysis_requests request WHERE request.id=?""", (request_id,),
+        ).fetchone()
+    return {"foreground_active": activity_gate.foreground_waiting,
+            "search_allowed": bool(row and row['state'] == 'leased'
+                                   and row['lease_id'] == lease_id and row['search_allowed'])}
+
+
 @app.post("/api/defensive-threats/analysis/claim")
 def claim_defensive_threat_analysis(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
@@ -5462,6 +5538,7 @@ def release_defensive_threat_analysis(
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
+                  attempts=MAX(0,attempts-1),
                   lease_expires_at=NULL,updated_at=?
                WHERE id=? AND state='leased' AND lease_id=?""",
             (datetime.now(timezone.utc).isoformat(), request_id, request.lease_id),
@@ -6308,3 +6385,5 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
 
 from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
+from .opening_evidence_api import router as opening_evidence_router
+app.include_router(opening_evidence_router)

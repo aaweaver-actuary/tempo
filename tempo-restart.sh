@@ -18,7 +18,7 @@ docker compose up -d --wait --build postgres redis
 # 3. Check the health of the database and cache services
 DB_HEALTH=$(docker compose exec -T redis redis-cli ping)
 if [ "$DB_HEALTH" != "PONG" ]; then
-  echo "Redis is not healthy. Please check the logs and try again."
+  echo "Redis is not healthy. Expected PONG but got $DB_HEALTH. Please check the Redis service and try again."
   exit 1
 fi
 

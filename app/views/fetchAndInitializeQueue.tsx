@@ -95,7 +95,7 @@ async function fetchQueueWindow(signal: AbortSignal): Promise<Response> {
     controller.abort();
   }, 15_000);
   try {
-    return await fetch(`${API_URL}/api/queue/window?limit=20`, { signal: controller.signal });
+    return await fetch(`${API_URL}/api/queue/window?limit=20&include_opening_evidence=true`, { signal: controller.signal });
   } catch (error) {
     if (timedOut)
       throw new Error("Queue request timed out after 15 seconds. Retry loading the queue.", { cause: error });
@@ -170,6 +170,8 @@ export async function fetchAndInitializeQueue(
   activeQueueController?.abort();
   const controller = new AbortController();
   activeQueueController = controller;
+  useTrainingStore.setState({ queueReadiness: "loading" });
+  let queueInitialized = false;
   let failedOperation = "process today queue";
   let failedEndpoint: string | undefined;
   let queueRequestFailed = false;
@@ -283,6 +285,7 @@ export async function fetchAndInitializeQueue(
     );
     useTrainingStore.getState().setPendingReviewError(pendingReviewError);
     useTrainingStore.getState().setOfflineQueue(false);
+    queueInitialized = true;
     try { localStorage.setItem(queueCacheKey, JSON.stringify(raw)); } catch {
       // A full browser storage quota must not turn a successful queue read into a failure.
     }
@@ -310,7 +313,7 @@ export async function fetchAndInitializeQueue(
       if (!pendingTrainingFailures().length) useTrainingStore.getState().setQueueNotice("");
     }
     const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
-    if (isIPhoneHomeScreen() && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared`, { signal: controller.signal })
+    if (isIPhoneHomeScreen() && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared?include_opening_evidence=true`, { signal: controller.signal })
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
@@ -383,6 +386,7 @@ export async function fetchAndInitializeQueue(
       if (generation !== requestGeneration) return;
       useTrainingStore.getState().hydrateLocalQueue(availableCards, advance, availableCards.length);
       useTrainingStore.getState().setOfflineQueue(true);
+      queueInitialized = true;
       showQueueNotice(`${describeOfflineQueue(prepared)} Live service: ${String(error)}. Retry sync when connected.`, "warning");
       return;
     }
@@ -393,6 +397,8 @@ export async function fetchAndInitializeQueue(
       );
     throw error;
   } finally {
+    if (generation === requestGeneration)
+      useTrainingStore.setState({ queueReadiness: queueInitialized ? "ready" : "unavailable" });
     if (activeQueueController === controller) activeQueueController = null;
   }
 }
