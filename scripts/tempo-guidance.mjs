@@ -15,10 +15,14 @@ export class TempoProblem extends Error {
 }
 
 export function verificationProblem(verification) {
-  const { status, job, message, run } = verification;
+  const { status, job, conclusion, message, run } = verification;
+  const unfinishedConclusions = { cancelled: "was cancelled", timed_out: "timed out", skipped: "was skipped", action_required: "requires action", neutral: "did not report success" };
+  const failedDescription = unfinishedConclusions[conclusion]
+    ? `The required release check${job ? ` (${job})` : ""} ${unfinishedConclusions[conclusion]}. A successful release check is still required before this version can be installed.`
+    : `The new version failed required release checks${job ? ` (${job})` : ""}. The failing job needs repair in the software or release workflow; retrying local startup cannot change that result.`;
   const descriptions = {
     pending: "The update is waiting for automated release checks.",
-    failed: `The new version failed required release checks${job ? ` (${job})` : ""}. Software repair is required; retrying locally cannot fix failed tests.`,
+    failed: failedDescription,
     missing: `Required release-check evidence is missing${job ? ` (${job})` : " for the current main revision"}. The release workflow must complete before this version can be installed.`,
     unavailable: `GitHub release checks could not be read. This is an access or connection problem, not a failed test.${message ? ` Cause: ${message}` : ""}`,
   };
@@ -28,7 +32,7 @@ export function verificationProblem(verification) {
       : status === "unavailable" ? /rate limit/i.test(message ?? "")
         ? "Next: wait for the reported GitHub rate limit to clear, then run tempo start."
         : "Next: restore GitHub connectivity/access, then run tempo start."
-      : `Next: ${status === "missing" ? "complete or restore the required release workflow" : "have the release checks repaired"}: ${run?.html_url ?? "https://github.com/aaweaver-actuary/tempo/actions/workflows/pages.yml"}`,
+      : `Next: ${status === "missing" ? "complete or restore the required release workflow" : conclusion === "cancelled" ? "rerun the cancelled release workflow" : "repair or complete the required release workflow"}: ${run?.html_url ?? "https://github.com/aaweaver-actuary/tempo/actions/workflows/pages.yml"}`,
   });
 }
 

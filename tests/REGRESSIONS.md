@@ -2064,6 +2064,10 @@ remain required. No sleep, ignored access error or empty-success substitute is u
 `CLI target safety errors name conflicting ports and service mounts without circular doctor advice`
 failed before the repair and protects the exact port/service item and direct
 configuration correction, without a circular instruction to run doctor again.
+`CLI verification failure guidance distinguishes cancelled and timed-out jobs from software failures`
+failed before the repair. It names the actual job conclusion and release-workflow
+action without claiming cancellation, timeout or missing execution proves a
+software defect; an ordinary failure may require software or workflow repair.
 
 Existing exact-main CI, source preservation, Redis persisted loading,
 PostgreSQL original-history/backup/migration/restart/receipt and incompatible

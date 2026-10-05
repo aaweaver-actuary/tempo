@@ -2077,3 +2077,18 @@ test("CLI target safety errors name conflicting ports and service mounts without
     return true;
   });
 });
+
+test("CLI verification failure guidance distinguishes cancelled and timed-out jobs from software failures", async () => {
+  const { verificationProblem } = await guidance();
+  for (const [conclusion, expected] of [["cancelled", /was cancelled/], ["timed_out", /timed out/], ["skipped", /was skipped/]]) {
+    const problem = verificationProblem({ status: "failed", job: "postgres / verify", conclusion,
+      run: { html_url: "https://github.com/fixture/ci" } });
+    assert.match(problem.message, expected);
+    assert.match(problem.message, /postgres \/ verify/);
+    assert(!problem.message.includes("Software repair is required"));
+    assert.match(problem.action, /release workflow.*https:\/\/github.com\/fixture\/ci/);
+  }
+  const failed = verificationProblem({ status: "failed", job: "postgres / verify", conclusion: "failure" });
+  assert.match(failed.message, /software or release workflow/);
+  assert(!failed.message.includes("Software repair is required"));
+});
