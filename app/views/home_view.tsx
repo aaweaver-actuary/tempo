@@ -159,6 +159,7 @@ export default function Home() {
     blockedDue: number;
   }>();
   const deferredRepairIds = useRef(new Set<string>());
+  const integrityCheckGeneration = useRef(0);
   const [insightsTab, setInsightsTab] = useState<"training" | "games">(
     "training",
   );
@@ -324,10 +325,12 @@ export default function Home() {
 
   const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
     if (!usesLocalApi()) return;
+    const integrityCheckRequestGeneration = ++integrityCheckGeneration.current;
     try {
       const response = await (passive ? backgroundFetch : fetch)(`${API_URL}/api/repertoires`);
       const data = await response.json();
       const parsed = repertoiresResponseSchema.parse(data);
+      if (integrityCheckRequestGeneration !== integrityCheckGeneration.current) return;
       const candidate = parsed.repertoires.find(
         (item) =>
           item.integrity_status === "needs_repair" &&

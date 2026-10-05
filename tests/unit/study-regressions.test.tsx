@@ -1011,6 +1011,102 @@ it("late integrity count refresh cannot close an explicitly opened repair dialog
   expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
 });
 
+for (const { title, latestIssueCount, olderIssueCount, preferred } of [
+  { title: "older passive integrity reconciliation cannot restore repair counts after a newer clean result",
+    latestIssueCount: 0, olderIssueCount: 1, preferred: false },
+  { title: "older passive integrity reconciliation cannot replace newer partial repair counts",
+    latestIssueCount: 1, olderIssueCount: 2, preferred: false },
+  { title: "newer preferred integrity reconciliation opens its dialog while an older passive response is pending",
+    latestIssueCount: 1, olderIssueCount: 2, preferred: true },
+]) {
+  it(title, async () => {
+    const pendingPassiveResponses: ((response: Response) => void)[] = [];
+    let foregroundIssueCount = 2;
+    const repertoireCounts = (issueCount: number) => ({ repertoires: [{
+      id: "rep", name: "Repair repertoire", source_name: "fixture.pgn", line_count: 2,
+      card_count: 6, due_count: 6, graph_state: "ready", graph_generation: 2,
+      integrity_status: issueCount ? "needs_repair" : "clean",
+      integrity_issue_count: issueCount, blocked_due_count: issueCount * 3,
+    }] });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window")) return Response.json({ count: 1, cards: [{
+        id: "overlapping-repair-study", queue_entry_id: 873, start_fen: new Chess().fen(),
+        moves: ["e2e4", "e7e5", "g1f3"], trained_color: "white", content_type: "opening",
+        repertoire_name: "Overlapping repair study", repertoire_source: "fixture.pgn",
+      }] });
+      if (url.endsWith("/repertoires")) {
+        if (new Headers(init?.headers).get("X-Tempo-Work-Class") === "background") {
+          return new Promise<Response>(resolve => pendingPassiveResponses.push(resolve));
+        }
+        return Response.json(repertoireCounts(foregroundIssueCount));
+      }
+      if (url.endsWith("/integrity")) return Response.json({ repertoire_id: "rep", status: "needs_repair",
+        issue_count: 1, first_issue_id: "overlap-issue", scan_status: "idle", scan_generation: "scan:2",
+        scan_progress: { completed: 2, total: 2 }, last_scan_error: null,
+        issues: [{ id: "overlap-issue", kind: "multiple_responses", signature: "overlap-signature",
+          fen: new Chess().fen(), fen_key: new Chess().fen().split(" ").slice(0, 4).join(" "),
+          trained_color: "white", moves: [], sources: [] }] });
+      return Response.json({ providers: [], states: [], lines: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Home />);
+    await screen.findByRole("heading", { name: "Overlapping repair study" });
+    await screen.findByRole("button", { name: "Resume repair" });
+    await act(async () => {});
+    const studyMove = screen.getByRole("button", { name: "e2e4" });
+    studyMove.focus();
+    const beforeReconciliation = useTrainingStore.getState();
+    const queueReadsBeforeReconciliation = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("tempo-integrity-repair-confirmed", { detail: { repertoireId: "rep" } }));
+    });
+    expect(pendingPassiveResponses).toHaveLength(1);
+    if (preferred) {
+      foregroundIssueCount = latestIssueCount;
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: "rep" } }));
+      });
+    } else {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent("tempo-integrity-repair-confirmed", { detail: { repertoireId: "rep" } }));
+      });
+      expect(pendingPassiveResponses).toHaveLength(2);
+      await act(async () => { pendingPassiveResponses[1](Response.json(repertoireCounts(latestIssueCount))); });
+    }
+    const assertLatestRepairCounts = () => {
+      if (latestIssueCount === 0) {
+        expect(screen.queryByRole("button", { name: "Resume repair" })).toBeNull();
+        expect(screen.queryByText(/opening cards? paused by repertoire repair/)).toBeNull();
+        expect(screen.queryByText(/issues? remaining\./)).toBeNull();
+      } else {
+        const notice = screen.getByRole("button", { name: "Resume repair" }).closest('[role="status"]')!;
+        expect(notice.textContent).toContain("3 opening cards paused by repertoire repair.");
+        expect(notice.textContent).toContain("1 issue remaining.");
+      }
+    };
+    assertLatestRepairCounts();
+    const dialog = preferred ? await screen.findByRole("dialog", { name: "Choose one response per position" }) : null;
+    if (dialog) fireEvent.click(await within(dialog).findByRole("button", { name: "e2e4" }));
+    await act(async () => { pendingPassiveResponses[0](Response.json(repertoireCounts(olderIssueCount))); });
+    assertLatestRepairCounts();
+    if (dialog) {
+      expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
+      expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
+    } else {
+      expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+      expect(document.activeElement).toBe(studyMove);
+    }
+    const afterReconciliation = useTrainingStore.getState();
+    expect(afterReconciliation.attempt).toEqual(beforeReconciliation.attempt);
+    expect(afterReconciliation.currentFenString).toBe(beforeReconciliation.currentFenString);
+    expect(afterReconciliation.step).toBe(beforeReconciliation.step);
+    expect(afterReconciliation.getCard().queueEntryId).toBe(beforeReconciliation.getCard().queueEntryId);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")))
+      .toHaveLength(queueReadsBeforeReconciliation);
+  });
+}
+
 for (const { title, hasRemainingConflict, crossTab } of [
   { title: "confirmed partial repair restores the deferred resume notice without changing study", hasRemainingConflict: true, crossTab: false },
   { title: "confirmed final repair removes the deferred resume notice without changing study", hasRemainingConflict: false, crossTab: false },
