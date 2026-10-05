@@ -19,7 +19,10 @@ export async function preparePromotionStudy(page: Page, black = false) {
     projection: { state: "ready", generation: 1, updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
   await page.goto("/");
   await expect(page.getByText("Promote to a knight")).toBeVisible();
-  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", fen);
+  const board = page.locator(".board-frame").first();
+  await expect(board).toHaveAttribute("data-fen", fen);
+  await expect(board.locator("piece.anim")).toHaveCount(0);
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(fen));
   return { localDate, fen, move };
 }
 

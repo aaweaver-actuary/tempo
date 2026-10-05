@@ -1,6 +1,7 @@
 import { test, expect, api, nav } from "./product-fixtures";
 import type { Page } from "@playwright/test";
 import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
+import { noPageOverflow } from "./ui-fixtures";
 
 test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 test.beforeEach(async ({ context }) => {
@@ -8,9 +9,15 @@ test.beforeEach(async ({ context }) => {
 });
 
 for (const black of [false, true]) {
-  test(`Study ${black ? "Black" : "White"} board underpromotion survives offline journal and exact UCI replay`, async ({ page }) => {
+  test(`Study ${black ? "Black" : "White"} board underpromotion survives offline journal and exact UCI replay`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: black ? 390 : 1280, height: 844 });
     const { localDate, fen: promotionFen, move } = await preparePromotionStudy(page, black);
     await waitForPreparedPhoneShell(page, localDate);
+    await page.getByRole("combobox", { name: "Promotion", exact: true }).scrollIntoViewIfNeeded();
+    await noPageOverflow(page);
+    await testInfo.attach("Study promotion control", { body: await page.screenshot({
+      path: `test-results/stalemate-swindles/promotion-control-${black ? "phone" : "desktop"}.png`,
+    }), contentType: "image/png" });
     await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
     await page.reload();
     await expect(page.getByText("Promote to a knight")).toBeVisible();
