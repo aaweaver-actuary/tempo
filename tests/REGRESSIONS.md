@@ -1436,6 +1436,8 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `test_issue77_missing_or_zero_saved_depth_never_uses_global_default`
 - `test_issue77_stale_graph_and_malformed_split_fail_without_partial_results`
 - `test_issue77_size_limits_fail_without_truncating_source`
+- `test_issue77_512_ply_line_evaluates_current_and_proposed_without_truncation` — legal knight cycles at the diagnostic ceiling reach both production graph builds intact, preserving all 512 plies and 256 learner decisions in graph steps.
+- `test_issue77_513_ply_source_is_rejected_before_any_graph_build` — direct snapshots and a fail-if-called graph sentinel prove selected, unselected and empty-selection requests reject oversized source before even a normal line that sorts earlier is built; error identifies the line and 513/512 boundary without truncation.
 - `test_issue77_snapshot_binds_depth_source_graph_and_split_revisions`
 - `test_issue77_card_revisions_membership_and_decision_versions_fence_snapshot`
 
@@ -1450,6 +1452,7 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `test_issue77_temporary_database_failure_is_retryable_without_partial_metrics`
 - `test_issue77_endpoints_use_actual_reader_pool_without_writer_credentials` — source and evaluate keep the actual loader, connection helper and pool selection; only low-level pool I/O is stubbed. Reader URL present/writer URL absent failed before the repair with `TEMPO_DATABASE_WRITE_URL is missing`. Both reads retain explicitly read-only repeatable transactions and close before decoding.
 - `test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hashing`
+- `test_issue77_http_oversized_source_is_413_through_actual_loader_without_payload` — GET source and POST evaluation retain actual loading/shared source validation, with database I/O stubbed at the existing connection seam; validation runs after connection closure and both return only the 413 limit error, with no graph construction or partial source/comparison.
 - `test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics`
 - `test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_only`
 - `test_issue77_repeatable_reader_and_worker_connections_set_isolation_before_budgets` — reader-based repeats select the reader pool; authoritative worker controls retain the writer pool. Both set isolation/read-only before timeout queries.

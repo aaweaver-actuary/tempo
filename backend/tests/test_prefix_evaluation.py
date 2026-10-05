@@ -15,6 +15,7 @@ from app.services.prefix_evaluation import (
 CARO_A = ('e2e4', 'c7c6', 'd2d4', 'd7d5', 'e4e5', 'c6c5')
 CARO_B = ('e2e4', 'c7c6', 'd2d4', 'd7d5', 'g1f3', 'c8g4')
 QGD = ('d2d4', 'd7d5', 'c2c4', 'e7e6', 'g1f3', 'g8f6')
+KNIGHT_CYCLE = ('g1f3', 'g8f6', 'f3g1', 'f6g8')
 
 
 def line(identifier, moves=CARO_A, depth=3, color='black', start=chess.STARTING_FEN):
@@ -169,6 +170,43 @@ def test_issue77_size_limits_fail_without_truncating_source(monkeypatch):
             scope.setattr(evaluator, bound, 1)
             with pytest.raises(PrefixEvaluationError) as error: evaluate_prefix(source, ('a',), None)
             assert error.value.code == 'limit_exceeded'
+
+
+def test_issue77_512_ply_line_evaluates_current_and_proposed_without_truncation(monkeypatch):
+    from app.services import prefix_evaluation as evaluator
+    source = snapshot((line('cycle', KNIGHT_CYCLE * 128, depth=20),))
+    original_build = evaluator.build_graph
+    built_line_lengths = []
+    def observed_build(graph_input):
+        built_line_lengths.append(len(json.loads(graph_input.lines[0]['moves_json'])))
+        return original_build(graph_input)
+    monkeypatch.setattr(evaluator, 'build_graph', observed_build)
+    result = evaluate_prefix(source, ('cycle',), {'cycle': 2})
+    assert built_line_lengths == [512, 512]
+    for structure in ('current', 'proposed'):
+        steps = result['whole_repertoire'][structure]['steps']
+        assert tuple(move for step in steps for move in step['moves']) == source.lines[0].moves
+        assert sum(len(step['decision_fen_keys']) for step in steps) == 256
+        assert steps[-1]['last_decision_index'] == 255
+    assert len(source.lines[0].moves) == 512
+
+
+@pytest.mark.parametrize('selection,depths', [
+    (('z-oversized',), None), (('z-oversized',), {'z-oversized': 2}),
+    (('a-normal',), None), (('a-normal',), {'a-normal': 2}), ((), None),
+], ids=['selected-current', 'selected-proposed', 'unselected-current', 'unselected-proposed', 'empty-selection'])
+def test_issue77_513_ply_source_is_rejected_before_any_graph_build(monkeypatch, selection, depths):
+    from app.services import prefix_evaluation as evaluator
+    source = EvaluationSnapshot('rep', 1,
+        (line('a-normal'), line('z-oversized', (*KNIGHT_CYCLE * 128, 'g1f3'))), (), ())
+    def forbidden_build(*_args):
+        pytest.fail('Source validation must reject the oversized line before building even a-normal')
+    monkeypatch.setattr(evaluator, 'build_graph', forbidden_build)
+    with pytest.raises(PrefixEvaluationError) as error:
+        evaluate_prefix(source, selection, depths)
+    assert error.value.code == 'limit_exceeded'
+    assert 'z-oversized' in str(error.value) and '513' in str(error.value) and '512' in str(error.value)
+    assert len(source.lines[1].moves) == 513
 
 
 def test_issue77_snapshot_binds_depth_source_graph_and_split_revisions():

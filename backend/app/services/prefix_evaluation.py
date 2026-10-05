@@ -15,6 +15,7 @@ from .opening_segmentation import POLICY_VERSION, POSITION_VERSION, decision_ide
 EVALUATION_VERSION = 1
 MAX_SOURCE_LINES = 2_000
 MAX_SOURCE_PLIES = 80_000
+MAX_PREFIX_EVALUATION_LINE_PLIES = 512
 MAX_GRAPH_STEPS = 40_000
 ESTIMATE_BASIS = 'Structural counts only; not evidence of better learning or measured time savings.'
 
@@ -110,7 +111,16 @@ def snapshot_identity(snapshot: EvaluationSnapshot) -> str:
 
 
 def validate_source(snapshot: EvaluationSnapshot) -> None:
-    if len(snapshot.lines) > MAX_SOURCE_LINES or sum(len(line.moves) for line in snapshot.lines) > MAX_SOURCE_PLIES:
+    if len(snapshot.lines) > MAX_SOURCE_LINES:
+        raise PrefixEvaluationError('limit_exceeded', 'Repertoire exceeds the bounded source evaluation limits.')
+    for line in snapshot.lines:
+        line_ply_count = len(line.moves)
+        if line_ply_count > MAX_PREFIX_EVALUATION_LINE_PLIES:
+            raise PrefixEvaluationError('limit_exceeded',
+                f'Line {line.id} contains {line_ply_count} plies; prefix evaluation supports at most '
+                f'{MAX_PREFIX_EVALUATION_LINE_PLIES} plies per source line. '
+                'Use a repertoire with shorter source lines for this diagnostic.')
+    if sum(len(line.moves) for line in snapshot.lines) > MAX_SOURCE_PLIES:
         raise PrefixEvaluationError('limit_exceeded', 'Repertoire exceeds the bounded source evaluation limits.')
     if len(snapshot.published_steps) > MAX_GRAPH_STEPS:
         raise PrefixEvaluationError('limit_exceeded', 'Repertoire exceeds the bounded graph evaluation limit.')

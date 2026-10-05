@@ -123,11 +123,21 @@ fingerprinting, chess traversal and counting occur after closing the connection.
 Isolation is selected before the timeout configuration queries. The API rechecks
 the source token after calculation and never returns partial results.
 
-Limits are 2,000 source lines, 80,000 source plies, 40,000 graph steps, a 4 MiB source
+Limits are 2,000 source lines, 80,000 total source plies, **512 plies per source line**,
+40,000 graph steps, a 4 MiB source
 move-JSON transfer budget, at most 40,000 saved split entries, and a ten-second
 request computation deadline. Foreground activity is checked between line/card
 calculations. Both endpoints are secondary work even without a work-class header;
 the POST is also query-only. They enqueue no work and persist no result or receipt.
+
+The per-line ceiling applies only to prefix evaluation; PGN imports, saved repertoire
+content and normal study are unaffected. Shared source validation checks every line,
+including unselected lines, before any current or proposed graph construction. A line
+with 512 plies is accepted; a line with 513 or more makes both endpoints return HTTP
+413 with `detail.code: limit_exceeded` and a message identifying the line, its ply
+count and the maximum. Nothing is truncated, skipped or returned as partial metrics.
+This bounds the input to each uninterrupted single-line graph build; it does not
+provide a hard real-time guarantee for every request phase.
 
 Errors contain `detail.code` and `detail.message`: `stale_snapshot`, `graph_not_ready`,
 `unsupported_source` and `unsupported_backend` use HTTP 409; `invalid_selection`

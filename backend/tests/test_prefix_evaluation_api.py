@@ -9,8 +9,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app import prefix_evaluation_api as api
-from app.services.prefix_evaluation import PublishedCard, snapshot_identity
-from test_prefix_evaluation import line, snapshot, CARO_B
+from app.services.prefix_evaluation import EvaluationSnapshot, PublishedCard, snapshot_identity
+from test_prefix_evaluation import line, snapshot, CARO_B, KNIGHT_CYCLE
 
 
 @pytest.fixture
@@ -215,6 +215,63 @@ def test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hash
     assert loaded.lines == source.lines and loaded.presentations == tuple(cards)
     assert all(statement.lstrip().startswith('SELECT') for statement in statements)
     assert loaded.published_steps == source.published_steps
+
+
+@pytest.mark.parametrize('endpoint', ['source', 'evaluate'])
+def test_issue77_http_oversized_source_is_413_through_actual_loader_without_payload(monkeypatch, endpoint):
+    from app.services import prefix_evaluation as evaluator
+    source = EvaluationSnapshot('rep', 1,
+        (line('a-normal'), line('z-oversized', (*KNIGHT_CYCLE * 128, 'g1f3'))), (), ())
+    source_rows = [{**route.graph_line(), 'name': route.name} for route in source.lines]
+    open_read = False
+    class Cursor:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+    class Database:
+        def execute_native(self, statement, _parameters=()):
+            if 'FROM repertoires' in statement: return Cursor([{'id': 'rep'}])
+            if 'FROM opening_graph_publications' in statement:
+                return Cursor([{'generation': 1, 'state': 'ready', 'task_generation': None, 'task_state': None}])
+            if 'COUNT(*)' in statement:
+                return Cursor([{'line_count': 2, 'source_bytes': sum(len(row['moves_json']) for row in source_rows)}])
+            if 'FROM repertoire_lines' in statement: return Cursor(source_rows)
+            if any(table in statement for table in ('FROM prefix_splits', 'FROM opening_graph_steps')):
+                return Cursor([])
+            raise AssertionError(statement)
+    @contextmanager
+    def connection(**options):
+        nonlocal open_read
+        assert options == {'read_only': True, 'background': True, 'repeatable_read': True}
+        open_read = True
+        try: yield Database()
+        finally: open_read = False
+    original_validation = api.validate_source
+    validated_sources = []
+    def validate_after_connection_close(loaded):
+        assert not open_read
+        validated_sources.append(loaded.lines)
+        original_validation(loaded)
+    def forbidden_build(*_args): pytest.fail('Oversized HTTP source reached graph construction')
+    monkeypatch.setattr(api.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(api.postgres_store, 'connection', connection)
+    monkeypatch.setattr(api, 'check_available', lambda *_args: None)
+    monkeypatch.setattr(api, 'validate_source', validate_after_connection_close)
+    monkeypatch.setattr(evaluator, 'build_graph', forbidden_build)
+    application = FastAPI(); application.include_router(api.router)
+    client = TestClient(application)
+    if endpoint == 'source':
+        response = client.get('/api/repertoires/rep/prefix-evaluation/source')
+    else:
+        response = client.post('/api/repertoires/rep/prefix-evaluation/evaluate', json={
+            'snapshot_id': snapshot_identity(source), 'selected_line_ids': ['a-normal'],
+            'candidate_depths': {'a-normal': 2}})
+    assert response.status_code == 413
+    payload = response.json()
+    assert set(payload) == {'detail'} and payload['detail']['code'] == 'limit_exceeded'
+    assert 'z-oversized' in payload['detail']['message']
+    assert '513' in payload['detail']['message'] and '512' in payload['detail']['message']
+    assert validated_sources == [source.lines] and not open_read
 
 
 def test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics(prepared, monkeypatch):
