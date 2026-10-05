@@ -441,6 +441,17 @@ def cleanup_graph_cards_in_transaction(
                 "WHERE retained.card_id=%s AND retained.repertoire_id<>%s)",
                 (card_id, card_id, repertoire_id),
             )
+        # Move a retained card's owner while the explicit generated membership
+        # still suppresses fallback in the departing repertoire.
+        database.execute_native(
+            "UPDATE cards SET repertoire_id=("
+            "SELECT MIN(retained.repertoire_id) FROM repertoire_cards retained "
+            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s) "
+            "WHERE id=%s AND repertoire_id=%s "
+            "AND EXISTS(SELECT 1 FROM repertoire_cards retained "
+            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
+            (repertoire_id, card_id, repertoire_id, repertoire_id),
+        )
         database.execute_native(
             "DELETE FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s",
             (repertoire_id, card_id),
@@ -448,14 +459,6 @@ def cleanup_graph_cards_in_transaction(
         database.execute_native(
             "DELETE FROM repertoire_integrity_card_blocks "
             "WHERE repertoire_id=%s AND card_id=%s", (repertoire_id, card_id),
-        )
-        database.execute_native(
-            "UPDATE cards SET repertoire_id=("
-            "SELECT MIN(link.repertoire_id) FROM repertoire_cards link "
-            "WHERE link.card_id=cards.id) "
-            "WHERE id=%s AND repertoire_id=%s AND canonical_route_source=0 "
-            "AND EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id)",
-            (card_id, repertoire_id),
         )
         database.execute_native(
             "UPDATE cards SET archived=1 WHERE id=%s AND canonical_route_source=0 "

@@ -787,6 +787,21 @@ def publish_opening_graph_rebuild(
                )""",
             (repertoire_id, repertoire_id, generation),
         )
+        # Reassign retained owners before deleting generated memberships, so
+        # cleanup cannot reactivate a stale owner fallback.
+        database.execute(
+            """UPDATE cards SET repertoire_id=(
+                   SELECT MIN(retained.repertoire_id) FROM repertoire_cards retained
+                   WHERE retained.card_id=cards.id AND retained.repertoire_id<>?
+               ) WHERE repertoire_id=? AND content_type='opening'
+                 AND EXISTS(SELECT 1 FROM repertoire_cards former
+                     WHERE former.card_id=cards.id AND former.repertoire_id=? AND former.canonical_route_source=0)
+                 AND EXISTS(SELECT 1 FROM repertoire_cards retained
+                     WHERE retained.card_id=cards.id AND retained.repertoire_id<>?)
+                 AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step
+                     WHERE step.repertoire_id=? AND step.generation=? AND step.card_id=cards.id)""",
+            (repertoire_id, repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation),
+        )
         database.execute(
             """DELETE FROM repertoire_cards
                WHERE repertoire_id=? AND canonical_route_source=0 AND card_id IN (
@@ -798,19 +813,6 @@ def publish_opening_graph_rebuild(
                      )
                )""",
             (repertoire_id, repertoire_id, generation),
-        )
-        database.execute(
-            """UPDATE cards SET repertoire_id=(
-                   SELECT MIN(link.repertoire_id) FROM repertoire_cards link
-                   WHERE link.card_id=cards.id
-               )
-               WHERE repertoire_id=? AND canonical_route_source=0 AND EXISTS(
-                   SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id
-               ) AND NOT EXISTS(
-                   SELECT 1 FROM repertoire_cards former
-                   WHERE former.card_id=cards.id AND former.repertoire_id=?
-               )""",
-            (repertoire_id, repertoire_id),
         )
         database.execute(
             """UPDATE cards SET archived=1

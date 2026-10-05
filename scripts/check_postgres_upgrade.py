@@ -284,6 +284,15 @@ def main() -> None:
                 database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket) VALUES('2026-01-01',%s,100,'opening')", (legacy_id,))
 
             database.commit()
+            # Reach published main first, preserving its captured evidence contexts
+            # through the subsequent canonical upgrade.
+            published_main_schema_version = 31
+            for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
+                if evidence_migration_version <= int(migration.name[:3]) <= published_main_schema_version:
+                    database.execute(migration.read_text(), prepare=False)
+                    database.commit()
+            assert database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0] == published_main_schema_version
+            preserved_evidence_contexts = database.execute("SELECT queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,repertoire_id").fetchall()
         apply_migrations(rehearsal_dsn)
         apply_migrations(rehearsal_dsn)
         with psycopg.connect(rehearsal_dsn) as database:
@@ -291,6 +300,8 @@ def main() -> None:
                 "SELECT version FROM tempo_schema_migrations ORDER BY version"
             ).fetchall()]
             assert versions == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
+            assert database.execute("SELECT queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,repertoire_id").fetchall() == preserved_evidence_contexts
+            print(f"PASS populated published-main schema{published_main_schema_version}->{POSTGRES_SCHEMA_VERSION} preserves opening evidence contexts")
             assert database.execute("SELECT new_cards_per_day FROM repertoires WHERE id='preserved-repertoire'").fetchone()[0] is None
             assert database.execute(
                 "SELECT name FROM repertoires WHERE id='preserved-repertoire'"

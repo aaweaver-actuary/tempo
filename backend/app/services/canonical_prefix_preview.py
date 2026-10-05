@@ -172,8 +172,9 @@ def _next_item(database, preview: dict, payload: dict) -> dict | None:
         row = database.execute(
             "SELECT card.id,card.start_fen,card.moves_json,card.kind name FROM cards card "
             "LEFT JOIN canonical_prefix_results result ON result.preview_id=? AND result.item_id='card:' || card.id "
-            "WHERE (card.repertoire_id=? OR EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id AND link.repertoire_id=?)) AND card.content_type='opening' AND card.archived=0 "
-            "AND (card.canonical_route_source=1 OR EXISTS(SELECT 1 FROM repertoire_cards source_link WHERE source_link.card_id=card.id AND source_link.repertoire_id=? AND source_link.canonical_route_source=1)) "
+            "WHERE card.content_type='opening' AND card.archived=0 "
+            "AND (EXISTS(SELECT 1 FROM repertoire_cards source_link WHERE source_link.card_id=card.id AND source_link.repertoire_id=? AND source_link.canonical_route_source=1) "
+            "OR (card.repertoire_id=? AND card.canonical_route_source=1 AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=card.id AND owner_link.repertoire_id=?))) "
             "AND card.id>? AND (result.status IS NULL OR result.status='pending') ORDER BY card.id LIMIT 1",
             (preview["id"], preview["repertoire_id"], preview["repertoire_id"], preview["repertoire_id"], cursor),
         ).fetchone()

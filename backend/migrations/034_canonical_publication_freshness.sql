@@ -40,6 +40,13 @@ BEGIN
             IF OLD.canonical_route_source=0 AND NEW.canonical_route_source=0 THEN RETURN NULL; END IF;
             IF ROW(OLD.start_fen,OLD.moves_json,OLD.archived,OLD.repertoire_id,OLD.content_type,OLD.trained_color,OLD.canonical_route_source) IS NOT DISTINCT FROM ROW(NEW.start_fen,NEW.moves_json,NEW.archived,NEW.repertoire_id,NEW.content_type,NEW.trained_color,NEW.canonical_route_source) THEN RETURN NULL; END IF;
             IF (OLD.content_type<>'opening' AND NEW.content_type<>'opening') OR (OLD.moves_json='[]' AND NEW.moves_json='[]') THEN RETURN NULL; END IF;
+            -- Owner-only reassignment does not change explicitly linked source sets.
+            IF ROW(OLD.start_fen,OLD.moves_json,OLD.archived,OLD.content_type,OLD.trained_color,OLD.canonical_route_source) IS NOT DISTINCT FROM ROW(NEW.start_fen,NEW.moves_json,NEW.archived,NEW.content_type,NEW.trained_color,NEW.canonical_route_source) THEN
+                UPDATE repertoires SET scope_source_revision=scope_source_revision+1
+                WHERE (id=OLD.repertoire_id AND OLD.canonical_route_source=1 AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=OLD.id AND owner_link.repertoire_id=OLD.repertoire_id))
+                   OR (id=NEW.repertoire_id AND NEW.canonical_route_source=1 AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=NEW.id AND owner_link.repertoire_id=NEW.repertoire_id));
+                RETURN NULL;
+            END IF;
             UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE (id=OLD.repertoire_id AND OLD.canonical_route_source=1 AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=OLD.id AND owner_link.repertoire_id=OLD.repertoire_id AND owner_link.canonical_route_source=0)) OR (id=NEW.repertoire_id AND NEW.canonical_route_source=1 AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=NEW.id AND owner_link.repertoire_id=NEW.repertoire_id AND owner_link.canonical_route_source=0)) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id AND canonical_route_source=1);
         END IF;
     ELSE

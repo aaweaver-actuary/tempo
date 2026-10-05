@@ -1373,7 +1373,11 @@ def test_canonical_card_mutation_without_coverage_work_reports_actionable_rechec
         connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian',?)", (identifier,))
     apply_preview(prepare_prefix())
     old_run = coverage.enqueue_coverage_refresh("italian")
-    assert coverage.coverage_summary("italian")["run_id"] == old_run
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoire_coverage_runs SET status='complete' WHERE id=?", (old_run,))
+        connection.execute("UPDATE repertoire_coverage_nodes SET explorer_status='complete',explorer_games=1000 WHERE run_id=?", (old_run,))
+        connection.execute("INSERT INTO repertoire_coverage_candidates(node_id,move_uci,required,covered,blended_probability,source_state) SELECT id,'f8c5',1,1,1,'explorer-only' FROM repertoire_coverage_nodes WHERE run_id=?", (old_run,))
+    assert coverage.coverage_summary("italian")["is_complete"]
     if mutation == "revise":
         main.revise_card(identifier, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, "f8c5"], history_mode="preserve", expected_revision=1))
     else:
@@ -1400,3 +1404,50 @@ def test_canonical_prefix_without_coverage_work_is_not_started(prefix_database):
     from app.services.repertoire_coverage import coverage_summary
     summary = coverage_summary("italian")
     assert summary["run_id"] is None and summary["status"] == "not-started"
+
+
+@pytest.mark.parametrize("observation", ["adoption", "cleanup"])
+@pytest.mark.parametrize("mutation", ["revise", "archive"])
+def test_canonical_shared_card_owner_cleanup_never_resurrects_generated_source(prefix_database, quiet_prefix_writes, observation, mutation):
+    from app import main
+    from app.models import CardRevisionRequest
+    from app.services.cards import card_id
+    from app.services.canonical_prefix import read_prefix
+    from app.services.canonical_prefix_preview import _next_item
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+
+    first = card_id(chess.STARTING_FEN, ITALIAN)
+    replacement = card_id(chess.STARTING_FEN, [*ITALIAN, "f8c5"])
+    def source_item(connection):
+        return _next_item(connection, {"id": "source-inspection", "repertoire_id": "other"}, {"phase": "cards", "cursor": ""})
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+        for identifier, owner, moves in [(first, 'italian', ITALIAN), (replacement, 'other', [*ITALIAN, 'f8c5'])]:
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES(?,?,'response',?,?,'2026-10-02',0)", (identifier, owner, chess.STARTING_FEN, json.dumps(moves)))
+            connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,0)", (owner, identifier))
+        assert source_item(connection) is None
+        source_before = read_prefix(connection, 'other')['source_revision']
+    main.revise_card(first, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, 'f8c5'], history_mode='preserve', expected_revision=1))
+    with database.read_connection() as connection:
+        assert read_prefix(connection, 'other')['source_revision'] == source_before
+        if observation == 'adoption':
+            assert source_item(connection) is None
+        authored_before = read_prefix(connection, 'italian')['source_revision']
+    enqueue_opening_graph_rebuild('other')
+    execute_opening_graph_rebuild(claim_task('opening_graph_rebuild'))
+    with database.read_connection() as connection:
+        assert not connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='other' AND card_id=?", (replacement,)).fetchone()
+        assert connection.execute("SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id='italian' AND card_id=?", (replacement,)).fetchone()[0] == 1
+        preserved = connection.execute("SELECT repertoire_id,archived,revision FROM cards WHERE id=?", (replacement,)).fetchone()
+        assert preserved['repertoire_id'] == 'italian' and preserved['archived'] == 0
+        assert source_item(connection) is None
+        assert read_prefix(connection, 'other')['source_revision'] == source_before
+        assert read_prefix(connection, 'italian')['source_revision'] == authored_before
+    if mutation == 'revise':
+        main.revise_card(replacement, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, 'f8c5', 'c2c3'], history_mode='preserve', expected_revision=preserved['revision']))
+    else:
+        main.archive_card(replacement)
+    with database.read_connection() as connection:
+        assert source_item(connection) is None
+        assert read_prefix(connection, 'other')['source_revision'] == source_before
+        assert read_prefix(connection, 'italian')['source_revision'] > authored_before

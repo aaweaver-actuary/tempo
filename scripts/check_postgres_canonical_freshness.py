@@ -16,7 +16,7 @@ from app.pgn_import_commands import admit_pgn_import, prepare_import_payload
 from app.canonical_prefix_api import save_prefix
 from app.services import repertoire_opportunities as opportunities
 from app.services.canonical_prefix import read_prefix, line_origin, prefix_projection, scope_line
-from app.services.canonical_prefix_preview import request_preview, execute_prefix_preview_slice
+from app.services.canonical_prefix_preview import request_preview, execute_prefix_preview_slice, _next_item
 from app.services.canonical_scope_freshness import game_scope_generation, coverage_run_is_current
 from app.services.durable_tasks import complete_task, claim_task, enqueue_task_in_transaction, warm_completion_sql
 from app.services.postgres_opening_graph import execute_postgres_opening_graph_slice
@@ -153,12 +153,26 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
         for identifier in (first_id, replacement_id):
             assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (repertoire_id, identifier)).fetchone()[0] == 0
         database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,0) ON CONFLICT(repertoire_id,card_id) DO NOTHING', (shared_repertoire_id, replacement_id))
+        database.execute('UPDATE cards SET repertoire_id=? WHERE id=?', (shared_repertoire_id, replacement_id))
     # Give Y current independent route/coverage certificates before X adopts B.
     with postgres_store.connection() as database:
         database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (shared_repertoire_id,))
         add_repertoire_branch(database, {'repertoire_id': shared_repertoire_id, 'name': 'Shared certificate', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': route})
     set_prefix(shared_repertoire_id, ITALIAN)
     shared_run_id = complete_coverage(shared_repertoire_id)
+    def source_ids(database, scope_id):
+        identifiers = set()
+        cursor = ''
+        for _ in range(100):
+            item = _next_item(database, {'id': 'source-inspection', 'repertoire_id': scope_id}, {'phase': 'cards', 'cursor': cursor})
+            if item is None:
+                return identifiers
+            identifiers.add(item['id'])
+            cursor = item['id']
+        raise AssertionError('Authored source fixture exceeded its bound')
+    with postgres_store.connection(read_only=True) as database:
+        shared_sources_before = source_ids(database, shared_repertoire_id)
+        assert replacement_id not in shared_sources_before
     with postgres_store.connection() as database:
         shared_prefix = read_prefix(database, shared_repertoire_id)
         shared_revision = shared_prefix['source_revision']
@@ -172,6 +186,7 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
         assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (shared_repertoire_id, replacement_id)).fetchone()[0] == 0
         assert read_prefix(database, repertoire_id)['source_revision'] > before
         assert read_prefix(database, shared_repertoire_id)['source_revision'] == shared_revision
+        assert source_ids(database, shared_repertoire_id) == shared_sources_before
         assert line_origin(database, shared_prefix['preview_id'], shared_ending_fen) == route
         assert coverage_run_is_current(database, database.execute('SELECT * FROM repertoire_coverage_runs WHERE id=?', (shared_run_id,)).fetchone(), shared_repertoire_id)
         database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (repertoire_id,))
@@ -187,6 +202,13 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
         assert database.execute('SELECT archived FROM cards WHERE id=?', (replacement_id,)).fetchone()[0] == 0
         assert database.execute('SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (repertoire_id, replacement_id)).fetchone()
         assert not database.execute('SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (shared_repertoire_id, replacement_id)).fetchone()
+        assert database.execute('SELECT repertoire_id FROM cards WHERE id=?', (replacement_id,)).fetchone()[0] == repertoire_id
+        assert source_ids(database, shared_repertoire_id) == shared_sources_before
+        shared_after_cleanup = read_prefix(database, shared_repertoire_id)['source_revision']
+        archive_card(database, {'card_id': replacement_id})
+        assert read_prefix(database, repertoire_id)['source_revision'] > authored_revision
+        assert read_prefix(database, shared_repertoire_id)['source_revision'] == shared_after_cleanup
+        database.execute('UPDATE cards SET archived=0 WHERE id=?', (replacement_id,))
         # Genuine mutations still invalidate every authored shared membership.
         database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1)', (shared_repertoire_id, replacement_id))
         structural_before = {scope_id: read_prefix(database, scope_id)['source_revision'] for scope_id in (repertoire_id, shared_repertoire_id)}

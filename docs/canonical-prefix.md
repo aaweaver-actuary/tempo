@@ -258,3 +258,14 @@ coverage. A repertoire with no coverage run reports `not-started`; `queued` desc
 an admitted current run. Rechecking and refreshing restores a current publication.
 Guided repertoire repair remains reverted as on main; its separate restoration is
 outside this PR.
+
+
+### Effective shared-card sources
+
+An explicit authored membership supplies a source for that repertoire. An explicit
+generated membership suppresses global card authorship and owner fallback. An
+unlinked authored owner remains a legitimate source. Graph cleanup moves retained
+ownership before removing a generated owner membership; owner-only reassignment
+invalidates only actual unlinked fallback scopes, preserving unchanged authored
+memberships and their certificates. Later card edits/archive invalidate the
+remaining authored scopes, not a repertoire whose generated link was removed.
