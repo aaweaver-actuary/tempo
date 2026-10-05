@@ -78,7 +78,7 @@ for (const candidate of [
       await clickSquare(page, candidate.move.slice(2, 4) as Square);
       const appliedCandidate = new Chess(findingFen);
       appliedCandidate.move({ from: candidate.move.slice(0, 2), to: candidate.move.slice(2, 4) });
-      await expect.poll(() => submissions).toEqual([{ move_uci: candidate.move }]);
+      await expect.poll(() => submissions).toEqual([{ move_uci: candidate.move, finding_id: finding.finding_id }]);
       await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(appliedCandidate.fen()));
       await expect(board).toHaveAttribute("data-input-enabled", "true");
     } finally {
@@ -92,6 +92,30 @@ for (const candidate of [
     await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(revealedEnd.fen()));
     await page.keyboard.press("r");
     await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(findingFen));
-    expect(submissions).toEqual([{ move_uci: candidate.move }]);
+    expect(submissions).toEqual([{ move_uci: candidate.move, finding_id: finding.finding_id }]);
   });
 }
+
+test("guided review reloads a stale displayed finding without grading its successor", async ({ page }) => {
+  await prepareVisualUI(page);
+  const successor = { ...finding, finding_id: "successor-finding", kind: "tactical miss" };
+  await page.route("**/api/games/visual-game/guided-review", route => route.fulfill({ json: session }));
+  await page.route("**/api/guided-reviews/restoration-review", route => route.fulfill({ json: {
+    ...session, current: successor,
+  } }));
+  const submissions: unknown[] = [];
+  await page.route("**/api/guided-reviews/restoration-review/attempt", async route => {
+    submissions.push(route.request().postDataJSON());
+    await route.fulfill({ status: 409, json: { detail: "Guided review changed. Reload the session." } });
+  });
+  await navigate(page, "Games");
+  await page.getByRole("button", { name: "Review this game" }).click();
+  await expect(page.locator(".guided-game-review")).toContainText("repertoire lapse");
+  await clickSquare(page, "e2");
+  await clickSquare(page, "e4");
+  await expect(page.locator(".guided-game-review")).toContainText("tactical miss");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+  await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(findingFen));
+  expect(submissions).toEqual([{ move_uci: "e2e4", finding_id: finding.finding_id }]);
+  await expect(page.locator(".guided-game-review")).not.toContainText("That correction works.");
+});

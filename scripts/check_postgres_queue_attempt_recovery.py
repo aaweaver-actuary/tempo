@@ -44,7 +44,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
             for index, card_id in enumerate(card_ids):
                 database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,?)",
                                  (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", today, today))
-                database.execute("INSERT INTO repertoire_cards VALUES(?,?)", (identifier, card_id))
+                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier, card_id))
                 entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,?,'new',?) RETURNING id", (today, card_id, -100 + index, identifier)).fetchone()[0])
         payloads = [{"card_id": card_id, "review": {"outcome": "correct", "guided": False,
                     "queue_entry_id": entry_id, "attempt_id": f"{identifier}-attempt-{index}",
@@ -194,7 +194,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
             for index, card_id in enumerate(card_ids):
                 database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,first_correct_at) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,?,?)",
                     (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", today, today, today))
-                database.execute("INSERT INTO repertoire_cards VALUES(?,?)", (identifier, card_id))
+                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier, card_id))
                 entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,?,'review',?) RETURNING id", (today, card_id, -1000000 + index, identifier)).fetchone()[0])
 
         def pause_after_validation(database, entry_id, card_id=None, expected_revision=None):

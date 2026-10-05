@@ -221,6 +221,8 @@ def verify_pause():
     snapshot = background_diagnostics.snapshot()
     assert snapshot.available, snapshot.model_dump()
     assert any(row.queue=='durable' and row.state=='paused' and row.count>0 for row in snapshot.queues)
+    assert snapshot.query_duration_seconds < background_diagnostics.QUERY_BUDGET_SECONDS
+    print('PASS defensive_diagnostics_canonical_freshness_classification_within_unchanged_query_budget')
     unrelated = durable_tasks.enqueue_task('daily_queue','foreground-proof',{})
     assert durable_tasks.claim_task('daily_queue')['kind']=='daily_queue'
     verify_activity_pause_provenance(request_id, queued['id'], unrelated['id'])

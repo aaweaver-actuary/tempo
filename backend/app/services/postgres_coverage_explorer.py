@@ -8,6 +8,8 @@ from typing import Any
 
 from ..database import background_read_connection, connection
 from ..postgres_store import PostgresConnection
+from .canonical_scope_freshness import coverage_run_is_current
+from .canonical_prefix import read_prefix
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
@@ -45,7 +47,7 @@ def _prepare_next_node(task: dict[str, Any]) -> dict[str, Any] | None:
             "ORDER BY n.id LIMIT 1",
             (payload["run_id"], payload.get("after_node_id", "")),
         ).fetchone()
-        return dict(row) if row else None
+        return dict(row) if row and coverage_run_is_current(database, row, row["repertoire_id"]) else None
 
 
 def _cached_or_fetched_payload(node: dict[str, Any]) -> tuple[dict, str, str, str]:
@@ -89,8 +91,11 @@ def _candidate_rows(node: dict[str, Any], explorer_payload: dict) -> tuple[list[
 def _fail_for_missing_token(task: dict[str, Any], node: dict[str, Any]) -> bool:
     message = "Set an Explorer token in Tempo or TEMPO_LICHESS_EXPLORER_TOKEN and refresh coverage"
     with connection(background=True) as database:
+        read_prefix(database, node["repertoire_id"], lock=True)
         if not lock_current_slice(database, task):
             return False
+        if not coverage_run_is_current(database, node, node["repertoire_id"]):
+            return complete_task_slice_in_transaction(database, task)
         database.execute_native(
             "UPDATE repertoire_coverage_nodes SET explorer_status='failed',last_error=%s,updated_at=%s "
             "WHERE id=%s AND explorer_status='queued'",
@@ -108,6 +113,7 @@ def _publish_node(
     database: PostgresConnection, task: dict[str, Any], prepared: dict[str, Any],
     explorer_payload: dict, cache_key: str, speeds: str, ratings: str,
 ) -> bool:
+    read_prefix(database, prepared["repertoire_id"], lock=True)
     if not lock_current_slice(database, task):
         return False
     node = database.execute_native(
@@ -115,7 +121,7 @@ def _publish_node(
         "FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id "
         "WHERE n.id=%s FOR UPDATE OF n,r", (prepared["id"],),
     ).fetchone()
-    if node is None or node["run_status"] not in {"queued", "running"}:
+    if node is None or node["run_status"] not in {"queued", "running"} or not coverage_run_is_current(database, node, prepared["repertoire_id"]):
         return complete_task_slice_in_transaction(database, task)
     if node["explorer_status"] != "queued":
         return advance_task_slice_in_transaction(

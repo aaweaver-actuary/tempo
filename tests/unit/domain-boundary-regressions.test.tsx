@@ -74,6 +74,18 @@ describe("validated domain boundaries", () => {
     })).toThrow();
   });
 
+  it("canonical route provenance remains a validated boolean in queue transport", () => {
+    const record = {
+      id: "authored-card", queue_entry_id: 46, start_fen: STANDARD_FEN,
+      moves: ["e2e4"], content_type: "opening", repertoire_name: "Italian",
+      repertoire_source: "PGN",
+    };
+    for (const provenance of [false, true, 0, 1])
+      expect(mapQueueCardToPracticeCard({ ...record, canonical_route_source: provenance }).backendId).toBe("authored-card");
+    expect(() => mapQueueCardToPracticeCard({ ...record, canonical_route_source: 2 })).toThrow();
+    expect(() => mapQueueCardToPracticeCard({ ...record, canonical_route_source: "true" })).toThrow();
+  });
+
   it("issue 13 approved defensive queue card retains its candidate and minimal move-free prompt", () => {
     const mapped = mapQueueCardToPracticeCard({
       id: "defense-card", queue_entry_id: 44,

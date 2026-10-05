@@ -81,7 +81,13 @@ test("training arrows never uncover the next answer and R restores the decision 
 
 test("Builder shortcuts cancel a held piece and preserve notes, selection and splitter keys", async ({ page }) => {
   await prepareVisualUI(page); await navigate(page, "Builder");
+  // The line worker publishes the initial repertoire after navigation. That
+  // changes the board's position identity and intentionally cancels old input;
+  // start the keyboard drag only after the intended Builder scope is ready.
+  await expect(page.getByRole("combobox", { name: "Active repertoire" })).toHaveValue("visual-repertoire");
   const board = page.locator(".board-frame");
+  await expect(page.locator(".persistent-board-shell")).toHaveAttribute("data-board-owner", "builder");
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
   const root = new Chess().fen();
   await board.scrollIntoViewIfNeeded();
   const from = await squareCenter(board, "e2"), to = await squareCenter(board, "e4");

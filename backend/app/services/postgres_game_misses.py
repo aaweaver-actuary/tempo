@@ -22,7 +22,7 @@ def execute_game_miss_slice(task: dict[str, Any]) -> bool:
     previous_id = str(payload.get("after_id", ""))
     with background_read_connection() as database:
         event = database.execute(
-            "SELECT id,ply FROM repertoire_decision_events "
+            "SELECT id,ply FROM current_repertoire_decision_events repertoire_decision_events "
             "WHERE game_id=? AND outcome='miss' AND (ply,id)>(?,?) "
             "ORDER BY ply,id LIMIT 1",
             (game_id, previous_ply, previous_id),

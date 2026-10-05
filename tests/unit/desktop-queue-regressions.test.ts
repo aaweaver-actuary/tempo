@@ -64,6 +64,25 @@ describe("desktop live queue isolation", () => {
     await expect(fetchAndInitializeQueue()).rejects.toThrow("Queue unavailable");
     expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
   });
+  it.each([0, 1])("canonical route provenance %s keeps the live Black training card playable", async (canonicalRouteSource) => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 1, cards: [{
+      id: "black-live", queue_entry_id: 804, start_fen: startingFen,
+      moves: ["e2e4", "e7e5"], content_type: "opening", repertoire_name: "Black repertoire",
+      repertoire_source: "PGN", trained_color: "black", revision: 3,
+      canonical_route_source: canonicalRouteSource,
+    }] })));
+
+    await fetchAndInitializeQueue();
+
+    const state = useTrainingStore.getState();
+    expect(state.practiceCards).toHaveLength(1);
+    expect(state.getCard()).toMatchObject({ backendId: "black-live", orientation: "black", revision: 3 });
+    expect(state.currentFenString.split(" ")[1]).toBe("b");
+    expect(state.attempt.phase).toBe("playerTurn");
+    expect(state.serviceError).toBe("");
+    expect(debugErrors()).toHaveLength(0);
+  });
+
   it("guided attempt recovery clears its warning while phone conflicts remain", async () => {
     const pendingNotice = publishNotification({ severity: "warning", source: "training queue", key: "guided-attempt-save", message: "Guided attempt save pending. Tempo will retry." });
     offlineTrainingMocks.replayOfflineAttempts.mockResolvedValueOnce({

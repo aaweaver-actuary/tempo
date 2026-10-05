@@ -315,17 +315,24 @@ def main() -> None:
                 database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket) VALUES('2026-01-01',%s,100,'opening')", (legacy_id,))
 
             database.commit()
-        # Rehearse the exact current-main boundary, retaining the earlier 29->30
-        # evidence backfill proof above. Main migrations are never renumbered.
+        # Rehearse published schema 31 -> 32 before the unmerged canonical
+        # migrations, preserving both branches' captured evidence assertions.
         with psycopg.connect(rehearsal_dsn) as database:
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
-                if 30 <= int(migration.name[:3]) <= 31:
+                if evidence_migration_version <= int(migration.name[:3]) <= 31:
                     database.execute(migration.read_text(), prepare=False)
                     database.commit()
             assert database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0] == 31
             assert database.execute("SELECT to_regclass('queue_attempt_origins')").fetchone()[0] is None
             evidence_contexts_before = database.execute("SELECT * FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,presentation_snapshot_id,repertoire_id").fetchall()
             assert len(evidence_contexts_before) == 3
+            published_main_schema_version = 32
+            database.execute((MIGRATIONS / "032_queue_attempt_origins.sql").read_text(), prepare=False)
+            database.commit()
+            assert database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0] == published_main_schema_version
+            assert database.execute("SELECT * FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,presentation_snapshot_id,repertoire_id").fetchall() == evidence_contexts_before
+            assert database.execute("SELECT COUNT(*) FROM queue_attempt_origins").fetchone()[0] == 5
+            preserved_evidence_contexts = database.execute("SELECT queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,repertoire_id").fetchall()
         apply_migrations(rehearsal_dsn)
         apply_migrations(rehearsal_dsn)
         with psycopg.connect(rehearsal_dsn) as database:
@@ -333,6 +340,8 @@ def main() -> None:
                 "SELECT version FROM tempo_schema_migrations ORDER BY version"
             ).fetchall()]
             assert versions == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
+            assert database.execute("SELECT queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,repertoire_id").fetchall() == preserved_evidence_contexts
+            print(f"PASS populated published-main schema{published_main_schema_version}->{POSTGRES_SCHEMA_VERSION} preserves opening evidence contexts")
             assert database.execute("SELECT new_cards_per_day FROM repertoires WHERE id='preserved-repertoire'").fetchone()[0] is None
             assert database.execute(
                 "SELECT name FROM repertoires WHERE id='preserved-repertoire'"

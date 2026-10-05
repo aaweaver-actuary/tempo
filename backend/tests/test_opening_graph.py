@@ -628,13 +628,15 @@ def test_exact_archived_prefix_restores_its_original_reviews_and_schedule(
 
             legacy_id = card_id(STARTING_FEN, route)
             scheduled = schedule_review("correct")
+            # This archived prefix is a graph projection with existing study history.
+            # Independently authored cards intentionally retain their archival state.
             connection.execute(
                 """INSERT INTO cards(
                        id,repertoire_id,kind,start_fen,moves_json,state,due_date,
                        interval_days,stability,fsrs_card_json,first_correct_at,
-                       introduced_at,content_type,trained_color
+                       introduced_at,content_type,trained_color,canonical_route_source
                    ) VALUES(?,?,'prefix',?,?,'mature','2026-12-01',30,30,?,?,
-                            '2026-08-01','opening','white')""",
+                            '2026-08-01','opening','white',0)""",
                 (
                     legacy_id,
                     "migration-repertoire",
