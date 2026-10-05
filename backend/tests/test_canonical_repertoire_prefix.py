@@ -1357,3 +1357,46 @@ def test_canonical_structural_edit_invalidates_both_authored_shared_memberships(
         connection.execute("UPDATE cards SET moves_json=? WHERE id='shared-source'", (json.dumps([*ITALIAN, 'f8c5']),))
         for identifier in before:
             assert read_prefix(connection, identifier)['source_revision'] > before[identifier]
+
+
+@pytest.mark.parametrize("mutation", ["revise", "archive"])
+def test_canonical_card_mutation_without_coverage_work_reports_actionable_recheck(prefix_database, quiet_prefix_writes, mutation):
+    from app import main
+    from app.models import CardRevisionRequest
+    from app.services import repertoire_coverage as coverage
+    from app.services.cards import card_id
+
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    identifier = card_id(chess.STARTING_FEN, ITALIAN)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,'italian','response',?,?,'2026-10-02')", (identifier, chess.STARTING_FEN, json.dumps(ITALIAN)))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian',?)", (identifier,))
+    apply_preview(prepare_prefix())
+    old_run = coverage.enqueue_coverage_refresh("italian")
+    assert coverage.coverage_summary("italian")["run_id"] == old_run
+    if mutation == "revise":
+        main.revise_card(identifier, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, "f8c5"], history_mode="preserve", expected_revision=1))
+    else:
+        main.archive_card(identifier)
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT id FROM repertoire_coverage_runs WHERE repertoire_id='italian' ORDER BY created_at DESC LIMIT 1").fetchone()[0] == old_run
+    summary = coverage.coverage_summary("italian")
+    assert summary["status"] == "failed"
+    assert summary["run_id"] is None and not summary["is_complete"]
+    assert summary["required_branches"] == summary["covered_branches"] == 0
+    assert summary["probability_coverage"] is None
+    assert "Canonical prefix" in summary["last_error"] and "refresh coverage" in summary["last_error"]
+    assert coverage.coverage_gaps("italian") == []
+    apply_preview(prepare_prefix())
+    replacement_run = coverage.enqueue_coverage_refresh("italian")
+    recovered = coverage.coverage_summary("italian")
+    assert replacement_run != old_run and recovered["run_id"] == replacement_run
+    assert recovered["status"] == "queued" and not recovered["last_error"]
+
+
+def test_canonical_prefix_without_coverage_work_is_not_started(prefix_database):
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoires SET canonical_prefix_moves_json=?,canonical_prefix_revision=1 WHERE id='italian'", (json.dumps(ITALIAN),))
+    from app.services.repertoire_coverage import coverage_summary
+    summary = coverage_summary("italian")
+    assert summary["run_id"] is None and summary["status"] == "not-started"

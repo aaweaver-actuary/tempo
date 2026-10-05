@@ -673,7 +673,12 @@ def coverage_summary(repertoire_id: str) -> dict:
         if not coverage_run_is_current(database, run, repertoire_id):
             return {
                 "run_id": None,
-                "status": "queued" if prefix["revision"] else "not-started",
+                "status": "failed" if run is not None else "not-started",
+                "last_error": (
+                    "Repertoire sources changed. Recheck Canonical prefix… and refresh coverage."
+                    if prefix["moves"] else
+                    "Repertoire scope changed. Refresh coverage to analyze the current repertoire."
+                ) if run is not None else None,
                 "required_branches": 0,
                 "covered_branches": 0,
                 "probability_coverage": None,

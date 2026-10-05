@@ -1665,7 +1665,7 @@ Baseline at `f5044167c9cfbb7eb84f89e848da7f70957aa989`: the new hidden-current H
 
 ### PR #66 boundary review: independent card and link provenance
 
-`test_canonical_card_promotion_does_not_invalidate_generated_shared_membership` reproduces Y's unwanted source bump (0 → 1) at the reviewed head and now verifies its source revision, canonical route certificate and completed coverage remain current after X adopts the shared card. `test_canonical_card_owner_fallback_respects_explicit_membership` covers missing, generated and authored owner links. `test_canonical_structural_edit_invalidates_both_authored_shared_memberships` preserves genuine shared-source invalidation. Migration 033 and SQLite compatibility triggers retain separate card/membership flags; no migration 034 is introduced.
+`test_canonical_card_promotion_does_not_invalidate_generated_shared_membership` reproduces Y's unwanted source bump (0 → 1) at the reviewed head and now verifies its source revision, canonical route certificate and completed coverage remain current after X adopts the shared card. `test_canonical_card_owner_fallback_respects_explicit_membership` covers missing, generated and authored owner links. `test_canonical_structural_edit_invalidates_both_authored_shared_memberships` preserves genuine shared-source invalidation. The publication-freshness migration (now 034 after current-main integration) and SQLite compatibility triggers retain separate card/membership flags.
 
 ### PR #66 boundary review: graph cleanup uses membership provenance
 
@@ -1688,3 +1688,12 @@ Complete CI run 37110969049 exposed two existing browser fixture races. `Setting
 That stricter move synchronization exposed stale board hit-test geometry when the repair-status banner translates the persistent board without changing its size. `board layout shifts refresh hit-test bounds before mouse and touch input without resetting a held piece` failed with both hit tests using the old top coordinate (1 failed, 1.01s). The board now clears cached bounds in capture listeners before Chessground's mouse/touch handlers; it does not reset position, redraw, or cancel a held drag. The regression also checks listener removal on unmount. The existing real recovery browser case continues to prove actual piece movement and held-drag preservation through repair confirmation.
 
 Run 37112651569 passed 187 regular browser cases but exposed the complementary banner-collapse boundary at the same recovery test's final drop assertion. Confirmation removed the banner while a piece was held, translating the board underneath the cursor and resolving a different legal but incorrect repertoire move. `repair confirmation removes its message but reserves board layout until the held drop is processed` failed before the fix (1 failed, 1.04s). Repair status now reserves its measured height during held input, removes completed messages immediately, and releases that space on the frame after mouse/touch release or cancellation. The existing real browser assertions continue to require a successful drop through passive confirmation.
+
+
+### PR #66 current-main integration and truthful coverage status
+
+- `test_canonical_card_mutation_without_coverage_work_reports_actionable_recheck` (revise/archive) reproduces nonexistent queued coverage after actual card mutations; stale statistics and gaps remain hidden, guidance is actionable, and explicit recheck/refresh restores an admitted current run.
+- `test_canonical_prefix_without_coverage_work_is_not_started` prevents a saved prefix alone from fabricating queued work.
+- `invalidated coverage shows actionable recheck guidance instead of nonexistent queued work` renders the failed summary and guidance in the regular Repertoire component suite.
+- The regular PostgreSQL canonical freshness proof checks actual authored revise/archive commands, absence of replacement coverage admission, and recovery; the canonical-prefix browser spec verifies guidance and recheck recovery at phone and desktop widths.
+- Current-main integration preserves migrations 030 opening evidence and 031 defensive pause, renumbers canonical migrations to 032–034, and preserves the #70 guided repertoire repair revert. Historical repair-specific validation above remains evidence for the older candidate, not functionality restored by this update.

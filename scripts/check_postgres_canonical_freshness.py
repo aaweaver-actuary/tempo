@@ -352,6 +352,43 @@ def prove_guided_review_boundary(repertoire_id):
         postgres_store.close_pools()
 
 
+
+def prove_card_mutation_coverage_status():
+    for mutation in ('revise', 'archive'):
+        repertoire_id = 'canonical-status-' + uuid.uuid4().hex
+        from app.services.cards import card_id
+        identifier = card_id(chess.STARTING_FEN, [*ITALIAN, 'f8c5', 'c2c3', 'g8f6'])
+        try:
+            with postgres_store.connection() as database:
+                database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (repertoire_id, repertoire_id, repertoire_id+'.pgn', NOW))
+                add_repertoire_branch(database, {'repertoire_id': repertoire_id, 'name': 'Source', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': [*ITALIAN, 'f8c5', 'c2c3']})
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'response',?,?,?) ON CONFLICT(id) DO UPDATE SET archived=0,superseded_by=NULL", (identifier, repertoire_id, chess.STARTING_FEN, json.dumps([*ITALIAN, 'f8c5', 'c2c3', 'g8f6']), NOW[:10]))
+                database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1)', (repertoire_id, identifier))
+            set_prefix(repertoire_id, ITALIAN)
+            old_run = complete_coverage(repertoire_id)
+            with postgres_store.connection() as database:
+                coverage_task_before = dict(database.execute("SELECT generation,state,payload_json FROM background_tasks WHERE kind='coverage_seed' AND deduplication_key=?", (repertoire_id,)).fetchone())
+                if mutation == 'revise':
+                    revision = database.execute('SELECT revision FROM cards WHERE id=?', (identifier,)).fetchone()[0]
+                    revise_card(database, {'card_id': identifier, 'request': {'starting_fen': chess.STARTING_FEN, 'moves': [*ITALIAN, 'f8c5', 'c2c3', 'g8f6', 'd2d3'], 'history_mode': 'preserve', 'expected_revision': revision}})
+                else:
+                    archive_card(database, {'card_id': identifier})
+                assert database.execute('SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1', (repertoire_id,)).fetchone()[0] == old_run
+                assert dict(database.execute("SELECT generation,state,payload_json FROM background_tasks WHERE kind='coverage_seed' AND deduplication_key=?", (repertoire_id,)).fetchone()) == coverage_task_before
+            summary = coverage_summary(repertoire_id)
+            assert summary['status'] == 'failed' and summary['run_id'] is None, summary
+            assert summary['probability_coverage'] is None and not summary['is_complete']
+            assert 'Canonical prefix' in summary['last_error'] and 'refresh coverage' in summary['last_error']
+            assert coverage_gaps(repertoire_id) == []
+            set_prefix(repertoire_id, ITALIAN)
+            assert complete_coverage(repertoire_id) != old_run
+            assert coverage_summary(repertoire_id)['status'] == 'complete'
+        finally:
+            with postgres_store.connection() as database:
+                database.execute("DELETE FROM background_tasks WHERE deduplication_key=? OR json_extract(payload_json,'$.repertoire_id')=?", (repertoire_id, repertoire_id))
+                database.execute('DELETE FROM repertoires WHERE id=?', (repertoire_id,))
+    print('PASS CF-10 authored revise/archive without replacement coverage reports recheck guidance; explicit recheck and refresh recover current publication', flush=True)
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Canonical freshness proof requires the runner-owned disposable PostgreSQL instance')
@@ -516,6 +553,7 @@ def main():
         prove_generated_split_boundary()
         prove_generated_split_boundary(card_source=1)
         prove_guided_review_boundary(mutation_repertoire_id)
+        prove_card_mutation_coverage_status()
     finally:
         opportunities._calculate_node_opportunities = saved_calculate
         with postgres_store.connection() as database:

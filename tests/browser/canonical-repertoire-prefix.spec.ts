@@ -60,13 +60,41 @@ for (const width of [390, 1280]) {
     } });
     expect(rejected.status()).toBe(409);
     expect((await rejected.json()).detail).toContain("canonical prefix");
+    // Explicitly authoring a generated card invalidates coverage without admitting a replacement seed.
+    let editedCard: { id: string; start_fen: string; moves: string[]; revision: number };
+    await expect.poll(async () => {
+      const queue = await (await request.get(`${api}/queue/today`)).json();
+      editedCard = queue.cards.find((card: { repertoire_name: string }) => card.repertoire_name === `canonical-italian-${width}`);
+      return Boolean(editedCard);
+    }, { timeout: 30_000 }).toBe(true);
+    await confirm(request, await request.put(`${api}/cards/${editedCard!.id}`, { data: {
+      starting_fen: editedCard!.start_fen, moves: editedCard!.moves,
+      history_mode: "preserve", expected_revision: editedCard!.revision,
+    } }));
+    const staleCoverage = await (await request.get(`${api}/repertoires/${repertoireId}/coverage`)).json();
+    expect(staleCoverage.status).toBe("failed");
+    expect(staleCoverage.run_id).toBeNull();
+    expect(staleCoverage.last_error).toContain("Recheck Canonical prefix");
     await page.reload(); await nav(page, "Repertoire");
     await expect(repertoireCard.getByText("Discoveries start after this opening.")).toBeVisible();
+    await repertoireCard.getByRole("button", { name: "Check coverage", exact: true }).click();
+    await expect(repertoireCard.getByRole("alert")).toContainText("Recheck Canonical prefix");
+    await expect(repertoireCard.getByText("Refreshing analysis for the current opening…")).toHaveCount(0);
     await repertoireCard.locator("details.card-menu summary").click();
     await repertoireCard.getByRole("menuitem", { name: "Canonical prefix…" }).click();
     await expect(dialog.getByLabel("Assumed SAN moves")).toHaveValue("1. e4 e5 2. Nf3 Nc6 3. Bc4");
     await expect(dialog.getByText("Compatible. Discoveries start after this opening.")).toBeVisible({ timeout: 30_000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await dialog.getByRole("button", { name: "Save prefix" }).click();
+    await expect(dialog).toHaveCount(0);
+    await repertoireCard.getByRole("button", { name: "Check coverage", exact: true }).click();
+    await expect(repertoireCard.getByText("Repertoire sources changed. Recheck Canonical prefix… and refresh coverage.")).toHaveCount(0);
+    const recoveredCoverage = await (await request.get(`${api}/repertoires/${repertoireId}/coverage`)).json();
+    expect(recoveredCoverage.run_id).not.toBeNull();
+    expect(recoveredCoverage.last_error ?? "").not.toContain("Recheck Canonical prefix");
+    await repertoireCard.locator("details.card-menu summary").click();
+    await repertoireCard.getByRole("menuitem", { name: "Canonical prefix…" }).click();
+    await expect(dialog.getByText("Compatible. Discoveries start after this opening.")).toBeVisible({ timeout: 30_000 });
     await dialog.getByRole("button", { name: "Clear prefix" }).click();
     await expect(dialog.getByText("Compatible. Saving will remove the opening restriction.")).toBeVisible({ timeout: 30_000 });
     await dialog.getByRole("button", { name: "Save prefix" }).click();

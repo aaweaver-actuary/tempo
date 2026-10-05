@@ -113,3 +113,22 @@ it("Repertoire train submits the displayed revision and leaves newer evidence un
   expect(onTrain).not.toHaveBeenCalled();
   expect(onQueueChanged).not.toHaveBeenCalled();
 });
+
+
+it("invalidated coverage shows actionable recheck guidance instead of nonexistent queued work", async () => {
+  const guidance = "Repertoire sources changed. Recheck Canonical prefix… and refresh coverage.";
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/coverage/gaps")) return Response.json({ gaps: [] });
+    if (String(input).endsWith("/coverage")) return Response.json({ run_id: null, status: "failed",
+      required_branches: 0, covered_branches: 0, probability_coverage: null,
+      is_complete: false, unknown_nodes: 0, last_error: guidance });
+    throw new Error(`Unexpected request: ${String(input)}`);
+  }));
+  render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()}
+    onResolveGap={vi.fn()} onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
+    onRenameLocal={vi.fn()} onQueueChanged={async () => {}} onTrain={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Check coverage" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(guidance);
+  expect(screen.getByText("failed")).toBeTruthy();
+  expect(screen.queryByText("Refreshing analysis for the current opening…")).toBeNull();
+});

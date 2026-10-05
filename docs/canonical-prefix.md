@@ -201,14 +201,13 @@ candidate validation. The live study instance is outside every development runne
 
 ## Current-main integration
 
-Main's migration 030 now belongs to guided integrity recommendations (PR #67).
-The unpublished canonical migrations therefore occupy 031–033, preserving the
-already merged migration and a contiguous upgrade path. Both router/task
-registrations and route contracts remain available. Main's durable PGN import
-recovery (PR #68) keeps its original receipt semantics. After integrating these
-changes, run focused schema/route, canonical scope, repair/discovery and import
-contract cases first; the new complete CI candidate supplies PostgreSQL durability,
-all browser workflows, pinned checks and final current-base validation.
+Main preserves migration 030 for opening-decision evidence (PR #69) and 031
+for defensive-analysis pause (PR #83). Canonical migrations occupy 032–034 with
+schema readiness 34. The guided repertoire repair revert (PR #70) remains intact;
+its UI, router and recommendation migration are not restored here. Existing
+integrity resolution still validates canonical scope. Durable PGN recovery and
+discard preserve their original receipts. Opening evidence and canonical scope
+registrations remain independently available and share the regular validation gate.
 
 ## Mutation transaction guarantees
 
@@ -246,5 +245,16 @@ do not advance global scope or admit a global refresh solely for materialization
 | Main repertoire selection / deletion | Existing PostgreSQL in-transaction refresh; SQLite now uses the same mutation guard atomically. |
 | Generated graph/card/link maintenance; training/reviews; internal study/tactics | No refresh solely for these writes: they do not advance global classification scope. |
 
-The scope/versioning model and schema version 33 are unchanged. Selective game
+Canonical migrations are 032–034 after main’s opening-evidence and defensive-pause migrations; schema readiness is version 34. The scope/versioning model is unchanged. Selective game
 fan-out remains deferred to issue #41.
+
+
+### Coverage after source changes
+
+An authored card edit or archive can invalidate published coverage without admitting
+replacement coverage work. The summary then reports `failed`, hides the stale run
+and statistics, and directs the user to recheck **Canonical prefix…** and refresh
+coverage. A repertoire with no coverage run reports `not-started`; `queued` describes
+an admitted current run. Rechecking and refreshing restores a current publication.
+Guided repertoire repair remains reverted as on main; its separate restoration is
+outside this PR.
