@@ -33,6 +33,7 @@ type SettingsValues = {
   tactics_new_per_day: number;
   defense_new_cards_per_day: number;
   include_defensive_cards_in_daily_stack: boolean;
+  defensive_analysis_enabled: boolean;
   discovery_window_days: 30 | 90;
   lichess_username: string;
   chesscom_username: string;
@@ -82,6 +83,7 @@ export default function SettingsView({
     tactics_new_per_day: 5,
     defense_new_cards_per_day: 5,
     include_defensive_cards_in_daily_stack: true,
+    defensive_analysis_enabled: false,
     discovery_window_days: 90,
     lichess_username: "",
     chesscom_username: "",
@@ -237,6 +239,7 @@ export default function SettingsView({
         tactics_new_per_day: values.tactics_new_per_day,
         defense_new_cards_per_day: values.defense_new_cards_per_day,
         include_defensive_cards_in_daily_stack: values.include_defensive_cards_in_daily_stack,
+        defensive_analysis_enabled: values.defensive_analysis_enabled,
         discovery_window_days: values.discovery_window_days,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
@@ -435,6 +438,12 @@ export default function SettingsView({
                 update("tactics_new_per_day", Number(event.target.value))
               }
             />
+          </label>
+          <label>
+            <span>Defensive analysis<small>Generate defensive exercises in the background. Turning off preserves your work; game analysis and repertoire recommendations continue.</small></span>
+            <TextInput type="checkbox"
+              checked={values.defensive_analysis_enabled}
+              onChange={(event) => update("defensive_analysis_enabled", event.target.checked)} />
           </label>
           <label>
             <span>New defensive exercises per day<small>Verified threats and false alarms; due reviews are additional</small></span>
