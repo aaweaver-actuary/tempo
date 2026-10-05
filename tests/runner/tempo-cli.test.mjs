@@ -505,7 +505,7 @@ test("CLI Redis readiness waits for saved legacy healthcheck loading before sche
 
 test("CLI Redis readiness retries strict loading error replies and connection refusal until PONG", async t => {
   const fixture = redisRuntimeFixture(t, [
-    { code: 1, stdout: "LOADING Redis is loading the dataset in memory\n", stderr: "" },
+    { code: 1, stdout: "", stderr: "LOADING Redis is loading the dataset in memory\n" },
     { code: 1, stdout: "", stderr: "Could not connect to Redis at 127.0.0.1:6379: Connection refused\n" },
     { code: 0, stdout: "PONG\n", stderr: "" },
   ]);
@@ -514,6 +514,23 @@ test("CLI Redis readiness retries strict loading error replies and connection re
   assert.equal(fixture.probes.length, 3);
   assert.deepEqual(fixture.waits, [1000, 1000]);
   assert(fixture.answeredPong());
+});
+
+test("CLI Redis readiness probes terminal errors before Docker health retries and preserves PostgreSQL readiness", async t => {
+  const blocked = redisRuntimeFixture(t, [{ code: 1, stdout: "", stderr: "NOAUTH Authentication required" }]);
+  await blocked.runtime.config(); await blocked.runtime.ensureImages();
+  await assert.rejects(blocked.runtime.ensureDatabase(), /NOAUTH Authentication required/);
+  const redisStartup = blocked.calls.find(args => args.includes("up") && args.includes("redis"));
+  assert(redisStartup && !redisStartup.includes("--wait"), "Docker health retries must not hide terminal replies or shorten the CLI deadline");
+  assert(!blocked.calls.some(args => args.includes("up") && args.includes("--wait")), "terminal Redis failures prevent further readiness work");
+
+  const ready = redisRuntimeFixture(t, [{ code: 0, stdout: "PONG", stderr: "" }]);
+  await ready.runtime.config(); await ready.runtime.ensureImages();
+  await ready.runtime.ensureDatabase();
+  const postgresWaitIndex = ready.calls.findIndex(args => args.includes("up") && args.includes("--wait") && args.includes("postgres"));
+  assert(postgresWaitIndex > ready.calls.findIndex(args => args.includes("ping")));
+  assert(!ready.calls[postgresWaitIndex].includes("redis"));
+  assert(ready.calls[postgresWaitIndex].includes("--no-recreate"));
 });
 
 test("CLI Redis readiness retries interrupted and timed-out probes with bounded remaining deadlines", async t => {

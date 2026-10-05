@@ -66,7 +66,8 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
     try {
       await waitForFixtureCondition(`${variant} Redis real persisted LOADING reply`, async () => {
         const response = await redis(["PING"], { allowFailure: true });
-        return { ready: response.stdout.startsWith("LOADING"), code: response.code, reply: response.stdout.trim() };
+        const reply = (response.stdout || response.stderr).trim();
+        return { ready: reply.startsWith("LOADING"), code: response.code, reply };
       });
       const healthObservation = await waitForFixtureCondition(`${variant} Redis healthcheck during LOADING`, async () => {
         const id = (await compose(["ps", "-q", "redis"], { timeout: 5000 })).stdout.trim();
@@ -76,7 +77,8 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
         return { ready: Boolean(loadingProbe && (variant === "legacy" ? health.Status === "healthy" : loadingProbe.ExitCode !== 0)),
           status: health?.Status, probe: loadingProbe };
       });
-      assert.equal((await redis(["PING"], { allowFailure: true })).stdout.startsWith("LOADING"), true);
+      const stillLoading = await redis(["PING"], { allowFailure: true });
+      assert.equal((stillLoading.stdout || stillLoading.stderr).startsWith("LOADING"), true);
       assert.equal(deploymentFinished, false, "deployment remains blocked during persisted loading");
       assert.equal(existsSync(join(loadingStateDirectory, "deployment.json")), false);
       assert.equal(healthObservation.probe.ExitCode, variant === "legacy" ? 0 : 1);
@@ -87,7 +89,7 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
         return { ready: journal.phase === "checking_redis", phase: journal.phase };
       });
       const journal = JSON.parse(readFileSync(join(loadingStateDirectory, "operation.json"), "utf8"));
-      assert.equal(journal.phase, variant === "legacy" ? "checking_redis" : "checking_database");
+      assert.equal(journal.phase, "checking_redis");
       assert(!(await loadingRuntime.runningServices()).some(service => [...applicationServices, "postgres-backup"].includes(service)));
       assert(!commandLog.slice(firstCommand).some(call => call.args.includes("scripts/apply_postgres_migrations.py")
         || (call.args.includes("up") && call.args.includes("foreground-worker"))), "no schema or application work before PONG");

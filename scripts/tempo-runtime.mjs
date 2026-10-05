@@ -248,8 +248,12 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (Number(cluster.stdout.trim()) !== expectedMajor)
       throw new Error("Existing PostgreSQL cluster does not match the registered major version; a separate major-upgrade procedure is required.");
     await compose(["up", "-d", "--no-build", "--no-deps", ...(allowRecreation ? ["--force-recreate"] : ["--no-recreate"]),
-      "--wait", "--wait-timeout", "180", "postgres", "redis"], { echo: true });
+      "postgres", "redis"], { echo: true });
+    // Probe immediately: Compose can exhaust its health retries before our
+    // deadline, or conceal an authentication error behind an unhealthy state.
     await waitForRedisReady();
+    stage("checking_database");
+    await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", "--wait", "--wait-timeout", "180", "postgres"], { echo: true });
   }
 
   async function waitForRedisReady() {

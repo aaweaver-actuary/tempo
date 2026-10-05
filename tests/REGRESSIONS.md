@@ -1350,13 +1350,16 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 - `CLI Redis readiness retries strict loading error replies and connection refusal until PONG`
   and `CLI Redis readiness retries interrupted and timed-out probes with bounded remaining deadlines`
   cover nonzero loading replies and temporary connection/probe failures.
+- `CLI Redis readiness probes terminal errors before Docker health retries and preserves PostgreSQL readiness`
+  prevents Docker's health retry window from hiding terminal Redis replies or
+  shortening the CLI loading deadline; PostgreSQL health still gates maintenance.
 - `CLI Redis readiness expires at 180 seconds and records the real loading reply without migration startup or publication`
   uses a controlled monotonic clock, preserves the existing receipt, and verifies
   the failed phase and timestamp. The five named `CLI Redis readiness fails ... immediately with the actual reply`
   cases cover authentication, configuration, terminal errors containing transient
   wording, unexpected responses, and nonzero PONG.
 - `CLI Redis readiness redacts terminal errors in thrown and saved failure evidence`
-  protects credentials. All ten Node cases are included by the regular wrapper's
+  protects credentials. All eleven Node cases are included by the regular wrapper's
   existing disjoint `CLI` contract group.
 - `Tempo CLI waits for persisted Redis loading before migration or application startup`
   in the regular PostgreSQL durability runner exercises strict and saved legacy
