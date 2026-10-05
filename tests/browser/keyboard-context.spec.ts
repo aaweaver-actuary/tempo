@@ -61,6 +61,8 @@ test("training arrows never uncover the next answer and R restores the decision 
   const board = page.locator(".board-frame");
   const root = new Chess().fen();
   await expect(board).toHaveAttribute("data-fen", root);
+  // The initial FEN is also present while the training queue is still loading.
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
   await playMove(page, board, "e2", "e4");
   const decision = new Chess(); decision.move("e4"); decision.move("e5");
   await expect(board).toHaveAttribute("data-fen", decision.fen());

@@ -8,6 +8,17 @@ import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, 
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
 
+function applicationIdentitiesMatch(running, target, services, images, hashes) {
+  return running.every(container => {
+    const labels = container.Config?.Labels ?? {};
+    const service = labels["com.docker.compose.service"];
+    return labels["com.docker.compose.project"] === target.project && services.includes(service)
+      && running.filter(other => other.Config?.Labels?.["com.docker.compose.service"] === service).length === 1
+      && container.Image === images[service] && hashes.has(service)
+      && labels["com.docker.compose.config-hash"] === hashes.get(service);
+  });
+}
+
 export function configurationFingerprint(configured) {
   const stable = structuredClone(configured);
   for (const service of Object.values(stable.services)) {
@@ -16,6 +27,32 @@ export function configurationFingerprint(configured) {
     if (service.labels) delete service.labels["org.opencontainers.image.revision"];
   }
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+// Read-only classification shared by diagnostics and lock-time preflight.
+// Authorization to retry never establishes successful history verification.
+export function assessMigrationRecovery({ guard, operation, target, configuration, retry = false }) {
+  if (guard) {
+    const database = { name: configuration.services.postgres.environment.POSTGRES_DB,
+      volume: target.volumes[target.postgresVolumeKey].name };
+    if (guard.version !== 1 || guard.target !== targetKey(target)
+      || guard.database?.name !== database.name || guard.database?.volume !== database.volume
+      || !["pending", "verified"].includes(guard.state)
+      || !Number.isInteger(guard.starting_schema) || !Number.isInteger(guard.intended_schema)
+      || guard.starting_schema < 1 || guard.intended_schema < guard.starting_schema
+      || !Array.isArray(guard.starting_versions) || guard.starting_versions.length !== guard.starting_schema
+      || guard.starting_versions.some((version, index) => version !== index + 1) || !guard.study_invariants
+      || !guard.backup?.verified || !guard.backup.filename)
+      return { status: "blocked", message: "Migration guard is invalid or belongs to another database. Preserve the guard and backup; inspect tempo doctor before recovery." };
+    if (guard.state === "pending") {
+      if (!retry) return { status: "blocked", message: `Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${guard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.` };
+      return { status: "retry-authorized", message: "Original-history verification remains unresolved until the real lifecycle successfully performs it." };
+    }
+  } else if (operation?.phase === "applying_migrations"
+    || (operation?.phase === "failed" && operation.failed_phase === "applying_migrations")) {
+    return { status: "blocked", message: "Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry." };
+  }
+  return { status: "clear" };
 }
 
 export async function executeLifecycle(plan, actions) {
@@ -223,14 +260,57 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const applications = ids.length ? JSON.parse((await docker(["inspect", ...ids])).stdout) : [];
     validateContainers(applications, target);
     const running = applications.filter(container => container.State?.Running);
-    return running.every(container => {
-      const labels = container.Config?.Labels ?? {};
-      const service = labels["com.docker.compose.service"];
-      return labels["com.docker.compose.project"] === target.project && services.includes(service)
-        && running.filter(other => other.Config?.Labels?.["com.docker.compose.service"] === service).length === 1
-        && container.Image === images[service] && hashes.has(service)
-        && labels["com.docker.compose.config-hash"] === hashes.get(service);
-    });
+    return applicationIdentitiesMatch(running, target, services, images, hashes);
+  }
+
+  async function inspectRunningRevision() {
+    const running = containers.filter(container => container.State?.Running
+      && container.Config?.Labels?.["com.docker.compose.project"] === target.project
+      && applicationServices.includes(container.Config?.Labels?.["com.docker.compose.service"]));
+    if (!running.length) return { status: "unknown", detail: "no running application services", receipt: "unverified" };
+    const missingServices = applicationServices.filter(service => configuration.services[service]
+      && !running.some(container => container.Config?.Labels?.["com.docker.compose.service"] === service));
+    let imageDetails = [];
+    try {
+      const inspection = await docker(["image", "inspect", ...new Set(running.map(container => container.Image))],
+        { allowFailure: true, timeout: 5000 });
+      const returnedImages = JSON.parse(inspection.stdout);
+      if (Array.isArray(returnedImages)) imageDetails = returnedImages.filter(image => image && typeof image.Id === "string");
+    } catch { /* Container IDs/configuration can still establish receipt identity. */ }
+    const unavailableImageServices = running.filter(container => !imageDetails.some(image => image.Id === container.Image))
+      .map(container => container.Config?.Labels?.["com.docker.compose.service"]);
+    const revisions = running.map(container => imageDetails.find(image => image.Id === container.Image)
+      ?.Config?.Labels?.["org.opencontainers.image.revision"]);
+    const knownRevisions = [...new Set(revisions.filter(value => /^[a-f0-9]{40}$/.test(value ?? "")))];
+    const duplicateService = running.some(container => running.filter(other => other.Config?.Labels?.["com.docker.compose.service"]
+      === container.Config?.Labels?.["com.docker.compose.service"]).length !== 1);
+    const identity = knownRevisions.length > 1 || duplicateService
+      ? { status: "mixed", detail: knownRevisions.join(", ") || "duplicate application services" }
+      : revisions.some(value => !/^[a-f0-9]{40}$/.test(value ?? ""))
+        ? { status: "unknown", detail: unavailableImageServices.length ? "immutable image inspection unavailable" : "revision labels missing from immutable images" }
+        : { status: "consistent", detail: `${knownRevisions[0]} across ${running.length} inspected running services` };
+    if (identity.status === "unknown" && knownRevisions.length)
+      identity.detail += `; available revision evidence (incomplete): ${knownRevisions.join(", ")}`;
+    if (unavailableImageServices.length) identity.detail += `; immutable image inspection unavailable for: ${unavailableImageServices.join(", ")}`;
+    if (missingServices.length) {
+      if (identity.status === "consistent") identity.status = "partial";
+      identity.detail += `; missing services: ${missingServices.join(", ")}`;
+    }
+    identity.receipt = "unverified";
+    if (previous?.evidence?.commit === previous?.revision && previous?.verified_at && previous?.images) {
+      try {
+        const hashes = new Map((await compose(["--profile", "maintenance", "config", "--hash", "*"], { timeout: 5000 })).stdout.trim()
+          .split("\n").filter(Boolean).map(line => line.trim().split(/\s+/)));
+        const services = [...applicationServices, "postgres-backup"].filter(name => configuration.services[name]);
+        const inspected = containers.filter(container => container.State?.Running
+          && container.Config?.Labels?.["com.docker.compose.project"] === target.project
+          && services.includes(container.Config?.Labels?.["com.docker.compose.service"]));
+        const revisionContradiction = knownRevisions.some(imageRevision => imageRevision !== previous.revision);
+        identity.receipt = !revisionContradiction && applicationIdentitiesMatch(inspected, target, services, previous.images, hashes)
+          ? "matches immutable images and configuration of inspected running services" : "differs from running service identities";
+      } catch { identity.receipt = "unverified (saved configuration inspection unavailable)"; }
+    }
+    return identity;
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
@@ -279,29 +359,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     // Read under the maintenance lock, including the backup path whose runtime
     // was created during the earlier read-only inspection.
     migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
-    if (migrationGuard) {
-      const database = { name: configuration.services.postgres.environment.POSTGRES_DB,
-        volume: target.volumes[target.postgresVolumeKey].name };
-      if (migrationGuard.version !== 1 || migrationGuard.target !== targetKey(target)
-        || migrationGuard.database?.name !== database.name || migrationGuard.database?.volume !== database.volume
-        || !["pending", "verified"].includes(migrationGuard.state)
-        || !Number.isInteger(migrationGuard.starting_schema) || !Number.isInteger(migrationGuard.intended_schema)
-        || migrationGuard.starting_schema < 1 || migrationGuard.intended_schema < migrationGuard.starting_schema
-        || !Array.isArray(migrationGuard.starting_versions) || migrationGuard.starting_versions.length !== migrationGuard.starting_schema
-        || migrationGuard.starting_versions.some((version, index) => version !== index + 1) || !migrationGuard.study_invariants
-        || !migrationGuard.backup?.verified || !migrationGuard.backup.filename)
-        throw new Error("Migration guard is invalid or belongs to another database. Preserve the guard and backup; inspect tempo doctor before recovery.");
-      if (migrationGuard.state === "pending") {
-        if (!retry) throw new Error(`Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${migrationGuard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.`);
-        return true;
-      }
-    } else if (existsSync(journalPath)) {
-      const previousOperation = JSON.parse(readFileSync(journalPath, "utf8"));
-      if (previousOperation.phase === "applying_migrations"
-        || (previousOperation.phase === "failed" && previousOperation.failed_phase === "applying_migrations"))
-        throw new Error("Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry.");
-    }
-    return false;
+    const previousOperation = !migrationGuard && existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, "utf8")) : null;
+    const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
+    if (assessment.status === "blocked") throw new Error(assessment.message);
+    return assessment.status === "retry-authorized";
   }
 
   async function runningServices() {
@@ -479,7 +540,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
-  return { config, inspectTarget, compose, docker, runningServices, ensureImages, recordedApplicationsMatch, ensureDatabase,
+  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase,
     checkSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }
