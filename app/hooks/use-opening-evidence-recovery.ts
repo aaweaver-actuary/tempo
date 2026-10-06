@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { recoverOpeningEvidence, subscribeOpeningEvidenceLeaseRelease, subscribeOpeningEvidenceOperationResume } from "../lib/opening-evidence-journal";
+import { recoverOpeningEvidence, subscribeOpeningEvidenceAppend, subscribeOpeningEvidenceLeaseRelease, subscribeOpeningEvidenceOperationResume } from "../lib/opening-evidence-journal";
 import { openingEvidenceRecoveryPolicy, openingEvidenceRetryDelays } from "../lib/opening-evidence-recovery-policy";
 import { publishNotification } from "../lib/notifications";
 import { useTrainingStore } from "../state/training-store";
@@ -28,13 +28,14 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
     }, retryAt.current - Date.now());
     window.addEventListener("online", requestRecovery);
     window.addEventListener("offline", requestRecovery);
+    const unsubscribeAppend = subscribeOpeningEvidenceAppend(requestRecovery);
     const unsubscribeLeaseRelease = subscribeOpeningEvidenceLeaseRelease(requestRecovery);
     const unsubscribeOperationResume = subscribeOpeningEvidenceOperationResume(requestRecovery);
     return () => {
       active.current = false; lifecycle.current++;
       clearTimeout(retryTimer.current); retryTimer.current = undefined;
       window.removeEventListener("online", requestRecovery); window.removeEventListener("offline", requestRecovery);
-      unsubscribeLeaseRelease(); unsubscribeOperationResume();
+      unsubscribeAppend(); unsubscribeLeaseRelease(); unsubscribeOperationResume();
     };
   }, [enabled]);
 

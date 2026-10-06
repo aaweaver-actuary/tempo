@@ -4,7 +4,7 @@ import { openingEvidenceCheckpointSchema, openingDecisionEventSchema } from "../
 import { API_URL } from "../const";
 import { offlineTrainingDatabase } from "./offline-training-storage";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
-import { publishNotification } from "./notifications";
+import { notifications, publishNotification, resolveNotification } from "./notifications";
 import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError } from "./opening-evidence-recovery-policy";
 import { subscribeOperationStatusChange } from "./operation-status-events";
 
@@ -23,6 +23,22 @@ type RecoverySliceResult = { moreWork: boolean };
 let activeRecovery: Promise<RecoverySliceResult> | undefined;
 const leasedRecoveryAttempts = new Set<string>();
 const blockedRecoveryAttempts = new Map<string, string>();
+const pendingRecoveryAttempts = new Set<string>();
+const appendListeners = new Set<() => void>();
+
+/** Local appends request foreground-safe recovery; they never send network work. */
+export function subscribeOpeningEvidenceAppend(listener: () => void): () => void {
+  appendListeners.add(listener);
+  return () => { appendListeners.delete(listener); };
+}
+
+function resolveDeliveryNotice(): void {
+  if (pendingRecoveryAttempts.size || blockedRecoveryAttempts.size) return;
+  try { for (const record of notifications())
+    if (!record.resolvedAt && ["opening-evidence-delivery", "opening-evidence-recovery"].includes(record.key ?? ""))
+      resolveNotification(record.id, { severity: "info", message: "Opening evidence recovery is up to date. Any rejected attempts remain retained for diagnosis." });
+  } catch { /* Diagnostics cannot change confirmed persistence. */ }
+}
 
 /** Only a status observation for this exact operation can release its deferral. */
 export function subscribeOpeningEvidenceOperationResume(listener: () => void): () => void {
@@ -66,7 +82,6 @@ function waitForAttemptLeaseRelease(attemptId: string): void {
     if (leaseWaiters.get(attemptId) === controller) leaseWaiters.delete(attemptId);
   });
 }
-let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let writeTail = Promise.resolve();
 const releaseLeases = new Map<string, () => void>();
 
@@ -178,7 +193,8 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
     if (snapshot.terminal) releaseLeases.get(snapshot.attempt_id)?.();
     if (snapshot.terminal?.state === "partial" && captures.get(snapshot.attempt_id) === journal)
       captures.delete(snapshot.attempt_id);
-    if (scheduleFlush && attempt.delivery_state === "pending") scheduleOpeningEvidenceFlush();
+    if (scheduleFlush && attempt.delivery_state === "pending")
+      for (const listener of appendListeners) listener();
   });
   writeTail = writing;
   return writing;
@@ -221,14 +237,6 @@ export function completeOpeningAttempt(attemptId: string | undefined, endedAt?: 
   return attemptId ? captures.get(attemptId)?.finish("complete", endedAt) : undefined;
 }
 
-function scheduleOpeningEvidenceFlush(): void {
-  flushTimer ??= setTimeout(() => {
-    flushTimer = undefined;
-    void flushOpeningEvidence().catch((error) => publishNotification({ severity: "warning", source: "opening evidence",
-      key: "opening-evidence-delivery", message: `Opening evidence remains saved for retry. Normal training continues. ${String(error)}` }));
-  }, 0);
-}
-
 async function savedJournal(attemptId?: string): Promise<{ attempt: SavedAttempt; events: SavedEvent[] } | undefined> {
   const database = await offlineTrainingDatabase();
   return new Promise((resolve, reject) => {
@@ -261,6 +269,8 @@ export async function rejectOpeningEvidence(attemptId: string, message: string):
       transaction.onabort = () => reject(transaction.error);
     });
   }
+  pendingRecoveryAttempts.delete(attemptId);
+  blockedRecoveryAttempts.delete(attemptId);
   publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence:${attemptId}`,
     message: `Opening evidence was rejected and retained for diagnosis. The aggregate review can still save. ${message}` });
 }
@@ -284,6 +294,9 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
     transaction.onabort = () => reject(transaction.error);
   });
   captures.delete(attemptId);
+  pendingRecoveryAttempts.delete(attemptId);
+  blockedRecoveryAttempts.delete(attemptId);
+  for (const listener of appendListeners) listener();
 }
 
 /** Local capacity fallback is diagnostic retention, not a server rejection. */
@@ -348,7 +361,8 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
     const timeout = setTimeout(() => controller.abort(), 15_000);
     let receipt: { persisted?: boolean; attempt_id?: string; received_sequences?: number[]; contiguous_sequence?: number };
     try {
-      let response = await confirmOperationResponse(await openingEvidenceFetch(`${API_URL}/api/opening-evidence/checkpoints`, {
+      let response = frozenDelivery ? await readOperationResponse(operationKey, { background: true, signal: controller.signal, fetch: openingEvidenceFetch, allowMissing: true }) : undefined;
+      if (!response || response.status === 404) response = await confirmOperationResponse(await openingEvidenceFetch(`${API_URL}/api/opening-evidence/checkpoints`, {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": operationKey,
           "X-Tempo-Work-Class": "background" },
         body: JSON.stringify(checkpoint), signal: controller.signal,
@@ -398,6 +412,7 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
+    pendingRecoveryAttempts.delete(checkpoint.attempt_id);
     if (attemptId) return;
   }
 }
@@ -410,17 +425,18 @@ export function flushOpeningEvidence(): Promise<void> {
 }
 
 /** Read one eligible row in primary-key order, without loading the journal table. */
-function recoveryCandidate(database: IDBDatabase, pendingAggregateIds: Set<string | undefined>): Promise<SavedAttempt | undefined> {
+function recoveryCandidate(database: IDBDatabase, pendingAggregateIds: Set<string | undefined>, includePending = false): Promise<SavedAttempt | undefined> {
   return new Promise((resolve, reject) => {
     const request = database.transaction("opening_attempts").objectStore("opening_attempts").openCursor();
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor) { resolve(undefined); return; }
       const attempt = cursor.value as SavedAttempt;
-      const eligible = attempt.final_sequence && !leasedRecoveryAttempts.has(attempt.attempt_id) && !blockedRecoveryAttempts.has(attempt.attempt_id) &&
+      const eligible = (includePending || !pendingRecoveryAttempts.has(attempt.attempt_id)) &&
+        (attempt.owner_session_id === sessionId || Boolean(navigator.locks)) && attempt.final_sequence && !leasedRecoveryAttempts.has(attempt.attempt_id) && !blockedRecoveryAttempts.has(attempt.attempt_id) &&
         !["rejected", "retained"].includes(attempt.delivery_state) &&
         !(attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id)) &&
-        ((attempt.delivery_state === "pending" && (attempt.owner_session_id !== sessionId || attempt.terminal?.state === "partial")) ||
+        ((attempt.delivery_state === "pending") ||
           (attempt.owner_session_id !== sessionId && attempt.terminal?.state !== "partial"));
       if (eligible) resolve(attempt);
       else cursor.continue();
@@ -431,7 +447,7 @@ function recoveryCandidate(database: IDBDatabase, pendingAggregateIds: Set<strin
 
 /** Claim and deliver one journal, then yield to the hook's next idle opportunity. */
 async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
-  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || navigator.onLine === false || !navigator.locks) return { moreWork: false };
+  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || navigator.onLine === false) return { moreWork: false };
   await writeTail.catch(() => undefined);
   const unsaved = [...captures.values()].find(journal => journal.storageError);
   if (unsaved) await storeAppend(unsaved, undefined, false);
@@ -451,7 +467,7 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
   const attempt = unsaved ? await new Promise<SavedAttempt | undefined>((resolve, reject) => {
     const request = database.transaction("opening_attempts").objectStore("opening_attempts").get(unsaved.header.attempt_id);
     request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
-  }) : await recoveryCandidate(database, pendingAggregateIds);
+  }) : await recoveryCandidate(database, pendingAggregateIds) ?? await recoveryCandidate(database, pendingAggregateIds, true);
   if (attempt) {
     if (attempt.local_capture_gap) publishNotification({ severity: "warning", source: "opening evidence",
       key: `opening-evidence:${attempt.attempt_id}`, message: `A previous local capture reported a gap. Saved evidence remains recoverable; normal review is available. ${attempt.local_capture_gap}` });
@@ -490,20 +506,24 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
       });
     }
     if (deliver) {
-      // Serialize with live delivery. A live flush requested during this slice
-      // waits for it, then owns its usual backlog loop independently.
+      // Serialize with explicit diagnostic flushes; idle recovery still owns
+      // only one bounded checkpoint per slice.
       if (activeFlush) await activeFlush.catch(() => undefined);
       if (!activeFlush) {
         activeDeliverySlice = deliverOpeningEvidence(attempt.attempt_id).finally(() => { activeDeliverySlice = undefined; });
         try { await activeDeliverySlice; }
         catch (error) {
-          if (error instanceof PendingOperationError && error.blocked) blockedRecoveryAttempts.set(attempt.attempt_id, error.operationId);
+          if (error instanceof PendingOperationError) {
+            if (error.blocked) blockedRecoveryAttempts.set(attempt.attempt_id, error.operationId);
+            else pendingRecoveryAttempts.add(attempt.attempt_id);
+          }
           throw error;
         }
       }
     }
   }
-  const moreWork = [...captures.values()].some(journal => journal.storageError) || Boolean(await recoveryCandidate(database, pendingAggregateIds));
+  const moreWork = [...captures.values()].some(journal => journal.storageError) || Boolean(await recoveryCandidate(database, pendingAggregateIds, true));
+  if (!moreWork) resolveDeliveryNotice();
   if (!moreWork && !leaseWaiters.size) leasedRecoveryAttempts.clear();
   return { moreWork };
 }
