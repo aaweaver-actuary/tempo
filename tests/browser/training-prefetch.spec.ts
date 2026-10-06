@@ -126,6 +126,9 @@ test("completed tactic advances while an earlier review save is still pending", 
 
 test("poisoned online A becomes inspectable while B and C save and conflict retry survives reload", async ({ page }) => {
   await page.addInitScript(() => {
+    // prepareVisualUI mounts once before this test installs its review routes.
+    // Seed only the controlled reload, so setup cannot interrupt an earlier save.
+    if (localStorage.getItem("recovery-fixture-routes-ready") !== "true") return;
     if (localStorage.getItem("recovery-fixture-seeded")) return;
     localStorage.setItem("recovery-fixture-seeded", "true");
     localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
@@ -150,6 +153,9 @@ test("poisoned online A becomes inspectable while B and C save and conflict retr
     return route.fulfill({ json: retrySucceeds ? { persisted: true } : { persisted: false,
       conflict: { code: "queue_attempt_unprovable", message: "The original queue attempt cannot be verified.", retryable: false } } });
   });
+  expect(saved).toEqual([]);
+  expect(reconciliations).toEqual([]);
+  await page.evaluate(() => localStorage.setItem("recovery-fixture-routes-ready", "true"));
   await page.reload();
   await expect.poll(() => saved).toEqual(["original-b", "original-c"]);
   await expect(page.getByRole("button", { name: "Review conflicts (1)" })).toBeVisible();

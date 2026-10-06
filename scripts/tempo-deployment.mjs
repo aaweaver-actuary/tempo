@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync,
   realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { TempoProblem, verificationProblem } from "./tempo-guidance.mjs";
 
 export const productVolumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups",
   "tempo-redis-data", "tempo-engine-operations"].map(name => [name, { name, external: true }]));
@@ -70,7 +71,7 @@ function validateWorkerStorageContract(serviceName, service, secrets) {
 export function validateTarget(config, target) {
   if (config.name !== target.project) throw new Error("Compose project differs from the registered Tempo target.");
   if (JSON.stringify(portsFromConfig(config)) !== JSON.stringify(target.ports))
-    throw new Error("Compose ports differ from the registered Tempo target. Run tempo doctor before changing the installation.");
+    throw new Error(`Compose ports differ from the registered Tempo target: configured ${JSON.stringify(portsFromConfig(config))}; registered ${JSON.stringify(target.ports)}. Correct the registered port mapping before maintenance.`);
   for (const [key, expected] of Object.entries(target.volumes)) {
     const actual = config.volumes?.[key];
     if (!actual || actual.name !== expected.name || Boolean(actual.external) !== Boolean(expected.external))
@@ -85,7 +86,7 @@ export function validateTarget(config, target) {
     const mounts = (service.volumes ?? []).filter(mount => mount.type === "volume");
     if (mounts.some(mount => !expected || mount.source !== source || mount.target !== expected.destination)
       || (expected && mounts.length !== 1))
-      throw new Error(`Persistent volume mount ownership differs for ${serviceName}. Inspect tempo doctor before maintenance.`);
+      throw new Error(`Persistent volume mount ownership differs for ${serviceName}. Restore its registered data mount before maintenance; preserve all volumes.`);
   }
   for (const [serviceName, expected] of Object.entries(persistentMounts)) {
     const source = target.disposable ? expected.disposableSource : expected.source;
@@ -193,14 +194,14 @@ export function acquireTargetLock(directory) {
       if (error.code !== "EEXIST") throw error;
       let owner;
       try { owner = JSON.parse(readFileSync(path, "utf8")); }
-      catch { throw new Error("Tempo maintenance lock is incomplete; inspect it with tempo doctor before retrying."); }
+      catch { throw new TempoProblem("maintenance_unknown", "Tempo maintenance lock is incomplete.", { action: `Next: preserve ${path} and identify its owning process before retrying; do not remove an active lock.` }); }
       try { process.kill(owner.pid, 0); }
       catch (ownerError) {
         if (ownerError.code === "ESRCH" && JSON.parse(readFileSync(path, "utf8")).token === owner.token) {
           unlinkSync(path); continue;
         }
       }
-      throw new Error("Tempo maintenance is already in progress for this target.");
+      throw new TempoProblem("maintenance_active", "Tempo maintenance is already in progress for this target.", { action: "Next: let that command finish. Use tempo status to check progress." });
     }
   }
   throw new Error("Could not acquire Tempo maintenance lock.");
@@ -231,13 +232,35 @@ export function redact(text, secretValues = []) {
   for (const value of secretValues.filter(value => value && value.length >= 4).sort((a, b) => b.length - a.length))
     safe = safe.replaceAll(value, "[redacted]");
   return safe.replace(/(Bearer\s+)[^\s"']+/gi, "$1[redacted]")
+    .replace(/(https?:\/\/)[^/\s@]+@/gi, "$1[redacted]@")
     .replace(/(postgres(?:ql)?:\/\/[^:\s/]+:)[^@\s]+@/gi, "$1[redacted]@");
+}
+
+// Provenance distinguishes process failures from exceptions in our own code.
+export class CommandExecutionError extends Error {
+  constructor(command, message, { cause, status } = {}) {
+    super(message, { cause });
+    this.command = command;
+    this.status = status;
+  }
+}
+
+export function isOperationalGitFailure(error, signal) {
+  return error instanceof CommandExecutionError && error.command === "git"
+    && (error.status !== undefined || ["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EIO", "ENOEXEC", "EMFILE", "ENFILE", "EAGAIN", "ETXTBSY"].includes(error.cause?.code)
+      || (signal?.aborted && error.cause?.code === "ABORT_ERR"));
+}
+
+export function isCandidateBlocker(error) {
+  return (error instanceof TempoProblem && ["source_unavailable", "source_branch", "source_changes", "source_remote", "source_diverged",
+    "verification_pending", "verification_failed", "verification_missing", "verification_unavailable"].includes(error.code))
+    || isOperationalGitFailure(error);
 }
 
 // Discrete arguments keep paths, passwords, and shell punctuation out of shell evaluation.
 export function commandExecutor({ root, environment = process.env, output = console.log, secretValues = [] }) {
-  return (command, argumentsList, { allowFailure = false, echo = false, timeout = 0 } = {}) => new Promise((resolveResult, reject) => {
-    const child = spawn(command, argumentsList, { cwd: root, env: environment, stdio: ["ignore", "pipe", "pipe"], timeout });
+  return (command, argumentsList, { allowFailure = false, echo = false, timeout = 0, signal } = {}) => new Promise((resolveResult, reject) => {
+    const child = spawn(command, argumentsList, { cwd: root, env: environment, stdio: ["ignore", "pipe", "pipe"], timeout, signal });
     let stdout = "", stderr = "", pendingOutput = "";
     const consume = (chunk, isError) => {
       const text = chunk.toString();
@@ -250,10 +273,10 @@ export function commandExecutor({ root, environment = process.env, output = cons
       }
     };
     child.stdout.on("data", chunk => consume(chunk, false)); child.stderr.on("data", chunk => consume(chunk, true));
-    child.once("error", error => reject(new Error(`${command} is unavailable: ${redact(error.message, secretValues)}`)));
+    child.once("error", error => reject(new CommandExecutionError(command, `${command} is unavailable: ${redact(error.message, secretValues)}`, { cause: error })));
     child.once("close", code => {
       if (echo && pendingOutput) output(redact(pendingOutput, secretValues));
-      if (code !== 0 && !allowFailure) reject(new Error(`${command} failed (${code ?? "interrupted"}): ${redact(stderr || stdout, secretValues).slice(-4000)}`));
+      if (code !== 0 && !allowFailure) reject(new CommandExecutionError(command, `${command} failed (${code ?? "interrupted"}): ${redact(stderr || stdout, secretValues).slice(-4000)}`, { status: code }));
       else resolveResult({ code, stdout, stderr });
     });
   });
@@ -265,7 +288,13 @@ async function githubJson(path, { signal } = {}) {
     headers: { Accept: "application/vnd.github+json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`GitHub verification unavailable (HTTP ${response.status}).`);
+  if (!response.ok) {
+    const rateLimited = response.status === 429 || (response.status === 403
+      && (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after")));
+    const cause = rateLimited ? "rate limit" : [401, 403].includes(response.status)
+      ? "authentication or access denied" : response.status >= 500 ? "server unavailable" : "request rejected";
+    throw new Error(`GitHub verification unavailable: ${cause} (HTTP ${response.status}).`);
+  }
   return response.json();
 }
 
@@ -329,33 +358,120 @@ export async function assessMainVerification(revision, fetchJson = githubJson, {
     message: "No complete main CI verification exists for the candidate revision." };
 }
 
-async function verifiedMainEvidence(revision, fetchJson) {
-  const assessment = await assessMainVerification(revision, fetchJson);
-  if (assessment.status !== "verified") throw new Error(assessment.message);
+async function verifiedMainEvidence(revision, fetchJson, signal) {
+  const assessment = await assessMainVerification(revision, fetchJson, { signal: signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000) });
+  if (assessment.status !== "verified") throw verificationProblem(assessment);
   return assessment.evidence;
 }
 
-export async function selectCandidate(target, run, fetchJson = githubJson) {
+export function sourceFingerprint(source) {
+  const { branch, head, changes, origin } = source;
+  return [branch, head, changes, origin].every(value => typeof value === "string")
+    ? { branch, head, changes, origin } : null;
+}
+
+export function sourceMatchesFingerprint(source, expected) {
+  const observed = sourceFingerprint(source), fence = sourceFingerprint(expected);
+  return Boolean(observed && fence && observed.branch === fence.branch && observed.head === fence.head
+    && observed.changes === fence.changes && observed.origin === fence.origin);
+}
+
+export async function inspectCandidateSource(target, run, { signal } = {}) {
+  const failures = [];
+  const probe = async argumentsList => {
+    signal?.throwIfAborted();
+    let result;
+    try { result = await run("git", argumentsList, { allowFailure: true, timeout: 5000, signal }); }
+    catch (error) {
+      signal?.throwIfAborted();
+      if (!isOperationalGitFailure(error)) throw error;
+      failures.push({ probe: argumentsList.join(" "), message: redact(error.message).slice(-4000), cause: error });
+      return null;
+    }
+    signal?.throwIfAborted();
+    if (result.code !== 0) {
+      const cause = new CommandExecutionError("git", `git failed (${result.code ?? "interrupted"}): ${redact(result.stderr || result.stdout).slice(-4000)}`, { status: result.code });
+      failures.push({ probe: argumentsList.join(" "), message: cause.message, cause });
+      return null;
+    }
+    return result.stdout.trim();
+  };
+  const branch = await probe(["branch", "--show-current"]);
+  let head = await probe(["rev-parse", "HEAD"]);
+  if (head !== null && !/^[a-f0-9]{40}$/.test(head)) {
+    failures.push({ probe: "rev-parse HEAD", message: "Git did not report a valid HEAD revision." });
+    head = null;
+  }
+  const changes = await probe(["--no-optional-locks", "status", "--porcelain"]);
+  const sourceChangeEntries = changes?.split("\n") ?? [];
+  const origin = await probe(["remote", "get-url", "origin"]);
+  const action = `Next: preserve your work in ${target.root}; move development work to an isolated checkout, then leave this registered checkout clean on main.`;
+  let problem;
+  if (failures.length) problem = new TempoProblem("source_unavailable", "Local source state could not be inspected safely. The update is blocked; the checkout is preserved.",
+    { action: `Next: preserve the checkout at ${target.root}; repair Git/repository access before attempting an update.`, cause: failures[0].cause });
+  else if (branch !== "main") problem = new TempoProblem("source_branch", `Automatic updates require the registered checkout to be on main. Current branch: ${branch || "detached HEAD"}.`, { action });
+  else if (changes) problem = new TempoProblem("source_changes", `Local changes are preserved: ${sourceChangeEntries.slice(0, 3).join("; ")}${sourceChangeEntries.length > 3 ? "; more files listed in tempo doctor --verbose" : ""}. Save them on a separate branch before updating Tempo.`, { action });
+  else if (!/^(?:https?:\/\/github\.com\/|git@github\.com:)aaweaver-actuary\/tempo(?:\.git)?$/.test(origin))
+    problem = new TempoProblem("source_remote", "Registered checkout has an unexpected GitHub remote.",
+      { action: `Next: correct the origin for ${target.root} to the verified Tempo repository before updating.` });
+  return { branch, head, changes, origin, problem, failures };
+}
+
+export async function assessCandidate(target, run, fetchJson, { signal, expectedSource } = {}) {
+  const source = await inspectCandidateSource(target, run, { signal });
+  if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
+    throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.",
+      { action: "Next: preserve the source changes, then run tempo start when the registered checkout is clean on main." });
+  if (source.problem) throw source.problem;
+  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000);
+  let revision;
+  try {
+    const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"],
+      { allowFailure: true, timeout: 15_000, signal: requestSignal });
+    revision = remote.stdout.trim().split(/\s+/)[0];
+    if (remote.code !== 0 || !/^[a-f0-9]{40}$/.test(revision ?? ""))
+      return { source, revision: source.head, verification: { status: "unavailable", message: `Remote main could not be read${remote.stderr?.trim() ? `: ${remote.stderr.trim().slice(-400)}` : "."}` } };
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (!isOperationalGitFailure(error, requestSignal)) throw error;
+    return { source, revision: source.head, verification: { status: "unavailable", message: error.message } };
+  }
+  // Do not fetch while waiting. Unknown ancestry is checked by the locked selector.
+  if (source.head !== revision && (await run("git", ["cat-file", "-e", `${revision}^{commit}`], { allowFailure: true, timeout: 5000 })).code === 0
+    && (await run("git", ["merge-base", "--is-ancestor", source.head, revision], { allowFailure: true, timeout: 5000 })).code === 1)
+    throw new TempoProblem("source_diverged", "Local main has diverged; Tempo will not reset or merge your work.",
+      { action: `Next: preserve and reconcile ${target.root} with remote main without discarding local commits.` });
+  return { source, revision, verification: await assessMainVerification(revision, fetchJson, { signal: requestSignal }) };
+}
+
+export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal } = {}) {
+  signal?.throwIfAborted();
   if (!target.root) throw new Error("Tempo checkout is not registered.");
-  const branch = (await run("git", ["branch", "--show-current"])).stdout.trim();
-  if (branch !== "main") throw new Error("Automatic updates require the registered checkout to be on main.");
-  if ((await run("git", ["status", "--porcelain"])).stdout.trim())
-    throw new Error("Local changes are preserved. Save them on a separate branch before updating Tempo.");
-  const remote = (await run("git", ["remote", "get-url", "origin"])).stdout.trim();
-  if (!/^(?:https?:\/\/github\.com\/|git@github\.com:)aaweaver-actuary\/tempo(?:\.git)?$/.test(remote))
-    throw new Error("Registered checkout has an unexpected GitHub remote.");
-  await run("git", ["fetch", "origin", "main"], { timeout: 60_000 });
+  const source = await inspectCandidateSource(target, run, { signal });
+  if (source.problem) throw source.problem;
+  if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
+    throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
+  await run("git", ["fetch", "origin", "main"], { timeout: 60_000, signal });
   const revision = (await run("git", ["rev-parse", "FETCH_HEAD"])).stdout.trim();
   const current = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
+  if (expectedRevision && revision !== expectedRevision)
+    throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
+  if (current !== source.head)
+    throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
   if ((await run("git", ["merge-base", "--is-ancestor", current, revision], { allowFailure: true })).code !== 0)
-    throw new Error("Local main has diverged; Tempo will not reset or merge your work.");
-  const evidence = await verifiedMainEvidence(revision, fetchJson);
+    throw new TempoProblem("source_diverged", "Local main has diverged; Tempo will not reset or merge your work.");
+  const evidence = await verifiedMainEvidence(revision, fetchJson, signal);
+  signal?.throwIfAborted();
+  if (expectedRevision) {
+    const latest = (await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { timeout: 15_000, signal })).stdout.trim().split(/\s+/)[0];
+    if (latest !== revision) throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
+  }
   if (revision !== current) {
-    const checkedHead = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
-    const checkedBranch = (await run("git", ["branch", "--show-current"])).stdout.trim();
-    const checkedStatus = (await run("git", ["status", "--porcelain"])).stdout.trim();
-    if (checkedHead !== current || checkedBranch !== "main" || checkedStatus)
-      throw new Error("Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
+    const checkedSource = await inspectCandidateSource(target, run, { signal });
+    if (!sourceMatchesFingerprint(checkedSource, source))
+      throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
+    signal?.throwIfAborted();
     await run("git", ["merge", "--ff-only", revision]);
     if ((await run("git", ["rev-parse", "HEAD"])).stdout.trim() !== revision)
       throw new Error("Checkout revision changed during update; no deployment was started.");

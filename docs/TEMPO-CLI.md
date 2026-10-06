@@ -6,8 +6,10 @@ After a merge, run:
 tempo start
 ```
 
-Tempo checks the latest main revision and its complete GitHub quality gate,
-prepares one coherent image set, checks the existing database, and performs
+Tempo checks the latest main revision and its complete GitHub quality gate. If
+checks are still running, it waits up to 30 minutes and continues automatically.
+It leaves existing services untouched while waiting; Ctrl-C cancels that wait.
+Once eligible, it prepares one coherent image set, checks the existing database, and performs
 verified maintenance when migrations are needed. It opens the browser after
 readiness passes and keeps running in the background. Closing the terminal
 does not stop it.
@@ -40,8 +42,11 @@ and unrelated commands are not overwritten.
 | `tempo start --no-open` | Start without opening a browser |
 | `tempo restart` | Perform the same checks and recreate application services |
 | `tempo stop` | Gracefully stop the stack, retaining all study data |
-| `tempo status` | Show source, receipt, running identity, schema, and update eligibility |
-| `tempo doctor` | Read-only diagnosis plus running API readiness and next actions |
+| `tempo status` | Short deployment/update assessment (service health is checked by doctor) |
+| `tempo doctor` | Short read-only answer: current service availability, primary blocker, and one next action |
+| `tempo doctor --verbose` | Full technical evidence, current Redis probe, and historical failure details |
+| `tempo start --verbose` | Normal startup with underlying command output |
+| `tempo start --no-wait` | Assess release checks once; attempt the checked recorded fallback when blocked |
 | `tempo logs [service] [--follow]` | Inspect recent or live service logs |
 | `tempo backup` | Stop writers, take and restore-verify a backup, then restore service state |
 | `tempo migrate` | Explicitly run the checked update path without opening the browser |
@@ -51,6 +56,52 @@ The Mac launcher and older shell helpers use this same CLI. You no longer
 need to decide whether a merge requires a rebuild or a migration.
 
 ## Reading diagnostics and a blocked update
+
+
+Normally, **run `tempo start`**. You do not need to watch GitHub or apply migrations
+separately. The command tells you when it is waiting, preparing images, pausing
+study, verifying a backup, applying migrations, and checking readiness. Finish
+your current study session before invoking an automatic update: it can proceed
+when verification finishes, without another confirmation.
+
+`doctor`, `status`, and `--plan` assess once; they never wait for verification or
+change source, services, study data, receipts, or migration guards. Their short
+answer prioritizes safety/unfinished migration obligations, source conflicts,
+release verification, then deployment/readiness work. `--verbose` retains the
+full evidence below; ordinary output is not a machine-readable API.
+
+| What Tempo reports | What happens / what to do |
+| --- | --- |
+| Release checks pending | Run `tempo start`; it waits once per minute for at most 30 minutes, then continues if eligible. |
+| Release checks still pending after the wait | Run `tempo start` later. Start/restart can attempt the recorded version only after checking its images, schema and readiness; migrate cannot substitute it. |
+| Required checks failed or evidence missing | The CLI names the job/evidence and workflow link. Release repair is needed; local resets or repeated starts cannot fix failed tests. |
+| GitHub unavailable | Restore network/access or wait for the reported rate limit, then run `tempo start`. This is not a failed test. |
+| Local work, wrong branch or divergence | Preserve the named checkout's work in an isolated development checkout; reconcile it to clean main without resetting away commits. |
+| Pending migrations or unknown running images | Normal `tempo start` prepares coherent images, verifies a backup and applies migrations. These are CLI work, not manual repair instructions. |
+| Redis loading or a temporary connection error | Startup retries within its existing 180-second Redis deadline. Terminal authentication/configuration errors identify Redis logs and the actual redacted reply. |
+| Another maintenance command is active | Let it finish; `tempo status` shows progress. An active migration is not reported as a failed migration. |
+| Unfinished database update | Preserve its original backup/guard, repair the named failure using detailed evidence, then explicitly run `tempo migrate --retry`. Invalid or missing recovery evidence requires the documented recovery procedure before retry. |
+| Unsafe target, missing volume/credential or PostgreSQL major mismatch | Correct the named item using the registration/environment or PostgreSQL maintenance procedure. No empty replacement database is created. |
+
+If a short-lived Docker container disappears while Tempo inspects ownership,
+Tempo refreshes that inventory once automatically. It still checks every
+surviving container and rejects access failures or incomplete metadata with a
+specific cause; it never treats failed inspection as an empty installation.
+
+A saved failure is **historical**, with its revision, phase and timestamp in
+verbose output. Older journals without these fields say they were not recorded.
+A bounded read-only Redis probe establishes current readiness independently; an
+old expected-PONG error is not evidence that Redis remains broken. HTTP 200 does
+not certify the running revision, a deployment receipt, or background completion.
+
+Waiting uses one deadline even when main advances or the CLI reloads updated
+source. It holds no maintenance lock and creates no deployment journal. A
+concurrent `tempo stop`, deployment, source edit, registration change or migration
+recovery change cancels the waiting start rather than letting it restart Tempo
+later. `--no-wait` opts out of waiting on start/restart/migrate; all existing
+compatibility and data-preservation checks still apply. Ctrl-C while waiting
+returns exit code 130. Diagnostics retain zero exit status for reported blockers;
+operational failures remain nonzero.
 
 `status`, `doctor`, and `--plan` distinguish the local branch/HEAD, remote-main
 SHA, recorded verified deployment, and actual running image identity. A receipt
@@ -84,8 +135,8 @@ rechecks current-main evidence, source safety, target isolation and readiness.
 
 If no deployment receipt exists and verification is pending, the update is
 waiting for that exact SHA. There is no verified fallback, and the blocked
-attempt has not applied the update. Inspect the linked workflow and its required
-jobs, then run `tempo start` once that revision is eligible. A successful run for
+attempt has not applied the update. Run `tempo start` to wait automatically; the workflow link is supporting evidence.
+After a 30-minute timeout, run it later to wait again. A successful run for
 an older main SHA does not verify a newer one. Earlier acceptable successful
 evidence for the **same** SHA remains acceptable despite a later pending/failed
 run. GitHub Pages publication is not an additional local deployment requirement.
@@ -138,8 +189,9 @@ docker --context desktop-linux compose --project-directory /Users/andy/tempo \
   api background-worker background-scheduler postgres
 ```
 
-Verification pending/failed/missing/unavailable remains a stop condition for a
-first deployment. Failed backup/history verification, a missing volume, mixed
+Pending verification makes a first deployment wait automatically, bounded by
+the original 30-minute deadline. Failed, missing or unavailable verification
+blocks it with a specific cause and next action. Failed backup/history verification, a missing volume, mixed
 target identity, unresolved migration guard or readiness failure requires
 inspection and a compatible fix forward. Preserve backups/guards/receipts and
 new study writes; do not manufacture first-deployment evidence, change verification
@@ -230,7 +282,11 @@ failure timestamp; schema checks and application startup have not advanced.
 Inspect `tempo logs redis`, address any reported terminal error, then run
 `tempo start` again. No Redis data is discarded to make startup succeed.
 
-Read the specific error, then use `tempo doctor` and `tempo logs api`. A missing
+Read the specific error and its next action. `tempo doctor --verbose` shows
+historical details; saved failure logs select Redis, PostgreSQL, maintenance or
+application services according to the failing phase and include the redacted
+cause, revision and timestamp. Image-preparation failures retain their command
+error without unrelated API logs. A missing
 volume, conflicting container, invalid history, missing credential, or failed
 restore is a stop condition. The CLI does not substitute sample data, silently
 create an empty database, discard local changes, or skip release checks.
@@ -262,7 +318,8 @@ and PostgreSQL maintenance. Plausible failures include a wrong target, local
 work loss, stale CI evidence, image/schema mismatch, partial maintenance, and
 false readiness, dependency recreation with active writers, and rejecting an
 intentional legacy queue-label normalization. The smallest proof is the dependency-free CLI regression
-suite, its regular Vitest wrapper, and the read-only migration-status pytest
+suite (including controlled-clock verification waiting and actual-command
+stop/cancellation/relaunch cases), its regular Vitest wrapper, and the read-only migration-status pytest
 cases. The settled candidate additionally runs the real disposable PostgreSQL
 durability gate, lint, and typecheck. CI owns final complete candidate and merge
 validation; no runtime gate is run against the live study installation.
