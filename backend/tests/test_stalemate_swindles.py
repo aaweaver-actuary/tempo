@@ -2,6 +2,7 @@
 
 from collections import Counter
 from copy import deepcopy
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import io
@@ -349,6 +350,60 @@ def test_stalemate_archive_downloader_failure_terminates_blocked_decompressor(tm
 
 def test_stalemate_archive_sampling_cancels_owned_pipeline_without_certifying_checksum(tmp_path):
     run_backpressured_archive(tmp_path, "sampling", sampling=True)
+
+
+@pytest.mark.parametrize("proof_name", [
+    "test_postgres_stalemate_bundle_import_reimport_preserves_draft_content",
+    "test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content",
+])
+@pytest.mark.parametrize("previous_configuration", [None, "postgresql://previous-proof.invalid/unused"])
+def test_stalemate_postgres_proofs_configure_and_restore_database_environment(monkeypatch, proof_name, previous_configuration):
+    specification = importlib.util.spec_from_file_location("stalemate_postgres_proof", ROOT / "scripts/check_postgres_stalemate_swindles.py")
+    proof_module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(proof_module)
+    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
+    database_variables = ("TEMPO_DATABASE_WRITE_URL", "TEMPO_DATABASE_READ_URL")
+    for variable in database_variables:
+        if previous_configuration is None:
+            monkeypatch.delenv(variable, raising=False)
+        else:
+            monkeypatch.setenv(variable, previous_configuration)
+    pool_closures = []
+    monkeypatch.setattr(proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True))
+
+    @contextmanager
+    def failed_database_operation():
+        assert pool_closures, "Pools must reset before the proof opens a connection"
+        assert all(os.getenv(variable) == "postgresql://postgres@postgres:5432/tempo" for variable in database_variables)
+        raise RuntimeError("database proof sentinel")
+        yield  # pragma: no cover - context manager deliberately fails on entry
+
+    monkeypatch.setattr(proof_module.postgres_store, "connection", failed_database_operation)
+    with pytest.raises(RuntimeError, match="database proof sentinel"):
+        getattr(proof_module, proof_name)()
+    assert all(os.getenv(variable) == previous_configuration for variable in database_variables)
+    assert len(pool_closures) >= 2, "Pools must also close after failed proof work"
+
+
+def test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances(monkeypatch):
+    specification = importlib.util.spec_from_file_location("stalemate_postgres_context", ROOT / "scripts/check_postgres_stalemate_swindles.py")
+    proof_module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(proof_module)
+    pool_closures = []
+    monkeypatch.setattr(proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True))
+    monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
+    monkeypatch.delenv("TEMPO_DATABASE_READ_URL", raising=False)
+    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
+    with proof_module.disposable_postgres_configuration():
+        assert len(pool_closures) == 1
+        assert os.environ["TEMPO_DATABASE_WRITE_URL"] == os.environ["TEMPO_DATABASE_READ_URL"] == "postgresql://postgres@postgres:5432/tempo"
+    assert len(pool_closures) == 2
+    assert "TEMPO_DATABASE_WRITE_URL" not in os.environ and "TEMPO_DATABASE_READ_URL" not in os.environ
+    monkeypatch.delenv("TEMPO_TEST_INSTANCE")
+    with pytest.raises(RuntimeError, match="disposable PostgreSQL runner"):
+        with proof_module.disposable_postgres_configuration():
+            pytest.fail("A live instance must never reach proof work")
+    assert len(pool_closures) == 2
 
 
 @pytest.mark.parametrize("extra_arguments", [
