@@ -22,6 +22,12 @@ async function readSavedPhoneQueue(page: Page): Promise<PreparedTraining | null>
 
 async function expectPhoneQueuePrepared(page: Page) {
   await expect.poll(async () => (await readSavedPhoneQueue(page))?.localDate).toBe(localDate);
+  // The database write precedes worker hydration and shell verification. Switch
+  // offline only after the product confirms that complete preparation boundary.
+  await expect.poll(() => page.evaluate((date) =>
+    (JSON.parse(localStorage.getItem("tempo-notifications-v1") ?? "[]") as { key?: string; message: string }[])
+      .some(record => record.key === "phone-queue-preparation" && record.message.startsWith(`Phone queue prepared for ${date}.`)),
+  localDate)).toBe(true);
   await expect(page.locator(".notification-toast.notification-info, .notification-toast.notification-success")).toHaveCount(0);
 }
 
@@ -41,7 +47,7 @@ test("local Tempo shell opens after the network drops", async ({ page }) => {
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect(page.getByText(/Tempo update ready/)).toHaveCount(0);
   await expect.poll(() => page.evaluate(async () => Boolean(
-    await (await caches.open("tempo-static-v6")).match("/pieces/merida/wP.svg"),
+    await (await caches.open("tempo-static-v7")).match("/pieces/merida/wP.svg"),
   ))).toBe(true);
   await page.context().setOffline(true);
   await page.reload();
@@ -60,7 +66,40 @@ const preparedCards = [
     repertoire_name: "Second phone card", repertoire_source: "PGN", scheduling_mode: "normal" },
 ];
 
-test("prepared phone queue survives API outage reload and syncs its review", async ({ page }) => {
+test("phone projection refresh retains its saved queue and coalesces preparation notices across reloads", async ({ page }) => {
+  let refreshing = false;
+  const windowPayload = { local_date: localDate, count: 2, cards: preparedCards };
+  const preparedAt = new Date().toISOString();
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: windowPayload }));
+  await page.route("**/api/queue/prepared?**", route => route.fulfill({ json: {
+    ...windowPayload, prepared_at: preparedAt, projection: { state: refreshing ? "refreshing" : "ready",
+      generation: 1, updated_at: null, refresh_pending: refreshing ? 1 : 0, last_error: null, blocked_count: 0 },
+  } }));
+  await page.goto("/");
+  await expectPhoneQueuePrepared(page);
+  const savedQueue = await readSavedPhoneQueue(page);
+  refreshing = true;
+  for (let reload = 0; reload < 3; reload++) {
+    await page.reload();
+    await page.getByRole("button", { name: "Notifications", exact: true }).click();
+    await page.locator("#notification-tray").getByRole("button", { name: "All", exact: true }).click();
+    await expect(page.locator("#notification-tray").getByText(/Phone offline queue is refreshing/)).toBeVisible();
+    expect(await readSavedPhoneQueue(page)).toEqual(savedQueue);
+    await expect(page.locator(".notification-toast.notification-warning")).toHaveCount(0);
+  }
+  const preparationNotices = () => page.evaluate(() =>
+    (JSON.parse(localStorage.getItem("tempo-notifications-v1") ?? "[]") as { key?: string; resolvedAt?: string }[])
+      .filter(record => record.key === "phone-queue-preparation"));
+  expect(await preparationNotices()).toHaveLength(1);
+  refreshing = false;
+  await page.reload();
+  await page.getByRole("button", { name: "Notifications", exact: true }).click();
+  await page.locator("#notification-tray").getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.locator("#notification-tray").getByText(/Phone queue prepared for/)).toBeVisible();
+  await expect.poll(async () => (await preparationNotices()).every(record => Boolean(record.resolvedAt))).toBe(true);
+});
+
+test("prepared phone queue and study worker survive full offline reload and sync one review per attempt", async ({ page }) => {
   const windowPayload = { local_date: localDate, count: 2, cards: preparedCards };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: windowPayload }));
   await page.route("**/api/queue/prepared?**", (route) => route.fulfill({ json: {
@@ -73,11 +112,14 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   expect(await page.evaluate(() => ({ userAgent: navigator.userAgent, standalone: (navigator as Navigator & { standalone?: boolean }).standalone }))).toMatchObject({ standalone: true });
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect.poll(() => page.evaluate(async () => {
-    const cache = await caches.open("tempo-static-v6");
+    const cache = await caches.open("tempo-static-v7");
     return (await cache.keys()).map((request) => new URL(request.url).pathname)
       .filter((path) => path.startsWith("/assets/")).length;
   })).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => page.evaluate(async () => (await (await caches.open("tempo-static-v7")).keys())
+    .some(request => /study\.worker[^/]*\.js$/.test(new URL(request.url).pathname)))).toBe(true);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.context().setOffline(true);
   await page.reload();
   await expect(page.getByText("First phone card")).toBeVisible();
   await expect(page.getByRole("main").getByText(/Offline queue prepared/)).toBeVisible();
@@ -103,8 +145,10 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
     } });
   });
   await page.unroute("**/api/**");
-  await page.reload();
+  await page.context().setOffline(false);
   await expect.poll(() => replayedEntries.length).toBe(3);
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.attempts
+    .every(attempt => Boolean(attempt.serverReviewId || attempt.serverAcknowledged))).toBe(true);
   expect(replayedEntries).toEqual([501, 502, 602]);
   await page.reload();
   expect(replayedEntries).toEqual([501, 502, 602]);
