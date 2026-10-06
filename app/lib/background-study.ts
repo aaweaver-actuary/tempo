@@ -14,6 +14,16 @@ const pending = new Map<
   { title: string; queuedAt: number; startedAt?: number; resolve: (value: unknown) => void; reject: (error: Error) => void }
 >();
 
+function failStudyRequests(cause?: unknown): void {
+  for (const [requestId, request] of pending) {
+    updateBrowserActivity(`study:${requestId}`, request.title, "failed", "Failed", "Study worker failed");
+    request.reject(new Error("Study worker failed. Reopen Tempo while connected to retry.", { cause }));
+  }
+  pending.clear();
+  worker?.terminate();
+  worker = undefined;
+}
+
 export function runStudyTask<T>(
   task: StudyTask,
   signal?: AbortSignal,
@@ -45,9 +55,13 @@ export function runStudyTask<T>(
         }
       }, 0);
     });
-  worker ??= new Worker(new URL("./study.worker.ts", import.meta.url), {
-    type: "module",
-  });
+  try {
+    worker ??= new Worker(new URL("./study.worker.ts", import.meta.url), { type: "module" });
+  } catch (error) {
+    reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
+    updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
+    return Promise.reject(new Error("Study worker failed. Reopen Tempo while connected to retry.", { cause: error }));
+  }
   worker.onmessage = ({ data: raw }) => {
     let data;
     try {
@@ -95,15 +109,12 @@ export function runStudyTask<T>(
       script: event.filename, line: event.lineno || undefined,
       column: event.colno || undefined,
     });
-    for (const [requestId, request] of pending)
-      updateBrowserActivity(`study:${requestId}`, request.title, "failed", "Failed", "Study worker failed");
-    for (const request of pending.values())
-      request.reject(
-        new Error("Study worker failed. Reopen Tempo while connected to retry."),
-      );
-    pending.clear();
-    worker?.terminate();
-    worker = undefined;
+    failStudyRequests(event);
+  };
+  worker.onmessageerror = () => {
+    const error = new Error("Study worker response could not be decoded");
+    reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
+    failStudyRequests(error);
   };
   return new Promise<T>((resolve, reject) => {
     const cancel = () => {
@@ -124,7 +135,11 @@ export function runStudyTask<T>(
         reject(error);
       },
     });
-    worker!.postMessage({ id, task });
+    try { worker!.postMessage({ id, task }); }
+    catch (error) {
+      reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
+      failStudyRequests(error);
+    }
   });
 }
 

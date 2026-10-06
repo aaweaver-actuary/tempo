@@ -9,6 +9,13 @@ afterEach(() => {
   clearDebugErrors();
 });
 
+it("phone worker construction failure rejects asynchronously with actionable diagnostics", async () => {
+  vi.stubGlobal("Worker", class { constructor() { throw new DOMException("Worker denied", "SecurityError"); } });
+  await expect(runStudyTask({ kind: "queue", payload: { cards: [], count: 0 } }))
+    .rejects.toThrow("Reopen Tempo while connected");
+  expect(debugErrors().at(-1)?.context.source).toBe("study-worker");
+});
+
 it("iPhone study worker startup failure is actionable and records the safe script path", async () => {
   class FailingWorker {
     onmessage: ((event: MessageEvent) => void) | null = null;
@@ -48,4 +55,30 @@ it("study worker reports queue compute and roundtrip durations", async () => {
   ]);
   expect(timings[1].duration).toBe(7);
   expect(timings.every(({ duration }) => duration >= 0)).toBe(true);
+});
+
+it("phone worker message decoding failure releases every caller and permits a fresh worker", async () => {
+  vi.resetModules();
+  const { runStudyTask: runTask } = await import("../../app/lib/background-study");
+  const workers: ControlledWorker[] = [];
+  class ControlledWorker {
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    onmessageerror: (() => void) | null = null;
+    terminate = vi.fn();
+    postMessage = vi.fn();
+    constructor() { workers.push(this); }
+  }
+  vi.stubGlobal("Worker", ControlledWorker);
+  const first = runTask({ kind: "queue", payload: { cards: [], count: 0 } });
+  const second = runTask({ kind: "workspace", url: "/api/repertoire/lines", payload: [] });
+  const failures = Promise.all([expect(first).rejects.toThrow("Reopen Tempo while connected"),
+    expect(second).rejects.toThrow("Reopen Tempo while connected")]);
+  workers[0].onmessageerror!();
+  await failures;
+  expect(workers[0].terminate).toHaveBeenCalledOnce();
+  const retry = runTask({ kind: "queue", payload: { cards: [], count: 0 } });
+  expect(workers).toHaveLength(2);
+  const id = workers[1].postMessage.mock.calls[0][0].id;
+  workers[1].onmessage!({ data: { id, result: [] } } as MessageEvent);
+  await expect(retry).resolves.toEqual([]);
 });
