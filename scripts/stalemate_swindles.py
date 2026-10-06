@@ -91,6 +91,8 @@ def staged_path(destination: Path):
 class ArchiveStream:
     """Own only this CLI's curl/zstd processes and a bounded compressed-byte pump."""
 
+    TERMINATION_GRACE_SECONDS = 5
+
     def __init__(self, source_url: str, expected_sha256: str):
         self.source_url = source_url
         self.expected_sha256 = expected_sha256
@@ -100,6 +102,66 @@ class ArchiveStream:
         self.decompressor = None
         self.pump = None
         self.text_stream = None
+        self.monitors: list[threading.Thread] = []
+        self.failures: list[str] = []
+        self.lifecycle_lock = threading.Lock()
+        self.stopping = threading.Event()
+        self.stopped = threading.Event()
+        self.input_forwarded = threading.Event()
+
+    def stop(self, failure: str | None = None):
+        """One caller signals/reaps both children; other callers never join it."""
+        with self.lifecycle_lock:
+            if self.stopping.is_set():
+                return
+            for stage, process in (("curl", self.downloader), ("zstd", self.decompressor)):
+                if process is not None and process.poll() not in (None, 0):
+                    self.failures.append(f"{stage} exited with {process.returncode}")
+            if failure is not None:
+                self.failures.append(failure)
+            self.stopping.set()
+        try:
+            # Signal every stage before waiting: either pipe may be backpressured.
+            for process in (self.downloader, self.decompressor):
+                if process is not None and process.poll() is None:
+                    try:
+                        process.terminate()
+                    except ProcessLookupError:
+                        pass
+            for process in (self.downloader, self.decompressor):
+                if process is not None:
+                    try:
+                        process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
+        finally:
+            self.stopped.set()
+
+    def monitor_process(self, stage: str, process):
+        while not self.stopping.is_set():
+            try:
+                result = process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                continue
+            if result:
+                self.stop(f"{stage} exited with {result}")
+            elif stage == "zstd" and not self.input_forwarded.is_set():
+                self.stop("zstd exited before the compressed source was fully forwarded")
+            return
+
+    def join_workers(self):
+        for worker in (self.pump, *self.monitors):
+            if worker is not None and worker.ident is not None:
+                worker.join(timeout=self.TERMINATION_GRACE_SECONDS)
+                if worker.is_alive():
+                    raise ValueError(f"Archive pipeline failed: {worker.name} did not stop")
+
+    def raise_pipeline_failure(self):
+        if self.failures:
+            raise ValueError(f"Archive pipeline failed: curl={self.downloader.returncode}, "
+                             f"zstd={self.decompressor.returncode}, pump_errors={len(self.pump_errors)}; "
+                             + "; ".join(self.failures))
 
     def __enter__(self):
         try:
@@ -107,18 +169,30 @@ class ArchiveStream:
             self.decompressor = subprocess.Popen(["zstd", "-dc"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
             def transfer_compressed_bytes():
                 try:
-                    while compressed_chunk := self.downloader.stdout.read(1024 * 1024):
+                    while not self.stopping.is_set() and (compressed_chunk := self.downloader.stdout.read(1024 * 1024)):
                         self.digest.update(compressed_chunk)
                         self.decompressor.stdin.write(compressed_chunk)
+                    if not self.stopping.is_set():
+                        self.decompressor.stdin.flush()
+                        # Mark forwarding before sending EOF, which permits zstd's normal exit.
+                        self.input_forwarded.set()
                 except Exception as error:
-                    self.pump_errors.append(error)
+                    if not self.stopping.is_set():
+                        self.pump_errors.append(error)
+                        self.stop(f"compressed-byte pump failed: {error}")
                 finally:
                     try:
                         self.decompressor.stdin.close()
-                    except (BrokenPipeError, OSError):
-                        pass
+                    except (BrokenPipeError, OSError) as error:
+                        if not self.stopping.is_set():
+                            self.pump_errors.append(error)
+                            self.stop(f"compressed-byte pump close failed: {error}")
             self.pump = threading.Thread(target=transfer_compressed_bytes, name="stalemate-archive-pump")
             self.pump.start()
+            for stage, process in (("curl", self.downloader), ("zstd", self.decompressor)):
+                monitor = threading.Thread(target=self.monitor_process, args=(stage, process), name=f"stalemate-archive-{stage}")
+                self.monitors.append(monitor)
+                monitor.start()
             self.text_stream = io.TextIOWrapper(self.decompressor.stdout, encoding="utf-8", errors="strict")
             return self
         except BaseException:
@@ -126,31 +200,40 @@ class ArchiveStream:
             raise
 
     def verify_complete(self):
-        self.pump.join()
-        download_result = self.downloader.wait()
-        decompression_result = self.decompressor.wait()
-        if self.pump_errors or download_result or decompression_result:
-            raise ValueError(f"Archive pipeline failed: curl={download_result}, zstd={decompression_result}, pump_errors={len(self.pump_errors)}")
+        if not self.input_forwarded.is_set():
+            self.stop("decompressed output ended before compressed source completion")
+        for stage, process in (("curl", self.downloader), ("zstd", self.decompressor)):
+            try:
+                result = process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                self.stop(f"{stage} did not exit after stream EOF")
+                break
+            if result:
+                self.stop(f"{stage} exited with {result}")
+        self.join_workers()
+        self.raise_pipeline_failure()
         if self.digest.hexdigest() != self.expected_sha256:
             raise ValueError("Compressed source SHA-256 differs from the published checksum")
 
-    def __exit__(self, *_):
-        for process in (self.downloader, self.decompressor):
-            if process is not None and process.poll() is None:
-                process.terminate()
-        for process in (self.downloader, self.decompressor):
-            if process is not None:
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-        if self.pump is not None:
-            self.pump.join(timeout=5)
+    def finish_sampling(self):
+        self.close()
+        self.raise_pipeline_failure()
+
+    def close(self):
+        self.stop()
+        if not self.stopped.wait(timeout=4 * self.TERMINATION_GRACE_SECONDS):
+            raise ValueError("Archive pipeline failed: owned process shutdown did not finish")
+        self.join_workers()
         if self.text_stream is not None:
             self.text_stream.close()
-        if self.downloader is not None and self.downloader.stdout is not None:
-            self.downloader.stdout.close()
+        for process in (self.downloader, self.decompressor):
+            if process is not None:
+                for pipe in (process.stdin, process.stdout):
+                    if pipe is not None:
+                        pipe.close()
+
+    def __exit__(self, *_):
+        self.close()
 
 
 def mine_to_file(arguments, stream, source: dict, archive: ArchiveStream | None = None):
@@ -170,6 +253,8 @@ def mine_to_file(arguments, stream, source: dict, archive: ArchiveStream | None 
         if archive is not None and not limited:
             archive.verify_complete()
             source.update({"sha256": archive.digest.hexdigest(), "sha256_verified": True})
+        elif archive is not None:
+            archive.finish_sampling()
         metadata = {"schema_version": 1, "generator_version": 1, "source_month": arguments.source_month,
             "source": source, "filters": asdict(filters), "limits": {"max_games": arguments.max_games, "stop_after_candidates": arguments.stop_after_candidates},
             "completion": {"complete": not limited, "reason": "sampling_mode" if limited else "input_eof"},

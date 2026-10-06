@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import signal
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -260,6 +261,94 @@ def test_stalemate_cli_archive_verifies_source_and_rejects_failed_pipeline(tmp_p
         changed_build = run_cli(*build_arguments, "--title", "Changed canonical content")
         assert changed_build.returncode == 1 and "new corpus revision" in changed_build.stderr
         assert bundle.read_bytes() == original_bytes
+
+
+def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=False, sampling=False):
+    """Use real owned pipes; an undrained producer cannot finish its 32 MiB write."""
+    tool_directory = tmp_path / "bin"
+    tool_directory.mkdir()
+    producer_pid_path = tmp_path / "producer.pid"
+    consumer_pid_path = tmp_path / "consumer.pid"
+    consumer_ready_path = tmp_path / "consumer-ready"
+    os.mkfifo(consumer_ready_path)
+    producer_bytes = 1024 * 1024 if downloader_failure else 32 * 1024 * 1024
+    producer_handshake = (f"with open({str(consumer_ready_path)!r}, 'rb', buffering=0) as ready:\n    assert ready.read(1) == b'1'\n"
+                          if downloader_failure else "")
+    producer_body = (
+        f"import os\nfrom pathlib import Path\nPath({str(producer_pid_path)!r}).write_text(str(os.getpid()))\n"
+        f"{producer_handshake}"
+        f"remaining = {producer_bytes}\n"
+        "while remaining:\n    remaining -= os.write(1, b'x' * min(65536, remaining))\n"
+        f"raise SystemExit({int(downloader_failure)})\n"
+    )
+    consumer_body = f"import os, signal, sys\nfrom pathlib import Path\nPath({str(consumer_pid_path)!r}).write_text(str(os.getpid()))\n"
+    if downstream_mode == "ignore_termination":
+        consumer_body += "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+    if downloader_failure:
+        consumer_body += f"with open({str(consumer_ready_path)!r}, 'wb', buffering=0) as ready:\n    ready.write(b'1')\nsignal.pause()\n"
+    else:
+        consumer_body += f"os.read(0, 1)\nsys.stdout.write({(synthetic_pgn() * (2 if sampling else 1))!r})\nsys.stdout.flush()\n"
+        if sampling:
+            consumer_body += "signal.pause()\n"
+        elif downstream_mode in ("close_input", "ignore_termination"):
+            consumer_body += "os.close(0)\nsignal.pause()\n"
+        else:
+            consumer_body += f"raise SystemExit({7 if downstream_mode == 'exit_failure' else 0})\n"
+    for command, body in (("curl", producer_body), ("zstd", consumer_body)):
+        executable = tool_directory / command
+        executable.write_text(f"#!{sys.executable}\n{body}")
+        executable.chmod(0o755)
+    environment = {**os.environ, "PATH": str(tool_directory) + os.pathsep + os.environ["PATH"]}
+    output = tmp_path / "candidates.jsonl"
+    command = [sys.executable, str(CLI), "mine", "--source-url",
+               "https://database.lichess.org/standard/lichess_db_standard_rated_2026-09.pgn.zst",
+               "--source-sha256", "0" * 64, "--source-month", "2026-09", "--output", str(output)]
+    if sampling:
+        command += ["--stop-after-candidates", "1"]
+    miner = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             env=environment, cwd=ROOT, start_new_session=True)
+    try:
+        try:
+            _, diagnostics = miner.communicate(timeout=20)
+        except subprocess.TimeoutExpired:
+            pytest.fail("Archive pipeline deadlocked with an owned child blocked by pipe backpressure")
+        assert miner.returncode == (0 if sampling else 1), diagnostics
+        if not sampling:
+            assert "Archive pipeline failed" in diagnostics
+        for pid_path in (producer_pid_path, consumer_pid_path):
+            assert pid_path.exists(), "Both real pipeline stages must have started"
+            with pytest.raises(ProcessLookupError):
+                os.kill(int(pid_path.read_text()), 0)
+        if sampling:
+            metadata = json.loads(Path(str(output) + ".metadata.json").read_text())
+            assert metadata["completion"] == {"complete": False, "reason": "sampling_mode"}
+            assert not metadata["source"]["sha256_verified"]
+            assert metadata["candidate_sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
+        else:
+            assert not output.exists() and not Path(str(output) + ".metadata.json").exists()
+        assert not list(tmp_path.glob("*.partial"))
+    finally:
+        if miner.poll() is None:
+            # Let ArchiveStream's context exit reap its own children on the red baseline.
+            miner.send_signal(signal.SIGINT)
+            try:
+                miner.communicate(timeout=12)
+            except subprocess.TimeoutExpired:
+                os.killpg(miner.pid, signal.SIGKILL)
+                miner.communicate(timeout=5)
+
+
+@pytest.mark.parametrize("downstream_mode", ["exit_failure", "close_input", "exit_success", "ignore_termination"])
+def test_stalemate_archive_decompressor_failure_terminates_upstream_producer_under_backpressure(tmp_path, downstream_mode):
+    run_backpressured_archive(tmp_path, downstream_mode)
+
+
+def test_stalemate_archive_downloader_failure_terminates_blocked_decompressor(tmp_path):
+    run_backpressured_archive(tmp_path, "blocked", downloader_failure=True)
+
+
+def test_stalemate_archive_sampling_cancels_owned_pipeline_without_certifying_checksum(tmp_path):
+    run_backpressured_archive(tmp_path, "sampling", sampling=True)
 
 
 @pytest.mark.parametrize("extra_arguments", [
