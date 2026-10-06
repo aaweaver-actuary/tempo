@@ -2143,7 +2143,7 @@ Stalemate Swindles (October 5, 2026):
 
 - `test_stalemate_archive_decompressor_failure_terminates_upstream_producer_under_backpressure` uses owned real processes and a 32 MiB producer, covering downstream failure, premature successful exit, closed input with a live consumer, and kill fallback for an uncooperative consumer. The original implementation deadlocked on the bounded deadline; failures now reap both PIDs and publish neither candidates nor metadata.
 - `test_stalemate_archive_downloader_failure_terminates_blocked_decompressor` uses a FIFO readiness handshake and a consumer that refuses input; upstream failure cancels both processes without relying on downstream EOF.
-- `test_stalemate_archive_sampling_cancels_owned_pipeline_without_certifying_checksum` verifies intentional bounded sampling reaps both stages and publishes only incomplete, unverified metadata. Existing archive checksum/success and atomic previous-output preservation tests remain required.
+- `test_stalemate_archive_sampling_cancels_owned_pipeline_without_certifying_checksum` verifies intentional bounded sampling reaps both stages and publishes only incomplete, unverified metadata. `test_stalemate_cli_archive_verifies_source_and_rejects_failed_pipeline` hashes more than 2 MiB across multiple pump chunks before complete publication; existing atomic previous-output preservation tests remain required.
 
 ## PR #91 authoritative promotion feedback
 

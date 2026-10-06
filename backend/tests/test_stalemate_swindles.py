@@ -231,8 +231,10 @@ def test_stalemate_cli_plain_path_builds_manifest_and_rejects_tampered_candidate
 
 @pytest.mark.parametrize("bad_checksum,download_failure,decompression_failure", [(False, False, False), (True, False, False), (False, True, False), (False, False, True)])
 def test_stalemate_cli_archive_verifies_source_and_rejects_failed_pipeline(tmp_path, bad_checksum, download_failure, decompression_failure):
-    # Real owned subprocesses with tiny passthrough stand-ins; no network/zstd dependency in CI.
-    source_bytes = synthetic_pgn().encode()
+    # Cross multiple pump chunks so certification must include the compressed tail.
+    # Non-draw records avoid unnecessary chess replay while preserving real streaming.
+    source_bytes = synthetic_pgn().encode() + b'[Event "Unselected game"]\n[Result "1-0"]\n\n1. e4 1-0\n\n' * 45000
+    assert len(source_bytes) > 2 * 1024 * 1024
     source = tmp_path / "source"
     source.write_bytes(source_bytes)
     tool_directory = tmp_path / "bin"
