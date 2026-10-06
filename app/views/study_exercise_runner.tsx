@@ -4,7 +4,7 @@ import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import type { DrawShape } from "@lichess-org/chessground/draw";
-import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
+import { Chessboard, type BoardTheme, type PieceSet, type PromotionPiece } from "../components/chessboard";
 import { Button } from "../components/buttons/BaseButton";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
@@ -48,7 +48,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const [selectedSquares, setSelectedSquares] = useState<string[]>([]);
   const [moveSequence, setMoveSequence] = useState<string[]>([]);
   const [coordinateInput, setCoordinateInput] = useState("");
-  const [selectedPromotion, setSelectedPromotion] = useState("q");
+  const [selectedPromotion, setSelectedPromotion] = useState<PromotionPiece>("q");
   const [choiceIds, setChoiceIds] = useState<string[]>([]);
   const [reachable, setReachable] = useState(true);
   const [answerText, setAnswerText] = useState("");
@@ -150,7 +150,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     positionKey: studyPositionKey,
     fen: boardHistory.fen, orientation, interactionMode: boardHistory.viewingHistory || blocked || reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
     showHint: false, theme: boardTheme, pieceSet, shapes: answerShapes,
-    lastMove: undefined, onMove, onSquareSelect: selectSquare,
+    lastMove: undefined, promotion: selectedPromotion, onMove, onSquareSelect: selectSquare,
   } : null);
 
   const addCoordinates = () => {
@@ -290,7 +290,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     {exercise.type === "square_set" && <p>{exercise.criterion}</p>}
     {exercise.type === "knight_path" && <p>Static, non-capturing knight route from {exercise.start_square} attacking {exercise.target_squares?.join(", ")}. {exercise.hop_rule === "exact" ? "Exactly" : "At most"} {exercise.maximum_hops} hops. Other pieces stay fixed.</p>}
     {!useSharedBoard && <Chessboard keyboard={keyboard} positionKey={studyPositionKey} fen={boardHistory.fen} locked={boardHistory.viewingHistory || blocked || Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
-      selectOnly={selectionMode && !reply} onMove={onMove} onSquareSelect={selectSquare}
+      selectOnly={selectionMode && !reply} promotion={selectedPromotion} onMove={onMove} onSquareSelect={selectSquare}
       showHint={false} theme={boardTheme} pieceSet={pieceSet} shapes={answerShapes}
       orientation={orientation} onFlip={() => setOrientation((value) => value === "white" ? "black" : "white")} />}
     {exercise.type === "choice" && <fieldset disabled={answerLocked}><legend>Choose an answer</legend>
@@ -303,7 +303,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     {(selectionMode || exercise.type === "move_line") && <div>
       {promotionAvailable && <label>Promotion <SelectInput value={selectedPromotion}
         disabled={answerLocked || blocked || busy || boardHistory.viewingHistory}
-        onChange={(event) => setSelectedPromotion(event.target.value)}>
+        onChange={(event) => setSelectedPromotion(event.target.value as PromotionPiece)}>
         <option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option>
       </SelectInput></label>}
       <p>Answer: {exercise.type === "move_line" ? moveSequence.join(" ") : selectedSquares.join(" → ") || "none"}</p>
