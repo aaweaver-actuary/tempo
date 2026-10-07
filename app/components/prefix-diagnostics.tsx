@@ -95,11 +95,12 @@ export function PrefixDiagnostics({ repertoireId, onBack }: { repertoireId: stri
     {listing && !listing.prefixes.length && <p>No current multi-decision opening prefixes.</p>}
     {listing?.prefixes.map(prefix => <div key={prefix.card_id}>
       {prefix.manifest ? <Button disabled={busy} onClick={() => void inspect(prefix)}>
-        Inspect prefix: {prefix.manifest.decisions.map(decision => moveLabel(decision.fen, decision.expected_uci)).join(" · ")} ({prefix.manifest.trained_color})
+        Inspect prefix: {prefix.presentation_san} ({prefix.manifest.trained_color})
       </Button> : <Notice error>{prefix.unavailable_reason ?? "Presentation unavailable. Refresh the repertoire."}</Notice>}
     </div>)}
     {listing?.next_card_id && <Button disabled={busy} onClick={() => void loadList(listing.next_card_id!)}>Next prefixes</Button>}
     {detail && <div>
+      <h3>{listing?.prefixes.find(prefix => prefix.card_id === detail.manifest.card_id)?.presentation_san}</h3>
       <h3>{detail.manifest.trained_color === "white" ? "White" : "Black"} · presentation revision {detail.manifest.card_revision}</h3>
       <p>Latest {detail.window.attempt_count} of up to 100 attempts for this exact presentation. {detail.window.older_attempts_excluded ? "Older attempts are excluded." : "No older attempts excluded."} Counts below cover this window only.</p>
       <p>Only durable decision observations are shown. Legacy whole-card reviews are not decomposed; unsynced evidence may be absent.</p>

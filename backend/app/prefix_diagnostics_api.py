@@ -1,6 +1,7 @@
 """On-demand, background-admitted reads; never a training/review dependency."""
 from contextlib import contextmanager
 import json
+import chess
 
 from fastapi import APIRouter, HTTPException, Query
 import psycopg
@@ -92,9 +93,12 @@ def prefix_projection(row: dict, repertoire_id: str) -> dict:
         manifest = decision_manifest(snapshot, repertoire_id)
         if len(manifest['decisions']) < 2:
             raise ValueError('The published prefix no longer matches this presentation')
-        return {'card_id': row['card_id'], 'manifest': manifest, 'unavailable_reason': None}
+        presentation_san = chess.Board(snapshot['start_fen']).variation_san(
+            [chess.Move.from_uci(move) for move in json.loads(snapshot['moves_json'])])
+        return {'card_id': row['card_id'], 'presentation_san': presentation_san,
+                'manifest': manifest, 'unavailable_reason': None}
     except (ValueError, KeyError) as error:
-        return {'card_id': row['card_id'], 'manifest': None,
+        return {'card_id': row['card_id'], 'presentation_san': None, 'manifest': None,
                 'unavailable_reason': f'{error}. Refresh the repertoire or inspect its presentation.'}
 
 

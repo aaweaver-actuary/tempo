@@ -57,6 +57,7 @@ def test_prefix_diagnostics_bounds_history_and_closes_reads_before_projection(pr
     presentation, _, _, _, statements = prepared
     listing = api.prefix_diagnostics_list('rep', after_card_id=None, graph_generation=None)
     assert listing['prefixes'][0]['manifest'] == presentation
+    assert listing['prefixes'][0]['presentation_san'] == '1. e4 e5 2. Nf3 Nc6 3. Bb5'
     result = detail(presentation)
     assert result['decisions'][0]['clean_successes'] == 1
     attempt_sql, attempt_parameters = next(item for item in statements if 'FROM opening_evidence_attempts' in item[0])
@@ -160,3 +161,13 @@ def test_prefix_diagnostics_reader_credentials_are_sufficient(monkeypatch):
     monkeypatch.setattr(api.activity_gate, 'background_request', scope)
     monkeypatch.setattr(api.activity_gate, 'background_database_section', scope)
     with api.diagnostic_read(): pass
+
+
+def test_prefix_diagnostics_full_saved_route_distinguishes_identical_learner_moves(prepared):
+    _, row, _, _, _ = prepared
+    open_game = api.prefix_projection(row, 'rep')
+    row['moves_json'] = json.dumps(['e2e4','c7c5','g1f3','b8c6','f1b5'])
+    sicilian = api.prefix_projection(row, 'rep')
+    assert [decision['expected_uci'] for decision in open_game['manifest']['decisions']] == [decision['expected_uci'] for decision in sicilian['manifest']['decisions']]
+    assert open_game['presentation_san'] == '1. e4 e5 2. Nf3 Nc6 3. Bb5'
+    assert sicilian['presentation_san'] == '1. e4 c5 2. Nf3 Nc6 3. Bb5'

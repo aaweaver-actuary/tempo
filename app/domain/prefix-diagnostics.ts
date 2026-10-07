@@ -2,7 +2,7 @@ import { z } from "zod";
 import { assistanceKindSchema, openingDecisionManifestSchema } from "./opening-evidence";
 const count = z.number().int().nonnegative();
 export const diagnosticPrefixSchema = z.strictObject({
-  card_id: z.string(), manifest: openingDecisionManifestSchema.nullable(), unavailable_reason: z.string().nullable(),
+  card_id: z.string(), presentation_san: z.string().nullable(), manifest: openingDecisionManifestSchema.nullable(), unavailable_reason: z.string().nullable(),
 });
 export const prefixDiagnosticsListSchema = z.strictObject({
   version: z.literal(1), repertoire_id: z.string(), graph_generation: count,

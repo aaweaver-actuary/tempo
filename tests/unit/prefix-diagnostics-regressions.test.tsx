@@ -6,7 +6,7 @@ import manifest from "../fixtures/opening-evidence-manifest.json";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const listing = { version: 1, repertoire_id: manifest.repertoire_id, graph_generation: 1,
-  prefixes: [{ card_id: manifest.card_id, manifest, unavailable_reason: null }], next_card_id: null };
+  prefixes: [{ card_id: manifest.card_id, presentation_san: "1. e4 e5 2. Nf3 Nc6 3. Bb5", manifest, unavailable_reason: null }], next_card_id: null };
 const detail = { version: 1, read_only: true, graph_generation: 1, manifest,
   window: { attempt_limit: 100, attempt_count: 100, older_attempts_excluded: true,
     newest_started_at: "2026-09-30T12:00:00Z", oldest_started_at: "2026-09-28T12:00:00Z" },
@@ -92,4 +92,14 @@ it("PD-82 diagnostic contract rejects unsupported versions and excessive windows
   expect(prefixDiagnosticsDetailSchema.safeParse(detail).success).toBe(true);
   expect(prefixDiagnosticsDetailSchema.safeParse({ ...detail, read_only: false }).success).toBe(false);
   expect(prefixDiagnosticsDetailSchema.safeParse({ ...detail, window: { ...detail.window, attempt_count: 101 } }).success).toBe(false);
+});
+
+it("PD-82 prefix selectors distinguish identical learner moves across opponent branches", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...listing, prefixes: [
+    { ...listing.prefixes[0], presentation_san: "1. e4 e5 2. Nf3" },
+    { ...listing.prefixes[0], card_id: "sicilian", presentation_san: "1. e4 c5 2. Nf3" },
+  ] })));
+  mount();
+  await screen.findByRole("button", { name: /Inspect prefix: 1\. e4 e5 2\. Nf3/ });
+  expect(screen.getByRole("button", { name: /Inspect prefix: 1\. e4 c5 2\. Nf3/ })).toBeTruthy();
 });

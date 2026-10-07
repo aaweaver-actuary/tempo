@@ -6,6 +6,7 @@ from .opening_evidence_contracts import EvidenceModel, OpeningDecisionManifest, 
 
 class DiagnosticPrefix(EvidenceModel):
     card_id: str
+    presentation_san: str | None
     manifest: OpeningDecisionManifest | None
     unavailable_reason: str | None
 

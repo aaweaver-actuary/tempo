@@ -1,6 +1,6 @@
 # Prefix difficulty diagnostics
 
-Repertoire → More → Prefix difficulty opens a read-only panel. Select a current multi-decision prefix to inspect each learner decision. Whole opening cards retain scheduling ownership; diagnostics never change boundaries, FSRS, cards, queues, or repertoire structure.
+Repertoire → More → Prefix difficulty opens a read-only panel. Select a current multi-decision prefix to inspect each learner decision. Selectors and the selected detail show the full saved move sequence, including opponent replies, to distinguish branches with identical learner moves. Whole opening cards retain scheduling ownership; diagnostics never change boundaries, FSRS, cards, queues, or repertoire structure.
 
 ## Evidence contract
 
