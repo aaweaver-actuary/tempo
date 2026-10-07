@@ -50,6 +50,33 @@ def verify_three_anchor_persistence(*, reconnect=lambda: None):
 
     before = memory_and_offense_snapshot()
 
+    expected_admission_queue_date = datetime.now().date().isoformat()
+    admission_task_key = ("defensive_admission", expected_admission_queue_date)
+
+    def background_task_snapshot():
+        with database.connection() as connection:
+            task_rows = [dict(row) for row in connection.execute(
+                "SELECT id,kind,deduplication_key,generation,payload_json FROM background_tasks"
+            )]
+            task_identities = {(row["kind"], row["deduplication_key"]): row["id"]
+                               for row in task_rows}
+            assert len(task_identities) == len(task_rows)
+            admission_work = [(row["id"], row["deduplication_key"], row["generation"],
+                               json.loads(row["payload_json"]))
+                              for row in task_rows if row["kind"] == "defensive_admission"]
+            # Claims/completions may occur; only enqueue events identify new admission work.
+            admission_enqueues = [tuple(row) for row in connection.execute(
+                """SELECT event.task_id,event.generation,event.phase
+                   FROM background_task_events event
+                   JOIN background_tasks task ON task.id=event.task_id
+                   WHERE task.kind='defensive_admission' AND event.event='enqueued'
+                   ORDER BY event.id"""
+            )]
+            return task_identities, admission_work, admission_enqueues
+
+    initial_task_identities, initial_admission_work, _ = background_task_snapshot()
+    assert initial_admission_work == []
+
     def persist_and_validate():
         with database.connection() as connection:
             threat_pipeline._upsert_seed(connection, game, seed)
@@ -80,9 +107,11 @@ def verify_three_anchor_persistence(*, reconnect=lambda: None):
                         "UPDATE threat_analysis_requests SET state='complete',report_json=? WHERE id=?",
                         (json.dumps(asdict(report)), relation["id"]),
                     )
+        expected_task_keys = set(initial_task_identities) | {admission_task_key}
         for candidate in candidates:
             task = {"payload": {"candidate_id": candidate["id"]}}
             if postgres_store.configured():
+                expected_task_keys.add(("defensive_threat_validate", candidate["id"]))
                 with database.connection() as connection:
                     task = enqueue_task_in_transaction(
                         connection, "defensive_threat_validate", candidate["id"], task["payload"],
@@ -93,7 +122,41 @@ def verify_three_anchor_persistence(*, reconnect=lambda: None):
                         "UPDATE background_tasks SET state='leased',lease_token=? WHERE id=?",
                         (task["lease_token"], task["id"]),
                     )
+            previous_task_identities, previous_admission_work, previous_admission_enqueues = (
+                background_task_snapshot()
+            )
             threat_pipeline.execute_threat_validation(task)
+            current_task_identities, current_admission_work, current_admission_enqueues = (
+                background_task_snapshot()
+            )
+            is_engine_supported_anchor = candidate["player_ply"] == 4
+            assert set(current_task_identities) == set(previous_task_identities) | (
+                {admission_task_key} if is_engine_supported_anchor else set()
+            )
+            assert all(current_task_identities[key] == task_id
+                       for key, task_id in previous_task_identities.items())
+            if is_engine_supported_anchor:
+                admission_task, = current_admission_work
+                admission_task_id, admission_queue_date, admission_generation, admission_payload = (
+                    admission_task
+                )
+                assert admission_queue_date == expected_admission_queue_date
+                assert admission_payload == {"queue_date": admission_queue_date, "phase": "threat",
+                                             "cursor": "", "control_exhausted": False}
+                if previous_admission_work:
+                    previous_admission_task, = previous_admission_work
+                    assert admission_task[:2] == previous_admission_task[:2]
+                    assert admission_generation == previous_admission_task[2] + 1
+                else:
+                    assert admission_generation == 1
+                assert current_admission_enqueues == previous_admission_enqueues + [
+                    (admission_task_id, admission_generation, "queued"),
+                ]
+            else:
+                assert current_admission_work == previous_admission_work
+                assert current_admission_enqueues == previous_admission_enqueues
+        assert set(current_task_identities) == expected_task_keys
+        return current_task_identities
 
     def assert_durable_evidence():
         with database.connection() as connection:
@@ -149,11 +212,11 @@ def verify_three_anchor_persistence(*, reconnect=lambda: None):
                      candidate["source_fingerprint"], candidate["validation_json"])
                     for candidate in candidates]
 
-    persist_and_validate()
+    task_identities = persist_and_validate()
     reconnect()
     identities = assert_durable_evidence()
     assert memory_and_offense_snapshot() == before
-    persist_and_validate()
+    assert persist_and_validate() == task_identities
     reconnect()
     assert assert_durable_evidence() == identities
     assert memory_and_offense_snapshot() == before
