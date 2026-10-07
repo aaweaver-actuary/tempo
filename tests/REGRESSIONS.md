@@ -2179,3 +2179,9 @@ The regular CI planning and runner wrappers protect the independently selected, 
 - `complete release evidence requires the lifecycle job`
 
 The first nine CI cases and the release-evidence case failed against main `6511093` before implementation. The ordinary-product regression also failed against `52d05bb` when combined with its required `tests/REGRESSIONS.md` registration; known prose and product test additions must not inadvertently require lifecycle. Sensitive source takes precedence over these exemptions. The cold-image regression failed against the initial separation candidate `74dd70f`; a fresh CI daemon exposed missing dependency images because standalone mode does not start a parent stack. They run through the existing CI reliability, PostgreSQL runner, and Tempo CLI Vitest wrappers in the regular gate. Related: roadmap #29, historical completed #45, and merged shutdown repair PR #94 (non-closing references).
+
+### PR #96 review: conservative backend lifecycle classification
+
+- `unclassified root backend application modules require deployment lifecycle` fails against `b452b374` for `backend/app/new_runtime.py`; unknown root modules and existing unclassified runtime entrypoints now require the blocking lifecycle layer, even with ordinary regression companions.
+- `reviewed backend domain changes with ordinary regressions omit deployment lifecycle` preserves service/domain/API/contract/model exclusions alongside normal backend, unit and browser tests and `tests/REGRESSIONS.md`.
+- `lifecycle-sensitive changes require deployment lifecycle verification` now checks every explicit sensitive path; existing complete-verification and schema/migration regressions remain required. All cases run through the existing CI reliability Vitest wrapper.

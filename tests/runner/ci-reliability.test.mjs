@@ -55,10 +55,36 @@ test("lifecycle-sensitive changes require deployment lifecycle verification", ()
   for (const path of ["scripts/tempo-runtime.mjs", "scripts/tempo-deployment.mjs", "scripts/tempo-cli.mjs",
     "scripts/check-tempo-cli.mjs", "docker-compose.yml", "docker-compose.postgres-maintenance.yml",
     "scripts/verify_postgres_backup.py", "scripts/check-redis-readiness.mjs", "backend/app/postgres_store.py",
-    "tests/runner/tempo-cli-fixture.mjs", "tests/unit/tempo-cli-regressions.test.ts", "backend/Dockerfile", "package-lock.json"]) {
+    "tests/runner/tempo-cli-fixture.mjs", "tests/unit/tempo-cli-regressions.test.ts", "backend/Dockerfile", "package-lock.json",
+    ...inventory.lifecycle.sensitivePaths]) {
     const planned = plan({ paths: [path, "tests/REGRESSIONS.md"] });
     assert.equal(planned.jobs.lifecycle?.applicable, true, path);
     assert.equal(planned.jobs.lifecycle.required, true, path);
+  }
+});
+
+test("unclassified root backend application modules require deployment lifecycle", () => {
+  for (const path of ["backend/app/new_runtime.py", "backend/app/worker_bootstrap.py", "backend/app/storage_adapter.py",
+    "backend/app/new_domain_commands.py", "backend/app/command_gateway.py", "backend/app/command_dispatch.py",
+    "backend/app/background_worker.py", "backend/app/tasks.py"]) {
+    for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_new_runtime.py"]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, true, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, true, paths.join(", "));
+      assert.match(planned.jobs.lifecycle.reason, /unclassified infrastructure/);
+    }
+  }
+});
+
+test("reviewed backend domain changes with ordinary regressions omit deployment lifecycle", () => {
+  for (const path of ["backend/app/services/daily_queue.py", "backend/app/study_commands.py",
+    "backend/app/opening_segmentation_api.py", "backend/app/study_contracts.py", "backend/app/models.py"]) {
+    for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+      "tests/unit/study-regressions.test.tsx", "tests/browser/studies.spec.ts"]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, false, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, false, paths.join(", "));
+    }
   }
 });
 
