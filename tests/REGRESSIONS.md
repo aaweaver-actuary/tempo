@@ -2121,3 +2121,15 @@ PostgreSQL original-history/backup/migration/restart/receipt and incompatible
 fallback regressions remain required. The concurrent-source regression now
 cancels without restarting fallback rather than silently accepting changed work.
 No live study fixture, background audit, release bypass or schema change is used.
+
+Disposable PostgreSQL backup shutdown (October 7, 2026; related performance work #45):
+
+- `disposable PostgreSQL backup handles INT and TERM while waiting on its sleeper`
+  in `tests/runner/postgres-test-speedups.test.mjs` failed against the original
+  idle command. It protects the disposable service's shell contract: install
+  explicit SIGINT/SIGTERM exit traps before starting the background sleeper and
+  waiting, with valid shell syntax. The existing Vitest wrapper runs it in the
+  regular gate alongside unchanged runner-plan and cleanup regressions.
+- The real PostgreSQL durability runner retains every lifecycle, recovery,
+  restart, backup/restore, and resource-ownership assertion. Production's
+  60-second shutdown allowance and recurring backup loop are unchanged.
