@@ -202,6 +202,10 @@ dynamically. Intentional smoke changes must update the inventory, audit and
 regressions together. Complete coverage uses all collected cases rather than
 a frozen numeric total, including Firefox/WebKit cross-browser projects.
 
+The [October 7 browser-selection validation](browser-selection-validation.md)
+records comparable counts/timings, tested revisions, isolation repairs and
+disposable-resource cleanup evidence.
+
 
 The plan job actually collects all regular and pinned cases. Its immutable
 plan and collection report record IDs, projects, titles, selection reasons,
