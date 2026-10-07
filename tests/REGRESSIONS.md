@@ -2199,3 +2199,13 @@ Additional callback/error cases in the same unit file:
 `issue78_incompatible_response_bindings_cannot_publish`.
 Pinned `Prefix comparison 390` / `Prefix comparison 1280` in `visual.spec.ts`
 protect the selected/whole structural results layout against responsive regressions.
+
+`issue78_browser_activity_lease_yields_before_readonly_preview` and
+`issue78_idle_admission_is_cancelled_without_evaluator_retry` prove bounded,
+read-only foreground-status admission and cancellation. The real browser case
+initially failed because every Refresh click renewed Tempo's three-second browser
+activity lease and immediately rejected its diagnostic. The client now waits on
+observable activity state; it never disables foreground admission or retries an
+evaluator failure automatically. Normal application browser-activity telemetry is
+excluded from the diagnostic request allowlist; PostgreSQL product immutability
+remains verified separately.

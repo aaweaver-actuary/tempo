@@ -1,11 +1,41 @@
 import { API_URL } from "../const";
 import { prefixSourceSchema, prefixComparisonSchema, type PrefixSource, type PrefixComparison } from "../domain/prefix-comparison";
-import type { z } from "zod";
+import { z } from "zod";
 
 export class PrefixPreviewError extends Error {
   constructor(public readonly code: string, message: string) { super(message); }
 }
+// Ordinary clicks hold the existing browser foreground lease. Wait on its
+// observable status rather than outranking study, guessing a sleep, or retrying
+// an evaluator failure. The server remains the final admission authority.
+export async function waitForPrefixIdle(signal: AbortSignal): Promise<void> {
+  const admissionSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
+  try {
+    while (!admissionSignal.aborted) {
+      const response = await fetch(`${API_URL}/api/system/foreground-active`, {
+        signal: admissionSignal, cache: "no-store", headers: { "X-Tempo-Work-Class": "background" },
+      });
+      if (!response.ok) throw new PrefixPreviewError("service_error", "Cannot check study activity. Retry when the service is available.");
+      const status = z.object({ active: z.boolean() }).safeParse(await response.json());
+      if (!status.success) throw new PrefixPreviewError("service_error", "The service returned an unsupported study-activity response.");
+      if (!status.data.active) return;
+      await new Promise<void>((resolve, reject) => {
+        const cancel = () => { clearTimeout(timer); reject(admissionSignal.reason); };
+        const timer = setTimeout(() => { admissionSignal.removeEventListener("abort", cancel); resolve(); }, 250);
+        admissionSignal.addEventListener("abort", cancel, { once: true });
+        if (admissionSignal.aborted) cancel();
+      });
+    }
+    throw admissionSignal.reason;
+  } catch (cause) {
+    if (!signal.aborted && admissionSignal.aborted)
+      throw new PrefixPreviewError("evaluation_busy", "Study work remains active. Pause briefly and retry the preview.");
+    throw cause;
+  }
+}
+
 async function readDiagnostic<T>(url: string, schema: z.ZodType<T>, signal: AbortSignal, body?: unknown): Promise<T> {
+  await waitForPrefixIdle(signal);
   const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]), cache: "no-store",
     ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
   const payload: unknown = await response.json();

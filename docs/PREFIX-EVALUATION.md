@@ -200,3 +200,11 @@ changes require explicit Refresh source and reselection. Failed freshness checks
 hide unverified metrics. Busy service responses are shown explicitly for user-initiated
 retry; polling never writes or queues work. Empty selection, no-op, unsupported,
 stale, graph-not-ready, input limits and service failures remain distinct.
+
+Before each diagnostic, the client polls the existing read-only
+`GET /api/system/foreground-active` with background work classification, at 250ms
+intervals for at most ten seconds. This waits for Tempo's normal three-second
+browser-activity lease after user input. Waiting is cancelled with its owning
+selection/source lifecycle. No evaluator error is retried automatically, and the
+server's own admission/deadline checks remain authoritative. This is a bounded
+interactive read, not a new worker, startup pipeline or durable job.

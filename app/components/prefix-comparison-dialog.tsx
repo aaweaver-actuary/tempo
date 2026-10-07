@@ -183,7 +183,7 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
     <p>Structural efficiency is not evidence of improved learning or measured time savings.</p>
     {error && <div role="alert"><strong>{errorLabels[error.code] ?? "Comparison unavailable"}</strong>: {error.message}</div>}
     <Button disabled={loading} onClick={() => void loadSource()}>Refresh source</Button>
-    {loading && <p role="status">Loading authoritative source…</p>}
+    {loading && <p role="status">Waiting for idle study work and loading authoritative source…</p>}
     {source && <>
       <details><summary>Authoritative snapshot</summary><p>Snapshot: <code>{source.snapshot_id}</code><br />Graph generation: {source.graph_generation}</p></details>
       <p>Last freshness check: {checkedAt ?? "unverified"}. External edits are checked every 30 seconds while visible and on focus.</p>
@@ -222,7 +222,7 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
       }} /></label>
       <p>Enter one to four depths, 1–20. Each candidate uses that depth for every selected line. Longer previews are allowed.</p>
       <Button disabled={working || !selectedIds.length} onClick={() => void compare()}>Compare depths</Button>
-      {working && <p role="status">Comparing selected lines…</p>}
+      {working && <p role="status">Waiting for idle study work and comparing selected lines…</p>}
     </>}
     {results.map(({ depth, comparison }) => <section key={depth} className="prefix-candidate" aria-label={`Candidate depth ${depth}`}>
       <h3>Candidate depth {depth}</h3>
@@ -230,6 +230,7 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
         ? "No structural change; requested depth differs from saved depth." : "No change from saved depths." : "Structure changes in this preview."}</p>
       <div className="prefix-comparison-scopes"><ScopeResults comparison={comparison.selected} title="Selected scope" /><ScopeResults comparison={comparison.whole_repertoire} title="Whole repertoire" /></div>
       {comparison.selected.removed_card_ids.some(id => comparison.whole_repertoire.unchanged_card_ids.includes(id)) && <p>Cards removed from the selected scope but retained by unselected lines: {comparison.selected.removed_card_ids.filter(id => comparison.whole_repertoire.unchanged_card_ids.includes(id)).length}.</p>}
+      <p>Selected additions reusing existing whole-repertoire card identities: {comparison.selected.added_card_ids.filter(id => comparison.whole_repertoire.unchanged_card_ids.includes(id)).length}.</p>
       <p>Shared cards are counted once in the whole repertoire. Unchanged identities do not imply history transfer.</p>
       <details><summary>Per-line requested and effective depths</summary><ul>{comparison.line_depths.map(line => <li key={line.line_id}>
         <code>{line.line_id}</code>: saved {line.current_depth}, requested {line.requested_depth}; effective {line.current_effective_depth} → {line.proposed_effective_depth}

@@ -315,6 +315,7 @@ for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ pag
     id: "rep", name: "Combined Black", source_name: "Combined Black.pgn", line_count: 4,
     card_count: 5, active_prefix_count: 4, graph_updated_at: "2026-09-18T12:00:00Z", due_count: 0, trained_color: "black",
   }] } }));
+  await page.route("**/api/system/foreground-active", route => route.fulfill({ json: { active: false } }));
   await page.route("**/api/repertoires/rep/prefix-evaluation/**", route => {
     if (route.request().method() === "GET") return route.fulfill({ json: fixture.source });
     return route.fulfill({ json: fixture.comparisons["a,b:2"] });

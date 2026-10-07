@@ -38,7 +38,7 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
   const source = prefixSourceSchema.parse(await sourceResponse.json());
   await expect(dialog.getByText("Selected source lines: 0")).toBeVisible();
   const observedRequests: string[] = [];
-  page.on("request", incoming => { if (incoming.url().includes("/api/") && incoming.method() !== "GET") observedRequests.push(incoming.method() + " " + incoming.url()); });
+  page.on("request", incoming => { if (incoming.url().includes("/api/") && incoming.method() !== "GET" && !incoming.url().endsWith("/system/browser-activity")) observedRequests.push(incoming.method() + " " + incoming.url()); });
   const startingPosition = dialog.getByLabel("Starting position and trained color");
   await startingPosition.selectOption(JSON.stringify([source.lines[0].start_fen, "black"]));
   await dialog.getByLabel("Move 1", { exact: true }).selectOption("e2e4");
