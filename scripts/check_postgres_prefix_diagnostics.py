@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Event
 from unittest.mock import patch
 import json
+import os
 from time import monotonic
 import uuid
 
@@ -147,7 +148,9 @@ def test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admissi
             pending = requests.submit(client.get, detail_url)
             assert denied.wait(5), 'Diagnostic did not yield to foreground admission'
             assert not sql_started.is_set()
-            assert client.get('/api/health').status_code == 200
+            foreground = client.get('/api/settings')
+            assert foreground.status_code == 200, foreground.text
+            assert 'initial_depth' in foreground.json()
         assert pending.result(timeout=10).json() == expected
     assert activity_gate.active_background_sections == 0 and server.zcard(redis_admission_gate._BACKGROUND_KEY) == 0
     with postgres_store.connection(read_only=True) as database:
@@ -161,3 +164,14 @@ def test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admissi
     assert new_detail.status_code == 200 and all(decision['coverage']=='unknown' for decision in new_detail.json()['decisions'])
     assert new_manifest['decisions'][0]['decision_id'] == manifest['decisions'][0]['decision_id']
     print(f'PASS test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission (102 scoped attempts, 100 selected, indexed lookup, real Redis contention, unchanged scheduling/shadow digest; HTTP read {elapsed_ms:.3f}ms)')
+
+
+if __name__ == '__main__':
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Prefix diagnostics rehearsal requires disposable PostgreSQL')
+    with postgres_store.connection(read_only=True) as database:
+        marker = database.execute_native("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()[0]
+        if marker != 'tempo-disposable-postgres-test':
+            raise RuntimeError('The database is not marked as runner-owned disposable state')
+    test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission()
+    postgres_store.close_pools()
