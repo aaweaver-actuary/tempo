@@ -1,5 +1,15 @@
 [
   {
+<<<<<<< HEAD
+=======
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/prefix-transition/plan",
+    "handler": "prefix_transition_plan",
+    "treatment": "read_only_post",
+    "state": "staged"
+  },
+  {
+>>>>>>> main
     "method": "GET",
     "path": "/api/repertoires/{identifier}/prefix-evaluation/source",
     "handler": "prefix_evaluation_source",
@@ -1258,5 +1268,22 @@
     "handler": "canonical_prefix_save",
     "treatment": "foreground_command",
     "state": "staged"
+<<<<<<< HEAD
+=======
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/prefix-diagnostics",
+    "handler": "prefix_diagnostics_list",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/prefix-diagnostics/{card_id}",
+    "handler": "prefix_diagnostics_detail",
+    "treatment": "reader",
+    "state": "staged"
+>>>>>>> main
   }
 ]

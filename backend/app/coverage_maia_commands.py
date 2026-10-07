@@ -12,9 +12,15 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
+<<<<<<< HEAD
 from .services.canonical_prefix import read_prefix
 from .services.canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
+=======
+from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+from .services.canonical_prefix import read_prefix
+from .services.canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, latest_coverage_attempt_predicate
+>>>>>>> main
 from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
 
 
@@ -33,11 +39,19 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
     row = database.execute_native(
         "SELECT n.*,r.settings_json,r.status AS run_status FROM repertoire_coverage_nodes n "
         "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
+<<<<<<< HEAD
         "WHERE n.id=%s FOR UPDATE OF n,r", (node_id,),
     ).fetchone()
     if row is None or row["maia_status"] != "leased" or row["lease_id"] != lease_id:
         raise HTTPException(409, "Coverage lease is no longer active")
     if (row["run_status"] in {"failed", "building"} or not coverage_run_is_current(database, row, row["repertoire_id"])):
+=======
+        f"WHERE n.id=%s AND {latest_coverage_attempt_predicate(database, native=True)} FOR UPDATE OF n,r", (node_id,),
+    ).fetchone()
+    if row is None or row["maia_status"] != "leased" or row["lease_id"] != lease_id:
+        raise HTTPException(409, "Coverage lease is no longer active")
+    if (row["run_status"] == "building" or not coverage_run_is_current(database, row, row["repertoire_id"])):
+>>>>>>> main
         raise HTTPException(409, "Coverage run is no longer active")
     return row
 
@@ -49,10 +63,18 @@ def claim_maia_node(database: PostgresConnection, _payload: dict[str, Any]) -> d
         "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
         "LEFT JOIN background_activity control ON control.source='coverage' "
         "AND control.work_id=n.run_id "
+<<<<<<< HEAD
         "WHERE n.explorer_status='complete' AND r.status IN ('queued','running','complete') "
         "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
         "AND COALESCE(control.paused,0)=0 "
         f"AND {coverage_scope_predicate(database, native=True)} "
+=======
+        "WHERE r.status IN ('queued','running','complete','failed') "
+        "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
+        "AND COALESCE(control.paused,0)=0 "
+        f"AND {coverage_scope_predicate(database, native=True)} "
+        f"AND {latest_coverage_attempt_predicate(database, native=True)} "
+>>>>>>> main
         "ORDER BY COALESCE(control.promoted,0) DESC,r.created_at,n.ply,n.id "
         "LIMIT 1", (now,),
     ).fetchone()
@@ -112,6 +134,10 @@ def fail_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> dic
         "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s "
         "WHERE id=%s", (message, now, row["run_id"]),
     )
+<<<<<<< HEAD
+=======
+    enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
+>>>>>>> main
     return {"status": "failed"}
 
 
@@ -155,6 +181,7 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
         (row["run_id"], row["run_id"], _now(), row["run_id"]),
     )
     enqueue_priority_refresh_in_transaction(database, row["repertoire_id"])
+<<<<<<< HEAD
     remaining = database.execute_native(
         "SELECT 1 FROM repertoire_coverage_nodes WHERE run_id=%s "
         "AND maia_status!='complete' LIMIT 1", (row["run_id"],),
@@ -165,6 +192,9 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
             {"repertoire_id": row["repertoire_id"], "phase": "summaries", "cursor": ""},
             priority=130, delay_seconds=5,
         )
+=======
+    enqueue_opportunity_refresh_in_transaction(database, row["repertoire_id"])
+>>>>>>> main
     return {"status": "complete"}
 
 

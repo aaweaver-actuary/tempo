@@ -330,6 +330,24 @@ test("Docker context excludes generated test credentials and local cache churn",
   }
 });
 
+<<<<<<< HEAD
+=======
+test("disposable PostgreSQL backup handles INT and TERM while waiting on its sleeper", () => {
+  const composeSource = readFileSync(join(root, "docker-compose.postgres.test.yml"), "utf8");
+  const backupServiceSource = composeSource.match(/^  postgres-backup:\r?\n([\s\S]*?)(?=^  \S)/m)?.[1];
+  assert(backupServiceSource, "Disposable backup service must remain in the Compose lifecycle");
+  assert.match(backupServiceSource, /^    entrypoint: \[sh\]$/m);
+  const quotedBackupCommand = backupServiceSource.match(/^    command: \[-c, (".*")\]$/m)?.[1];
+  assert(quotedBackupCommand, "Backup idle command must be one shell argument");
+  const backupCommand = JSON.parse(quotedBackupCommand);
+  assert.equal(backupCommand, "trap 'exit 0' INT TERM; sleep infinity & wait",
+    "Install both shutdown traps before waiting on the background sleeper; PID 1 cannot rely on default signal handling");
+  const syntaxCheck = spawnSync("sh", ["-n", "-c", backupCommand], { encoding: "utf8", timeout: 5_000 });
+  assert.ifError(syntaxCheck.error);
+  assert.equal(syntaxCheck.status, 0, syntaxCheck.stderr);
+});
+
+>>>>>>> main
 test("scenario dispatch builds once and all startup paths forbid implicit rebuilds", () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   assert.equal(source.split('[...compose, "build"]').length - 1, 1);

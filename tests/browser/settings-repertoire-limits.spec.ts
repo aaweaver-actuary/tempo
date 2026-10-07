@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { test, expect } from "./observability";
+=======
+import { test, expect } from "./product-fixtures";
+>>>>>>> main
 import { assertDisposableTarget } from "./disposable-target";
 import { navigate } from "./ui-fixtures";
 

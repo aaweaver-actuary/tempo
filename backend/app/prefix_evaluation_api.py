@@ -69,7 +69,16 @@ def diagnostic_request():
         raise diagnostic_error('evaluation_busy', 'The diagnostic read service is temporarily unavailable. Retry after study work settles.', 503) from error
 
 
+<<<<<<< HEAD
 def load_snapshot(identifier, deadline):
+=======
+def load_snapshot(identifier, deadline, *, capture=None):
+    """Capture optional additional read rows in the same structural transaction.
+
+    The callback may read bounded raw rows only; decoding and calculation remain
+    outside the transaction. Existing evaluator callers retain their contract.
+    """
+>>>>>>> main
     check_available(deadline)
     # No chess, JSON interpretation or application fingerprinting inside this transaction.
     with postgres_store.connection(read_only=True, background=True, repeatable_read=True) as database:
@@ -121,6 +130,10 @@ def load_snapshot(identifier, deadline):
             "WHERE step.repertoire_id=%s AND step.generation=%s ORDER BY step.card_id",
             (identifier, publication['generation']),
         ).fetchall()
+<<<<<<< HEAD
+=======
+        additional_rows = capture(database) if capture is not None else None
+>>>>>>> main
     check_available(deadline)
     try:
         lines = []
@@ -140,7 +153,11 @@ def load_snapshot(identifier, deadline):
             row['trained_color'], row['revision'], row['archived'], bool(row['linked'])) for row in card_rows)
         snapshot = EvaluationSnapshot(identifier, publication['generation'], tuple(lines), splits, steps, cards)
         validate_source(snapshot)
+<<<<<<< HEAD
         return snapshot
+=======
+        return snapshot if capture is None else (snapshot, additional_rows)
+>>>>>>> main
     except (ValueError, TypeError, KeyError) as error:
         if isinstance(error, PrefixEvaluationError): raise
         raise PrefixEvaluationError('unsupported_source', 'Saved source or graph data is malformed. Repair it before evaluating.') from error

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { prepareVisualUI } from "./visual-fixtures";
+<<<<<<< HEAD
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { api, test as productTest, move } from "./product-fixtures";
@@ -39,6 +40,11 @@ productTest("daily study opens while background analysis remains queued", async 
   }
 });
 
+=======
+
+const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+>>>>>>> main
 test("discovery preview backlog leaves a prompt foreground training queue refresh", async ({ page }) => {
   await prepareVisualUI(page);
   const discoveries = Array.from({ length: 6 }, (_, index) => ({

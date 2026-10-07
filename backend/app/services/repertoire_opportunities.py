@@ -14,9 +14,15 @@ import chess
 from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from .activity_gate import activity_gate
+<<<<<<< HEAD
 from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
 from .discovery_admission import _full_history_request, _source_game
 from .canonical_scope_freshness import coverage_run_is_current, scope_identity, coverage_scope_predicate, opportunity_is_current, game_scope_generation, opportunity_scope_predicate
+=======
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction, enqueue_compact_postgres_task_in_transaction, lock_current_slice
+from .discovery_admission import _full_history_request, _source_game
+from .canonical_scope_freshness import scope_identity, latest_coverage_run_id, opportunity_is_current, game_scope_generation, opportunity_scope_predicate
+>>>>>>> main
 from .canonical_prefix import read_prefix, assumed_position_keys
 
 
@@ -115,7 +121,11 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
     ).fetchone()
     previous_dismissal = (
         json.loads(previous["dismissed_evidence_json"])
+<<<<<<< HEAD
         if previous and previous["dismissed_evidence_json"] else {}
+=======
+        if previous and previous["dismissed_evidence_json"] is not None else None
+>>>>>>> main
     )
     handled_evidence = (json.loads(previous["handled_evidence_json"])
                         if previous and previous["handled_evidence_json"] else None)
@@ -124,7 +134,12 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
                                       and previous["evidence_fingerprint"] != published_fingerprint)
     reset_admission = reopened or preparing_revision_changed
     handled_snapshot = None if reopened or handled_evidence is None else previous["handled_evidence_json"]
+<<<<<<< HEAD
     status = "dismissed" if previous and previous["status"] == "dismissed" and not _materially_new(evidence, previous_dismissal) else "active"
+=======
+    dismissal_reopened = previous_dismissal is not None and _materially_new(evidence, previous_dismissal)
+    status = "dismissed" if previous_dismissal is not None and not dismissal_reopened else "active"
+>>>>>>> main
     database.execute(
         """INSERT INTO repertoire_opportunities(
              id,repertoire_id,kind,fen_key,card_id,opponent_move_uci,status,score,
@@ -143,6 +158,7 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
              admission_state=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admission_state END,
              admitted_card_id=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admitted_card_id END,
              snoozed_until=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.snoozed_until END,
+<<<<<<< HEAD
              seen_at=CASE WHEN ? OR (repertoire_opportunities.status='dismissed'
                 AND excluded.status='active') THEN NULL ELSE repertoire_opportunities.seen_at END,
              updated_at=excluded.updated_at,resolved_at=NULL""",
@@ -150,6 +166,14 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
          opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
          published_fingerprint, json.dumps(previous_dismissal) if previous_dismissal else None,
          handled_snapshot, _now(), _now(), identity["canonical_prefix_revision"], identity["canonical_scope_source_revision"], identity["canonical_scope_preview_id"], game_generation, reset_admission, reset_admission, reset_admission, reset_admission),
+=======
+             seen_at=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.seen_at END,
+             updated_at=excluded.updated_at,resolved_at=NULL""",
+        (opportunity_id, repertoire_id, kind, fen_key, card_id,
+         opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
+         published_fingerprint, json.dumps(previous_dismissal) if previous_dismissal is not None else None,
+         handled_snapshot, _now(), _now(), identity["canonical_prefix_revision"], identity["canonical_scope_source_revision"], identity["canonical_scope_preview_id"], game_generation, reset_admission, reset_admission, reset_admission, reset_admission or dismissal_reopened),
+>>>>>>> main
     )
     if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active" and handled_snapshot is None:
         enqueue_task_in_transaction(
@@ -494,6 +518,7 @@ def refresh_node_opportunities(database: sqlite3.Connection, repertoire_id: str,
         _apply_node_opportunities(database, repertoire_id, _calculate_node_opportunities(inputs))
 
 
+<<<<<<< HEAD
 def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id: str) -> dict | None:
     node = database.execute(
         """SELECT n.*,r.settings_json,r.status run_status,r.created_at run_created_at FROM repertoire_coverage_nodes n
@@ -501,6 +526,40 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
         (node_id, repertoire_id),
     ).fetchone()
     if not coverage_run_is_current(database, node, repertoire_id):
+=======
+def _latest_coverage_node(database, repertoire_id: str, fen_key: str):
+    return database.execute(
+        """SELECT n.*,r.settings_json,r.status run_status,r.created_at run_created_at
+           FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id
+           WHERE n.repertoire_id=? AND n.fen_key=? AND n.run_id=?""",
+        (repertoire_id, fen_key, latest_coverage_run_id(database, repertoire_id)),
+    ).fetchone()
+
+
+def _coverage_source_snapshot(database, repertoire_id: str, fen_key: str) -> dict:
+    node = _latest_coverage_node(database, repertoire_id, fen_key)
+    candidates = [dict(row) for row in database.execute(
+        "SELECT * FROM repertoire_coverage_candidates WHERE node_id=? ORDER BY move_uci",
+        (node["id"],),
+    ).fetchall()] if node else []
+    return {"node": dict(node) if node else None, "candidates": candidates}
+
+
+def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id: str) -> dict | None:
+    requested_node = database.execute(
+        "SELECT fen_key FROM repertoire_coverage_nodes WHERE id=? AND repertoire_id=?",
+        (node_id, repertoire_id),
+    ).fetchone()
+    if requested_node is None:
+        return None
+    return _load_position_inputs(database, repertoire_id, requested_node["fen_key"])
+
+
+def _load_position_inputs(database, repertoire_id: str, fen_key: str) -> dict | None:
+    source_snapshot = _coverage_source_snapshot(database, repertoire_id, fen_key)
+    node = source_snapshot["node"]
+    if node is None:
+>>>>>>> main
         return None
     cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
     personal = database.execute(
@@ -530,6 +589,7 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
            GROUP BY move_uci""",
         (repertoire_id, node["fen_key"]),
     ).fetchall()
+<<<<<<< HEAD
     rows = [dict(row) for row in database.execute(
         "SELECT * FROM repertoire_coverage_candidates WHERE node_id=?", (node_id,),
     ).fetchall()]
@@ -538,6 +598,19 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
             "consequences": {row["move_uci"]: {"game_count": row["game_count"],
                                                 "max_loss_cp": row["max_loss_cp"]} for row in consequences},
             "candidates": rows}
+=======
+    existing_moves = [row[0] for row in database.execute(
+        "SELECT opponent_move_uci FROM repertoire_opportunities WHERE repertoire_id=? AND fen_key=? AND kind='missing_response'",
+        (repertoire_id, fen_key),
+    ).fetchall()]
+    return {"node": node, "source_snapshot": source_snapshot,
+            "existing_moves": existing_moves,
+            "personal_counts": {row["move_uci"]: row["encounters"] for row in personal},
+            "personal_repertoire_games": relevant_games,
+            "consequences": {row["move_uci"]: {"game_count": row["game_count"],
+                                                "max_loss_cp": row["max_loss_cp"]} for row in consequences},
+            "candidates": source_snapshot["candidates"]}
+>>>>>>> main
 
 
 def _calculate_node_opportunities(inputs: dict) -> list[dict]:
@@ -554,7 +627,11 @@ def _calculate_node_opportunities(inputs: dict) -> list[dict]:
     )
     covered_moves = set(json.loads(node["covered_replies_json"]))
     decisions: list[dict] = []
+<<<<<<< HEAD
     for move_uci in set(candidates) | set(personal_counts):
+=======
+    for move_uci in sorted(set(candidates) | set(personal_counts) | set(inputs.get("existing_moves", []))):
+>>>>>>> main
         candidate = candidates.get(move_uci)
         explorer_ready = source_is_fresh and node["explorer_status"] == "complete" and node["explorer_games"] >= MIN_EXPLORER_GAMES
         maia_ready = source_is_fresh and node["maia_status"] == "complete"
@@ -590,6 +667,16 @@ def _calculate_node_opportunities(inputs: dict) -> list[dict]:
             "cohort": {key: settings.get(key) for key in ("explorer_rating", "maia_elo", "speed_weights")},
             "qualifying_sources": qualifying_sources, "coverage_run_id": node["run_id"],
             "coverage_node_id": node["id"],
+<<<<<<< HEAD
+=======
+            "source_provenance": {
+                source: {"coverage_run_id": node["run_id"], "coverage_node_id": node["id"],
+                         "run_created_at": node["run_created_at"],
+                         "status": "stale" if not source_is_fresh and node[f"{source}_status"] == "complete"
+                         else node[f"{source}_status"]}
+                for source in ("explorer", "maia")
+            },
+>>>>>>> main
             "coverage_path_floor": float(settings.get("path_floor", 0.0005)),
             "run_status": node["run_status"],
             "consequence": consequence,
@@ -689,6 +776,17 @@ def _apply_post_gap_opportunity(database: sqlite3.Connection, repertoire_id: str
              opponent_move_uci=move_uci, score=decision["score"], evidence=decision["evidence"])
 
 
+<<<<<<< HEAD
+=======
+def enqueue_opportunity_refresh_in_transaction(database, repertoire_id: str) -> None:
+    enqueue = (enqueue_compact_postgres_task_in_transaction
+               if hasattr(database, "execute_native") else enqueue_task_in_transaction)
+    enqueue(database, "repertoire_opportunity", repertoire_id,
+            {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
+            priority=130, delay_seconds=5)
+
+
+>>>>>>> main
 def enqueue_opportunity_refresh(repertoire_id: str, *, background: bool = False) -> None:
     enqueue_task("repertoire_opportunity", repertoire_id,
                  {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
@@ -708,7 +806,12 @@ def _advance_slice(database: sqlite3.Connection, task: dict, phase: str, cursor:
     )
 
 
+<<<<<<< HEAD
 def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, opportunity_id: str) -> None:
+=======
+def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, opportunity_id: str,
+                         *, node_decisions: list[dict] | None = None) -> None:
+>>>>>>> main
     opportunity = database.execute(
         "SELECT * FROM repertoire_opportunities WHERE id=? AND repertoire_id=?",
         (opportunity_id, repertoire_id),
@@ -724,6 +827,7 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
         if not card or card["state"] != "locked" or card["archived"]:
             _resolve(database, opportunity_id)
     elif opportunity["kind"] == "missing_response":
+<<<<<<< HEAD
         node = database.execute(
             f"""SELECT covered_replies_json FROM repertoire_coverage_nodes WHERE repertoire_id=?
                AND fen_key=? AND run_id=(SELECT r.id FROM repertoire_coverage_runs r
@@ -732,6 +836,13 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
             (repertoire_id, opportunity["fen_key"], repertoire_id),
         ).fetchone()
         if not node or opportunity["opponent_move_uci"] in json.loads(node["covered_replies_json"]):
+=======
+        if node_decisions is None:
+            inputs = _load_position_inputs(database, repertoire_id, opportunity["fen_key"])
+            node_decisions = _calculate_node_opportunities(inputs) if inputs else []
+        if not any(decision["move_uci"] == opportunity["opponent_move_uci"] and decision["active"]
+                   for decision in node_decisions):
+>>>>>>> main
             _resolve(database, opportunity_id)
     else:
         if opportunity["card_id"]:
@@ -741,6 +852,7 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
             if linked_card and linked_card["introduced_at"]:
                 _resolve(database, opportunity_id)
                 return
+<<<<<<< HEAD
         covered_node = database.execute(
             f"""SELECT covered_replies_json FROM repertoire_coverage_nodes WHERE repertoire_id=?
                AND fen_key=? AND run_id=(SELECT r.id FROM repertoire_coverage_runs r
@@ -748,6 +860,9 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
                created_at DESC LIMIT 1)""",
             (repertoire_id, opportunity["fen_key"], repertoire_id),
         ).fetchone()
+=======
+        covered_node = _latest_coverage_node(database, repertoire_id, opportunity["fen_key"])
+>>>>>>> main
         if covered_node and opportunity["opponent_move_uci"] in json.loads(covered_node["covered_replies_json"]):
             _resolve(database, opportunity_id)
             return
@@ -789,10 +904,16 @@ def execute_opportunity_slice(task: dict) -> bool:
             ).fetchone()
         elif phase == "nodes":
             item = database.execute(
+<<<<<<< HEAD
                 f"""SELECT id FROM repertoire_coverage_nodes WHERE repertoire_id=? AND run_id=(
                     SELECT r.id FROM repertoire_coverage_runs r WHERE repertoire_id=? AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")}
                     ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,created_at DESC LIMIT 1)
                    AND id>? ORDER BY id LIMIT 1""", (repertoire_id, repertoire_id, cursor),
+=======
+                """SELECT id FROM repertoire_coverage_nodes WHERE repertoire_id=? AND run_id=?
+                   AND id>? ORDER BY id LIMIT 1""",
+                (repertoire_id, latest_coverage_run_id(database, repertoire_id), cursor),
+>>>>>>> main
             ).fetchone()
         elif phase == "findings":
             item = database.execute(
@@ -839,11 +960,26 @@ def execute_opportunity_slice(task: dict) -> bool:
             inputs = _load_node_inputs(database, repertoire_id, item_id)
         elif phase == "findings":
             inputs = _load_post_gap_inputs(database, repertoire_id, item_id)
+<<<<<<< HEAD
+=======
+        elif phase == "cleanup":
+            cleanup_row = database.execute(
+                "SELECT kind,fen_key FROM repertoire_opportunities WHERE id=? AND repertoire_id=?",
+                (item_id, repertoire_id),
+            ).fetchone()
+            cleanup_fen_key = cleanup_row["fen_key"] if cleanup_row and cleanup_row["kind"] == "missing_response" else None
+            inputs = _load_position_inputs(database, repertoire_id, cleanup_fen_key) if cleanup_fen_key else None
+            cleanup_snapshot = inputs["source_snapshot"] if inputs else {"node": None, "candidates": []}
+>>>>>>> main
         else:
             inputs = None
     evidence = _calculate_card_evidence(inputs) if phase == "cards" and inputs else None
     recurring_decisions = _calculate_recurring_decisions(recurring_rows, window_days) if phase == "cards" else []
+<<<<<<< HEAD
     node_decisions = _calculate_node_opportunities(inputs) if phase == "nodes" and inputs else []
+=======
+    node_decisions = _calculate_node_opportunities(inputs) if phase in {"nodes", "cleanup"} and inputs else []
+>>>>>>> main
     post_gap_decision = _calculate_post_gap_opportunity(inputs) if phase == "findings" and inputs else None
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
@@ -866,6 +1002,21 @@ def execute_opportunity_slice(task: dict) -> bool:
                                  and current["lease_token"] == task["lease_token"])
         if not current_slice:
             return True
+<<<<<<< HEAD
+=======
+        source_fen_key = None
+        expected_snapshot = None
+        if phase == "nodes" and inputs:
+            source_fen_key = inputs["node"]["fen_key"]
+            expected_snapshot = inputs["source_snapshot"]
+        elif phase == "cleanup":
+            source_fen_key = cleanup_fen_key
+            expected_snapshot = cleanup_snapshot
+        if source_fen_key and _coverage_source_snapshot(database, repertoire_id, source_fen_key) != expected_snapshot:
+            # Retry the same cursor; a newer attempt or source result invalidated calculation.
+            _advance_slice(database, task, phase, cursor)
+            return True
+>>>>>>> main
         if phase == "summaries" and inputs:
             _publish_decision_summary(database, repertoire_id, inputs)
         elif phase == "cards":
@@ -876,7 +1027,11 @@ def execute_opportunity_slice(task: dict) -> bool:
         elif phase == "findings" and post_gap_decision:
             _apply_post_gap_opportunity(database, repertoire_id, post_gap_decision)
         elif phase == "cleanup":
+<<<<<<< HEAD
             _cleanup_opportunity(database, repertoire_id, item_id)
+=======
+            _cleanup_opportunity(database, repertoire_id, item_id, node_decisions=node_decisions)
+>>>>>>> main
         elif phase == "summary_cleanup":
             fen_key, expected_uci = item_id.split("\0", 1)
             database.execute(
