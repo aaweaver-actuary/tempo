@@ -307,7 +307,13 @@ def main():
     os.environ['TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS'] = '50'
     repertoire_id = 'segmentation-rehearsal-' + uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
-    starting_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    import chess
+    fixture_board = chess.Board()
+    # Keep the route family independent of retained standard e4 targets from
+    # preceding recovery scenarios; never revive or rewrite those fixtures.
+    for move_uci in ('a2a3', 'a7a6', 'h2h3', 'h7h6', 'a3a4', 'a6a5', 'h3h4', 'h6h5'):
+        fixture_board.push_uci(move_uci)
+    starting_fen = fixture_board.fen()
     lines = tuple({'id': f'{repertoire_id}-{index}', 'name': f'Branch {index}', 'start_fen': starting_fen,
                    'moves_json': json.dumps(['e2e4', reply, 'g1f3']), 'trained_color': 'white', 'learner_decision_count': 2}
                   for index, reply in enumerate(['e7e5', 'c7c5', 'e7e6']))
@@ -346,10 +352,11 @@ def main():
                 "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color,canonical_route_source) "
                 "VALUES(%s,%s,'checkpoint',%s,%s,%s,'white',1) ON CONFLICT DO NOTHING RETURNING id",
                 (target_step.card_id, shared_target_repertoire_id, starting_fen, json.dumps(target_step.moves), date.today().isoformat())).fetchone()
-            if created_target:
-                owned_card_ids.append(target_step.card_id)
-                database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',
-                                        (shared_target_repertoire_id, target_step.card_id))
+            if created_target is None:
+                raise RuntimeError('Authored target fixture overlaps an existing card; preserve existing data')
+            owned_card_ids.append(target_step.card_id)
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',
+                                    (shared_target_repertoire_id, target_step.card_id))
             for line, step in zip(lines, steps):
                 database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)',
                     (line['id'], repertoire_id, line['name'], 'white', starting_fen, line['moves_json'], now))
