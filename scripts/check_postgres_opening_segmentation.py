@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 import uuid
+import psycopg
+from psycopg.rows import dict_row
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -66,6 +68,18 @@ def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(reper
     assert result['whole_repertoire']['current']['metrics']['distinct_cards'] == 3
     assert result['whole_repertoire']['proposed']['metrics']['distinct_cards'] == 4
     assert product_snapshot() == before, 'Deployed reader-only prefix diagnostics wrote product state'
+    transition_request = Request(
+        f'http://api:8000/api/repertoires/{repertoire_id}/prefix-transition/plan', method='POST',
+        headers={'Content-Type': 'application/json'}, data=json.dumps({
+            'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
+            'candidate_depths': {lines[0]['id']: 1}}).encode())
+    transition = reader_api_response(transition_request)
+    assert transition['dry_run'] and transition['status'] == 'ready', transition
+    assert transition['depth_changes'] == [{'line_id': lines[0]['id'], 'before': 2, 'after': 1}]
+    assert any(card['classification'] == 'new_replacement' for card in transition['cards'])
+    assert product_snapshot() == before, 'Deployed reader-only transition planner wrote product state'
+    print(json.dumps({'test': 'test_issue79_reader_only_deployed_api_plans_without_product_writes',
+                      'plan_http_status': 200, 'status': transition['status'], 'product_state_unchanged': True}))
     print(json.dumps({'test': 'test_issue77_reader_only_deployed_api_evaluates_without_product_writes',
                       'source_http_status': 200, 'evaluate_http_status': 200,
                       'current_selected_cards': 1, 'proposed_selected_cards': 2,
@@ -82,7 +96,9 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
     tables = ('cards', 'reviews', 'repertoire_cards', 'repertoire_lines',
               'repertoire_line_training_depths', 'opening_graph_steps', 'opening_graph_publications',
               'prefix_splits', 'opening_card_schedule_seeds', 'daily_queue', 'queue_projections',
-              'background_tasks', 'operation_receipts')
+              'background_tasks', 'operation_receipts', 'card_revisions', 'review_schedule_snapshots',
+              'queue_attempt_origins', 'review_attempt_receipts', 'opening_evidence_attempts',
+              'opening_evidence_observations', 'opening_evidence_events', 'study_attempts')
     def product_snapshot():
         with postgres_store.connection(read_only=True) as database:
             return {table: sorted(json.dumps(dict(row), sort_keys=True, default=str) for row in
@@ -101,6 +117,8 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
             'snapshot_id': source['snapshot_id'], 'selected_line_ids': selection, 'candidate_depths': depths})
         assert response.status_code == 200, response.text
     assert product_snapshot() == before, 'Prefix diagnostics wrote product state'
+    test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(
+        repertoire_id, lines, card_ids, product_snapshot)
 
     original_connection = postgres_store.connection
     original_calculation = evaluator_api.iter_prefix_evaluation
@@ -133,9 +151,12 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
             future = executor.submit(client.post, base_path + '/evaluate', json={
                 'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
             assert prepared.wait(5), 'Evaluation did not reach its closed-connection calculation'
-            with original_connection(read_only=True) as database:
-                readers = database.execute_native('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
-                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers)
+            # A fresh observer must not borrow one of the reader PIDs being
+            # inspected and then mistake its own SELECT for held computation.
+            with psycopg.connect(os.environ['TEMPO_DATABASE_READ_URL'], row_factory=dict_row) as observer:
+                observer.execute('SET TRANSACTION READ ONLY')
+                readers = observer.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
+                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers), readers
             started = time.perf_counter()
             with original_connection(read_only=False) as database:
                 database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
@@ -176,6 +197,135 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
                       'source_changed_response': 409, 'background_transaction_budget_ms': 50}))
 
 
+def post_transition_when_foreground_idle(client, path, payload):
+    """Honor real foreground leases without hiding database or planner failures."""
+    from app.services import redis_admission_gate
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if redis_admission_gate.foreground_present():
+            time.sleep(0.01)
+            continue
+        response = client.post(path, json=payload)
+        detail = response.json().get('detail', {})
+        if (response.status_code != 503 or not isinstance(detail, dict)
+                or detail.get('code') != 'evaluation_busy'
+                or detail.get('message') != 'Study work is active. Retry the diagnostic when study is idle.'):
+            return response
+        assert response.headers.get('Retry-After') == '1', response.text
+    raise AssertionError('Transition diagnostic never obtained foreground-idle admission within 10 seconds')
+
+
+def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repertoire_id, lines, card_ids, product_snapshot):
+    """Release readers, permit a real review, and reject the stale plan."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app import prefix_transition_api as planner_api
+    from app import prefix_evaluation_api as evaluator_api
+
+    client = TestClient(app)
+    source = client.get(f'/api/repertoires/{repertoire_id}/prefix-evaluation/source').json()
+    path = f'/api/repertoires/{repertoire_id}/prefix-transition/plan'
+    payload = {'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
+               'candidate_depths': {lines[0]['id']: 1}}
+    before = product_snapshot()
+    response = post_transition_when_foreground_idle(client, path, payload)
+    assert response.status_code == 200 and response.json()['status'] == 'ready', response.text
+    replay = post_transition_when_foreground_idle(client, path, payload)
+    assert replay.status_code == 200, replay.text
+    assert response.json() == replay.json(), {'first': response.json(), 'replay': replay.json()}
+    assert product_snapshot() == before
+    test_issue79_pending_command_bindings_are_accounted_before_delivery(client, path, payload, card_ids[0], product_snapshot)
+    original_connection = postgres_store.connection
+    original_calculation = planner_api.iter_transition_plan
+    prepared, released = threading.Event(), threading.Event()
+    reader_pids = []
+    @contextmanager
+    def observed_connection(**options):
+        with original_connection(**options) as database:
+            if options.get('repeatable_read'):
+                assert options['read_only'] and options['background'] and not options.get('authoritative')
+                settings = database.execute_native(
+                    "SELECT pg_backend_pid(),current_setting('transaction_read_only'),"
+                    "current_setting('transaction_isolation'),current_setting('transaction_timeout')").fetchone()
+                assert tuple(settings)[1:] == ('on', 'repeatable read', '50ms')
+                reader_pids.append(settings[0])
+            yield database
+    def paused_calculation(*args):
+        calculation = original_calculation(*args)
+        try:
+            next(calculation)
+            prepared.set()
+            assert released.wait(5), 'Foreground review was blocked during transition planning'
+            return (yield from calculation)
+        finally:
+            calculation.close()
+    postgres_store.connection = observed_connection
+    planner_api.iter_transition_plan = paused_calculation
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(post_transition_when_foreground_idle, client, path, payload)
+            assert prepared.wait(5)
+            with psycopg.connect(os.environ['TEMPO_DATABASE_READ_URL'], row_factory=dict_row) as observer:
+                observer.execute('SET TRANSACTION READ ONLY')
+                readers = observer.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
+                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers), readers
+            started = time.perf_counter()
+            with original_connection(read_only=False) as database:
+                database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
+                apply_scheduling_review(database, card_ids[0], 'correct', guided=False, source_kind='study',
+                    source_ref=f'prefix-transition:{repertoire_id}', light_first_interval_days=7,
+                    reviewed_at=datetime.now(timezone.utc), review_day=date.today())
+            review_ms = (time.perf_counter() - started) * 1000
+            after_review = product_snapshot()
+            released.set()
+            response = future.result(timeout=5)
+            assert response.status_code == 409 and response.json()['detail']['code'] == 'stale_plan', response.text
+            assert product_snapshot() == after_review
+    finally:
+        released.set()
+        postgres_store.connection = original_connection
+        planner_api.iter_transition_plan = original_calculation
+    # Schedule changes keep the structural selection token, but require a fresh plan.
+    assert evaluator_api.snapshot_identity(evaluator_api.load_snapshot(repertoire_id, time.monotonic() + 10)) == source['snapshot_id']
+    replay = post_transition_when_foreground_idle(client, path, payload)
+    assert replay.status_code == 200 and replay.json()['status'] == 'ready', replay.text
+    assert product_snapshot() == after_review
+    print(json.dumps({'test': 'test_issue79_readonly_planner_foreground_concurrency_and_stale_replay',
+                      'foreground_review_ms': round(review_ms, 3), 'readers_idle_during_calculation': True,
+                      'product_state_unchanged': True, 'stale_plan_rejected': True, 'fresh_retry_succeeded': True}))
+
+
+def test_issue79_pending_command_bindings_are_accounted_before_delivery(client, path, payload, card_id, product_snapshot):
+    """Real retained receipts bind direct reviews, checkpoints, and study answers."""
+    pending = [(uuid.uuid4().hex, command, command_payload) for command, command_payload in (
+        ('cards.review', {'card_id': card_id}),
+        ('opening_evidence.checkpoint', {'checkpoint': {'manifest': {'card_id': card_id}}}),
+        ('studies.attempts.submit', {'attempt': {'card_id': card_id}}),
+    )]
+    try:
+        with postgres_store.connection(read_only=False) as database:
+            for operation_id, command, command_payload in pending:
+                # Blocked receipts cannot execute automatically during the read
+                # rehearsal. Only their production payload bindings are needed.
+                database.execute_native(
+                    "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES(%s,%s,%s,'blocked',%s)",
+                    (operation_id, command, operation_id, json.dumps(command_payload)))
+        before = product_snapshot()
+        response = post_transition_when_foreground_idle(client, path, payload)
+        assert response.status_code == 200 and response.json()['status'] == 'ready', response.text
+        pending_actions = {attempt['object_id']: attempt['action'] for attempt in response.json()['attempts']
+                           if attempt['kind'] == 'pending_command'}
+        assert all(pending_actions.get(operation_id) == 'retire_with_conflict' for operation_id, *_rest in pending), pending_actions
+        assert product_snapshot() == before
+    finally:
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', ([item[0] for item in pending],))
+    print(json.dumps({'test': 'test_issue79_pending_command_bindings_are_accounted_before_delivery',
+                      'direct_review': True, 'nested_checkpoint': True, 'nested_study_answer': True,
+                      'product_state_unchanged': True}))
+
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Segmentation rehearsal requires the disposable PostgreSQL instance')
@@ -184,7 +334,13 @@ def main():
     os.environ['TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS'] = '50'
     repertoire_id = 'segmentation-rehearsal-' + uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
-    starting_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    import chess
+    fixture_board = chess.Board()
+    # Keep the route family independent of retained standard e4 targets from
+    # preceding recovery scenarios; never revive or rewrite those fixtures.
+    for move_uci in ('a2a3', 'a7a6', 'h2h3', 'h7h6', 'a3a4', 'a6a5', 'h3h4', 'h6h5'):
+        fixture_board.push_uci(move_uci)
+    starting_fen = fixture_board.fen()
     lines = tuple({'id': f'{repertoire_id}-{index}', 'name': f'Branch {index}', 'start_fen': starting_fen,
                    'moves_json': json.dumps(['e2e4', reply, 'g1f3']), 'trained_color': 'white', 'learner_decision_count': 2}
                   for index, reply in enumerate(['e7e5', 'c7c5', 'e7e6']))
@@ -199,6 +355,7 @@ def main():
                         'queue': 'SELECT * FROM daily_queue WHERE card_id=ANY(%s) ORDER BY id',
                     }.items()}
     owned_card_ids = []
+    shared_target_repertoire_id = repertoire_id + '-authored-target'
     operation_id = None
     traversals = []
     original_traverse = worker.presentation_occurrences
@@ -213,17 +370,31 @@ def main():
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)',
                                     (repertoire_id, 'Segmentation rehearsal', 'test.pgn', now))
+            database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)',
+                                    (shared_target_repertoire_id, 'Authored compatible target', 'test.pgn', now))
+            target_step = build_graph(GraphInput(shared_target_repertoire_id, ({'id': 'authored-target',
+                'start_fen': starting_fen, 'moves_json': json.dumps(['e2e4']), 'trained_color': 'white',
+                'learner_decision_count': 1},), 1))[0]
+            created_target = database.execute_native(
+                "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color,canonical_route_source) "
+                "VALUES(%s,%s,'checkpoint',%s,%s,%s,'white',1) ON CONFLICT DO NOTHING RETURNING id",
+                (target_step.card_id, shared_target_repertoire_id, starting_fen, json.dumps(target_step.moves), date.today().isoformat())).fetchone()
+            if created_target is None:
+                raise RuntimeError('Authored target fixture overlaps an existing card; preserve existing data')
+            owned_card_ids.append(target_step.card_id)
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',
+                                    (shared_target_repertoire_id, target_step.card_id))
             for line, step in zip(lines, steps):
                 database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)',
                     (line['id'], repertoire_id, line['name'], 'white', starting_fen, line['moves_json'], now))
                 database.execute_native('INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,%s)',
                     (line['id'], line['learner_decision_count']))
-                created_card = database.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color) VALUES(%s,%s,'prefix',%s,%s,%s,'white') ON CONFLICT DO NOTHING RETURNING id",
+                created_card = database.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color,canonical_route_source) VALUES(%s,%s,'prefix',%s,%s,%s,'white',0) ON CONFLICT DO NOTHING RETURNING id",
                     (step.card_id, repertoire_id, starting_fen, line['moves_json'], date.today().isoformat())).fetchone()
                 if created_card is None:
                     raise RuntimeError('Segmentation fixture overlaps an existing card; preserve existing data')
                 owned_card_ids.append(step.card_id)
-                database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (repertoire_id, step.card_id))
+                database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)', (repertoire_id, step.card_id))
                 database.execute_native('INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color) VALUES(%s,1,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                     (repertoire_id, line['id'], step.decision_index, step.segment_kind, step.first_decision_index, step.last_decision_index,
                      json.dumps(step.decision_fen_keys), step.card_id, step.parent_card_id, step.decision_fen_key, step.starting_fen, json.dumps(step.moves), step.trained_color))
@@ -346,6 +517,7 @@ def main():
             database.execute_native('DELETE FROM background_tasks WHERE kind=%s AND deduplication_key=%s', ('opening_segmentation', repertoire_id))
             database.execute_native('DELETE FROM cards WHERE id=ANY(%s)', (owned_card_ids,))
             database.execute_native('DELETE FROM repertoires WHERE id=%s', (repertoire_id,))
+            database.execute_native('DELETE FROM repertoires WHERE id=%s', (shared_target_repertoire_id,))
         postgres_store.close_pools()
 
 

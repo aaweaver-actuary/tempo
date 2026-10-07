@@ -1,3 +1,12 @@
+Issue #79 — read-only shorter-prefix transition planning (October 7, 2026):
+
+- `backend/tests/test_prefix_transition.py`: `test_issue79_equal_depth_and_empty_selection_are_explicit_no_ops`; `test_issue79_depth_only_shortening_is_distinct_from_no_op`; `test_issue79_selected_caro_routes_preserve_unselected_qgd_and_alias_decisions`; `test_issue79_shared_card_retains_other_membership_history_queue_and_owner`; `test_issue79_implicit_authored_owner_retains_card_without_explicit_other_link`.
+- Identity/history: `test_issue79_compatible_targets_reuse_real_history_and_keep_seed_distinct`; `test_issue79_compatible_authored_checkpoint_target_preserves_its_authoritative_kind` (failed before the schema repair exposed by the real deployment); `test_issue79_replacements_start_with_postgres_defaults_without_fabricated_evidence`; `test_issue79_pending_active_delayed_and_offline_attempts_have_explicit_dispositions`.
+- Fail-closed conflicts: `test_issue79_authored_edits_targets_and_provenance_fail_closed` (authored removal, incompatible color, owner fallback, archival, and scheduling); `test_issue79_integrity_conflicts_fail_closed_with_specific_repair_identity`; `test_issue79_saved_split_bypass_blocks_without_repair_or_history_transfer`; `test_issue79_shared_target_global_role_change_blocks_even_with_matching_identity`; `test_issue79_lengthening_and_invalid_selection_never_produce_an_applicable_plan`.
+- Determinism/freshness: `test_issue79_same_snapshot_and_input_produce_deeply_immutable_identical_plans`; `test_issue79_reordered_selection_tables_and_rows_produce_identical_plan`; `test_issue79_shared_split_blockers_remain_deterministic_when_override_order_changes` (failed before canonical blocker ordering); `test_issue79_source_graph_revision_and_transition_state_invalidate_old_plan` (source, generation, revision, membership, reviews, seeds, attempts, absent targets, day); `test_issue79_tampered_plan_fails_integrity_fence`.
+- `backend/tests/test_prefix_transition_api.py`: `test_issue79_http_plan_is_typed_deterministic_and_has_no_application_authority`; `test_issue79_http_invalid_or_lengthening_requests_fail_without_partial_plans`; `test_issue79_http_rejects_stale_sources_and_state_changes_during_planning`; `test_issue79_http_conflicting_authored_membership_returns_complete_blocked_plan`; `test_issue79_http_outage_and_foreground_preemption_are_retryable_without_false_success`; `test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_close`; `test_issue79_runtime_guard_is_background_query_only_without_command_dispatch`.
+- Regular disposable PostgreSQL durability, `scripts/check_postgres_opening_segmentation.py`: `test_issue79_reader_only_deployed_api_plans_without_product_writes` runs the real POST through the reader-only API and compares product state; `test_issue79_readonly_planner_foreground_concurrency_and_stale_replay` proves explicitly read-only repeatable snapshots, idle readers during computation, a real NOWAIT foreground review, rejection of the now-stale plan, and fresh retry with no planner writes; `test_issue79_pending_command_bindings_are_accounted_before_delivery` covers direct reviews and nested checkpoint/study payloads in retained operation receipts. Existing #77 proofs remain required. These are feature regressions, not a repair of an existing planner.
+
 PR #72 integration with main #69/#83 (October 5, 2026):
 
 - `test_queue_origin_migration_follows_current_main_without_renumbering_published_versions` checks contiguous numbering/readiness and preserved published 030/031. `test_postgres_current_main_schema31_upgrade_adds_queue_origins_without_changing_evidence` in the regular durability upgrade rehearsal proves real 31->32 backfill and unchanged evidence contexts.
@@ -2158,7 +2167,6 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 
 The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.
 
-
 ## Issue #7 — durable opportunity dismissals
 
 `backend/tests/test_repertoire_opportunities.py` runs in the regular backend gate:
@@ -2232,3 +2240,5 @@ retention. With independent Maia enabled, the predecessor fixture kept receiving
 source results and the following retention scenario failed its unchanged deadline;
 the isolated retention scenario passed. This preserves every product assertion
 and isolates the next scenario without changing priorities or raising timeouts.
+
+- Issue #79: `test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejection` keeps real foreground health admission distinct from deterministic plan replay and never retries database/service failures.

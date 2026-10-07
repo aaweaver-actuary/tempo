@@ -1,5 +1,12 @@
 [
   {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/prefix-transition/plan",
+    "handler": "prefix_transition_plan",
+    "treatment": "read_only_post",
+    "state": "staged"
+  },
+  {
     "method": "GET",
     "path": "/api/repertoires/{identifier}/prefix-evaluation/source",
     "handler": "prefix_evaluation_source",
