@@ -8,7 +8,7 @@ from typing import Any
 
 from ..database import background_read_connection, connection
 from ..postgres_store import PostgresConnection
-from .canonical_scope_freshness import coverage_run_is_current
+from .canonical_scope_freshness import coverage_run_is_current, latest_coverage_attempt_predicate
 from .canonical_prefix import read_prefix
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
@@ -45,7 +45,7 @@ def _prepare_next_node(task: dict[str, Any]) -> dict[str, Any] | None:
             "AND control.work_id=n.run_id "
             "WHERE n.run_id=%s AND n.id>%s AND n.explorer_status='queued' "
             "AND r.status IN ('queued','running','failed') AND COALESCE(control.paused,0)=0 "
-            "ORDER BY n.id LIMIT 1",
+            f"AND {latest_coverage_attempt_predicate(database, native=True)} ORDER BY n.id LIMIT 1",
             (payload["run_id"], payload.get("after_node_id", "")),
         ).fetchone()
         return dict(row) if row and coverage_run_is_current(database, row, row["repertoire_id"]) else None
@@ -121,7 +121,7 @@ def _publish_node(
     node = database.execute_native(
         "SELECT n.*,r.settings_json,r.status AS run_status,r.total_nodes "
         "FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id "
-        "WHERE n.id=%s FOR UPDATE OF n,r", (prepared["id"],),
+        f"WHERE n.id=%s AND {latest_coverage_attempt_predicate(database, native=True)} FOR UPDATE OF n,r", (prepared["id"],),
     ).fetchone()
     if node is None or node["run_status"] not in {"queued", "running", "failed"} or not coverage_run_is_current(database, node, prepared["repertoire_id"]):
         return complete_task_slice_in_transaction(database, task)

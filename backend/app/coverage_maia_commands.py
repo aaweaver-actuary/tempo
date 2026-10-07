@@ -14,7 +14,7 @@ from .postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
 from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 from .services.canonical_prefix import read_prefix
-from .services.canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate
+from .services.canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, latest_coverage_attempt_predicate
 from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
 
 
@@ -33,7 +33,7 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
     row = database.execute_native(
         "SELECT n.*,r.settings_json,r.status AS run_status FROM repertoire_coverage_nodes n "
         "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
-        "WHERE n.id=%s FOR UPDATE OF n,r", (node_id,),
+        f"WHERE n.id=%s AND {latest_coverage_attempt_predicate(database, native=True)} FOR UPDATE OF n,r", (node_id,),
     ).fetchone()
     if row is None or row["maia_status"] != "leased" or row["lease_id"] != lease_id:
         raise HTTPException(409, "Coverage lease is no longer active")
@@ -53,6 +53,7 @@ def claim_maia_node(database: PostgresConnection, _payload: dict[str, Any]) -> d
         "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
         "AND COALESCE(control.paused,0)=0 "
         f"AND {coverage_scope_predicate(database, native=True)} "
+        f"AND {latest_coverage_attempt_predicate(database, native=True)} "
         "ORDER BY COALESCE(control.promoted,0) DESC,r.created_at,n.ply,n.id "
         "LIMIT 1", (now,),
     ).fetchone()

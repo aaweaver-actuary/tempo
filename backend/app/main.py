@@ -4168,7 +4168,7 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str,
 
 @app.get("/api/repertoire-coverage/maia/available")
 def coverage_maia_available():
-    from .services.canonical_scope_freshness import coverage_scope_predicate
+    from .services.canonical_scope_freshness import coverage_scope_predicate, latest_coverage_attempt_predicate
     if not postgres_store.configured():
         return {"available": True}
     read_section = background_read_connection if activity_gate.in_background else read_connection
@@ -4181,7 +4181,8 @@ def coverage_maia_available():
             "WHERE r.status IN ('queued','running','complete','failed') "
             "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
             "AND COALESCE(control.paused,0)=0 "
-            f"AND {coverage_scope_predicate(database, native=True)})",
+            f"AND {coverage_scope_predicate(database, native=True)} "
+            f"AND {latest_coverage_attempt_predicate(database, native=True)})",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
     return {"available": bool(row[0])}

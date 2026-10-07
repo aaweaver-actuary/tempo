@@ -5,6 +5,7 @@ import os
 import uuid
 
 import chess
+from fastapi import HTTPException
 from app import postgres_store, coverage_maia_commands
 from app.services import repertoire_opportunities as opportunities
 from app.services.durable_tasks import complete_task, enqueue_task_in_transaction
@@ -121,6 +122,22 @@ def prove_opportunity_dismissal_and_source_freshness(run_bounded_task_slices):
             assert database.execute("SELECT COUNT(*) FROM cards WHERE repertoire_id=?", (repertoire_id,)).fetchone()[0] == 0
             assert database.execute("SELECT moves_json FROM repertoire_lines WHERE repertoire_id=?", (repertoire_id,)).fetchone()[0] == '["e2e4","e7e5","g1f3"]'
         print("PASS OF-1 PostgreSQL dismissal survives unavailable/stale resolution and replay; only three new games reopen; no cards or repertoire mutation", flush=True)
+        # Superseded failed attempts cannot regain callback eligibility.
+        with postgres_store.connection() as database:
+            database.execute("UPDATE repertoire_coverage_nodes SET maia_status='leased',lease_id='of-obsolete' WHERE id=?", (old_node,))
+            database.execute("UPDATE repertoire_coverage_runs SET status='failed' WHERE id=?", (old_run,))
+            obsolete_before = dict(database.execute("SELECT * FROM repertoire_coverage_nodes WHERE id=?", (old_node,)).fetchone())
+        try:
+            with postgres_store.connection() as database:
+                coverage_maia_commands.submit_maia_node(database, {"node_id":old_node,"lease_id":"of-obsolete",
+                    "moves":[{"move_uci":"c7c5","probability":0.9}]})
+        except HTTPException as error:
+            assert error.status_code == 409
+        else:
+            raise AssertionError("Superseded failed run accepted an obsolete Maia callback")
+        with postgres_store.connection(read_only=True) as database:
+            assert dict(database.execute("SELECT * FROM repertoire_coverage_nodes WHERE id=?", (old_node,)).fetchone()) == obsolete_before
+            assert database.execute("SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id=?", (old_node,)).fetchone()[0] == 0.2
         # Real lease callback remains usable after the other source makes the run failed.
         with postgres_store.connection() as database:
             database.execute("UPDATE repertoire_coverage_nodes SET explorer_status='failed',maia_status='leased',lease_id='of-lease' WHERE id=?", (new_node,))

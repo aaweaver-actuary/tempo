@@ -2211,3 +2211,10 @@ in both directions; the bounded refresh produced no opportunity; failed/pending
 and empty newer snapshots retained obsolete active evidence; and the combined
 dismissal/source transition failed. Baseline harness setup errors were corrected
 before confirming the background publication failure. #4 remains open.
+
+`test_issue8_independent_claim_skips_superseded_failed_attempt` proves that relaxing
+overall failure gates does not revive obsolete workers: only the newest current
+attempt is claimable, and a superseded failed lease cannot submit or change rows.
+It failed on the first candidate by claiming the old node. OF-2 also rejects a
+real superseded PostgreSQL callback with 409 and verifies row/candidate immutability.
+Availability, claims, and successful callbacks share the same latest-attempt rank.

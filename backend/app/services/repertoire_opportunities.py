@@ -16,7 +16,7 @@ from .. import postgres_store
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task, enqueue_task_in_transaction, enqueue_compact_postgres_task_in_transaction, lock_current_slice
 from .discovery_admission import _full_history_request, _source_game
-from .canonical_scope_freshness import scope_identity, coverage_scope_predicate, opportunity_is_current, game_scope_generation, opportunity_scope_predicate
+from .canonical_scope_freshness import scope_identity, latest_coverage_run_id, opportunity_is_current, game_scope_generation, opportunity_scope_predicate
 from .canonical_prefix import read_prefix, assumed_position_keys
 
 
@@ -494,22 +494,12 @@ def refresh_node_opportunities(database: sqlite3.Connection, repertoire_id: str,
         _apply_node_opportunities(database, repertoire_id, _calculate_node_opportunities(inputs))
 
 
-def _latest_coverage_run_id(database, repertoire_id: str) -> str | None:
-    """Newest current-scope attempt is authoritative; source failure is not fallback."""
-    run = database.execute(
-        f"""SELECT r.id FROM repertoire_coverage_runs r WHERE r.repertoire_id=?
-            AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")}
-            ORDER BY r.created_at DESC,r.id DESC LIMIT 1""", (repertoire_id,),
-    ).fetchone()
-    return run["id"] if run else None
-
-
 def _latest_coverage_node(database, repertoire_id: str, fen_key: str):
     return database.execute(
         """SELECT n.*,r.settings_json,r.status run_status,r.created_at run_created_at
            FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id
            WHERE n.repertoire_id=? AND n.fen_key=? AND n.run_id=?""",
-        (repertoire_id, fen_key, _latest_coverage_run_id(database, repertoire_id)),
+        (repertoire_id, fen_key, latest_coverage_run_id(database, repertoire_id)),
     ).fetchone()
 
 
@@ -836,7 +826,7 @@ def execute_opportunity_slice(task: dict) -> bool:
             item = database.execute(
                 """SELECT id FROM repertoire_coverage_nodes WHERE repertoire_id=? AND run_id=?
                    AND id>? ORDER BY id LIMIT 1""",
-                (repertoire_id, _latest_coverage_run_id(database, repertoire_id), cursor),
+                (repertoire_id, latest_coverage_run_id(database, repertoire_id), cursor),
             ).fetchone()
         elif phase == "findings":
             item = database.execute(

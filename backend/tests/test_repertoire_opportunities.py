@@ -1743,3 +1743,29 @@ def test_issue8_equal_timestamp_selection_is_deterministic_and_scope_fenced(part
         assert list_opportunities(db, "rep")[0]["evidence"]["coverage_node_id"] == selected_node
         refresh_node_opportunities(db, "rep", other_node)
         assert list_opportunities(db, "rep")[0]["evidence"]["coverage_node_id"] == selected_node
+
+
+def test_issue8_independent_claim_skips_superseded_failed_attempt(tmp_path, monkeypatch, request):
+    from app.services import repertoire_coverage, introduction_priorities
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", lambda *args, **kwargs: None)
+    with database.connection() as db:
+        _seed_decision_route(db)
+        old_node, _ = _seed_source_transition_coverage(db, run_id="old-run", run_status="failed",
+            explorer_status="failed", maia_status="queued",
+            created_at=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat())
+        new_node, _ = _seed_source_transition_coverage(db, run_id="new-run", run_status="failed",
+            explorer_status="failed", maia_status="queued")
+    job = repertoire_coverage.claim_maia_coverage_node()
+    assert job and job["node_id"] == new_node
+    with database.connection() as db:
+        db.execute("UPDATE repertoire_coverage_nodes SET maia_status='leased',lease_id='obsolete-lease' WHERE id=?", (old_node,))
+        before = dict(db.execute("SELECT * FROM repertoire_coverage_nodes WHERE id=?", (old_node,)).fetchone())
+    with pytest.raises(RuntimeError, match="lease is no longer active"):
+        repertoire_coverage.submit_maia_coverage(old_node, "obsolete-lease", [{"move_uci":"c7c5", "probability":0.9}])
+    with database.connection() as db:
+        assert dict(db.execute("SELECT * FROM repertoire_coverage_nodes WHERE id=?", (old_node,)).fetchone()) == before
+        assert db.execute("SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id=?", (old_node,)).fetchone()[0] == 0.2
