@@ -2181,3 +2181,5 @@ UI coverage (`tests/unit/prefix-diagnostics-regressions.test.tsx`): named `PD-82
 This is a new read-only feature; there was no existing diagnostic implementation to reproduce as a failing defect. Whole-card scheduling and PR #69 capture/recovery remain unchanged. Counts are explicitly windowed, and no latency or difficulty/depth classifier is introduced.
 
 - `test_prefix_diagnostics_reader_credentials_are_sufficient` — failed before the reader-pool repair (writer credentials are absent in the deployed API); passes with the configured PostgreSQL reader and explicit repeatable-read/read-only transaction. The initial real browser run reproduced the same missing-writer-URL error. No writer credentials were added to the API.
+
+- Updated `test_queue_origin_migration_follows_current_main_without_renumbering_published_versions` for exact readiness version 36. Initial PR CI caught its obsolete version-35 assertion; continuity and the exact published queue-origin migration assertions remain enforced, with the new diagnostics index migration separately protected.
