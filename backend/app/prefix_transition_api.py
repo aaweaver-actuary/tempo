@@ -45,7 +45,7 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline):
             row_count += sizes['count']
             byte_count += sizes['bytes']
             if row_count > MAX_TRANSITION_ROWS or byte_count > MAX_TRANSITION_BYTES:
-                raise PrefixEvaluationError('limit_exceeded', 'Transition state exceeds 40,000 rows or 4 MiB. Reduce retained state through supported maintenance before planning.')
+                raise PrefixEvaluationError('limit_exceeded', 'Transition state exceeds 40,000 rows or 4 MiB. This snapshot needs validated planner capacity beyond the current limits; retain its history and source data.')
             raw_tables.append((name, database.execute_native(query, parameters).fetchall()))
 
         card_parameters = (list(lookup_card_ids),)
@@ -62,9 +62,18 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline):
              'SELECT snapshot.* FROM review_schedule_snapshots snapshot JOIN reviews review ON review.id=snapshot.review_id WHERE review.card_id=ANY(%s)', card_parameters)
         read('opening_evidence_observations',
              'SELECT observation.* FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=ANY(%s)', card_parameters)
+        read('opening_evidence_presentations', 'SELECT * FROM opening_evidence_presentations WHERE card_id=ANY(%s)', card_parameters)
+        read('opening_evidence_queue_contexts',
+             'SELECT context.* FROM opening_evidence_queue_contexts context JOIN opening_evidence_presentations presentation '
+             'ON presentation.id=context.presentation_snapshot_id WHERE presentation.card_id=ANY(%s)', card_parameters)
+        read('repertoire_integrity_card_blocks', 'SELECT * FROM repertoire_integrity_card_blocks WHERE card_id=ANY(%s)', card_parameters)
         read('pending_commands',
-             "SELECT receipt.*,receipt.payload_json::jsonb->>'card_id' card_id FROM operation_receipts receipt "
-             "WHERE receipt.state NOT IN ('complete','failed') AND receipt.payload_json::jsonb->>'card_id'=ANY(%s)", card_parameters)
+             "SELECT resolved.* FROM (SELECT receipt.*,COALESCE(receipt.payload_json::jsonb->>'card_id',"
+             "receipt.payload_json::jsonb#>>'{checkpoint,manifest,card_id}',receipt.payload_json::jsonb#>>'{attempt,card_id}',"
+             "attempt.card_id,queue.card_id) card_id FROM operation_receipts receipt "
+             "LEFT JOIN study_attempts attempt ON attempt.id=receipt.payload_json::jsonb->>'attempt_id' "
+             "LEFT JOIN daily_queue queue ON queue.id::text=receipt.payload_json::jsonb->>'entry_id' "
+             "WHERE receipt.state NOT IN ('complete','failed')) resolved WHERE resolved.card_id=ANY(%s)", card_parameters)
         read('other_graph_steps',
              'SELECT step.* FROM opening_graph_steps step JOIN opening_graph_publications publication '
              'ON publication.repertoire_id=step.repertoire_id AND publication.generation=step.generation '
@@ -125,3 +134,5 @@ def prefix_transition_plan(identifier: str, request: PrefixTransitionRequest):
             return plan
         except (psycopg.errors.QueryCanceled, psycopg.errors.ReadOnlySqlTransaction) as error:
             raise structural.diagnostic_error('evaluation_busy', 'The bounded transition read could not finish. Retry when study is idle.', 503) from error
+        except psycopg.errors.InvalidTextRepresentation as error:
+            raise structural.diagnostic_error('unsupported_source', 'Saved command context is malformed. Repair the retained context before planning.', 409) from error

@@ -209,6 +209,7 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
     assert response.status_code == 200 and response.json()['status'] == 'ready', response.text
     assert response.json() == client.post(path, json=payload).json()
     assert product_snapshot() == before
+    test_issue79_pending_command_bindings_are_accounted_before_delivery(client, path, payload, card_ids[0], product_snapshot)
     original_connection = postgres_store.connection
     original_calculation = planner_api.iter_transition_plan
     prepared, released = threading.Event(), threading.Event()
@@ -266,6 +267,36 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
     print(json.dumps({'test': 'test_issue79_readonly_planner_foreground_concurrency_and_stale_replay',
                       'foreground_review_ms': round(review_ms, 3), 'readers_idle_during_calculation': True,
                       'product_state_unchanged': True, 'stale_plan_rejected': True, 'fresh_retry_succeeded': True}))
+
+
+def test_issue79_pending_command_bindings_are_accounted_before_delivery(client, path, payload, card_id, product_snapshot):
+    """Real retained receipts bind direct reviews, checkpoints, and study answers."""
+    pending = [(uuid.uuid4().hex, command, command_payload) for command, command_payload in (
+        ('cards.review', {'card_id': card_id}),
+        ('opening_evidence.checkpoint', {'checkpoint': {'manifest': {'card_id': card_id}}}),
+        ('studies.attempts.submit', {'attempt': {'card_id': card_id}}),
+    )]
+    try:
+        with postgres_store.connection(read_only=False) as database:
+            for operation_id, command, command_payload in pending:
+                # Blocked receipts cannot execute automatically during the read
+                # rehearsal. Only their production payload bindings are needed.
+                database.execute_native(
+                    "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES(%s,%s,%s,'blocked',%s)",
+                    (operation_id, command, operation_id, json.dumps(command_payload)))
+        before = product_snapshot()
+        response = client.post(path, json=payload)
+        assert response.status_code == 200 and response.json()['status'] == 'ready', response.text
+        pending_actions = {attempt['object_id']: attempt['action'] for attempt in response.json()['attempts']
+                           if attempt['kind'] == 'pending_command'}
+        assert all(pending_actions.get(operation_id) == 'retire_with_conflict' for operation_id, *_rest in pending), pending_actions
+        assert product_snapshot() == before
+    finally:
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', ([item[0] for item in pending],))
+    print(json.dumps({'test': 'test_issue79_pending_command_bindings_are_accounted_before_delivery',
+                      'direct_review': True, 'nested_checkpoint': True, 'nested_study_answer': True,
+                      'product_state_unchanged': True}))
 
 
 def main():

@@ -46,8 +46,7 @@ def changed_snapshot(prepared, name, rows):
 
 def plan(prepared, selection=('caro',), depths=None):
     depths = {'caro': 2} if depths is None else depths
-    evaluation = evaluate_prefix(prepared.source, selection, depths)
-    return plan_transition(prepared, selection, depths, evaluation)
+    return plan_transition(prepared, selection, depths)
 
 
 def test_issue79_equal_depth_and_empty_selection_are_explicit_no_ops():
@@ -254,3 +253,25 @@ def test_issue79_tampered_plan_fails_integrity_fence():
     result = plan(prepared)
     with pytest.raises(PrefixEvaluationError):
         validate_plan_freshness(result.model_copy(update={'depth_changes': ()}), prepared)
+
+
+def test_issue79_compatible_authored_checkpoint_target_preserves_its_authoritative_kind():
+    from app.services.prefix_transition import evaluation_steps
+    prepared = prepared_snapshot()
+    target = evaluation_steps(evaluate_prefix(prepared.source, ['caro'], {'caro': 2})['whole_repertoire']['proposed'])[0]
+    prepared = changed_snapshot(prepared, 'cards', prepared.rows('cards') + [
+        card_row(target, repertoire_id='other', kind='checkpoint', canonical_route_source=1)])
+    result = plan(prepared)
+    reused = next(card for card in result.cards if card.card_id == target.card_id)
+    assert result.status == 'ready' and reused.classification == 'reuse_existing'
+    assert reused.kind_after == 'checkpoint' and reused.state_handling == 'preserve'
+
+
+def test_issue79_integrity_conflicts_fail_closed_with_specific_repair_identity():
+    prepared = prepared_snapshot()
+    old_id = prepared.source.published_steps[0].card_id
+    prepared = changed_snapshot(prepared, 'repertoire_integrity_card_blocks', [
+        dict(card_id=old_id, repertoire_id='rep', issue_id='authored-route-conflict')])
+    result = plan(prepared)
+    assert result.status == 'blocked'
+    assert any(blocker.code == 'integrity_conflict' and 'authored-route-conflict' in blocker.reason for blocker in result.blockers)

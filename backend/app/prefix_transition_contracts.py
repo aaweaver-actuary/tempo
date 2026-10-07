@@ -44,7 +44,7 @@ class CardDisposition(FrozenRecord):
     lifecycle: Literal['preserve', 'create', 'archive', 'blocked']
     owner_before: str | None
     owner_after: str | None
-    kind_after: Literal['prefix', 'response'] | None
+    kind_after: str | None
     state_handling: Literal['preserve', 'fresh', 'blocked']
     # JSON strings keep arbitrary existing schedule/seed data deeply immutable.
     schedule_json: str | None
@@ -78,6 +78,9 @@ class PrefixTransitionPlan(FrozenRecord):
     snapshot_id: str
     transition_snapshot_id: str
     graph_generation: int
+    graph_policy_version: int
+    position_version: int
+    structural_version: int
     study_day: str
     plan_id: str
     status: Literal['no_op', 'ready', 'blocked']

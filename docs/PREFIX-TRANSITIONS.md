@@ -27,6 +27,10 @@ depth changes, complete current/proposed graph steps, and ordered classification
 for cards, memberships, attempts, and delayed/offline submissions. Nested records,
 graph moves, and collections are immutable. Arbitrary existing scheduling and
 seed records are represented as canonical JSON strings to keep them immutable.
+The public pure `plan_transition(snapshot, selected_line_ids, candidate_depths)`
+derives its comparison through the production evaluator; callers do not supply
+an independent proposed graph. Graph policy, position and structural contract
+versions are explicit response fields as well as fingerprint inputs.
 
 `no_op` means neither configuration nor structure changes. A shorter saved depth
 with unchanged presentations is a `ready` depth-only change. `blocked` returns a
@@ -54,6 +58,9 @@ validation-pending targets, suppressed authored-owner fallback, bypassed saved
 splits, changing shared/unselected roles, or altering an existing identity's
 schedule fail closed. Generated memberships outside the current graph block a
 transition if normal publication cleanup would silently remove them.
+Compatible authored targets retain their authoritative kind (including
+`checkpoint`); graph roles do not overwrite it. Existing integrity blocks produce
+actionable blockers naming the issue and repertoire.
 
 Unchanged and reused identities retain their current schedule, review IDs and
 existing seed records. Every plan specifies zero new reviews and zero new clean
@@ -94,10 +101,14 @@ snapshots, revisions, queue origins, attempts/observations, receipts, pending
 commands, and the absence of target IDs. Schedule/history changes invalidate a
 transition plan even when they do not invalidate a structural preview. The study
 day is part of the snapshot; refreshing on another day yields a new plan.
+Pending commands include direct review bindings, nested checkpoint manifests,
+nested study answers, study self-assessment identities, and surviving queue-entry
+bindings. Immutable presentation/queue evidence contexts are fenced too.
 
 `validate_plan_freshness` is a pure fingerprint/integrity check, not authorization
-or locking. #80 must recapture and recompute the exact plan under its authoritative
-concurrency protocol before writes, reject blockers, protect absent-target races,
+or locking. #80 must recapture and recompute the exact plan outside write sections,
+then revalidate its critical fingerprints under authoritative locking before
+writes, reject blockers, protect absent-target races,
 and preserve all planned histories/memberships. Rebuild/publication must honor the
 planned attempt retirement and fresh-state policy without the legacy history
 transfer. Application, receipts, replay, interruption recovery, and publication

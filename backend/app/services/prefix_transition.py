@@ -12,8 +12,8 @@ from ..prefix_transition_contracts import (
     PrefixTransitionPlan, SubmissionDisposition,
 )
 from .opening_graph import GraphStep
-from .opening_segmentation import stable_key
-from .prefix_evaluation import EvaluationSnapshot, PrefixEvaluationError, snapshot_identity, validate_source
+from .opening_segmentation import POLICY_VERSION, POSITION_VERSION, stable_key
+from .prefix_evaluation import EVALUATION_VERSION, EvaluationSnapshot, PrefixEvaluationError, snapshot_identity, validate_source, evaluate_prefix
 from .review_reconciliation import SCHEDULE_COLUMNS
 
 TRANSITION_VERSION = 1
@@ -131,7 +131,9 @@ def iter_transition_plan(snapshot: TransitionSnapshot, selected_line_ids, candid
     reviews_by_card = defaultdict(list)
     for review in snapshot.rows('reviews'):
         reviews_by_card[review['card_id']].append(review['id'])
-    other_steps = snapshot.rows('other_graph_steps')
+    other_steps_by_card = defaultdict(list)
+    for graph_step in snapshot.rows('other_graph_steps'):
+        other_steps_by_card[graph_step['card_id']].append(graph_step)
     card_plans, membership_plans, blockers = [], [], []
     retired_ids, conflicting_ids = set(), set()
 
@@ -145,6 +147,10 @@ def iter_transition_plan(snapshot: TransitionSnapshot, selected_line_ids, candid
             for child_id in sorted(children & current_ids):
                 block('saved_split_conflict', child_id,
                       f'Shortening bypasses saved split {override.source_card_id}. Resolve that saved split explicitly before changing its route depth.')
+    for integrity_block in snapshot.rows('repertoire_integrity_card_blocks'):
+        if integrity_block['card_id'] in affected_ids:
+            block('integrity_conflict', integrity_block['card_id'],
+                  f"Resolve integrity issue {integrity_block['issue_id']} in repertoire {integrity_block['repertoire_id']} before shortening.")
     for publication in snapshot.rows('publications'):
         if (publication['state'] != 'ready' or publication.get('task_generation', 0) is not None
                 and (publication.get('task_generation', 0) > publication['generation']
@@ -170,7 +176,7 @@ def iter_transition_plan(snapshot: TransitionSnapshot, selected_line_ids, candid
             block('missing_card', card_id, 'A source membership has no card. Repair it before shortening.')
         if proposed:
             # Match the publication classifier's union across current repertoires.
-            outside = [step for step in other_steps if step['card_id'] == card_id]
+            outside = other_steps_by_card[card_id]
             has_prefix = any(step.segment_kind == 'prefix' for step in proposed) or any(step['segment_kind'] == 'prefix' for step in outside)
             has_root = any(step.parent_card_id is None for step in proposed) or any(step['parent_card_id'] is None for step in outside)
             kind_after = 'prefix' if has_prefix else 'response'
@@ -272,6 +278,7 @@ def iter_transition_plan(snapshot: TransitionSnapshot, selected_line_ids, candid
         for card in card_plans if card.expected_revision is not None)
     contents = dict(repertoire_id=source.repertoire_id, snapshot_id=snapshot_identity(source),
                     transition_snapshot_id=transition_snapshot_identity(snapshot), graph_generation=source.graph_generation,
+                    graph_policy_version=POLICY_VERSION, position_version=POSITION_VERSION, structural_version=EVALUATION_VERSION,
                     study_day=snapshot.study_day, status='blocked' if blockers else 'ready' if depth_changes else 'no_op',
                     selected_line_ids=tuple(sorted(selected)),
                     depth_changes=depth_changes, current_steps=current_steps, proposed_steps=proposed_steps,
@@ -282,7 +289,10 @@ def iter_transition_plan(snapshot: TransitionSnapshot, selected_line_ids, candid
     return plan.model_copy(update={'plan_id': stable_key('prefix-transition-plan', TRANSITION_VERSION, plan.model_dump(mode='json', exclude={'plan_id'}))})
 
 
-def plan_transition(snapshot, selected_line_ids, candidate_depths, evaluation):
+def plan_transition(snapshot, selected_line_ids, candidate_depths):
+    """Public pure entry point: derive structure using the production evaluator."""
+    validate_shortening(snapshot.source, selected_line_ids, candidate_depths)
+    evaluation = evaluate_prefix(snapshot.source, selected_line_ids, candidate_depths)
     calculation = iter_transition_plan(snapshot, selected_line_ids, candidate_depths, evaluation)
     while True:
         try:
