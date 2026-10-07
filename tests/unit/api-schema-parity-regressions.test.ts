@@ -30,7 +30,7 @@ it("backend sync serialization matches frontend contract across every status and
   const output = execFileSync(resolvePython(), ["-c", `
 import json
 from app.models import GameSyncStatusResponse
-from app.services.game_sync_coordinator import serialize_job
+from app.services.game_sync_serialization import serialize_job
 row = {'id':'11111111-1111-4111-8111-111111111111','status':'queued','created_at':'2026-09-29T12:00:00+00:00','started_at':None,'completed_at':None,'updated_at':'2026-09-29T12:00:00+00:00','error':None,'result_json':json.dumps({'imported':3})}
 statuses = ['queued','running','paused','retrying','failed']
 payloads = []
