@@ -85,7 +85,12 @@ Existing durability coverage verifies attempts/reviews and replay preservation.
 `make docker-durability` was launched at clean `3f18205` with elevated Docker access.
 Its new PostgreSQL proof separately seeds 15,000 locked cards, checks three unlock
 slices, foreground admission without a premature lease, and crash/legacy replay.
-At this evidence commit the run is pending; its final result belongs in the PR handoff.
+It passed every stage, with 914.50 seconds of measured sequential stage intervals;
+schema/CLI recovery accounts for 675.79 seconds. The maximum sparse unlock section
+was 0.063 seconds. Backup restore, study/review preservation, recreation, and cleanup
+passed. Runtime sources were unchanged during the run; an evidence-only documentation
+commit was added. The final follow-up removes an extra blank line from the sparse
+regression and updates this record, without changing runtime behavior or assertions.
 The CI planner selects complete coverage because shared queue/dispatch infrastructure
 changed. No local `make full` is claimed: CI owns the required complete candidate gate.
 
@@ -93,8 +98,10 @@ Logs, fixture-repair failures, source hashes, scenario timings, and resource own
 are retained outside the development clone at
 `test-results/daily-study-recovery-2026-10-07/` in the root checkout. Browser project
 `tempo-pg-regressions-48954-e4472f17` was torn down by its owning runner. Durability
-project `tempo-pg-regressions-49439-958b3343` is owned by this checkout/run; the runner
-records exact containers/images/volumes and teardown commands before cleanup.
+project `tempo-pg-regressions-49439-958b3343` and its CLI child were also torn down.
+The runner records exact containers/images/volumes and teardown commands before
+cleanup. An independent inspection confirmed no remaining containers, volumes,
+networks, or project images across all six task-owned test projects.
 The earlier failed browser fixtures were repaired without changing product timeouts
 or skipping coverage. Shared images, build caches, live data, and other task resources
 are retained. Keep this checkout until the PR is merged or its work is safely preserved.

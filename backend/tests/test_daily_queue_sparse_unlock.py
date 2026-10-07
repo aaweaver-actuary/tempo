@@ -33,5 +33,3 @@ def test_daily_queue_sparse_unlock_does_not_scan_locked_backlog():
             slice_count += 1
         assert slice_count == 3
         assert [row[0] for row in sparse_database.execute("SELECT id FROM cards WHERE state='new' ORDER BY id")] == eligible_ids
-
-
