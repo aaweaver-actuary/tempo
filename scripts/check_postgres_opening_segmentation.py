@@ -197,6 +197,25 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
                       'source_changed_response': 409, 'background_transaction_budget_ms': 50}))
 
 
+def post_transition_when_foreground_idle(client, path, payload):
+    """Honor real foreground leases without hiding database or planner failures."""
+    from app.services import redis_admission_gate
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if redis_admission_gate.foreground_present():
+            time.sleep(0.01)
+            continue
+        response = client.post(path, json=payload)
+        detail = response.json().get('detail', {})
+        if (response.status_code != 503 or not isinstance(detail, dict)
+                or detail.get('code') != 'evaluation_busy'
+                or detail.get('message') != 'Study work is active. Retry the diagnostic when study is idle.'):
+            return response
+        assert response.headers.get('Retry-After') == '1', response.text
+    raise AssertionError('Transition diagnostic never obtained foreground-idle admission within 10 seconds')
+
+
 def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repertoire_id, lines, card_ids, product_snapshot):
     """Release readers, permit a real review, and reject the stale plan."""
     from fastapi.testclient import TestClient
@@ -210,9 +229,11 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
     payload = {'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
                'candidate_depths': {lines[0]['id']: 1}}
     before = product_snapshot()
-    response = client.post(path, json=payload)
+    response = post_transition_when_foreground_idle(client, path, payload)
     assert response.status_code == 200 and response.json()['status'] == 'ready', response.text
-    assert response.json() == client.post(path, json=payload).json()
+    replay = post_transition_when_foreground_idle(client, path, payload)
+    assert replay.status_code == 200, replay.text
+    assert response.json() == replay.json(), {'first': response.json(), 'replay': replay.json()}
     assert product_snapshot() == before
     test_issue79_pending_command_bindings_are_accounted_before_delivery(client, path, payload, card_ids[0], product_snapshot)
     original_connection = postgres_store.connection
@@ -243,7 +264,7 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
     planner_api.iter_transition_plan = paused_calculation
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(client.post, path, json=payload)
+            future = executor.submit(post_transition_when_foreground_idle, client, path, payload)
             assert prepared.wait(5)
             with psycopg.connect(os.environ['TEMPO_DATABASE_READ_URL'], row_factory=dict_row) as observer:
                 observer.execute('SET TRANSACTION READ ONLY')
@@ -267,7 +288,7 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
         planner_api.iter_transition_plan = original_calculation
     # Schedule changes keep the structural selection token, but require a fresh plan.
     assert evaluator_api.snapshot_identity(evaluator_api.load_snapshot(repertoire_id, time.monotonic() + 10)) == source['snapshot_id']
-    replay = client.post(path, json=payload)
+    replay = post_transition_when_foreground_idle(client, path, payload)
     assert replay.status_code == 200 and replay.json()['status'] == 'ready', replay.text
     assert product_snapshot() == after_review
     print(json.dumps({'test': 'test_issue79_readonly_planner_foreground_concurrency_and_stale_replay',
@@ -291,7 +312,7 @@ def test_issue79_pending_command_bindings_are_accounted_before_delivery(client, 
                     "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES(%s,%s,%s,'blocked',%s)",
                     (operation_id, command, operation_id, json.dumps(command_payload)))
         before = product_snapshot()
-        response = client.post(path, json=payload)
+        response = post_transition_when_foreground_idle(client, path, payload)
         assert response.status_code == 200 and response.json()['status'] == 'ready', response.text
         pending_actions = {attempt['object_id']: attempt['action'] for attempt in response.json()['attempts']
                            if attempt['kind'] == 'pending_command'}

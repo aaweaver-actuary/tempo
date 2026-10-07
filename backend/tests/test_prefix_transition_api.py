@@ -163,3 +163,33 @@ def test_issue79_runtime_guard_is_background_query_only_without_command_dispatch
         return await main.prioritize_foreground_requests(request, downstream)
     assert asyncio.run(probe()).status_code == 204
     assert seen == [(True, True)]
+
+
+@pytest.mark.parametrize('message,expected_requests', [
+    ('Study work is active. Retry the diagnostic when study is idle.', 2),
+    ('The diagnostic read service is temporarily unavailable. Retry after study work settles.', 1),
+])
+def test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejection(monkeypatch, message, expected_requests):
+    """Periodic product health leases cannot masquerade as nondeterministic plans."""
+    import importlib.util
+    from pathlib import Path
+    from types import SimpleNamespace
+    from app.services import redis_admission_gate
+
+    script_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_segmentation.py'
+    specification = importlib.util.spec_from_file_location('issue79_postgres_rehearsal', script_path)
+    rehearsal = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(rehearsal)
+    monkeypatch.setattr(redis_admission_gate, 'foreground_present', lambda: False)
+    busy_body = {'detail': {'code': 'evaluation_busy', 'message': message}}
+    busy = SimpleNamespace(status_code=503, headers={'Retry-After': '1'}, text=json.dumps(busy_body), json=lambda: busy_body)
+    ready_body = {'status': 'ready', 'plan_id': 'same-snapshot-plan'}
+    ready = SimpleNamespace(status_code=200, headers={}, text=json.dumps(ready_body), json=lambda: ready_body)
+    responses = iter((busy, ready))
+    requests = []
+    def post(path, *, json):
+        requests.append((path, json))
+        return next(responses)
+    response = rehearsal.post_transition_when_foreground_idle(SimpleNamespace(post=post), '/plan', {'snapshot_id': 'same'})
+    assert len(requests) == expected_requests
+    assert response is (ready if expected_requests == 2 else busy)

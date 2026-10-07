@@ -2166,3 +2166,5 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `documented global browser smoke count and titles match inventory and real collection`
 
 The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.
+
+- Issue #79: `test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejection` keeps real foreground health admission distinct from deterministic plan replay and never retries database/service failures.
