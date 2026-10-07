@@ -185,7 +185,7 @@ PYTHONPATH=backend backend/.venv/bin/python scripts/benchmark-background-diagnos
 It owns a temporary SQLite fixture, rejects configured PostgreSQL URLs and
 compares 1,000 current tasks with zero versus 100,000 raw events, plus 100 matched
 baseline/instrumented transitions. This is compatibility evidence only. The
-regular disposable PostgreSQL `schema_upgrade` scenario additionally invokes
+regular disposable PostgreSQL `background_diagnostics` scenario additionally invokes
 `scripts/check_postgres_background_diagnostics.py`: migration/replay, reclaim,
 concurrent additive counters, rollback, bounded retention and before/after query
 and transition timing in its own database. The transition measurement includes

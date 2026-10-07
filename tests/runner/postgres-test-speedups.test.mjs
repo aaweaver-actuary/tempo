@@ -17,7 +17,7 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
 const fullStages = [
   "compose_config", "image_build", "maintenance_cli", "startup", "service_health",
-  "background_budget", "operation_recovery", "schema_upgrade", "background_workloads",
+  "background_budget", "operation_recovery", "schema_migrations", "priority_recovery", "background_diagnostics", "deployment_lifecycle", "background_workloads",
   "threat_candidate_upsert", "command_recreation", "backup_restore", "browser",
   "study_isolation", "study_durability", "cleanup",
 ];
@@ -45,8 +45,8 @@ test("focused PostgreSQL browser execution excludes maintenance and durability s
   assert.deepEqual(buildPostgresPlaywrightArguments(options), ["playwright", "test", "--grep", "Builder [review]"]);
 });
 
-test("durability mode and legacy skip-browser retain study recovery while omitting only browser execution", () => {
-  const expected = fullStages.filter((stage) => !["browser", "study_isolation"].includes(stage));
+test("durability mode and legacy skip-browser retain ordinary recovery without deployment lifecycle", () => {
+  const expected = fullStages.filter((stage) => !["browser", "study_isolation", "deployment_lifecycle"].includes(stage));
   assert.deepEqual(postgresTestStages(parse(["--mode", "durability"])), expected);
   assert.deepEqual(postgresTestStages(parse(["--skip-browser"])), expected);
   assert.equal(parse(["--mode", "durability"]).skipBrowser, true);
@@ -59,6 +59,33 @@ test("priority benchmark mode runs only its isolated PostgreSQL measurement", ()
   ]);
   assert.throws(() => parse(["--mode", "priority-benchmark", "--browser-grep", "Train"]),
     /cannot be combined/);
+});
+
+test("standalone lifecycle mode requires the complete rehearsal without parent startup or browser work", () => {
+  assert.deepEqual(postgresTestStages(parse(["--mode", "lifecycle"])), [
+    "compose_config", "image_build", "maintenance_cli", "deployment_lifecycle", "cleanup",
+  ]);
+  assert.throws(() => parse(["--mode", "lifecycle", "--browser-file", "studies.spec.ts"]), /cannot be combined/);
+});
+
+test("lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent", async () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  deployment_lifecycle: async () => {");
+  const end = source.indexOf("  background_workloads: async () => {", start);
+  assert(start >= 0 && end > start);
+  for (const mode of ["full", "lifecycle"]) for (const shouldFail of [false, true]) {
+    const calls = [];
+    const rehearsalFailure = new Error("rehearsal failed");
+    const context = { options: { mode }, project: "fixture", environment: {}, candidateRevision: "revision",
+      buildLabels: "labels", compose: ["compose"], join, process: { cwd: () => root },
+      verifyTempoCliLifecycle: async () => { calls.push("rehearsal"); if (shouldFail) throw rehearsalFailure; },
+      run: (_command, args) => calls.push(args.includes("stop") ? "stop" : "restore"),
+      waitForReady: async () => calls.push("ready") };
+    const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
+    if (shouldFail) await assert.rejects(actions.deployment_lifecycle(), error => error === rehearsalFailure);
+    else await actions.deployment_lifecycle();
+    assert.deepEqual(calls, mode === "full" ? ["stop", "rehearsal", "restore", "ready"] : ["rehearsal"]);
+  }
 });
 
 test("valid opponent-branch durability and background fixtures prescribe one White response per position", () => {
@@ -168,7 +195,7 @@ test("full browser coverage creates a fresh durability database before study com
 });
 
 test("full and durability modes cannot silently narrow their browser coverage", () => {
-  for (const mode of ["full", "durability"]) {
+  for (const mode of ["full", "durability", "lifecycle"]) {
     assert.throws(() => parse(["--mode", mode, "--browser-grep", "Builder"]), /cannot be combined/);
   }
   assert.throws(() => parse(["--skip-browser", "--mode", "full"]), /cannot be combined/);
@@ -197,7 +224,7 @@ test("file focus is explicit, discrete, and restricted to an existing browser ba
   }
 });
 
-for (const mode of ["full", "browser", "durability", "priority-benchmark"]) {
+for (const mode of ["full", "browser", "durability", "lifecycle", "priority-benchmark"]) {
   test(`${mode} --list exposes the executable plan without Docker, ports, secrets, or timing files`, (context) => {
     const directory = temporaryDirectory(context);
     const result = spawnSync(process.execPath, [resolve(root, "scripts/test-postgres-docker.mjs"), "--list", "--mode", mode], {
@@ -362,7 +389,7 @@ test("CI isolates cancellation, caches dependencies and requires split complete 
   const layers = readFileSync(join(root, ".github/workflows/verify-layer.yml"), "utf8");
   assert(layers.includes("cache: pip"));
   assert.equal((workflow + layers).split("uses: Swatinem/rust-cache@v2").length - 1, 2);
-  assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, browser, visual, quarantine]"));
+  assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]"));
   assert(workflow.includes("node scripts/ci-quality.mjs"));
   assert(workflow.includes("needs.plan.outputs.scope == 'complete'"));
   assert(workflow.includes("group: tempo-pages-deployment\n      cancel-in-progress: false"));

@@ -4,7 +4,7 @@ Use one Make target for the question you are answering. `make plan` prints the e
 
 Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.
 
-**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`. The default sandbox can deny `127.0.0.1` binding or Docker access. Full, UI, visual, and performance scopes also verify that the pinned container can read the checkout through its Docker bind mount, including `package-lock.json`, before tests begin. This catches isolated checkouts under paths Docker Desktop cannot share. `make preflight` checks all three capabilities alone when diagnosing the environment. This preflight is a capability check, not another test family.
+**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`, plus `make docker-lifecycle`. The default sandbox can deny `127.0.0.1` binding or Docker access. Full, UI, visual, and performance scopes also verify that the pinned container can read the checkout through its Docker bind mount, including `package-lock.json`, before tests begin. This catches isolated checkouts under paths Docker Desktop cannot share. `make preflight` checks all three capabilities alone when diagnosing the environment. This preflight is a capability check, not another test family.
 
 ## Full gate
 
@@ -62,7 +62,8 @@ For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-re
 | View title filter | `make view VIEW=Builder` | Browser tests whose titles match the pattern; focused subset only |
 | Visual and performance | `make visual` | Pinned visual and performance specs |
 | Performance only | `make perf` | Pinned performance specs; subset of `visual` |
-| PostgreSQL durability only | `make docker-durability` | All PostgreSQL recovery and study-durability checks; no browser specs |
+| PostgreSQL durability only | `make docker-durability` | Ordinary PostgreSQL migrations, recovery, workloads, backup/restore and study durability; no browser or deployment lifecycle |
+| Deployment lifecycle only | `make docker-lifecycle` | Complete CLI migration, backup, Redis loading, deployment and recovery rehearsal on its own disposable project |
 | Legacy SQLite compatibility | `make legacy-sqlite` | Former SQLite runtime/browser runner; optional, outside the default full gate |
 
 `make plan TIER=fast`, `TIER=python`, `TIER=backend`, `TIER=rust`, `TIER=integration`, `TIER=ui`, or `TIER=browser` prints that scope's exact stages. A view title filter is convenient during development but is not a claim of complete coverage for that view; use `make ui` or `make full` for the broader gate. Make rejects multiple verification targets in one invocation so a combined command cannot accidentally repeat a suite.
@@ -80,20 +81,31 @@ Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.
 
 ## PostgreSQL execution modes and timings
 
-The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full or durability mode so a filtered run cannot masquerade as a full gate.
+The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability, deployment lifecycle and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full, durability or lifecycle mode so a filtered run cannot masquerade as a full gate.
 
 ```sh
 node scripts/test-postgres-docker.mjs --list --mode browser
 node scripts/test-postgres-docker.mjs --list --mode durability
+node scripts/test-postgres-docker.mjs --list --mode lifecycle
 make ui-file FILE=games-board-context.spec.ts
 make docker-durability
 ```
 
 These are alternative development scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, the relevant subsystem when stable, and the full gate on the final candidate before release. A passing focused run is not evidence that the full gate passed.
 
-Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
+Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. The independent lifecycle mode builds the required current images and maintenance tools, runs the entire CLI rehearsal, and cleans up; it does not start an unused parent application stack. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
 
 The executable scenario plan also drives `--list`. Every invocation writes a separate `postgres-scenarios-<mode>-<project>.json` under `test-results/performance/` (or the explicitly selected `TEMPO_TEST_TIMING_DIR`). It records commit, mode, requested browser filter, planned stages, and measured duration/exit status after each executed stage, including failures and cleanup. It does not copy environment variables or exception payloads into the timing report. Never sum these scenario durations with the enclosing `postgres_docker` duration: they are nested measurements of the same work. CI's existing artifact upload includes the raw scenario reports.
+
+## Deployment lifecycle selection
+
+`schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
+
+The existing immutable CI plan adds a blocking `lifecycle` layer. Its sensitivity rules live alongside the browser inventory, but lifecycle selection does not use browser families or rendering breadth. Migrations/schema readiness, PostgreSQL storage/credential infrastructure, Tempo deployment scripts and entrypoints, backup/restore, Redis recovery, Compose/service images, dependencies and lifecycle/verification harness inputs require it. Sensitive matches override ordinary product/prose exemptions; unclassified infrastructure and missing comparison history select it conservatively. Both names of renames/copies and deleted paths remain classified.
+
+Every complete, nightly, main, merge-group, manual and publishing verification requires lifecycle. Ordinary unrelated PRs record it explicitly as inapplicable, with the corresponding workflow skip and aggregate explanation. Broad browser coverage alone does not make overall verification complete: the overall scope is complete only when lifecycle and the existing full browser/pinned coverage are selected. Browser selection, critical cases, pinned applicability and parallelism are unchanged.
+
+The hashed plan captures the expected PostgreSQL mode and ordered scenario inventory. Layer and quality checks require the matching revision, plan hash, exact scenario inventory and successful results including cleanup; a missing, cancelled, unexpectedly skipped, failed or stale selected lifecycle result blocks quality. The release CLI requires `lifecycle / verify` in complete exact-main CI evidence. No previous-revision results are reused.
 
 ## Cache behavior and isolation
 
@@ -112,7 +124,7 @@ CI retains npm caching and adds pip downloads plus Rust compiler/dependency cach
 `scripts/verification-stages.mjs` defines the existing commands for both the
 unchanged local `make full` and independent CI owners: `ci-frontend` (all units,
 lint, typecheck), `ci-backend` (all Python tests and defense-engine smoke), and
-`ci-build` (Rust format/lint/tests, WASM and local build). PostgreSQL durability,
+`ci-build` (Rust format/lint/tests, WASM and local build). PostgreSQL durability, independently selected deployment lifecycle,
 regular browser verification and pinned visual/performance remain separate
 runner modes. Splitting durability and browsers gives each its own disposable
 stack; the full runner's intervening study isolation is replaced by separate
@@ -128,9 +140,10 @@ complete verification. Selection changes follow in a separate commit.
 ## CI verification tiers and reliability evidence
 
 The CI workflow preserves local `make full` and uses separate frontend,
-backend/engine, Rust/WASM/build, PostgreSQL durability, browser, and pinned
+backend/engine, Rust/WASM/build, PostgreSQL durability, source-selected deployment lifecycle, browser, and pinned
 visual/performance jobs. Every PR runs all units and build checks, all
-PostgreSQL durability scenarios, and the global browser smoke below. Each
+ordinary PostgreSQL durability scenarios, deployment lifecycle when selected,
+and the global browser smoke below. Each
 PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
 containers and remains serial within its stack. GitHub's **Re-run failed jobs**
 repeats a failed layer and its aggregate without repeating successful layers.
@@ -165,7 +178,8 @@ The guided-failure smoke intercepts its failure API; it proves browser outbox
 persistence and reload behavior, not authoritative PostgreSQL review persistence.
 The offline replay smoke likewise intercepts its review response. The existing
 always-required PostgreSQL durability layer retains real review/receipt,
-restart, replay and recovery proof; its scenario selection is unchanged.
+restart, replay and recovery proof. The separate lifecycle boundary retains
+the complete deployment rehearsal when selected.
 
 `scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
 Exact leaf and subsystem mappings add complete consumer families. Study

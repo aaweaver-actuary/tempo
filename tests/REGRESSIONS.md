@@ -1213,7 +1213,7 @@ The regular Python suite includes `backend/tests/test_background_diagnostics.py`
 `tests/unit/background-diagnostics-regressions.test.ts` supplies the named
 Python/TypeScript schema parity, bounded cache and monotonic engine outcome
 regressions. `debug bundle includes only validated aggregate background diagnostics` in `debug-reporting-regressions.test.tsx` protects
-export redaction. The normal PostgreSQL `schema_upgrade` scenario executes
+export redaction. The normal PostgreSQL `background_diagnostics` scenario executes
 `check_postgres_background_diagnostics.py` against a runner-owned database for
 real migration/replay/concurrent counters/lease reclaim/rollback and query cost.
 These are new instrumentation contracts; there was no prior snapshot endpoint
@@ -1559,7 +1559,7 @@ allows the intended derived-label change. The parameterized
 protects queue identity/order/results/admission, review outcomes/invalidation,
 and receipt request/result history through explicit semantic column sets.
 
-The regular PostgreSQL `schema_upgrade` stage invokes
+The PostgreSQL `deployment_lifecycle` stage in full mode and independently selected lifecycle verification invokes
 `scripts/check-tempo-cli.mjs` on its own project/ports/volumes with populated
 schema 16. It proves a real restore-verified backup and upgrade to current,
 including migration 025 normalization of an archived `tactics` card in
@@ -2157,3 +2157,24 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `documented global browser smoke count and titles match inventory and real collection`
 
 The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.
+
+## PostgreSQL deployment lifecycle verification boundary
+
+The regular CI planning and runner wrappers protect the independently selected, mandatory deployment lifecycle boundary. Ordinary durability retains every direct migration, recovery, workload, backup/restore, and study proof; full verification includes the entire CLI rehearsal. Named regressions:
+
+- `lifecycle-sensitive changes require deployment lifecycle verification`
+- `ordinary product changes omit deployment lifecycle independently of browser breadth`
+- `complete verification always requires deployment lifecycle`
+- `migration and schema changes cannot omit deployment lifecycle`
+- `unknown infrastructure and unavailable comparison history require lifecycle`
+- `selected lifecycle failure or missing results blocks aggregate quality`
+- `unselected lifecycle is explicitly inapplicable`
+- `lifecycle reports must match the immutable plan revision mode and scenarios`
+- `full and split PostgreSQL verification preserve every existing proof`
+- `standalone lifecycle mode requires the complete rehearsal without parent startup or browser work`
+- `lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent`
+- `lifecycle --list exposes the executable plan without Docker, ports, secrets, or timing files`
+- `lifecycle executor invokes exactly its planned actions once, including cleanup`
+- `complete release evidence requires the lifecycle job`
+
+The first nine CI cases and the release-evidence case failed against main `6511093` before implementation. They run through the existing CI reliability, PostgreSQL runner, and Tempo CLI Vitest wrappers in the regular gate. Related: roadmap #29, historical completed #45, and merged shutdown repair PR #94 (non-closing references).

@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       visual: ${{ steps.inventory.outputs.visual }}
+      lifecycle: ${{ steps.inventory.outputs.lifecycle }}
       quarantine: ${{ steps.inventory.outputs.quarantine }}
       scope: ${{ steps.inventory.outputs.scope }}
     steps:
@@ -88,6 +89,13 @@ jobs:
     with:
       layer: postgres
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
+  lifecycle:
+    needs: plan
+    if: needs.plan.outputs.lifecycle == 'true'
+    uses: ./.github/workflows/verify-layer.yml
+    with:
+      layer: lifecycle
+      diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   browser:
     needs: plan
     uses: ./.github/workflows/verify-layer.yml
@@ -109,7 +117,7 @@ jobs:
       layer: quarantine
   quality:
     if: always()
-    needs: [plan, frontend, backend, build, postgres, browser, visual, quarantine]
+    needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4

@@ -77,6 +77,7 @@ compose.push("-f", buildLabels);
 const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
+  plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
 });
@@ -832,18 +833,29 @@ const actions = {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_operation_recovery.py"]);
   },
-  schema_upgrade: async () => {
+  schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_upgrade.py"]);
+  },
+  priority_recovery: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_priority_recovery.py"]);
+  },
+  background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_background_diagnostics.py"]);
+  },
+  deployment_lifecycle: async () => {
+    const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
+      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+    if (options.mode === "lifecycle") {
+      await verifyLifecycle();
+      return;
+    }
     const consumers = ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"];
     run("docker", [...compose, "stop", ...consumers]);
     try {
-      await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
-        composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+      await verifyLifecycle();
     } finally {
       run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...consumers]);
       await waitForReady();

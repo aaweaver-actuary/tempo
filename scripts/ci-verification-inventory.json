@@ -1,5 +1,23 @@
 {
   "version": 1,
+  "lifecycle": {
+    "sensitivePaths": [
+      "backend/app/database.py", "backend/app/postgres_store.py", "backend/app/postgres_readiness.py",
+      "backend/app/schema_version.py", "backend/app/celery_app.py", "backend/app/main.py",
+      "backend/app/services/database_executor.py", "backend/app/services/background_runtime.py",
+      "tests/unit/tempo-cli-regressions.test.ts", "tests/unit/ci-reliability-regressions.test.ts",
+      "tests/unit/postgres-test-speedups-regressions.test.ts", "tests/unit/postgres-test-runner-regressions.test.ts",
+      "tests/unit/test-plan-regressions.test.ts", "tests/unit/api-schema-parity-regressions.test.ts"
+    ],
+    "sensitivePrefixes": ["backend/migrations/", "scripts/", "tests/runner/", "docker/", ".github/"],
+    "sensitivePatterns": [
+      "(^|/)Dockerfile($|\\.)", "(^|/)docker-compose[^/]*\\.ya?ml$",
+      "(^|/)[^/]*(migration|schema|upgrade|backup|restore|redis|credential|secret)[^/]*\\.(py|mjs|[cm]?tsx?|json|ya?ml|sh)$"
+    ],
+    "ordinaryPrefixes": ["app/", "backend/app/", "backend/tests/", "tests/unit/", "tests/browser/", "public/", "assets/", "tempo-core/src/"],
+    "ordinaryPaths": ["README.md", "CONTRIBUTING.md", "AGENTS.md"],
+    "ordinaryPatterns": ["^docs/.*\\.md$", "^tempo-core/.*\\.md$"]
+  },
   "families": {
     "board": ["board-geometry.spec.ts", "board-input.spec.ts", "board-interactions.spec.ts", "board-state.spec.ts", "held-drag.spec.ts", "held-drag-preservation.spec.ts", "keyboard-context.spec.ts"],
     "discoveries": ["discovery-viewer.spec.ts", "activity-tray.spec.ts", "training-queue-contention.spec.ts"],
