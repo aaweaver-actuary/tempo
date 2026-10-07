@@ -153,6 +153,12 @@ test("actual browser collection grep selects exactly the planned tests", () => {
   }
   const realCases = collect();
   const planned = verificationPlan({ paths: ["docs/testing.md"], files: readdirSync("tests/browser").filter(file => file.endsWith(".spec.ts")), cases: realCases });
+  const offlineReplay = planned.collection.filter(item => item.file === "phone-offline-training.spec.ts" &&
+    item.title === "prepared phone queue and study worker survive full offline reload and sync one review per attempt");
+  assert(offlineReplay.length > 0, "Phone offline replay must resolve to actual collected cases");
+  assert(offlineReplay.every(item => item.critical && item.selected));
+  assert.throws(() => verificationPlan({ paths: ["docs/testing.md"], files, cases: realCases.filter(item => !offlineReplay.some(offline => offline.id === item.id)) }),
+    /Missing critical browser coverage: offline replay/);
   assert.deepEqual(collect(planned.browserGrep).map(item => item.id).sort(), planned.collection.filter(item => item.selected).map(item => item.id).sort());
   assert.equal(planned.collection.filter(item => item.selected).length, inventory.critical.length);
   const results = browserResults({ suites: [{ specs: [{ id: "case", title: "title", tests: [{ projectName: "chromium", status: "skipped", results: [{ status: "skipped", duration: 0 }] }] }] }] });

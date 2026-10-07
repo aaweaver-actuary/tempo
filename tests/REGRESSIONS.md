@@ -2130,3 +2130,14 @@ PostgreSQL original-history/backup/migration/restart/receipt and incompatible
 fallback regressions remain required. The concurrent-source regression now
 cancels without restarting fallback rather than silently accepting changed work.
 No live study fixture, background audit, release bypass or schema change is used.
+
+## PR #92 review: critical phone offline coverage
+
+`actual browser collection grep selects exactly the planned tests` in
+`tests/runner/ci-reliability.test.mjs`, invoked by the regular CI reliability unit
+file, now explicitly checks that `offline replay` resolves to the collected
+`prepared phone queue and study worker survive full offline reload and sync one review per attempt`
+case and remains critical/selected. Removing that case must still fail planning.
+The reviewed head failed this named regression and the real PR-diff planner with
+`Missing critical browser coverage: offline replay`; only the inventory title is
+repaired, with no planner-enforcement change.

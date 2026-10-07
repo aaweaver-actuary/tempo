@@ -21,7 +21,7 @@
   "critical": [
     { "file": "opening-evidence.spec.ts", "title": "AS-15 a real tab lease releases stranded evidence into a later idle slice", "covers": "passive Web Locks release wakeup and one-journal idle slices" },
     { "file": "recovery.spec.ts", "title": "intentional training failure is saved once and reload resumes it without another failure", "covers": "durable review and reload" },
-    { "file": "phone-offline-training.spec.ts", "title": "prepared phone queue survives API outage reload and syncs its review", "covers": "offline replay" },
+    { "file": "phone-offline-training.spec.ts", "title": "prepared phone queue and study worker survive full offline reload and sync one review per attempt", "covers": "offline replay" },
     { "file": "opening-evidence.spec.ts", "title": "AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive", "covers": "shadow capture foreground isolation" },
     {"file": "opening-evidence.spec.ts", "title": "AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity", "covers": "evidence recovery foreground readiness"},
     {"file": "opening-evidence.spec.ts", "title": "AS-16 restarted opening board records guided arrows and retains the prior partial attempt", "covers": "Restart assistance provenance"},
