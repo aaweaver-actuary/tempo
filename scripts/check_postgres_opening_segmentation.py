@@ -322,6 +322,7 @@ def main():
                         'queue': 'SELECT * FROM daily_queue WHERE card_id=ANY(%s) ORDER BY id',
                     }.items()}
     owned_card_ids = []
+    shared_target_repertoire_id = repertoire_id + '-authored-target'
     operation_id = None
     traversals = []
     original_traverse = worker.presentation_occurrences
@@ -336,6 +337,19 @@ def main():
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)',
                                     (repertoire_id, 'Segmentation rehearsal', 'test.pgn', now))
+            database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)',
+                                    (shared_target_repertoire_id, 'Authored compatible target', 'test.pgn', now))
+            target_step = build_graph(GraphInput(shared_target_repertoire_id, ({'id': 'authored-target',
+                'start_fen': starting_fen, 'moves_json': json.dumps(['e2e4']), 'trained_color': 'white',
+                'learner_decision_count': 1},), 1))[0]
+            created_target = database.execute_native(
+                "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color,canonical_route_source) "
+                "VALUES(%s,%s,'checkpoint',%s,%s,%s,'white',1) ON CONFLICT DO NOTHING RETURNING id",
+                (target_step.card_id, shared_target_repertoire_id, starting_fen, json.dumps(target_step.moves), date.today().isoformat())).fetchone()
+            if created_target:
+                owned_card_ids.append(target_step.card_id)
+                database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',
+                                        (shared_target_repertoire_id, target_step.card_id))
             for line, step in zip(lines, steps):
                 database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)',
                     (line['id'], repertoire_id, line['name'], 'white', starting_fen, line['moves_json'], now))
@@ -469,6 +483,7 @@ def main():
             database.execute_native('DELETE FROM background_tasks WHERE kind=%s AND deduplication_key=%s', ('opening_segmentation', repertoire_id))
             database.execute_native('DELETE FROM cards WHERE id=ANY(%s)', (owned_card_ids,))
             database.execute_native('DELETE FROM repertoires WHERE id=%s', (repertoire_id,))
+            database.execute_native('DELETE FROM repertoires WHERE id=%s', (shared_target_repertoire_id,))
         postgres_store.close_pools()
 
 
