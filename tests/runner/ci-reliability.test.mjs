@@ -1,11 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { inventory, mandatoryLayers, allLayers, changedPathsFromNameStatus, validateInventory, verificationPlan, collectCases } from "../../scripts/ci-verification-plan.mjs";
 import { evaluateQuality, deploymentAllowed } from "../../scripts/ci-quality.mjs";
 import { executeLayer, layerCommands, browserResults } from "../../scripts/ci-run-layer.mjs";
 import { postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
+
+const demotedCriticalCases = [
+  { file: "opening-evidence.spec.ts", family: "training", title: "AS-15 a real tab lease releases stranded evidence into a later idle slice" },
+  { file: "opening-evidence.spec.ts", family: "training", title: "AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive" },
+  { file: "opening-evidence.spec.ts", family: "training", title: "AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity" },
+  { file: "opening-evidence.spec.ts", family: "training", title: "AS-16 restarted opening board records guided arrows and retains the prior partial attempt" },
+  { file: "opening-evidence.spec.ts", family: "training", title: "AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt" },
+  { file: "opening-evidence.spec.ts", family: "training", title: "AS-16 offline compact quota failure blocks advancement until durable retry" },
+  { file: "opening-evidence.spec.ts", family: "training", title: "AS-16 offline evidence quota saves a compact phone review and retains its journal after sync" },
+  { file: "studies.spec.ts", family: "studies", title: "prepared study response is graded offline and replayed with its actual squares" },
+];
+
+let completeBrowserCases;
+function collectBrowserCases(grep) {
+  const result = spawnSync("npx", ["playwright", "test", "--list", "--reporter=json", ...(grep ? ["--grep", grep] : [])], {
+    encoding: "utf8", env: { ...process.env, TEMPO_DOCKER_URL: "http://127.0.0.1:1" }, maxBuffer: 20 * 1024 * 1024,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return collectCases(JSON.parse(result.stdout));
+}
+function currentBrowserCases() { return completeBrowserCases ??= collectBrowserCases(); }
+function selectedIds(planned) { return planned.collection.filter(item => item.selected).map(item => item.id).sort(); }
+
 
 const files = Object.values(inventory.families).flat();
 const cases = files.filter(file => !inventory.families.pinned.includes(file)).flatMap(file => [
@@ -146,19 +169,15 @@ test("failed-layer rerun leaves successful unrelated jobs intact and diagnostic 
 });
 
 test("actual browser collection grep selects exactly the planned tests", () => {
-  const environment = { ...process.env, TEMPO_DOCKER_URL: "http://127.0.0.1:1" };
-  function collect(grep) {
-    const result = spawnSync("npx", ["playwright", "test", "--list", "--reporter=json", ...(grep ? ["--grep", grep] : [])], { encoding: "utf8", env: environment, maxBuffer: 20 * 1024 * 1024 });
-    assert.equal(result.status, 0, result.stderr); return collectCases(JSON.parse(result.stdout));
+  const realCases = currentBrowserCases();
+  for (const paths of [["docs/testing.md"], ["app/domain/opening-segmentation.ts", "tests/REGRESSIONS.md"], ["app/domain/study-exercises.ts"]]) {
+    const planned = plan({ paths, cases: realCases });
+    assert.deepEqual(collectBrowserCases(planned.browserGrep).map(item => item.id).sort(), selectedIds(planned));
   }
-  const realCases = collect();
-  const planned = verificationPlan({ paths: ["docs/testing.md"], files: readdirSync("tests/browser").filter(file => file.endsWith(".spec.ts")), cases: realCases });
-  assert.deepEqual(collect(planned.browserGrep).map(item => item.id).sort(), planned.collection.filter(item => item.selected).map(item => item.id).sort());
-  assert.equal(planned.collection.filter(item => item.selected).length, inventory.critical.length);
+  assert.equal(selectedIds(plan({ cases: realCases })).length, inventory.critical.length);
   const results = browserResults({ suites: [{ specs: [{ id: "case", title: "title", tests: [{ projectName: "chromium", status: "skipped", results: [{ status: "skipped", duration: 0 }] }] }] }] });
   assert.equal(results[0].status, "failed");
 });
-
 
 test("diagnostic artifact failure still cleans owned resources and preserves both failures", async () => {
   const { executeDiagnosticCleanup } = await import("../../scripts/postgres-test-plan.mjs");
@@ -223,4 +242,173 @@ test("current-main integration retains CI and segmentation regression registrati
     const acceptanceId = `AS-${String(acceptanceNumber).padStart(2, "0")}`;
     assert(regressionRegistry.includes(`| ${acceptanceId} |`), `Missing segmentation acceptance mapping: ${acceptanceId}`);
   }
+});
+
+
+test("every current browser spec belongs to exactly one complete family", () => {
+  const currentSpecs = readdirSync("tests/browser").filter(file => file.endsWith(".spec.ts")).sort();
+  assert.deepEqual(Object.values(inventory.families).flat().sort(), currentSpecs);
+  validateInventory(currentSpecs);
+  assert.throws(() => validateInventory([...currentSpecs, "unclassified.spec.ts"]), /Unclassified/);
+  const duplicateSpecInventory = { ...inventory, families: { ...inventory.families, duplicate: [currentSpecs[0]] } };
+  assert.throws(() => validateInventory(currentSpecs, duplicateSpecInventory), /multiple inventory families/);
+});
+
+test("reviewed source mappings reject missing families and duplicate or ambiguous paths", () => {
+  for (const sourceMapping of inventory.sources) {
+    assert(sourceMapping.reason?.trim(), "Every narrowed source group needs its consumer rationale");
+    for (const mappedPath of sourceMapping.paths) assert(existsSync(mappedPath), `Stale source mapping: ${mappedPath}`);
+  }
+  for (const invalidMapping of [
+    { paths: ["unclassified.ts"], families: ["missing"] },
+    { paths: ["unclassified.ts"], families: [] },
+    { paths: ["unclassified.ts"], families: ["training", "training"] },
+    { paths: ["unclassified.ts"], families: ["pinned"] },
+    { paths: ["/absolute.ts"], families: ["training"] },
+    { paths: ["../outside.ts"], families: ["training"] },
+    { paths: [""], families: ["training"] },
+    { paths: [inventory.sources[0].paths[0]], families: ["studies"] },
+  ]) assert.throws(() => plan({ sourceInventory: { ...inventory, sources: [...inventory.sources, invalidMapping] } }), /source mapping/i);
+});
+
+test("demoted critical cases remain required by their complete browser families", () => {
+  const realCases = currentBrowserCases();
+  for (const demoted of demotedCriticalCases) {
+    assert(inventory.families[demoted.family].includes(demoted.file));
+    const planned = plan({ cases: realCases, paths: [`tests/browser/${demoted.file}`] });
+    const matchingCases = planned.collection.filter(item => item.file === demoted.file && item.title === demoted.title);
+    assert(matchingCases.length, `Demoted case disappeared: ${demoted.title}`);
+    assert(matchingCases.every(item => !item.critical && item.selected && item.nightly && item.release), demoted.title);
+    assert.deepEqual(planned.families, [demoted.family]);
+    assert(planned.collection.filter(item => inventory.families[demoted.family].includes(item.file)).every(item => item.selected));
+  }
+});
+
+test("ordinary prose and standalone core tests select only six global browser smoke cases", () => {
+  assert.equal(inventory.critical.length, 6);
+  const proseAndCorePaths = ["docs/testing.md", "README.md", "CONTRIBUTING.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md",
+    "app/components/README.md", "tests/browser/README.md", "tests/REGRESSIONS.md", "tests/unit/study-regressions.test.tsx", "backend/tests/test_studies.py"];
+  const realCases = currentBrowserCases();
+  const criticalIds = plan({ cases: realCases }).collection.filter(item => item.critical).map(item => item.id).sort();
+  assert.equal(criticalIds.length, 6);
+  for (const paths of [...proseAndCorePaths.map(path => [path]), proseAndCorePaths]) {
+    const planned = plan({ cases: realCases, paths });
+    assert.equal(planned.scope, "targeted", paths.join(", "));
+    assert.deepEqual(planned.families, []);
+    assert.deepEqual(selectedIds(planned), criticalIds);
+    assert(mandatoryLayers.every(layer => planned.jobs[layer].required));
+  }
+});
+
+test("mapped leaf changes retain critical plus their family with regression additions", () => {
+  const realCases = currentBrowserCases();
+  const planned = plan({ cases: realCases, paths: ["app/domain/opening-segmentation.ts",
+    "tests/unit/opening-segmentation-regressions.test.tsx", "backend/tests/test_opening_segmentation.py", "tests/REGRESSIONS.md"] });
+  assert.equal(planned.scope, "targeted");
+  assert.deepEqual(planned.families, ["repertoire"]);
+  assert.equal(planned.jobs.visual.applicable, false);
+  const expectedIds = planned.collection.filter(item => item.critical || inventory.families.repertoire.includes(item.file)).map(item => item.id).sort();
+  assert.deepEqual(selectedIds(planned), expectedIds);
+});
+
+test("shared subsystem sources select complete consumer families without unrelated families", () => {
+  const examples = [
+    ["app/lib/opening-evidence-recovery-policy.ts", ["training"]],
+    ["app/hooks/use-opening-evidence-recovery.ts", ["training"]],
+    ["backend/app/services/postgres_opening_evidence.py", ["training"]],
+    ["app/lib/opening-evidence-review.ts", ["defense", "training"]],
+    ["app/domain/study-exercises.ts", ["studies", "training"]],
+    ["backend/app/services/study_grading.py", ["studies", "training"]],
+    ["backend/app/services/opening_segmentation.py", ["repertoire", "training"]],
+    ["app/lib/discovery-preview-scheduler.ts", ["discoveries", "training"]],
+    ["app/lib/comparison.ts", ["games"]],
+  ];
+  for (const [sourcePath, expectedFamilies] of examples) {
+    const planned = plan({ paths: [sourcePath, "tests/REGRESSIONS.md"] });
+    assert.equal(planned.scope, "targeted", sourcePath);
+    assert.deepEqual(planned.families, expectedFamilies, sourcePath);
+    const requiredSpecs = new Set(expectedFamilies.flatMap(family => inventory.families[family]));
+    assert.deepEqual(selectedIds(planned), planned.collection.filter(item => item.critical || requiredSpecs.has(item.file)).map(item => item.id).sort(), sourcePath);
+  }
+  for (const [sourcePath, expectedFamilies] of [["app/views/studies_view.tsx", ["studies", "training"]], ["app/views/comparison_view.tsx", ["games"]]]) {
+    const planned = plan({ paths: [sourcePath] });
+    assert.deepEqual(planned.families, expectedFamilies);
+    assert(planned.jobs.visual.required, "Narrow browser families must retain pinned rendering checks");
+  }
+});
+
+test("cross-cutting browser infrastructure and uncertain inputs require the complete matrix", () => {
+  const crossCuttingPaths = ["playwright.config.ts", "tests/browser/ui-fixtures.ts", "tests/browser/product-fixtures.ts",
+    "tests/browser/observability.ts", "tests/fixtures/study-grading.json", "tests/unit/keyboard-board-fixture.tsx", "backend/tests/conftest.py",
+    "app/components/board/chessboard.tsx", "app/state/training-store.ts", "app/domain/schemas/index.ts", "app/lib/operation-status.ts",
+    "app/lib/offline-training.ts", "backend/app/main.py", "backend/app/database.py", "backend/migrations/001_initial.sql",
+    "scripts/ci-verification-plan.mjs", "scripts/test-postgres-docker.mjs", "tests/runner/ci-reliability.test.mjs",
+    "package.json", "package-lock.json", ".github/workflows/pages.yml", "unclassified/new-source.ts", "unclassified/new-file.md"];
+  for (const path of crossCuttingPaths) {
+    const planned = plan({ paths: ["app/domain/opening-segmentation.ts", path] });
+    assert.equal(planned.scope, "complete", path);
+    assert.equal(selectedIds(planned).length, cases.length, path);
+    assert(planned.jobs.visual.required, path);
+  }
+  assert.equal(selectedIds(plan({ comparisonAvailable: false })).length, cases.length);
+});
+
+test("renamed and copied subsystem paths union both complete family selections", () => {
+  for (const status of ["R100", "C100"]) {
+    const paths = changedPathsFromNameStatus(`${status}\0app/lib/comparison.ts\0app/domain/study-exercises.ts\0`);
+    assert.deepEqual(plan({ paths }).families, ["games", "studies", "training"]);
+  }
+  assert.deepEqual(plan({ paths: changedPathsFromNameStatus("D\0app/lib/comparison.ts\0") }).families, ["games"]);
+});
+
+test("complete verification and non-PR boundaries retain the full collected browser matrix", () => {
+  const realCases = currentBrowserCases();
+  const full = plan({ cases: realCases, complete: true, paths: ["docs/testing.md"] });
+  assert.deepEqual(selectedIds(full), realCases.map(item => item.id).sort());
+  for (const project of ["chromium", "firefox", "webkit"]) assert(full.collection.some(item => item.selected && item.project === project));
+  assert(!layerCommands("browser", full).at(-1)[2].includes("--browser-grep"));
+  const workflow = readFileSync(".github/workflows/pages.yml", "utf8");
+  const selectionBlock = workflow.match(/          if \[ "\$TEMPO_EVENT" = pull_request \]; then\n[\s\S]*?          fi/)?.[0];
+  assert(selectionBlock, "Missing explicit PR versus complete planning boundary");
+  for (const event of ["pull_request", "push", "schedule", "merge_group", "workflow_dispatch"]) {
+    const result = spawnSync("bash", ["-c", 'node() { printf "%s\\n" "$@"; }\n' + selectionBlock], {
+      encoding: "utf8", env: { ...process.env, TEMPO_EVENT: event, TEMPO_BASE: "base-revision" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.stdout.trim().split("\n"), ["scripts/ci-verification-plan.mjs", ...(event === "pull_request" ? ["--base", "base-revision"] : ["--complete"])]);
+  }
+});
+
+test("browser quality rejects missing extra duplicate wrong-project and stale results", () => {
+  const invalidResults = [
+    report => report.tests.pop(),
+    report => report.tests.push({ id: "extra:chromium", status: "passed", retries: 0 }),
+    report => { report.tests[0] = { ...report.tests[1] }; },
+    report => { report.tests[0].id = report.tests[0].id.replace(/:[^:]+$/, report.tests[0].id.endsWith(":chromium") ? ":webkit" : ":chromium"); },
+    report => { report.commit = "older-revision"; },
+    report => { report.planHash = "another-plan"; },
+    report => { report.tests[0].status = "skipped"; },
+    report => { report.tests[0].status = "failed"; },
+    report => { report.tests[0].retries = 1; },
+  ];
+  for (const complete of [false, true]) {
+    const planned = plan({ complete, cases: currentBrowserCases() });
+    for (const invalidate of invalidResults) {
+      const { needs, reports } = successfulResults(planned);
+      assert(evaluateQuality(planned, needs, reports).success);
+      invalidate(reports.browser);
+      assert.equal(evaluateQuality(planned, needs, reports).success, false, invalidate.toString());
+    }
+  }
+});
+
+test("documented global browser smoke count and titles match inventory and real collection", () => {
+  const documentation = readFileSync("docs/testing.md", "utf8");
+  const documentedCount = documentation.match(/^Global critical browser smoke: \*\*(\d+) cases\*\*\.$/m);
+  assert(documentedCount, "Document the authoritative smoke count explicitly");
+  const documentedGlobalCases = [...documentation.matchAll(/^\| `([^`]+)` \| `([^`]+)` \| global \|/gm)].map(match => `${match[1]}:${match[2]}`).sort();
+  assert.deepEqual(documentedGlobalCases, inventory.critical.map(item => `${item.file}:${item.title}`).sort());
+  assert.equal(Number(documentedCount[1]), inventory.critical.length);
+  assert.equal(Number(documentedCount[1]), plan({ cases: currentBrowserCases() }).collection.filter(item => item.critical).length);
+  for (const demoted of demotedCriticalCases) assert(documentation.includes(`| \`${demoted.file}\` | \`${demoted.title}\` | family |`), demoted.title);
 });

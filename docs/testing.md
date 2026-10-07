@@ -130,23 +130,78 @@ complete verification. Selection changes follow in a separate commit.
 The CI workflow preserves local `make full` and uses separate frontend,
 backend/engine, Rust/WASM/build, PostgreSQL durability, browser, and pinned
 visual/performance jobs. Every PR runs all units and build checks, all
-PostgreSQL durability scenarios, and seven critical browser cases covering
-review/reload, offline replay, fail-closed reads, Study grading, foreground
-contention and held drags. Each PostgreSQL/browser invocation owns fresh
-ports, credentials, volumes and containers and remains serial within its
-stack. GitHub's **Re-run failed jobs** repeats a failed layer and its aggregate,
-without repeating successful unrelated layers.
+PostgreSQL durability scenarios, and the global browser smoke below. Each
+PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
+containers and remains serial within its stack. GitHub's **Re-run failed jobs**
+repeats a failed layer and its aggregate without repeating successful layers.
+
+Global critical browser smoke: **6 cases**.
+
+The table audits all 14 cases previously designated critical. A global case
+protects a shared browser invariant needed on ordinary PRs. A family case stays
+unchanged and required whenever its complete family is selected, and at every
+complete boundary. Lower-level coverage is complementary; it does not replace
+the retained browser proof. All listed unit/backend files remain in mandatory
+PR verification.
+
+| Spec | Exact case title | Required tier | Unique browser invariant and decision | Complete family | Existing lower-level coverage |
+| --- | --- | --- | --- | --- | --- |
+| `recovery.spec.ts` | `intentional training failure is saved once and reload resumes it without another failure` | global | Browser failure outbox drains once, and reload resumes guided state without a duplicate failure. Shared save/reload invariant. | training | `tests/unit/training-failure-outbox-regressions.test.ts` |
+| `phone-offline-training.spec.ts` | `prepared phone queue survives API outage reload and syncs its review` | global | Real browser shell/storage survives outage and reload; ordered review replay does not repeat after confirmation. Shared offline invariant. | training | `tests/unit/offline-shell-regressions.test.ts`, `backend/tests/test_phone_offline_training.py` |
+| `recovery.spec.ts` | `failed initial loads never display empty records or zero statistics` | global | Service failure shows an actionable error instead of fabricated empty Games/Progress data. Shared fail-closed invariant. | training | Complementary validation/error boundaries in `tests/unit/validated-data-regressions.test.ts` and `tests/unit/status-polling-regressions.test.tsx` |
+| `studies.spec.ts` | `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` | global | A real PostgreSQL-backed Study can be authored, enrolled, answered and assessed through the workspace. One shared Study workflow. | studies | `tests/unit/study-exercise-grading.test.ts`, `backend/tests/test_studies.py` |
+| `training-queue-contention.spec.ts` | `discovery preview backlog leaves a prompt foreground training queue refresh` | global | Background previews retain bounded concurrency/work classification while foreground queue refresh completes promptly. Shared foreground priority invariant. | discoveries | `tests/unit/discovery-preview-scheduler-regressions.test.ts` |
+| `held-drag-preservation.spec.ts` | `held training drag survives sync, service, notification and parent updates and drops once` | global | A real held piece survives unrelated updates without lease resets and drops exactly once. Shared input-preservation invariant. | board | `tests/unit/board-drag-preservation-regressions.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-15 a real tab lease releases stranded evidence into a later idle slice` | family | Real cross-tab Web Locks release wakes stranded evidence without reconnect; one-journal slices preserve ownership. Opening-specific recovery. | training | `tests/unit/opening-evidence-recovery-lifecycle.test.tsx`, `tests/unit/opening-evidence-recovery-slices.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive` | family | A stalled optional checkpoint cannot block real piece placement or aggregate review. Opening-specific persistence seam; shared foreground smoke remains global. | training | `tests/unit/opening-evidence-regressions.test.ts`, `tests/unit/opening-evidence-background-admission.test.ts` |
+| `opening-evidence.spec.ts` | `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity` | family | Recovered journals wait for startup readiness and browser idle admission before delivery. Opening-specific admission policy. | training | `tests/unit/opening-evidence-home-lifecycle.test.tsx`, `tests/unit/opening-evidence-recovery-policy.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-16 restarted opening board records guided arrows and retains the prior partial attempt` | family | Restart preserves prior partial evidence and records newly rendered guidance as assistance. Opening-specific provenance. | training | `tests/unit/opening-evidence-home-lifecycle.test.tsx`, `tests/unit/opening-evidence-regressions.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` | family | Optional-evidence quota fallback preserves the aggregate and IndexedDB journal despite a late receipt. Opening-specific quota/recovery boundary. | training | `tests/unit/opening-evidence-regressions.test.ts`, `tests/unit/opening-evidence-review-deadlines.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 offline compact quota failure blocks advancement until durable retry` | family | Failure to persist the essential compact phone review blocks advancement until storage retry succeeds. Opening-specific fallback path. | training | `tests/unit/opening-evidence-offline-quota.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync` | family | Optional-evidence quota permits a durable compact phone review with stable aggregate-only identity and retained evidence after sync. Opening-specific quota path. | training | `tests/unit/opening-evidence-offline-quota.test.ts`, `tests/unit/opening-evidence-regressions.test.ts` |
+| `studies.spec.ts` | `prepared study response is graded offline and replayed with its actual squares` | family | Prepared Study grading stores and replays the actual square answer with its revision/queue identity. Study-specific grading; shared phone replay remains global. | studies | `tests/unit/study-exercise-grading.test.ts`, `backend/tests/test_phone_offline_training.py`, `backend/tests/test_studies.py` |
+
+The guided-failure smoke intercepts its failure API; it proves browser outbox
+persistence and reload behavior, not authoritative PostgreSQL review persistence.
+The offline replay smoke likewise intercepts its review response. The existing
+always-required PostgreSQL durability layer retains real review/receipt,
+restart, replay and recovery proof; its scenario selection is unchanged.
 
 `scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
-Mapped leaf edits add complete browser families; shared board/state/contracts,
-scheduling, migrations, fixtures, runner and dependency changes, unknown paths,
-or missing comparison history select every browser case and pinned checks.
-Both names of renamed/copied files and deleted paths are classified. All TSX
-rendering edits and rendering assets select pinned visual/performance.
-Documentation under `docs/` and the root README retain required core,
-durability and critical checks. Adding an unclassified browser spec fails
-planning. PR #50 is merged into main; its opening-segmentation spec belongs to
-the repertoire family and participates in current collection and selection.
+Exact leaf and subsystem mappings add complete consumer families. Study
+contracts/grading select both Studies and training; opening recovery selects
+training; the review-delivery helper also selects defense because it serves
+ordinary defensive-card saves. Backend segmentation helpers additionally
+select training because they build opening-evidence manifests. Mapping reasons
+record these consumers; missing families and duplicate/ambiguous paths fail
+planning. New executable paths do not inherit coverage from a directory prefix.
+
+Ordinary Markdown under `docs/`, repository README files, explicitly listed
+root prose and `tests/REGRESSIONS.md` retain mandatory core/durability checks
+and the global smoke. Standalone `tests/unit/*.test.ts(x)` and
+`backend/tests/test_*.py` likewise retain the always-complete core tests without
+adding browser families. Consequently, adding a feature's regression and
+registration cannot erase its reviewed source selection. Shared helpers,
+fixtures, executable examples/data and runner configuration do not receive
+this exception. Unknown Markdown outside these reviewed prose locations stays
+conservative too.
+
+Shared board/state/contracts, global browser fixtures, runners, dependencies,
+migrations, unknown executable paths and missing comparison history select
+every browser family and pinned checks. Both names of renamed/copied files and
+deleted paths participate in the union. All TSX rendering edits and rendering
+assets retain pinned visual/performance selection. Adding an unclassified
+browser spec fails planning; all regular and pinned specs have exactly one
+family. Unknown or cross-cutting changes remain complete even when another
+changed source has a narrow mapping.
+
+The regular CI reliability suite checks this documented smoke count and the
+exact global titles against the inventory and actual Playwright collection.
+The planner prints the collected global-critical and selected/total counts
+dynamically. Intentional smoke changes must update the inventory, audit and
+regressions together. Complete coverage uses all collected cases rather than
+a frozen numeric total, including Firefox/WebKit cross-browser projects.
+
 
 The plan job actually collects all regular and pinned cases. Its immutable
 plan and collection report record IDs, projects, titles, selection reasons,
