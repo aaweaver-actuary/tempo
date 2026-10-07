@@ -2172,9 +2172,10 @@ The regular CI planning and runner wrappers protect the independently selected, 
 - `lifecycle reports must match the immutable plan revision mode and scenarios`
 - `full and split PostgreSQL verification preserve every existing proof`
 - `standalone lifecycle mode requires the complete rehearsal without parent startup or browser work`
+- `standalone lifecycle prepares dependency images on a cold Docker daemon`
 - `lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent`
 - `lifecycle --list exposes the executable plan without Docker, ports, secrets, or timing files`
 - `lifecycle executor invokes exactly its planned actions once, including cleanup`
 - `complete release evidence requires the lifecycle job`
 
-The first nine CI cases and the release-evidence case failed against main `6511093` before implementation. They run through the existing CI reliability, PostgreSQL runner, and Tempo CLI Vitest wrappers in the regular gate. Related: roadmap #29, historical completed #45, and merged shutdown repair PR #94 (non-closing references).
+The first nine CI cases and the release-evidence case failed against main `6511093` before implementation. The cold-image regression failed against the initial separation candidate `74dd70f`; a fresh CI daemon exposed missing dependency images because standalone mode does not start a parent stack. They run through the existing CI reliability, PostgreSQL runner, and Tempo CLI Vitest wrappers in the regular gate. Related: roadmap #29, historical completed #45, and merged shutdown repair PR #94 (non-closing references).

@@ -68,6 +68,33 @@ test("standalone lifecycle mode requires the complete rehearsal without parent s
   assert.throws(() => parse(["--mode", "lifecycle", "--browser-file", "studies.spec.ts"]), /cannot be combined/);
 });
 
+test("standalone lifecycle prepares dependency images on a cold Docker daemon", async () => {
+  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
+  const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
+  assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
+  for (const mode of ["lifecycle", "durability", "full", "browser", "priority-benchmark"]) {
+    const servicesWithAvailableImages = new Set();
+    const imagePreparationCommands = [];
+    const imagePreparationContext = { options: { mode }, compose: ["compose"], resourcesCreated: false,
+      run: (_command, args) => {
+        imagePreparationCommands.push(args);
+        if (args.includes("build")) servicesWithAvailableImages.add("application");
+        if (args.includes("pull")) for (const service of args.slice(args.indexOf("pull") + 1)) servicesWithAvailableImages.add(service);
+      } };
+    await runInNewContext(`({${runnerSource.slice(imageBuildStartIndex, maintenanceCliStartIndex)}})`, imagePreparationContext).image_build();
+    assert(imagePreparationContext.resourcesCreated, "Owned image cleanup is armed before preparation");
+    assert(servicesWithAvailableImages.has("application"));
+    if (mode === "lifecycle") {
+      for (const service of ["postgres", "redis"])
+        assert(servicesWithAvailableImages.has(service), `Rehearsal cannot inspect the missing ${service} image on a cold daemon`);
+    } else {
+      assert(!imagePreparationCommands.some(args => args.includes("pull")), "Other modes retain their existing startup prerequisites");
+    }
+    assert(!imagePreparationCommands.some(args => args.includes("up")), "Image preparation must not start parent services");
+  }
+});
+
 test("lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent", async () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf("  deployment_lifecycle: async () => {");
