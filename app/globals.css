@@ -4101,3 +4101,22 @@ button {
   .canonical-prefix-dialog { padding: 16px; gap: 8px; }
   .canonical-prefix-board { width: min(240px, 100%); }
 }
+
+/* Read-only route/depth comparisons share the repertoire dialog contract. */
+.prefix-comparison-dialog { width: min(1100px, 100%); padding: 24px; max-height: calc(100dvh - 40px); overflow-y: auto; overflow-wrap: anywhere; }
+.prefix-comparison-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.prefix-comparison-header h2 { min-width: 0; }
+.prefix-comparison-dialog label { display: flex; flex-direction: column; gap: 4px; margin-block: 8px; }
+.prefix-comparison-dialog select, .prefix-comparison-dialog input:not([type="checkbox"]) { width: 100%; max-width: 100%; min-height: 44px; }
+.prefix-source-lines { max-height: 300px; overflow-y: auto; padding: 4px; border: 1px solid var(--line); }
+.prefix-source-lines > label { flex-direction: row; align-items: flex-start; gap: 12px; padding: 8px; min-height: 44px; }
+.prefix-source-lines input { flex: 0 0 auto; margin-top: 6px; }
+.prefix-source-lines span { min-width: 0; }
+.prefix-comparison-dialog summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
+.prefix-comparison-scopes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.prefix-scope-results { min-width: 0; }
+.prefix-scope-results table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.prefix-scope-results th, .prefix-scope-results td { padding: 6px 4px; text-align: left; border-bottom: 1px solid var(--line); }
+.prefix-scope-results th:first-child { width: 48%; }
+.prefix-candidate { margin-top: 24px; border-top: 1px solid var(--line); }
+@media (max-width: 767px) { .prefix-comparison-dialog { padding: 16px; } .prefix-comparison-scopes { grid-template-columns: minmax(0, 1fr); } }

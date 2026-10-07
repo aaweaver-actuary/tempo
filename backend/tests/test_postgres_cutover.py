@@ -6054,7 +6054,7 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
     assert any(statement.startswith("INSERT INTO repertoire_priority_jobs")
                and parameters[0] == "rep" for statement, parameters in statements)
     assert sum(statement.startswith("WITH queued AS") for statement, _ in statements) == (
-        2 + int(not remaining_nodes)
+        3
     )
 
 
@@ -6366,6 +6366,9 @@ def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeyp
     from app.services import postgres_coverage_explorer
 
     statements = []
+    refreshes = []
+    monkeypatch.setattr(postgres_coverage_explorer, "enqueue_opportunity_refresh_in_transaction",
+                        lambda database, repertoire_id: refreshes.append(repertoire_id))
 
     class Database:
         def execute_native(self, statement, parameters=()):
@@ -6383,6 +6386,8 @@ def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeyp
     assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
                and "Explorer token" in parameters[0]
                for statement, parameters in statements)
+
+    assert refreshes == ["rep"]
 
 
 def test_postgres_explorer_terminal_failure_marks_run_failed(monkeypatch):
