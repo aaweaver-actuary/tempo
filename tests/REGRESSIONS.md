@@ -1416,7 +1416,7 @@ this input adaptation.
 - `AS-15 recovery cancels idle work during foreground transitions and after unmount`, `AS-15 only the current queue generation can settle recovery readiness`, `AS-15 overlapping recovery shares one scan and failed storage remains retryable` — lifecycle cancellation, empty valid queue, unavailable queue, generations and coalescing.
 - `AS-16 wrong-response reveal remains revealed` — real Home move handling keeps post-error assistance distinct from Restart guidance.
 - `AS-16 quota fallback reload and ambiguous retries retain the compact payload and key (QuotaExceededError/NS_ERROR_DOM_QUOTA_REACHED)`, `AS-16 denied initial review storage never switches to aggregate-only (SecurityError/InvalidStateError/NotAllowedError)`, `AS-16 unknown initial review storage failure remains blocking` — durable capacity-fallback identity and fail-closed non-quota or non-DOMException storage errors, including an unverified object with the Firefox quota name.
-- `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity`, `AS-16 restarted opening board records guided arrows and retains the prior partial attempt`, `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` — regular critical browser workflows for orphan recovery, rendered Restart guidance, aggregate advancement, retained IndexedDB data and in-flight receipt safety.
+- `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity`, `AS-16 restarted opening board records guided arrows and retains the prior partial attempt`, `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` — regular training-family browser workflows for orphan recovery, rendered Restart guidance, aggregate advancement, retained IndexedDB data and in-flight receipt safety.
 - `test_opening_checkpoint_request_is_background_without_a_client_work_class_header` — actual HTTP middleware keeps standalone checkpoint receipt admission out of its own foreground lease; legacy clients need no new header, and review requests stay foreground.
 
 ### PR #69 — preserve shadow-only GET admission
@@ -1447,7 +1447,7 @@ These regressions run in `tests/unit/opening-evidence-background-admission.test.
 
 Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests/unit/opening-evidence-recovery-slices.test.tsx`, alongside existing live-delivery, Home, outbox, browser and PostgreSQL contracts. Offline aggregate ownership and live flush behavior remain authoritative.
 
-- `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync`; `AS-16 offline compact quota failure blocks advancement until durable retry` — real IndexedDB transactions and phone UI prove compact durability, blocking failure/retry, aggregate-only sync identity and retained evidence across reload. Registered critical browser inventory.
+- `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync`; `AS-16 offline compact quota failure blocks advancement until durable retry` — real IndexedDB transactions and phone UI prove compact durability, blocking failure/retry, aggregate-only sync identity and retained evidence across reload. Required in the training browser family and complete matrix.
 - `AS-15 reconnect requests share an active recovery slice without concurrent journal work`; `AS-15 a live browser lease yields to later recovery journals without closing its attempt`; `AS-15 recovery leaves completions owned by pending aggregate reviews and retained evidence untouched` — serialized reconnects, lease safety/fairness and aggregate ownership exclusions.
 - `AS-16 aggregate phone storage quota without evidence remains blocking` — quota fallback is restricted to optional evidence; the successful quota case covers modern and legacy Firefox quota names.
 - `AS-15 live flushing requested during a recovery slice keeps its normal delivery behavior` — shared serialization does not drop a live caller's pending checkpoint work or expand the recovery slice itself.
@@ -1469,7 +1469,7 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 - `AS-15 orphan completion verification timeout yields and retries safely` — a stalled background GET releases the coalesced recovery promise after 15s without changing journal state; a later 404 yields one partial checkpoint.
 - `AS-15 lease-blocked opening evidence is retried after the owning tab releases it`; `AS-15 live lease retry does not create an idle recovery loop` — held A and later B/C progress, passive ownership release wakes the actual hook after backlog drains, foreground/idle checks, no polling and coalesced releases.
 - `AS-15 unmount cancels passive lease waiters without running recovery`; `AS-15 orphan verification response body shares its bounded deadline` — cancellation and full response-read boundaries.
-- `AS-15 a real tab lease releases stranded evidence into a later idle slice` — real two-tab Web Locks, B/C drain while A remains held, tab close wakes idle recovery without reconnect/reload; frozen retry and partial seal remain separate slices. Critical browser inventory.
+- `AS-15 a real tab lease releases stranded evidence into a later idle slice` — real two-tab Web Locks, B/C drain while A remains held, tab close wakes idle recovery without reconnect/reload; frozen retry and partial seal remain separate slices. Required in the training browser family and complete matrix.
 - `AS-16 guided review failure receipt shares the foreground review deadline` — existing Again/failure command also retains its signal through receipt confirmation without demoting foreground admission.
 
 - `AS-15 blocked opening-evidence operations do not automatically resubmit during idle recovery` — real hook/journal POST 202 and typed blocked receipt preserve the frozen checkpoint, events and operation identity without automatic retry or rejection. Coverage: `tests/unit/opening-evidence-recovery-policy.test.tsx`.
@@ -2133,3 +2133,27 @@ Disposable PostgreSQL backup shutdown (October 7, 2026; related performance work
 - The real PostgreSQL durability runner retains every lifecycle, recovery,
   restart, backup/restore, and resource-ownership assertion. Production's
   60-second shutdown allowance and recurring backup loop are unchanged.
+
+## Ordinary PR browser selection
+
+Browser selection only; the existing CI reliability wrapper runs these Node regressions in the regular frontend gate. Product cases and PostgreSQL durability remain unchanged.
+
+`CI reliability planning and browser selection regressions pass in the regular suite` — `tests/unit/ci-reliability-regressions.test.ts` executes the complete Node suite and confirms the demotion and documented-count checks ran.
+
+The retained `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` case also guards small-smoke startup independence: a six-case run exposed a real `refreshing` initial projection before phone preparation, which correctly refused incomplete data. The case now waits for the real ready projection before opening its browser workflow, within the existing 60-second test budget. Its authoring, prepared storage, real grading and export assertions remain intact; all eight demoted cases are unchanged. The failed run and trace are retained as diagnosis, not timing evidence.
+
+`repertoire limits update today's queue, persist after reload, and reset to default` — the complete repertoire-family run exposed its dependence on an unrelated product test clearing prior imports. The trace showed `segmentation-1280` still owned the shared queued cards, so filtering by the new import's repertoire yielded zero. This spec now uses the existing disposable-product fixture before its unchanged limit, failed-save/retry, reload and reset assertions. The failed family run/trace is retained; no product behavior or shared fixture was changed.
+
+- `every current browser spec belongs to exactly one complete family`
+- `reviewed source mappings reject missing families and duplicate or ambiguous paths`
+- `demoted critical cases remain required by their complete browser families`
+- `ordinary prose and standalone core tests select only six global browser smoke cases`
+- `mapped leaf changes retain critical plus their family with regression additions`
+- `shared subsystem sources select complete consumer families without unrelated families`
+- `cross-cutting browser infrastructure and uncertain inputs require the complete matrix`
+- `renamed and copied subsystem paths union both complete family selections`
+- `complete verification and non-PR boundaries retain the full collected browser matrix`
+- `browser quality rejects missing extra duplicate wrong-project and stale results`
+- `documented global browser smoke count and titles match inventory and real collection`
+
+The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.
