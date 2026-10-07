@@ -1,13 +1,30 @@
 import { test, expect, api, nav } from "./product-fixtures";
 
 for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence ${width}`, async ({ page, request }) => {
-  const imported = await request.post(`${api}/imports/pgn`, { multipart: {
-    file: { name: `diagnostics-${width}.pgn`, mimeType: "application/x-chess-pgn", buffer: Buffer.from('[Event "Opening"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *') },
-    trained_color: "white", initial_depth: "3",
-  } });
+  const settings = await (await request.get(`${api}/settings`)).json();
+  await request.put(`${api}/settings`, { data: { ...settings, initial_depth: 3 } });
+  // Enter the empty library before importing: visiting Train after import can
+  // legitimately capture teaching assistance and asynchronously admit cards.
+  await page.setViewportSize({ width, height: 844 });
+  await page.goto("/"); await nav(page, "Repertoire");
+  await page.getByRole("button", { name: "＋ Import PGN" }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: `diagnostics-${width}.pgn`, mimeType: "application/x-chess-pgn",
+    buffer: Buffer.from('[Event "Opening"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *'),
+  });
+  const [imported] = await Promise.all([
+    page.waitForResponse(response => response.url().includes("/api/imports/pgn") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Import repertoire", exact: true }).click(),
+  ]);
   expect(imported.ok()).toBeTruthy();
   const { repertoire_id: repertoireId } = await imported.json();
+  await page.getByRole("button", { name: "View imported repertoire" }).click();
+  await nav(page, "Insights"); await nav(page, "Repertoire");
   await expect.poll(async () => (await request.get(`${api}/repertoires/${repertoireId}/prefix-diagnostics`)).status(), { timeout: 30_000 }).toBe(200);
+  await expect.poll(async () => {
+    const queue = await (await request.get(`${api}/queue/today`)).json();
+    return queue.cards.some((card: { repertoire_id: string }) => card.repertoire_id === repertoireId);
+  }, { timeout: 30_000 }).toBe(true);
   const before = await (await request.get(`${api}/queue/today`)).json();
   const diagnosticReads: string[] = [];
   page.on("request", resource => {
@@ -17,8 +34,6 @@ for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay 
       expect(resource.headers()["x-tempo-work-class"]).toBe("background");
     }
   });
-  await page.setViewportSize({ width, height: 844 });
-  await page.goto("/"); await nav(page, "Repertoire");
   const card = page.locator(".repertoire-card").filter({ has: page.getByRole("heading", { name: `diagnostics-${width}`, exact: true }) });
   await expect(card).toBeVisible();
   expect(diagnosticReads).toHaveLength(0);

@@ -20,6 +20,25 @@ from app.services.prefix_diagnostics import project_prefix_diagnostics
 
 def test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission():
     repertoire_id = 'prefix-diagnostics-' + uuid.uuid4().hex
+    try:
+        _assert_prefix_diagnostics(repertoire_id)
+    finally:
+        # Keep durable shadow evidence, but remove this fixture's active routes.
+        # Otherwise later global game-comparison tests can select our repertoire.
+        with postgres_store.connection() as database:
+            database.execute('DELETE FROM cards WHERE id=?', (repertoire_id,))
+            database.execute('DELETE FROM repertoires WHERE id IN (?,?)', (repertoire_id, repertoire_id+'-shared'))
+        test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes(repertoire_id)
+
+
+def test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes(repertoire_id):
+    with postgres_store.connection(read_only=True) as database:
+        assert not database.execute('SELECT 1 FROM cards WHERE id=?', (repertoire_id,)).fetchone()
+        assert not database.execute('SELECT 1 FROM repertoires WHERE id IN (?,?)', (repertoire_id, repertoire_id+'-shared')).fetchone()
+    print('PASS test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes')
+
+
+def _assert_prefix_diagnostics(repertoire_id):
     card_id = repertoire_id
     other_scope = repertoire_id + '-shared'
     line_id = repertoire_id + '-line'
