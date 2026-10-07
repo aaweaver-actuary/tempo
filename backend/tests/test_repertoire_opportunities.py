@@ -970,7 +970,7 @@ def test_issue4_personal_common_move_surfaces_without_masters_or_cohort_data(tmp
         now = datetime.now(timezone.utc).isoformat()
         db.execute("""INSERT INTO repertoire_coverage_runs(id,repertoire_id,status,settings_json,created_at,updated_at)
                       VALUES('run','rep','complete',?, ?,?)""",
-                   (json.dumps({"path_floor": 0.0005, "maia_elo": 1500}), now, now))
+                   (json.dumps({"path_floor": 0.0005, "maia_elo": 1500, "reply_denominator": 20, "cumulative_target": 0.95}), now, now))
         db.execute("""INSERT INTO repertoire_coverage_nodes(
             id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,
             covered_replies_json,explorer_status,maia_status,updated_at)
@@ -1447,7 +1447,7 @@ def _seed_source_transition_coverage(db, *, run_id="transition-run", created_at=
     db.execute("""INSERT INTO repertoire_coverage_runs
         (id,repertoire_id,status,settings_json,created_at,updated_at)
         VALUES(?,'rep',?, ?,?,?)""", (run_id, run_status,
-        json.dumps({"path_floor": 0.0005, "maia_elo": 1500}), now, now))
+        json.dumps({"path_floor": 0.0005, "maia_elo": 1500, "reply_denominator": 20, "cumulative_target": 0.95}), now, now))
     db.execute("""INSERT INTO repertoire_coverage_nodes
         (id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,
          covered_replies_json,explorer_status,maia_status,explorer_games,updated_at)
@@ -1553,3 +1553,193 @@ def test_issue7_dismissal_transition_replay_is_idempotent(dismissed_source_trans
             assert db.execute("SELECT COUNT(*) FROM repertoire_opportunities").fetchone()[0] == 1
             assert db.execute("SELECT dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
                               (opportunity_id,)).fetchone()[0] == snapshot
+
+
+@pytest.fixture
+def partial_source_transition(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _seed_decision_route(db)
+        old_node, fen_key = _seed_source_transition_coverage(
+            db, run_id="old-run", created_at=(datetime.now(timezone.utc)-timedelta(days=1)).isoformat(),
+            probability=0.01, covered=True)
+    return old_node, fen_key
+
+
+@pytest.mark.parametrize("successful_source", ["maia", "explorer"])
+def test_issue8_newer_source_survives_other_source_failure(partial_source_transition, successful_source):
+    old_node, _ = partial_source_transition
+    failed_source = "explorer" if successful_source == "maia" else "maia"
+    with database.connection() as db:
+        new_node, _ = _seed_source_transition_coverage(db, run_id="new-run", run_status="failed",
+            explorer_status="failed" if failed_source == "explorer" else "complete",
+            maia_status="failed" if failed_source == "maia" else "complete")
+        # A caller holding an old node ID must still consume the authoritative snapshot.
+        refresh_node_opportunities(db, "rep", old_node)
+        opportunity = list_opportunities(db, "rep")[0]
+        evidence = opportunity["evidence"]
+        assert evidence[f"{successful_source}_probability"] == 0.2
+        assert evidence[f"{failed_source}_probability"] is None
+        assert evidence[f"{failed_source}_status"] == "failed"
+        assert evidence["qualifying_sources"] == [successful_source]
+        assert evidence["coverage_run_id"] == "new-run"
+        assert evidence["coverage_node_id"] == new_node
+        assert evidence["source_provenance"][successful_source]["coverage_node_id"] == new_node
+        assert evidence["source_provenance"][failed_source]["coverage_run_id"] == "new-run"
+        assert "blended_probability" not in evidence
+        repertoire_opportunities._cleanup_opportunity(db, "rep", opportunity["id"])
+        assert [item["id"] for item in list_opportunities(db, "rep")] == [opportunity["id"]]
+
+
+def _run_opportunity_nodes_and_cleanup():
+    with database.connection() as db:
+        enqueue_task_in_transaction(db, "repertoire_opportunity", "rep", {"repertoire_id": "rep", "phase": "nodes", "cursor": ""})
+    for _ in range(20):
+        task = claim_task("repertoire_opportunity")
+        if task is None:
+            return
+        if not execute_opportunity_slice(task):
+            complete_task(task["id"], task["generation"], task["lease_token"], kind=task["kind"])
+    pytest.fail("bounded opportunity refresh did not finish")
+
+
+def test_issue8_background_publication_and_cleanup_use_same_newest_partial_run(partial_source_transition, request):
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    with database.connection() as db:
+        new_node, _ = _seed_source_transition_coverage(db, run_id="new-run", run_status="failed",
+            explorer_status="failed", maia_status="complete")
+    _run_opportunity_nodes_and_cleanup()
+    _run_opportunity_nodes_and_cleanup()
+    with database.connection() as db:
+        items = list_opportunities(db, "rep")
+        assert len(items) == 1
+        assert items[0]["evidence"]["coverage_node_id"] == new_node
+        assert db.execute("SELECT COUNT(*) FROM repertoire_opportunities").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("source_status", ["failed", "queued", "complete", "missing-node", "empty"])
+def test_issue8_no_historical_fallback_for_unusable_newest_sources(partial_source_transition, source_status):
+    old_node, _ = partial_source_transition
+    with database.connection() as db:
+        db.execute("UPDATE repertoire_coverage_nodes SET covered_replies_json='[\"e7e5\"]' WHERE id=?", (old_node,))
+        db.execute("UPDATE repertoire_coverage_candidates SET covered=0,explorer_probability=0.2,maia_probability=0.2 WHERE node_id=?", (old_node,))
+        refresh_node_opportunities(db, "rep", old_node)
+        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        new_node, _ = _seed_source_transition_coverage(db, run_id="new-run",
+            explorer_status=source_status if source_status in {"failed","queued"} else "complete",
+            maia_status=source_status if source_status in {"failed","queued"} else "complete")
+        if source_status == "complete":
+            db.execute("UPDATE repertoire_coverage_runs SET created_at=? WHERE id='old-run'",
+                       ((datetime.now(timezone.utc)-timedelta(days=10)).isoformat(),))
+            db.execute("UPDATE repertoire_coverage_runs SET created_at=? WHERE id='new-run'",
+                       ((datetime.now(timezone.utc)-timedelta(days=8)).isoformat(),))
+        elif source_status == "missing-node":
+            db.execute("DELETE FROM repertoire_coverage_nodes WHERE id=?", (new_node,))
+        elif source_status == "empty":
+            db.execute("DELETE FROM repertoire_coverage_candidates WHERE node_id=?", (new_node,))
+        refresh_node_opportunities(db, "rep", old_node)
+        repertoire_opportunities._cleanup_opportunity(db, "rep", opportunity_id)
+        assert list_opportunities(db, "rep") == []
+
+
+def test_issue8_dismissal_survives_partial_source_transitions(dismissed_source_transition):
+    node_id, fen_key, opportunity_id, snapshot = dismissed_source_transition
+    with database.connection() as db:
+        new_node, _ = _seed_source_transition_coverage(db, run_id="partial-run", run_status="failed",
+            explorer_status="failed", maia_status="failed")
+        refresh_node_opportunities(db, "rep", node_id)
+        assert db.execute("SELECT status FROM repertoire_opportunities").fetchone()[0] == "resolved"
+        db.execute("UPDATE repertoire_coverage_nodes SET maia_status='complete' WHERE id=?", (new_node,))
+        refresh_node_opportunities(db, "rep", node_id)
+        assert list_opportunities(db, "rep") == []
+        assert db.execute("SELECT dismissed_evidence_json FROM repertoire_opportunities").fetchone()[0] == snapshot
+        _seed_transition_personal_games(db, fen_key, 3)
+        refresh_node_opportunities(db, "rep", new_node)
+        assert [item["id"] for item in list_opportunities(db, "rep")] == [opportunity_id]
+
+
+def test_issue8_maia_claim_and_partial_submit_survive_explorer_failure(tmp_path, monkeypatch, request):
+    from app.services import repertoire_coverage, introduction_priorities
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    monkeypatch.setattr(introduction_priorities, "enqueue_priority_refresh", lambda *args, **kwargs: None)
+    with database.connection() as db:
+        _seed_decision_route(db)
+        node_id, _ = _seed_source_transition_coverage(db, run_status="failed",
+            explorer_status="failed", maia_status="queued")
+        db.execute("""INSERT INTO repertoire_coverage_nodes
+            (id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,covered_replies_json,updated_at)
+            VALUES('remaining-node','transition-run','rep',?,'other-position',3,'white','[]','[]',?)""",
+            (chess.STARTING_FEN, datetime.now(timezone.utc).isoformat()))
+    job = repertoire_coverage.claim_maia_coverage_node()
+    assert job and job["node_id"] == node_id
+    repertoire_coverage.submit_maia_coverage(node_id, job["lease_id"], [{"move_uci": "c7c5", "probability": 0.3}])
+    with database.connection() as db:
+        assert db.execute("SELECT maia_status FROM repertoire_coverage_nodes WHERE id='remaining-node'").fetchone()[0] == "queued"
+        assert db.execute("SELECT state FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0] == "queued"
+        refresh_node_opportunities(db, "rep", node_id)
+        evidence = list_opportunities(db, "rep")[0]["evidence"]
+        assert evidence["maia_probability"] == 0.3
+        assert evidence["explorer_probability"] is None
+
+
+def test_issue8_partial_maia_failure_checkpoints_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _seed_decision_route(db)
+        node_id, _ = _seed_source_transition_coverage(db, maia_status="leased")
+        db.execute("UPDATE repertoire_coverage_nodes SET lease_id='failure-lease' WHERE id=?", (node_id,))
+    response = TestClient(app).post('/api/repertoire-coverage/maia/failure',
+        json={"node_id": node_id, "lease_id": "failure-lease", "error": "provider unavailable"})
+    assert response.status_code == 200
+    with database.connection() as db:
+        assert db.execute("SELECT state FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0] == "queued"
+        refresh_node_opportunities(db, "rep", node_id)
+        assert list_opportunities(db, "rep")[0]["evidence"]["qualifying_sources"] == ["explorer"]
+
+
+def test_issue8_source_change_during_calculation_requeues_without_stale_publication(partial_source_transition, monkeypatch, request):
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    with database.connection() as db:
+        node_id, _ = _seed_source_transition_coverage(db, run_id="new-run", explorer_status="failed")
+        enqueue_task_in_transaction(db, "repertoire_opportunity", "rep", {"repertoire_id": "rep", "phase": "nodes", "cursor": ""})
+    original_calculate = repertoire_opportunities._calculate_node_opportunities
+    def source_changes(inputs):
+        # This second writer commits while the worker's calculation has no connection.
+        with database.connection() as db:
+            db.execute("UPDATE repertoire_coverage_nodes SET maia_status='failed' WHERE id=?", (node_id,))
+        return original_calculate(inputs)
+    monkeypatch.setattr(repertoire_opportunities, "_calculate_node_opportunities", source_changes)
+    task = claim_task("repertoire_opportunity")
+    assert execute_opportunity_slice(task)
+    with database.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM repertoire_opportunities").fetchone()[0] == 0
+        payload = json.loads(db.execute("SELECT payload_json FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0])
+        assert payload["cursor"] == ""
+    monkeypatch.setattr(repertoire_opportunities, "_calculate_node_opportunities", original_calculate)
+    _run_opportunity_nodes_and_cleanup()
+    with database.connection() as db:
+        assert list_opportunities(db, "rep") == []
+
+
+def test_issue8_equal_timestamp_selection_is_deterministic_and_scope_fenced(partial_source_transition):
+    with database.connection() as db:
+        tied_time = datetime.now(timezone.utc).isoformat()
+        selected_node, _ = _seed_source_transition_coverage(db, run_id="z-current", created_at=tied_time,
+            explorer_status="failed", maia_status="complete")
+        other_node, _ = _seed_source_transition_coverage(db, run_id="a-current", created_at=tied_time,
+            probability=0.01)
+        out_of_scope_node, _ = _seed_source_transition_coverage(db, run_id="zz-out-of-scope",
+            created_at=(datetime.now(timezone.utc)+timedelta(seconds=1)).isoformat(), probability=0.9)
+        db.execute("UPDATE repertoire_coverage_runs SET settings_json=? WHERE id='zz-out-of-scope'",
+                   (json.dumps({"canonical_prefix_revision": 99}),))
+        refresh_node_opportunities(db, "rep", out_of_scope_node)
+        assert list_opportunities(db, "rep")[0]["evidence"]["coverage_node_id"] == selected_node
+        refresh_node_opportunities(db, "rep", other_node)
+        assert list_opportunities(db, "rep")[0]["evidence"]["coverage_node_id"] == selected_node

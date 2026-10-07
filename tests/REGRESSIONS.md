@@ -2169,3 +2169,45 @@ The result-identity regression includes replacement with an unplanned ID in the 
 - `test_issue7_dismissal_transition_replay_is_idempotent` reopens database connections between repeated transitions and checks identity and suppression.
 
 Baseline on main `08e19ab`: the two identical-return cases and replay case failed; snapshot preservation and material reopening already passed.
+
+## Issue #8 — newest independent coverage sources
+
+Opportunity refresh and cleanup use the newest current-scope coverage attempt
+(`created_at DESC, id DESC`) and evaluate each source independently. Failed,
+pending, missing, or stale sources do not fall back to historical success. The
+existing seven-day freshness, source sample thresholds, personal evidence,
+canonical identity, and three-additional-games material-change rule remain.
+Evidence retains route-compatible `coverage_run_id`/`coverage_node_id` and adds
+`source_provenance` for each provider with its run, node, timestamp, and status.
+
+`backend/tests/test_repertoire_opportunities.py` runs in the regular backend gate:
+
+- `test_issue8_newer_source_survives_other_source_failure` covers Maia-success/Explorer-failure and the symmetric case, null unavailable probabilities, actual source provenance, and cleanup.
+- `test_issue8_background_publication_and_cleanup_use_same_newest_partial_run` proves bounded worker selection, cleanup consistency, and replay.
+- `test_issue8_no_historical_fallback_for_unusable_newest_sources` covers failed, pending, stale, absent-node, and empty-success snapshots.
+- `test_issue8_dismissal_survives_partial_source_transitions` combines #7 suppression with partial-source recovery and material reopening.
+- `test_issue8_maia_claim_and_partial_submit_survive_explorer_failure` proves independent leasing and atomic refresh checkpointing before other nodes finish.
+- `test_issue8_partial_maia_failure_checkpoints_refresh` proves failure refresh retains usable Explorer evidence.
+- `test_issue8_source_change_during_calculation_requeues_without_stale_publication` commits another writer's source change while calculation holds no connection, then proves obsolete publication is rejected and the same cursor is retried.
+- `test_issue8_equal_timestamp_selection_is_deterministic_and_scope_fenced` proves deterministic ties and exclusion of newer obsolete-scope runs.
+
+Existing `test_postgres_maia_submit_publishes_candidates_in_bounded_sets` now
+requires the opportunity checkpoint even with remaining nodes; the missing-token
+regression checks that Explorer failure checkpoints opportunity refresh too.
+Existing #4 foreground-contention/restart/replay, #28 admission eligibility,
+#55 handled-revision, and #66 canonical-scope regressions remain in the gate.
+
+Real PostgreSQL proofs **OF-1/OF-2**, implemented in
+`scripts/check_postgres_opportunity_freshness.py`, are invoked by the existing
+canonical freshness scenario in the regular durability gate. They close pools
+between durable slices, verify both partial-source directions and exact
+provenance through cleanup, retain dismissal across unavailable/stale resolution,
+replay without duplication, reopen only after three new supporting games, and
+accept a real Maia callback after Explorer failure. They assert no card creation
+or automatic repertoire mutation. Fixture teardown deletes only its owned rows.
+
+Failing-before evidence on `b40199c` (the #7 fix): newer partial evidence was lost
+in both directions; the bounded refresh produced no opportunity; failed/pending
+and empty newer snapshots retained obsolete active evidence; and the combined
+dismissal/source transition failed. Baseline harness setup errors were corrected
+before confirming the background publication failure. #4 remains open.

@@ -350,7 +350,7 @@ def claim_coverage_node() -> dict | None:
         node = database.execute(
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
-               WHERE n.explorer_status='queued' AND r.status IN ('queued','running') AND {coverage_scope_predicate(database)} AND {claimable('coverage', 'n.run_id')}
+               WHERE n.explorer_status='queued' AND r.status IN ('queued','running','failed') AND {coverage_scope_predicate(database)} AND {claimable('coverage', 'n.run_id')}
                ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
         if not node:
@@ -622,12 +622,11 @@ def execute_coverage_node(node: dict) -> None:
                    FROM repertoire_coverage_nodes WHERE run_id=?""",
                 (node["run_id"],),
             ).fetchone()
+            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
         from .introduction_priorities import enqueue_priority_refresh
-        from .repertoire_opportunities import enqueue_opportunity_refresh
 
         enqueue_priority_refresh(node["repertoire_id"], background=True)
-        if not remaining:
-            enqueue_opportunity_refresh(node["repertoire_id"], background=True)
         emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                         progress_counts["total"] * 2)
@@ -648,6 +647,8 @@ def execute_coverage_node(node: dict) -> None:
                 "UPDATE repertoire_coverage_runs SET status='queued',last_error=?,updated_at=? WHERE id=?",
                 (str(error), _now(), node["run_id"]),
             )
+            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     except Exception as error:
         with connection(background=True) as database:
             database.execute("BEGIN IMMEDIATE")
@@ -661,6 +662,8 @@ def execute_coverage_node(node: dict) -> None:
                 "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? WHERE id=?",
                 (str(error), _now(), node["run_id"]),
             )
+            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
 
 
 def coverage_summary(repertoire_id: str) -> dict:
@@ -769,8 +772,8 @@ def claim_maia_coverage_node() -> dict | None:
         node = database.execute(
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
-               WHERE n.explorer_status='complete' AND n.maia_status='queued'
-               AND r.status IN ('queued','running','complete') AND {coverage_scope_predicate(database)}
+               WHERE n.maia_status='queued'
+               AND r.status IN ('queued','running','complete','failed') AND {coverage_scope_predicate(database)}
                AND {claimable('coverage', 'n.run_id')}
                ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
@@ -836,13 +839,12 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
                SUM(CASE WHEN maia_status='complete' THEN 1 ELSE 0 END) AS maia_done
                FROM repertoire_coverage_nodes WHERE run_id=?""", (node["run_id"],)
         ).fetchone()
+        from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                     (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                     progress_counts["total"] * 2)
     if repertoire_id:
         from .introduction_priorities import enqueue_priority_refresh
-        from .repertoire_opportunities import enqueue_opportunity_refresh
 
         enqueue_priority_refresh(repertoire_id, background=True)
-        if (progress_counts["maia_done"] or 0) == progress_counts["total"]:
-            enqueue_opportunity_refresh(repertoire_id, background=True)
