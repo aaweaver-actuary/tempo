@@ -952,7 +952,7 @@ describe("reported study regressions", () => {
 });
 
 it("repair completion preserves the active attempt focus and pending opponent reply", async () => {
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/api/queue/window")) return Response.json({ count: 1, cards: [{
       id: "repair-continuity", queue_entry_id: 870, start_fen: new Chess().fen(),
@@ -963,20 +963,102 @@ it("repair completion preserves the active attempt focus and pending opponent re
       source_name: "fixture.pgn", line_count: 1, card_count: 1, due_count: 1,
       integrity_status: "needs_repair", integrity_issue_count: 1, blocked_due_count: 1 }] });
     return Response.json({ providers: [], states: [], lines: [] });
-  }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
   render(<Home />);
   await screen.findByRole("heading", { name: "Repair continuity" });
   await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(new Chess().fen()));
   vi.useFakeTimers();
   const moveButton = screen.getByText("e2e4"); moveButton.focus(); fireEvent.click(moveButton);
   const before = useTrainingStore.getState();
+  const activeCardBefore = before.practiceCards[before.activeCardIndex];
+  const queueReadsBefore = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
   await act(async () => { window.dispatchEvent(new CustomEvent("tempo-integrity-repair-confirmed", { detail: { repertoireId: "rep" } })); });
   const after = useTrainingStore.getState();
   expect(after.attempt).toEqual(before.attempt); expect(after.step).toBe(before.step);
   expect(after.currentFenString).toBe(before.currentFenString); expect(document.activeElement).toBe(moveButton);
+  expect(after.practiceCards[after.activeCardIndex]).toBe(activeCardBefore);
+  expect(after.practiceCards[after.activeCardIndex].queueEntryId).toBe(activeCardBefore.queueEntryId);
+  expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window"))).toHaveLength(queueReadsBefore);
   expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(430); });
   expect(useTrainingStore.getState().step).toBe(2);
+});
+
+it("final repair reconciliation immediately loads newly unblocked cards from an empty training queue", async () => {
+  const repairIssue = { id: "final-conflict", kind: "multiple_responses", signature: "final-signature",
+    fen: new Chess().fen(), fen_key: new Chess().fen().split(" ").slice(0, 4).join(" "),
+    trained_color: "white", moves: [], sources: [{ type: "line", id: "blocked-source" }] };
+  const unblockedCard = { id: "finally-playable", queue_entry_id: 874, start_fen: new Chess().fen(),
+    moves: ["e2e4", "e7e5", "g1f3"], trained_color: "white", content_type: "opening",
+    repertoire_name: "Unblocked study", repertoire_source: "fixture.pgn" };
+  const submission = { task_id: "final-repair-graph", repertoire_id: "rep", issue_id: repairIssue.id, state: "queued" };
+  let submissionConfirmed = false;
+  let repairPublished = false;
+  let completeQueueRead: ((response: Response) => void) | undefined;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/queue/window")) {
+      if (!repairPublished) return Response.json({ count: 0, cards: [] });
+      return new Promise<Response>(resolve => { completeQueueRead = resolve; });
+    }
+    if (url.endsWith("/repertoires")) return Response.json({ repertoires: [{ id: "rep", name: "Repair repertoire",
+      source_name: "fixture.pgn", line_count: 1, card_count: 1, due_count: 1,
+      graph_state: "ready", graph_generation: repairPublished ? 2 : 1,
+      integrity_status: repairPublished ? "clean" : "needs_repair", integrity_issue_count: repairPublished ? 0 : 1,
+      blocked_due_count: repairPublished ? 0 : 1 }] });
+    if (url.endsWith("/integrity")) return Response.json({ repertoire_id: "rep",
+      status: repairPublished ? "clean" : "needs_repair", issue_count: repairPublished ? 0 : 1,
+      first_issue_id: repairPublished ? null : repairIssue.id, scan_status: "idle", scan_generation: "scan:2",
+      scan_progress: { completed: 1, total: 1 }, last_scan_error: null, issues: repairPublished ? [] : [repairIssue] });
+    if (url.endsWith("/final-conflict/resolve") && init?.method === "POST") {
+      submissionConfirmed = true;
+      return Response.json(submission);
+    }
+    if (url.includes("/api/operations/")) return Response.json(submissionConfirmed
+      ? { state: "complete", response: submission } : { state: "unknown" });
+    if (url.endsWith("/system/tasks")) return Response.json({ tasks: [{ id: submission.task_id,
+      kind: "opening_graph_rebuild", deduplication_key: "rep", generation: 2, state: repairPublished ? "complete" : "queued" }] });
+    return Response.json({ providers: [], states: [], lines: [] });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Home />);
+  await screen.findByText(/You['’]re done for today/);
+  await waitFor(() => expect(useTrainingStore.getState().queueReadiness).toBe("ready"));
+  expect(useTrainingStore.getState().isDatabaseQueueActive).toBe(true);
+  expect(useTrainingStore.getState().cardsLeft).toBe(0);
+  expect(useTrainingStore.getState().practiceCards).toEqual([]);
+  fireEvent.click(await screen.findByRole("button", { name: "Resume repair" }));
+  const dialog = await screen.findByRole("dialog", { name: "Choose one response per position" });
+  await within(dialog).findByText(/line blocked-source/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "e2e4" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Keep this response" }));
+  await within(dialog).findByText(/All choices queued/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Defer repertoire repair" }));
+  vi.useFakeTimers();
+  await act(async () => { await flushIntegrityRepairs(); });
+  expect(pendingIntegrityRepairs()).toHaveLength(1);
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ issueId: repairIssue.id, phase: "validating", taskId: submission.task_id });
+  const queueReadsBeforeCompletion = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
+  repairPublished = true;
+  await act(async () => { await flushIntegrityRepairs(); });
+  expect(pendingIntegrityRepairs()).toHaveLength(0);
+  expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")))
+    .toHaveLength(queueReadsBeforeCompletion + 1);
+  expect(completeQueueRead).toBeTypeOf("function");
+  // The read is already proved with refresh timers frozen. Let the real queue
+  // worker fallback yield while hydrating the explicitly released response.
+  vi.useRealTimers();
+  await act(async () => { completeQueueRead!(Response.json({ count: 1, cards: [unblockedCard] })); });
+  await waitFor(() => expect(useTrainingStore.getState().queueReadiness).toBe("ready"));
+  const playableState = useTrainingStore.getState();
+  expect(playableState.cardsLeft).toBe(1);
+  expect(playableState.practiceCards[playableState.activeCardIndex]).toMatchObject({ backendId: unblockedCard.id, queueEntryId: 874 });
+  expect(playableState.attempt.phase).toBe("playerTurn");
+  expect(screen.getByRole("heading", { name: "Unblocked study" })).toBeTruthy();
+  expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(new Chess().fen());
+  expect(screen.queryByText(/You['’]re done for today/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Resume repair" })).toBeNull();
 });
 
 it("late integrity count refresh cannot close an explicitly opened repair dialog or erase its choice", async () => {

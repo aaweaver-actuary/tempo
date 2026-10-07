@@ -1962,6 +1962,10 @@ export default function Home() {
           invalidateWorkspaceData();
           invalidateTrainingQueueCache();
           void checkPendingIntegrity(undefined, true);
+          const currentTrainingState = useTrainingStore.getState();
+          const hasPlayableTrainingCard = currentTrainingState.cardsLeft > 0
+            && Boolean(currentTrainingState.practiceCards[currentTrainingState.activeCardIndex]);
+          if (!hasPlayableTrainingCard) void refreshDatabaseQueue(false).catch(() => undefined);
         }}
         onResume={openRepairDialog}
       />
