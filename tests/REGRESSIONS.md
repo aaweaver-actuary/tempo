@@ -2223,3 +2223,12 @@ OF-1's supporting games use the real durable position-index and repertoire
 comparison handlers, publishing staged generations through the authoritative
 views. The initial real-store rehearsal rejected direct inserts into those views;
 the repaired OF-1/OF-2 passed on fresh PostgreSQL before obtaining new complete CI.
+
+`test_postgres_completed_study_fixtures_release_background_work_before_retention`
+in the regular PostgreSQL study durability scenario deletes only the completed
+study/recovery fixture repertoires after all restart/replay assertions, then
+verifies their queued/leased/retrying work is cancelled before compatibility
+retention. With independent Maia enabled, the predecessor fixture kept receiving
+source results and the following retention scenario failed its unchanged deadline;
+the isolated retention scenario passed. This preserves every product assertion
+and isolates the next scenario without changing priorities or raising timeouts.
