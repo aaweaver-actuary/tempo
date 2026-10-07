@@ -2157,3 +2157,15 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `documented global browser smoke count and titles match inventory and real collection`
 
 The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.
+
+
+## Issue #7 — durable opportunity dismissals
+
+`backend/tests/test_repertoire_opportunities.py` runs in the regular backend gate:
+
+- `test_issue7_dismissal_survives_stale_resolution_and_identical_return` covers stale and failed sources, resolution, and identical qualifying return.
+- `test_issue7_material_games_reopen_after_resolution` retains the existing three-additional-games rule.
+- `test_issue7_resolution_preserves_dismissal_snapshot` checks the persisted snapshot during resolution.
+- `test_issue7_dismissal_transition_replay_is_idempotent` reopens database connections between repeated transitions and checks identity and suppression.
+
+Baseline on main `08e19ab`: the two identical-return cases and replay case failed; snapshot preservation and material reopening already passed.

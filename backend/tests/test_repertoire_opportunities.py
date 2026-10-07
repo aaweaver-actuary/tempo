@@ -1434,3 +1434,122 @@ def test_direct_training_requires_revision_before_opening_write_transaction(fing
 
     with pytest.raises(ValueError, match="evidence revision"):
         repertoire_opportunities.admit_existing_decision(Database(), "rep", "discovery", fingerprint)
+
+
+def _seed_source_transition_coverage(db, *, run_id="transition-run", created_at=None,
+                                     explorer_status="complete", maia_status="complete",
+                                     run_status="complete", probability=0.2, covered=False):
+    board = chess.Board()
+    board.push_uci("e2e4")
+    fen_key = " ".join(board.fen().split()[:4])
+    now = created_at or datetime.now(timezone.utc).isoformat()
+    node_id = f"{run_id}-node"
+    db.execute("""INSERT INTO repertoire_coverage_runs
+        (id,repertoire_id,status,settings_json,created_at,updated_at)
+        VALUES(?,'rep',?, ?,?,?)""", (run_id, run_status,
+        json.dumps({"path_floor": 0.0005, "maia_elo": 1500}), now, now))
+    db.execute("""INSERT INTO repertoire_coverage_nodes
+        (id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,
+         covered_replies_json,explorer_status,maia_status,explorer_games,updated_at)
+        VALUES(?,?,'rep',?,?,1,'white','[["e2e4"]]',?,?,?,?,?)""",
+        (node_id, run_id, board.fen(), fen_key,
+         json.dumps(["e7e5", "c7c5"] if covered else ["e7e5"]),
+         explorer_status, maia_status, 500, now))
+    db.execute("""INSERT INTO repertoire_coverage_candidates
+        (node_id,move_uci,explorer_probability,maia_probability,covered,source_state)
+        VALUES(?,'c7c5',?,?,?,'blended')""", (node_id, probability, probability, int(covered)))
+    return node_id, fen_key
+
+
+def _seed_transition_personal_games(db, fen_key, count):
+    now = datetime.now(timezone.utc).isoformat()
+    for number in range(count):
+        game_id = f"transition-game-{number}"
+        db.execute("""INSERT INTO imported_games
+            (id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+            VALUES(?,'lichess','player',?,'rapid',1,'white','*',?,'["e2e4","c7c5"]')""",
+            (game_id, now, chess.STARTING_FEN))
+        db.execute("""INSERT INTO game_repertoire_matches
+            (game_id,repertoire_id,classification,updated_at)
+            VALUES(?,'rep','opponent repertoire gap',?)""", (game_id, now))
+        db.execute("""INSERT INTO game_position_occurrences(game_id,ply,fen_key,move_uci)
+            VALUES(?,1,?,'c7c5')""", (game_id, fen_key))
+
+
+@pytest.fixture
+def dismissed_source_transition(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _seed_decision_route(db)
+        node_id, fen_key = _seed_source_transition_coverage(db)
+        refresh_node_opportunities(db, "rep", node_id)
+        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        assert dismiss_opportunity(db, "rep", opportunity_id)
+        snapshot = db.execute("SELECT dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
+                              (opportunity_id,)).fetchone()[0]
+    return node_id, fen_key, opportunity_id, snapshot
+
+
+def _resolve_transition_source(db, node_id, unavailable):
+    if unavailable == "stale":
+        db.execute("UPDATE repertoire_coverage_runs SET created_at=? WHERE id='transition-run'",
+                   ((datetime.now(timezone.utc) - timedelta(days=8)).isoformat(),))
+    else:
+        db.execute("UPDATE repertoire_coverage_nodes SET explorer_status='failed',maia_status='failed' WHERE id=?",
+                   (node_id,))
+    refresh_node_opportunities(db, "rep", node_id)
+    assert db.execute("SELECT status FROM repertoire_opportunities").fetchone()[0] == "resolved"
+
+
+def _restore_transition_source(db, node_id):
+    db.execute("UPDATE repertoire_coverage_runs SET created_at=? WHERE id='transition-run'",
+               (datetime.now(timezone.utc).isoformat(),))
+    db.execute("UPDATE repertoire_coverage_nodes SET explorer_status='complete',maia_status='complete' WHERE id=?",
+               (node_id,))
+    refresh_node_opportunities(db, "rep", node_id)
+
+
+@pytest.mark.parametrize("unavailable", ["stale", "failed"])
+def test_issue7_dismissal_survives_stale_resolution_and_identical_return(dismissed_source_transition, unavailable):
+    node_id, _, opportunity_id, snapshot = dismissed_source_transition
+    with database.connection() as db:
+        _resolve_transition_source(db, node_id, unavailable)
+        _restore_transition_source(db, node_id)
+        assert list_opportunities(db, "rep") == []
+        row = db.execute("SELECT status,dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
+                         (opportunity_id,)).fetchone()
+        assert row["status"] == "dismissed"
+        assert row["dismissed_evidence_json"] == snapshot
+
+
+def test_issue7_material_games_reopen_after_resolution(dismissed_source_transition):
+    node_id, fen_key, opportunity_id, _ = dismissed_source_transition
+    with database.connection() as db:
+        _resolve_transition_source(db, node_id, "failed")
+        _seed_transition_personal_games(db, fen_key, 3)
+        _restore_transition_source(db, node_id)
+        assert [item["id"] for item in list_opportunities(db, "rep")] == [opportunity_id]
+        assert db.execute("SELECT dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
+                          (opportunity_id,)).fetchone()[0] is None
+
+
+def test_issue7_resolution_preserves_dismissal_snapshot(dismissed_source_transition):
+    node_id, _, opportunity_id, snapshot = dismissed_source_transition
+    with database.connection() as db:
+        _resolve_transition_source(db, node_id, "stale")
+        assert db.execute("SELECT dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
+                          (opportunity_id,)).fetchone()[0] == snapshot
+
+
+def test_issue7_dismissal_transition_replay_is_idempotent(dismissed_source_transition):
+    node_id, _, opportunity_id, snapshot = dismissed_source_transition
+    for _ in range(2):
+        with database.connection() as db:
+            _resolve_transition_source(db, node_id, "failed")
+            _restore_transition_source(db, node_id)
+            refresh_node_opportunities(db, "rep", node_id)
+            assert list_opportunities(db, "rep") == []
+            assert db.execute("SELECT COUNT(*) FROM repertoire_opportunities").fetchone()[0] == 1
+            assert db.execute("SELECT dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
+                              (opportunity_id,)).fetchone()[0] == snapshot

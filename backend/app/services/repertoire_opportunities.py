@@ -115,7 +115,7 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
     ).fetchone()
     previous_dismissal = (
         json.loads(previous["dismissed_evidence_json"])
-        if previous and previous["dismissed_evidence_json"] else {}
+        if previous and previous["dismissed_evidence_json"] is not None else None
     )
     handled_evidence = (json.loads(previous["handled_evidence_json"])
                         if previous and previous["handled_evidence_json"] else None)
@@ -124,7 +124,8 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
                                       and previous["evidence_fingerprint"] != published_fingerprint)
     reset_admission = reopened or preparing_revision_changed
     handled_snapshot = None if reopened or handled_evidence is None else previous["handled_evidence_json"]
-    status = "dismissed" if previous and previous["status"] == "dismissed" and not _materially_new(evidence, previous_dismissal) else "active"
+    dismissal_reopened = previous_dismissal is not None and _materially_new(evidence, previous_dismissal)
+    status = "dismissed" if previous_dismissal is not None and not dismissal_reopened else "active"
     database.execute(
         """INSERT INTO repertoire_opportunities(
              id,repertoire_id,kind,fen_key,card_id,opponent_move_uci,status,score,
@@ -143,13 +144,12 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
              admission_state=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admission_state END,
              admitted_card_id=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admitted_card_id END,
              snoozed_until=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.snoozed_until END,
-             seen_at=CASE WHEN ? OR (repertoire_opportunities.status='dismissed'
-                AND excluded.status='active') THEN NULL ELSE repertoire_opportunities.seen_at END,
+             seen_at=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.seen_at END,
              updated_at=excluded.updated_at,resolved_at=NULL""",
         (opportunity_id, repertoire_id, kind, fen_key, card_id,
          opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
-         published_fingerprint, json.dumps(previous_dismissal) if previous_dismissal else None,
-         handled_snapshot, _now(), _now(), identity["canonical_prefix_revision"], identity["canonical_scope_source_revision"], identity["canonical_scope_preview_id"], game_generation, reset_admission, reset_admission, reset_admission, reset_admission),
+         published_fingerprint, json.dumps(previous_dismissal) if previous_dismissal is not None else None,
+         handled_snapshot, _now(), _now(), identity["canonical_prefix_revision"], identity["canonical_scope_source_revision"], identity["canonical_scope_preview_id"], game_generation, reset_admission, reset_admission, reset_admission, reset_admission or dismissal_reopened),
     )
     if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active" and handled_snapshot is None:
         enqueue_task_in_transaction(
