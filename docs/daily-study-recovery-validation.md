@@ -109,3 +109,25 @@ are retained. Keep this checkout until the PR is merged or its work is safely pr
 Deployment remains separate from this PR. After deployment, read today’s queue and
 worker activity/metrics to verify real cards, useful progress, and lease-expiry behavior;
 do not infer live recovery from disposable test results.
+
+## CI readiness-precondition repair
+
+CI run `37596912747` at head `99e3185` / merge candidate `6fd52f4` passed backend,
+frontend, builds, pinned visual/performance, and PostgreSQL durability. Its complete
+browser matrix passed 222 cases and failed the existing FEN-only Study workflow.
+The trace showed a real admitted study card with projection state `refreshing`; the
+phone offline copy correctly rejected that partial projection. The workflow had
+treated presence of one online card as proof of complete offline preparation.
+
+The test now waits for the actual published `ready` projection and complete card
+count before requiring the offline phone copy. It keeps the service-worker,
+IndexedDB, authoring, board, and grading assertions, with no timeout increases or
+product/API change. Early online study remains covered by the new backlog case.
+The updated named workflow is registered in `tests/REGRESSIONS.md`.
+
+Focused repair: `make ui-file FILE=studies.spec.ts` passed all nine cases; exact
+browser/scenario durations and resource ownership are preserved in the repair log
+and timing JSON. `npm run typecheck`, `npm run lint`, and
+`git diff origin/main --check` passed. Project `tempo-pg-regressions-70974-46d84879`
+was cleaned up by its runner. A new complete current-candidate CI result is required
+after pushing this repair; successful jobs from the older head are not final proof.
