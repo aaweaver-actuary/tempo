@@ -4,7 +4,7 @@
     "board": ["board-geometry.spec.ts", "board-input.spec.ts", "board-interactions.spec.ts", "board-state.spec.ts", "held-drag.spec.ts", "held-drag-preservation.spec.ts", "keyboard-context.spec.ts"],
     "discoveries": ["discovery-viewer.spec.ts", "activity-tray.spec.ts", "training-queue-contention.spec.ts"],
     "training": ["phone-opening-study.spec.ts", "guided-review-board-restoration.spec.ts", "training-prefetch.spec.ts", "phone-offline-training.spec.ts", "opening-evidence.spec.ts", "recovery.spec.ts", "tactic-capture.spec.ts"],
-    "repertoire": ["prefix-split-training.spec.ts", "repertoire-statistics.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts"],
+    "repertoire": ["prefix-split-training.spec.ts", "repertoire-statistics.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts", "prefix-diagnostics.spec.ts"],
     "studies": ["studies.spec.ts"],
     "games": ["paste-analysis.spec.ts", "comparison-workspace.spec.ts", "real-game-feedback.spec.ts", "games-board-context.spec.ts"],
     "defense": ["defense-preview.spec.ts", "settings-defense-toggle.spec.ts", "provider-integration.spec.ts"],

@@ -2309,3 +2309,36 @@ the isolated retention scenario passed. This preserves every product assertion
 and isolates the next scenario without changing priorities or raising timeouts.
 
 - Issue #79: `test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejection` keeps real foreground health admission distinct from deterministic plan replay and never retries database/service failures.
+
+## Issue #82 — Read-only decision-level prefix difficulty diagnostics
+
+Backend regular-suite coverage (`backend/tests/test_prefix_diagnostics.py` and `test_prefix_diagnostics_api.py`):
+
+- `test_prefix_diagnostics_matches_shadow_reducer_representative_attempts` — exact persisted observation parity with PR #69, including wrong response/reveal/correction and original timestamps.
+- `test_prefix_diagnostics_assistance_and_correction_never_create_clean_recall` — all five assistance kinds and manual-failure correction retain zero clean credit; `test_prefix_diagnostics_unverified_responses_do_not_establish_coverage` excludes illegal/unverified responses from coverage.
+- `test_prefix_diagnostics_partial_attempt_preserves_reached_predecessors` — earlier clean recall survives later failure; unreached successors stay unknown.
+- `test_prefix_diagnostics_distinct_days_use_frozen_study_day` — repeated same-day retries count once using the original frozen timezone; `test_prefix_diagnostics_unknown_weak_and_strong_measure_coverage` distinguishes unknown from weak and strong response-day coverage even when every response fails.
+- `test_prefix_diagnostics_later_assistance_preserves_reducer_clean_evidence` — later assistance does not rewrite an already clean first response, matching PR #69 exactly.
+- `test_prefix_diagnostics_isolates_repertoire_color_revision_and_occurrence`; `test_prefix_diagnostics_repeated_decision_identity_keeps_occurrences_separate` — immutable presentation predicates and separate occurrence indices prevent scope/history mixing.
+- `test_prefix_diagnostics_legacy_reviews_create_no_observations` — aggregate review history is never queried or decomposed.
+- `test_prefix_diagnostics_bounds_history_and_closes_reads_before_projection`; `test_prefix_diagnostics_history_window_and_recent_outcomes_are_bounded`; `test_prefix_diagnostics_recent_outcomes_order_instants_not_timezone_strings` — 101-header lookahead, 100 selected attempts, at most 2,000 observation rows, 20 recent outcomes per decision, and computation after connection closure.
+- PR #100: `test_prefix_diagnostics_manifest_validation_only_checks_reporting_window` — a different manifest on the excluded 101st attempt permits HTTP 200 with the newest 100-attempt window and `older_attempts_excluded=true`; a mismatch on the included 100th attempt retains HTTP 409 and its existing error. The excluded case reproduced HTTP 409 before the fix; observation reads remain limited to included attempts.
+- `test_prefix_diagnostics_pagination_and_detail_reject_changed_context`; `test_prefix_diagnostics_background_admission_preserves_foreground_progress`; `test_prefix_diagnostics_connection_is_authoritative_bounded_and_admitted`; `test_prefix_diagnostics_index_migration_only_adds_read_indexes` — stale context rejection, header-independent secondary classification, PostgreSQL reader-role read-only bounded connections, and additive indexing only.
+
+Real PostgreSQL/Redis coverage (`scripts/check_postgres_prefix_diagnostics.py`, called by the existing opening-evidence rehearsal in regular durability):
+
+- `test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission` — 102 reducer-persisted attempts with a 100-attempt read window; exact reducer-derived expected projection; assistance, failure, correction, partial/unreached and day-based coverage; shared repertoire isolation; legacy history; original-key replay; indexed access; real Redis foreground denial before SQL; read-only repeatable-read 250ms/25ms limits; unchanged cards/queue/reviews/splits and complete shadow digest; new-revision unknown state with historical evidence preserved.
+
+UI coverage (`tests/unit/prefix-diagnostics-regressions.test.tsx`): named `PD-82` tests protect on-demand background GETs, Unknown/Weak/Strong coverage, window disclosure, generation-bound pagination, stale payload rejection, cancellation, actionable errors, and bounded read-only contracts. `tests/browser/prefix-diagnostics.spec.ts` adds `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence` at phone/desktop sizes, proving the real menu/GET workflow, no startup reads, no horizontal overflow, and unchanged queue cards.
+
+This is a new read-only feature; there was no existing diagnostic implementation to reproduce as a failing defect. Whole-card scheduling and PR #69 capture/recovery remain unchanged. Counts are explicitly windowed, and no latency or difficulty/depth classifier is introduced.
+
+- `test_prefix_diagnostics_reader_credentials_are_sufficient` — failed before the reader-pool repair (writer credentials are absent in the deployed API); passes with the configured PostgreSQL reader and explicit repeatable-read/read-only transaction. The initial real browser run reproduced the same missing-writer-URL error. No writer credentials were added to the API.
+
+- Updated `test_queue_origin_migration_follows_current_main_without_renumbering_published_versions` for exact readiness version 36. Initial PR CI caught its obsolete version-35 assertion; continuity and the exact published queue-origin migration assertions remain enforced, with the new diagnostics index migration separately protected.
+
+- The PostgreSQL foreground-admission fixture uses an actual foreground `/api/settings` database read while the diagnostic waits on a held Redis foreground lease. Its initial full-health probe correctly failed because the durability harness intentionally stops background consumers. The focused real PostgreSQL/Redis scenario passes after this fixture repair; health semantics and required durability stages are unchanged. A standalone invocation also refuses databases lacking the runner-owned disposable marker.
+
+- `PD-82 prefix selectors distinguish identical learner moves across opponent branches` and `test_prefix_diagnostics_full_saved_route_distinguishes_identical_learner_moves` protect full saved-presentation SAN labels (including opponent replies). The missing label/contract regression failed before the display repair. Labels derive from the saved presentation after connection closure and do not reconstruct study attempts.
+
+- `test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes` — diagnostics rehearsal removes only its owned active cards/repertoires so later global comparisons remain isolated; retained shadow evidence stays durable. Covered by `scripts/check_postgres_prefix_diagnostics.py` in the regular PostgreSQL evidence rehearsal.
