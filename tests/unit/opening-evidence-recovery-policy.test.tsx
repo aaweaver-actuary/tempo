@@ -7,29 +7,32 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstub
 
 async function recoveryHarness(ids = ["A"], fallback = false) {
   const storage = await openingEvidenceStorage();
-  for (const id of ids) {
+  const seedPending = (id: string) => {
     const checkpoint = evidenceCompletion(id);
     checkpoint.terminal!.state = "partial";
     storage.seed(checkpoint);
     storage.stores.opening_attempts.set(id, { ...(storage.stores.opening_attempts.get(id) as object),
       delivery_state: "pending", delivery: { checkpoint, operationKey: `opening-checkpoint:${id}` } });
-  }
+  };
+  ids.forEach(seedPending);
   const originals = structuredClone([...storage.stores.opening_attempts]);
   const events = structuredClone([...storage.stores.opening_events]);
-  const requests: { url: string; init?: RequestInit }[] = [];
+  const requests: { url: string; init?: RequestInit; at: number }[] = [];
   const submittedAttempts = new Map<string, string>();
   let leaseReleased!: () => void;
   const response = { mode: "blocked" as "blocked" | "network" | "pending" | "complete" };
+  const responseModes = new Map<string, typeof response.mode>();
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-    requests.push({ url, init });
-    if (response.mode === "network") throw new TypeError("Fetch failed");
+    requests.push({ url, init, at: Date.now() });
     const key = init?.method === "POST" ? new Headers(init.headers).get("Idempotency-Key")! : decodeURIComponent(url.split("/").at(-1)!);
     if (init?.method === "POST") submittedAttempts.set(key, JSON.parse(init.body as string).attempt_id);
-    if (init?.method === "POST" && response.mode !== "complete") return Response.json({ operation_id: key }, { status: 202 });
     const id = submittedAttempts.get(key) ?? key.split(":").at(-1)!;
+    const mode = responseModes.get(id) ?? response.mode;
+    if (mode === "network") throw new TypeError("Fetch failed");
+    if (init?.method === "POST" && mode !== "complete") return Response.json({ operation_id: key }, { status: 202 });
     const persisted = { persisted: true, attempt_id: id, received_sequences: [1, 2, 3], contiguous_sequence: 3 };
-    return Response.json(init?.method === "POST" ? persisted : response.mode === "complete"
-      ? { state: "complete", response: persisted } : { state: response.mode, last_error: { message: "Repair the local worker" } });
+    return Response.json(init?.method === "POST" ? persisted : mode === "complete"
+      ? { state: "complete", response: persisted } : { state: mode, last_error: { message: "Repair the local worker" } });
   }));
   const journal = await import("../../app/lib/opening-evidence-journal");
   const recovery = vi.spyOn(journal, "recoverOpeningEvidence");
@@ -78,8 +81,81 @@ async function recoveryHarness(ids = ["A"], fallback = false) {
   const posts = () => requests.filter(request => request.init?.method === "POST");
   const unchanged = () => { expect([...storage.stores.opening_attempts]).toEqual(originals);
     expect([...storage.stores.opening_events]).toEqual(events); expect(storage.commits).toEqual([]); };
-  return { ...storage, journal, recovery, response, requests, callbacks, mounted, Harness, idle, advance, posts, unchanged, useTrainingStore, leaseReleased: () => leaseReleased(), frames, messages, ports, paint };
+  return { ...storage, journal, recovery, response, responseModes, seedPending, requests, callbacks, mounted, Harness, idle, advance, posts, unchanged, useTrainingStore, leaseReleased: () => leaseReleased(), frames, messages, ports, paint };
 }
+
+it("pending journal backoff survives healthy journal successes and idle timer wakeups", async () => {
+  const state = await recoveryHarness(["A", "B"]);
+  state.response.mode = "complete"; state.responseModes.set("A", "pending");
+  const startedAt = Date.now();
+  const aRequests = () => state.requests.filter(request => decodeURIComponent(request.url).endsWith("opening-checkpoint:A"));
+  await state.idle();
+  await state.idle(); // B does not inherit A's first delay.
+  expect(state.stores.opening_attempts.has("B")).toBe(false);
+  expect(aRequests().map(request => request.at - startedAt)).toEqual([0]);
+  let elapsed = 0;
+  for (const [index, delay] of [1000, 2000, 4000, 8000, 16000, 30000, 30000].entries()) {
+    if (index === 1) {
+      state.seedPending("C");
+      act(() => window.dispatchEvent(new Event("online")));
+      await state.idle();
+      expect(state.stores.opening_attempts.has("C")).toBe(false);
+      expect(aRequests()).toHaveLength(index + 1);
+    }
+    const requestCount = state.requests.length;
+    await state.advance(delay - 1);
+    expect(state.callbacks.size).toBe(0); expect(state.requests).toHaveLength(requestCount);
+    await state.advance(1);
+    expect(state.callbacks.size).toBe(1); expect(state.requests).toHaveLength(requestCount);
+    await state.idle(); elapsed += delay;
+    expect(aRequests()).toHaveLength(index + 2);
+    expect(aRequests().at(-1)!.at - startedAt).toBe(elapsed);
+    expect(state.posts()).toEqual([]); expect(vi.getTimerCount()).toBe(1);
+  }
+  state.responseModes.set("A", "complete");
+  await state.advance(30000); await state.idle();
+  expect(state.stores.opening_attempts.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("recovery wakes at the earliest independent journal retry deadline", async () => {
+  const state = await recoveryHarness(["A"]); state.response.mode = "pending";
+  const startedAt = Date.now();
+  await state.idle(); await state.advance(250);
+  state.seedPending("B"); act(() => window.dispatchEvent(new Event("online")));
+  await state.idle();
+  expect(state.requests.map(request => [decodeURIComponent(request.url).split(":").at(-1), request.at - startedAt])).toEqual([["A", 0], ["B", 250]]);
+  await state.advance(749); expect(state.callbacks.size).toBe(0);
+  await state.advance(1); expect(state.requests).toHaveLength(2); await state.idle();
+  expect(state.requests.at(-1)!.at - startedAt).toBe(1000);
+  expect(decodeURIComponent(state.requests.at(-1)!.url)).toContain("opening-checkpoint:A");
+  await state.advance(249); expect(state.callbacks.size).toBe(0);
+  await state.advance(1); expect(state.requests).toHaveLength(3); await state.idle();
+  expect(state.requests.at(-1)!.at - startedAt).toBe(1250);
+  expect(decodeURIComponent(state.requests.at(-1)!.url)).toContain("opening-checkpoint:B");
+  await state.advance(1750); expect(state.requests).toHaveLength(4); await state.idle();
+  expect(state.requests.at(-1)!.at - startedAt).toBe(3000);
+  expect(decodeURIComponent(state.requests.at(-1)!.url)).toContain("opening-checkpoint:A");
+  expect(vi.getTimerCount()).toBe(1);
+});
+
+it.each(["pending", "blocked"] as const)("externally completed opening journal prunes stale recovery guards (%s)", async mode => {
+  for (const completion of ["deleted", "acknowledged"] as const) {
+    const state = await recoveryHarness(); state.response.mode = mode;
+    const { notifications, publishNotification } = await import("../../app/lib/notifications");
+    publishNotification({ severity: "warning", source: "opening evidence", key: "opening-evidence-delivery", message: "Delivery remains saved" });
+    await state.idle();
+    expect(notifications().filter(record => ["opening-evidence-recovery", "opening-evidence-delivery"].includes(record.key ?? "")).every(record => record.resolvedAt === null)).toBe(true);
+    const networkCount = state.requests.length;
+    // Shared storage changes without this module's acknowledgment/cleanup path.
+    if (completion === "deleted") state.stores.opening_attempts.delete("A");
+    else state.stores.opening_attempts.set("A", { ...(state.stores.opening_attempts.get("A") as object), delivery_state: "idle", delivery: undefined });
+    state.stores.opening_events.clear();
+    await act(async () => { expect(await state.journal.recoverOpeningEvidence()).toEqual({ moreWork: false }); });
+    expect(state.requests).toHaveLength(networkCount); expect(state.posts()).toEqual([]);
+    expect(notifications().filter(record => ["opening-evidence-recovery", "opening-evidence-delivery"].includes(record.key ?? "")).every(record => Boolean(record.resolvedAt))).toBe(true);
+    state.mounted.unmount();
+  }
+});
 
 it("AS-15 blocked opening-evidence operations do not automatically resubmit during idle recovery", async () => {
   const state = await recoveryHarness();
@@ -113,7 +189,10 @@ it("live opening appends request idle recovery without bypassing pending receipt
   await state.idle();
   expect(state.posts()).toHaveLength(1);
   const frozen = structuredClone(state.stores.opening_attempts.get("live"));
+  const requestsBeforeAppend = state.requests.length;
   await act(async () => { capture.response(manifest.decisions[1].move_offset, manifest.decisions[1].expected_uci, "expected"); });
+  await state.idle(); // An append may reconcile work, but cannot replay this identity early.
+  expect(state.requests).toHaveLength(requestsBeforeAppend);
   await state.advance(999);
   expect(state.posts()).toHaveLength(1);
   expect(state.callbacks.size).toBe(0);
@@ -132,15 +211,14 @@ it("live opening appends request idle recovery without bypassing pending receipt
 
 it("pending opening receipt yields to another journal and keeps its warning until confirmed", async () => {
   const state = await recoveryHarness(["A", "B"]);
-  state.response.mode = "pending";
+  state.response.mode = "complete"; state.responseModes.set("A", "pending");
   await state.idle();
-  await state.advance(1000);
-  state.response.mode = "complete";
   await state.idle();
   expect(state.stores.opening_attempts.has("A")).toBe(true);
   expect(state.stores.opening_attempts.has("B")).toBe(false);
   const { notifications } = await import("../../app/lib/notifications");
   expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeNull();
+  await state.advance(1000); state.responseModes.set("A", "complete");
   await state.idle();
   expect(state.stores.opening_attempts.size).toBe(0);
   expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeTruthy();
@@ -169,10 +247,11 @@ it("AS-15 connectivity lease and render storms cannot bypass recovery backoff", 
   await state.idle();
   act(() => { for (let index = 0; index < 10; index++) { window.dispatchEvent(new Event("online")); state.leaseReleased(); } });
   state.mounted.rerender(<state.Harness />);
-  expect(state.callbacks.size).toBe(0); expect(vi.getTimerCount()).toBe(1);
-  await state.advance(999); expect(state.recovery).toHaveBeenCalledOnce();
-  await state.advance(1); expect(state.callbacks.size).toBe(1); expect(state.recovery).toHaveBeenCalledOnce();
-  await state.idle(); expect(state.recovery).toHaveBeenCalledTimes(2); state.unchanged();
+  expect(state.callbacks.size).toBe(1); expect(vi.getTimerCount()).toBe(1);
+  await state.idle(); expect(state.requests).toHaveLength(1); expect(state.callbacks.size).toBe(0);
+  await state.advance(999); expect(state.requests).toHaveLength(1);
+  await state.advance(1); expect(state.callbacks.size).toBe(1); expect(state.requests).toHaveLength(1);
+  await state.idle(); expect(state.requests).toHaveLength(2); state.unchanged();
 });
 
 it("AS-15 foreground activity pauses an eligible recovery retry", async () => {
@@ -185,14 +264,17 @@ it("AS-15 foreground activity pauses an eligible recovery retry", async () => {
 });
 
 it("AS-15 successful recovery resets backoff and healthy backlog has no delay", async () => {
-  const state = await recoveryHarness(["A", "B", "C"]); state.response.mode = "network";
+  const state = await recoveryHarness(["A"]); state.response.mode = "network";
   await state.idle(); await state.advance(1000); await state.idle(); await state.advance(2000);
   state.response.mode = "complete"; await state.idle();
-  expect(state.stores.opening_attempts.has("A")).toBe(false); expect(state.callbacks.size).toBe(1); expect(vi.getTimerCount()).toBe(0);
-  state.response.mode = "network"; await state.idle(); await state.advance(999); expect(state.callbacks.size).toBe(0);
-  await state.advance(1); state.response.mode = "complete"; await state.idle();
-  expect(state.callbacks.size).toBe(1); expect(vi.getTimerCount()).toBe(0);
-  await state.idle(); expect(state.stores.opening_attempts.size).toBe(0); expect(state.callbacks.size).toBe(0);
+  expect(state.stores.opening_attempts.has("A")).toBe(false); expect(state.callbacks.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
+  state.seedPending("B"); state.seedPending("C"); state.responseModes.set("B", "network");
+  act(() => window.dispatchEvent(new Event("online")));
+  await state.idle(); expect(state.callbacks.size).toBe(1);
+  await state.idle(); expect(state.stores.opening_attempts.has("C")).toBe(false); expect(vi.getTimerCount()).toBe(1);
+  await state.advance(999); expect(state.callbacks.size).toBe(0);
+  await state.advance(1); state.responseModes.set("B", "complete"); await state.idle();
+  expect(state.stores.opening_attempts.size).toBe(0); expect(state.callbacks.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
 });
 
 it("AS-15 post-paint recovery retries obey the same eligibility delay", async () => {
@@ -266,7 +348,7 @@ it("AS-15 offline recovery cancels admission and waits for connectivity without 
   Object.assign(navigator, { onLine: false }); act(() => window.dispatchEvent(new Event("offline")));
   expect(state.callbacks.size).toBe(0); await state.advance(60_000); expect(state.requests).toEqual([]);
   Object.assign(navigator, { onLine: true }); act(() => window.dispatchEvent(new Event("online")));
-  await state.idle(); await state.idle(); expect(state.posts()).toHaveLength(0); expect(state.requests).toHaveLength(1);
+  await state.idle(); expect(state.callbacks.size).toBe(0); expect(state.posts()).toHaveLength(0); expect(state.requests).toHaveLength(1);
   Object.assign(navigator, { onLine: false }); act(() => window.dispatchEvent(new Event("offline")));
   Object.assign(navigator, { onLine: true }); act(() => window.dispatchEvent(new Event("online")));
   await state.idle(); expect(state.posts()).toHaveLength(0); expect(state.requests).toHaveLength(1); state.unchanged();
@@ -285,7 +367,7 @@ it("AS-15 a warning subscriber cannot change blocked suspension or transient bac
   const { subscribeNotifications } = await import("../../app/lib/notifications");
   const unsubscribe = subscribeNotifications(() => { throw new Error("Subscriber failed"); });
   try {
-    await state.idle(); await state.idle(); expect(state.posts()).toHaveLength(0); expect(state.requests).toHaveLength(1); state.unchanged();
+    await state.idle(); expect(state.callbacks.size).toBe(0); expect(state.posts()).toHaveLength(0); expect(state.requests).toHaveLength(1); state.unchanged();
   } finally { unsubscribe(); }
 });
 
@@ -309,7 +391,8 @@ it("AS-15 events during an active failing slice cannot create a concurrent or ea
   state.mounted.rerender(<state.Harness />); expect(state.callbacks.size).toBe(0);
   expect(state.journal.recoverOpeningEvidence()).toBe(state.recovery.mock.results[0].value);
   await act(async () => { rejectRequest(new TypeError("Network unavailable")); }); await first;
-  expect(state.callbacks.size).toBe(0); expect(vi.getTimerCount()).toBe(1); expect(fetch).toHaveBeenCalledOnce(); state.unchanged();
+  expect(state.callbacks.size).toBe(1); expect(vi.getTimerCount()).toBe(1); expect(fetch).toHaveBeenCalledOnce();
+  await state.idle(); expect(state.callbacks.size).toBe(0); expect(fetch).toHaveBeenCalledOnce(); state.unchanged();
   await state.advance(1000); expect(state.callbacks.size).toBe(1); expect(fetch).toHaveBeenCalledOnce();
 });
 

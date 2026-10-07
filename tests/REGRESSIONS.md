@@ -2153,3 +2153,30 @@ failed activity, requires termination, and completes a retry using a new Worker.
 `source: "study-worker"`, retained data diagnostics, and the default validation
 source/endpoint. Both failed on the reviewed implementation. Existing startup,
 message-error, worker timing, and coalescing regressions remain required.
+
+## PR #92 review: independent and authoritative journal recovery
+
+`pending journal backoff survives healthy journal successes and idle timer wakeups`
+and `recovery wakes at the earliest independent journal retry deadline` in
+`tests/unit/opening-evidence-recovery-policy.test.tsx` use independent receipt
+responses, saved A/B/C journals, a controlled clock, and explicit idle callbacks.
+Healthy B/C progress immediately while A retains its 1/2/4/8/16/30/30-second
+progression; timers send no requests, and separately delayed identities wake at
+their own earliest deadline. Both failed under the reviewed global admission gate.
+
+`externally completed opening journal prunes stale recovery guards` in that file
+covers pending and blocked local state with both external deletion and durable
+acknowledgment to idle, bypassing this module's cleanup functions. Both guard
+variants failed before reconciliation. The test requires no network replay and
+resolution of both aggregate delivery and recovery notices. Still-persisted
+blocked operations remain covered by `AS-15 blocked opening-evidence operations do not automatically resubmit during idle recovery`
+and `AS-15 explicit operation status recovery resumes a deferred journal without starving backlog`.
+
+Updated existing live-append, independent-receipt, storm, successful-reset,
+offline, warning-subscriber, and active-failure cases retain their named regular
+coverage. An event may request one bounded idle reconciliation slice; request
+eligibility and failure history belong to the journal, never to hook success.
+`AS-15 orphan completion verification timeout yields and retries safely` now also
+checks that direct recovery calls cannot bypass its post-timeout deadline.
+Foreground blocking, unmount/disable cleanup, frozen receipt bodies/keys,
+queue retention, saved reviews, and offline-shell completeness remain required.
