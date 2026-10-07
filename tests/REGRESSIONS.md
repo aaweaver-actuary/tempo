@@ -2214,3 +2214,5 @@ without losing selections across checklist pages and filters.
 `issue78_longer_requested_depth_can_have_no_structural_change` uses production
 clamping/effective-depth output to distinguish changed depth configuration from
 unchanged structure on a short source route.
+
+Prefix rehearsal admission: `test_prefix_rehearsal_replay_waits_only_for_documented_foreground_admission` and `test_prefix_rehearsal_admission_is_bounded_and_retains_retry_header_contract` preserve non-admission failures, stale responses, the exact retry-header contract and a bounded deadline while real health probes contend with read-only requests.

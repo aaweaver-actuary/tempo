@@ -97,6 +97,26 @@ def test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes
                       'candidate_depths': [1, 2, 3, 4], 'product_state_unchanged': True}))
 
 
+def idle_prefix_response(client, method, path, **options):
+    """Wait only for documented foreground admission, preserving other failures."""
+    from app.services import redis_admission_gate
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if redis_admission_gate.foreground_present():
+            time.sleep(0.01)
+            continue
+        response = client.request(method, path, **options)
+        if response.status_code != 503:
+            return response
+        detail = response.json().get('detail', {})
+        if (detail.get('code') != 'evaluation_busy' or
+                detail.get('message') != 'Study work is active. Retry the diagnostic when study is idle.'):
+            return response
+        assert response.headers.get('Retry-After') == '1', response.text
+    raise AssertionError('Prefix rehearsal never obtained foreground-idle admission within 10 seconds')
+
+
 def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids):
     """Real primary/query-only HTTP reads, response fencing and idle traversal."""
     from fastapi.testclient import TestClient
@@ -116,12 +136,12 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
     client = TestClient(app)  # No lifespan: the existing disposable product already owns startup.
     base_path = f'/api/repertoires/{repertoire_id}/prefix-evaluation'
     before = product_snapshot()
-    source_response = client.get(base_path + '/source')
+    source_response = idle_prefix_response(client, 'GET', base_path + '/source')
     assert source_response.status_code == 200, source_response.text
     source = source_response.json()
     for selection, depths in (([], None), ([lines[0]['id']], None),
                               ([line['id'] for line in lines[:2]], {line['id']: 1 for line in lines[:2]})):
-        response = client.post(base_path + '/evaluate', json={
+        response = idle_prefix_response(client, 'POST', base_path + '/evaluate', json={
             'snapshot_id': source['snapshot_id'], 'selected_line_ids': selection, 'candidate_depths': depths})
         assert response.status_code == 200, response.text
     assert product_snapshot() == before, 'Prefix diagnostics wrote product state'
@@ -154,7 +174,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
     evaluator_api.iter_prefix_evaluation = paused_calculation
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(client.post, base_path + '/evaluate', json={
+            future = executor.submit(idle_prefix_response, client, 'POST', base_path + '/evaluate', json={
                 'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
             assert prepared.wait(5), 'Evaluation did not reach its closed-connection calculation'
             with original_connection(read_only=True) as database:
@@ -184,7 +204,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
         return result
     evaluator_api.iter_prefix_evaluation = changed_source
     try:
-        response = client.post(base_path + '/evaluate', json={
+        response = idle_prefix_response(client, 'POST', base_path + '/evaluate', json={
             'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
         assert response.status_code == 409 and response.json()['detail']['code'] == 'stale_snapshot', response.text
         assert 'whole_repertoire' not in response.json()
@@ -192,7 +212,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
         evaluator_api.iter_prefix_evaluation = original_calculation
         with original_connection(read_only=False) as database:
             database.execute_native('UPDATE repertoire_lines SET name=%s WHERE id=%s', (lines[0]['name'], lines[0]['id']))
-    replay = client.post(base_path + '/evaluate', json={
+    replay = idle_prefix_response(client, 'POST', base_path + '/evaluate', json={
         'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
     assert replay.status_code == 200, replay.text
     print(json.dumps({'test': 'test_issue77_readonly_snapshot_and_foreground_concurrency',
