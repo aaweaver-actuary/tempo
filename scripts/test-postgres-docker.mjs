@@ -606,6 +606,22 @@ async function verifyForegroundAndStudyDurability() {
     afterRestartQueue.cards.map(card => card.queue_entry_id), "Burial replay cannot bury the next card");
   console.log("PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
+  // These fixtures have completed their restart/replay proof. Independent Maia
+  // results can keep arriving after Explorer fails; release their owned work
+  // before the next scenario measures compatibility retention.
+  const completedFixtureIds = [importedStudy.repertoire_id, importedBackground.repertoire_id];
+  for (const repertoireId of completedFixtureIds) {
+    await postCommand(`repertoires/${repertoireId}`, {}, { method: "DELETE" });
+  }
+  const afterFixtureCleanup = await get("migration/snapshot");
+  assert(!afterFixtureCleanup.tables.repertoires.some(row => completedFixtureIds.includes(row.id)),
+    "Completed study fixtures are removed before compatibility retention");
+  const remainingFixtureTasks = readScopedPostgresRows(`SELECT COALESCE(json_agg(row_to_json(task)),'[]'::json)
+    FROM (SELECT kind,state FROM background_tasks WHERE state IN ('queued','leased','retrying')
+      AND (deduplication_key IN ('${completedFixtureIds.join("','")}')
+        OR payload_json::jsonb->>'repertoire_id' IN ('${completedFixtureIds.join("','")}'))) task`);
+  assert.deepEqual(remainingFixtureTasks, [], "Completed study fixtures leave no active background tasks");
+  console.log("PASS test_postgres_completed_study_fixtures_release_background_work_before_retention");
   activeStudyRepertoireId = null;
 }
 
