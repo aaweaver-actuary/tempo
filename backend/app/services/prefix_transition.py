@@ -284,7 +284,7 @@ def iter_transition_plan(snapshot: TransitionSnapshot, selected_line_ids, candid
                     depth_changes=depth_changes, current_steps=current_steps, proposed_steps=proposed_steps,
                     cards=tuple(card_plans), memberships=tuple(sorted(membership_plans, key=lambda item: (item.card_id, item.repertoire_id))),
                     attempts=tuple(sorted(attempts, key=lambda item: (item.card_id, item.kind, item.object_id))),
-                    submissions=submissions, blockers=tuple(sorted(blockers, key=lambda item: (item.object_id, item.code))))
+                    submissions=submissions, blockers=tuple(sorted(blockers, key=lambda item: (item.object_id, item.code, item.reason))))
     plan = PrefixTransitionPlan(plan_id='', **contents)
     return plan.model_copy(update={'plan_id': stable_key('prefix-transition-plan', TRANSITION_VERSION, plan.model_dump(mode='json', exclude={'plan_id'}))})
 

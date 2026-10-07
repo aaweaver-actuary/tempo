@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 import uuid
+import psycopg
+from psycopg.rows import dict_row
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -149,9 +151,12 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
             future = executor.submit(client.post, base_path + '/evaluate', json={
                 'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
             assert prepared.wait(5), 'Evaluation did not reach its closed-connection calculation'
-            with original_connection(read_only=True) as database:
-                readers = database.execute_native('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
-                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers)
+            # A fresh observer must not borrow one of the reader PIDs being
+            # inspected and then mistake its own SELECT for held computation.
+            with psycopg.connect(os.environ['TEMPO_DATABASE_READ_URL'], row_factory=dict_row) as observer:
+                observer.execute('SET TRANSACTION READ ONLY')
+                readers = observer.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
+                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers), readers
             started = time.perf_counter()
             with original_connection(read_only=False) as database:
                 database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
@@ -240,9 +245,10 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(client.post, path, json=payload)
             assert prepared.wait(5)
-            with original_connection(read_only=True) as database:
-                readers = database.execute_native('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
-                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers)
+            with psycopg.connect(os.environ['TEMPO_DATABASE_READ_URL'], row_factory=dict_row) as observer:
+                observer.execute('SET TRANSACTION READ ONLY')
+                readers = observer.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
+                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers), readers
             started = time.perf_counter()
             with original_connection(read_only=False) as database:
                 database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))

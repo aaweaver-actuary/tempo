@@ -275,3 +275,11 @@ def test_issue79_integrity_conflicts_fail_closed_with_specific_repair_identity()
     result = plan(prepared)
     assert result.status == 'blocked'
     assert any(blocker.code == 'integrity_conflict' and 'authored-route-conflict' in blocker.reason for blocker in result.blockers)
+
+
+def test_issue79_shared_split_blockers_remain_deterministic_when_override_order_changes():
+    source = snapshot((line('caro'), line('caro-b', CARO_B)), (split(CARO_A, 4), split(CARO_B, 4)))
+    prepared = prepared_snapshot(source)
+    reordered = replace(prepared, source=replace(source, prefix_overrides=tuple(reversed(source.prefix_overrides))))
+    assert transition_snapshot_identity(prepared) == transition_snapshot_identity(reordered)
+    assert plan(prepared, ('caro', 'caro-b'), {'caro': 1, 'caro-b': 1}) == plan(reordered, ('caro', 'caro-b'), {'caro': 1, 'caro-b': 1})
