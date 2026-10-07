@@ -4169,6 +4169,7 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str,
 
 @app.get("/api/repertoire-coverage/maia/available")
 def coverage_maia_available():
+    from .services.canonical_scope_freshness import coverage_scope_predicate, latest_coverage_attempt_predicate
     if not postgres_store.configured():
         return {"available": True}
     read_section = background_read_connection if activity_gate.in_background else read_connection
@@ -4178,9 +4179,11 @@ def coverage_maia_available():
             "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
             "LEFT JOIN background_activity control ON control.source='coverage' "
             "AND control.work_id=n.run_id "
-            "WHERE n.explorer_status='complete' AND r.status IN ('queued','running','complete') "
+            "WHERE r.status IN ('queued','running','complete','failed') "
             "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
-            "AND COALESCE(control.paused,0)=0)",
+            "AND COALESCE(control.paused,0)=0 "
+            f"AND {coverage_scope_predicate(database, native=True)} "
+            f"AND {latest_coverage_attempt_predicate(database, native=True)})",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
     return {"available": bool(row[0])}
@@ -4283,7 +4286,7 @@ def coverage_maia_failure(request: dict,
         raise HTTPException(422, "Invalid coverage failure report")
     with connection(background=activity_gate.in_background) as database:
         node = database.execute(
-            "SELECT run_id FROM repertoire_coverage_nodes WHERE id=? AND maia_status='leased' AND lease_id=?",
+            "SELECT run_id,repertoire_id FROM repertoire_coverage_nodes WHERE id=? AND maia_status='leased' AND lease_id=?",
             (node_id, lease_id),
         ).fetchone()
         if not node:
@@ -4299,6 +4302,8 @@ def coverage_maia_failure(request: dict,
             "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? WHERE id=?",
             (message, now, node["run_id"]),
         )
+        from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+        enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     return {"status": "failed"}
 
 
