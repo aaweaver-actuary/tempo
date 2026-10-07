@@ -2121,3 +2121,8 @@ PostgreSQL original-history/backup/migration/restart/receipt and incompatible
 fallback regressions remain required. The concurrent-source regression now
 cancels without restarting fallback rather than silently accepting changed work.
 No live study fixture, background audit, release bypass or schema change is used.
+
+## Daily study sparse unlock recovery — October 7, 2026
+
+- `backend/tests/test_daily_queue_sparse_unlock.py::test_daily_queue_sparse_unlock_does_not_scan_locked_backlog` reproduces the live queue blocker with 15,000 locked cards and 21 eligible cards: 1,875 slices before the fix, three after. Published generation, mature incoming transposition, and locked/learning-parent exclusions remain authoritative.
+- Existing `test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips`, `test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_replay`, and `test_any_mature_incoming_path_unlocks_a_transposed_descendant` protect replay, bounded slices, and graph semantics.
