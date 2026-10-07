@@ -2155,3 +2155,5 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `complete verification and non-PR boundaries retain the full collected browser matrix`
 - `browser quality rejects missing extra duplicate wrong-project and stale results`
 - `documented global browser smoke count and titles match inventory and real collection`
+
+The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.

@@ -383,6 +383,7 @@ test("browser quality rejects missing extra duplicate wrong-project and stale re
   const invalidResults = [
     report => report.tests.pop(),
     report => report.tests.push({ id: "extra:chromium", status: "passed", retries: 0 }),
+    report => { report.tests[0].id = `${report.tests[0].id.startsWith("f") ? "e" : "f"}${report.tests[0].id.slice(1)}`; },
     report => { report.tests[0] = { ...report.tests[1] }; },
     report => { report.tests[0].id = report.tests[0].id.replace(/:[^:]+$/, report.tests[0].id.endsWith(":chromium") ? ":webkit" : ":chromium"); },
     report => { report.commit = "older-revision"; },
