@@ -1,9 +1,10 @@
 """HTTP admission, immutable scopes, and fixed SQL bounds for #82."""
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 import json
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from app import prefix_diagnostics_api as api
 from app.services.opening_decision_evidence import reduce_observations
@@ -66,6 +67,38 @@ def test_prefix_diagnostics_bounds_history_and_closes_reads_before_projection(pr
     assert 'attempt_id=ANY' in observation_sql and observation_parameters == (['one'], 2000)
     assert all('OFFSET' not in sql and 'FOR UPDATE' not in sql for sql, _ in statements)
     assert next(parameters for sql, parameters in statements if 'WITH prefix_ids' in sql)[6] == 9
+
+
+@pytest.mark.parametrize('mismatched_attempt_index', [api.ATTEMPT_LIMIT, api.ATTEMPT_LIMIT - 1],
+                         ids=['excluded-101st', 'included-100th'])
+def test_prefix_diagnostics_manifest_validation_only_checks_reporting_window(prepared, mismatched_attempt_index):
+    presentation, _, attempts, _, statements = prepared
+    newest_started_at = datetime.fromisoformat(attempts[0]['started_at'])
+    attempts.extend({**attempts[0], 'attempt_id': f'older-{attempt_offset}',
+                     'started_at': (newest_started_at - timedelta(seconds=attempt_offset)).isoformat()}
+                    for attempt_offset in range(1, api.ATTEMPT_LIMIT + 1))
+    attempts[mismatched_attempt_index]['manifest_id'] = 'x' * 64
+    application = FastAPI()
+    application.include_router(api.router)
+    response = TestClient(application).get('/api/repertoires/rep/prefix-diagnostics/card',
+        params={'manifest_id': presentation['manifest_id'], 'graph_generation': 1})
+
+    if mismatched_attempt_index < api.ATTEMPT_LIMIT:
+        assert response.status_code == 409
+        assert response.json() == {'detail': 'Stored evidence does not match this presentation. Inspect service diagnostics.'}
+    else:
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result['window'] == {
+            'attempt_limit': api.ATTEMPT_LIMIT, 'attempt_count': api.ATTEMPT_LIMIT,
+            'older_attempts_excluded': True, 'newest_started_at': attempts[0]['started_at'],
+            'oldest_started_at': attempts[api.ATTEMPT_LIMIT - 1]['started_at'],
+        }
+        assert result['decisions'][0]['clean_successes'] == 1
+    observation_parameters = next(parameters for sql, parameters in statements
+                                  if 'FROM opening_evidence_observations' in sql)
+    assert observation_parameters == ([attempt['attempt_id'] for attempt in attempts[:api.ATTEMPT_LIMIT]],
+                                      api.ATTEMPT_LIMIT * 20)
 
 
 def test_prefix_diagnostics_isolates_repertoire_color_revision_and_occurrence(prepared):

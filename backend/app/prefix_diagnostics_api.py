@@ -142,7 +142,7 @@ def prefix_diagnostics_detail(identifier: str, card_id: str,
     manifest = prefix['manifest']
     if manifest is None or manifest['manifest_id'] != manifest_id:
         raise diagnostic_error('The prefix presentation changed. Refresh Prefix difficulty before continuing.')
-    if any(attempt['manifest_id'] != manifest_id for attempt in attempts):
+    if any(attempt['manifest_id'] != manifest_id for attempt in attempts[:ATTEMPT_LIMIT]):
         raise diagnostic_error('Stored evidence does not match this presentation. Inspect service diagnostics.')
     try:
         return project_prefix_diagnostics(manifest, generation, attempts,
