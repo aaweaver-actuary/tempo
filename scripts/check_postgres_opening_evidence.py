@@ -1071,6 +1071,11 @@ if __name__=='__main__':
         os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_SHADOW_REHEARSAL_URL', 'postgresql://postgres@postgres:5432/tempo')
         os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
         assert os.getenv('TEMPO_REDIS_URL'), 'Opening evidence admission proof requires runner-owned Redis'
+<<<<<<< HEAD
+=======
+        from check_postgres_prefix_diagnostics import test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission
+        test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission()
+>>>>>>> main
         test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
         test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics()
         test_postgres_opening_checkpoint_reduction_yields_to_foreground_review()

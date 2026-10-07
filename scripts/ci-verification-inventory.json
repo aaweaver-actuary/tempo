@@ -4,7 +4,11 @@
     "board": ["board-geometry.spec.ts", "board-input.spec.ts", "board-interactions.spec.ts", "board-state.spec.ts", "held-drag.spec.ts", "held-drag-preservation.spec.ts", "keyboard-context.spec.ts"],
     "discoveries": ["discovery-viewer.spec.ts", "activity-tray.spec.ts", "training-queue-contention.spec.ts"],
     "training": ["phone-opening-study.spec.ts", "guided-review-board-restoration.spec.ts", "training-prefetch.spec.ts", "phone-offline-training.spec.ts", "opening-evidence.spec.ts", "recovery.spec.ts", "tactic-capture.spec.ts"],
-    "repertoire": ["prefix-split-training.spec.ts", "repertoire-statistics.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts"],
+<<<<<<< HEAD
+    "repertoire": ["prefix-split-training.spec.ts", "repertoire-statistics.spec.ts", "opening-segmentation.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts"],
+=======
+    "repertoire": ["prefix-split-training.spec.ts", "repertoire-statistics.spec.ts", "opening-segmentation.spec.ts", "prefix-comparison.spec.ts", "settings-repertoire-limits.spec.ts", "canonical-repertoire-prefix.spec.ts", "prefix-diagnostics.spec.ts"],
+>>>>>>> main
     "studies": ["studies.spec.ts"],
     "games": ["paste-analysis.spec.ts", "comparison-workspace.spec.ts", "real-game-feedback.spec.ts", "games-board-context.spec.ts"],
     "defense": ["defense-preview.spec.ts", "settings-defense-toggle.spec.ts", "provider-integration.spec.ts"],
@@ -12,6 +16,29 @@
     "pinned": ["visual.spec.ts", "performance.spec.ts"]
   },
   "sources": [
+<<<<<<< HEAD
+    { "paths": ["app/components/discoveries-tray.tsx", "app/components/activity-tray.tsx"], "families": ["discoveries", "training"] },
+    { "paths": ["app/components/opening-segmentation.tsx", "app/domain/opening-segmentation.ts", "backend/app/opening_segmentation_api.py", "backend/app/services/opening_segmentation.py", "backend/app/services/postgres_opening_segmentation.py"], "families": ["repertoire"] },
+    { "paths": ["app/components/repertoire-statistics.tsx"], "families": ["repertoire"] },
+    { "paths": ["app/components/studies.tsx"], "families": ["studies", "training"] },
+    { "paths": ["app/components/comparison-workspace.tsx"], "families": ["games"] }
+  ],
+  "critical": [
+    { "file": "opening-evidence.spec.ts", "title": "AS-15 a real tab lease releases stranded evidence into a later idle slice", "covers": "passive Web Locks release wakeup and one-journal idle slices" },
+    { "file": "recovery.spec.ts", "title": "intentional training failure is saved once and reload resumes it without another failure", "covers": "durable review and reload" },
+    { "file": "phone-offline-training.spec.ts", "title": "prepared phone queue survives API outage reload and syncs its review", "covers": "offline replay" },
+    { "file": "opening-evidence.spec.ts", "title": "AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive", "covers": "shadow capture foreground isolation" },
+    {"file": "opening-evidence.spec.ts", "title": "AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity", "covers": "evidence recovery foreground readiness"},
+    {"file": "opening-evidence.spec.ts", "title": "AS-16 restarted opening board records guided arrows and retains the prior partial attempt", "covers": "Restart assistance provenance"},
+    {"file": "opening-evidence.spec.ts", "title": "AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt", "covers": "aggregate durability under optional evidence quota"},
+    {"file": "opening-evidence.spec.ts", "title": "AS-16 offline compact quota failure blocks advancement until durable retry", "covers": "offline compact quota failure durability boundary"},
+    {"file": "opening-evidence.spec.ts", "title": "AS-16 offline evidence quota saves a compact phone review and retains its journal after sync", "covers": "offline quota aggregate-only identity and journal retention"},
+    { "file": "recovery.spec.ts", "title": "failed initial loads never display empty records or zero statistics", "covers": "fail-closed service behavior" },
+    { "file": "studies.spec.ts", "title": "FEN-only study square exercise is authored enrolled and reviewed through the real workspace", "covers": "Study grading" },
+    { "file": "studies.spec.ts", "title": "prepared study response is graded offline and replayed with its actual squares", "covers": "Study offline grading" },
+    { "file": "training-queue-contention.spec.ts", "title": "discovery preview backlog leaves a prompt foreground training queue refresh", "covers": "foreground contention" },
+    { "file": "held-drag-preservation.spec.ts", "title": "held training drag survives sync, service, notification and parent updates and drops once", "covers": "held drag preservation" }
+=======
     {"paths": ["app/components/prefix-comparison-dialog.tsx", "app/domain/prefix-comparison.ts", "app/lib/prefix-comparison.ts"], "families": ["repertoire"], "reason": "Read-only route selection and structural comparisons share the repertoire snapshot and presentation contract."},
     {"paths": ["app/components/discoveries-tray.tsx", "app/lib/discovery-preview-scheduler.ts"], "families": ["discoveries", "training"], "reason": "Discovery previews/admissions and foreground training queue contention share this bounded scheduler."},
     {"paths": ["app/components/opening-segmentation.tsx", "app/domain/opening-segmentation.ts", "backend/app/opening_segmentation_api.py", "backend/app/services/postgres_opening_segmentation.py"], "families": ["repertoire"], "reason": "These sources implement repertoire segmentation previews and their snapshot/publication contract."},
@@ -30,5 +57,6 @@
     {"file": "studies.spec.ts", "title": "FEN-only study square exercise is authored enrolled and reviewed through the real workspace", "covers": "Study grading"},
     {"file": "training-queue-contention.spec.ts", "title": "discovery preview backlog leaves a prompt foreground training queue refresh", "covers": "foreground contention"},
     {"file": "held-drag-preservation.spec.ts", "title": "held training drag survives sync, service, notification and parent updates and drops once", "covers": "held drag preservation"}
+>>>>>>> main
   ]
 }

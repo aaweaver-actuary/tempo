@@ -4101,7 +4101,29 @@ button {
   .canonical-prefix-dialog { padding: 16px; gap: 8px; }
   .canonical-prefix-board { width: min(240px, 100%); }
 }
+<<<<<<< HEAD
+=======
 
+.prefix-diagnostics {
+  overflow-wrap: anywhere;
+}
+.prefix-diagnostics > div > button {
+  margin-block: 4px;
+  white-space: normal;
+  text-align: left;
+}
+.diagnostic-decision {
+  margin-block: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.diagnostic-decision summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  align-content: center;
+}
 /* Read-only route/depth comparisons share the repertoire dialog contract. */
 .prefix-comparison-dialog { width: min(1100px, 100%); padding: 24px; max-height: calc(100dvh - 40px); overflow-y: auto; overflow-wrap: anywhere; }
 .prefix-comparison-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -4120,3 +4142,4 @@ button {
 .prefix-scope-results th:first-child { width: 48%; }
 .prefix-candidate { margin-top: 24px; border-top: 1px solid var(--line); }
 @media (max-width: 767px) { .prefix-comparison-dialog { padding: 16px; } .prefix-comparison-scopes { grid-template-columns: minmax(0, 1fr); } }
+>>>>>>> main

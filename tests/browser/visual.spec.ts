@@ -306,6 +306,8 @@ for (const width of [390, 1280]) {
     await expect(page).toHaveScreenshot(`review-conflicts-${width}.png`, { animations: "disabled", fullPage: true });
   });
 }
+<<<<<<< HEAD
+=======
 
 for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ page }) => {
   const fixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8"));
@@ -336,3 +338,4 @@ for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ pag
   await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).getByRole("heading", { name: "Whole repertoire", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
   await expect(page).toHaveScreenshot(`prefix-comparison-whole-${width}.png`, { animations: "disabled", fullPage: true });
 });
+>>>>>>> main

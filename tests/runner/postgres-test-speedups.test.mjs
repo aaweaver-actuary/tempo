@@ -330,6 +330,8 @@ test("Docker context excludes generated test credentials and local cache churn",
   }
 });
 
+<<<<<<< HEAD
+=======
 test("disposable PostgreSQL backup handles INT and TERM while waiting on its sleeper", () => {
   const composeSource = readFileSync(join(root, "docker-compose.postgres.test.yml"), "utf8");
   const backupServiceSource = composeSource.match(/^  postgres-backup:\r?\n([\s\S]*?)(?=^  \S)/m)?.[1];
@@ -345,6 +347,7 @@ test("disposable PostgreSQL backup handles INT and TERM while waiting on its sle
   assert.equal(syntaxCheck.status, 0, syntaxCheck.stderr);
 });
 
+>>>>>>> main
 test("scenario dispatch builds once and all startup paths forbid implicit rebuilds", () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   assert.equal(source.split('[...compose, "build"]').length - 1, 1);

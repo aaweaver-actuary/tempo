@@ -1,3 +1,5 @@
+<<<<<<< HEAD
+=======
 Issue #79 — read-only shorter-prefix transition planning (October 7, 2026):
 
 - `backend/tests/test_prefix_transition.py`: `test_issue79_equal_depth_and_empty_selection_are_explicit_no_ops`; `test_issue79_depth_only_shortening_is_distinct_from_no_op`; `test_issue79_selected_caro_routes_preserve_unselected_qgd_and_alias_decisions`; `test_issue79_shared_card_retains_other_membership_history_queue_and_owner`; `test_issue79_implicit_authored_owner_retains_card_without_explicit_other_link`.
@@ -7,6 +9,7 @@ Issue #79 — read-only shorter-prefix transition planning (October 7, 2026):
 - `backend/tests/test_prefix_transition_api.py`: `test_issue79_http_plan_is_typed_deterministic_and_has_no_application_authority`; `test_issue79_http_invalid_or_lengthening_requests_fail_without_partial_plans`; `test_issue79_http_rejects_stale_sources_and_state_changes_during_planning`; `test_issue79_http_conflicting_authored_membership_returns_complete_blocked_plan`; `test_issue79_http_outage_and_foreground_preemption_are_retryable_without_false_success`; `test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_close`; `test_issue79_runtime_guard_is_background_query_only_without_command_dispatch`.
 - Regular disposable PostgreSQL durability, `scripts/check_postgres_opening_segmentation.py`: `test_issue79_reader_only_deployed_api_plans_without_product_writes` runs the real POST through the reader-only API and compares product state; `test_issue79_readonly_planner_foreground_concurrency_and_stale_replay` proves explicitly read-only repeatable snapshots, idle readers during computation, a real NOWAIT foreground review, rejection of the now-stale plan, and fresh retry with no planner writes; `test_issue79_pending_command_bindings_are_accounted_before_delivery` covers direct reviews and nested checkpoint/study payloads in retained operation receipts. Existing #77 proofs remain required. These are feature regressions, not a repair of an existing planner.
 
+>>>>>>> main
 PR #72 integration with main #69/#83 (October 5, 2026):
 
 - `test_queue_origin_migration_follows_current_main_without_renumbering_published_versions` checks contiguous numbering/readiness and preserved published 030/031. `test_postgres_current_main_schema31_upgrade_adds_queue_origins_without_changing_evidence` in the regular durability upgrade rehearsal proves real 31->32 backfill and unchanged evidence contexts.
@@ -89,7 +92,11 @@ Quiet notifications (October 2, 2026):
 | Diagnostic incident keys or serialized bundles persist a credential | `hydrates legacy secret-bearing incident keys without losing counts or identity`; `removes canary secrets from every persisted and exported incident field` |
 | A 250 ms background transaction times out while claiming threats or reading recurring evidence | `test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue`; `test_postgres_recurring_evidence_uses_per_event_analysis_lookups`; `scripts/check_postgres_upgrade.py` verifies the claim indexes; `scripts/measure_postgres_incident_workloads.py` measures all four reported workloads on an isolated restore |
 | Docker Compose warns that the existing Tempo data volume belongs to another project | `test_tempo_data_volume_is_external` in `scripts/test-docker.mjs` verifies Compose resolves `tempo-data` as external and retains its name |
+<<<<<<< HEAD
+| An in-progress game sync exposes partial worker counters as a completed frontend result, or malformed completion appears successful | `test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result`; `test_completed_game_sync_rejects_partial_result_in_public_model`; `backend sync serialization matches strict frontend status contract across progress and completion` |
+=======
 | An in-progress game sync exposes partial worker counters as a completed frontend result, or malformed completion appears successful | `test_game_sync_public_projection_preserves_coordinator_import_contract`; `test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result`; `test_completed_game_sync_rejects_partial_result_in_public_model`; `backend sync serialization matches frontend contract across every status and legacy partial counters` |
+>>>>>>> main
 | Two indefinitely preparing discovery admissions starve a later unsent save, or an old oversized key cannot recover safely | `two indefinitely preparing admissions cannot starve a later unsent discovery`; `a large saved discovery backlog receives bounded submission service`; `legacy oversized stored operation key is repaired only after its confirmed rejection`; `uncertain invalid stored operation key remains intact with an actionable error` |
 | Validation failures are double-reported, attributed to a display label, or merged with unrelated errors after reload | `one validation exception reports once with its HTTP endpoint and resolves after valid status`; `does not reuse notification identity after debug module reload`; `repeated incident observations keep first seen history and count occurrences` |
 | PostgreSQL background timeout leaks through a pool, masks rollback, or aborts a bounded populated workload | `scripts/check_postgres_background_budget.py` checks transaction-local timeout, rollback, and reuse; `scripts/check_postgres_background_workloads.py` commits a threat claim, recurring evidence read, 864-key position read, and bounded priority retention on populated fixtures |
@@ -1441,7 +1448,11 @@ this input adaptation.
 - `AS-15 recovery cancels idle work during foreground transitions and after unmount`, `AS-15 only the current queue generation can settle recovery readiness`, `AS-15 overlapping recovery shares one scan and failed storage remains retryable` — lifecycle cancellation, empty valid queue, unavailable queue, generations and coalescing.
 - `AS-16 wrong-response reveal remains revealed` — real Home move handling keeps post-error assistance distinct from Restart guidance.
 - `AS-16 quota fallback reload and ambiguous retries retain the compact payload and key (QuotaExceededError/NS_ERROR_DOM_QUOTA_REACHED)`, `AS-16 denied initial review storage never switches to aggregate-only (SecurityError/InvalidStateError/NotAllowedError)`, `AS-16 unknown initial review storage failure remains blocking` — durable capacity-fallback identity and fail-closed non-quota or non-DOMException storage errors, including an unverified object with the Firefox quota name.
+<<<<<<< HEAD
+- `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity`, `AS-16 restarted opening board records guided arrows and retains the prior partial attempt`, `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` — regular critical browser workflows for orphan recovery, rendered Restart guidance, aggregate advancement, retained IndexedDB data and in-flight receipt safety.
+=======
 - `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity`, `AS-16 restarted opening board records guided arrows and retains the prior partial attempt`, `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` — regular training-family browser workflows for orphan recovery, rendered Restart guidance, aggregate advancement, retained IndexedDB data and in-flight receipt safety.
+>>>>>>> main
 - `test_opening_checkpoint_request_is_background_without_a_client_work_class_header` — actual HTTP middleware keeps standalone checkpoint receipt admission out of its own foreground lease; legacy clients need no new header, and review requests stay foreground.
 
 ### PR #69 — preserve shadow-only GET admission
@@ -1472,7 +1483,11 @@ These regressions run in `tests/unit/opening-evidence-background-admission.test.
 
 Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests/unit/opening-evidence-recovery-slices.test.tsx`, alongside existing live-delivery, Home, outbox, browser and PostgreSQL contracts. Offline aggregate ownership and live flush behavior remain authoritative.
 
+<<<<<<< HEAD
+- `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync`; `AS-16 offline compact quota failure blocks advancement until durable retry` — real IndexedDB transactions and phone UI prove compact durability, blocking failure/retry, aggregate-only sync identity and retained evidence across reload. Registered critical browser inventory.
+=======
 - `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync`; `AS-16 offline compact quota failure blocks advancement until durable retry` — real IndexedDB transactions and phone UI prove compact durability, blocking failure/retry, aggregate-only sync identity and retained evidence across reload. Required in the training browser family and complete matrix.
+>>>>>>> main
 - `AS-15 reconnect requests share an active recovery slice without concurrent journal work`; `AS-15 a live browser lease yields to later recovery journals without closing its attempt`; `AS-15 recovery leaves completions owned by pending aggregate reviews and retained evidence untouched` — serialized reconnects, lease safety/fairness and aggregate ownership exclusions.
 - `AS-16 aggregate phone storage quota without evidence remains blocking` — quota fallback is restricted to optional evidence; the successful quota case covers modern and legacy Firefox quota names.
 - `AS-15 live flushing requested during a recovery slice keeps its normal delivery behavior` — shared serialization does not drop a live caller's pending checkpoint work or expand the recovery slice itself.
@@ -1494,7 +1509,11 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 - `AS-15 orphan completion verification timeout yields and retries safely` — a stalled background GET releases the coalesced recovery promise after 15s without changing journal state; a later 404 yields one partial checkpoint.
 - `AS-15 lease-blocked opening evidence is retried after the owning tab releases it`; `AS-15 live lease retry does not create an idle recovery loop` — held A and later B/C progress, passive ownership release wakes the actual hook after backlog drains, foreground/idle checks, no polling and coalesced releases.
 - `AS-15 unmount cancels passive lease waiters without running recovery`; `AS-15 orphan verification response body shares its bounded deadline` — cancellation and full response-read boundaries.
+<<<<<<< HEAD
+- `AS-15 a real tab lease releases stranded evidence into a later idle slice` — real two-tab Web Locks, B/C drain while A remains held, tab close wakes idle recovery without reconnect/reload; frozen retry and partial seal remain separate slices. Critical browser inventory.
+=======
 - `AS-15 a real tab lease releases stranded evidence into a later idle slice` — real two-tab Web Locks, B/C drain while A remains held, tab close wakes idle recovery without reconnect/reload; frozen retry and partial seal remain separate slices. Required in the training browser family and complete matrix.
+>>>>>>> main
 - `AS-16 guided review failure receipt shares the foreground review deadline` — existing Again/failure command also retains its signal through receipt confirmation without demoting foreground admission.
 
 - `AS-15 blocked opening-evidence operations do not automatically resubmit during idle recovery` — real hook/journal POST 202 and typed blocked receipt preserve the frozen checkpoint, events and operation identity without automatic retry or rejection. Coverage: `tests/unit/opening-evidence-recovery-policy.test.tsx`.
@@ -2147,6 +2166,26 @@ fallback regressions remain required. The concurrent-source regression now
 cancels without restarting fallback rather than silently accepting changed work.
 No live study fixture, background audit, release bypass or schema change is used.
 
+<<<<<<< HEAD
+## Daily study sparse unlock recovery — October 7, 2026
+
+- `backend/tests/test_daily_queue_sparse_unlock.py::test_daily_queue_sparse_unlock_does_not_scan_locked_backlog` reproduces the live queue blocker with 15,000 locked cards and 21 eligible cards: 1,875 slices before the fix, three after. Published generation, mature incoming transposition, and locked/learning-parent exclusions remain authoritative.
+- Existing `test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips`, `test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_replay`, and `test_any_mature_incoming_path_unlocks_a_transposed_descendant` protect replay, bounded slices, and graph semantics.
+
+## Issue #38 — claim durable slices at execution capacity
+
+- `backend/tests/test_daily_study_dispatch.py::test_background_lease_starts_when_slice_execution_begins` — an unleased wake delayed 120 seconds claims a fresh lease and executes one slice directly. Failed on main before the fix.
+- `test_background_legacy_deliveries_preserve_restart_and_replay` and `test_background_current_legacy_delivery_commits_once_before_duplicate_wake` — expired worker recovery, compatible legacy messages, stale tokens, duplicate wakes and commit-before-ack replay publish once. The restart test failed before the fix.
+- `test_background_crash_during_slice_rolls_back_then_recovers_after_lease` — actual rollback after simulated worker loss, expiry, and successful replay.
+- `test_background_continuation_broker_failure_retains_committed_slice` — failed broker wake preserves phase/cursor and periodic recovery completes it; failed before the fix.
+- `test_background_execution_preserves_pause_priority_promotion_and_delayed_eligibility` and `test_background_execution_capacity_yields_to_foreground_without_leasing` — selection semantics and foreground admission remain intact.
+- `test_background_congested_wakes_complete_without_broker_lease_expiries` — five 120-second-delayed wakes produce five committed completions, zero broker-induced expiries and zero stale deliveries.
+- `scripts/check_postgres_daily_study_dispatch.py`, in regular `background_workloads`, proves the real 15,000-card sparse selection, bounded PostgreSQL transactions, Redis foreground admission, expired-worker recovery, and fenced legacy replay.
+- `tests/browser/training-queue-contention.spec.ts::daily study opens while background analysis remains queued` seeds a task-owned real PostgreSQL queue plus 3,000 eligible low-priority analysis tasks, runs the actual Celery worker, verifies the actual queue/card and Chessground pawn move while analysis remains queued, and cleans up its own fixture. No queue or activity responses are mocked.
+- `tests/browser/studies.spec.ts::FEN-only study square exercise is authored enrolled and reviewed through the real workspace` waits for the complete published projection before requiring an offline phone copy. CI reproduced a partial online queue containing the study card while projection state was still refreshing; offline preparation correctly rejected that partial copy. The test retains its real service-worker/IndexedDB and authoring/review assertions without changing timeouts or product readiness behavior.
+
+Existing cutover handler tests now assert direct execution instead of a second broker message; their foreground, cursor, publication and stale-replay assertions remain unchanged. Nonblocking background admission, refresh coalescing and selective analysis fan-out (#39–#41) remain separate work.
+=======
 Disposable PostgreSQL backup shutdown (October 7, 2026; related performance work #45):
 
 - `disposable PostgreSQL backup handles INT and TERM while waiting on its sleeper`
@@ -2325,3 +2364,37 @@ the isolated retention scenario passed. This preserves every product assertion
 and isolates the next scenario without changing priorities or raising timeouts.
 
 - Issue #79: `test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejection` keeps real foreground health admission distinct from deterministic plan replay and never retries database/service failures.
+
+## Issue #82 — Read-only decision-level prefix difficulty diagnostics
+
+Backend regular-suite coverage (`backend/tests/test_prefix_diagnostics.py` and `test_prefix_diagnostics_api.py`):
+
+- `test_prefix_diagnostics_matches_shadow_reducer_representative_attempts` — exact persisted observation parity with PR #69, including wrong response/reveal/correction and original timestamps.
+- `test_prefix_diagnostics_assistance_and_correction_never_create_clean_recall` — all five assistance kinds and manual-failure correction retain zero clean credit; `test_prefix_diagnostics_unverified_responses_do_not_establish_coverage` excludes illegal/unverified responses from coverage.
+- `test_prefix_diagnostics_partial_attempt_preserves_reached_predecessors` — earlier clean recall survives later failure; unreached successors stay unknown.
+- `test_prefix_diagnostics_distinct_days_use_frozen_study_day` — repeated same-day retries count once using the original frozen timezone; `test_prefix_diagnostics_unknown_weak_and_strong_measure_coverage` distinguishes unknown from weak and strong response-day coverage even when every response fails.
+- `test_prefix_diagnostics_later_assistance_preserves_reducer_clean_evidence` — later assistance does not rewrite an already clean first response, matching PR #69 exactly.
+- `test_prefix_diagnostics_isolates_repertoire_color_revision_and_occurrence`; `test_prefix_diagnostics_repeated_decision_identity_keeps_occurrences_separate` — immutable presentation predicates and separate occurrence indices prevent scope/history mixing.
+- `test_prefix_diagnostics_legacy_reviews_create_no_observations` — aggregate review history is never queried or decomposed.
+- `test_prefix_diagnostics_bounds_history_and_closes_reads_before_projection`; `test_prefix_diagnostics_history_window_and_recent_outcomes_are_bounded`; `test_prefix_diagnostics_recent_outcomes_order_instants_not_timezone_strings` — 101-header lookahead, 100 selected attempts, at most 2,000 observation rows, 20 recent outcomes per decision, and computation after connection closure.
+- PR #100: `test_prefix_diagnostics_manifest_validation_only_checks_reporting_window` — a different manifest on the excluded 101st attempt permits HTTP 200 with the newest 100-attempt window and `older_attempts_excluded=true`; a mismatch on the included 100th attempt retains HTTP 409 and its existing error. The excluded case reproduced HTTP 409 before the fix; observation reads remain limited to included attempts.
+- `test_prefix_diagnostics_pagination_and_detail_reject_changed_context`; `test_prefix_diagnostics_background_admission_preserves_foreground_progress`; `test_prefix_diagnostics_connection_is_authoritative_bounded_and_admitted`; `test_prefix_diagnostics_index_migration_only_adds_read_indexes` — stale context rejection, header-independent secondary classification, PostgreSQL reader-role read-only bounded connections, and additive indexing only.
+
+Real PostgreSQL/Redis coverage (`scripts/check_postgres_prefix_diagnostics.py`, called by the existing opening-evidence rehearsal in regular durability):
+
+- `test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission` — 102 reducer-persisted attempts with a 100-attempt read window; exact reducer-derived expected projection; assistance, failure, correction, partial/unreached and day-based coverage; shared repertoire isolation; legacy history; original-key replay; indexed access; real Redis foreground denial before SQL; read-only repeatable-read 250ms/25ms limits; unchanged cards/queue/reviews/splits and complete shadow digest; new-revision unknown state with historical evidence preserved.
+
+UI coverage (`tests/unit/prefix-diagnostics-regressions.test.tsx`): named `PD-82` tests protect on-demand background GETs, Unknown/Weak/Strong coverage, window disclosure, generation-bound pagination, stale payload rejection, cancellation, actionable errors, and bounded read-only contracts. `tests/browser/prefix-diagnostics.spec.ts` adds `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence` at phone/desktop sizes, proving the real menu/GET workflow, no startup reads, no horizontal overflow, and unchanged queue cards.
+
+This is a new read-only feature; there was no existing diagnostic implementation to reproduce as a failing defect. Whole-card scheduling and PR #69 capture/recovery remain unchanged. Counts are explicitly windowed, and no latency or difficulty/depth classifier is introduced.
+
+- `test_prefix_diagnostics_reader_credentials_are_sufficient` — failed before the reader-pool repair (writer credentials are absent in the deployed API); passes with the configured PostgreSQL reader and explicit repeatable-read/read-only transaction. The initial real browser run reproduced the same missing-writer-URL error. No writer credentials were added to the API.
+
+- Updated `test_queue_origin_migration_follows_current_main_without_renumbering_published_versions` for exact readiness version 36. Initial PR CI caught its obsolete version-35 assertion; continuity and the exact published queue-origin migration assertions remain enforced, with the new diagnostics index migration separately protected.
+
+- The PostgreSQL foreground-admission fixture uses an actual foreground `/api/settings` database read while the diagnostic waits on a held Redis foreground lease. Its initial full-health probe correctly failed because the durability harness intentionally stops background consumers. The focused real PostgreSQL/Redis scenario passes after this fixture repair; health semantics and required durability stages are unchanged. A standalone invocation also refuses databases lacking the runner-owned disposable marker.
+
+- `PD-82 prefix selectors distinguish identical learner moves across opponent branches` and `test_prefix_diagnostics_full_saved_route_distinguishes_identical_learner_moves` protect full saved-presentation SAN labels (including opponent replies). The missing label/contract regression failed before the display repair. Labels derive from the saved presentation after connection closure and do not reconstruct study attempts.
+
+- `test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes` — diagnostics rehearsal removes only its owned active cards/repertoires so later global comparisons remain isolated; retained shadow evidence stays durable. Covered by `scripts/check_postgres_prefix_diagnostics.py` in the regular PostgreSQL evidence rehearsal.
+>>>>>>> main

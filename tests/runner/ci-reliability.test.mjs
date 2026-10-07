@@ -1,12 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+<<<<<<< HEAD
+import { readFileSync, readdirSync } from "node:fs";
+=======
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+>>>>>>> main
 import { spawnSync } from "node:child_process";
 import { inventory, mandatoryLayers, allLayers, changedPathsFromNameStatus, validateInventory, verificationPlan, collectCases } from "../../scripts/ci-verification-plan.mjs";
 import { evaluateQuality, deploymentAllowed } from "../../scripts/ci-quality.mjs";
 import { executeLayer, layerCommands, browserResults } from "../../scripts/ci-run-layer.mjs";
 import { postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
 
+<<<<<<< HEAD
+=======
 const demotedCriticalCases = [
   { file: "opening-evidence.spec.ts", family: "training", title: "AS-15 a real tab lease releases stranded evidence into a later idle slice" },
   { file: "opening-evidence.spec.ts", family: "training", title: "AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive" },
@@ -30,6 +36,7 @@ function currentBrowserCases() { return completeBrowserCases ??= collectBrowserC
 function selectedIds(planned) { return planned.collection.filter(item => item.selected).map(item => item.id).sort(); }
 
 
+>>>>>>> main
 const files = Object.values(inventory.families).flat();
 const cases = files.filter(file => !inventory.families.pinned.includes(file)).flatMap(file => [
   { id: `${file}:ordinary`, file, title: "ordinary case", fullTitle: `chromium ${file} ordinary case`, project: "chromium" },
@@ -169,16 +176,32 @@ test("failed-layer rerun leaves successful unrelated jobs intact and diagnostic 
 });
 
 test("actual browser collection grep selects exactly the planned tests", () => {
+<<<<<<< HEAD
+  const environment = { ...process.env, TEMPO_DOCKER_URL: "http://127.0.0.1:1" };
+  function collect(grep) {
+    const result = spawnSync("npx", ["playwright", "test", "--list", "--reporter=json", ...(grep ? ["--grep", grep] : [])], { encoding: "utf8", env: environment, maxBuffer: 20 * 1024 * 1024 });
+    assert.equal(result.status, 0, result.stderr); return collectCases(JSON.parse(result.stdout));
+  }
+  const realCases = collect();
+  const planned = verificationPlan({ paths: ["docs/testing.md"], files: readdirSync("tests/browser").filter(file => file.endsWith(".spec.ts")), cases: realCases });
+  assert.deepEqual(collect(planned.browserGrep).map(item => item.id).sort(), planned.collection.filter(item => item.selected).map(item => item.id).sort());
+  assert.equal(planned.collection.filter(item => item.selected).length, inventory.critical.length);
+=======
   const realCases = currentBrowserCases();
   for (const paths of [["docs/testing.md"], ["app/domain/opening-segmentation.ts", "tests/REGRESSIONS.md"], ["app/domain/study-exercises.ts"]]) {
     const planned = plan({ paths, cases: realCases });
     assert.deepEqual(collectBrowserCases(planned.browserGrep).map(item => item.id).sort(), selectedIds(planned));
   }
   assert.equal(selectedIds(plan({ cases: realCases })).length, inventory.critical.length);
+>>>>>>> main
   const results = browserResults({ suites: [{ specs: [{ id: "case", title: "title", tests: [{ projectName: "chromium", status: "skipped", results: [{ status: "skipped", duration: 0 }] }] }] }] });
   assert.equal(results[0].status, "failed");
 });
 
+<<<<<<< HEAD
+
+=======
+>>>>>>> main
 test("diagnostic artifact failure still cleans owned resources and preserves both failures", async () => {
   const { executeDiagnosticCleanup } = await import("../../scripts/postgres-test-plan.mjs");
   const captureFailure = new Error("artifact write denied"), cleanupFailure = new Error("cleanup denied");
@@ -243,6 +266,8 @@ test("current-main integration retains CI and segmentation regression registrati
     assert(regressionRegistry.includes(`| ${acceptanceId} |`), `Missing segmentation acceptance mapping: ${acceptanceId}`);
   }
 });
+<<<<<<< HEAD
+=======
 
 
 test("every current browser spec belongs to exactly one complete family", () => {
@@ -413,3 +438,4 @@ test("documented global browser smoke count and titles match inventory and real 
   assert.equal(Number(documentedCount[1]), plan({ cases: currentBrowserCases() }).collection.filter(item => item.critical).length);
   for (const demoted of demotedCriticalCases) assert(documentation.includes(`| \`${demoted.file}\` | \`${demoted.title}\` | family |`), demoted.title);
 });
+>>>>>>> main
