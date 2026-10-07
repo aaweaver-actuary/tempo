@@ -2126,3 +2126,16 @@ No live study fixture, background audit, release bypass or schema change is used
 
 - `backend/tests/test_daily_queue_sparse_unlock.py::test_daily_queue_sparse_unlock_does_not_scan_locked_backlog` reproduces the live queue blocker with 15,000 locked cards and 21 eligible cards: 1,875 slices before the fix, three after. Published generation, mature incoming transposition, and locked/learning-parent exclusions remain authoritative.
 - Existing `test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips`, `test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_replay`, and `test_any_mature_incoming_path_unlocks_a_transposed_descendant` protect replay, bounded slices, and graph semantics.
+
+## Issue #38 — claim durable slices at execution capacity
+
+- `backend/tests/test_daily_study_dispatch.py::test_background_lease_starts_when_slice_execution_begins` — an unleased wake delayed 120 seconds claims a fresh lease and executes one slice directly. Failed on main before the fix.
+- `test_background_legacy_deliveries_preserve_restart_and_replay` and `test_background_current_legacy_delivery_commits_once_before_duplicate_wake` — expired worker recovery, compatible legacy messages, stale tokens, duplicate wakes and commit-before-ack replay publish once. The restart test failed before the fix.
+- `test_background_crash_during_slice_rolls_back_then_recovers_after_lease` — actual rollback after simulated worker loss, expiry, and successful replay.
+- `test_background_continuation_broker_failure_retains_committed_slice` — failed broker wake preserves phase/cursor and periodic recovery completes it; failed before the fix.
+- `test_background_execution_preserves_pause_priority_promotion_and_delayed_eligibility` and `test_background_execution_capacity_yields_to_foreground_without_leasing` — selection semantics and foreground admission remain intact.
+- `test_background_congested_wakes_complete_without_broker_lease_expiries` — five 120-second-delayed wakes produce five committed completions, zero broker-induced expiries and zero stale deliveries.
+- `scripts/check_postgres_daily_study_dispatch.py`, in regular `background_workloads`, proves the real 15,000-card sparse selection, bounded PostgreSQL transactions, Redis foreground admission, expired-worker recovery, and fenced legacy replay.
+- `tests/browser/training-queue-contention.spec.ts::daily study opens while background analysis remains queued` seeds a task-owned real PostgreSQL queue plus 3,000 eligible low-priority analysis tasks, runs the actual Celery worker, verifies the actual queue/card and Chessground pawn move while analysis remains queued, and cleans up its own fixture. No queue or activity responses are mocked.
+
+Existing cutover handler tests now assert direct execution instead of a second broker message; their foreground, cursor, publication and stale-replay assertions remain unchanged. Nonblocking background admission, refresh coalescing and selective analysis fan-out (#39–#41) remain separate work.

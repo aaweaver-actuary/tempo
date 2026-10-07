@@ -856,6 +856,8 @@ const actions = {
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/scripts/check_postgres_daily_study_dispatch.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -990,6 +992,7 @@ const actions = {
       const browserArguments = buildPostgresPlaywrightArguments(options);
       run("npx", browserArguments, { env: { ...environment,
         TEMPO_DOCKER_URL: origin,
+        TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
   },
