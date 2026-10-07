@@ -65,15 +65,9 @@ export function runStudyTask<T>(
   worker.onmessage = ({ data: raw }) => {
     let data;
     try {
-      data = parseData(studyReplySchema, raw, "study worker response");
+      data = parseData(studyReplySchema, raw, "study worker response", undefined, "study-worker");
     } catch (error) {
-      for (const [requestId, request] of pending) {
-        updateBrowserActivity(`study:${requestId}`, request.title, "failed", "Failed", String(error));
-        request.reject(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-      pending.clear();
+      failStudyRequests(error);
       return;
     }
     const request = pending.get(data.id);

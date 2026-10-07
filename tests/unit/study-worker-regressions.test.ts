@@ -6,7 +6,52 @@ import { tempoPerformanceTimings } from "../../app/lib/performance";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   clearDebugErrors();
+});
+
+it("schema-invalid study worker reply rejects all callers and replaces the worker before retry", async () => {
+  vi.resetModules();
+  const { runStudyTask: runTask } = await import("../../app/lib/background-study");
+  const { debugErrors: currentDebugErrors } = await import("../../app/lib/debug-reporting");
+  const { browserActivitySnapshot } = await import("../../app/lib/browser-activity");
+  const workers: ProtocolWorker[] = [];
+  class ProtocolWorker {
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    terminate = vi.fn();
+    postMessage = vi.fn();
+    constructor() { workers.push(this); }
+  }
+  vi.stubGlobal("Worker", ProtocolWorker);
+  const firstController = new AbortController();
+  const secondController = new AbortController();
+  const firstCleanup = vi.spyOn(firstController.signal, "removeEventListener");
+  const secondCleanup = vi.spyOn(secondController.signal, "removeEventListener");
+  const first = runTask({ kind: "queue", payload: { cards: [], count: 0 } }, firstController.signal);
+  const second = runTask({ kind: "workspace", url: "/api/repertoire/lines", payload: [] }, secondController.signal);
+  const settled = Promise.allSettled([first, second]);
+  const invalidReply = structuredClone({ id: "stale-worker-protocol", result: [] });
+  workers[0].onmessage!({ data: invalidReply } as MessageEvent);
+  const failures = await settled;
+  expect(failures).toHaveLength(2);
+  for (const failure of failures) {
+    expect(failure.status).toBe("rejected");
+    if (failure.status === "rejected") expect(String(failure.reason)).toContain("Reopen Tempo while connected");
+  }
+  expect(firstCleanup).toHaveBeenCalledWith("abort", expect.any(Function));
+  expect(secondCleanup).toHaveBeenCalledWith("abort", expect.any(Function));
+  expect(browserActivitySnapshot().filter(activity => activity.id.startsWith("study:")).map(activity => activity.state)).toEqual(["failed", "failed"]);
+  expect(currentDebugErrors()).toHaveLength(1);
+  expect(currentDebugErrors()[0]).toMatchObject({ kind: "data-validation", context: { source: "study-worker" },
+    message: expect.stringContaining("Invalid study worker response") });
+  expect(workers[0].terminate).toHaveBeenCalledOnce();
+  firstController.abort(); secondController.abort();
+  expect(browserActivitySnapshot().every(activity => activity.state === "failed")).toBe(true);
+  const retry = runTask({ kind: "queue", payload: { cards: [], count: 0 } });
+  expect(workers).toHaveLength(2);
+  const requestId = workers[1].postMessage.mock.calls[0][0].id;
+  workers[1].onmessage!({ data: { id: requestId, result: ["fresh-worker"] } } as MessageEvent);
+  await expect(retry).resolves.toEqual(["fresh-worker"]);
 });
 
 it("phone worker construction failure rejects asynchronously with actionable diagnostics", async () => {

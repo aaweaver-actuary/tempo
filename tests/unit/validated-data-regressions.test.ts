@@ -21,11 +21,28 @@ import {
   readStoredValue,
   validRecords,
   readJsonResponse,
+  parseData,
 } from "../../app/lib/validated-data";
-import { clearDebugErrors, reportDebugError, resolveValidationIncidentsForEndpoint } from "../../app/lib/debug-reporting";
+import { clearDebugErrors, debugErrors, reportDebugError, resolveValidationIncidentsForEndpoint } from "../../app/lib/debug-reporting";
 import { clearNotificationHistory, notifications } from "../../app/lib/notifications";
 
 beforeEach(clearDataDiagnostics);
+
+it("schema validation reports the caller debug source once", () => {
+  const schema = z.object({ value: z.number() });
+  clearDebugErrors();
+  try {
+    parseData(schema, { value: "incompatible" }, "study worker response", undefined, "study-worker");
+  } catch (error) {
+    reportDebugError(error, { kind: "data-validation", source: "study-worker" });
+  }
+  expect(debugErrors()).toHaveLength(1);
+  expect(debugErrors()[0].context.source).toBe("study-worker");
+  expect(dataDiagnostics().at(-1)?.source).toBe("study worker response");
+  clearDebugErrors();
+  expect(() => parseData(schema, { value: "invalid" }, "default source", "/api/default")).toThrow("Invalid default source data");
+  expect(debugErrors()[0].context).toMatchObject({ source: "validated-data", endpointPath: "/api/default" });
+});
 
 it("discovery training eligibility requires an explanation when direct training is unavailable", () => {
   expect(discoveryTrainingEligibilitySchema.parse({ eligible: true, reason: null }).eligible).toBe(true);

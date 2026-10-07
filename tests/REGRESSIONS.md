@@ -2141,3 +2141,15 @@ case and remains critical/selected. Removing that case must still fail planning.
 The reviewed head failed this named regression and the real PR-diff planner with
 `Missing critical browser coverage: offline replay`; only the inventory title is
 repaired, with no planner-enforcement change.
+
+## PR #92 review: study-worker protocol failures
+
+`schema-invalid study worker reply rejects all callers and replaces the worker before retry`
+in `tests/unit/study-worker-regressions.test.ts` supplies a transferable invalid
+reply through `onmessage`, rejects two pending callers, checks abort cleanup and
+failed activity, requires termination, and completes a retry using a new Worker.
+`schema validation reports the caller debug source once` in
+`tests/unit/validated-data-regressions.test.ts` protects single reporting with
+`source: "study-worker"`, retained data diagnostics, and the default validation
+source/endpoint. Both failed on the reviewed implementation. Existing startup,
+message-error, worker timing, and coalescing regressions remain required.

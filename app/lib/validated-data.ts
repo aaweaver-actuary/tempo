@@ -73,6 +73,7 @@ export function parseData<T>(
   raw: unknown,
   source: string,
   endpoint?: string,
+  debugSource = "validated-data",
 ): T {
   const result = schema.safeParse(raw);
   if (result.success) return result.data;
@@ -83,7 +84,7 @@ export function parseData<T>(
   const failure = new Error(`Invalid ${source} data: ${message}`);
   reportDebugError(failure, {
     kind: "data-validation",
-    source: "validated-data",
+    source: debugSource,
     operation: "schema validation",
     endpoint,
   });
