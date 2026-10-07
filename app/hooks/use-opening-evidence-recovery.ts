@@ -17,6 +17,7 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
   useEffect(() => {
     if (!enabled) return;
     active.current = true; lifecycle.current++;
+    pending.current = true;
     const requestRecovery = () => {
       pending.current = true;
       setRecoveryGeneration(generation => generation + 1);

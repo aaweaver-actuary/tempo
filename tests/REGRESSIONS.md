@@ -2180,3 +2180,8 @@ eligibility and failure history belong to the journal, never to hook success.
 checks that direct recovery calls cannot bypass its post-timeout deadline.
 Foreground blocking, unmount/disable cleanup, frozen receipt bodies/keys,
 queue retention, saved reviews, and offline-shell completeness remain required.
+
+`AS-15 re-enabling after an inactive failed slice recovers the journal deadline`
+failed on the first repair candidate and covers a failure settling while the hook
+is disabled. Re-enabling requests metadata reconciliation through idle admission,
+restores the per-journal wake-up, and sends no request before that saved deadline.

@@ -401,9 +401,28 @@ it("AS-15 disabling and re-enabling recovery preserves the pending retry deadlin
   await state.idle(); await state.advance(250);
   state.mounted.rerender(<state.Harness enabled={false} />); expect(vi.getTimerCount()).toBe(0);
   await state.advance(250); state.mounted.rerender(<state.Harness />);
-  expect(vi.getTimerCount()).toBe(1); expect(state.callbacks.size).toBe(0);
+  expect(vi.getTimerCount()).toBe(1); await state.idle();
+  expect(state.requests).toHaveLength(1); expect(state.callbacks.size).toBe(0);
   await state.advance(499); expect(state.callbacks.size).toBe(0);
-  await state.advance(1); expect(state.callbacks.size).toBe(1); expect(state.recovery).toHaveBeenCalledOnce();
+  await state.advance(1); expect(state.callbacks.size).toBe(1); expect(state.requests).toHaveLength(1);
+});
+
+it("AS-15 re-enabling after an inactive failed slice recovers the journal deadline", async () => {
+  const state = await recoveryHarness(); const completedFetch = fetch;
+  let rejectReceipt!: (error: Error) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((_resolve, reject) => { rejectReceipt = reject; })));
+  await state.idle(false); await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+  const first = state.recovery.mock.results[0].value.catch(() => undefined);
+  state.mounted.rerender(<state.Harness enabled={false} />);
+  await act(async () => { rejectReceipt(new TypeError("Connection failed while disabled")); await first; });
+  expect(state.callbacks.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
+  state.response.mode = "complete"; vi.stubGlobal("fetch", completedFetch);
+  state.mounted.rerender(<state.Harness />);
+  await state.idle(); // Reconcile the module's deadline; do not send an early receipt read.
+  expect(state.requests).toHaveLength(0); expect(vi.getTimerCount()).toBe(1);
+  await state.advance(999); expect(state.callbacks.size).toBe(0);
+  await state.advance(1); expect(state.requests).toHaveLength(0); await state.idle();
+  expect(state.requests).toHaveLength(1); expect(state.stores.opening_attempts.size).toBe(0);
 });
 
 it("AS-15 malformed saved journal validation suspends without discarding evidence", async () => {
