@@ -52,7 +52,7 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
   const [filter, setFilter] = useState("");
   const [linePage, setLinePage] = useState(0);
   const [results, setResults] = useState<CandidateResult[]>([]);
-  const [error, setError] = useState<{ code: string; message: string } | null>(null);
+  const [error, setError] = useState<{ code: string; message: string; freshnessCheckGeneration?: number } | null>(null);
   const [working, setWorking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
@@ -67,10 +67,11 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
     comparisonController.current?.abort(); comparisonController.current = null;
     setResults([]); setWorking(false);
   }, []);
-  const reportError = useCallback((cause: unknown) => {
+  const reportError = useCallback((cause: unknown, freshnessCheck = false) => {
     cancelComparison();
     const code = cause instanceof PrefixPreviewError ? cause.code : "service_error";
-    setError({ code, message: cause instanceof Error ? cause.message : "Comparison unavailable. Refresh and retry." });
+    setError({ code, message: cause instanceof Error ? cause.message : "Comparison unavailable. Refresh and retry.",
+      freshnessCheckGeneration: freshnessCheck && (code === "service_error" || code === "evaluation_busy") ? comparisonGeneration.current : undefined });
     setCheckedAt(null);
     if (code === "stale_snapshot") {
       ++sourceGeneration.current;
@@ -107,15 +108,18 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
       const expectedSource = currentSource.current;
       if (!expectedSource || document.visibilityState === "hidden" || monitorController.current || comparisonController.current) return;
       const generation = sourceGeneration.current;
+      const comparisonRequest = comparisonGeneration.current;
       const controller = new AbortController(); monitorController.current = controller;
       try {
         const latest = await readPrefixSource(repertoireId, controller.signal);
         if (controller.signal.aborted || generation !== sourceGeneration.current || currentSource.current !== expectedSource) return;
         if (latest.snapshot_id !== expectedSource.snapshot_id || latest.graph_generation !== expectedSource.graph_generation)
           throw new PrefixPreviewError("stale_snapshot", "Source or graph changed. Refresh the source and select again.");
+        // Recover only the freshness error owned when this request began.
+        setError(previous => previous?.freshnessCheckGeneration === comparisonRequest ? null : previous);
         setCheckedAt(new Date().toLocaleTimeString());
       } catch (cause) {
-        if (!controller.signal.aborted && generation === sourceGeneration.current) reportError(cause);
+        if (!controller.signal.aborted && generation === sourceGeneration.current) reportError(cause, true);
       } finally { if (monitorController.current === controller) monitorController.current = null; }
     }
     const onVisibility = () => {

@@ -2206,6 +2206,14 @@ Additional callback/error cases in the same unit file:
 `issue78_candidate_edit_cancels_publication_and_batch_failure_returns_no_partial_metrics`,
 `issue78_failed_freshness_check_hides_unverified_metrics`, and
 `issue78_incompatible_response_bindings_cannot_publish`.
+
+PR #101 freshness recovery regressions in the same regular-suite file:
+
+- `issue78_freshness_recovery_clears_service_error_without_restoring_results` and `issue78_freshness_recovery_clears_evaluation_busy_without_restoring_results`: focus/periodic failures clear after a compatible check, the successful timestamp advances, and invalidated results stay hidden without another comparison request.
+- `issue78_stale_snapshot_requires_explicit_refresh_and_reselection` and `issue78_stale_graph_generation_requires_explicit_refresh_and_reselection`: stale source state survives later focus/interval events; only explicit refresh and selection permit a new comparison.
+- `issue78_older_freshness_success_preserves_newer_validation_error`, `issue78_older_freshness_success_preserves_newer_comparison_error`, and `issue78_older_freshness_success_preserves_newer_source_error`: deferred older success cannot erase a newer error, including validation that leaves the monitor request un-aborted.
+- `issue78_freshness_success_preserves_unrelated_comparison_error` and `issue78_freshness_success_preserves_incompatible_source_error`: a compatible check clears only recoverable freshness errors, preserving unrelated service failures and incompatible-source refresh requirements.
+
 Pinned `Prefix comparison 390` / `Prefix comparison 1280` in `visual.spec.ts`
 protect the selected/whole structural results layout against responsive regressions.
 

@@ -232,6 +232,114 @@ it("issue78_failed_freshness_check_hides_unverified_metrics", async () => {
   expect(screen.getByText(/Last freshness check: unverified/)).toBeTruthy();
 });
 
+it.each([
+  ["service_error", "focus"], ["evaluation_busy", "periodic"],
+] as const)("issue78_freshness_recovery_clears_%s_without_restoring_results", async (errorCode, failureTrigger) => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime(new Date("2026-10-07T14:00:00Z"));
+  const fetcher = fetchFixture(); await mount(); selectLines("a"); compareDepths("2");
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  const initialCheck = screen.getByText(/Last freshness check:/).textContent;
+  fetcher.mockResolvedValueOnce(Response.json({ detail: { code: errorCode, message: "Temporary freshness failure." } }, { status: 503 }));
+  await act(async () => {
+    if (failureTrigger === "focus") window.dispatchEvent(new Event("focus"));
+    else await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(screen.getByRole("alert").textContent).toContain("Temporary freshness failure.");
+  expect(screen.queryByRole("region", { name: "Candidate depth 2" })).toBeNull();
+  expect(screen.getByText(/Last freshness check: unverified/)).toBeTruthy();
+  expect(screen.getByText("Selected source lines: 1")).toBeTruthy();
+  vi.setSystemTime(new Date("2026-10-07T14:02:00Z"));
+  const readsBeforeRecovery = fetcher.mock.calls.length;
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(fetcher).toHaveBeenCalledTimes(readsBeforeRecovery + 1);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByText(/Last freshness check:/).textContent).toContain(new Date().toLocaleTimeString());
+  expect(screen.getByText(/Last freshness check:/).textContent).not.toBe(initialCheck);
+  expect(screen.queryByRole("region", { name: "Candidate depth 2" })).toBeNull();
+  expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+});
+
+it.each([
+  ["snapshot", { snapshot_id: "external-change" }], ["graph_generation", { graph_generation: source.graph_generation + 1 }],
+] as const)("issue78_stale_%s_requires_explicit_refresh_and_reselection", async (_changedField, sourceChange) => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const fetcher = fetchFixture(); await mount(); selectLines("a"); compareDepths("2");
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  fetcher.mockResolvedValueOnce(Response.json({ ...source, ...sourceChange }));
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(screen.getByRole("alert").textContent).toContain("Refresh the source and select again.");
+  expect(screen.queryByRole("region", { name: "Candidate depth 2" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Compare depths" })).toBeNull();
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  const readsAfterInvalidation = fetcher.mock.calls.length;
+  await act(async () => { window.dispatchEvent(new Event("focus")); await vi.advanceTimersByTimeAsync(30_000); });
+  expect(fetcher).toHaveBeenCalledTimes(readsAfterInvalidation);
+  expect(screen.getByText("Stale preview")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh source" }));
+  await screen.findByText("Selected source lines: 0");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect((screen.getByRole("button", { name: "Compare depths" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("region", { name: "Candidate depth 2" })).toBeNull();
+  selectLines("a"); fireEvent.click(screen.getByRole("button", { name: "Compare depths" }));
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+});
+
+it.each(["validation", "comparison", "source"] as const)("issue78_older_freshness_success_preserves_newer_%s_error", async newerOperation => {
+  const olderFreshness = deferred();
+  const fetcher = fetchFixture(); await mount(); selectLines("a");
+  fireEvent.change(screen.getByLabelText("Candidate learner-decision depths"), { target: { value: "2" } });
+  fetcher.mockImplementationOnce(() => olderFreshness.promise);
+  const readsBeforeFreshness = fetcher.mock.calls.length;
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(fetcher).toHaveBeenCalledTimes(readsBeforeFreshness + 1);
+  if (newerOperation === "validation") {
+    compareDepths("0");
+    expect(screen.getByText("Invalid selection")).toBeTruthy();
+    expect(fetcher.mock.calls.at(-1)?.[1]?.signal?.aborted).toBe(false);
+  } else if (newerOperation === "comparison") {
+    fetcher.mockResolvedValueOnce(Response.json({ detail: { code: "service_error", message: "Newer comparison failed." } }, { status: 503 }));
+    fireEvent.click(screen.getByRole("button", { name: "Compare depths" }));
+    await screen.findByText("Service unavailable");
+  } else {
+    fetcher.mockRejectedValueOnce(new Error("Newer source operation failed."));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh source" }));
+    await screen.findByText("Service unavailable");
+  }
+  const newerError = screen.getByRole("alert").textContent;
+  await act(async () => { olderFreshness.resolve(Response.json(source)); });
+  expect(screen.getByRole("alert").textContent).toBe(newerError);
+  expect(screen.queryByRole("region", { name: "Candidate depth 2" })).toBeNull();
+});
+
+it("issue78_freshness_success_preserves_unrelated_comparison_error", async () => {
+  const fetcher = fetchFixture(); await mount(); selectLines("a");
+  fetcher.mockResolvedValueOnce(Response.json({ detail: { code: "service_error", message: "Comparison service unavailable." } }, { status: 503 }));
+  compareDepths("2"); await screen.findByText("Service unavailable");
+  const comparisonError = screen.getByRole("alert").textContent;
+  const readsBeforeFreshness = fetcher.mock.calls.length;
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(fetcher).toHaveBeenCalledTimes(readsBeforeFreshness + 1);
+  expect(screen.getByRole("alert").textContent).toBe(comparisonError);
+  expect(screen.queryByRole("region", { name: "Candidate depth 2" })).toBeNull();
+});
+
+it("issue78_freshness_success_preserves_incompatible_source_error", async () => {
+  const fetcher = fetchFixture(); await mount(); selectLines("a"); compareDepths("2");
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  fetcher.mockResolvedValueOnce(Response.json({ ...source, repertoire_id: "incompatible" }));
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(screen.getByText("Unsupported source")).toBeTruthy();
+  const incompatibleError = screen.getByRole("alert").textContent;
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(screen.getByRole("alert").textContent).toBe(incompatibleError);
+  expect(screen.queryByRole("region", { name: "Candidate depth 2" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh source" }));
+  await screen.findByText("Selected source lines: 0");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect((screen.getByRole("button", { name: "Compare depths" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 it("issue78_incompatible_response_bindings_cannot_publish", async () => {
   stubDiagnosticFetch(vi.fn(async (_url, options?: RequestInit) => options?.method === "POST"
     ? Response.json({ ...prefixComparisonSchema.parse(comparisons["a,b:2"]), selected_line_ids: ["a", "qgd"] }) : Response.json(source)));
