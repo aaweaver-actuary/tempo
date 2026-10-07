@@ -1,5 +1,7 @@
 [
   {
+<<<<<<< HEAD
+=======
     "method": "POST",
     "path": "/api/repertoires/{identifier}/prefix-transition/plan",
     "handler": "prefix_transition_plan",
@@ -7,6 +9,7 @@
     "state": "staged"
   },
   {
+>>>>>>> main
     "method": "GET",
     "path": "/api/repertoires/{identifier}/prefix-evaluation/source",
     "handler": "prefix_evaluation_source",
@@ -1265,6 +1268,8 @@
     "handler": "canonical_prefix_save",
     "treatment": "foreground_command",
     "state": "staged"
+<<<<<<< HEAD
+=======
   },
   {
     "method": "GET",
@@ -1279,5 +1284,6 @@
     "handler": "prefix_diagnostics_detail",
     "treatment": "reader",
     "state": "staged"
+>>>>>>> main
   }
 ]

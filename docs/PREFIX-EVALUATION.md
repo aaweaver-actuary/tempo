@@ -145,6 +145,8 @@ uses 422; `limit_exceeded` uses 413; `evaluation_busy` uses 503 with `Retry-Afte
 A missing repertoire uses 404. Refresh after stale source/publication changes; retry
 busy work when study is idle. Every retry is a fresh, deterministic read against
 its supplied snapshot, with no history transfer or application authority.
+<<<<<<< HEAD
+=======
 
 ## Issue #78 implementation validation plan
 
@@ -208,3 +210,4 @@ browser-activity lease after user input. Waiting is cancelled with its owning
 selection/source lifecycle. No evaluator error is retried automatically, and the
 server's own admission/deadline checks remain authoritative. This is a bounded
 interactive read, not a new worker, startup pipeline or durable job.
+>>>>>>> main

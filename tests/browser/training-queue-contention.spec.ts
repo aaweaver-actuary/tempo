@@ -1,8 +1,50 @@
 import { expect, test } from "@playwright/test";
 import { prepareVisualUI } from "./visual-fixtures";
+<<<<<<< HEAD
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { api, test as productTest, move } from "./product-fixtures";
+import { prepareUI } from "./ui-fixtures";
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+productTest("daily study opens while background analysis remains queued", async ({ page, request }) => {
+  const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
+  if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
+    throw new Error("Daily study backlog proof requires the owning disposable PostgreSQL runner");
+  const fixtureId = `daily-study-proof-${randomUUID()}`;
+  const composeArguments = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
+  const docker = (...args: string[]) => execFileSync("docker", [...composeArguments, ...args], { encoding: "utf8", timeout: 30_000 });
+  const fixture = (action: string) => docker("run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
+    "schema", "python", "/source/scripts/check_postgres_daily_study_dispatch.py", action, fixtureId);
+  try {
+    docker("stop", "background-worker", "background-scheduler");
+    fixture("seed");
+    docker("start", "background-worker");
+    const initialActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
+    expect(initialActivity.counts.queued).toBeGreaterThan(1000);
+    await prepareUI(page);
+    await expect(page.locator('.persistent-board-shell[data-unavailable="true"]')).toHaveCount(0);
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+    await expect(page.getByText(/The local queue could not be loaded/)).toHaveCount(0);
+    const queue = await (await request.get(`${api}/queue/window?limit=20`)).json();
+    expect(queue.cards.some((card: { id: string }) => card.id === `${fixtureId}-due`)).toBe(true);
+    await move(page, "e2", "e4");
+    await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeVisible();
+    const remainingActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
+    expect(remainingActivity.counts.queued).toBeGreaterThan(0);
+  } finally {
+    docker("stop", "background-worker");
+    try { fixture("cleanup"); }
+    finally { docker("start", "background-worker", "background-scheduler"); }
+  }
+});
+
+=======
+
+const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+>>>>>>> main
 test("discovery preview backlog leaves a prompt foreground training queue refresh", async ({ page }) => {
   await prepareVisualUI(page);
   const discoveries = Array.from({ length: 6 }, (_, index) => ({

@@ -26,8 +26,11 @@ import {
 } from "../domain/schemas";
 import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
+<<<<<<< HEAD
+=======
 import { PrefixDiagnostics } from "../components/prefix-diagnostics";
 import { PrefixComparisonDialog } from "../components/prefix-comparison-dialog";
+>>>>>>> main
 import { OpeningSegmentation } from "../components/opening-segmentation";
 import { RepertoireStatistics } from "../components/repertoire-statistics";
 import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
@@ -87,9 +90,13 @@ export default function RepertoireView({
   theme?: BoardTheme;
   pieceSet?: PieceSet;
 }) {
+<<<<<<< HEAD
+  const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
+=======
   const [diagnosticsRepertoireId, setDiagnosticsRepertoireId] = useState<string | null>(null);
   const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
   const [comparisonRepertoireId, setComparisonRepertoireId] = useState<string | null>(null);
+>>>>>>> main
   const [prefixRepertoireId, setPrefixRepertoireId] = useState<string | null>(null);
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
@@ -348,9 +355,12 @@ export default function RepertoireView({
     await requestOpportunityRefresh(repertoireId);
     setScoutingRepertoire(repertoireId);
   }
+<<<<<<< HEAD
+=======
   const diagnosticsRepertoire = backendItems.find(item => item.id === diagnosticsRepertoireId);
   if (diagnosticsRepertoire) return <PrefixDiagnostics key={diagnosticsRepertoire.id} repertoireId={diagnosticsRepertoire.id}
     onBack={() => setDiagnosticsRepertoireId(null)} />;
+>>>>>>> main
   const segmentationRepertoire = backendItems.find(item => item.id === segmentationRepertoireId);
   if (segmentationRepertoire) return <div>
     <Button onClick={() => setSegmentationRepertoireId(null)}>← Repertoires</Button>
@@ -366,9 +376,12 @@ export default function RepertoireView({
   }
   return (
     <section className="library-page" id="repertoire">
+<<<<<<< HEAD
+=======
       {backendItems.filter(item => item.id === comparisonRepertoireId).map(item => <PrefixComparisonDialog
         key={`${item.id}:${refreshRevision}`} repertoireId={item.id} repertoireName={item.title}
         onClose={() => setComparisonRepertoireId(null)} />)}
+>>>>>>> main
       {backendItems.filter(item => item.id === prefixRepertoireId).map(item => <CanonicalPrefixDialog key={item.id}
         repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
         onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
@@ -438,8 +451,11 @@ export default function RepertoireView({
                   <Button role="menuitem" onClick={() => void rename(item)}>
                     Rename
                   </Button>
+<<<<<<< HEAD
+=======
                   {item.backend && <Button role="menuitem" onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); setComparisonRepertoireId(item.id); setOpenMenu(null); }}>Compare prefix depths</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setDiagnosticsRepertoireId(item.id); setOpenMenu(null); }}>Prefix difficulty</Button>}
+>>>>>>> main
                   {item.backend && <Button role="menuitem" onClick={() => { setSegmentationRepertoireId(item.id); setOpenMenu(null); }}>Recommended segmentation</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setPrefixRepertoireId(item.id); setOpenMenu(null); }}>Canonical prefix…</Button>}
                   <Button role="menuitem" onClick={() => exportPgn(item)}>

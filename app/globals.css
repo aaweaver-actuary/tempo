@@ -4101,6 +4101,8 @@ button {
   .canonical-prefix-dialog { padding: 16px; gap: 8px; }
   .canonical-prefix-board { width: min(240px, 100%); }
 }
+<<<<<<< HEAD
+=======
 
 .prefix-diagnostics {
   overflow-wrap: anywhere;
@@ -4140,3 +4142,4 @@ button {
 .prefix-scope-results th:first-child { width: 48%; }
 .prefix-candidate { margin-top: 24px; border-top: 1px solid var(--line); }
 @media (max-width: 767px) { .prefix-comparison-dialog { padding: 16px; } .prefix-comparison-scopes { grid-template-columns: minmax(0, 1fr); } }
+>>>>>>> main

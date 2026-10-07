@@ -27,6 +27,8 @@ export function changedPathsFromNameStatus(output) {
 }
 
 export function validateInventory(files, sourceInventory = inventory) {
+<<<<<<< HEAD
+=======
   const mappedPaths = new Set();
   for (const mapping of sourceInventory.sources) {
     if (!mapping.paths?.length || !mapping.families?.length || new Set(mapping.families).size !== mapping.families.length
@@ -38,6 +40,7 @@ export function validateInventory(files, sourceInventory = inventory) {
       mappedPaths.add(path);
     }
   }
+>>>>>>> main
   const classified = Object.values(sourceInventory.families).flat();
   if (new Set(classified).size !== classified.length) throw new Error("A browser spec belongs to multiple inventory families");
   for (const file of files) if (!classified.includes(file.startsWith("tests/browser/") ? file.slice("tests/browser/".length) : file)) throw new Error(`Unclassified browser spec: ${file}. Register its complete family before planning.`);
@@ -72,12 +75,23 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
   if (complete) reasons.push("complete verification requested");
   if (!comparisonAvailable) reasons.push("comparison history missing or uncertain");
   for (const path of paths) {
+<<<<<<< HEAD
+    // Only explicitly mapped leaf sources or test specs narrow integration coverage.
+    // Every other executable/configuration path is deliberately conservative.
+=======
     // Exact reviewed consumer mappings narrow browser families. Core tests still
     // run in full; shared fixtures and unknown executable paths stay conservative.
+>>>>>>> main
     const mapping = sourceInventory.sources.find(entry => entry.paths.includes(path));
     const specFamily = Object.entries(sourceInventory.families).find(([, specs]) => path.startsWith("tests/browser/") && specs.includes(path.slice("tests/browser/".length)))?.[0];
     const rendering = /\.(css|scss|svg|png|jpe?g|webp)$/.test(path) || /(?:layout|chessboard|board-|visual|theme|pieces)/i.test(path);
     if (rendering || (path.startsWith("app/") && path.endsWith(".tsx"))) visual = true;
+<<<<<<< HEAD
+    if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: mapped leaf source`); }
+    else if (specFamily && specFamily !== "pinned") { families.add(specFamily); reasons.push(`${path}: complete ${specFamily} browser family`); }
+    else if (specFamily === "pinned") { visual = true; reasons.push(`${path}: pinned rendering verification`); }
+    else if ((path.startsWith("docs/") && path.endsWith(".md")) || path === "README.md") reasons.push(`${path}: prose; core and critical verification still required`);
+=======
     const ordinaryProse = (path.startsWith("docs/") && path.endsWith(".md")) || /(?:^|\/)README\.md$/.test(path) || sourceInventory.prosePaths?.includes(path);
     const standaloneCoreTest = /^tests\/unit\/[^/]+\.test\.tsx?$/.test(path) || /^backend\/tests\/test_[^/]+\.py$/.test(path);
     if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: reviewed consumer families; ${mapping.reason}`); }
@@ -85,6 +99,7 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     else if (specFamily === "pinned") { visual = true; reasons.push(`${path}: pinned rendering verification`); }
     else if (ordinaryProse) reasons.push(`${path}: prose; core and critical verification still required`);
     else if (standaloneCoreTest) reasons.push(`${path}: standalone test; complete core and critical verification still required`);
+>>>>>>> main
     else { broad = true; reasons.push(`${path}: shared or unclassified path; broad verification`); }
   }
   if (broad) { Object.keys(sourceInventory.families).filter(family => family !== "pinned").forEach(family => families.add(family)); visual = true; }
@@ -159,6 +174,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   mkdirSync("test-results/ci", { recursive: true });
   writeFileSync("test-results/ci/plan.json", JSON.stringify(plan, null, 2));
   writeFileSync("test-results/ci/collection.json", JSON.stringify({ browser: plan.collection, pinned: plan.pinnedCollection, core: "All frontend/backend unit tests, engine smoke and Rust/build checks run on every PR" }, null, 2));
+<<<<<<< HEAD
+  console.log(`${plan.scope}: ${plan.collection.filter(item => item.selected).length}/${plan.collection.length} regular browser cases; visual=${plan.jobs.visual.applicable}`);
+=======
   console.log(`${plan.scope}: ${plan.collection.filter(item => item.selected).length}/${plan.collection.length} regular browser cases; ${plan.collection.filter(item => item.critical).length} global critical; visual=${plan.jobs.visual.applicable}`);
+>>>>>>> main
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `visual=${plan.jobs.visual.applicable}\nquarantine=${plan.jobs.quarantine.applicable}\nscope=${plan.scope}\n`);
 }
