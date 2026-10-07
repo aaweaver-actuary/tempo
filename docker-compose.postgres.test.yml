@@ -14,7 +14,8 @@ services:
     profiles: [maintenance]
     image: postgres:18.6-trixie
     entrypoint: [sh]
-    command: [-c, "sleep infinity"]
+    # Handle the image's SIGINT stop signal and SIGTERM explicitly as shell PID 1.
+    command: [-c, "trap 'exit 0' INT TERM; sleep infinity & wait"]
     environment:
       PGPASSFILE: /run/secrets/admin_pgpass
     secrets: [admin_pgpass]
