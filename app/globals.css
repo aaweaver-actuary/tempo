@@ -4101,3 +4101,24 @@ button {
   .canonical-prefix-dialog { padding: 16px; gap: 8px; }
   .canonical-prefix-board { width: min(240px, 100%); }
 }
+
+.prefix-diagnostics {
+  overflow-wrap: anywhere;
+}
+.prefix-diagnostics > div > button {
+  margin-block: 4px;
+  white-space: normal;
+  text-align: left;
+}
+.diagnostic-decision {
+  margin-block: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.diagnostic-decision summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: list-item;
+  align-content: center;
+}

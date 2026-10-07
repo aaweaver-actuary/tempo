@@ -716,8 +716,13 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
             )
+    prefix_diagnostics_read = (
+        request.method == "GET" and len(request_path_parts) in {4, 5}
+        and request_path_parts[:2] == ["api", "repertoires"]
+        and request_path_parts[3] == "prefix-diagnostics"
+    )
     is_background = (
-        prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
         # Its receipt read uses background admission too; a foreground request
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
@@ -6453,3 +6458,6 @@ from .opening_evidence_api import router as opening_evidence_router
 app.include_router(opening_evidence_router)
 from .canonical_prefix_api import router as canonical_prefix_router
 app.include_router(canonical_prefix_router)
+
+from .prefix_diagnostics_api import router as prefix_diagnostics_router
+app.include_router(prefix_diagnostics_router)

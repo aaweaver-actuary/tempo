@@ -26,6 +26,7 @@ import {
 } from "../domain/schemas";
 import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
+import { PrefixDiagnostics } from "../components/prefix-diagnostics";
 import { OpeningSegmentation } from "../components/opening-segmentation";
 import { RepertoireStatistics } from "../components/repertoire-statistics";
 import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
@@ -85,6 +86,7 @@ export default function RepertoireView({
   theme?: BoardTheme;
   pieceSet?: PieceSet;
 }) {
+  const [diagnosticsRepertoireId, setDiagnosticsRepertoireId] = useState<string | null>(null);
   const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
   const [prefixRepertoireId, setPrefixRepertoireId] = useState<string | null>(null);
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
@@ -344,6 +346,9 @@ export default function RepertoireView({
     await requestOpportunityRefresh(repertoireId);
     setScoutingRepertoire(repertoireId);
   }
+  const diagnosticsRepertoire = backendItems.find(item => item.id === diagnosticsRepertoireId);
+  if (diagnosticsRepertoire) return <PrefixDiagnostics key={diagnosticsRepertoire.id} repertoireId={diagnosticsRepertoire.id}
+    onBack={() => setDiagnosticsRepertoireId(null)} />;
   const segmentationRepertoire = backendItems.find(item => item.id === segmentationRepertoireId);
   if (segmentationRepertoire) return <div>
     <Button onClick={() => setSegmentationRepertoireId(null)}>← Repertoires</Button>
@@ -428,6 +433,7 @@ export default function RepertoireView({
                   <Button role="menuitem" onClick={() => void rename(item)}>
                     Rename
                   </Button>
+                  {item.backend && <Button role="menuitem" onClick={() => { setDiagnosticsRepertoireId(item.id); setOpenMenu(null); }}>Prefix difficulty</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setSegmentationRepertoireId(item.id); setOpenMenu(null); }}>Recommended segmentation</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setPrefixRepertoireId(item.id); setOpenMenu(null); }}>Canonical prefix…</Button>}
                   <Button role="menuitem" onClick={() => exportPgn(item)}>

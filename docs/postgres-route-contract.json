@@ -1258,5 +1258,19 @@
     "handler": "canonical_prefix_save",
     "treatment": "foreground_command",
     "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/prefix-diagnostics",
+    "handler": "prefix_diagnostics_list",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/prefix-diagnostics/{card_id}",
+    "handler": "prefix_diagnostics_detail",
+    "treatment": "reader",
+    "state": "staged"
   }
 ]
