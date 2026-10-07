@@ -82,7 +82,17 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
   }
   expect(observedRequests.every(incoming => incoming.startsWith("POST ") && incoming.endsWith("/prefix-evaluation/evaluate"))).toBe(true);
   expect((await (await request.get(`${api}/queue/today`)).json()).cards).toEqual(queueBefore!.cards);
-  expect(prefixSourceSchema.parse(await (await request.get(`${api}/repertoires/${repertoireId}/prefix-evaluation/source`)).json())).toEqual(source);
+  await expect.poll(async () => {
+    const response = await request.get(`${api}/repertoires/${repertoireId}/prefix-evaluation/source`);
+    if (!response.ok()) {
+      // Docker health reads can briefly hold foreground admission between UI and audit reads.
+      expect(response.status()).toBe(503);
+      expect((await response.json()).detail).toEqual({ code: "evaluation_busy", message: "Study work is active. Retry the diagnostic when study is idle." });
+      expect(response.headers()["retry-after"]).toBe("1");
+      return null;
+    }
+    return prefixSourceSchema.parse(await response.json());
+  }, { timeout: 5000, intervals: [1000] }).toEqual(source);
   await expect(dialog.getByRole("button", { name: /apply|save|recommend/i })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).scrollIntoViewIfNeeded();
