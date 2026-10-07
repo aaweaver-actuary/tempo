@@ -423,9 +423,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
     request_path_parts = request.url.path.strip("/").split("/")
     prefix_evaluation_read = (
         len(request_path_parts) == 5 and request_path_parts[:2] == ["api", "repertoires"]
-        and request_path_parts[3] == "prefix-evaluation"
-        and ((request.method == "GET" and request_path_parts[4] == "source")
-             or (request.method == "POST" and request_path_parts[4] == "evaluate"))
+        and ((request_path_parts[3] == "prefix-evaluation"
+              and ((request.method == "GET" and request_path_parts[4] == "source")
+                   or (request.method == "POST" and request_path_parts[4] == "evaluate")))
+             or (request.method == "POST" and request_path_parts[3:] == ["prefix-transition", "plan"]))
     )
     read_only_post = (
         request.method == "POST"
@@ -6449,6 +6450,8 @@ from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
 from .prefix_evaluation_api import router as prefix_evaluation_router
 app.include_router(prefix_evaluation_router)
+from .prefix_transition_api import router as prefix_transition_router
+app.include_router(prefix_transition_router)
 from .opening_evidence_api import router as opening_evidence_router
 app.include_router(opening_evidence_router)
 from .canonical_prefix_api import router as canonical_prefix_router
