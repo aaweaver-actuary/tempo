@@ -89,7 +89,7 @@ Quiet notifications (October 2, 2026):
 | Diagnostic incident keys or serialized bundles persist a credential | `hydrates legacy secret-bearing incident keys without losing counts or identity`; `removes canary secrets from every persisted and exported incident field` |
 | A 250 ms background transaction times out while claiming threats or reading recurring evidence | `test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue`; `test_postgres_recurring_evidence_uses_per_event_analysis_lookups`; `scripts/check_postgres_upgrade.py` verifies the claim indexes; `scripts/measure_postgres_incident_workloads.py` measures all four reported workloads on an isolated restore |
 | Docker Compose warns that the existing Tempo data volume belongs to another project | `test_tempo_data_volume_is_external` in `scripts/test-docker.mjs` verifies Compose resolves `tempo-data` as external and retains its name |
-| An in-progress game sync exposes partial worker counters as a completed frontend result, or malformed completion appears successful | `test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result`; `test_completed_game_sync_rejects_partial_result_in_public_model`; `backend sync serialization matches strict frontend status contract across progress and completion` |
+| An in-progress game sync exposes partial worker counters as a completed frontend result, or malformed completion appears successful | `test_game_sync_public_projection_preserves_coordinator_import_contract`; `test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result`; `test_completed_game_sync_rejects_partial_result_in_public_model`; `backend sync serialization matches frontend contract across every status and legacy partial counters` |
 | Two indefinitely preparing discovery admissions starve a later unsent save, or an old oversized key cannot recover safely | `two indefinitely preparing admissions cannot starve a later unsent discovery`; `a large saved discovery backlog receives bounded submission service`; `legacy oversized stored operation key is repaired only after its confirmed rejection`; `uncertain invalid stored operation key remains intact with an actionable error` |
 | Validation failures are double-reported, attributed to a display label, or merged with unrelated errors after reload | `one validation exception reports once with its HTTP endpoint and resolves after valid status`; `does not reuse notification identity after debug module reload`; `repeated incident observations keep first seen history and count occurrences` |
 | PostgreSQL background timeout leaks through a pool, masks rollback, or aborts a bounded populated workload | `scripts/check_postgres_background_budget.py` checks transaction-local timeout, rollback, and reuse; `scripts/check_postgres_background_workloads.py` commits a threat claim, recurring evidence read, 864-key position read, and bounded priority retention on populated fixtures |
@@ -2166,6 +2166,73 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `documented global browser smoke count and titles match inventory and real collection`
 
 The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.
+
+## Issue #78 — branch-scoped read-only prefix comparisons
+
+`tests/unit/prefix-comparison-regressions.test.tsx` runs in the regular Vitest suite:
+
+- `issue78_exact_route_selection_resolves_deterministic_source_ids`: literal root/color/UCI matching, no transposition expansion, explicit checklist and filter isolation.
+- `issue78_mixed_saved_depths_display_without_global_default`: saved mixed depths and requested/effective longer prefixes.
+- `issue78_caro_scope_comparison_preserves_unselected_qgd`: candidate maps contain only selected IDs; real evaluator fixture preserves QGD graph steps.
+- `issue78_whole_repertoire_counts_preserve_shared_cards`: selected/whole card counts come from the deduplicating server evaluator.
+- `issue78_source_change_invalidates_late_preview`: refresh clears selection and discards old success callbacks.
+- `issue78_newer_selection_wins_over_inflight_result`: an obsolete comparison cannot replace the newer scope.
+- `issue78_empty_noop_unsupported_and_stale_are_distinct`: explicit empty/no-op and machine-readable errors.
+- `issue78_comparison_performs_no_writes`: only authoritative source GET and read-only evaluation POST; no application controls.
+- `issue78_final_source_check_prevents_mixed_snapshot_publication`: no publication after graph/source changes between candidate and final check.
+- `issue78_candidate_depth_validation_is_bounded_and_does_not_rank`: one to four uniform alternatives, numeric ordering only.
+- `issue78_periodic_and_focus_checks_invalidate_changed_sources`: changed external snapshots clear comparisons.
+- `issue78_unmount_and_repertoire_switch_discard_old_callbacks`: lifecycle cancellation and response ownership.
+
+`issue78_python_prefix_evaluator_matches_frontend_source_and_comparison_contracts`
+in `tests/unit/api-schema-parity-regressions.test.ts` executes the production Python
+evaluator, verifies strict Zod/Python transport parity and guards checked fixtures.
+
+`test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes`
+in `scripts/check_postgres_opening_segmentation.py` runs in regular PostgreSQL
+durability: real reader-only HTTP requests for depths 1–4, unchanged unselected
+steps and complete product-state snapshots, including depths/cards/graph, reviews,
+schedules/queues, tasks and receipts. The existing #77 source-change and
+foreground-concurrency proofs remain intact.
+
+`issue78_phone_and_desktop_comparison_remain_usable 390` and `… 1280` in
+`tests/browser/prefix-comparison.spec.ts` run in the repertoire browser family:
+real combined Black repertoire, literal `1.e4 c6` selection excluding QGD and
+transposed incoming routes, shorter/longer candidates, unchanged source and queue,
+read-only request allowlist, usable responsive bounds and Escape/focus restoration.
+
+Additional callback/error cases in the same unit file:
+`issue78_old_failure_cannot_clear_a_newer_success`,
+`issue78_candidate_edit_cancels_publication_and_batch_failure_returns_no_partial_metrics`,
+`issue78_failed_freshness_check_hides_unverified_metrics`, and
+`issue78_incompatible_response_bindings_cannot_publish`.
+
+PR #101 freshness recovery regressions in the same regular-suite file:
+
+- `issue78_freshness_recovery_clears_service_error_without_restoring_results` and `issue78_freshness_recovery_clears_evaluation_busy_without_restoring_results`: focus/periodic failures clear after a compatible check, the successful timestamp advances, and invalidated results stay hidden without another comparison request.
+- `issue78_stale_snapshot_requires_explicit_refresh_and_reselection` and `issue78_stale_graph_generation_requires_explicit_refresh_and_reselection`: stale source state survives later focus/interval events; only explicit refresh and selection permit a new comparison.
+- `issue78_older_freshness_success_preserves_newer_validation_error`, `issue78_older_freshness_success_preserves_newer_comparison_error`, and `issue78_older_freshness_success_preserves_newer_source_error`: deferred older success cannot erase a newer error, including validation that leaves the monitor request un-aborted.
+- `issue78_freshness_success_preserves_unrelated_comparison_error` and `issue78_freshness_success_preserves_incompatible_source_error`: a compatible check clears only recoverable freshness errors, preserving unrelated service failures and incompatible-source refresh requirements.
+
+Pinned `Prefix comparison 390` / `Prefix comparison 1280` in `visual.spec.ts`
+protect the selected/whole structural results layout against responsive regressions.
+
+`issue78_browser_activity_lease_yields_before_readonly_preview` and
+`issue78_idle_admission_is_cancelled_without_evaluator_retry` prove bounded,
+read-only foreground-status admission and cancellation. The real browser case
+initially failed because every Refresh click renewed Tempo's three-second browser
+activity lease and immediately rejected its diagnostic. The client now waits on
+observable activity state; it never disables foreground admission or retries an
+evaluator failure automatically. Normal application browser-activity telemetry is
+excluded from the diagnostic request allowlist; PostgreSQL product immutability
+remains verified separately.
+`issue78_source_pagination_preserves_explicit_selection` guards bounded rendering
+without losing selections across checklist pages and filters.
+`issue78_longer_requested_depth_can_have_no_structural_change` uses production
+clamping/effective-depth output to distinguish changed depth configuration from
+unchanged structure on a short source route.
+
+Prefix rehearsal admission: `test_prefix_rehearsal_replay_waits_only_for_documented_foreground_admission` and `test_prefix_rehearsal_admission_is_bounded_and_retains_retry_header_contract` preserve non-admission failures, stale responses, the exact retry-header contract and a bounded deadline while real health probes contend with read-only requests.
 
 ## Issue #7 — durable opportunity dismissals
 

@@ -30,7 +30,7 @@ it("backend sync serialization matches frontend contract across every status and
   const output = execFileSync(resolvePython(), ["-c", `
 import json
 from app.models import GameSyncStatusResponse
-from app.services.game_sync_coordinator import serialize_job
+from app.services.game_sync_serialization import serialize_job
 row = {'id':'11111111-1111-4111-8111-111111111111','status':'queued','created_at':'2026-09-29T12:00:00+00:00','started_at':None,'completed_at':None,'updated_at':'2026-09-29T12:00:00+00:00','error':None,'result_json':json.dumps({'imported':3})}
 statuses = ['queued','running','paused','retrying','failed']
 payloads = []
@@ -85,4 +85,16 @@ from app.models import RepertoireSettingsResponse
 print(json.dumps([RepertoireSettingsResponse(repertoire_id='rep',new_cards_per_day=value,effective_new_cards_per_day=value if value is not None else 10).model_dump(mode='json') for value in [None,0,5]]))
 `], { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" });
   for (const raw of JSON.parse(output)) expect(repertoireSettingsResponseSchema.parse(raw)).toEqual(raw);
+});
+
+it("issue78_python_prefix_evaluator_matches_frontend_source_and_comparison_contracts", async () => {
+  const { prefixSourceSchema, prefixComparisonSchema } = await import("../../app/domain/prefix-comparison");
+  const raw = JSON.parse(execFileSync(resolvePython(), ["tests/fixtures/prefix-comparison/generate.py"],
+    { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
+  expect(prefixSourceSchema.parse(raw.source)).toEqual(raw.source);
+  for (const result of Object.values(raw.comparisons)) expect(prefixComparisonSchema.parse(result)).toEqual(result);
+  const { default: checkedFixture } = await import("../fixtures/prefix-comparison/structural.json");
+  expect(raw).toEqual(checkedFixture);
+  expect(prefixSourceSchema.safeParse({ ...raw.source, version: 2 }).success).toBe(false);
+  expect(prefixComparisonSchema.safeParse({ ...raw.comparisons["a,b:2"], preview_only: false }).success).toBe(false);
 });
