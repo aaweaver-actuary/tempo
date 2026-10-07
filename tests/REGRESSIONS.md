@@ -2209,3 +2209,5 @@ observable activity state; it never disables foreground admission or retries an
 evaluator failure automatically. Normal application browser-activity telemetry is
 excluded from the diagnostic request allowlist; PostgreSQL product immutability
 remains verified separately.
+`issue78_source_pagination_preserves_explicit_selection` guards bounded rendering
+without losing selections across checklist pages and filters.

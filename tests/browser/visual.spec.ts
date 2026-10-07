@@ -325,8 +325,8 @@ for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ pag
   await page.getByRole("menuitem", { name: "Compare prefix depths", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: /Compare prefix depths/ });
   await dialog.getByLabel("Starting position and trained color").selectOption(JSON.stringify([fixture.source.lines[0].start_fen, "black"]));
-  await dialog.getByLabel("Move 1", { exact: true }).selectOption("e2e4");
-  await dialog.getByLabel("Move 2", { exact: true }).selectOption("c7c6");
+  await dialog.getByRole("combobox", { name: "Move 1", exact: true }).selectOption("e2e4");
+  await dialog.getByRole("combobox", { name: "Move 2", exact: true }).selectOption("c7c6");
   await dialog.getByRole("checkbox", { name: /^alias ·/ }).uncheck();
   await dialog.getByLabel("Candidate learner-decision depths").fill("2");
   await dialog.getByRole("button", { name: "Compare depths", exact: true }).click();

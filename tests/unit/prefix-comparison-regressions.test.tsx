@@ -273,3 +273,16 @@ it("issue78_idle_admission_is_cancelled_without_evaluator_retry", async () => {
   await vi.advanceTimersByTimeAsync(2000);
   expect(fetcher).toHaveBeenCalledTimes(reads);
 });
+
+it("issue78_source_pagination_preserves_explicit_selection", async () => {
+  stubDiagnosticFetch(vi.fn(async () => Response.json({ ...source, lines: [...source.lines,
+    ...Array.from({ length: 60 }, (_, index) => ({ ...source.lines[0], id: `extra-${index}`, name: `extra-${index}` }))] })));
+  await mount(); selectLines("a");
+  expect(screen.getAllByRole("checkbox")).toHaveLength(50);
+  fireEvent.click(screen.getByRole("button", { name: "Next source lines" }));
+  selectLines("extra-50");
+  expect(screen.getByText("Selected source lines: 2")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Filter source lines by name, ID or UCI moves"), { target: { value: "qgd" } });
+  expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+  expect(screen.getByText("Selected source lines: 2")).toBeTruthy();
+});

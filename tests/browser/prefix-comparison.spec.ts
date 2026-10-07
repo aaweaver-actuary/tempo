@@ -41,11 +41,11 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
   page.on("request", incoming => { if (incoming.url().includes("/api/") && incoming.method() !== "GET" && !incoming.url().endsWith("/system/browser-activity")) observedRequests.push(incoming.method() + " " + incoming.url()); });
   const startingPosition = dialog.getByLabel("Starting position and trained color");
   await startingPosition.selectOption(JSON.stringify([source.lines[0].start_fen, "black"]));
-  await dialog.getByLabel("Move 1", { exact: true }).selectOption("e2e4");
-  await dialog.getByLabel("Move 2", { exact: true }).selectOption("c7c6");
+  await dialog.getByRole("combobox", { name: "Move 1", exact: true }).selectOption("e2e4");
+  await dialog.getByRole("combobox", { name: "Move 2", exact: true }).selectOption("c7c6");
   await expect(dialog.getByText("Selected source lines: 2")).toBeVisible();
   const unselected = source.lines.filter(line => line.moves[0] === "d2d4");
-  for (const line of unselected) await expect(dialog.getByRole("checkbox", { name: new RegExp(`^${line.name} · saved depth`) })).not.toBeChecked();
+  for (const line of unselected) await expect(dialog.getByRole("checkbox", { name: new RegExp(line.id) })).not.toBeChecked();
   const queueBefore = await (await request.get(`${api}/queue/today`)).json();
   await dialog.getByLabel("Candidate learner-decision depths").fill("2, 4");
   const evaluations: ReturnType<typeof prefixComparisonSchema.parse>[] = [];
