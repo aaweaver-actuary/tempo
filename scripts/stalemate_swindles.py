@@ -292,11 +292,16 @@ def run_mine(arguments):
 
 
 def load_candidates(paths: list[str], receipts: list[dict]):
+    verified_candidate_hashes: set[str] = set()
     for filename in paths:
         path = Path(filename)
         receipt = json.loads(Path(str(path) + ".metadata.json").read_text(encoding="utf-8"))
         if receipt.get("schema_version") != 1 or receipt.get("candidate_sha256") != file_sha256(path):
             raise ValueError(f"Candidate file/metadata mismatch: {path}")
+        candidate_sha256 = receipt["candidate_sha256"]
+        if candidate_sha256 in verified_candidate_hashes:
+            raise ValueError(f"Candidate inputs contain duplicate mined output: {path}")
+        verified_candidate_hashes.add(candidate_sha256)
         receipts.append(receipt)
         with path.open(encoding="utf-8") as candidate_file:
             observed_count = 0

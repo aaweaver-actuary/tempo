@@ -229,6 +229,61 @@ def test_stalemate_cli_plain_path_builds_manifest_and_rejects_tampered_candidate
     assert run_cli(*build_arguments).returncode == 1 and bundle.read_bytes() == before
 
 
+@pytest.mark.parametrize("duplicate_input", ["same_path", "copied_output"])
+@pytest.mark.parametrize("previous_outputs", [False, True])
+def test_stalemate_build_rejects_duplicate_verified_candidate_receipts(tmp_path, duplicate_input, previous_outputs):
+    original, copied, bundle, manifest = (tmp_path / name for name in ("original.jsonl", "copied.jsonl", "bundle.json", "manifest.json"))
+    result = run_cli("mine", "--source-month", "2026-09", "--output", str(original), input_text=synthetic_pgn())
+    assert result.returncode == 0, result.stderr
+    original_metadata = Path(str(original) + ".metadata.json")
+    receipt = json.loads(original_metadata.read_text())
+    assert receipt["candidate_sha256"] == hashlib.sha256(original.read_bytes()).hexdigest()
+    assert receipt["counts"]["games_scanned"] == receipt["counts"]["eligible_candidates"] == 1
+    copied.write_bytes(original.read_bytes())
+    Path(str(copied) + ".metadata.json").write_bytes(original_metadata.read_bytes())
+    build_options = ("--corpus-id", "synthetic-receipt-regression-v1", "--output", str(bundle), "--manifest", str(manifest))
+    if previous_outputs:
+        result = run_cli("build", "--candidates", str(original), *build_options)
+        assert result.returncode == 0, result.stderr
+        previous_bytes = (bundle.read_bytes(), manifest.read_bytes())
+    repeated = original if duplicate_input == "same_path" else copied
+    result = run_cli("build", "--candidates", str(original), str(repeated), *build_options)
+    assert result.returncode == 1, "Duplicate receipts must not inflate manifest population counters"
+    expected_error = "Candidate inputs must not be repeated" if duplicate_input == "same_path" else "Candidate inputs contain duplicate mined output"
+    assert expected_error in result.stderr
+    if duplicate_input == "copied_output":
+        assert str(copied) in result.stderr
+    if previous_outputs:
+        assert (bundle.read_bytes(), manifest.read_bytes()) == previous_bytes
+    else:
+        assert not bundle.exists() and not manifest.exists()
+    assert not list(tmp_path.rglob("*.partial"))
+
+
+def test_stalemate_build_accepts_distinct_candidate_outputs_with_shared_provenance(tmp_path):
+    candidate_paths = [tmp_path / "white.jsonl", tmp_path / "black.jsonl"]
+    receipts = []
+    for candidate_path, pgn in zip(candidate_paths, [synthetic_pgn(), synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5"))]):
+        result = run_cli("mine", "--source-month", "2026-09", "--output", str(candidate_path), input_text=pgn)
+        assert result.returncode == 0, result.stderr
+        receipt = json.loads(Path(str(candidate_path) + ".metadata.json").read_text())
+        assert receipt["candidate_sha256"] == hashlib.sha256(candidate_path.read_bytes()).hexdigest()
+        receipts.append(receipt)
+    assert receipts[0]["candidate_sha256"] != receipts[1]["candidate_sha256"]
+    for field in ("source_month", "source", "filters", "completion"):
+        assert receipts[0][field] == receipts[1][field]
+    bundle, manifest = tmp_path / "bundle.json", tmp_path / "manifest.json"
+    result = run_cli("build", "--candidates", *(str(candidate_path) for candidate_path in candidate_paths),
+                     "--corpus-id", "synthetic-distinct-receipts-v1", "--output", str(bundle), "--manifest", str(manifest))
+    assert result.returncode == 0, result.stderr
+    counts = json.loads(manifest.read_text())["counts"]
+    for name in swindles.new_counts():
+        assert counts[name] == sum(receipt["counts"][name] for receipt in receipts)
+    assert counts["games_scanned"] == counts["eligible_candidates"] == counts["unique_candidates"] == counts["selected_puzzles"] == 2
+    assert len(json.loads(bundle.read_text())["tables"]["study_exercises"]) == 2
+    assert not list(tmp_path.rglob("*.partial"))
+
+
 @pytest.mark.parametrize("bad_checksum,download_failure,decompression_failure", [(False, False, False), (True, False, False), (False, True, False), (False, False, True)])
 def test_stalemate_cli_archive_verifies_source_and_rejects_failed_pipeline(tmp_path, bad_checksum, download_failure, decompression_failure):
     # Cross multiple pump chunks so certification must include the compressed tail.
