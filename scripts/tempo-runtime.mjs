@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
+import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
 
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -43,14 +44,14 @@ export function assessMigrationRecovery({ guard, operation, target, configuratio
       || !Array.isArray(guard.starting_versions) || guard.starting_versions.length !== guard.starting_schema
       || guard.starting_versions.some((version, index) => version !== index + 1) || !guard.study_invariants
       || !guard.backup?.verified || !guard.backup.filename)
-      return { status: "blocked", message: "Migration guard is invalid or belongs to another database. Preserve the guard and backup; inspect tempo doctor before recovery." };
+      return { status: "blocked", code: "migration_guard_invalid", message: "Migration guard is invalid or belongs to another database. Preserve the guard and backup; inspect tempo doctor before recovery." };
     if (guard.state === "pending") {
-      if (!retry) return { status: "blocked", message: `Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${guard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.` };
-      return { status: "retry-authorized", message: "Original-history verification remains unresolved until the real lifecycle successfully performs it." };
+      if (!retry) return { status: "blocked", code: "migration_pending", backup: guard.backup.filename, message: `Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${guard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.` };
+      return { status: "retry-authorized", code: "migration_retry", message: "Original-history verification remains unresolved until the real lifecycle successfully performs it." };
     }
   } else if (operation?.phase === "applying_migrations"
     || (operation?.phase === "failed" && operation.failed_phase === "applying_migrations")) {
-    return { status: "blocked", message: "Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry." };
+    return { status: "blocked", code: "migration_guard_missing", message: "Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry." };
   }
   return { status: "clear" };
 }
@@ -139,12 +140,35 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return configuration;
   }
 
+  async function inspectContainerInventory() {
+    const inspectionAction = `Next: restore Docker access in context ${target.context} or let the named container operation finish, then run tempo start. Keep all study volumes.`;
+    for (let inventoryAttempt = 0; inventoryAttempt < 2; inventoryAttempt++) {
+      const inventoryIds = (await docker(["ps", "-aq"], { timeout: 5000 })).stdout.trim().split(/\s+/).filter(Boolean);
+      if (!inventoryIds.length) return [];
+      const inspection = await docker(["inspect", ...inventoryIds], { allowFailure: true, timeout: 5000 });
+      if (inspection.code === 0) {
+        let inspectedContainers;
+        try { inspectedContainers = JSON.parse(inspection.stdout); } catch { /* Reject invalid metadata below. */ }
+        if (!Array.isArray(inspectedContainers) || inspectedContainers.length !== inventoryIds.length
+          || inventoryIds.some(id => !inspectedContainers.some(container => typeof container.Id === "string" && container.Id.startsWith(id))))
+          throw new TempoProblem("container_inventory_invalid", "Docker container metadata is incomplete or invalid; installation safety cannot be checked.", { action: inspectionAction });
+        return inspectedContainers;
+      }
+      const failureLines = inspection.stderr.trim().split(/\r?\n/);
+      const missingIds = failureLines.map(line => line.match(/^(?:error(?: response from daemon)?:\s*)?no such (?:object|container):\s*([a-f0-9]{12,64})\s*$/i)?.[1]);
+      // An auto-removed container can disappear between ps and inspect. Refresh
+      // once only for that exact response, then validate every surviving owner.
+      if (inventoryAttempt === 0 && inspection.code === 1 && missingIds.every(id => id && inventoryIds.includes(id))) continue;
+      throw new TempoProblem("container_inventory_failed", `Docker container inspection failed: ${redact(inspection.stderr || `inspection exited ${inspection.code ?? "interrupted"} without complete metadata`, secretValues).slice(-400)}`,
+        { action: inspectionAction });
+    }
+  }
+
   async function inspectTarget() {
     const daemonId = (await docker(["info", "--format", "{{.ID}}"])).stdout.trim();
     if (!target.daemonId || daemonId !== target.daemonId) throw new Error("Docker daemon differs from the registered Tempo target.");
     await config();
-    const ids = (await docker(["ps", "-aq"])).stdout.trim().split(/\s+/).filter(Boolean);
-    containers = ids.length ? JSON.parse((await docker(["inspect", ...ids])).stdout) : [];
+    containers = await inspectContainerInventory();
     validateContainers(containers, target);
     for (const expected of Object.values(target.volumes)) {
       const result = await docker(["volume", "inspect", expected.name], { allowFailure: true });
@@ -360,11 +384,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       }
       // Saved deployments can contain the old healthcheck, which accepts
       // LOADING with exit zero. Only a real PONG permits maintenance to advance.
-      const terminalReply = /^(?:\(error\)\s*)?(?:ERR|NOAUTH|WRONGPASS|NOPERM|MISCONF|WRONGTYPE|BUSY|READONLY)\b/i.test(reason);
-      const transient = !terminalReply && (interrupted || /^(?:\(error\)\s*)?LOADING\b/i.test(reason)
-        || /^Error: Server closed the connection$/i.test(reason)
-        || /(?:connection (?:refused|reset|closed)|could not connect to redis|timed? out|timeout|interrupted)/i.test(reason));
-      if (!transient || now() >= deadline) fail();
+      const reply = classifyRedisReply({ code: 1, stderr: reason, interrupted });
+      if (reply.status !== "transient" || now() >= deadline) fail();
       if (!reportedWait) { log(`Tempo: waiting for Redis: ${reason}`); reportedWait = true; }
       await wait(Math.min(1000, deadline - now()));
     }
@@ -376,6 +397,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function checkSchema() {
+    stage("checking_schema");
     status = JSON.parse((await maintenance("scripts/apply_postgres_migrations.py", ["--check", "--json",
       "--reader-passfile", "/run/secrets/reader_pgpass", "--writer-passfile", "/run/secrets/writer_pgpass"])).stdout);
     if (!status.applied_versions.length || !status.initialized)
@@ -543,10 +565,18 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function recordFailure(error) {
     operation.failure = redact(error.message, secretValues); operation.failed_phase = operation.phase; operation.phase = "failed";
     operation.failed_at = new Date().toISOString();
+    const guidance = phaseGuidance(operation.failed_phase);
+    operation.failure_log = join(stateDirectory, `failure-${operation.id}.log`);
+    operation.next_action = error.action ?? guidance.action;
     atomicJson(journalPath, operation);
-    try { const logs = await compose(["logs", "--no-color", "--tail", "60", "api", "foreground-worker", "background-worker"], { allowFailure: true });
-      writeFileSync(join(stateDirectory, `failure-${operation.id}.log`), redact(logs.stdout + logs.stderr, secretValues), { mode: 0o600 }); }
+    try {
+      const services = guidance.services.filter(service => configuration?.services?.[service]);
+      const logs = services.length ? await compose(["--profile", "maintenance", "logs", "--no-color", "--tail", "60", ...services], { allowFailure: true }) : { stdout: "", stderr: "" };
+      writeFileSync(operation.failure_log, redact(`Phase: ${operation.failed_phase}\nRevision: ${revision}\nFailed at: ${operation.failed_at}\n${error.message}\n${logs.stdout}${logs.stderr}`, secretValues), { mode: 0o600 });
+      log(`Failure evidence: ${operation.failure_log}`);
+    }
     catch { /* The original failure remains the error. */ }
+    error.action ??= guidance.action;
   }
 
   async function stopAll() {
@@ -591,5 +621,6 @@ async function verifyPostgresImageMajor(docker, image, registeredMajor) {
   const actualMajor = Number(result.stdout.trim().match(/^postgres \(PostgreSQL\) (\d+)(?:\.|\s|$)/)?.[1]);
   if (!Number.isInteger(actualMajor) || actualMajor < 1) throw new Error(`Could not determine PostgreSQL server major from selected image ${image}.`);
   if (actualMajor !== registeredMajor)
-    throw new Error(`Registered PostgreSQL major ${registeredMajor}; candidate image PostgreSQL major ${actualMajor}. A separate major-upgrade procedure is required.`);
+    throw new TempoProblem("postgres_major", `Registered PostgreSQL major ${registeredMajor}; candidate image PostgreSQL major ${actualMajor}. A separate major-upgrade procedure is required.`,
+      { action: "Next: follow docs/POSTGRES-MAINTENANCE.md for a separate PostgreSQL major upgrade. Do not recreate this cluster with a different server major." });
 }

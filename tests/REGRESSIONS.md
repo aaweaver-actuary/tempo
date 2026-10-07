@@ -2083,3 +2083,135 @@ Against unchanged production head `413a8af6acf890b9365f917398acafd9f400cb8d`, th
 - `repair completion preserves the active attempt focus and pending opponent reply` additionally asserts unchanged queue-read count and the exact active card object/queue-entry identity. The neighboring partial/final and cross-tab reconciliation cases retain their attempt, FEN, step, identity, focus, and no-queue-reread assertions.
 
 The new empty-queue case failed on unchanged production `715565b12452f0bf0520ed47c013337e5871c85a`: successful validation removed the saved repair, but queue reads remained at two instead of increasing to three (2.55 s wall). Home now retains passive count reconciliation and invokes its existing non-advancing queue refresh only when the current store has no playable card. Logs and candidate provenance are retained outside the checkout under `test-results/2026-10-07-pr84-empty-queue/`; complete current-main candidate validation is recorded in the PR handoff.
+
+## CLI guided startup recovery (2026-10-05 user-reported diagnostic confusion)
+
+### PR #90 local source-inspection recovery boundary
+
+The preliminary Git observation is independent of candidate-update eligibility
+and recorded immutable fallback validation. Failed probes retain unknown fields;
+they cannot authorize fetching, updating source, or building candidate images.
+All cases below run in the normal CLI wrapper with unchanged group deadlines.
+
+- `actual CLI source inspection fallback survives ${probe} probe failure without candidate mutation`
+  table-drives branch, HEAD, status, origin and actual process launch failures.
+  Every case failed on production head `022060b` before repair. They prove
+  independently checked fallback readiness, explicit previous-version/update-deferred
+  wording, unchanged deployment receipt and local work, and no candidate mutation.
+- `actual CLI source inspection fallback stays deferred when the failed probe recovers`
+  prevents adopting newly available source during a fallback-only invocation.
+- `actual CLI source inspection no-receipt startup fails closed without changing services data or source`
+  failed before repair: it now explains both unavailable inspection and absent
+  verified fallback without creating a receipt or changing services/data/source.
+- `actual CLI source inspection migrate never substitutes the recorded fallback`
+  preserves migrate's strict candidate requirement.
+- `actual CLI source inspection diagnostics remain read-only for ${surface}` covers
+  concise/verbose doctor, status, start/restart/migrate plans, one repair action,
+  redacted Git evidence, unknown working-tree status and independent deployment,
+  running identity, schema, maintenance and release evidence. Doctor failed before
+  repair. `actual CLI source inspection diagnostics retain independent facts when Git cannot launch or local schema is unreadable`
+  also failed before repair and protects unknown branch/HEAD/schema comparisons.
+- `actual CLI source inspection safety still rejects unsafe fallback ${unsafeFallback}`
+  combines source failure with unavailable immutable images, incompatible database
+  schema and invalid migration guards; none may produce false readiness.
+- `CLI automatic start cancels when source inspection becomes unavailable after waiting begins`
+  failed before repair. Established source fencing fails closed, preserving the
+  receipt and starting neither a candidate nor fallback. Existing source-drift,
+  stop, installation-state and relaunch regressions remain unchanged.
+- `CLI automatic start cancels on programming errors during source inspection without falling back`
+  injects a one-shot internal exception into the actual waiting command and proves
+  that recovery catches cannot relabel it or start the previous deployment.
+- `CLI source inspection retains known facts and classifies only operational Git failures`,
+  `CLI source inspection preserves programming errors and cancellation instead of permitting fallback`,
+  and `CLI source inspection executor retains native process launch provenance and legacy exit behavior`
+  protect partial observations and narrow failure classification without hiding bugs.
+- `CLI source inspection evidence bounds probe failures and redacts repository URL credentials`
+  keeps detailed probe evidence bounded and secret-safe.
+- `CLI source fingerprint compares deliberate Git state and ignores diagnostic problem metadata`
+  proves equality depends only on branch/HEAD/status/origin; unknown state cannot
+  establish a fence. `CLI source inspection prevents candidate assessment waiting and selection mutations with unavailable probes`
+  proves all preliminary failures block waiting and selection before fetch, and
+  a stale expected fingerprint also blocks fetch.
+
+`tests/runner/tempo-cli.test.mjs` runs through the regular
+`tests/unit/tempo-cli-regressions.test.ts` wrapper. New groups remain disjoint,
+nonempty and within their existing deadlines; no real 30-minute wait is required.
+
+- `actual CLI diagnostics explain current blocker before historical Redis failure`
+  and `actual CLI diagnostics keep technical evidence in verbose output with legacy timestamps identified`
+  failed before the repair (missing direct recovery action and rejected verbose
+  flag). They protect a concise answer, historical/current separation and missing
+  legacy fields without inventing failure timestamps.
+- `actual CLI diagnostics explain one primary next action when source and verification are blocked`,
+  `actual CLI diagnostics explain safe recovery instead of ordinary start for an unfinished migration`,
+  `actual CLI diagnostics explain current terminal Redis errors with one repair action and redaction`,
+  and `actual CLI diagnostic safety concise and verbose modes preserve source receipts guards and services`
+  and `actual CLI diagnostics explain active maintenance before treating its migration guard as a failure`
+  protect blocker priority, explicit guarded retry, active maintenance, actual Redis errors, secrecy
+  and read-only default/detailed diagnostics.
+- `CLI pending verification` cases protect minute-spaced bounded waiting,
+  pending-to-success/failed/missing/unavailable transitions, a single deadline
+  when main advances, no-wait behavior and cancellation during request/sleep.
+- `CLI waiting installation fence` cases protect concurrent journal, receipt,
+  guard and registration changes and duplicate deployment cancellation under the
+  reacquired maintenance lock.
+- `CLI automatic start` / `CLI automatic migrate` cases execute the real command
+  against isolated fake processes: successful waiting; timeout with/without
+  compatible recorded fallback; no fallback for migrate; actual concurrent stop;
+  source drift; actual SIGINT; and original state/deadline fencing through updated
+  CLI relaunch. Timeout integration cases jump a controlled clock to the deadline;
+  separate unit cases prove every minute boundary without expensive process loops.
+- `CLI automatic start cancels a concurrent stop during initial target inspection`
+  failed before the repair: startup accepted a new stop journal as its baseline
+  and restarted services. The installation fence now precedes Docker and target
+  inspection, preserving a concurrent stop from the beginning of startup.
+- `CLI failure evidence selects Redis logs and redacts replies without unrelated API logs`
+  protects actual failing-phase log selection and saved redacted evidence.
+- `actual CLI blocked update reports specific GitHub causes without a fallback or leaked credentials`,
+  `actual CLI diagnostics preserve actionable GitHub rate limit and access causes in default output`,
+  `actual CLI diagnostics identify the missing release job in default output`,
+  and `actual CLI diagnostics explain the named branch requiring preservation`
+  protect specific causes and actions without requiring verbose mode. These and
+  the changed-file assertion failed before the repair (5 named failures).
+- `actual CLI diagnostics keep complete changed-file evidence beyond the concise preview`
+  protects a bounded default file list and the complete evidence in verbose mode.
+
+The relaunch deadline fixture controls both process clocks explicitly; it does
+not assume a host uptime above thirty minutes. Interrupted fallback cases use
+separate regular-suite groups with unchanged 60-second limits and full coverage.
+The existing PostgreSQL upgrade plan regression retains its read-only guarantee
+and recognizable plan message.
+`test_tempo_cli_postgres_fallback_reports_previous_version_ready_without_applying_update`
+in the regular disposable PostgreSQL durability runner checks the real installed
+command's explicit fallback wording, unchanged receipt and previous-version journal.
+Its prior wording assertion failed in CI before this consumer was updated.
+
+CI also exposed a setup race in existing browser regression
+`poisoned online A becomes inspectable while B and C save and conflict retry survives reload`:
+the initial helper mount began flushing before review handlers were installed;
+the next reload interrupted B and replayed its identical request/key. Its outbox
+is now seeded only after the handlers are ready, with assertions that setup sent
+no controlled reviews. Exact B/C saves and conflict reload/retry protection remain
+unchanged; no application review behavior or timeout was altered.
+
+`actual CLI read-only container inspection refreshes a disappeared transient container once`,
+`actual CLI read-only container inspection refuses an unsafe survivor after a transient disappears`,
+and `actual CLI read-only container inspection never hides access malformed or repeated-disappearance failures`
+failed before the repair (3 named failures). A real local PostgreSQL rehearsal
+exposed auto-removal between Docker's global list and inspect. Only a matching
+missing-container response permits one immediate inventory refresh; complete
+metadata, surviving ownership checks, read-only behavior and bounded failure
+remain required. No sleep, ignored access error or empty-success substitute is used.
+`CLI target safety errors name conflicting ports and service mounts without circular doctor advice`
+failed before the repair and protects the exact port/service item and direct
+configuration correction, without a circular instruction to run doctor again.
+`CLI verification failure guidance distinguishes cancelled and timed-out jobs from software failures`
+failed before the repair. It names the actual job conclusion and release-workflow
+action without claiming cancellation, timeout or missing execution proves a
+software defect; an ordinary failure may require software or workflow repair.
+
+Existing exact-main CI, source preservation, Redis persisted loading,
+PostgreSQL original-history/backup/migration/restart/receipt and incompatible
+fallback regressions remain required. The concurrent-source regression now
+cancels without restarting fallback rather than silently accepting changed work.
+No live study fixture, background audit, release bypass or schema change is used.

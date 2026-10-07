@@ -71,17 +71,24 @@ function exists(path) { try { readFileSync(path); return true; } catch { return 
 async function fixtureNetwork() {
   const fs = await import("node:fs");
   const directory = process.env.TEMPO_CLI_FIXTURE_DIRECTORY;
-  const fixture = JSON.parse(fs.readFileSync(directory + "/fixture.json", "utf8"));
   globalThis.fetch = async (url, options = {}) => {
+    const fixture = JSON.parse(fs.readFileSync(directory + "/fixture.json", "utf8"));
     fs.appendFileSync(directory + "/requests.jsonl", JSON.stringify({ url: String(url), method: options.method ?? "GET" }) + "\n");
     if (String(url).includes("api.github.com")) {
       if (fixture.diagnostics?.githubError) throw new Error(fixture.diagnostics.githubError);
-      if (fixture.diagnostics?.githubStatus) return new Response("access denied", { status: fixture.diagnostics.githubStatus });
+      if (fixture.diagnostics?.githubStatus) return new Response("access denied", { status: fixture.diagnostics.githubStatus,
+        headers: fixture.diagnostics.githubRateLimit ? { "x-ratelimit-remaining": "0" } : {} });
     }
     if (String(url).includes("/actions/workflows/")) return Response.json({ workflow_runs: fixture.diagnostics?.runs ?? [
       { id: 12, head_sha: fixture.revision, head_branch: "main", event: "push", status: "completed", html_url: "https://github.com/fixture/ci" },
     ] });
     if (String(url).includes("/actions/runs/")) {
+      if (fixture.diagnostics?.advanceAfterJobs) {
+        fixture.revision = "b".repeat(40);
+        delete fixture.diagnostics.advanceAfterJobs;
+        fixture.diagnostics.runs = [{ id: 13, head_sha: fixture.revision, head_branch: "main", event: "push", status: "queued", html_url: "https://github.com/fixture/next-ci" }];
+        fs.writeFileSync(directory + "/fixture.json", JSON.stringify(fixture));
+      }
       if (["race-dirty", "race-head"].includes(fixture.mode)) {
         const machinePath = directory + "/machine.json";
         const machine = JSON.parse(fs.readFileSync(machinePath, "utf8"));
@@ -111,8 +118,15 @@ async function fakeCommand() {
   const output = value => { console.log(typeof value === "string" ? value : JSON.stringify(value)); };
   const save = () => fs.writeFileSync(machinePath, JSON.stringify(machine));
   if (command === "git") {
+    const probe = args[0] === "rev-parse" && args[1] === "HEAD" ? "head" : args[0];
+    if (machine.gitProbeFailure?.probe === probe) {
+      const failure = machine.gitProbeFailure;
+      if (failure.once) { delete machine.gitProbeFailure; save(); }
+      console.error(failure.message ?? "fatal: cannot read repository metadata");
+      process.exit(128);
+    }
     if (args[0] === "branch") output(machine.branch ?? "main");
-    else if (args[0] === "status") output(fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : "");
+    else if (args[0] === "status") output(machine.sourceChanges ?? (fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : ""));
     else if (args[0] === "remote") output(machine.remote ?? "https://github.com/aaweaver-actuary/tempo");
     else if (args[0] === "cat-file") process.exit(machine.remoteObjectMissing ? 1 : 0);
     else if (args[0] === "merge-base") process.exit(machine.ancestryCode ?? 0);
@@ -124,13 +138,32 @@ async function fakeCommand() {
     }
     process.exit(0);
   }
-  if (args.includes("info")) { if (args.includes("--format")) output("fixture-daemon"); process.exit(0); }
+  if (args.includes("info")) {
+    if (args.includes("--format")) {
+      if (machine.stopDuringInspection) {
+        const state = path.join(directory, "state", fs.readdirSync(path.join(directory, "state"))[0]);
+        fs.writeFileSync(path.join(state, "operation.json"), JSON.stringify({ id: "stop-during-inspection", phase: "stopped" }));
+      }
+      output("fixture-daemon");
+    }
+    process.exit(0);
+  }
   if (args.includes("volume") && args.includes("inspect")) { output([]); process.exit(0); }
   if (args.includes("ps") && args.includes("-aq")) {
     const containers = args.includes("compose") ? machine.containers.filter(container => args.includes(container.Config.Labels["com.docker.compose.service"])) : machine.containers;
-    output(containers.map(container => container.Id).join("\n")); process.exit(0);
+    const containerIds = containers.map(container => container.Id);
+    if (!args.includes("compose") && machine.transientInventoryContainer && (!machine.transientInventoryRemoved || machine.repeatTransientRemoval))
+      containerIds.push("deaddeaddead");
+    output(containerIds.join("\n")); process.exit(0);
   }
   if (args.includes("inspect") && !args.includes("image")) {
+    if (args.includes("deaddeaddead")) {
+      machine.transientInventoryRemoved = true; save();
+      output(machine.containers.filter(container => args.includes(container.Id)));
+      console.error("error: no such object: deaddeaddead"); process.exit(1);
+    }
+    if (machine.inventoryInspectionError) { console.error(machine.inventoryInspectionError); process.exit(1); }
+    if (machine.inventoryMalformed) { output({}); process.exit(0); }
     output(machine.containers.filter(container => args.includes(container.Id)).map(container => ({ ...container,
       State: { Running: machine.running.includes(container.Config.Labels["com.docker.compose.service"]) } }))); process.exit(0);
   }
@@ -178,7 +211,10 @@ async function fakeCommand() {
       || (fixture.mode === "interrupted-applications" && args.includes("web"))) process.kill(process.ppid, "SIGKILL");
     process.exit(0);
   }
-  if (args.includes("ping")) { output("PONG"); process.exit(0); }
+  if (args.includes("ping")) {
+    if (machine.redisReply) { console.error(machine.redisReply); process.exit(1); }
+    output("PONG"); process.exit(0);
+  }
   if (args.includes("psql")) {
     if (machine.ledgerReadUnavailable) process.exit(17);
     output((machine.appliedVersions ?? Array.from({ length: machine.schema }, (_, index) => index + 1)).join("\n")); process.exit(0);
