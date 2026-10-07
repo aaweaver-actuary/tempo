@@ -9,6 +9,8 @@ from fastapi import HTTPException
 from app import postgres_store, coverage_maia_commands
 from app.services import repertoire_opportunities as opportunities
 from app.services.durable_tasks import complete_task, enqueue_task_in_transaction
+from app.services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
+from app.services.postgres_game_derivation import execute_game_position_index_slice
 
 
 def prove_opportunity_dismissal_and_source_freshness(run_bounded_task_slices):
@@ -107,11 +109,14 @@ def prove_opportunity_dismissal_and_source_freshness(run_bounded_task_slices):
                     (id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
                     VALUES(?,'lichess','freshness-player',?,'rapid',1,'white','*',?,'["e2e4","c7c5"]')""",
                     (game_id,now.isoformat(),chess.STARTING_FEN))
-                database.execute("""INSERT INTO game_repertoire_matches
-                    (game_id,repertoire_id,classification,updated_at) VALUES(?,?,'opponent repertoire gap',?)""",
-                    (game_id,repertoire_id,now.isoformat()))
-                database.execute("INSERT INTO game_position_occurrences(game_id,ply,fen_key,move_uci) VALUES(?,1,?,'c7c5')",
-                                 (game_id,fen_key))
+                database.execute("""INSERT INTO game_derivation_jobs
+                    (game_id,status,completed_phases,derivation_version,updated_at)
+                    VALUES(?,'running',0,1,?)""", (game_id,now.isoformat()))
+                enqueue_task_in_transaction(database, "game_derivation_positions", game_id,
+                    {"game_id":game_id,"derivation_version":1,"cursor":0},priority=-1000)
+        for game_id in game_ids:
+            run_bounded_task_slices("game_derivation_positions", game_id, execute_game_position_index_slice)
+            run_bounded_task_slices("game_derivation_compare", game_id, execute_game_repertoire_comparison_slice)
         refresh()
         row = published()
         assert row["id"] == opportunity_id and row["status"] == "active"
@@ -150,6 +155,6 @@ def prove_opportunity_dismissal_and_source_freshness(run_bounded_task_slices):
     finally:
         with postgres_store.connection() as database:
             database.execute_native("DELETE FROM imported_games WHERE id=ANY(%s::text[])", (game_ids,))
-            database.execute_native("DELETE FROM background_tasks WHERE deduplication_key=%s OR payload_json::jsonb->>'repertoire_id'=%s OR payload_json::jsonb->>'opportunity_id' IN (SELECT id FROM repertoire_opportunities WHERE repertoire_id=%s)", (repertoire_id,repertoire_id,repertoire_id))
+            database.execute_native("DELETE FROM background_tasks WHERE deduplication_key=%s OR deduplication_key=ANY(%s::text[]) OR payload_json::jsonb->>'repertoire_id'=%s OR payload_json::jsonb->>'opportunity_id' IN (SELECT id FROM repertoire_opportunities WHERE repertoire_id=%s)", (repertoire_id,game_ids,repertoire_id,repertoire_id))
             database.execute("DELETE FROM repertoires WHERE id=?", (repertoire_id,))
         postgres_store.close_pools()

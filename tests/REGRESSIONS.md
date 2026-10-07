@@ -2218,3 +2218,8 @@ attempt is claimable, and a superseded failed lease cannot submit or change rows
 It failed on the first candidate by claiming the old node. OF-2 also rejects a
 real superseded PostgreSQL callback with 409 and verifies row/candidate immutability.
 Availability, claims, and successful callbacks share the same latest-attempt rank.
+
+OF-1's supporting games use the real durable position-index and repertoire
+comparison handlers, publishing staged generations through the authoritative
+views. The initial real-store rehearsal rejected direct inserts into those views;
+the repaired OF-1/OF-2 passed on fresh PostgreSQL before obtaining new complete CI.
