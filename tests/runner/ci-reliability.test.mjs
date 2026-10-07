@@ -56,21 +56,28 @@ test("lifecycle-sensitive changes require deployment lifecycle verification", ()
     "scripts/check-tempo-cli.mjs", "docker-compose.yml", "docker-compose.postgres-maintenance.yml",
     "scripts/verify_postgres_backup.py", "scripts/check-redis-readiness.mjs", "backend/app/postgres_store.py",
     "tests/runner/tempo-cli-fixture.mjs", "tests/unit/tempo-cli-regressions.test.ts", "backend/Dockerfile", "package-lock.json"]) {
-    const planned = plan({ paths: [path] });
+    const planned = plan({ paths: [path, "tests/REGRESSIONS.md"] });
     assert.equal(planned.jobs.lifecycle?.applicable, true, path);
     assert.equal(planned.jobs.lifecycle.required, true, path);
   }
 });
 
 test("ordinary product changes omit deployment lifecycle independently of browser breadth", () => {
-  for (const path of ["app/components/chessboard.tsx", "backend/app/services/daily_queue.py",
-    "app/domain/opening-segmentation.ts", "tests/browser/studies.spec.ts", "docs/testing.md"]) {
-    const planned = plan({ paths: [path] });
-    assert.equal(planned.jobs.lifecycle?.applicable, false, path);
+  const ordinaryChangeGroups = [
+    ...["app/components/chessboard.tsx", "backend/app/services/daily_queue.py",
+      "app/domain/opening-segmentation.ts", "tests/browser/studies.spec.ts", "docs/testing.md",
+      ...inventory.lifecycle.ordinaryPaths].map(path => [path]),
+    ["app/domain/opening-segmentation.ts", "tests/unit/opening-segmentation-regressions.test.tsx",
+      "backend/tests/test_opening_segmentation.py", "tests/REGRESSIONS.md", "docs/testing.md"],
+  ];
+  for (const paths of ordinaryChangeGroups) {
+    const planned = plan({ paths });
+    assert.equal(planned.jobs.lifecycle?.applicable, false, paths.join(", "));
     assert.equal(planned.jobs.postgres.required, true);
     assert.equal(planned.scope, "targeted");
   }
-  const broadBrowser = plan({ paths: ["app/components/chessboard.tsx"] });
+  const broadBrowser = plan({ paths: ["app/components/chessboard.tsx", "tests/REGRESSIONS.md"] });
+  assert.equal(broadBrowser.jobs.lifecycle.applicable, false);
   assert.equal(broadBrowser.collection.filter(item => item.selected).length, cases.length);
   assert.equal(broadBrowser.jobs.visual.applicable, true);
 });

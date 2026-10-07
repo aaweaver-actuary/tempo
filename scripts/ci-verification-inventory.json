@@ -15,7 +15,7 @@
       "(^|/)[^/]*(migration|schema|upgrade|backup|restore|redis|credential|secret)[^/]*\\.(py|mjs|[cm]?tsx?|json|ya?ml|sh)$"
     ],
     "ordinaryPrefixes": ["app/", "backend/app/", "backend/tests/", "tests/unit/", "tests/browser/", "public/", "assets/", "tempo-core/src/"],
-    "ordinaryPaths": ["README.md", "CONTRIBUTING.md", "AGENTS.md"],
+    "ordinaryPaths": ["README.md", "CONTRIBUTING.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md", "DUCKDB_VS_SQLITE.md", "GAMES_SYNC_RESEARCH.md", "GAMES_SYNC_IMPLEMENTATION.md", "tests/REGRESSIONS.md"],
     "ordinaryPatterns": ["^docs/.*\\.md$", "^tempo-core/.*\\.md$"]
   },
   "families": {
