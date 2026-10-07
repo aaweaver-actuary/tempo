@@ -2142,6 +2142,8 @@ Browser selection only; the existing CI reliability wrapper runs these Node regr
 
 The retained `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` case also guards small-smoke startup independence: a six-case run exposed a real `refreshing` initial projection before phone preparation, which correctly refused incomplete data. The case now waits for the real ready projection before opening its browser workflow, within the existing 60-second test budget. Its authoring, prepared storage, real grading and export assertions remain intact; all eight demoted cases are unchanged. The failed run and trace are retained as diagnosis, not timing evidence.
 
+`repertoire limits update today's queue, persist after reload, and reset to default` — the complete repertoire-family run exposed its dependence on an unrelated product test clearing prior imports. The trace showed `segmentation-1280` still owned the shared queued cards, so filtering by the new import's repertoire yielded zero. This spec now uses the existing disposable-product fixture before its unchanged limit, failed-save/retry, reload and reset assertions. The failed family run/trace is retained; no product behavior or shared fixture was changed.
+
 - `every current browser spec belongs to exactly one complete family`
 - `reviewed source mappings reject missing families and duplicate or ambiguous paths`
 - `demoted critical cases remain required by their complete browser families`
