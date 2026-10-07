@@ -95,11 +95,11 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
   }, { timeout: 5000, intervals: [1000] }).toEqual(source);
   await expect(dialog.getByRole("button", { name: /apply|save|recommend/i })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).scrollIntoViewIfNeeded();
+  await dialog.getByRole("heading", { name: "Candidate depth 2", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
   await page.screenshot({ path: testInfo.outputPath(`prefix-comparison-${width}.png`) });
   await testInfo.attach(`prefix-comparison-${width}`, { path: testInfo.outputPath(`prefix-comparison-${width}.png`), contentType: "image/png" });
   const wholeScope = dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).getByRole("region", { name: "Whole repertoire", exact: true });
-  await wholeScope.scrollIntoViewIfNeeded();
+  await wholeScope.getByRole("heading", { name: "Whole repertoire", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
   await expect(wholeScope.getByRole("row", { name: /Distinct cards/ })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath(`prefix-comparison-whole-${width}.png`) });
   await testInfo.attach(`prefix-comparison-whole-${width}`, { path: testInfo.outputPath(`prefix-comparison-whole-${width}.png`), contentType: "image/png" });

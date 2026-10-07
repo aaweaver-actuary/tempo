@@ -331,8 +331,8 @@ for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ pag
   await dialog.getByLabel("Candidate learner-decision depths").fill("2");
   await dialog.getByRole("button", { name: "Compare depths", exact: true }).click();
   await expect(dialog.getByRole("region", { name: "Candidate depth 2", exact: true })).toBeVisible();
-  await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).scrollIntoViewIfNeeded();
+  await dialog.getByRole("heading", { name: "Candidate depth 2", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
   await expect(page).toHaveScreenshot(`prefix-comparison-${width}.png`, { animations: "disabled", fullPage: true });
-  await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).getByRole("region", { name: "Whole repertoire", exact: true }).scrollIntoViewIfNeeded();
+  await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).getByRole("heading", { name: "Whole repertoire", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
   await expect(page).toHaveScreenshot(`prefix-comparison-whole-${width}.png`, { animations: "disabled", fullPage: true });
 });
