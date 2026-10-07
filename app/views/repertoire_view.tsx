@@ -26,6 +26,7 @@ import {
 } from "../domain/schemas";
 import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
+import { PrefixComparisonDialog } from "../components/prefix-comparison-dialog";
 import { OpeningSegmentation } from "../components/opening-segmentation";
 import { RepertoireStatistics } from "../components/repertoire-statistics";
 import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
@@ -86,6 +87,7 @@ export default function RepertoireView({
   pieceSet?: PieceSet;
 }) {
   const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
+  const [comparisonRepertoireId, setComparisonRepertoireId] = useState<string | null>(null);
   const [prefixRepertoireId, setPrefixRepertoireId] = useState<string | null>(null);
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
@@ -359,6 +361,9 @@ export default function RepertoireView({
   }
   return (
     <section className="library-page" id="repertoire">
+      {backendItems.filter(item => item.id === comparisonRepertoireId).map(item => <PrefixComparisonDialog
+        key={`${item.id}:${refreshRevision}`} repertoireId={item.id} repertoireName={item.title}
+        onClose={() => setComparisonRepertoireId(null)} />)}
       {backendItems.filter(item => item.id === prefixRepertoireId).map(item => <CanonicalPrefixDialog key={item.id}
         repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
         onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
@@ -428,6 +433,7 @@ export default function RepertoireView({
                   <Button role="menuitem" onClick={() => void rename(item)}>
                     Rename
                   </Button>
+                  {item.backend && <Button role="menuitem" onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); setComparisonRepertoireId(item.id); setOpenMenu(null); }}>Compare prefix depths</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setSegmentationRepertoireId(item.id); setOpenMenu(null); }}>Recommended segmentation</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setPrefixRepertoireId(item.id); setOpenMenu(null); }}>Canonical prefix…</Button>}
                   <Button role="menuitem" onClick={() => exportPgn(item)}>

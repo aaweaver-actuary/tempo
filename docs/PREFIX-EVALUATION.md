@@ -145,3 +145,58 @@ uses 422; `limit_exceeded` uses 413; `evaluation_busy` uses 503 with `Retry-Afte
 A missing repertoire uses 404. Refresh after stale source/publication changes; retry
 busy work when study is idle. Every retry is a fresh, deterministic read against
 its supplied snapshot, with no history transfer or application authority.
+
+## Issue #78 implementation validation plan
+
+The read-only Repertoire comparison dialog selects literal starting-FEN/color/UCI
+routes and auditable source IDs. Its risks are implicit transposition expansion,
+mixed-depth misreporting, shared-card double counting, obsolete async callbacks,
+accidental commands and responsive overflow. Focused selection/component tests,
+Python-to-Zod parity and existing evaluator/API tests provide the first proof.
+Disposable PostgreSQL verifies multiple candidate reads leave product tables
+unchanged; the real browser workflow covers 390/1280px. Pinned visual/performance
+runs once stable. CI owns the complete required current-head/current-base gate.
+No tests use the live study stack.
+
+## Branch-scoped comparison UI (#78)
+
+In a backend-backed Repertoire card, open **More actions → Compare prefix depths**.
+Choose a saved starting position/color, then successive route moves such as
+`1.e4 c6`. Matching is exact starting-FEN, trained-color and ordered-UCI prefix
+matching against the displayed authoritative snapshot. A matching board position
+or opening name never expands the selection. The source-line checklist is final:
+users can explicitly include/exclude IDs. Names and SAN are display aids only.
+The snapshot token, graph generation, exact routes and selected IDs are inspectable.
+Filtering/paging never silently changes selection; source rows are paged by 50 and
+long routes show an excerpt with the complete UCI source available in details.
+
+No scope or candidate depth is chosen automatically. Enter one to four distinct
+uniform candidate depths, 1–20, separated by commas. Numeric ordering is only for
+comparison and is not a recommendation. Current depths come from each source
+line's saved state. Each candidate uses the existing read-only evaluate POST with
+an explicit complete selected-ID depth map. Candidates run sequentially, followed
+by an authoritative source re-read. Only a complete matching batch is published;
+a failed/stale batch returns no partial metrics. There are no command, preference,
+transition, receipt, save or application calls.
+
+Each candidate shows selected-scope and whole-repertoire current/proposed metrics,
+signed deltas, additional/reduced starts and added/removed/unchanged card identities.
+Whole-repertoire values are server results, not sums of selected and unselected
+counts. Selected-scope removals that remain unchanged in the whole repertoire are
+shown as retained by unselected lines. Newly selected presentations may also reuse
+identities already present in the whole repertoire. These classifications grant
+no persistence/history-transfer authority. Requested/effective line depths distinguish
+structural no-change from saved-depth no-change. Counts imply neither better
+learning nor measured time savings.
+
+Closing, repertoire changes, local refresh revisions, source reloads and selection
+or candidate edits abort obsolete work and revoke response ownership. Snapshot,
+graph, repertoire, selected IDs and requested/saved depths are checked on acceptance.
+A final source check prevents publication across candidates from different snapshots.
+While visible, the dialog rechecks source every 30 seconds and on focus. External
+changes are detected at the next check; the last successful check time is visible.
+On becoming hidden it clears comparisons; on return it rechecks freshness. Source
+changes require explicit Refresh source and reselection. Failed freshness checks
+hide unverified metrics. Busy service responses are shown explicitly for user-initiated
+retry; polling never writes or queues work. Empty selection, no-op, unsupported,
+stale, graph-not-ready, input limits and service failures remain distinct.

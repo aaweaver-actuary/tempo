@@ -65,12 +65,36 @@ def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(reper
     assert result['selected']['proposed']['metrics']['learner_decision_occurrences'] == 2
     assert result['whole_repertoire']['current']['metrics']['distinct_cards'] == 3
     assert result['whole_repertoire']['proposed']['metrics']['distinct_cards'] == 4
+    test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes(
+        endpoint, source, lines, product_snapshot, reader_api_response)
     assert product_snapshot() == before, 'Deployed reader-only prefix diagnostics wrote product state'
     print(json.dumps({'test': 'test_issue77_reader_only_deployed_api_evaluates_without_product_writes',
                       'source_http_status': 200, 'evaluate_http_status': 200,
                       'current_selected_cards': 1, 'proposed_selected_cards': 2,
                       'current_whole_cards': 3, 'proposed_whole_cards': 4,
                       'product_state_unchanged': True, 'foreground_rejections': foreground_rejections}))
+
+
+def test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes(
+        endpoint, source, lines, product_snapshot, reader_api_response):
+    before = product_snapshot()
+    for candidate_depth in (1, 2, 3, 4):
+        candidate = reader_api_response(Request(endpoint + '/evaluate', method='POST',
+            headers={'Content-Type': 'application/json'}, data=json.dumps({
+                'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
+                'candidate_depths': {lines[0]['id']: candidate_depth}}).encode()))
+        assert candidate['snapshot_id'] == source['snapshot_id']
+        assert candidate['line_depths'][0]['requested_depth'] == candidate_depth
+        for unselected_line in lines[1:]:
+            def steps(kind):
+                return [step for step in candidate['whole_repertoire'][kind]['steps']
+                        if step['line_id'] == unselected_line['id']]
+            assert steps('current') == steps('proposed'), 'An unselected source route changed'
+        assert product_snapshot() == before, 'Candidate comparison wrote product state'
+    refreshed = reader_api_response(endpoint + '/source')
+    assert refreshed == source
+    print(json.dumps({'test': 'test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes',
+                      'candidate_depths': [1, 2, 3, 4], 'product_state_unchanged': True}))
 
 
 def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids):

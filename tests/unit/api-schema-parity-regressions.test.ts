@@ -86,3 +86,15 @@ print(json.dumps([RepertoireSettingsResponse(repertoire_id='rep',new_cards_per_d
 `], { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" });
   for (const raw of JSON.parse(output)) expect(repertoireSettingsResponseSchema.parse(raw)).toEqual(raw);
 });
+
+it("issue78_python_prefix_evaluator_matches_frontend_source_and_comparison_contracts", async () => {
+  const { prefixSourceSchema, prefixComparisonSchema } = await import("../../app/domain/prefix-comparison");
+  const raw = JSON.parse(execFileSync(resolvePython(), ["tests/fixtures/prefix-comparison/generate.py"],
+    { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
+  expect(prefixSourceSchema.parse(raw.source)).toEqual(raw.source);
+  for (const result of Object.values(raw.comparisons)) expect(prefixComparisonSchema.parse(result)).toEqual(result);
+  const { default: checkedFixture } = await import("../fixtures/prefix-comparison/structural.json");
+  expect(raw).toEqual(checkedFixture);
+  expect(prefixSourceSchema.safeParse({ ...raw.source, version: 2 }).success).toBe(false);
+  expect(prefixComparisonSchema.safeParse({ ...raw.comparisons["a,b:2"], preview_only: false }).success).toBe(false);
+});

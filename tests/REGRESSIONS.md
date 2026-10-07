@@ -2157,3 +2157,45 @@ The retained `FEN-only study square exercise is authored enrolled and reviewed t
 - `documented global browser smoke count and titles match inventory and real collection`
 
 The result-identity regression includes replacement with an unplanned ID in the same browser project, preserving result count, project totals and uniqueness. Count-only or per-project-count validation cannot satisfy this case.
+
+## Issue #78 — branch-scoped read-only prefix comparisons
+
+`tests/unit/prefix-comparison-regressions.test.tsx` runs in the regular Vitest suite:
+
+- `issue78_exact_route_selection_resolves_deterministic_source_ids`: literal root/color/UCI matching, no transposition expansion, explicit checklist and filter isolation.
+- `issue78_mixed_saved_depths_display_without_global_default`: saved mixed depths and requested/effective longer prefixes.
+- `issue78_caro_scope_comparison_preserves_unselected_qgd`: candidate maps contain only selected IDs; real evaluator fixture preserves QGD graph steps.
+- `issue78_whole_repertoire_counts_preserve_shared_cards`: selected/whole card counts come from the deduplicating server evaluator.
+- `issue78_source_change_invalidates_late_preview`: refresh clears selection and discards old success callbacks.
+- `issue78_newer_selection_wins_over_inflight_result`: an obsolete comparison cannot replace the newer scope.
+- `issue78_empty_noop_unsupported_and_stale_are_distinct`: explicit empty/no-op and machine-readable errors.
+- `issue78_comparison_performs_no_writes`: only authoritative source GET and read-only evaluation POST; no application controls.
+- `issue78_final_source_check_prevents_mixed_snapshot_publication`: no publication after graph/source changes between candidate and final check.
+- `issue78_candidate_depth_validation_is_bounded_and_does_not_rank`: one to four uniform alternatives, numeric ordering only.
+- `issue78_periodic_and_focus_checks_invalidate_changed_sources`: changed external snapshots clear comparisons.
+- `issue78_unmount_and_repertoire_switch_discard_old_callbacks`: lifecycle cancellation and response ownership.
+
+`issue78_python_prefix_evaluator_matches_frontend_source_and_comparison_contracts`
+in `tests/unit/api-schema-parity-regressions.test.ts` executes the production Python
+evaluator, verifies strict Zod/Python transport parity and guards checked fixtures.
+
+`test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes`
+in `scripts/check_postgres_opening_segmentation.py` runs in regular PostgreSQL
+durability: real reader-only HTTP requests for depths 1–4, unchanged unselected
+steps and complete product-state snapshots, including depths/cards/graph, reviews,
+schedules/queues, tasks and receipts. The existing #77 source-change and
+foreground-concurrency proofs remain intact.
+
+`issue78_phone_and_desktop_comparison_remain_usable 390` and `… 1280` in
+`tests/browser/prefix-comparison.spec.ts` run in the repertoire browser family:
+real combined Black repertoire, literal `1.e4 c6` selection excluding QGD and
+transposed incoming routes, shorter/longer candidates, unchanged source and queue,
+read-only request allowlist, usable responsive bounds and Escape/focus restoration.
+
+Additional callback/error cases in the same unit file:
+`issue78_old_failure_cannot_clear_a_newer_success`,
+`issue78_candidate_edit_cancels_publication_and_batch_failure_returns_no_partial_metrics`,
+`issue78_failed_freshness_check_hides_unverified_metrics`, and
+`issue78_incompatible_response_bindings_cannot_publish`.
+Pinned `Prefix comparison 390` / `Prefix comparison 1280` in `visual.spec.ts`
+protect the selected/whole structural results layout against responsive regressions.
