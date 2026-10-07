@@ -2140,6 +2140,8 @@ Browser selection only; the existing CI reliability wrapper runs these Node regr
 
 `CI reliability planning and browser selection regressions pass in the regular suite` — `tests/unit/ci-reliability-regressions.test.ts` executes the complete Node suite and confirms the demotion and documented-count checks ran.
 
+The retained `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` case also guards small-smoke startup independence: a six-case run exposed a real `refreshing` initial projection before phone preparation, which correctly refused incomplete data. The case now waits for the real ready projection before opening its browser workflow, within the existing 60-second test budget. Its authoring, prepared storage, real grading and export assertions remain intact; all eight demoted cases are unchanged. The failed run and trace are retained as diagnosis, not timing evidence.
+
 - `every current browser spec belongs to exactly one complete family`
 - `reviewed source mappings reject missing families and duplicate or ambiguous paths`
 - `demoted critical cases remain required by their complete browser families`

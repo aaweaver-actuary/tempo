@@ -67,6 +67,14 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   // Compose's local queue day can differ from the browser after UTC midnight.
   // Pin this workflow to that day while its timers continue running normally.
   const serverQueue = await (await request.get(`${api}/queue/today`)).json();
+  // A small smoke can reach this case before the initial durable queue slice
+  // finishes. Establish its ready boundary before browser preparation starts.
+  await expect.poll(async () => {
+    const preparedQueue = await request.get(`${api}/queue/prepared`);
+    expect(preparedQueue.ok()).toBeTruthy();
+    return preparedQueue.json();
+  }, { message: "Initial disposable queue is ready for phone preparation", timeout: 30_000 })
+    .toMatchObject({ local_date: serverQueue.local_date, projection: { state: "ready" } });
   await page.clock.setFixedTime(new Date(`${serverQueue.local_date}T12:00:00Z`));
   const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
   expect(catalog.packs.filter((pack: { active: boolean }) => pack.active)).toEqual([]);
