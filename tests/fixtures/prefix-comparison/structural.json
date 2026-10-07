@@ -5806,6 +5806,1406 @@
           "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356"
         ]
       }
+    },
+    "b:3": {
+      "version": 1,
+      "preview_only": true,
+      "estimate_basis": "Structural counts only; not evidence of better learning or measured time savings.",
+      "repertoire_id": "rep",
+      "graph_generation": 1,
+      "snapshot_id": "c0fb330ae2457df68cecee51cb2862fab19bb3d3627e79fcce668fbe96a9d8cb",
+      "selected_line_ids": [
+        "b"
+      ],
+      "selected_line_count": 1,
+      "status": "no_change",
+      "depth_configuration_changed": false,
+      "structure_changed": false,
+      "current_depth_distribution": [
+        {
+          "depth": 3,
+          "line_count": 1
+        }
+      ],
+      "line_depths": [
+        {
+          "line_id": "b",
+          "current_depth": 3,
+          "requested_depth": 3,
+          "current_effective_depth": 3,
+          "proposed_effective_depth": 3
+        }
+      ],
+      "selected": {
+        "current": {
+          "metrics": {
+            "distinct_cards": 1,
+            "prefix_cards": 1,
+            "descendant_decision_cards": 0,
+            "learner_decision_occurrences": 3,
+            "distinct_learner_decisions": 3,
+            "repeated_decisions_across_cards": 0,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 1
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "proposed": {
+          "metrics": {
+            "distinct_cards": 1,
+            "prefix_cards": 1,
+            "descendant_decision_cards": 0,
+            "learner_decision_occurrences": 3,
+            "distinct_learner_decisions": 3,
+            "repeated_decisions_across_cards": 0,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 1
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "delta": {
+          "distinct_cards": 0,
+          "prefix_cards": 0,
+          "descendant_decision_cards": 0,
+          "learner_decision_occurrences": 0,
+          "distinct_learner_decisions": 0,
+          "repeated_decisions_across_cards": 0,
+          "repeated_decisions_within_cards": 0,
+          "board_starts": 0
+        },
+        "additional_starts": 0,
+        "reduced_starts": 0,
+        "unchanged_card_ids": [
+          "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c"
+        ],
+        "added_card_ids": [],
+        "removed_card_ids": []
+      },
+      "whole_repertoire": {
+        "current": {
+          "metrics": {
+            "distinct_cards": 5,
+            "prefix_cards": 4,
+            "descendant_decision_cards": 1,
+            "learner_decision_occurrences": 12,
+            "distinct_learner_decisions": 7,
+            "repeated_decisions_across_cards": 5,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 5
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            },
+            {
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "qgd"
+              ],
+              "decision_ids": [
+                "3f70ea37c17c0c6d7a74d38e5fa4f45cf99c7fa1608caac5c6ef379b68c49d4d",
+                "d518df921ca33e16dfdda2db2592c926c766348d96fd2561f9a05bf367ed0ad2",
+                "14a9db01e119187de8c4c921fea07c323ce812e223a790b8d1ef76134b6bc691"
+              ]
+            },
+            {
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172"
+              ]
+            },
+            {
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "decision"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            },
+            {
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "alias"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 1,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 1,
+              "segment_kind": "decision",
+              "first_decision_index": 2,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "parent_card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "alias",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "qgd",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "proposed": {
+          "metrics": {
+            "distinct_cards": 5,
+            "prefix_cards": 4,
+            "descendant_decision_cards": 1,
+            "learner_decision_occurrences": 12,
+            "distinct_learner_decisions": 7,
+            "repeated_decisions_across_cards": 5,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 5
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            },
+            {
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "qgd"
+              ],
+              "decision_ids": [
+                "3f70ea37c17c0c6d7a74d38e5fa4f45cf99c7fa1608caac5c6ef379b68c49d4d",
+                "d518df921ca33e16dfdda2db2592c926c766348d96fd2561f9a05bf367ed0ad2",
+                "14a9db01e119187de8c4c921fea07c323ce812e223a790b8d1ef76134b6bc691"
+              ]
+            },
+            {
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172"
+              ]
+            },
+            {
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "decision"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            },
+            {
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "alias"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 1,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 1,
+              "segment_kind": "decision",
+              "first_decision_index": 2,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "parent_card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "alias",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "qgd",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "delta": {
+          "distinct_cards": 0,
+          "prefix_cards": 0,
+          "descendant_decision_cards": 0,
+          "learner_decision_occurrences": 0,
+          "distinct_learner_decisions": 0,
+          "repeated_decisions_across_cards": 0,
+          "repeated_decisions_within_cards": 0,
+          "board_starts": 0
+        },
+        "additional_starts": 0,
+        "reduced_starts": 0,
+        "unchanged_card_ids": [
+          "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+          "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+          "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+          "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+          "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84"
+        ],
+        "added_card_ids": [],
+        "removed_card_ids": []
+      }
+    },
+    "b:4": {
+      "version": 1,
+      "preview_only": true,
+      "estimate_basis": "Structural counts only; not evidence of better learning or measured time savings.",
+      "repertoire_id": "rep",
+      "graph_generation": 1,
+      "snapshot_id": "c0fb330ae2457df68cecee51cb2862fab19bb3d3627e79fcce668fbe96a9d8cb",
+      "selected_line_ids": [
+        "b"
+      ],
+      "selected_line_count": 1,
+      "status": "no_change",
+      "depth_configuration_changed": true,
+      "structure_changed": false,
+      "current_depth_distribution": [
+        {
+          "depth": 3,
+          "line_count": 1
+        }
+      ],
+      "line_depths": [
+        {
+          "line_id": "b",
+          "current_depth": 3,
+          "requested_depth": 4,
+          "current_effective_depth": 3,
+          "proposed_effective_depth": 3
+        }
+      ],
+      "selected": {
+        "current": {
+          "metrics": {
+            "distinct_cards": 1,
+            "prefix_cards": 1,
+            "descendant_decision_cards": 0,
+            "learner_decision_occurrences": 3,
+            "distinct_learner_decisions": 3,
+            "repeated_decisions_across_cards": 0,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 1
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "proposed": {
+          "metrics": {
+            "distinct_cards": 1,
+            "prefix_cards": 1,
+            "descendant_decision_cards": 0,
+            "learner_decision_occurrences": 3,
+            "distinct_learner_decisions": 3,
+            "repeated_decisions_across_cards": 0,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 1
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "delta": {
+          "distinct_cards": 0,
+          "prefix_cards": 0,
+          "descendant_decision_cards": 0,
+          "learner_decision_occurrences": 0,
+          "distinct_learner_decisions": 0,
+          "repeated_decisions_across_cards": 0,
+          "repeated_decisions_within_cards": 0,
+          "board_starts": 0
+        },
+        "additional_starts": 0,
+        "reduced_starts": 0,
+        "unchanged_card_ids": [
+          "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c"
+        ],
+        "added_card_ids": [],
+        "removed_card_ids": []
+      },
+      "whole_repertoire": {
+        "current": {
+          "metrics": {
+            "distinct_cards": 5,
+            "prefix_cards": 4,
+            "descendant_decision_cards": 1,
+            "learner_decision_occurrences": 12,
+            "distinct_learner_decisions": 7,
+            "repeated_decisions_across_cards": 5,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 5
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            },
+            {
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "qgd"
+              ],
+              "decision_ids": [
+                "3f70ea37c17c0c6d7a74d38e5fa4f45cf99c7fa1608caac5c6ef379b68c49d4d",
+                "d518df921ca33e16dfdda2db2592c926c766348d96fd2561f9a05bf367ed0ad2",
+                "14a9db01e119187de8c4c921fea07c323ce812e223a790b8d1ef76134b6bc691"
+              ]
+            },
+            {
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172"
+              ]
+            },
+            {
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "decision"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            },
+            {
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "alias"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 1,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 1,
+              "segment_kind": "decision",
+              "first_decision_index": 2,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "parent_card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "alias",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "qgd",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "proposed": {
+          "metrics": {
+            "distinct_cards": 5,
+            "prefix_cards": 4,
+            "descendant_decision_cards": 1,
+            "learner_decision_occurrences": 12,
+            "distinct_learner_decisions": 7,
+            "repeated_decisions_across_cards": 5,
+            "repeated_decisions_within_cards": 0,
+            "board_starts": 5
+          },
+          "cards": [
+            {
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "b"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "cf6b6a7d223b1b81cfa8943e78c4d0ec45bd2fc46620d900134b13bd7db7185a"
+              ]
+            },
+            {
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "qgd"
+              ],
+              "decision_ids": [
+                "3f70ea37c17c0c6d7a74d38e5fa4f45cf99c7fa1608caac5c6ef379b68c49d4d",
+                "d518df921ca33e16dfdda2db2592c926c766348d96fd2561f9a05bf367ed0ad2",
+                "14a9db01e119187de8c4c921fea07c323ce812e223a790b8d1ef76134b6bc691"
+              ]
+            },
+            {
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172"
+              ]
+            },
+            {
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "decision"
+              ],
+              "line_ids": [
+                "a"
+              ],
+              "decision_ids": [
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            },
+            {
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black",
+              "roles": [
+                "prefix"
+              ],
+              "line_ids": [
+                "alias"
+              ],
+              "decision_ids": [
+                "900430080af32a6f624228ece1b9cadcd32409066fd370d05ee0ced18a84e545",
+                "41f21e67b0385dfdb12c14f40d23702022ed9f985823e6da610aca2e85cc8172",
+                "e01efb23caceb51fc65bec5c0f8c8a06ffce2606510479b43ed40e51cebd2327"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 1,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "a",
+              "decision_index": 1,
+              "segment_kind": "decision",
+              "first_decision_index": 2,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+              "parent_card_id": "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/8/PPP2PPP/RNBQKBNR w KQkq - 0 3",
+              "moves": [
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "alias",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -"
+              ],
+              "card_id": "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "e4e5",
+                "c6c5"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "b",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp1ppppp/2p5/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/pp2pppp/2p5/3p4/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "e2e4",
+                "c7c6",
+                "d2d4",
+                "d7d5",
+                "g1f3",
+                "c8g4"
+              ],
+              "trained_color": "black"
+            },
+            {
+              "repertoire_id": "rep",
+              "line_id": "qgd",
+              "decision_index": 0,
+              "segment_kind": "prefix",
+              "first_decision_index": 0,
+              "last_decision_index": 2,
+              "decision_fen_keys": [
+                "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq -",
+                "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -"
+              ],
+              "card_id": "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+              "parent_card_id": null,
+              "decision_fen_key": "rnbqkbnr/ppp2ppp/4p3/3p4/2PP4/5N2/PP2PPPP/RNBQKB1R b KQkq -",
+              "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": [
+                "d2d4",
+                "d7d5",
+                "c2c4",
+                "e7e6",
+                "g1f3",
+                "g8f6"
+              ],
+              "trained_color": "black"
+            }
+          ]
+        },
+        "delta": {
+          "distinct_cards": 0,
+          "prefix_cards": 0,
+          "descendant_decision_cards": 0,
+          "learner_decision_occurrences": 0,
+          "distinct_learner_decisions": 0,
+          "repeated_decisions_across_cards": 0,
+          "repeated_decisions_within_cards": 0,
+          "board_starts": 0
+        },
+        "additional_starts": 0,
+        "reduced_starts": 0,
+        "unchanged_card_ids": [
+          "058cf8fe4f736aa6420629f4fbbd329c160ac79cdbac280d8c9bda7ac643e67c",
+          "34ab2e8356b337176e31ed5a587776fac7eb953116f7709c2c889e14dcc76356",
+          "3ed52d3fc2cab67ba9f2e65fb3961eae139ed6b55d9aa0cae78cbc36d4159c2a",
+          "8c278dc612fc188555e6ab2cd6f61a8829daac51f79b54737619e531f7ea275d",
+          "fe34740a7052db64a119c37437e422da87c9646596eb4f20027677dcaa569a84"
+        ],
+        "added_card_ids": [],
+        "removed_card_ids": []
+      }
     }
   }
 }

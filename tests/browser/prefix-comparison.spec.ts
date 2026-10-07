@@ -16,6 +16,14 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
     expect(["evaluation_busy", "graph_not_ready"]).toContain((await response.json()).detail.code);
     return 0;
   }, { timeout: 30_000 }).toBeGreaterThan(0);
+  let queueBefore: { cards: unknown[]; projection: { state: string; refresh_pending: number } };
+  await expect.poll(async () => {
+    const response = await request.get(`${api}/queue/today`);
+    expect(response.ok()).toBe(true);
+    queueBefore = await response.json();
+    return { cards: queueBefore!.cards.length, state: queueBefore!.projection.state, pending: queueBefore!.projection.refresh_pending };
+  }, { message: "Imported repertoire queue is published before immutability baseline", timeout: 30_000 })
+    .toEqual({ cards: 2, state: "ready", pending: 0 });
   await page.setViewportSize({ width, height: 844 });
   await page.goto("/"); await nav(page, "Repertoire");
   const card = page.locator(".repertoire-card").filter({ has: page.getByRole("heading", { name: `prefix-comparison-${width}`, exact: true }) });
@@ -46,7 +54,6 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
   await expect(dialog.getByText("Selected source lines: 2")).toBeVisible();
   const unselected = source.lines.filter(line => line.moves[0] === "d2d4");
   for (const line of unselected) await expect(dialog.getByRole("checkbox", { name: new RegExp(line.id) })).not.toBeChecked();
-  const queueBefore = await (await request.get(`${api}/queue/today`)).json();
   await dialog.getByLabel("Candidate learner-decision depths").fill("2, 4");
   const evaluations: ReturnType<typeof prefixComparisonSchema.parse>[] = [];
   page.on("response", async response => {
@@ -74,7 +81,7 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
     }
   }
   expect(observedRequests.every(incoming => incoming.startsWith("POST ") && incoming.endsWith("/prefix-evaluation/evaluate"))).toBe(true);
-  expect((await (await request.get(`${api}/queue/today`)).json()).cards).toEqual(queueBefore.cards);
+  expect((await (await request.get(`${api}/queue/today`)).json()).cards).toEqual(queueBefore!.cards);
   expect(prefixSourceSchema.parse(await (await request.get(`${api}/repertoires/${repertoireId}/prefix-evaluation/source`)).json())).toEqual(source);
   await expect(dialog.getByRole("button", { name: /apply|save|recommend/i })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

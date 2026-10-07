@@ -286,3 +286,9 @@ it("issue78_source_pagination_preserves_explicit_selection", async () => {
   expect(screen.getAllByRole("checkbox")).toHaveLength(1);
   expect(screen.getByText("Selected source lines: 2")).toBeTruthy();
 });
+
+it("issue78_longer_requested_depth_can_have_no_structural_change", async () => {
+  fetchFixture(); await mount(); selectLines("b"); compareDepths("4");
+  await screen.findByText("No structural change; requested depth differs from saved depth.");
+  expect(screen.getByText((_text, element) => element?.tagName === "LI" && element.textContent === "b: saved 3, requested 4; effective 3 → 3")).toBeTruthy();
+});

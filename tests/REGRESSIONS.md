@@ -2211,3 +2211,6 @@ excluded from the diagnostic request allowlist; PostgreSQL product immutability
 remains verified separately.
 `issue78_source_pagination_preserves_explicit_selection` guards bounded rendering
 without losing selections across checklist pages and filters.
+`issue78_longer_requested_depth_can_have_no_structural_change` uses production
+clamping/effective-depth output to distinguish changed depth configuration from
+unchanged structure on a short source route.

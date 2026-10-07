@@ -19,7 +19,7 @@ def comparison_fixture():
         'current_depth_distribution': [{'depth': depth, 'line_count': count}
             for depth, count in sorted(Counter(item.saved_depth for item in source.lines).items())],
     }, 'comparisons': {}}
-    for selection, depths in ((('a', 'b'), (1, 2, 3, 4)), (('a',), (2, 3)), (('qgd',), (2,))):
+    for selection, depths in ((('a', 'b'), (1, 2, 3, 4)), (('a',), (2, 3)), (('qgd',), (2,)), (('b',), (3, 4))):
         for depth in depths:
             result['comparisons'][','.join(sorted(selection)) + ':' + str(depth)] = evaluate_prefix(
                 source, selection, {identifier: depth for identifier in selection})
