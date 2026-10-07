@@ -76,8 +76,45 @@ test("unclassified root backend application modules require deployment lifecycle
   }
 });
 
+test("unclassified backend service modules require deployment lifecycle with ordinary companions", () => {
+  const ordinaryCompanions = ["tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+    "tests/unit/study-regressions.test.tsx"];
+  for (const servicePath of ["backend/app/services/postgres_connection.py", "backend/app/services/storage_adapter.py",
+    "backend/app/services/worker_runtime.py", "backend/app/services/deployment_state.py",
+    "backend/app/services/new_domain_service.py", "backend/app/services/unclassified_future_service.py"]) {
+    assert(!inventory.lifecycle.ordinaryPaths.includes(servicePath), servicePath);
+    for (const paths of [[servicePath], ...ordinaryCompanions.map(companionPath => [servicePath, companionPath]),
+      [servicePath, ...ordinaryCompanions]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, true, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, true, paths.join(", "));
+      assert.match(planned.jobs.lifecycle.reason, /unclassified infrastructure/);
+    }
+  }
+});
+
+test("reviewed ordinary and sensitive service classifications survive ordinary companions", () => {
+  const ordinaryCompanions = ["tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+    "tests/unit/study-regressions.test.tsx"];
+  for (const [servicePath, lifecycleRequired] of [
+    ["backend/app/services/study_grading.py", false],
+    ["backend/app/services/opening_segmentation.py", false],
+    ["backend/app/services/repertoire_statistics.py", false],
+    ["backend/app/services/database_executor.py", true],
+    ["backend/app/services/background_runtime.py", true],
+  ]) {
+    assert(existsSync(servicePath), servicePath);
+    for (const paths of [[servicePath], ...ordinaryCompanions.map(companionPath => [servicePath, companionPath]),
+      [servicePath, ...ordinaryCompanions]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, lifecycleRequired, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, lifecycleRequired, paths.join(", "));
+    }
+  }
+});
+
 test("reviewed backend domain changes with ordinary regressions omit deployment lifecycle", () => {
-  for (const path of ["backend/app/services/daily_queue.py", "backend/app/study_commands.py",
+  for (const path of ["backend/app/services/study_grading.py", "backend/app/study_commands.py",
     "backend/app/opening_segmentation_api.py", "backend/app/study_contracts.py", "backend/app/models.py"]) {
     for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
       "tests/unit/study-regressions.test.tsx", "tests/browser/studies.spec.ts"]]) {
@@ -90,7 +127,7 @@ test("reviewed backend domain changes with ordinary regressions omit deployment 
 
 test("ordinary product changes omit deployment lifecycle independently of browser breadth", () => {
   const ordinaryChangeGroups = [
-    ...["app/components/chessboard.tsx", "backend/app/services/daily_queue.py",
+    ...["app/components/chessboard.tsx", "backend/app/services/study_grading.py",
       "app/domain/opening-segmentation.ts", "tests/browser/studies.spec.ts", "docs/testing.md",
       ...inventory.lifecycle.ordinaryPaths].map(path => [path]),
     ["app/domain/opening-segmentation.ts", "tests/unit/opening-segmentation-regressions.test.tsx",
@@ -109,7 +146,8 @@ test("ordinary product changes omit deployment lifecycle independently of browse
 });
 
 test("complete verification always requires deployment lifecycle", () => {
-  for (const paths of [[], ["docs/testing.md"], ["app/components/chessboard.tsx"]]) {
+  for (const paths of [[], ["docs/testing.md"], ["app/components/chessboard.tsx"],
+    ["backend/app/services/study_grading.py"], ["backend/app/services/new_domain_service.py"]]) {
     const planned = plan({ paths, complete: true });
     assert.equal(planned.scope, "complete");
     assert.equal(planned.jobs.lifecycle?.applicable, true);

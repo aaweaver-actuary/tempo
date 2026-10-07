@@ -2190,3 +2190,8 @@ The first nine CI cases and the release-evidence case failed against main `65110
 
 - `standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons` fails against `b452b374` because the pull lacks `--policy missing`. It checks the exact policy and dependency services, cold/warm/partial cache acquisition semantics, unchanged other modes, and no parent startup.
 - `standalone lifecycle propagates missing dependency acquisition failures with cleanup armed` preserves genuinely missing-image failure propagation and owned cleanup. These cases run through the existing PostgreSQL speedups Vitest wrapper; product Compose images and rehearsal assertions are unchanged.
+
+### PR #96 review: conservative service lifecycle classification
+
+- `unclassified backend service modules require deployment lifecycle with ordinary companions` fails against `2db9058` for `backend/app/services/postgres_connection.py`. Unknown connection, storage, worker, deployment and domain service modules require lifecycle, alone or with ordinary registry/backend/unit-test companions; new files never become ordinary through subtree membership.
+- `reviewed ordinary and sensitive service classifications survive ordinary companions` preserves exact reviewed domain-service exemptions and mandatory lifecycle for `database_executor.py` and `background_runtime.py`, with the same companions. `complete verification always requires deployment lifecycle` also covers ordinary and unknown service paths. These cases run through the existing CI reliability Vitest wrapper in the regular suite.
