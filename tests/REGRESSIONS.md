@@ -2172,7 +2172,7 @@ The regular CI planning and runner wrappers protect the independently selected, 
 - `lifecycle reports must match the immutable plan revision mode and scenarios`
 - `full and split PostgreSQL verification preserve every existing proof`
 - `standalone lifecycle mode requires the complete rehearsal without parent startup or browser work`
-- `standalone lifecycle prepares dependency images on a cold Docker daemon`
+- `standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons`
 - `lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent`
 - `lifecycle --list exposes the executable plan without Docker, ports, secrets, or timing files`
 - `lifecycle executor invokes exactly its planned actions once, including cleanup`
@@ -2185,3 +2185,8 @@ The first nine CI cases and the release-evidence case failed against main `65110
 - `unclassified root backend application modules require deployment lifecycle` fails against `b452b374` for `backend/app/new_runtime.py`; unknown root modules and existing unclassified runtime entrypoints now require the blocking lifecycle layer, even with ordinary regression companions.
 - `reviewed backend domain changes with ordinary regressions omit deployment lifecycle` preserves service/domain/API/contract/model exclusions alongside normal backend, unit and browser tests and `tests/REGRESSIONS.md`.
 - `lifecycle-sensitive changes require deployment lifecycle verification` now checks every explicit sensitive path; existing complete-verification and schema/migration regressions remain required. All cases run through the existing CI reliability Vitest wrapper.
+
+### PR #96 review: missing-only lifecycle dependency preparation
+
+- `standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons` fails against `b452b374` because the pull lacks `--policy missing`. It checks the exact policy and dependency services, cold/warm/partial cache acquisition semantics, unchanged other modes, and no parent startup.
+- `standalone lifecycle propagates missing dependency acquisition failures with cleanup armed` preserves genuinely missing-image failure propagation and owned cleanup. These cases run through the existing PostgreSQL speedups Vitest wrapper; product Compose images and rehearsal assertions are unchanged.

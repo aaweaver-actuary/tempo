@@ -68,31 +68,62 @@ test("standalone lifecycle mode requires the complete rehearsal without parent s
   assert.throws(() => parse(["--mode", "lifecycle", "--browser-file", "studies.spec.ts"]), /cannot be combined/);
 });
 
-test("standalone lifecycle prepares dependency images on a cold Docker daemon", async () => {
+test("standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons", async () => {
   const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
   for (const mode of ["lifecycle", "durability", "full", "browser", "priority-benchmark"]) {
-    const servicesWithAvailableImages = new Set();
-    const imagePreparationCommands = [];
-    const imagePreparationContext = { options: { mode }, compose: ["compose"], resourcesCreated: false,
-      run: (_command, args) => {
-        imagePreparationCommands.push(args);
-        if (args.includes("build")) servicesWithAvailableImages.add("application");
-        if (args.includes("pull")) for (const service of args.slice(args.indexOf("pull") + 1)) servicesWithAvailableImages.add(service);
-      } };
-    await runInNewContext(`({${runnerSource.slice(imageBuildStartIndex, maintenanceCliStartIndex)}})`, imagePreparationContext).image_build();
-    assert(imagePreparationContext.resourcesCreated, "Owned image cleanup is armed before preparation");
-    assert(servicesWithAvailableImages.has("application"));
-    if (mode === "lifecycle") {
-      for (const service of ["postgres", "redis"])
-        assert(servicesWithAvailableImages.has(service), `Rehearsal cannot inspect the missing ${service} image on a cold daemon`);
-    } else {
-      assert(!imagePreparationCommands.some(args => args.includes("pull")), "Other modes retain their existing startup prerequisites");
+    for (const cachedServices of [[], ["postgres"], ["postgres", "redis"]]) {
+      const servicesWithAvailableImages = new Set(cachedServices);
+      const imagePreparationCommands = [];
+      const registryAcquisitions = [];
+      const imagePreparationContext = { options: { mode }, compose: ["compose"], resourcesCreated: false,
+        run: (command, args) => {
+          assert.equal(command, "docker");
+          imagePreparationCommands.push(args);
+          if (args.includes("build")) servicesWithAvailableImages.add("application");
+          if (args.includes("pull")) {
+            const pullArguments = args.slice(args.indexOf("pull") + 1);
+            assert.deepEqual(Array.from(pullArguments), ["--policy", "missing", "postgres", "redis"],
+              "Dependency preparation must use Compose's missing-only policy for exactly PostgreSQL and Redis");
+            for (const service of pullArguments.slice(2)) {
+              if (servicesWithAvailableImages.has(service)) continue;
+              registryAcquisitions.push(service);
+              servicesWithAvailableImages.add(service);
+            }
+          }
+        } };
+      await runInNewContext(`({${runnerSource.slice(imageBuildStartIndex, maintenanceCliStartIndex)}})`, imagePreparationContext).image_build();
+      assert(imagePreparationContext.resourcesCreated, "Owned image cleanup is armed before preparation");
+      assert(servicesWithAvailableImages.has("application"));
+      if (mode === "lifecycle") {
+        assert.equal(imagePreparationCommands.filter(args => args.includes("pull")).length, 1);
+        assert.deepEqual(registryAcquisitions, ["postgres", "redis"].filter(service => !cachedServices.includes(service)),
+          "Only uncached dependencies may require registry access");
+        for (const service of ["postgres", "redis"])
+          assert(servicesWithAvailableImages.has(service), `Rehearsal requires the ${service} image before child startup`);
+      } else {
+        assert(!imagePreparationCommands.some(args => args.includes("pull")), "Other modes retain their existing startup prerequisites");
+      }
+      assert(!imagePreparationCommands.some(args => args.includes("up")), "Image preparation must not start parent services");
     }
-    assert(!imagePreparationCommands.some(args => args.includes("up")), "Image preparation must not start parent services");
   }
+});
+
+test("standalone lifecycle propagates missing dependency acquisition failures with cleanup armed", async () => {
+  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
+  const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
+  assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
+  const acquisitionFailure = new Error("Missing Redis image could not be acquired");
+  const imagePreparationContext = { options: { mode: "lifecycle" }, compose: ["compose"], resourcesCreated: false,
+    run: (_command, args) => {
+      if (args.includes("pull")) throw acquisitionFailure;
+    } };
+  const actions = runInNewContext(`({${runnerSource.slice(imageBuildStartIndex, maintenanceCliStartIndex)}})`, imagePreparationContext);
+  await assert.rejects(actions.image_build(), error => error === acquisitionFailure);
+  assert(imagePreparationContext.resourcesCreated, "Acquisition failure must leave owned image cleanup armed");
 });
 
 test("lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent", async () => {

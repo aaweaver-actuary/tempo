@@ -802,7 +802,7 @@ const actions = {
     run("docker", [...compose, "build"]);
     // The rehearsal records dependency images before starting its child stack.
     // Standalone mode has no parent startup to pull these images first.
-    if (options.mode === "lifecycle") run("docker", [...compose, "pull", "postgres", "redis"]);
+    if (options.mode === "lifecycle") run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
   },
   maintenance_cli: async () => {
     run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]);
