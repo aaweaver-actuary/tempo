@@ -1,8 +1,9 @@
 """Explicit content deletion, shared ownership, and durable recreation exclusions."""
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from collections import defaultdict
+from bisect import bisect_left
 from datetime import date, datetime, timezone
 import json
 from typing import Any
@@ -11,6 +12,15 @@ from fastapi import HTTPException
 
 RETAINED_REPERTOIRE_ID = "__retained_cards__"
 SYSTEM_REPERTOIRE_IDS = ("__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__", "__defense__", RETAINED_REPERTOIRE_ID)
+
+
+@dataclass(frozen=True)
+class _StoredGraphDependency:
+    repertoire_id: str
+    line_id: str
+    decision_index: int
+    card_id: str
+    parent_card_id: str | None
 
 
 def is_card_deleted(database, identifier: str) -> bool:
@@ -179,7 +189,7 @@ def permanent_delete_card(database, identifier: str, expected_revision: int) -> 
         raise HTTPException(409, "The card changed; refresh it before deleting")
     # Link each child to the deleted step's predecessor within its own source
     # route, preserving all other cards and their schedules without fake reviews.
-    database.execute("UPDATE opening_graph_steps AS child SET parent_card_id=(SELECT parent.parent_card_id FROM opening_graph_steps parent WHERE parent.repertoire_id=child.repertoire_id AND parent.generation=child.generation AND parent.line_id=child.line_id AND parent.card_id=? ORDER BY parent.decision_index LIMIT 1) WHERE child.parent_card_id=?", (identifier, identifier))
+    _reparent_stored_graph_dependencies(database, identifier)
     _delete_matching(database, "opening_graph_steps", "card_id", [identifier])
     purge_card_data(database, [identifier])
     from .queue_commands import request_queue_refresh_in_transaction
@@ -187,14 +197,43 @@ def permanent_delete_card(database, identifier: str, expected_revision: int) -> 
     return {"deleted": True, "card_id": identifier}
 
 
+def _reparent_stored_graph_dependencies(database, identifier: str) -> None:
+    """Use the same occurrence-aware ancestor rule at deletion and rebuild."""
+    routes = database.execute("SELECT DISTINCT repertoire_id,generation,line_id FROM opening_graph_steps WHERE card_id=? ORDER BY repertoire_id,generation,line_id", (identifier,)).fetchall()
+    for route in routes:
+        dependencies = tuple(_StoredGraphDependency(route["repertoire_id"], route["line_id"],
+            int(row["decision_index"]), row["card_id"], row["parent_card_id"])
+            for row in database.execute("SELECT decision_index,card_id,parent_card_id FROM opening_graph_steps WHERE repertoire_id=? AND generation=? AND line_id=? ORDER BY decision_index", tuple(route)))
+        previous_parents = {step.decision_index: step.parent_card_id for step in dependencies}
+        updates = [(step.parent_card_id, route["repertoire_id"], route["generation"], route["line_id"], step.decision_index)
+            for step in omit_deleted_graph_steps(dependencies, {identifier})
+            if step.parent_card_id != previous_parents[step.decision_index]]
+        database.executemany("UPDATE opening_graph_steps SET parent_card_id=? WHERE repertoire_id=? AND generation=? AND line_id=? AND decision_index=?", updates)
+
+
 def omit_deleted_graph_steps(steps, deleted_ids: set[str]):
-    parents = {(step.repertoire_id, step.line_id, step.card_id): step.parent_card_id for step in steps}
+    occurrences = defaultdict(list)
+    for step in steps:
+        occurrences[(step.repertoire_id, step.line_id, step.card_id)].append(step)
+    for route_occurrences in occurrences.values():
+        route_occurrences.sort(key=lambda step: step.decision_index)
     retained = []
     for step in steps:
         if step.card_id in deleted_ids:
             continue
         parent_id = step.parent_card_id
-        while parent_id in deleted_ids:
-            parent_id = parents.get((step.repertoire_id, step.line_id, parent_id))
+        search_before_decision = step.decision_index
+        while parent_id in deleted_ids or parent_id == step.card_id:
+            # Repeated positions share a card identity. Follow the preceding
+            # occurrence in this route, never a later visit or a self dependency.
+            parent_occurrences = occurrences[(step.repertoire_id, step.line_id, parent_id)]
+            preceding_index = bisect_left(parent_occurrences, search_before_decision,
+                key=lambda occurrence: occurrence.decision_index) - 1
+            if preceding_index < 0:
+                parent_id = None
+                break
+            predecessor = parent_occurrences[preceding_index]
+            search_before_decision = predecessor.decision_index
+            parent_id = predecessor.parent_card_id
         retained.append(replace(step, parent_card_id=parent_id))
     return tuple(retained)

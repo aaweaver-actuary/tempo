@@ -49,6 +49,52 @@ def main_check():
         assert execute_command(operation_id, name, payload) == result
         return result
 
+    def prove_repeated_route_dependencies():
+        repetition_repertoire = f"{prefix}-repetition"
+        repetition_line = f"{prefix}-repetition-line"
+        repertoire_ids.append(repetition_repertoire)
+        repetition_fen = "4k1n1/8/8/7p/P7/8/8/4K1N1 w - - 0 1"
+        repetition_moves = ["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8", "a4a5", "h5h4", "e1f2"]
+        repetition_source = {"id": repetition_line, "start_fen": repetition_fen,
+            "moves_json": json.dumps(repetition_moves), "trained_color": "white"}
+        repeated_steps = build_graph(GraphInput(repetition_repertoire, (repetition_source,), 1))
+        assert repeated_steps[1].card_id == repeated_steps[3].card_id
+        with postgres_store.connection() as database:
+            assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", ([step.card_id for step in repeated_steps],)).fetchone(), "Repetition proof identities collide with another fixture"
+            card_ids.extend(step.card_id for step in repeated_steps)
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repetition_repertoire, repetition_repertoire, "repetition proof", today))
+            database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Repeated source','white',?,?,?)", (repetition_line, repetition_repertoire, repetition_fen, repetition_source["moves_json"], today))
+            repeated_task = enqueue_task_in_transaction(database, "opening_graph_rebuild", repetition_repertoire,
+                {"repertoire_id": repetition_repertoire, "local_day": today, "step_offset": 0})
+            repeated_task["payload"] = json.loads(repeated_task["payload_json"])
+            repeated_task["lease_token"] = "repetition-proof"
+            task_ids.append(repeated_task["id"])
+            database.execute("UPDATE background_tasks SET state='leased',lease_token=? WHERE id=?", (repeated_task["lease_token"], repeated_task["id"]))
+            repeated_prepared = PreparedGraphLine(repetition_line, repeated_steps)
+            assert stage_graph_line_in_transaction(database, repeated_task, repeated_prepared)
+            database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(?,?,'ready',?)", (repetition_repertoire, repeated_task["generation"], today))
+        command("cards.delete", {"card_id": repeated_steps[1].card_id, "expected_revision": 1})
+        for restart in (False, True):
+            postgres_store.close_pools()
+            with postgres_store.connection() as database:
+                if restart:
+                    repeated_task["lease_token"] = "repetition-restarted"
+                    database.execute("UPDATE background_tasks SET state='leased',phase='stage',lease_token=?,payload_json=? WHERE id=?", (repeated_task["lease_token"], json.dumps(repeated_task["payload"]), repeated_task["id"]))
+                    assert stage_graph_line_in_transaction(database, repeated_task, repeated_prepared)
+                for decision_index, expected_parent in ((2, repeated_steps[0].card_id), (4, repeated_steps[2].card_id)):
+                    assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE repertoire_id=? AND line_id=? AND decision_index=?", (repetition_repertoire, repetition_line, decision_index)).fetchone()[0] == expected_parent
+                assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (repetition_line,)).fetchone()[0] == repetition_source["moves_json"]
+                assert database.execute("SELECT 1 FROM cards WHERE id=?", (repeated_steps[1].card_id,)).fetchone() is None
+        with postgres_store.connection() as database:
+            database.execute("UPDATE cards SET state='mature' WHERE id=?", (repeated_steps[0].card_id,))
+            child_id = repeated_steps[2].card_id
+            cursor = f"{int(child_id, 16) - 1:064x}"
+            assert database.execute(f"SELECT id FROM cards WHERE {main._OPENING_UNLOCK_ELIGIBILITY_SQL} AND id>? ORDER BY id LIMIT 1", (cursor,)).fetchone()[0] == child_id
+            main._unlock_eligible_opening_cards(database, today, after_card_id=cursor, batch_size=1)
+            assert database.execute("SELECT state FROM cards WHERE id=?", (child_id,)).fetchone()[0] == "new"
+            assert database.execute("SELECT state FROM cards WHERE id=?", (repeated_steps[4].card_id,)).fetchone()[0] == "locked"
+        print("PASS test_deleted_repeated_route_prerequisite_reparents_each_occurrence_without_self_dependency; permanent deletion, reconnect/rebuild and real descendant unlock")
+
     try:
         with postgres_store.connection() as database:
             queue_snapshot = snapshot_queue_environment(database, (today, tomorrow))
@@ -208,6 +254,7 @@ def main_check():
             cancel_repertoire_tasks(database, imported["repertoire_id"])
             task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key=?", (imported["repertoire_id"],)))
         print("PASS test_import_does_not_report_deleted_content_as_created_or_shared")
+        prove_repeated_route_dependencies()
     finally:
         with postgres_store.connection() as database:
             if card_ids:

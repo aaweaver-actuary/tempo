@@ -102,6 +102,26 @@ def test_deleted_graph_prerequisites_preserve_source_and_usable_descendants(work
     assert json.loads(source["moves_json"])[0] == "e2e4"
 
 
+def test_deleted_repeated_route_prerequisite_reparents_each_occurrence_without_self_dependency(workspace):
+    moves = ["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8", "d2d4", "a7a6", "c2c4"]
+    source = {"id": "repetition", "start_fen": chess.STARTING_FEN, "moves_json": json.dumps(moves), "trained_color": "white"}
+    steps = build_graph(GraphInput("old", (source,), 1))
+    assert steps[1].card_id == steps[3].card_id
+    filtered = {step.decision_index: step for step in omit_deleted_graph_steps(steps, {steps[1].card_id})}
+    assert filtered[2].parent_card_id == steps[0].card_id
+    assert filtered[4].parent_card_id == steps[2].card_id
+    assert all(step.card_id != step.parent_card_id for step in filtered.values())
+    assert source["moves_json"] == json.dumps(moves)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('repetition','old','Repeated source','white',?,?,?)", (chess.STARTING_FEN, json.dumps(moves), date.today().isoformat()))
+        for step in steps:
+            connection.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,'old','response',?,?,'locked',?)", (step.card_id, step.starting_fen, json.dumps(step.moves), date.today().isoformat()))
+            connection.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color) VALUES('old',1,'repetition',?,?,?,?,?,?,'white')", (step.decision_index, step.card_id, step.parent_card_id, step.decision_fen_key, step.starting_fen, json.dumps(step.moves)))
+        permanent_delete_card(connection, steps[1].card_id, 1)
+        for decision_index, expected_parent in ((2, steps[0].card_id), (4, steps[2].card_id)):
+            assert connection.execute("SELECT parent_card_id FROM opening_graph_steps WHERE line_id='repetition' AND decision_index=?", (decision_index,)).fetchone()[0] == expected_parent
+
+
 def test_retained_introduced_cards_survive_queue_refresh_and_next_day_without_a_review(workspace):
     from datetime import timedelta
     today = date.today().isoformat()
