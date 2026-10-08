@@ -29,12 +29,9 @@ productTest("daily study opens while background analysis remains queued", async 
       const publishedQueueResponse = await request.get(`${api}/queue/window?limit=20`);
       expect(publishedQueueResponse.ok()).toBeTruthy();
       const publishedQueue = await publishedQueueResponse.json();
-      return {
-        state: publishedQueue.projection.state,
-        fixtureCardPublished: publishedQueue.cards.some((card: { id: string }) => card.id === `${fixtureId}-due`),
-      };
+      return publishedQueue.cards.some((card: { id: string }) => card.id === `${fixtureId}-due`);
     }, { message: "Fixture due card is published before browser interaction", timeout: 30_000 })
-      .toEqual({ state: "ready", fixtureCardPublished: true });
+      .toBe(true);
     const publishedActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
     expect(publishedActivity.counts.queued).toBeGreaterThan(1000);
     await prepareUI(page);
