@@ -44,3 +44,21 @@ boundary and wait for safe readiness. The complete pending-review recovery file
 passed all 8 cases in 21.36 seconds, including readiness toggles retaining one
 in-flight request/callback. Focused ESLint passed. The phone browser fixture now
 models the queue becoming available only after authoritative receipt completion.
+
+Final follow-up development candidate: browser review storage failures now suspend
+receipt recovery without discarding the retained result; passive initial queue reads
+retain a compact manual-check banner. Training preserves storage warning severity
+and raw details. Existing opening-policy tests now assert actionable prose with raw
+errors in Details, and the conflict UI asserts exact attempt ownership. CI's prior
+head failed those ten outdated assertions; no retry, suspension or persistence
+assertions were removed.
+
+Exact final focused commands (bundled Node 24.19 first in PATH):
+- `npm run test:unit -- tests/unit/pending-review-recovery-regressions.test.tsx tests/unit/phone-recovery-messaging-regressions.test.tsx tests/unit/review-outbox-regressions.test.ts`: 63 passed, 32.84s, before the subsequent warning-renderer refinement.
+- `npm run test:unit -- tests/unit/phone-recovery-messaging-regressions.test.tsx tests/unit/opening-evidence-recovery-policy.test.tsx tests/unit/review-conflict-ui-regressions.test.tsx`: 53 passed, 57.90s, including that refinement.
+- `npm run lint`: passed, 0 errors and 10 existing warnings. `npm run typecheck`: passed before the last renderer/test refinement and rerun for the settled candidate. Static checks were untimed; no performance claim.
+
+These runs tested the dirty development candidate based on 40ab450. Fresh required
+CI will certify its committed head and merge candidate; earlier CI successes do
+not certify the follow-up. Local browser/visual/durability remain unavailable for
+the Docker preflight reason above. CI owns these required scopes.

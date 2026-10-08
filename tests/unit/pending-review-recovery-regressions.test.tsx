@@ -111,3 +111,15 @@ it("phone readiness toggles retain one in-flight recovery and one confirmation c
   expect(fetch).toHaveBeenCalledOnce(); expect(confirmed).toHaveBeenCalledOnce();
   await advance(30000); expect(confirmed).toHaveBeenCalledOnce();
 });
+
+it("phone review storage failure suspends recovery and retains the confirmed result for repair", async () => {
+  enqueuePendingReview(review);
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Storage denied", "SecurityError"); });
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true } })));
+  const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
+  await advance(1000); await advance(60000);
+  expect(fetch).toHaveBeenCalledOnce(); expect(pendingReviews()[0]).toMatchObject(review);
+  expect(confirmed).not.toHaveBeenCalled();
+  expect(notifications().find(record => record.key === "review-save:original-attempt")).toMatchObject({
+    severity: "warning", details: { classification: "storage", error: expect.stringContaining("Storage denied") } });
+});

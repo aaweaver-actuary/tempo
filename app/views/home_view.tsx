@@ -1151,8 +1151,9 @@ export default function Home() {
         setReviewPersistenceState(awaitingConfirmation ? "pendingConfirmation" : "saveFailed");
         setReviewSaveError(
           awaitingConfirmation ? "Waiting for the computer to confirm this result." :
+          error instanceof ReviewReplayError && error.classification === "storage" ? "This browser could not update the saved result. Keep its data and open Notifications for details." :
           error instanceof ReviewReplayError && error.blocked ? "Saving is blocked. Resolve and retry the operation in Jobs." :
-          "The computer could not save this result. Open Notifications for details before retrying.",
+          "This result could not be confirmed. Keep this browser's data and open Notifications for details before retrying.",
         );
         setQueueNotice("");
         if (!advancedFromCache && !retryPending)

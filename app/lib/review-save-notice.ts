@@ -10,8 +10,8 @@ export function reportReviewSaveStatus(error: ReviewReplayError): void {
     const pending = !error.blocked && ["pending", "transient"].includes(error.classification);
     const key = reviewSaveNoticeKey(error);
     const input = { key, source: "training review", active: false,
-      severity: pending ? "info" as const : error.blocked ? "warning" as const : "error" as const,
-      message: pending ? pendingReviewMessage : error.blocked ? "Saving is blocked. Resolve and retry the operation in Jobs." : "The computer could not save this result. Check Details before retrying.",
+      severity: pending ? "info" as const : (error.blocked || error.classification === "storage") ? "warning" as const : "error" as const,
+      message: pending ? pendingReviewMessage : error.classification === "storage" ? "This browser could not update the saved result. Keep its data and open Notifications for details." : error.blocked ? "Saving is blocked. Resolve and retry the operation in Jobs." : "The computer could not save this result. Check Details before retrying.",
       details: { cardId: error.backendId, queueEntryId: error.queueEntryId, attemptId: error.attemptId,
         error: error.message, classification: error.classification, ...(error.code ? { code: error.code } : {}) } };
     const previous = notifications().find(record => record.key === key && !record.resolvedAt);

@@ -2850,3 +2850,7 @@ Stalemate Swindles (October 5, 2026):
 - `phone passive queue refresh leaves review delivery to bounded receipt recovery` prevents periodic queue reads and receipt-completion refreshes from bypassing the retry scheduler or draining multiple results in one idle slice.
 - `phone receipt confirmed during a foreground pause refreshes once after resume` reproduces and protects an in-flight confirmation crossing a readiness effect boundary; the original candidate dropped the completion callback and left the inline status pending.
 - `phone readiness toggles retain one in-flight recovery and one confirmation callback` prevents a readiness rerender from attaching duplicate refresh callbacks to the shared receipt request.
+- `phone review storage failure suspends recovery and retains the confirmed result for repair` distinguishes browser persistence failure from a pending computer receipt, retaining the outbox and raw storage detail without automatic retry or false UI success.
+- Existing opening recovery-policy regressions now verify concise Jobs/storage actions and raw operation errors in Details; the review-conflict attribution regression verifies the attempt key while preserving original evidence and no false success.
+
+- `phone save failure preserves the outbox storage warning and raw details` — `tests/unit/phone-recovery-messaging-regressions.test.tsx`; the training renderer retains the incident owner’s warning classification and diagnostics.

@@ -30,7 +30,7 @@ export type DebugErrorContext = {
   queueEntryId?: number;
   attemptId?: string;
   code?: string;
-  classification?: "conflict" | "pending" | "transient" | "failed";
+  classification?: "conflict" | "pending" | "transient" | "failed" | "storage";
   script?: string;
   line?: number;
   column?: number;
@@ -54,7 +54,7 @@ export type DebugErrorRecord = {
     queueEntryId?: number;
     attemptId?: string;
     code?: string;
-    classification?: "conflict" | "pending" | "transient" | "failed";
+    classification?: "conflict" | "pending" | "transient" | "failed" | "storage";
     scriptPath?: string;
     line?: number;
     column?: number;

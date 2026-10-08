@@ -52,8 +52,8 @@ it("old A failure is attributed to A while current B remains displayed and confl
     handleAttemptFailure: vi.fn(), resetCardAttempt: vi.fn(), setEditorCard: vi.fn(), onMove: vi.fn(),
     reviewPersistenceIdentity: { backendId: "card-a", queueEntryId: 17, attemptId: "completed-a" } };
   const view = render(<TrainingView {...props} reviewPersistenceState="saveFailed" reviewSaveError="Earlier A is unavailable" />);
-  expect(notifications().find(notice => notice.key === "review-save:17")?.details).toMatchObject({ cardId: "card-a", queueEntryId: 17, attemptId: "completed-a" });
-  expect(notifications().some(notice => notice.key === "review-save:18")).toBe(false);
+  expect(notifications().find(notice => notice.key === "review-save:completed-a")?.details).toMatchObject({ cardId: "card-a", queueEntryId: 17, attemptId: "completed-a" });
+  expect(notifications().some(notice => notice.details?.cardId === "card-b")).toBe(false);
   view.rerender(<TrainingView {...props} reviewPersistenceState="conflicted" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="idle" />);
   expect(notifications().some(notice => notice.message.includes("Result saved"))).toBe(false);

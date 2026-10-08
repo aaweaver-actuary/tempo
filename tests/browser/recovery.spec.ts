@@ -104,7 +104,7 @@ test("unresolved guided review keeps its card paused while other training opens"
 
   await expect(page.getByRole("heading", { name: "Available review" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pending review" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Retry saving review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check saved reviews" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Correct" })).toBeEnabled();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toHaveLength(1);
 });

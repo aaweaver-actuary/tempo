@@ -283,6 +283,8 @@ export async function fetchAndInitializeQueue(
         });
       }
     }
+    if (options.replaySavedReviews === false && pendingReviews().length)
+      pendingReviewError = "Previously saved reviews are waiting for confirmation.";
     if (options.replaySavedReviews !== false && pendingReviews().length) {
       try {
         await flushPendingReviews();

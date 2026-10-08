@@ -4,7 +4,7 @@ import { STANDARD_FEN } from "../../app/const";
 import TrainingView from "../../app/views/training_view";
 import { useTrainingStore } from "../../app/state/training-store";
 import { asCardId, asFenString, asSanMove } from "../../app/types";
-import { clearNotificationHistory, notifications, notificationToasts } from "../../app/lib/notifications";
+import { clearNotificationHistory, notifications, notificationToasts, publishNotification } from "../../app/lib/notifications";
 import { enqueuePendingDiscoveryAdmission, flushPendingDiscoveryAdmissions, pendingDiscoveryAdmissions,
   recoverUnacknowledgedDiscoveryAdmissions } from "../../app/lib/discovery-admission-outbox";
 
@@ -83,4 +83,18 @@ it("phone passive queue refresh leaves review delivery to bounded receipt recove
   await fetchAndInitializeQueue(false, { preparePhoneQueue: false, replaySavedReviews: false });
   expect(fetcher.mock.calls.every(call => !String(call[0]).includes("/review") && !String(call[0]).includes("/operations/"))).toBe(true);
   expect(pendingReviews()).toHaveLength(1);
+  expect(useTrainingStore.getState().pendingReviewError).toContain("waiting for confirmation");
+});
+
+it("phone save failure preserves the outbox storage warning and raw details", () => {
+  publishNotification({ key: "review-save:storage-attempt", source: "training review", severity: "warning",
+    message: "Storage needs attention", details: { classification: "storage", error: "Storage denied" } });
+  render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={vi.fn()} cardsLeft={1}
+    card={{ id: asCardId("storage-card"), kind: "opening", title: "Prep", subtitle: "", startingFen: asFenString(STANDARD_FEN),
+      moves: [asSanMove("e4")], userMoveTarget: 1, orientation: "white" }} boardTheme="brown" pieceSet="cburnett"
+    rateCard={vi.fn(async () => undefined)} handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} setEditorCard={vi.fn()}
+    onMove={vi.fn()} useSharedBoard reviewPersistenceState="saveFailed" reviewSaveError="This browser could not update the saved result."
+    reviewPersistenceIdentity={{ backendId: "storage-card", queueEntryId: 42, attemptId: "storage-attempt" }} retryReviewSave={vi.fn()} />);
+  expect(notifications()).toHaveLength(1);
+  expect(notifications()[0]).toMatchObject({ severity: "warning", details: { classification: "storage", error: "Storage denied" } });
 });

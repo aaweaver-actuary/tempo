@@ -238,7 +238,7 @@ it("cross-tab completion with failed storage reads preserves warnings and permit
   const { notifications } = await import("../../app/lib/notifications");
   state.unchanged(); expect(state.requests).toHaveLength(1);
   expect(notifications().find(record => record.key === "opening-evidence-recovery")).toMatchObject({ resolvedAt: null,
-    message: expect.stringContaining("Restore browser storage/access") });
+    message: expect.stringContaining("restore storage access"), details: { recoveryPolicy: "suspend", error: expect.stringContaining("Storage unavailable") } });
   read.mockRestore(); state.mounted.unmount();
   state.stores.opening_attempts.delete("A"); state.stores.opening_events.clear();
   render(<state.Harness />); await state.idle();
@@ -304,7 +304,8 @@ it("AS-15 blocked opening-evidence operations do not automatically resubmit duri
   state.unchanged(); expect(state.callbacks.size).toBe(0);
   expect(state.requests.some(request => request.url.endsWith("/retry"))).toBe(false);
   const { notifications } = await import("../../app/lib/notifications");
-  expect(notifications().find(record => record.key === "opening-evidence-recovery")?.message).toContain("opening-checkpoint:A");
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")).toMatchObject({
+    severity: "warning", message: expect.stringContaining("Jobs"), details: { error: expect.stringContaining("opening-checkpoint:A"), recoveryPolicy: "blocked" } });
 });
 
 it("live opening appends request idle recovery without bypassing pending receipt backoff", async () => {
@@ -474,7 +475,7 @@ it.each(["SecurityError", "InvalidStateError", "QuotaExceededError", "NS_ERROR_D
     state.mounted.rerender(<state.Harness />); await state.advance(120_000);
     expect(getItem).toHaveBeenCalledTimes(reads); state.unchanged();
     const { notifications } = await import("../../app/lib/notifications");
-    expect(notifications().find(record => record.key === "opening-evidence-recovery")?.message).toContain("reload Tempo");
+    expect(notifications().find(record => record.key === "opening-evidence-recovery")?.message).toContain("reopen Tempo");
     // Repair + explicit page lifecycle restart, rather than an unrelated online event.
     state.mounted.unmount(); vi.stubGlobal("localStorage", { getItem: () => null }); state.response.mode = "complete";
     render(<state.Harness />); expect(state.callbacks.size).toBe(1); await state.idle();

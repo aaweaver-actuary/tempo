@@ -31,6 +31,7 @@ const rejectedOpeningReviewStorageKey = "tempo-rejected-opening-reviews-v1";
 const storageKey = "tempo-pending-training-reviews-v1";
 const reviewRequestTimeoutMs = 15_000;
 const evidenceStorageErrors = new WeakSet<object>();
+const reviewStorageErrors = new WeakSet<object>();
 let activeFlush: Promise<ReviewFlushResult> | undefined;
 let activeFlushMaximumReviews = Infinity;
 
@@ -39,7 +40,7 @@ export class ReviewReplayError extends Error {
   readonly backendId: string;
   readonly queueEntryId: number;
   readonly attemptId: string;
-  readonly classification: "conflict" | "pending" | "transient" | "failed";
+  readonly classification: "conflict" | "pending" | "transient" | "failed" | "storage";
   constructor(message: string, readonly endpoint: string, review: PendingReview,
     readonly status?: number, readonly code?: string, readonly retryable = true, options?: ErrorOptions) {
     super(message, options);
@@ -48,7 +49,8 @@ export class ReviewReplayError extends Error {
     this.backendId = review.backendId;
     this.queueEntryId = review.queueEntryId;
     this.attemptId = logicalAttemptId(review);
-    this.classification = options?.cause instanceof PendingOperationError ? "pending"
+    this.classification = options?.cause !== null && typeof options?.cause === "object" && reviewStorageErrors.has(options.cause) ? "storage"
+      : options?.cause instanceof PendingOperationError ? "pending"
       : status === 409 && !retryable ? "conflict" : options?.cause instanceof FailedOperationError || (status !== undefined && status < 500 && status !== 408 && status !== 429) ? "failed" : "transient";
   }
 }
@@ -99,7 +101,11 @@ export function conflictedReviews(): PendingReview[] {
 }
 
 function writeReviews(reviews: PendingReview[]): void {
-  localStorage.setItem(storageKey, JSON.stringify(reviews));
+  try { localStorage.setItem(storageKey, JSON.stringify(reviews)); }
+  catch (error) {
+    if (error !== null && typeof error === "object") reviewStorageErrors.add(error);
+    throw error;
+  }
   window.dispatchEvent(new Event("tempo:review-outbox"));
 }
 
@@ -318,8 +324,10 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
     } catch (error) {
       if (error instanceof ReviewReplayError) { reportReviewSaveStatus(error); throw error; }
       if ((error !== null && typeof error === "object" && evidenceStorageErrors.has(error))) throw error;
-      throw new ReviewReplayError(error instanceof Error ? error.message : String(error),
+      const replayError = new ReviewReplayError(error instanceof Error ? error.message : String(error),
         `${API_URL}/api/cards/${review.backendId}/review`, review, undefined, undefined, true, { cause: error });
+      reportReviewSaveStatus(replayError);
+      throw replayError;
     }
   }
   return result;

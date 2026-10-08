@@ -57,7 +57,7 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
             details: { error: String(error), recoveryPolicy: policy },
             message: policy === "retry" ? "Opening details are waiting to sync. You can keep training."
               : policy === "blocked" ? "Opening details could not sync. Resolve and retry the blocked operation in Jobs. You can keep training."
-              : "Opening details could not be stored or read. Keep this browser's data and reopen Tempo to retry; export diagnostics if this continues.",
+              : "Opening details could not be read or stored. Keep this browser's data, restore storage access, then reopen Tempo.",
           });
         } catch { /* Diagnostics cannot change retry or suspension policy. */ }
         return policy;

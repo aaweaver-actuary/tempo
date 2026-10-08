@@ -153,7 +153,8 @@ function StandardTrainingView({
       else publishNotification({ severity: "info", source, key: saveKey, details, message: pendingReviewMessage });
       reviewNotificationId.current = existing?.id ?? notifications().find(record => record.key === saveKey)?.id;
     } else if (reviewPersistenceState === "saveFailed") {
-      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "error", active: false, message: reviewSaveError });
+      const existing = notifications().find(record => record.key === saveKey && !record.resolvedAt);
+      if (existing) updateNotification(existing.id, { severity: existing.severity === "warning" ? "warning" : "error", active: false, message: reviewSaveError });
       else publishNotification({ severity: "error", source, key: saveKey, details, message: reviewSaveError });
       reviewNotificationId.current = undefined;
     } else if (reviewPersistenceState === "conflicted") {
