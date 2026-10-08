@@ -168,3 +168,70 @@ reliability follow-up to merged #69 and #72; open #84 and #91 have separate
 scopes. Related performance roadmap #29 and background-admission #39 retain
 remaining requirements; no issue is closed by this partial follow-up.
 Required CI and mergeability remain pending until the final candidate passes.
+
+
+## October 8 cross-tab completion follow-up
+
+The remaining review at `30ad6fa` identified a missing trigger: acknowledgment
+woke only module-local append listeners. Reconciliation itself already checked
+persisted guards correctly. Current main `75bde76` is integrated while retaining
+all reviewed PR changes and #104 regression/CI inventory coverage. The only merge
+conflict was the regression registry; both sides were retained. Product/test
+commit: `e079f473aeb156221cb6c4f8cea5db53431a2ca7`.
+
+The journal now publishes a bounded identity-only marker after successful IndexedDB
+acknowledgment/removal, including checkpoint receipt confirmation. Native storage
+events reuse Tempo's established subscription pattern; a short-lived BroadcastChannel
+publishes when marker writes fail. The first recovery subscriber installs both
+receivers, and the last removes listeners/closes the receiver. Own-session and malformed
+signals are ignored. Receiving only requests the existing idle slice; IndexedDB
+remains authoritative for guards/warnings. Failed reads retain evidence, diagnostics
+and the existing reload recovery policy. Retry deadlines, frozen operation keys,
+foreground admission and receipt-first replay are unchanged. If both transports are
+unavailable, committed success remains success and a warning asks the user to reload
+other tabs. There is no polling, schema/API change or migration.
+
+### Focused evidence
+
+Environment: isolated `.dev-copies/pr92-cross-tab-recovery`, macOS ARM64, Node
+26.10.0. Locked dependencies were installed once with `npm ci`; the selected unit
+files do not invoke Python. CI owns the complete required candidate gate.
+
+- Before the fix, `npm run test:unit -- tests/unit/opening-evidence-recovery-policy.test.tsx -t 'cross-tab completion signal schedules'` failed both pending/blocked cases at zero scheduled idle callbacks (2.19 s wall).
+- Elevated `make view VIEW='cross-tab opening completion wakes reconciliation through storage events'` failed all four selected native-browser cases before the fix at zero received signals. Runner `tempo-pg-regressions-55983-9e746b5a` records browser 43.66 s, build 11.86 s, startup 13.54 s and successful cleanup 11.76 s. Product source was unchanged `8611f4e`, with the new test patch. Its preserved traces are authoritative; the initial shared log was overwritten by a separately active chat and is not used as provenance.
+- `npm run test:unit -- tests/unit/opening-evidence-cross-tab-signals.test.ts tests/unit/opening-evidence-recovery-policy.test.tsx tests/unit/opening-evidence-recovery-lifecycle.test.tsx tests/unit/opening-evidence-recovery-slices.test.tsx tests/unit/opening-evidence-background-admission.test.ts tests/unit/opening-evidence-regressions.test.ts tests/unit/opening-evidence-offline-quota.test.ts tests/unit/opening-evidence-review-deadlines.test.ts tests/unit/review-outbox-regressions.test.ts tests/unit/offline-training-regressions.test.ts tests/unit/phone-opening-study-regressions.test.tsx tests/unit/phone-queue-preparation-regressions.test.ts`: **187 passed**, 12.61 s test / 13.55 s wall. After expressive local boolean names were finalized, the two directly affected files passed **53 tests**, 1.86 s / 2.50 s wall.
+- `npm run typecheck`: passed, 17.48 s wall. `npm run lint`: passed, 36.98 s wall, zero errors and ten pre-existing warnings. `npm run check:conflicts` and `git diff --check`: passed.
+- Elevated `make ui-file FILE=opening-evidence.spec.ts`: **15 passed**, 50.0 s browser / 118.96 s wall.
+- Elevated `make view VIEW='phone-offline-training.spec.ts|phone-opening-study.spec.ts|cross-tab opening completion wakes reconciliation'`: **29 passed**, 110.56 s total wall, including both complete phone files and native storage/BroadcastChannel cases across Chromium, Firefox and WebKit. This combines the planned focused selections in one disposable runner.
+- `make plan` and the current-main CI planner select **complete 245/245 browser cases** and all core/build/durability/lifecycle/pinned checks. The plan was inspected through `createPlan({base:'origin/main'})` and saved with its exact source revision. Local `make full` was not repeated; CI owns complete candidate validation.
+
+The first fixed native-browser run passed seven cases; WebKit's fallback case
+reported an extra receipt GET. Its trace proves the first GET was aborted before a
+successful retry, with no checkpoint POST or review. The fixture now distinguishes
+completed receipt responses from initiated reads and retains exact no-duplicate
+checkpoint/review/receipt assertions. The subsequent full affected selections pass.
+A cursor-cloning/commit-observation issue in the new unit fixture was also repaired;
+no product retry policy or timeout was changed.
+
+All new regressions are registered in `tests/REGRESSIONS.md`. The real browser
+fixture uses two same-origin application tabs with native IndexedDB and native
+transports. Only receipt responses and idle opportunities are controlled. Tab A
+shows blocked recovery with no idle work queued; B confirms the original receipt;
+A receives completion, schedules an idle callback, reads its guarded attempt and
+resolves the warning. Duplicate signals and sender closure create no checkpoint
+POST, aggregate review or new accepted receipt. Unit cases cover transaction
+abort, retained/rejected evidence, unrelated backoff, in-flight wakeups, failed
+reads, foreground admission, malformed/self signals and subscription cleanup.
+
+Unique local evidence is preserved and hash-verified outside the worktree at root
+`test-results/2026-10-08-pr92-cross-tab-01a11c28/`. Ownership records contain exact
+project/container/image identifiers, revision, activity times and teardown commands.
+All four task-owned runners completed cleanup; no live or other-task resources were
+removed. The original phone-study checkout and this unmerged worktree are retained.
+The separately active duplicate chat paused implementation/pushes; its unpublished
+work was neither overwritten nor attributed to this candidate.
+
+Related #29/#39 retain their broader requirements; no issue closing keyword applies.
+The existing PR description will hold the final head, current-base merge candidate
+and successful CI link after required validation. Earlier CI evidence above is
+historical and is not a current-base pass for this follow-up.
