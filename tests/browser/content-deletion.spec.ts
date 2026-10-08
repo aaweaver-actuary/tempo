@@ -90,9 +90,10 @@ test("permanently deleting the active training card clears its attempt and survi
   await page.reload(); await nav(page, "Train");
   expect((await (await request.get(`${api}/queue/today`)).json()).cards.some((card: { id: string }) => card.id === deletedId)).toBe(false);
   expect((await request.post(`${api}/cards/${deletedId}/review`, { data: { outcome: "correct", expected_revision: 1 } })).status()).toBe(409);
-  await confirmed(await request.post(`${api}/imports/pgn`, { multipart: {
+  const reimported = await confirmed(await request.post(`${api}/imports/pgn`, { multipart: {
     file: { name: deletesFirstImport ? "individual-delete.pgn" : "next-delete.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(deletesFirstImport ? pgn : nextPgn) }, trained_color: "white", initial_depth: "2",
   } }), request);
+  expect(reimported.cards_created).toBe(0);
   await expect.poll(async () => {
     const repertoires = (await (await request.get(`${api}/repertoires`)).json()).repertoires;
     const target = repertoires.find((item: { id: string }) => item.id === (deletesFirstImport ? imported.repertoire_id : nextImported.repertoire_id));

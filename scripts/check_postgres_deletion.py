@@ -190,6 +190,24 @@ def main_check():
                 raise AssertionError("Delayed review graded deleted content")
         assert command("cards.delete", {"card_id": f"{keep}-shared", "expected_revision": 1})["deleted"]
         print("PASS test_permanent_card_delete_global_history_rebuild_restart_descendant_usability_and_delayed_review")
+        from app.pgn_import_commands import prepare_import_payload
+        from app.services.pgn import ParsedLine
+        import_payload = prepare_import_payload(f"{prefix}-import.pgn", "white", 2, 1,
+            [ParsedLine(starting_fen, moves, ())])
+        with postgres_store.connection() as database:
+            from app.card_deletion import purge_card_data
+            import_ids = import_payload["segment_ids"]
+            card_ids.extend(import_ids)
+            purge_card_data(database, import_ids)
+        imported = command("imports.pgn.admit", import_payload)
+        repertoire_ids.append(imported["repertoire_id"])
+        assert imported["cards_created"] == imported["prefix_cards_created"] == imported["decision_cards_created"] == 0
+        assert imported["shared_prefixes_reused"] == imported["shared_decisions_reused"] == 0
+        with postgres_store.connection() as database:
+            from app.card_deletion import cancel_repertoire_tasks
+            cancel_repertoire_tasks(database, imported["repertoire_id"])
+            task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key=?", (imported["repertoire_id"],)))
+        print("PASS test_import_does_not_report_deleted_content_as_created_or_shared")
     finally:
         with postgres_store.connection() as database:
             if card_ids:

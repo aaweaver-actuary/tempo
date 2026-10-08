@@ -2154,10 +2154,14 @@ async def import_pgn(
                 else []
             )
         }
-        created = len(segment_ids - existing_segment_ids)
-        prefix_cards_created = len(prefix_segment_ids - existing_segment_ids)
+        deleted_segment_ids = {row[0] for row in db.execute(
+            f"SELECT card_id FROM deleted_cards WHERE card_id IN ({placeholders})", tuple(sorted(segment_ids)),
+        )} if segment_ids else set()
+        eligible_segments = [segment for segment in imported_segments if segment.card_id not in deleted_segment_ids]
+        created = len(segment_ids - existing_segment_ids - deleted_segment_ids)
+        prefix_cards_created = len(prefix_segment_ids - existing_segment_ids - deleted_segment_ids)
         descendant_cards_created = len(
-            descendant_segment_ids - existing_segment_ids
+            descendant_segment_ids - existing_segment_ids - deleted_segment_ids
         )
         integrity = integrity_summary(db, rid)
         admitted = 0
@@ -2194,7 +2198,7 @@ async def import_pgn(
         games_found=games,
         unique_lines=len(unique_line_keys),
         cards_created=created,
-        duplicates_merged=max(0, len(imported_segments) - len(segment_ids)),
+        duplicates_merged=max(0, len(eligible_segments) - len(segment_ids - deleted_segment_ids)),
         cards_admitted_today=admitted,
         integrity=integrity,
         decision_cards_created=descendant_cards_created,
@@ -2202,7 +2206,7 @@ async def import_pgn(
             0,
             sum(
                 segment.segment_kind == "decision"
-                for segment in imported_segments
+                for segment in eligible_segments
             )
             - descendant_cards_created,
         ),
@@ -2211,7 +2215,7 @@ async def import_pgn(
             0,
             sum(
                 segment.segment_kind == "prefix"
-                for segment in imported_segments
+                for segment in eligible_segments
             )
             - prefix_cards_created,
         ),

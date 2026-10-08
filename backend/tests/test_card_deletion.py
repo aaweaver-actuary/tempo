@@ -162,3 +162,20 @@ def test_automatic_tactic_admission_skips_deleted_content_without_consuming_allo
         assert connection.execute("SELECT 1 FROM cards WHERE id=?", (identifiers[0],)).fetchone() is None
         assert connection.execute("SELECT card_id FROM tactic_progress").fetchone()[0] == identifiers[1]
         assert connection.execute("SELECT COUNT(*) FROM tactic_introductions").fetchone()[0] == 1
+
+
+def test_import_does_not_report_deleted_content_as_created_or_shared(workspace, monkeypatch):
+    import asyncio
+    from io import BytesIO
+    from starlette.datastructures import UploadFile
+    from app.services.opening_graph import decision_segments
+    moves = ["a2a4", "h7h6", "a4a5", "h6h5", "b2b4"]
+    segments = decision_segments(chess.STARTING_FEN, moves, "white", 2)
+    with database.connection() as connection:
+        connection.executemany("INSERT INTO deleted_cards(card_id,deleted_at) VALUES(?,?)", [(segment.card_id, date.today().isoformat()) for segment in segments])
+    monkeypatch.setattr(main, "enqueue_opening_graph_rebuild", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "enqueue_integrity_scans", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "enqueue_coverage_refresh", lambda *args, **kwargs: None)
+    result = asyncio.run(main.import_pgn(UploadFile(BytesIO(b'[Event "Removed source"]\n\n1. a4 h6 2. a5 h5 3. b4 *'), filename="removed.pgn"), "white", 2, None))
+    assert result.cards_created == result.prefix_cards_created == result.decision_cards_created == 0
+    assert result.shared_prefixes_reused == result.shared_decisions_reused == 0
