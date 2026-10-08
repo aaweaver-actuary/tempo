@@ -2599,3 +2599,11 @@ never invents an aggregate review. `uncertain cross-tab recovery retains saved w
 after a failed storage read (%s)` covers pending and blocked guards: unavailable storage cannot
 clear evidence or warnings, and restored reads preserve guards for still-persisted work. These
 are additional boundary proofs for the existing fixes, not newly discovered production defects.
+
+## PR #92 final integration: moving browser recovery clock
+
+`AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work`
+uses the existing moving-clock fixture option. The prior run failed with one checkpoint
+instead of three because the visual fixture froze Date.now() before the retry deadline.
+The browser still proves the identical frozen body/key is replayed before event 2; no
+assertion or timeout is weakened.

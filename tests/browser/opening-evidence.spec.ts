@@ -387,7 +387,8 @@ test("AS-08 deferred evidence persistence leaves rendered moves and aggregate re
 });
 
 test("AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work", async ({ page }) => {
-  await prepareVisualUI(page); await prepareQueue(page);
+  // Absolute retry deadlines need a moving clock; visual fixtures freeze Date.now().
+  await prepareVisualUI(page, false); await prepareQueue(page);
   const sends: { key: string; body: OpeningEvidenceCheckpoint }[] = [];
   await page.route("**/api/opening-evidence/checkpoints", async route => {
     sends.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON() });
