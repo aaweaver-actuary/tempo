@@ -112,6 +112,11 @@ function run(command, argumentsList, options = {}) {
 
 const workloadConsumers = backgroundWorkloadConsumers;
 
+function runPrefixApplicationProof(...argumentsList) {
+  run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
+    "schema", "python", "/source/scripts/check_postgres_prefix_transition_application.py", ...argumentsList]);
+}
+
 function verifyWorkloadConsumers(expectedState) {
   const result = spawnSync("docker", [...compose, "ps", "--all", "--format", "json", ...workloadConsumers],
     { encoding: "utf8", env: environment });
@@ -890,6 +895,8 @@ const actions = {
           "/source/scripts/check_postgres_opening_evidence.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_canonical_freshness.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/scripts/check_postgres_prefix_transition_application.py"]);
       },
       restoreConsumers: async () => {
         run("docker", [...compose, "start", ...workloadConsumers]);
@@ -958,6 +965,8 @@ const actions = {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert(settingsCommitted, "Settings business effect commits after its response is discarded");
+    run("docker", [...compose, "stop", ...workloadConsumers, "foreground-worker"]);
+    runPrefixApplicationProof("--seed-retained");
     run("docker", [...compose, "down"]);
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
@@ -976,11 +985,16 @@ const actions = {
       before.cards.map(card => card.queue_entry_id));
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_opening_evidence.py", "--verify-persisted"]);
+    runPrefixApplicationProof("--verify-retained");
+    run("docker", [...compose, "stop", ...workloadConsumers, "foreground-worker"]);
+    runPrefixApplicationProof("--recover-retained", "--cleanup-retained");
+    run("docker", [...compose, "start", ...workloadConsumers, "foreground-worker"]);
     console.log("PASS PostgreSQL lost-response receipt replay, settings, and queue order survive container recreation");
   },
   backup_restore: async () => {
     run("docker", [...compose, "stop", "api", "foreground-worker", "background-worker",
       "background-scheduler", "defense-engine", "maia-worker", "web"]);
+    runPrefixApplicationProof("--seed-retained");
     run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
       "pg_dump -U postgres -d tempo -Fc -f /tmp/tempo-test.dump && " +
       "pg_restore -l /tmp/tempo-test.dump >/dev/null && " +
@@ -990,6 +1004,10 @@ const actions = {
       "/source/scripts/verify_postgres_backup.py",
       "postgresql://postgres@postgres:5432/tempo",
       "postgresql://postgres@postgres:5432/tempo_restore_check"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
+      "-e", "TEMPO_PREFIX_APPLICATION_PROOF_URL=postgresql://postgres@postgres:5432/tempo_restore_check",
+      "schema", "python", "/source/scripts/check_postgres_prefix_transition_application.py", "--recover-retained"]);
+    runPrefixApplicationProof("--recover-retained", "--cleanup-retained");
     run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
       "dropdb -U postgres tempo_restore_check && rm /tmp/tempo-test.dump"]);
     console.log("PASS every PostgreSQL table matches after backup restoration");

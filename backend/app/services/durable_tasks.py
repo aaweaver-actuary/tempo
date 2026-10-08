@@ -337,6 +337,9 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
     sanitized_error = str(error)[:500]
 
     def operation(database: sqlite3.Connection) -> dict:
+        if postgres_store.configured():
+            from .prefix_transition_application import lock_linked_receipts
+            lock_linked_receipts(database, task_id, generation)
         row = database.execute(
             "SELECT attempt_count,max_attempts,kind,payload_json FROM background_tasks WHERE id=? AND generation=? AND lease_token=?",
             (task_id, generation, lease_token),
@@ -416,6 +419,9 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 "UPDATE imported_games SET analysis_state='failed' WHERE id=?",
                 (game_id,),
             )
+        if terminal and postgres_store.configured():
+            from .prefix_transition_application import record_linked_failure
+            record_linked_failure(database, task_id, generation, sanitized_error)
         _record_event(database, task_id, generation, state, state, sanitized_error, kind=row["kind"])
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 

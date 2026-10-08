@@ -1279,5 +1279,12 @@
     "handler": "prefix_diagnostics_detail",
     "treatment": "reader",
     "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/prefix-transition/apply",
+    "handler": "prefix_transition_apply",
+    "treatment": "foreground_command",
+    "state": "staged"
   }
 ]

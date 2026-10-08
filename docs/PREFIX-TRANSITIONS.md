@@ -86,7 +86,7 @@ attempts proves no offline work exists. Existing checkpoints and observations
 remain attached to their original presentation; this PR neither closes attempts
 nor creates observations.
 
-## Freshness and #80 obligations
+## Planner freshness
 
 The reader captures structure and transition state together in explicitly
 read-only repeatable-read transactions against the authoritative PostgreSQL
@@ -111,8 +111,7 @@ then revalidate its critical fingerprints under authoritative locking before
 writes, reject blockers, protect absent-target races,
 and preserve all planned histories/memberships. Rebuild/publication must honor the
 planned attempt retirement and fresh-state policy without the legacy history
-transfer. Application, receipts, replay, interruption recovery, and publication
-fencing are intentionally not implemented here.
+transfer. The planner remains read-only. The application command below consumes this exact contract; it does not alter classification or history rules.
 
 The endpoint is a secondary `read_only_post`, with no command registration,
 receipt, background handler, stored preview, or migration. Evaluator limits and
@@ -131,3 +130,117 @@ segmentation rehearsal proves deployed reader-only operation, unchanged product
 state, idle readers during calculation, NOWAIT foreground scheduling, and stale
 rejection/fresh retry. Run `make docker-durability` on the settled candidate.
 CI owns the final required broad gate; no rendering or UI changes are introduced.
+
+
+## Durable application (#80)
+
+`POST /api/repertoires/{identifier}/prefix-transition/apply` requires a stable
+`Idempotency-Key` and the original `plan_id`, `snapshot_id`,
+`transition_snapshot_id`, `graph_generation`, `study_day`, `selected_line_ids`
+and complete selected-line `candidate_depths`. The reader-only API dispatches
+`repertoire.prefix_transition.apply` to the foreground worker. It performs no
+planning or writes itself and holds no foreground lease while the worker prepares.
+A pending operation returns **202** and `Location: /api/operations/{operation_id}`.
+That existing status includes application phase, reserved graph generation,
+linked staging/graph/integrity/queue identities, and recovery instructions.
+Only a completed receipt returns the saved final result.
+
+Preparation uses the unchanged production evaluator and transition planner. All
+read connections close before JSON decoding, chess traversal, hashing and plan
+classification. The original request belongs to the existing durable command
+receipt; migration 036 stores its recomputed immutable plan, publication targets,
+progress and final result. Equal-depth and empty-selection plans validate and
+complete without application records or publication tasks. Lengthening, blockers,
+wrong fingerprints, malformed input and changed study day fail before activation.
+SQLite execution is explicitly unsupported. A mutating application also waits for the
+current source generation to have a completed clean integrity scan, so an unchecked
+source cannot commit a transition whose fenced publication then requires structural
+repair. This is an application readiness check; planner semantics remain unchanged.
+
+### Acceptance and identity reservations
+
+The acceptance write acquires foreground admission only after preparation. It
+locks the command receipt, relevant pending receipts and graph tasks, then sorted
+graph advisory identities, sorted card advisory identities, source/depth rows,
+repertoire/publication state, cards/memberships and attempt/queue rows. Queue date
+locks use the existing queue-position identity. Pending receipt locks use NOWAIT;
+contention retries through existing durable operation recovery instead of waiting
+behind a command whose card locks could invert the order. PostgreSQL raw-row
+JSON evidence captured during preparation must match under these locks. This is
+SQL serialization/comparison, with no Python decoding or chess classification
+inside the write transaction. Existing finite snapshot limits still apply.
+
+Acceptance reserves a new unpublished graph generation and repertoire/card
+identity fences, including cards that were absent at approval. Database triggers
+check both arriving and departing structural scopes. Imports, source/depth edits,
+card edits/creation, membership adoption, split changes, graph requests and step
+writes cannot bypass the reservations through another writer path. The existing
+`tempo:opening-graph:` and `tempo:card-edit:` locks serialize creators with fence
+installation. A transaction-local owner setting is accepted only for a persisted
+active application. The staging handler verifies its task generation/lease before
+using that owner; activation verifies the original receipt and exact prepared
+inputs. Structural fences remain until completion or explicit recovery resolution.
+Schedules and reviews on unchanged/shared identities remain available.
+
+### Invisible staging and atomic activation
+
+One `prefix_transition_application` handler reads the immutable plan, closes its
+connection before decoding, then writes at most eight proposed steps and its
+cursor together through the existing graph writer and durable task lease. It
+creates no cards, memberships, attempts, depth changes or queue entries. Expired
+leases cannot publish a slice. Staging completion durably requeues the original
+foreground receipt through normal operation recovery.
+
+Activation recaptures and recomputes the approved plan outside its transaction.
+Reviews, checkpoints or scheduling changes during staging invalidate it. The
+fully staged graph must equal the plan and its raw rows must still match under
+locks. The short foreground transaction updates only planned depths, strictly
+inserts missing cards with existing publisher defaults, adds planned generated
+memberships, applies existing membership cleanup/owner reassignment, retires
+planned unfinished attempts and queued projections, publishes the exact staged
+graph and requests normal graph finalization. Inserts never silently adopt a
+previously absent target. Compatible authored targets retain their authoritative
+kind; existing schedules, seeds, reviews, revisions and provenance remain on the
+same identity. Replacement roots initialize `new`, descendants `locked`, due on
+the approved study day, without fabricated learning evidence. Normal daily-queue
+introduction can subsequently introduce new cards through its existing rules.
+
+Retired cards are archived with no replacement redirect. Queued rows are
+superseded while queue origins survive. Unfinished opening/study attempts receive
+`retired_operation_id`, retaining their actual state and observations; no completion
+is invented. Planned pending commands receive old-card conflicts. Standalone
+checkpoint persistence locks the original card and checks retirement before
+writing any events/observations. Unresolved delayed/offline reviews continue to
+conflict on the original archived identity. Matching completed review receipts
+replay their original result and never credit a replacement.
+
+### Deferred completion and failure recovery
+
+Activation does **not** complete the receipt. Normal graph finalization, integrity
+scanning and queue refresh run as existing bounded tasks. Completion requires the
+reserved graph to remain authoritative, its graph task to be complete, the recorded
+integrity generation to be clean/idle and complete, and a recorded queue refresh
+after that publication to reach ready steady state. Completion saves the final
+result and releases structural fences in one transaction. Across midnight,
+recovery requests the current day's queue while preserving approved fresh-card
+due dates.
+
+Before activation, definitive rejection or exhausted staging failure releases
+fences and leaves source depths, cards and the visible graph unchanged. Abandoned
+unpublished steps remain unreachable; future graph reservations advance past them.
+After activation, exhausted publication failure marks the existing operation
+blocked/recovery-required and retains the committed application and fences.
+The existing operation retry endpoint resumes failed linked task phases/generations;
+it does not reapply depths, recreate cards or replan committed effects. Database
+contention, transient preparation preemption and uncertain commits use existing
+operation/task retries and lease recovery. Matching completed replays return the
+original result even after subsequent source changes; changed payloads under the
+same identity conflict.
+
+The regular disposable PostgreSQL runner includes named application, contention,
+retirement, lost-response and midnight cases. Its recreation stage retains both
+pre-activation and activated operations and requires real workers to recover them.
+Its backup stage dumps both phases, verifies every public table, then behaviorally
+resumes the restored operations in the isolated restore database. No live study
+resources are used. CI owns final required broad candidate validation. No #81 UI
+or boundary recommendation is included.

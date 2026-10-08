@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import logging
 import time
 import uuid
@@ -40,6 +42,7 @@ from . import endgame_commands  # noqa: F401 - registers foreground endgame temp
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
 from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
 from . import analysis_paste_commands  # noqa: F401 - registers foreground analysis paste
+from .services import prefix_transition_application  # registers the foreground apply command
 from . import prefix_split_commands  # noqa: F401 - registers foreground prefix splits
 from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import opportunity_commands  # noqa: F401 - registers foreground discovery state changes
@@ -117,6 +120,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "daily_statistics",
     "game_sync_window",
     "opening_graph_rebuild",
+    prefix_transition_application.TASK_KIND,
     "integrity_scan",
     "opening_segmentation",
     "repertoire_opportunity",
@@ -159,11 +163,13 @@ def execute_foreground_command(
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
-    with activity_gate.foreground():
-        should_execute, saved_payload, attempt_token, _attempt_number = record_operation_attempt(
-            operation_id, command_name, payload, background=False,
-            expected_retry_cycle=expected_retry_cycle,
-        )
+    scope = nullcontext() if command_name == prefix_transition_application.COMMAND else activity_gate.foreground()
+    with scope:
+        with (activity_gate.foreground() if command_name == prefix_transition_application.COMMAND else nullcontext()):
+            should_execute, saved_payload, attempt_token, _attempt_number = record_operation_attempt(
+                operation_id, command_name, payload, background=False,
+                expected_retry_cycle=expected_retry_cycle,
+            )
         if not should_execute:
             return None
         try:
@@ -171,7 +177,11 @@ def execute_foreground_command(
                                      attempt_token=attempt_token)
         except Exception as error:
             record_operation_retry(operation_id, attempt_token, error,
-                                   retryable=False, background=False)
+                                   retryable=(command_name == prefix_transition_application.COMMAND and
+                                              isinstance(error, (psycopg.OperationalError, psycopg.InterfaceError,
+                                                                 DeadlockDetected, LockNotAvailable,
+                                                                 SerializationFailure, TransactionTimeout))),
+                                   background=False)
             raise
     _LOGGER.info(
         "foreground command=%s queue_wait_seconds=%s execution_seconds=%.3f",
@@ -278,6 +288,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "daily_statistics": execute_postgres_daily_statistics_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
+        prefix_transition_application.TASK_KIND: prefix_transition_application.execute_application_slice,
         "integrity_scan": execute_postgres_integrity_slice,
         "opening_segmentation": execute_segmentation_slice,
         "repertoire_opportunity": execute_opportunity_slice,
@@ -310,6 +321,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "repertoire_priority",
                 "daily_statistics",
                 "opening_graph_rebuild",
+                prefix_transition_application.TASK_KIND,
                 "integrity_scan",
                 "opening_segmentation",
                 "coverage_seed",
@@ -325,7 +337,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                     kind=claimed_task["kind"],
                 )
         except TransactionTimeout as error:
-            if claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention"}:
+            if claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention", prefix_transition_application.TASK_KIND}:
                 retry_result = fail_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error,
                 )

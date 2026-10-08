@@ -2342,3 +2342,33 @@ This is a new read-only feature; there was no existing diagnostic implementation
 - `PD-82 prefix selectors distinguish identical learner moves across opponent branches` and `test_prefix_diagnostics_full_saved_route_distinguishes_identical_learner_moves` protect full saved-presentation SAN labels (including opponent replies). The missing label/contract regression failed before the display repair. Labels derive from the saved presentation after connection closure and do not reconstruct study attempts.
 
 - `test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes` — diagnostics rehearsal removes only its owned active cards/repertoires so later global comparisons remain isolated; retained shadow evidence stays durable. Covered by `scripts/check_postgres_prefix_diagnostics.py` in the regular PostgreSQL evidence rehearsal.
+
+## Issue #80 — durable approved shorter-prefix application
+
+| Failure / behavior | Named regular regression |
+| --- | --- |
+| Wrong immutable identity, changed study day or blockers authorize mutation | `test_issue80_accepts_only_the_exact_approved_shortening_plan`; `test_issue80_changed_study_day_and_blocked_plan_never_authorize_mutation` |
+| API writes/plans directly, lacks required command identity, or holds its own foreground lease during preparation | `test_issue80_http_apply_requires_stable_identity_and_keeps_preparation_outside_api`; `test_issue80_apply_dispatch_does_not_hold_a_foreground_lease_during_preparation` |
+| OpenAPI omits immutable request fields or deferred completion/location contract | `test_issue80_openapi_binds_the_exact_request_and_deferred_completion_contract` |
+| Retired study self-assessment grades or loses a completed receipt | `test_issue80_retired_study_self_assessment_conflicts_before_grading_and_completed_receipt_replays` |
+| Unchecked source integrity commits an unrecoverable fenced transition | `test_issue80_unclean_source_integrity_rejects_before_acceptance` |
+| Deployed reader-only API bypasses command transport, falsely completes pending publication or loses replay identity | `test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result` |
+| External worker omits the new durable kind or completes its cursor separately | `test_issue80_external_worker_claims_transition_slices_and_owns_atomic_cursor_completion` |
+| Checkpoints write evidence after original-card retirement | `test_issue80_checkpoint_locks_original_card_and_rejects_retirement_before_evidence_writes` |
+| Selected Caro-Kann routes change QGD depths/ordered graph coverage, or replacements inherit fabricated learning | `test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state` |
+| Structural edits, membership adoption or absent-target creation bypass reservations; duplicate plans or changed payloads apply twice | `test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery` |
+| Source, target, history, membership or graph changes after preparation partially apply | `test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation` |
+| Study during staging applies a stale plan or leaves structural fences stuck | `test_issue80_review_during_staging_rejects_activation_and_releases_fences` |
+| Real concurrent target creation, source edit or membership adoption escapes authoritative locks | `test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict` |
+| Concurrent same-operation delivery, stale stage lease, activation interruption, lost response or worker restart repeats mutation | `test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback` |
+| Reviews, schedules, seeds, shared memberships, implicit ownership or authored checkpoint kinds are rewritten | `test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved` |
+| Queued, active, partial, pending or offline old presentations grade replacements or fabricate completion; completed receipts fail to replay | `test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements` |
+| Publication failure undoes committed activation, releases fences early, or cannot resume linked work | `test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks` |
+| Midnight recovery changes approved due dates or completes before the current queue is steady | `test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue` |
+| Staging failure changes product state, or validated equal/empty plans create publication work | `test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay` |
+| PostgreSQL recreation or restoration loses pending immutable plans, receipts, fences, or activated publication recovery | `test_issue80_retained_pre_and_post_activation_applications_recover_after_recreation_or_restore`; `issue80 durable application proofs cover recreation and restored pre/post activation state` |
+
+Python/API regressions live in `backend/tests/test_prefix_transition_apply.py`.
+PostgreSQL behavior proofs live in `scripts/check_postgres_prefix_transition_application.py`
+and run through the regular disposable durability runner, including recreation and
+backup/restore stages. Orchestration coverage lives in the regular runner contract file.

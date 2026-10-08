@@ -108,6 +108,8 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
   let overrideReplayed = false;
   const context = {
     assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
+    workloadConsumers: ['background-worker','background-scheduler','defense-engine'],
+    runPrefixApplicationProof: () => {},
     repertoireLimitRecreationPgn, limitRecreationRepertoireId: null,
     console: { log() {} },
     importFixture: async () => {
@@ -454,4 +456,16 @@ test("background workload preserves benchmark and consumer restoration failures"
     restoreConsumers: () => { throw restorationFailure; },
   }), (error) => error instanceof AggregateError
     && error.errors[0] === benchmarkFailure && error.errors[1] === restorationFailure);
+});
+
+test("issue80 durable application proofs cover recreation and restored pre/post activation state", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const recreate = source.slice(source.indexOf('  command_recreation: async () => {'), source.indexOf('  backup_restore: async () => {'));
+  assert(recreate.indexOf('runPrefixApplicationProof("--seed-retained")') < recreate.indexOf('...compose, "down"'));
+  assert(recreate.indexOf('...compose, "up"') < recreate.indexOf('runPrefixApplicationProof("--verify-retained")'));
+  const backup = source.slice(source.indexOf('  backup_restore: async () => {'), source.indexOf('  browser: async () => {'));
+  assert(backup.indexOf('runPrefixApplicationProof("--seed-retained")') < backup.indexOf('pg_dump'));
+  assert(backup.indexOf('verify_postgres_backup.py') < backup.indexOf('TEMPO_PREFIX_APPLICATION_PROOF_URL='));
+  assert(backup.indexOf('TEMPO_PREFIX_APPLICATION_PROOF_URL=postgresql://postgres@postgres:5432/tempo_restore_check') < backup.indexOf('dropdb'));
+  assert.match(backup, /runPrefixApplicationProof\("--recover-retained", "--cleanup-retained"\)/);
 });

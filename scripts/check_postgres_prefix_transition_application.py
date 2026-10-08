@@ -1,0 +1,679 @@
+"""Issue 80 durable application proofs, exclusively on runner-owned PostgreSQL."""
+from contextlib import contextmanager
+from datetime import date, datetime, timezone
+import json
+import os
+from pathlib import Path
+import sys
+import time
+import uuid
+
+import chess
+from fastapi import HTTPException
+import psycopg
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
+from app import postgres_store, prefix_evaluation_api, prefix_transition_api
+from app.command_gateway import execute_command, read_operation, CommandConflict
+from app.services import prefix_transition_application as application
+from app.services.durable_tasks import claim_task,enqueue_task_in_transaction
+from app.services.opening_graph import GraphInput, build_graph
+from app.services.postgres_opening_graph import stage_graph_steps, create_graph_cards, execute_postgres_opening_graph_slice
+from app.services.postgres_integrity import execute_postgres_integrity_slice
+from app.services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
+
+
+def idle_call(callback):
+    """Retry only real foreground preemption, never an outage or stale proof."""
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        try:
+            return callback()
+        except (HTTPException,psycopg.errors.SerializationFailure) as error:
+            cause=error.__cause__ if isinstance(error,psycopg.errors.SerializationFailure) else error
+            if not (isinstance(cause,HTTPException) and cause.status_code==503 and isinstance(cause.detail,dict)
+                    and cause.detail.get('message')=='Study work is active. Retry the diagnostic when study is idle.'):
+                raise
+            from app.services.redis_admission_gate import foreground_present
+            while foreground_present() and time.monotonic()<deadline:
+                time.sleep(0.01)
+    raise AssertionError('Foreground-idle preparation did not finish within its deadline')
+
+
+def execute(payload):
+    return idle_call(lambda:execute_command(payload['operation_id'],application.COMMAND,payload))
+
+
+def ready_plan(repertoire_id, lines):
+    deadline = time.monotonic() + 10
+    source = idle_call(lambda:prefix_evaluation_api.load_snapshot(repertoire_id, time.monotonic()+10))
+    request = {'snapshot_id': prefix_evaluation_api.snapshot_identity(source),
+               'selected_line_ids': [line['id'] for line in lines[:2]],
+               'candidate_depths': {line['id']: 1 for line in lines[:2]}}
+    plan = idle_call(lambda:prefix_transition_api.prefix_transition_plan(repertoire_id, prefix_transition_api.PrefixTransitionRequest(**request)))
+    assert plan.status == 'ready', plan
+    request.update({field: getattr(plan, field) for field in ('plan_id', 'transition_snapshot_id', 'graph_generation', 'study_day')})
+    operation_id = uuid.uuid4().hex
+    return plan, {'operation_id': operation_id, 'repertoire_id': repertoire_id, 'request': request}
+
+
+def drain(kind, handler):
+    count = 0
+    while task := claim_task(kind):
+        handler(task)
+        count += 1
+        assert count < 300, (kind, task)
+    return count
+
+
+def publish(payload, after_activation=None):
+    drain(application.TASK_KIND, application.execute_application_slice)
+    execute(payload)
+    result = read_operation(payload['operation_id'])
+    assert result['state'] == 'pending' and result['transition']['state'] == 'publishing', result
+    if after_activation:
+        after_activation()
+    drain('opening_graph_rebuild', execute_postgres_opening_graph_slice)
+    drain('integrity_scan', execute_postgres_integrity_slice)
+    drain('daily_queue', execute_postgres_queue_refresh_slice)
+    drain(application.TASK_KIND, application.execute_application_slice)
+    result = read_operation(payload['operation_id'])
+    if result['state'] == 'pending' and result['transition']['queue_date'] == application.date.today().isoformat():
+        # Midnight completion requests a new current-day refresh, then yields.
+        drain('daily_queue', execute_postgres_queue_refresh_slice)
+        drain(application.TASK_KIND, application.execute_application_slice)
+        result = read_operation(payload['operation_id'])
+    assert result['state'] == 'complete', result
+    return result['response']
+
+
+def create_fixture(label):
+    repertoire_id = 'issue80-' + label + '-' + uuid.uuid4().hex
+    other_id = repertoire_id + '-shared'
+    # Separate FEN identity family from earlier durability fixtures.
+    board = chess.Board()
+    for move in ('a2a3', 'a7a6', 'h2h3', 'h7h6', 'a3a4', 'a6a5'):
+        board.push_uci(move)
+    if 'activated' in label:
+        board.push_uci('h3h4'); board.push_uci('h6h5')
+    board.fullmove_number = 1
+    fen = board.fen()
+    lines = [dict(id=repertoire_id + suffix, name=name, start_fen=fen, moves_json=json.dumps(moves),
+                  trained_color='black', learner_decision_count=2)
+             for suffix, name, moves in (
+                 ('-caro-a', 'Caro-Kann A', ['e2e4','c7c6','d2d4','d7d5','b1c3','d5e4','c3e4','g8f6']),
+                 ('-caro-b', 'Caro-Kann B', ['e2e4','c7c6','d2d4','d7d5','b1d2','d5e4','d2e4','g8f6']),
+                 ('-qgd', 'QGD', ['d2d4','d7d5','c2c4','e7e6','b1c3','g8f6']))]
+    # Fixtures are sequential; cleanup ensures content-derived IDs remain isolated.
+    steps = build_graph(GraphInput(repertoire_id, tuple(lines), 2))
+    ids = sorted({step.card_id for step in steps})
+    with postgres_store.connection(read_only=False) as database:
+        now = datetime.now(timezone.utc).isoformat()
+        for rep in (repertoire_id, other_id):
+            database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,\'issue80.pgn\',%s)', (rep, rep, now))
+        if label.startswith('backup-'):
+            database.execute_native('UPDATE repertoires SET new_cards_per_day=0 WHERE id=ANY(%s)',([repertoire_id,other_id],))
+        for line in lines:
+            database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,start_fen,moves_json,trained_color,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)', (line['id'], repertoire_id, line['name'], fen, line['moves_json'], 'black', now))
+            database.execute_native('INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,2)', (line['id'],))
+        assert not database.execute_native('SELECT id FROM cards WHERE id=ANY(%s)', (ids,)).fetchall(), 'Fixture overlaps retained data'
+        create_graph_cards(database, tuple({step.card_id: step for step in steps}.values()), date.today().isoformat(), strict=True)
+        for card_id in ids:
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)', (repertoire_id,card_id))
+        stage_graph_steps(database, steps, 1)
+        database.execute_native("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (repertoire_id,now))
+        baseline=enqueue_task_in_transaction(database,'opening_graph_rebuild',repertoire_id,{'repertoire_id':repertoire_id,'local_day':date.today().isoformat()},priority=40)
+        assert baseline['generation']==1
+        database.execute_native("UPDATE background_tasks SET phase='finalize' WHERE id=%s",(baseline['id'],))
+    drain('opening_graph_rebuild',execute_postgres_opening_graph_slice)
+    drain('integrity_scan',execute_postgres_integrity_slice)
+    drain('daily_queue',execute_postgres_queue_refresh_slice)
+    return repertoire_id, other_id, lines, steps
+
+
+def cleanup_fixture(repertoire_id,other_id):
+    with postgres_store.connection(read_only=False) as database:
+        operations = [row[0] for row in database.execute_native('SELECT operation_id FROM prefix_transition_applications WHERE repertoire_id=%s', (repertoire_id,)).fetchall()]
+        for operation_id in operations:
+            application.release_fences(database, operation_id)
+        database.execute_native('DELETE FROM study_attempts WHERE exercise_id=%s',(repertoire_id+'-exercise',))
+        database.execute_native('DELETE FROM study_exercises WHERE study_id=%s',(repertoire_id,))
+        database.execute_native('DELETE FROM study_positions WHERE source_id=%s',(repertoire_id+'-source',))
+        database.execute_native('DELETE FROM study_sources WHERE chapter_id=%s',(repertoire_id+'-chapter',))
+        database.execute_native('DELETE FROM study_chapters WHERE study_id=%s',(repertoire_id,))
+        database.execute_native('DELETE FROM studies WHERE id=%s',(repertoire_id,))
+        database.execute_native('DELETE FROM opening_evidence_attempts WHERE repertoire_id=ANY(%s)', ([repertoire_id,other_id],))
+        database.execute_native('DELETE FROM prefix_transition_applications WHERE repertoire_id=%s', (repertoire_id,))
+        owned_ids=[row[0] for row in database.execute_native('SELECT id FROM cards WHERE repertoire_id=ANY(%s)',([repertoire_id,other_id],)).fetchall()]
+        database.execute_native('DELETE FROM opening_evidence_queue_contexts WHERE repertoire_id=ANY(%s)',([repertoire_id,other_id],))
+        database.execute_native('DELETE FROM queue_attempt_origins WHERE card_id=ANY(%s)',(owned_ids,))
+        database.execute_native('DELETE FROM review_attempt_receipts WHERE card_id=ANY(%s)',(owned_ids,))
+        database.execute_native('DELETE FROM opening_evidence_presentations WHERE card_id=ANY(%s)',(owned_ids,))
+        database.execute_native('DELETE FROM repertoires WHERE id=ANY(%s)', ([repertoire_id,other_id],))
+        database.execute_native('DELETE FROM background_tasks WHERE deduplication_key=ANY(%s)', ([repertoire_id,other_id,*operations],))
+        database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', (operations,))
+
+
+@contextmanager
+def fixture(label):
+    created=create_fixture(label)
+    try:
+        yield created
+    finally:
+        cleanup_fixture(created[0],created[1])
+
+
+def test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state():
+    with fixture('success') as (rep, other, lines, steps):
+        plan, payload = ready_plan(rep, lines)
+        before_qgd = [step for step in steps if step.line_id == lines[2]['id']]
+        result = execute(payload)
+        assert result == {'status': 'pending'},read_operation(payload['operation_id'])
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s', (rep,)).fetchone()[0] == 1
+            assert all(row[0] == 2 for row in database.execute_native('SELECT learner_decision_count FROM repertoire_line_training_depths WHERE line_id=ANY(%s)', ([line['id'] for line in lines],)).fetchall())
+        def fresh_defaults():
+            with postgres_store.connection(read_only=True) as database:
+                for card in plan.cards:
+                    if card.lifecycle == 'create':
+                        row = database.execute_native('SELECT * FROM cards WHERE id=%s', (card.card_id,)).fetchone()
+                        assert row['state'] == json.loads(card.schedule_json)['state'] and row['due_date'] == plan.study_day, dict(row)
+                        assert row['introduced_at'] is None and row['fsrs_card_json'] is None
+        final = publish(payload, fresh_defaults)
+        assert execute(payload) == final
+        with postgres_store.connection(read_only=True) as database:
+            current = prefix_evaluation_api.load_snapshot(rep, time.monotonic()+10)
+            assert current.published_steps == plan.proposed_steps
+            assert [step for step in current.published_steps if step.line_id == lines[2]['id']] == before_qgd
+            depths = {row[0]: row[1] for row in database.execute_native('SELECT line_id,learner_decision_count FROM repertoire_line_training_depths WHERE line_id=ANY(%s)', ([line['id'] for line in lines],)).fetchall()}
+            assert depths == {lines[0]['id']:1, lines[1]['id']:1, lines[2]['id']:2}
+            for card in plan.cards:
+                row = database.execute_native('SELECT * FROM cards WHERE id=%s', (card.card_id,)).fetchone()
+                if card.lifecycle == 'create':
+                    assert row['due_date'] == plan.study_day
+                    assert row['fsrs_card_json'] is None and row['recent_attempts_json'] == '[]'
+                    assert not database.execute_native('SELECT 1 FROM reviews WHERE card_id=%s', (card.card_id,)).fetchone()
+                    assert not database.execute_native('SELECT 1 FROM opening_evidence_attempts WHERE card_id=%s', (card.card_id,)).fetchone()
+                if card.lifecycle == 'archive':
+                    assert row['archived'] == 1 and row['superseded_by'] is None
+            assert not database.execute_native('SELECT 1 FROM prefix_transition_repertoire_fences WHERE operation_id=%s', (payload['operation_id'],)).fetchone()
+        print('PASS test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state')
+
+
+
+def test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery():
+    from fastapi import HTTPException
+    with fixture('fences') as (rep, other, lines, steps):
+        plan, payload = ready_plan(rep, lines)
+        execute(payload)
+        target = next(card for card in plan.cards if card.lifecycle == 'create')
+        target_step = next(step for step in plan.proposed_steps if step.card_id == target.card_id)
+        attempts = (
+            ("UPDATE repertoire_lines SET name=name||' changed' WHERE id=%s", (lines[0]['id'],)),
+            ("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color) VALUES(%s,%s,'prefix',%s,%s,%s,'black')",
+             (target.card_id,other,target_step.starting_fen,json.dumps(target_step.moves),plan.study_day)),
+            ('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',(other,steps[0].card_id)),
+            ("UPDATE repertoire_line_training_depths SET learner_decision_count=1 WHERE line_id=%s", (lines[0]['id'],)),
+        )
+        for statement, parameters in attempts:
+            try:
+                with postgres_store.connection(read_only=False) as database:
+                    database.execute_native(statement,parameters)
+            except psycopg.Error as error:
+                assert error.sqlstate == 'P0080', error
+            else:
+                raise AssertionError('A structural producer bypassed the active transition fence')
+        duplicate = dict(payload,operation_id=uuid.uuid4().hex)
+        assert execute(duplicate) is None
+        assert read_operation(duplicate['operation_id'])['error']['detail']['code'] == 'prefix_transition_in_progress'
+        final = publish(payload)
+        assert execute(payload) == final
+        changed = dict(payload,request=dict(payload['request'],candidate_depths={line['id']:2 for line in lines[:2]}))
+        try:
+            execute_command(payload['operation_id'], application.COMMAND, changed)
+        except CommandConflict:
+            pass
+        else:
+            raise AssertionError('Changed command payload reused a completed receipt')
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('DELETE FROM operation_receipts WHERE operation_id=%s',(duplicate['operation_id'],))
+        print('PASS test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery')
+
+
+def test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation():
+    from app import command_gateway
+    original_prepare = application.prepare_application
+    for mutation in ('source','target','history','membership','graph'):
+        with fixture('stale-'+mutation) as (rep, other, lines, steps):
+            plan, payload = ready_plan(rep, lines)
+            def raced_prepare(command_payload):
+                prepared = original_prepare(command_payload)
+                with postgres_store.connection(read_only=False) as database:
+                    if mutation == 'source':
+                        database.execute_native("UPDATE repertoire_lines SET name=name||' concurrent' WHERE id=%s",(lines[0]['id'],))
+                    elif mutation == 'target':
+                        step = next(step for step in plan.proposed_steps if next(card for card in plan.cards if card.card_id==step.card_id).lifecycle=='create')
+                        create_graph_cards(database,(step,),plan.study_day,strict=True)
+                    elif mutation == 'history':
+                        database.execute_native("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,'correct',%s,0,1)",(steps[0].card_id,datetime.now(timezone.utc).isoformat()))
+                    elif mutation == 'membership':
+                        database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',(other,steps[0].card_id))
+                    else:
+                        database.execute_native('UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id=%s',(rep,))
+                return prepared
+            command_gateway._preparers[application.COMMAND] = raced_prepare
+            try:
+                assert execute(payload) is None
+            finally:
+                command_gateway._preparers[application.COMMAND] = original_prepare
+            result = read_operation(payload['operation_id'])
+            assert result['state']=='failed' and result['error']['detail']['code']=='stale_plan', result
+            with postgres_store.connection(read_only=True) as database:
+                assert not database.execute_native('SELECT 1 FROM prefix_transition_applications WHERE operation_id=%s',(payload['operation_id'],)).fetchone()
+                assert all(row[0]==2 for row in database.execute_native('SELECT learner_decision_count FROM repertoire_line_training_depths WHERE line_id=ANY(%s)',([line['id'] for line in lines],)).fetchall())
+                assert not database.execute_native('SELECT 1 FROM cards WHERE repertoire_id=%s AND archived=1',(rep,)).fetchone()
+            with postgres_store.connection(read_only=False) as database:
+                database.execute_native('DELETE FROM operation_receipts WHERE operation_id=%s',(payload['operation_id'],))
+    print('PASS test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation')
+
+
+def test_issue80_review_during_staging_rejects_activation_and_releases_fences():
+    with fixture('staging-review') as (rep,other,lines,steps):
+        plan,payload=ready_plan(rep,lines)
+        execute(payload)
+        drain(application.TASK_KIND,application.execute_application_slice)
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('UPDATE cards SET stability=stability+1 WHERE id=%s',(steps[0].card_id,))
+        assert execute(payload) is None
+        result=read_operation(payload['operation_id'])
+        assert result['state']=='failed' and result['transition']['state']=='rejected',result
+        with postgres_store.connection(read_only=False) as database:
+            assert database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s',(rep,)).fetchone()[0]==1
+            database.execute_native("UPDATE repertoire_lines SET name=name||' usable' WHERE id=%s",(lines[0]['id'],))
+    print('PASS test_issue80_review_during_staging_rejects_activation_and_releases_fences')
+
+def test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    original_lock=application.lock_and_revalidate
+    for producer_kind in ('target','source','membership'):
+        with fixture('concurrent-'+producer_kind) as (rep,other,lines,steps):
+            plan,payload=ready_plan(rep,lines)
+            step=next(step for step in plan.proposed_steps if next(card for card in plan.cards if card.card_id==step.card_id).lifecycle=='create')
+            locked=threading.Event(); release=threading.Event(); producer_started=threading.Event(); producer_pids=[]
+            def paused_lock(database,prepared):
+                original_lock(database,prepared)
+                locked.set()
+                assert release.wait(5),'Structural producer did not reach its authoritative lock'
+            def producer():
+                try:
+                    with postgres_store.connection(read_only=False) as database:
+                        producer_pids.append(database.execute_native('SELECT pg_backend_pid()').fetchone()[0])
+                        producer_started.set()
+                        if producer_kind=='target':
+                            create_graph_cards(database,(step,),plan.study_day,strict=True)
+                        elif producer_kind=='source':
+                            database.execute_native("UPDATE repertoire_lines SET name=name||' concurrent' WHERE id=%s",(lines[0]['id'],))
+                        else:
+                            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)',(other,steps[0].card_id))
+                except psycopg.Error as error:
+                    return error.sqlstate
+                return 'mutated'
+            application.lock_and_revalidate=paused_lock
+            try:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    accepted=executor.submit(execute,payload)
+                    assert locked.wait(5)
+                    created=executor.submit(producer)
+                    assert producer_started.wait(5)
+                    deadline=time.monotonic()+5
+                    while time.monotonic()<deadline:
+                        with postgres_store.connection(read_only=True) as observer:
+                            waiting=observer.execute_native("SELECT 1 FROM pg_stat_activity WHERE pid=%s AND wait_event_type='Lock'",(producer_pids[0],)).fetchone()
+                        if waiting: break
+                        time.sleep(0.01)
+                    assert waiting,producer_kind+' never contended on its real PostgreSQL structural lock'
+                    release.set()
+                    assert accepted.result(timeout=5)=={'status':'pending'}
+                    assert created.result(timeout=5)=='P0080',producer_kind
+            finally:
+                release.set(); application.lock_and_revalidate=original_lock
+            publish(payload)
+    print('PASS test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict')
+
+
+def test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from app import command_gateway
+    original_prepare=application.prepare_application
+    original_create=application.create_graph_cards
+    with fixture('replay') as (rep,other,lines,steps):
+        plan,payload=ready_plan(rep,lines)
+        prepared=idle_call(lambda:original_prepare(payload))
+        barrier=threading.Barrier(2)
+        command_gateway._preparers[application.COMMAND]=lambda _: (barrier.wait(timeout=5),prepared)[1]
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results=list(executor.map(lambda _:execute(payload),range(2)))
+            assert results==[{'status':'pending'},{'status':'pending'}]
+        finally:
+            command_gateway._preparers[application.COMMAND]=original_prepare
+        first=claim_task(application.TASK_KIND)
+        assert first
+        application.execute_application_slice(first)
+        assert application.execute_application_slice(first) is False,'Expired stage lease published twice'
+        drain(application.TASK_KIND,application.execute_application_slice)
+        def interrupted_create(database,batch,day,**options):
+            original_create(database,batch,day,**options)
+            raise psycopg.errors.SerializationFailure('Injected interruption during activation')
+        application.create_graph_cards=interrupted_create
+        try:
+            try: execute(payload)
+            except psycopg.errors.SerializationFailure: pass
+            else: raise AssertionError('Activation interruption was not observed')
+        finally:
+            application.create_graph_cards=original_create
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s',(rep,)).fetchone()[0]==1
+            assert not database.execute_native('SELECT id FROM cards WHERE id=ANY(%s)',([card.card_id for card in plan.cards if card.lifecycle=='create'],)).fetchall()
+        # Commit activation but discard its transport result. Restart all pools;
+        # the retained operation resumes publication without repeating mutation.
+        execute(payload)
+        postgres_store.close_pools()
+        assert execute(payload)=={'status':'pending'},read_operation(payload['operation_id'])
+        final=publish(payload)
+        assert execute(payload)==final
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute_native('SELECT COUNT(*) FROM prefix_transition_applications WHERE operation_id=%s',(payload['operation_id'],)).fetchone()[0]==1
+    print('PASS test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback')
+
+def test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved():
+    from app.services.review_service import apply_scheduling_review
+    from app.services.prefix_transition import SCHEDULE_COLUMNS
+    with fixture('history') as (rep,other,lines,steps):
+        root=steps[0].card_id
+        shortened=build_graph(GraphInput(rep,tuple(dict(line,learner_decision_count=1) for line in lines[:2]),1))[0]
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',(other,root))
+            apply_scheduling_review(database,root,'correct',guided=False,source_kind='study',source_ref=rep,light_first_interval_days=7,reviewed_at=datetime.now(timezone.utc),review_day=date.today())
+            create_graph_cards(database,(shortened,),date.today().isoformat(),strict=True)
+            database.execute_native("UPDATE cards SET repertoire_id=%s,canonical_route_source=1,kind='checkpoint' WHERE id=%s",(other,shortened.card_id))
+            database.execute_native("UPDATE cards SET state='learning',introduced_at=%s WHERE id=%s",(date.today().isoformat(),shortened.card_id))
+            # No explicit other membership: preserve the authored implicit owner.
+            database.execute_native('INSERT INTO opening_card_schedule_seeds(card_id,source_card_id,baseline_successful_days,baseline_recent_clean,verification_due,created_at) VALUES(%s,%s,2,1,%s,%s)',(shortened.card_id,root,date.today().isoformat(),datetime.now(timezone.utc).isoformat()))
+        def retained():
+            with postgres_store.connection(read_only=True) as database:
+                return {table:[dict(row) for row in database.execute_native(query,([root,shortened.card_id],)).fetchall()] for table,query in {
+                    'reviews':'SELECT * FROM reviews WHERE card_id=ANY(%s) ORDER BY id',
+                    'seeds':'SELECT * FROM opening_card_schedule_seeds WHERE card_id=ANY(%s) ORDER BY card_id',
+                    'schedules':'SELECT '+','.join(('id',*SCHEDULE_COLUMNS))+' FROM cards WHERE id=ANY(%s) ORDER BY id',
+                }.items()}
+        before=retained()
+        plan,payload=ready_plan(rep,lines)
+        assert next(card for card in plan.cards if card.card_id==root).classification=='retained_shared'
+        assert next(card for card in plan.cards if card.card_id==shortened.card_id).kind_after=='checkpoint'
+        execute(payload);publish(payload)
+        assert retained()==before,{'before':before,'after':retained()}
+        with postgres_store.connection(read_only=True) as database:
+            row=database.execute_native('SELECT repertoire_id,archived FROM cards WHERE id=%s',(root,)).fetchone()
+            assert tuple(row)==(other,0)
+            assert database.execute_native('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s',(other,root)).fetchone()[0]==1
+            assert database.execute_native('SELECT kind,canonical_route_source,repertoire_id FROM cards WHERE id=%s',(shortened.card_id,)).fetchone()[0]=='checkpoint'
+    print('PASS test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved')
+
+
+def test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements():
+    from app.services.opening_decision_evidence import decision_manifest
+    from app.services.postgres_opening_evidence import persist_checkpoint,prepare_standalone_checkpoint,commit_standalone_checkpoint
+    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.review_commands import submit_review
+    from app.command_gateway import request_digest
+    with fixture('attempts') as (rep,other,lines,steps):
+        root=steps[0].card_id
+        now=datetime.now(timezone.utc).isoformat()
+        with postgres_store.connection(read_only=False) as database:
+            queue=database.execute_native("SELECT id FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued' ORDER BY id LIMIT 1",(date.today().isoformat(),root)).fetchone()[0]
+            snapshot=database.execute_native('SELECT * FROM opening_evidence_presentations WHERE card_id=%s ORDER BY id DESC LIMIT 1',(root,)).fetchone()
+        manifest=decision_manifest(dict(snapshot),rep)
+        def checkpoint(label,queue_id=queue):
+            return {'attempt_id':rep+'-'+label,'manifest':manifest,'origin_queue_entry_id':queue_id,'queue_entry_id':queue_id,'parent_attempt_id':None,'started_at':now,'study_timezone':'America/New_York','source':'offline','events':[],'terminal':None}
+        done=checkpoint('completed');decision=manifest['decisions'][0]
+        done['events']=[{'sequence':1,'decision_index':0,'decision_id':decision['decision_id'],'expected_uci':decision['expected_uci'],'kind':'first_response','observed_at':now,'response_uci':decision['expected_uci'],'disposition':'expected','assistance':None}]
+        done['terminal']={'state':'complete','final_sequence':1,'ended_at':now}
+        review={'card_id':root,'review':{'outcome':'correct','queue_entry_id':queue,'attempt_id':done['attempt_id'],'recorded_at':now,'opening_evidence_completion':done},'prepared_manifest':manifest}
+        with postgres_store.connection(read_only=False) as database:
+            completed=submit_review(database,review)
+            second=database.execute_native("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket,admission_repertoire_id) VALUES(%s,%s,99,1000,'opening',%s) RETURNING id",(date.today().isoformat(),root,rep)).fetchone()[0]
+            active=checkpoint('active',second);partial=checkpoint('partial',second)
+            partial['terminal']={'state':'partial','final_sequence':0,'ended_at':now}
+            persist_checkpoint(database,{'checkpoint':active,'prepared_manifest':manifest})
+            persist_checkpoint(database,{'checkpoint':partial,'prepared_manifest':manifest})
+            pending_id=rep+'-pending-review';pending={'card_id':root,'review':{'outcome':'correct','queue_entry_id':second,'attempt_id':rep+'-pending'}}
+            database.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,background) VALUES(%s,'cards.review',%s,'blocked',%s,false)",(pending_id,request_digest('cards.review',pending),json.dumps(pending)))
+        # Persist an unfinished study self-assessment linked to the same original
+        # card, so retirement covers both durable attempt formats in PostgreSQL.
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('INSERT INTO studies(id,title,created_at,updated_at) VALUES(%s,%s,%s,%s)',(rep,rep,now,now))
+            database.execute_native('INSERT INTO study_chapters(id,study_id,title,position) VALUES(%s,%s,%s,0)',(rep+'-chapter',rep,rep))
+            database.execute_native("INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,filename,record_index,headers_json,diagnostics_json,valid,created_at) VALUES(%s,%s,%s,1,'','fixture','fixture.pgn',0,'{}','[]',1,%s)",(rep+'-source',rep+'-chapter',rep,now))
+            database.execute_native("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path) VALUES(%s,%s,0,%s,'[]','root')",(rep+'-position',rep+'-source',lines[0]['start_fen']))
+            database.execute_native("INSERT INTO study_exercises(id,study_id,position_id,status,created_at,updated_at) VALUES(%s,%s,%s,'published',%s,%s)",(rep+'-exercise',rep,rep+'-position',now,now))
+            database.execute_native("INSERT INTO study_attempts(id,exercise_id,revision,card_id,queue_entry_id,cycle,context,answer_json,answer_hash,assessment_json,assessment_method,grader_version,started_at,committed_at) VALUES(%s,%s,1,%s,%s,99,'review','{}','fixture','{\"outcome\":\"needs_self_assessment\"}','self',1,%s,%s)",(rep+'-study-attempt',rep+'-exercise',root,second,now,now))
+        prepared=prepare_standalone_checkpoint({'checkpoint':active})
+        plan,payload=ready_plan(rep,lines)
+        assert next(card for card in plan.cards if card.card_id==root).lifecycle=='archive'
+        execute(payload);publish(payload)
+        with postgres_store.connection(read_only=False) as database:
+            assert submit_review(database,review)==completed,'Matching completed receipt did not replay its old result'
+            for attempt_id in (active['attempt_id'],partial['attempt_id']):
+                row=database.execute_native('SELECT retired_operation_id,completed_at FROM opening_evidence_attempts WHERE attempt_id=%s',(attempt_id,)).fetchone()
+                assert tuple(row)==(payload['operation_id'],None)
+            assert database.execute_native('SELECT retired_operation_id FROM opening_evidence_attempts WHERE attempt_id=%s',(done['attempt_id'],)).fetchone()[0] is None
+            study_attempt=database.execute_native('SELECT retired_operation_id,finalized_at,result_json FROM study_attempts WHERE id=%s',(rep+'-study-attempt',)).fetchone()
+            assert tuple(study_attempt)==(payload['operation_id'],None,None)
+            from app.study_attempt_commands import self_assess_study_attempt
+            try: self_assess_study_attempt(database,{'attempt_id':rep+'-study-attempt','exercise_id':rep+'-exercise','study_id':rep,'assessment':{'rating':'correct'}})
+            except HTTPException as error: assert error.status_code==409 and 'retired' in error.detail
+            else: raise AssertionError('Retired study self-assessment graded replacement')
+
+            assert database.execute_native('SELECT status FROM daily_queue WHERE id=%s',(second,)).fetchone()[0]=='superseded'
+            assert database.execute_native('SELECT 1 FROM queue_attempt_origins WHERE queue_entry_id=%s',(second,)).fetchone()
+            try: commit_standalone_checkpoint(database,prepared)
+            except HTTPException as error: assert error.detail['code']=='card_archived' and not error.detail['aggregate_review_allowed']
+            else: raise AssertionError('Old checkpoint wrote replacement evidence')
+            try: submit_review(database,pending)
+            except HTTPException as error: assert error.status_code==409
+            else: raise AssertionError('Offline old-card submission graded a replacement')
+            database.execute_native('DELETE FROM operation_receipts WHERE operation_id=%s',(pending_id,))
+        for card in plan.cards:
+            if card.lifecycle=='create':
+                with postgres_store.connection(read_only=True) as database:
+                    assert not database.execute_native('SELECT 1 FROM reviews WHERE card_id=%s',(card.card_id,)).fetchone()
+        assert read_operation(pending_id)['state']=='unknown'
+    print('PASS test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements')
+
+def test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks():
+    from app.services.durable_tasks import fail_task
+    from app.command_gateway import record_operation_attempt
+    with fixture('publication-failure') as (rep,other,lines,steps):
+        plan,payload=ready_plan(rep,lines)
+        execute(payload);drain(application.TASK_KIND,application.execute_application_slice);execute(payload)
+        graph=claim_task('opening_graph_rebuild')
+        assert graph and graph['payload']['repertoire_id']==rep
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s',(graph['id'],))
+        assert fail_task(graph['id'],graph['generation'],graph['lease_token'],RuntimeError('Injected publication interruption'))['state']=='failed'
+        state=read_operation(payload['operation_id'])
+        assert state['state']=='blocked' and state['transition']['state']=='recovery_required' and state['transition']['recovery']
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s',(rep,)).fetchone()[0]==2
+            assert database.execute_native('SELECT 1 FROM prefix_transition_card_fences WHERE operation_id=%s',(payload['operation_id'],)).fetchone()
+        should_execute,saved,token,_=record_operation_attempt(payload['operation_id'],application.COMMAND,payload,background=False,expected_retry_cycle=state['retry_cycle'])
+        assert should_execute
+        idle_call(lambda:execute_command(payload['operation_id'],application.COMMAND,saved,attempt_token=token))
+        final=publish(payload)
+        assert final['graph_generation']==2
+    print('PASS test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks')
+
+
+def test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue():
+    from datetime import timedelta
+    original_date=application.date
+    class Tomorrow(date):
+        @classmethod
+        def today(cls): return original_date.today()+timedelta(days=1)
+    with fixture('midnight') as (rep,other,lines,steps):
+        plan,payload=ready_plan(rep,lines)
+        execute(payload);drain(application.TASK_KIND,application.execute_application_slice);execute(payload)
+        application.date=Tomorrow
+        try:
+            final=publish(payload)
+            assert final['queue_date']==Tomorrow.today().isoformat()
+            with postgres_store.connection(read_only=True) as database:
+                for card in plan.cards:
+                    if card.lifecycle=='create':
+                        assert database.execute_native('SELECT due_date FROM cards WHERE id=%s',(card.card_id,)).fetchone()[0]==plan.study_day
+        finally:
+            application.date=original_date
+    print('PASS test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue')
+
+
+def seed_retained_applications():
+    from app.command_gateway import record_operation_attempt
+    for phase in ('before','activated'):
+        rep,other,lines,steps=create_fixture('backup-'+phase)
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('UPDATE repertoires SET new_cards_per_day=0 WHERE id=ANY(%s)',([rep,other],))
+        plan,payload=ready_plan(rep,lines)
+        should_execute,saved,token,_=record_operation_attempt(payload['operation_id'],application.COMMAND,payload,background=False)
+        assert should_execute
+        idle_call(lambda:execute_command(payload['operation_id'],application.COMMAND,saved,attempt_token=token))
+        if phase=='activated':
+            drain(application.TASK_KIND,application.execute_application_slice)
+            execute(payload)
+        print(json.dumps({'retained_prefix_application':payload['operation_id'],'phase':phase,'repertoire_id':rep}))
+
+
+def recover_retained_applications(cleanup=False,verify_only=False):
+    with postgres_store.connection(read_only=True) as database:
+        rows=database.execute_native("SELECT receipt.payload_json FROM operation_receipts receipt JOIN prefix_transition_applications application USING(operation_id) WHERE application.repertoire_id LIKE %s ORDER BY application.repertoire_id",('issue80-backup-%',)).fetchall()
+    assert len(rows)==2,'Both pre-activation and post-activation durable fixtures must survive'
+    for row in rows:
+        payload=json.loads(row[0])
+        result=read_operation(payload['operation_id'])
+        if verify_only:
+            deadline=time.monotonic()+90
+            while result['state'] not in {'complete','failed','blocked'} and time.monotonic()<deadline:
+                time.sleep(0.05)
+                result=read_operation(payload['operation_id'])
+            assert result['state']=='complete',result
+        if result['state']!='complete':
+            final=publish(payload)
+        else:
+            final=result['response']
+        assert execute(payload)==final
+        assert final['graph_generation']==2
+        if cleanup:
+            cleanup_fixture(payload['repertoire_id'],payload['repertoire_id']+'-shared')
+    print('PASS test_issue80_retained_pre_and_post_activation_applications_recover_after_recreation_or_restore')
+
+def test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay():
+    from app.services.durable_tasks import fail_task
+    with fixture('stage-failure') as (rep,other,lines,steps):
+        plan,payload=ready_plan(rep,lines)
+        execute(payload)
+        task=claim_task(application.TASK_KIND)
+        assert task
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s',(task['id'],))
+        assert fail_task(task['id'],task['generation'],task['lease_token'],RuntimeError('Injected interruption before staging'))['state']=='failed'
+        state=read_operation(payload['operation_id'])
+        assert state['state']=='failed' and state['transition']['state']=='rejected',state
+        with postgres_store.connection(read_only=False) as database:
+            assert database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s',(rep,)).fetchone()[0]==1
+            assert not database.execute_native('SELECT 1 FROM prefix_transition_card_fences WHERE operation_id=%s',(payload['operation_id'],)).fetchone()
+            database.execute_native("UPDATE repertoire_lines SET name=name||' usable' WHERE id=%s",(lines[0]['id'],))
+        source=idle_call(lambda:prefix_evaluation_api.load_snapshot(rep,time.monotonic()+10))
+        for selection,candidates in (([],{}),([lines[0]['id']],{lines[0]['id']:2})):
+            request={'snapshot_id':prefix_evaluation_api.snapshot_identity(source),'selected_line_ids':selection,'candidate_depths':candidates}
+            noop=idle_call(lambda:prefix_transition_api.prefix_transition_plan(rep,prefix_transition_api.PrefixTransitionRequest(**request)))
+            request.update({field:getattr(noop,field) for field in ('plan_id','transition_snapshot_id','graph_generation','study_day')})
+            envelope={'operation_id':uuid.uuid4().hex,'repertoire_id':rep,'request':request}
+            final=execute(envelope)
+            assert final['no_op'] and execute(envelope)==final
+            original_source=prefix_evaluation_api.load_snapshot
+            prefix_evaluation_api.load_snapshot=lambda *_args,**_options: (_ for _ in ()).throw(AssertionError('Completed no-op replay replanned'))
+            try: assert execute(envelope)==final
+            finally: prefix_evaluation_api.load_snapshot=original_source
+            with postgres_store.connection(read_only=False) as database:
+                assert not database.execute_native('SELECT 1 FROM prefix_transition_applications WHERE operation_id=%s',(envelope['operation_id'],)).fetchone()
+                database.execute_native('DELETE FROM operation_receipts WHERE operation_id=%s',(envelope['operation_id'],))
+    print('PASS test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay')
+
+def test_issue80_unclean_source_integrity_rejects_before_acceptance():
+    with fixture('unchecked-source') as (rep,other,lines,steps):
+        plan,payload=ready_plan(rep,lines)
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native("UPDATE repertoire_integrity_state SET status='unchecked' WHERE repertoire_id=%s",(rep,))
+        assert execute(payload) is None
+        result=read_operation(payload['operation_id'])
+        assert result['error']['detail']['code']=='source_integrity_not_ready',result
+        with postgres_store.connection(read_only=False) as database:
+            assert not database.execute_native('SELECT 1 FROM prefix_transition_applications WHERE operation_id=%s',(payload['operation_id'],)).fetchone()
+            database.execute_native('DELETE FROM operation_receipts WHERE operation_id=%s',(payload['operation_id'],))
+    print('PASS test_issue80_unclean_source_integrity_rejects_before_acceptance')
+
+
+def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result():
+    from urllib.request import Request,urlopen
+    from urllib.error import HTTPError
+    with fixture('http') as (rep,other,lines,steps):
+        plan,payload=ready_plan(rep,lines)
+        path=f'http://api:8000/api/repertoires/{rep}/prefix-transition/apply'
+        def request(body):
+            return Request(path,method='POST',headers={'Content-Type':'application/json','Idempotency-Key':payload['operation_id']},data=json.dumps(body).encode())
+        with urlopen(request(payload['request']),timeout=10) as response:
+            assert response.status==202 and response.headers['Location']==f"/api/operations/{payload['operation_id']}"
+            assert json.load(response)['operation_id']==payload['operation_id']
+        deadline=time.monotonic()+10
+        result=read_operation(payload['operation_id'])
+        while result['state'] in {'unknown','queued','executing','retrying'} and time.monotonic()<deadline:
+            time.sleep(0.01);result=read_operation(payload['operation_id'])
+        assert result['state']=='pending' and result['transition']['state']=='staging',result
+        final=publish(payload)
+        with urlopen(request(payload['request']),timeout=10) as response:
+            assert response.status==200 and json.load(response)==final
+        changed=dict(payload['request'],candidate_depths={line['id']:2 for line in lines[:2]})
+        try: urlopen(request(changed),timeout=10)
+        except HTTPError as error: assert error.code==409
+        else: raise AssertionError('Reader API accepted changed command identity after completion')
+    print('PASS test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result')
+
+def main():
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Prefix application proofs require the disposable runner')
+    os.environ['TZ']='America/New_York'
+    time.tzset()
+    os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_PREFIX_APPLICATION_PROOF_URL','postgresql://postgres@postgres:5432/tempo')
+    os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+    if '--seed-retained' in sys.argv:
+        seed_retained_applications(); return
+    if '--recover-retained' in sys.argv or '--verify-retained' in sys.argv:
+        recover_retained_applications(cleanup='--cleanup-retained' in sys.argv,verify_only='--verify-retained' in sys.argv); return
+    test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state()
+    test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery()
+    test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation()
+    test_issue80_review_during_staging_rejects_activation_and_releases_fences()
+    test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict()
+    test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback()
+    test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved()
+    test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements()
+    test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks()
+    test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue()
+    test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay()
+    test_issue80_unclean_source_integrity_rejects_before_acceptance()
+    test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result()
+
+
+if __name__ == '__main__':
+    main()

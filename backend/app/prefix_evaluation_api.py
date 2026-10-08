@@ -69,7 +69,7 @@ def diagnostic_request():
         raise diagnostic_error('evaluation_busy', 'The diagnostic read service is temporarily unavailable. Retry after study work settles.', 503) from error
 
 
-def load_snapshot(identifier, deadline, *, capture=None):
+def load_snapshot(identifier, deadline, *, capture=None, reads=None):
     """Capture optional additional read rows in the same structural transaction.
 
     The callback may read bounded raw rows only; decoding and calculation remain
@@ -78,6 +78,9 @@ def load_snapshot(identifier, deadline, *, capture=None):
     check_available(deadline)
     # No chess, JSON interpretation or application fingerprinting inside this transaction.
     with postgres_store.connection(read_only=True, background=True, repeatable_read=True) as database:
+        if reads is not None:
+            from .snapshot_reads import RecordingReader
+            database = RecordingReader(database, reads)
         if database.execute_native('SELECT id FROM repertoires WHERE id=%s', (identifier,)).fetchone() is None:
             raise diagnostic_error('repertoire_not_found', 'Repertoire not found.', 404)
         publication = database.execute_native(

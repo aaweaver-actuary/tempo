@@ -673,10 +673,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and (len(path_parts) == 4 or path_parts[4] == "reject")
             and request.method == "POST"
         )
+        prefix_transition_command = (request.method == 'POST' and len(path_parts) == 5 and path_parts[:2] == ['api','repertoires'] and path_parts[3:] == ['prefix-transition','apply'])
         canonical_prefix_command = (path_parts[:2] == ["api", "repertoires"]
             and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
             and request.method in {"POST", "PUT"})
-        if not read_only_post and not any((canonical_prefix_command, study_create, study_update, study_archive,
+        if not read_only_post and not any((prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
                     study_import_commit, study_bundle_import,
                     exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
@@ -712,7 +713,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     pgn_import_command,
                     analysis_paste_command,
                     integrity_resolution_command,
-                    card_validation, prefix_split_command, segmentation_command, opening_evidence_command)):
+                    card_validation, prefix_split_command, segmentation_command, opening_evidence_command,
+                    prefix_transition_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -724,6 +726,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
     )
     is_background = (
         prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        or (request.method == 'POST' and len(request_path_parts) == 5
+            and request_path_parts[:2] == ['api', 'repertoires']
+            and request_path_parts[3:] == ['prefix-transition', 'apply'])
         # Its receipt read uses background admission too; a foreground request
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
@@ -1679,6 +1684,8 @@ def _execute_daily_queue_task(task: dict) -> None:
 register_durable_task_handler("daily_queue", _execute_daily_queue_task)
 register_durable_task_handler("integrity_repair", execute_durable_integrity_repair)
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
+from .services.prefix_transition_application import execute_application_slice
+register_durable_task_handler("prefix_transition_application", execute_application_slice)
 from .services.postgres_opening_segmentation import execute_segmentation_slice
 register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
@@ -6469,3 +6476,5 @@ app.include_router(canonical_prefix_router)
 
 from .prefix_diagnostics_api import router as prefix_diagnostics_router
 app.include_router(prefix_diagnostics_router)
+from .prefix_transition_apply_api import router as prefix_transition_apply_router
+app.include_router(prefix_transition_apply_router)

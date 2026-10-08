@@ -36,6 +36,9 @@ class Database:
             return Cursor(rowcount=1)
         return Cursor(rowcount=1)
 
+    def execute_native(self, statement, parameters=()):
+        return self.execute(statement, parameters)
+
 
 def test_postgres_durable_claim_preserves_phase_after_expired_lease(monkeypatch):
     database = Database()
