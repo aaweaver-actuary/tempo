@@ -35,6 +35,10 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(mo
         row = None
         if statement.startswith("SELECT command_name,request_hash,state,"):
             row = ("opening_evidence.checkpoint", command_gateway.request_digest("opening_evidence.checkpoint", payload), "executing", None, None, "owned-token")
+        elif statement.startswith("SELECT revision,archived FROM cards"):
+            row = {"revision": request.manifest.card_revision, "archived": 0}
+        elif statement.startswith("SELECT retired_operation_id FROM opening_evidence_attempts"):
+            row = (None,)
         elif statement.startswith("SELECT * FROM opening_evidence_attempts"):
             row = attempt
         elif statement.startswith("SELECT 1 FROM opening_evidence_queue_contexts"):

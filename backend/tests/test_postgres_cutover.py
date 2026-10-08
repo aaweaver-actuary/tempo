@@ -3147,6 +3147,8 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
                 last_error TEXT,completed_at TEXT,updated_at TEXT);
             CREATE TABLE background_task_events(id INTEGER PRIMARY KEY,task_id TEXT,
                 generation INTEGER,event TEXT,phase TEXT,detail TEXT,created_at TEXT);
+            CREATE TABLE prefix_transition_applications(operation_id TEXT PRIMARY KEY,
+                state TEXT,queue_task_id TEXT,queue_generation INTEGER,queue_date TEXT);
             CREATE TABLE queue_projections(queue_date TEXT PRIMARY KEY,state TEXT,
                 generation INTEGER,refresh_pending INTEGER,last_error TEXT,
                 blocked_count INTEGER,updated_at TEXT);
@@ -3723,7 +3725,7 @@ def test_postgres_study_practice_attempt_replays_and_self_assesses_once(monkeypa
                 card_id TEXT,queue_entry_id INTEGER,cycle INTEGER,context TEXT,
                 answer_json TEXT,answer_hash TEXT,assessment_json TEXT,assessment_method TEXT,
                 grader_version INTEGER,hint_seen INTEGER,solution_seen_before_answer INTEGER,
-                started_at TEXT,committed_at TEXT,finalized_at TEXT,result_json TEXT);
+                started_at TEXT,committed_at TEXT,finalized_at TEXT,result_json TEXT,retired_operation_id TEXT);
             INSERT INTO study_exercises VALUES('exercise','study','published',1,'position');
         """)
         database.execute("INSERT INTO study_positions VALUES('position',?)", (chess.STARTING_FEN,))
