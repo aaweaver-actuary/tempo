@@ -10,6 +10,68 @@ from app.services.prefix_transition import plan_transition
 from test_prefix_transition import prepared_snapshot
 
 
+@pytest.mark.parametrize('missing_match', [False, True])
+def test_pr102_preparation_selects_first_step_for_each_card_and_root_role(monkeypatch, missing_match):
+    from contextlib import contextmanager, nullcontext
+    from dataclasses import replace
+    import json
+    from types import SimpleNamespace
+    from app.services import prefix_transition_application as application
+
+    captured = prepared_snapshot()
+    plan = plan_transition(captured, ['caro'], {'caro': 2})
+    creations = [card for card in plan.cards if card.lifecycle == 'create']
+    assert len(creations) == 2
+    expected_references = []
+    proposed_references = []
+    for card in creations:
+        card_is_root = json.loads(card.schedule_json)['state'] == 'new'
+        reference = next(step for step in plan.proposed_steps if step.card_id == card.card_id
+                         and (step.parent_card_id is None) == card_is_root)
+        expected_references.append(replace(reference, line_id='first-' + card.card_id))
+        proposed_references.extend((
+            replace(reference, parent_card_id='opposite-role' if card_is_root else None),
+            expected_references[-1], replace(reference, line_id='later-' + card.card_id)))
+    if missing_match:
+        proposed_references = [step for step in proposed_references
+                               if step.card_id != creations[-1].card_id]
+
+    class CountedSteps:
+        visits = 0
+
+        def __iter__(self):
+            for step in proposed_references:
+                self.visits += 1
+                yield step
+
+    counted_steps = CountedSteps()
+    prepared_plan = plan.model_copy(update={'status': 'no_op', 'proposed_steps': counted_steps})
+    @contextmanager
+    def connection(**_options):
+        yield SimpleNamespace(execute_native=lambda *_args: SimpleNamespace(fetchone=lambda: None))
+
+    calculations = iter(({'whole_repertoire': {'current': {'steps': []}, 'proposed': {'steps': []}}}, prepared_plan))
+    monkeypatch.setattr(application.postgres_store, 'connection', connection)
+    monkeypatch.setattr(application.structural, 'diagnostic_request', lambda: nullcontext(float('inf')))
+    monkeypatch.setattr(application.structural, 'load_snapshot', lambda *_args: captured.source)
+    monkeypatch.setattr(application.planner_api, '_calculate', lambda *_args: next(calculations))
+    monkeypatch.setattr(application.planner_api, 'discover_memberships', lambda *_args: ())
+    monkeypatch.setattr(application.planner_api, 'load_transition_snapshot', lambda *_args, **_kwargs: captured)
+    monkeypatch.setattr(application, 'validate_approved_plan', lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(application.structural, 'check_available', lambda *_args: None)
+    payload = {'operation_id': 'pr102-lookup', 'repertoire_id': plan.repertoire_id,
+               'request': approved_request(plan).model_dump(mode='json')}
+    if missing_match:
+        with pytest.raises(StopIteration):
+            application.prepare_application(payload)
+    else:
+        result = application.prepare_application(payload)
+        assert [step.line_id for step in result.creations] == [step.line_id for step in expected_references]
+        assert [(step.parent_card_id is None) for step in result.creations] == [
+            json.loads(card.schedule_json)['state'] == 'new' for card in creations]
+        assert counted_steps.visits == len(proposed_references), 'Replacement preparation rescanned proposed steps'
+
+
 def approved_request(plan):
     return PrefixTransitionApplyRequest(
         plan_id=plan.plan_id, snapshot_id=plan.snapshot_id,

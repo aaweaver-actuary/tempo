@@ -2691,3 +2691,11 @@ PR #102 current-main application locking repair:
 - `test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets` uses real PostgreSQL to bind tombstones to approval, reject an old request without application writes, fence tombstone insertion and card deletion during staging, then force the actual deletion command to yield to a queue writer without partial deletion and retry its original identity to identical receipt replay after publication.
 - `test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier` holds real uncommitted creation and deletion transactions in both orders. Contending exclusion/recreation yields within the configured lock deadline, committed exclusions reject retries, and no card is recreated.
 - The retained `test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget` failed after integrating #104 with 8,001 advisory locks for 8,000 inserted cards. Migration 039 preserves immutable deletion migration 037 and removes per-card recreation locks only together with exclusive tombstone participation; the original one-lock proof remains required.
+
+## PR #102 — Linear replacement preparation
+
+`test_pr102_preparation_selects_first_step_for_each_card_and_root_role` in
+`backend/tests/test_prefix_transition_apply.py` preserves first-match precedence,
+root/non-root matching and missing-match failure. Its iteration-count assertion
+failed against the reconciled baseline (7 visits for 6 steps); preparation now
+indexes the proposed steps once and uses constant-time lookups.

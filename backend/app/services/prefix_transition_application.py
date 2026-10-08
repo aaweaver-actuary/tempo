@@ -108,13 +108,18 @@ def prepare_application(payload):
             raise conflict('stale_plan', 'The staged graph does not match the approved transition. Request a fresh plan.')
         reads.append(SnapshotRead(query, parameters, staged))
         structural.check_available(deadline)
+    first_step_by_card_and_root_role = {}
+    for step in plan.proposed_steps:
+        first_step_by_card_and_root_role.setdefault((step.card_id, step.parent_card_id is None), step)
+        structural.check_available(deadline)
     creations = []
     for card in plan.cards:
         if card.lifecycle != 'create':
             continue
         fresh_card_is_root = json.loads(card.schedule_json)['state'] == 'new'
-        reference = next(step for step in plan.proposed_steps if step.card_id == card.card_id
-                         and (step.parent_card_id is None) == fresh_card_is_root)
+        reference = first_step_by_card_and_root_role.get((card.card_id, fresh_card_is_root))
+        if reference is None:
+            raise StopIteration
         creations.append(replace(reference, segment_kind='prefix' if card.kind_after == 'prefix' else 'decision'))
         structural.check_available(deadline)
     return PreparedApplication(payload, plan, snapshot, tuple(reads), tuple(creations),
