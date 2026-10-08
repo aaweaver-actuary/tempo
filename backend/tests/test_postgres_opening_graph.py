@@ -12,6 +12,45 @@ from app.services import postgres_opening_graph
 from app.services.opening_graph import GraphInput, GraphStep, build_graph
 
 
+def test_pr102_obsolete_cleanup_has_constant_command_count():
+    from types import SimpleNamespace
+    for card_count in (16, 64):
+        statements = []
+        card_ids = tuple(f'obsolete-{index}' for index in range(card_count))
+        class Database:
+            def execute_native(self, statement, parameters=()):
+                statements.append((statement, parameters))
+                membership = (0, 'rep') if 'FOR UPDATE OF link,card' in statement else None
+                return SimpleNamespace(fetchone=lambda: membership,
+                                       fetchall=lambda: [(identifier,) for identifier in card_ids])
+        postgres_opening_graph.remove_obsolete_graph_memberships(Database(), 'rep', 2, card_ids)
+        assert len(statements) <= 7, f'Cleanup executed {len(statements)} statements for {card_count} cards'
+
+
+def test_pr102_graph_card_creation_uses_one_strict_bulk_statement():
+    from types import SimpleNamespace
+    steps = tuple(GraphStep(
+        repertoire_id='rep', line_id='line', decision_index=index, segment_kind='prefix',
+        first_decision_index=index, last_decision_index=index, decision_fen_keys=('fen',),
+        card_id=f'card-{index}', parent_card_id=None if index == 0 else 'card-0',
+        decision_fen_key='fen', starting_fen=chess.STARTING_FEN, moves=('e2e4',),
+        trained_color='white') for index in range(64))
+    statements = []
+    database = SimpleNamespace(execute_native=lambda statement, parameters=(): statements.append((statement, parameters)))
+    postgres_opening_graph.create_graph_cards(database, steps, '2026-10-08', strict=True)
+    assert len(statements) == 1
+    statement, parameters = statements[0]
+    assert 'UNNEST(' in statement and 'ON CONFLICT' not in statement
+    assert all(len(column) == len(steps) for column in parameters)
+    assert parameters[5] == ['new'] + ['locked'] * 63
+    statements.clear()
+    postgres_opening_graph.create_graph_cards(database, steps, '2026-10-08')
+    assert 'ON CONFLICT(id) DO NOTHING' in statements[0][0]
+    statements.clear()
+    postgres_opening_graph.create_graph_cards(database, (), '2026-10-08', strict=True)
+    assert statements == []
+
+
 def test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_traversal(monkeypatch):
     starting_fen = chess.STARTING_FEN
     lines = (
@@ -96,6 +135,8 @@ def test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor(monk
         raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
 
         def execute_native(self, _statement, _parameters=()):
+            if _statement.startswith('INSERT INTO cards'):
+                batches.append(list(zip(*_parameters)))
             return []
 
     monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
@@ -247,10 +288,9 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
             if "FOR UPDATE OF link,card" in statement:
-                result = None if parameters[-1] == "adopted" else (0,)
-            else:
-                result = (1,) if parameters and parameters[-1] == "current" else None
-            return type("Cursor", (), {"fetchone": lambda _self: result})()
+                assert 'link.canonical_route_source=0' in statement and 'NOT EXISTS' in statement
+                assert parameters[1] == ['obsolete', 'adopted', 'current']
+            return type("Cursor", (), {"fetchall": lambda _self: [('obsolete',)]})()
 
     monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
@@ -263,6 +303,7 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
         Database(), task, postgres_opening_graph.PreparedGraphCleanupSlice(("obsolete", "adopted", "current"), "current"),
     )
     assert sum(statement.startswith("DELETE FROM repertoire_cards") for statement, _ in statements) == 1
+    assert next(parameters for statement, parameters in statements if statement.startswith('DELETE FROM repertoire_cards')) == ('rep', ['obsolete'])
     assert transitions[-1][0] == "cleanup"
     assert transitions[-1][1]["after_card_id"] == "current"
     assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
@@ -341,6 +382,8 @@ def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(m
         raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
 
         def execute_native(self, _statement, _parameters=()):
+            if _statement.startswith('INSERT INTO cards'):
+                writes.append(len(_parameters[0]))
             return []
 
     @contextmanager

@@ -2699,3 +2699,35 @@ PR #102 current-main application locking repair:
 root/non-root matching and missing-match failure. Its iteration-count assertion
 failed against the reconciled baseline (7 visits for 6 steps); preparation now
 indexes the proposed steps once and uses constant-time lookups.
+
+## PR #102 — Constant-command atomic activation
+
+- `test_pr102_obsolete_cleanup_has_constant_command_count` failed against the
+  original helper with 128 statements for 16 obsolete cards; cleanup now uses
+  one eligible-set lock and six ordered set-based mutations. Ordinary graph
+  cleanup retains its two-card durable slices and authored/current exclusions.
+- `test_pr102_graph_card_creation_uses_one_strict_bulk_statement` protects typed
+  bulk inputs, strict absent-target inserts, publisher conflict handling, root
+  defaults and empty input (`backend/tests/test_postgres_opening_graph.py`).
+- `test_pr102_activation_sql_statement_count_is_independent_of_transition_size`
+  in the regular disposable PostgreSQL application rehearsal exercises 128/512
+  genuinely obsolete generated memberships and 256/1,024 fresh replacements.
+  It counts native/raw SQL, expands pipelined `executemany`, measures transaction
+  and barrier duration through commit, requires constant command counts, verifies
+  real archival/membership changes and fresh scheduling without invented history,
+  and obtains a separate reservation lock and ordinary queue write after commit.
+  Baseline acceptance counts were 462/1,614 and activation counts 2,003/7,763;
+  corrected counts are 79 and 94 respectively at both sizes. These are client
+  top-level statements, excluding row-trigger-internal SQL.
+- `test_pr102_bulk_cleanup_preserves_authored_shared_history_and_owner_semantics`
+  retains authored/current links, authored implicit ownership, shared memberships,
+  minimum retained-owner selection, schedules, actual reviews and seeds; it
+  supersedes only orphaned queues and retains the established authored-orphan
+  archival rule.
+- `test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier` injects
+  failures after cleanup and before publication, requires exact product-state
+  rollback, observes real barrier contention during activation, verifies immediate
+  acquisition and ordinary queue writes after rollback/commit, then publishes
+  through the original receipt. Existing real structural/queue contention,
+  advisory-lock-budget, permanent deletion, recreation/restore and lifecycle
+  regressions remain required.

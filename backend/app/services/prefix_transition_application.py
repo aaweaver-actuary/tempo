@@ -210,9 +210,10 @@ def apply_command(database, prepared):
         generation = database.execute_native('SELECT COALESCE(MAX(generation),0)+1 FROM opening_graph_steps WHERE repertoire_id=%s', (prepared.plan.repertoire_id,)).fetchone()[0]
         database.execute_native("INSERT INTO prefix_transition_applications(operation_id,repertoire_id,plan_id,plan_json,graph_generation,state) VALUES(%s,%s,%s,%s,%s,'staging')",
                                 (operation_id, prepared.plan.repertoire_id, prepared.plan.plan_id, prepared.plan.model_dump_json(), generation))
-        with database.raw.cursor() as cursor:
-            cursor.executemany('INSERT INTO prefix_transition_card_fences(card_id,operation_id) VALUES(%s,%s)', [(card_id, operation_id) for card_id in prepared.snapshot.lookup_card_ids])
-            cursor.executemany('INSERT INTO prefix_transition_repertoire_fences(repertoire_id,operation_id) VALUES(%s,%s)', [(repertoire_id, operation_id) for repertoire_id in prepared.repertoire_ids])
+        database.execute_native('INSERT INTO prefix_transition_card_fences(card_id,operation_id) SELECT card_id,%s FROM UNNEST(%s::text[]) AS identities(card_id)',
+                                (operation_id, list(prepared.snapshot.lookup_card_ids)))
+        database.execute_native('INSERT INTO prefix_transition_repertoire_fences(repertoire_id,operation_id) SELECT repertoire_id,%s FROM UNNEST(%s::text[]) AS identities(repertoire_id)',
+                                (operation_id, list(prepared.repertoire_ids)))
         task = enqueue_task_in_transaction(database, TASK_KIND, operation_id, {'operation_id': operation_id, 'offset': 0}, priority=40)
         database.execute_native('UPDATE prefix_transition_applications SET staging_task_id=%s WHERE operation_id=%s', (task['id'], operation_id))
         return {'status': 'pending'}
@@ -232,10 +233,21 @@ def activate_application(database, prepared, application):
     # Strict creates are protected by missing-ID reservations, never ON CONFLICT
     # adoption. Existing cards retain every scheduling/default/history column.
     create_graph_cards(database, prepared.creations, plan.study_day, strict=True)
-    with database.raw.cursor() as cursor:
-        cursor.executemany('INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,%s) ON CONFLICT(line_id) DO UPDATE SET learner_decision_count=excluded.learner_decision_count', [(change.line_id, change.after) for change in plan.depth_changes])
-        cursor.executemany('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)', [(membership.repertoire_id, membership.card_id) for membership in plan.memberships if membership.action == 'add_generated'])
-        cursor.executemany('UPDATE cards SET kind=%s WHERE id=%s AND canonical_route_source=0', [(card.kind_after, card.card_id) for card in plan.cards if card.kind_after is not None])
+    database.execute_native(
+        'INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) '
+        'SELECT line_id,learner_decision_count FROM UNNEST(%s::text[],%s::bigint[]) AS changes(line_id,learner_decision_count) '
+        'ON CONFLICT(line_id) DO UPDATE SET learner_decision_count=excluded.learner_decision_count',
+        ([change.line_id for change in plan.depth_changes], [change.after for change in plan.depth_changes]))
+    added_memberships = [membership for membership in plan.memberships if membership.action == 'add_generated']
+    database.execute_native(
+        'INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) '
+        'SELECT repertoire_id,card_id,0 FROM UNNEST(%s::text[],%s::text[]) AS memberships(repertoire_id,card_id)',
+        ([membership.repertoire_id for membership in added_memberships], [membership.card_id for membership in added_memberships]))
+    classified_cards = [card for card in plan.cards if card.kind_after is not None]
+    database.execute_native(
+        'UPDATE cards SET kind=classification.kind FROM UNNEST(%s::text[],%s::text[]) AS classification(card_id,kind) '
+        'WHERE cards.id=classification.card_id AND cards.canonical_route_source=0',
+        ([card.card_id for card in classified_cards], [card.kind_after for card in classified_cards]))
     obsolete_ids = tuple(membership.card_id for membership in plan.memberships if membership.action == 'obsolete')
     remove_obsolete_graph_memberships(database, plan.repertoire_id, generation, obsolete_ids)
     for kind, table, identity in (('opening_attempt', 'opening_evidence_attempts', 'attempt_id'), ('study_attempt', 'study_attempts', 'id')):

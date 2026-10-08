@@ -44,14 +44,14 @@ def execute(payload):
     return idle_call(lambda:execute_command(payload['operation_id'],application.COMMAND,payload))
 
 
-def ready_plan(repertoire_id, lines):
+def ready_plan(repertoire_id, lines, *, selected_line_count=2):
     deadline = time.monotonic() + 10
     source = idle_call(lambda:prefix_evaluation_api.load_snapshot(repertoire_id, time.monotonic()+10))
     request = {'snapshot_id': prefix_evaluation_api.snapshot_identity(source),
-               'selected_line_ids': [line['id'] for line in lines[:2]],
-               'candidate_depths': {line['id']: 1 for line in lines[:2]}}
+               'selected_line_ids': [line['id'] for line in lines[:selected_line_count]],
+               'candidate_depths': {line['id']: 1 for line in lines[:selected_line_count]}}
     plan = idle_call(lambda:prefix_transition_api.prefix_transition_plan(repertoire_id, prefix_transition_api.PrefixTransitionRequest(**request)))
-    assert plan.status == 'ready', plan
+    assert plan.status == 'ready', (plan.status, plan.blockers)
     request.update({field: getattr(plan, field) for field in ('plan_id', 'transition_snapshot_id', 'graph_generation', 'study_day')})
     operation_id = uuid.uuid4().hex
     return plan, {'operation_id': operation_id, 'repertoire_id': repertoire_id, 'request': request}
@@ -74,12 +74,12 @@ def isolate_unrelated_publication_tasks():
             database.execute_native("DELETE FROM background_activity WHERE source='durable' AND work_id=ANY(%s)",(paused,))
 
 
-def drain(kind, handler):
+def drain(kind, handler, *, slice_budget=300):
     count = 0
     while task := claim_task(kind):
         handler(task)
         count += 1
-        assert count < 300, (kind, task)
+        assert count < slice_budget, (kind, task)
     return count
 
 
@@ -104,7 +104,7 @@ def publish(payload, after_activation=None):
     return result['response']
 
 
-def create_fixture(label):
+def create_fixture(label, *, source_line_count=None):
     repertoire_id = 'issue80-' + label + '-' + uuid.uuid4().hex
     other_id = repertoire_id + '-shared'
     # Separate FEN identity family from earlier durability fixtures.
@@ -121,6 +121,41 @@ def create_fixture(label):
                  ('-caro-a', 'Caro-Kann A', ['e2e4','c7c6','d2d4','d7d5','b1c3','d5e4','c3e4','g8f6']),
                  ('-caro-b', 'Caro-Kann B', ['e2e4','c7c6','d2d4','d7d5','b1d2','d5e4','d2e4','g8f6']),
                  ('-qgd', 'QGD', ['d2d4','d7d5','c2c4','e7e6','b1c3','g8f6']))]
+    if source_line_count is not None:
+        import random
+        from app.services.cards import card_id
+        generator = random.Random(102)
+        lines = []
+        used_identities = set()
+        used_decision_positions = set()
+        while len(lines) < source_line_count:
+            if board.is_game_over() or len(board.move_stack) > 60:
+                board = chess.Board(fen)
+            starting_fen = board.fen()
+            trained_color = 'black'
+            moves = []
+            decision_positions = set()
+            for _ in range(4):
+                if board.is_game_over():
+                    break
+                if board.turn == chess.BLACK:
+                    decision_positions.add(' '.join(board.fen().split()[:4]))
+                move = generator.choice(sorted(board.legal_moves, key=lambda item: item.uci()))
+                moves.append(move.uci())
+                board.push(move)
+            identities = {card_id(starting_fen, moves), card_id(starting_fen, moves[:2])}
+            continuation = chess.Board(starting_fen)
+            for move in moves[:2]:
+                continuation.push_uci(move)
+            identities.add(card_id(continuation.fen(), moves[2:]))
+            if (len(moves) != 4 or len(identities) != 3 or identities & used_identities
+                    or len(decision_positions) != 2 or decision_positions & used_decision_positions):
+                continue
+            used_identities.update(identities)
+            used_decision_positions.update(decision_positions)
+            lines.append(dict(id=f'{repertoire_id}-route-{len(lines):04d}', name='Scale route',
+                              start_fen=starting_fen, moves_json=json.dumps(moves),
+                              trained_color=trained_color, learner_decision_count=2))
     # Fixtures are sequential; cleanup ensures content-derived IDs remain isolated.
     steps = build_graph(GraphInput(repertoire_id, tuple(lines), 2))
     ids = sorted({step.card_id for step in steps})
@@ -131,7 +166,7 @@ def create_fixture(label):
         if label.startswith('backup-'):
             database.execute_native('UPDATE repertoires SET new_cards_per_day=0 WHERE id=ANY(%s)',([repertoire_id,other_id],))
         for line in lines:
-            database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,start_fen,moves_json,trained_color,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)', (line['id'], repertoire_id, line['name'], fen, line['moves_json'], 'black', now))
+            database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,start_fen,moves_json,trained_color,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)', (line['id'], repertoire_id, line['name'], line['start_fen'], line['moves_json'], line['trained_color'], now))
             database.execute_native('INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,2)', (line['id'],))
         assert not database.execute_native('SELECT id FROM cards WHERE id=ANY(%s)', (ids,)).fetchall(), 'Fixture overlaps retained data'
         create_graph_cards(database, tuple({step.card_id: step for step in steps}.values()), date.today().isoformat(), strict=True)
@@ -142,9 +177,12 @@ def create_fixture(label):
         baseline=enqueue_task_in_transaction(database,'opening_graph_rebuild',repertoire_id,{'repertoire_id':repertoire_id,'local_day':date.today().isoformat()},priority=40)
         assert baseline['generation']==1
         database.execute_native("UPDATE background_tasks SET phase='finalize' WHERE id=%s",(baseline['id'],))
-    drain('opening_graph_rebuild',execute_postgres_opening_graph_slice)
-    drain('integrity_scan',execute_postgres_integrity_slice)
-    drain('daily_queue',execute_postgres_queue_refresh_slice)
+    # The larger fixture deliberately requires more unchanged bounded slices;
+    # derive its finite test iteration budget from its actual source size.
+    fixture_slice_budget = 300 if source_line_count is None else max(300, source_line_count * 32)
+    drain('opening_graph_rebuild',execute_postgres_opening_graph_slice, slice_budget=fixture_slice_budget)
+    drain('integrity_scan',execute_postgres_integrity_slice, slice_budget=fixture_slice_budget)
+    drain('daily_queue',execute_postgres_queue_refresh_slice, slice_budget=fixture_slice_budget)
     return repertoire_id, other_id, lines, steps
 
 
@@ -173,8 +211,8 @@ def cleanup_fixture(repertoire_id,other_id,extra_repertoire_ids=()):
 
 
 @contextmanager
-def fixture(label, *, extra_repertoire_ids=()):
-    created=create_fixture(label)
+def fixture(label, *, extra_repertoire_ids=(), source_line_count=None):
+    created=create_fixture(label, source_line_count=source_line_count)
     try:
         yield created
     finally:
@@ -1126,6 +1164,244 @@ def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_f
         else: raise AssertionError('Reader API accepted changed command identity after completion')
     print('PASS test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result')
 
+@contextmanager
+def measure_application_transactions():
+    """Count real client SQL, including pipelined executemany, through commit."""
+    from app import command_gateway
+    original_writer_connection = command_gateway._writer_connection
+    measurements = []
+
+    class MeasuredCursor:
+        def __init__(self, cursor, measurement):
+            self.cursor = cursor
+            self.measurement = measurement
+
+        def __enter__(self):
+            self.cursor.__enter__()
+            return self
+
+        def __exit__(self, *arguments):
+            return self.cursor.__exit__(*arguments)
+
+        def execute(self, statement, parameters=()):
+            self.measurement['client_calls'] += 1
+            self.measurement['sql_statements'] += 1
+            return self.cursor.execute(statement, parameters)
+
+        def executemany(self, statement, parameters):
+            self.measurement['client_calls'] += 1
+            self.measurement['sql_statements'] += len(parameters)
+            return self.cursor.executemany(statement, parameters)
+
+        def __getattr__(self, name):
+            return getattr(self.cursor, name)
+
+    class MeasuredDatabase:
+        def __init__(self, database, measurement):
+            self.database = database
+            self.measurement = measurement
+
+        @property
+        def raw(self):
+            from types import SimpleNamespace
+            return SimpleNamespace(cursor=lambda: MeasuredCursor(self.database.raw.cursor(), self.measurement),
+                                   execute=self.execute_native)
+
+        def execute_native(self, statement, parameters=()):
+            self.measurement['client_calls'] += 1
+            self.measurement['sql_statements'] += 1
+            result = self.database.execute_native(statement, parameters)
+            if "pg_try_advisory_xact_lock(hashtextextended('tempo:prefix-transition:reservations'" in statement:
+                self.measurement['barrier_acquired_at'] = time.perf_counter()
+            if statement.startswith('INSERT INTO prefix_transition_applications'):
+                self.measurement['phase'] = 'acceptance'
+            if "UPDATE prefix_transition_applications SET state='publishing'" in statement:
+                self.measurement['phase'] = 'activation'
+            return result
+
+        def execute(self, statement, parameters=()):
+            self.measurement['client_calls'] += 1
+            self.measurement['sql_statements'] += 1
+            return self.database.execute(statement, parameters)
+
+        def __getattr__(self, name):
+            return getattr(self.database, name)
+
+    @contextmanager
+    def measured_writer_connection(background):
+        measurement = dict(sql_statements=0, client_calls=0)
+        with original_writer_connection(background) as database:
+            started = time.perf_counter()
+            yield MeasuredDatabase(database, measurement)
+        completed = time.perf_counter()
+        if 'phase' in measurement:
+            measurement['transaction_seconds'] = completed - started
+            measurement['barrier_seconds'] = completed - measurement.pop('barrier_acquired_at')
+            measurements.append(measurement)
+
+    command_gateway._writer_connection = measured_writer_connection
+    try:
+        yield measurements
+    finally:
+        command_gateway._writer_connection = original_writer_connection
+
+
+def test_pr102_activation_sql_statement_count_is_independent_of_transition_size():
+    measurements = []
+    for obsolete_count in (128, 512):
+        with fixture('activation-scale-' + str(obsolete_count), source_line_count=obsolete_count) as (rep, other, lines, steps):
+            plan, payload = ready_plan(rep, lines, selected_line_count=obsolete_count)
+            obsolete_ids = [membership.card_id for membership in plan.memberships if membership.action == 'obsolete']
+            created_ids = [card.card_id for card in plan.cards if card.lifecycle == 'create']
+            assert len(set(obsolete_ids)) == obsolete_count, 'Scaling fixture must actually retire generated memberships'
+            assert len(set(created_ids)) == 2 * obsolete_count, 'Scaling fixture must create substantial replacements'
+            with measure_application_transactions() as recorded:
+                assert execute(payload) == {'status': 'pending'}
+                drain(application.TASK_KIND, application.execute_application_slice)
+                assert execute(payload) == {'status': 'pending'}
+            assert [row['phase'] for row in recorded] == ['acceptance', 'activation'], recorded
+            for row in recorded:
+                row.update(obsolete_memberships=obsolete_count, replacement_cards=len(created_ids))
+                print(json.dumps({'pr102_activation_measurement': row}), flush=True)
+            measurements.extend(recorded)
+            with postgres_store.connection(read_only=True) as database:
+                assert database.execute_native('SELECT COUNT(*) FROM repertoire_cards WHERE repertoire_id=%s AND card_id=ANY(%s)', (rep, obsolete_ids)).fetchone()[0] == 0
+                assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=ANY(%s) AND archived=1', (obsolete_ids,)).fetchone()[0] == obsolete_count
+                assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=ANY(%s) AND archived=0', (created_ids,)).fetchone()[0] == len(created_ids)
+                assert database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=ANY(%s)', (created_ids,)).fetchone()[0] == 0
+                assert database.execute_native('SELECT COUNT(*) FROM opening_card_schedule_seeds WHERE card_id=ANY(%s)', (created_ids,)).fetchone()[0] == 0
+                expected_schedules = {card.card_id: json.loads(card.schedule_json)['state'] for card in plan.cards if card.lifecycle == 'create'}
+                assert {row[0]: row[1] for row in database.execute_native('SELECT id,state FROM cards WHERE id=ANY(%s)', (created_ids,)).fetchall()} == expected_schedules
+            # A separate real transaction immediately obtains the exclusive
+            # counterpart and performs an ordinary queue statement after commit.
+            with postgres_store.connection(read_only=False) as database:
+                assert database.execute_native("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:prefix-transition:reservations',0))").fetchone()[0]
+                database.execute_native("UPDATE daily_queue SET status=status WHERE card_id=ANY(%s)", (created_ids,))
+    for phase in ('acceptance', 'activation'):
+        phase_measurements = [row for row in measurements if row['phase'] == phase]
+        assert len({row['sql_statements'] for row in phase_measurements}) == 1, phase_measurements
+        assert len({row['client_calls'] for row in phase_measurements}) == 1, phase_measurements
+    print('PASS test_pr102_activation_sql_statement_count_is_independent_of_transition_size')
+
+
+def test_pr102_bulk_cleanup_preserves_authored_shared_history_and_owner_semantics():
+    from app.services.postgres_opening_graph import remove_obsolete_graph_memberships
+    from app.services.review_service import apply_scheduling_review
+    from app.services.prefix_transition import SCHEDULE_COLUMNS
+    extra_repertoire_ids = []
+    with fixture('bulk-cleanup', source_line_count=8, extra_repertoire_ids=extra_repertoire_ids) as (rep, other, lines, steps):
+        card_ids = [step.card_id for step in steps]
+        ordinary, second_ordinary, shared, authored_link, implicit_owner, current, authored_orphan, shared_tail = card_ids
+        with postgres_store.connection(read_only=False) as database:
+            first_retained_owner = rep + '-aaa'
+            extra_repertoire_ids.append(first_retained_owner)
+            database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'cleanup.pgn',%s)", (first_retained_owner, first_retained_owner, datetime.now(timezone.utc).isoformat()))
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) SELECT %s,card_id,1 FROM unnest(%s::text[]) card_id', (other, [shared, shared_tail]))
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)', (first_retained_owner, shared))
+            database.execute_native('UPDATE repertoire_cards SET canonical_route_source=1 WHERE repertoire_id=%s AND card_id=%s', (rep, authored_link))
+            database.execute_native('UPDATE cards SET canonical_route_source=1,repertoire_id=%s WHERE id=%s', (other, implicit_owner))
+            database.execute_native('UPDATE cards SET canonical_route_source=1 WHERE id=%s', (authored_orphan,))
+            database.execute_native('INSERT INTO opening_graph_steps SELECT repertoire_id,2,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json FROM opening_graph_steps WHERE repertoire_id=%s AND generation=1 AND card_id=%s', (rep, current))
+            for identifier in card_ids:
+                apply_scheduling_review(database, identifier, 'correct', guided=False, source_kind='study',
+                                        source_ref=rep, light_first_interval_days=7,
+                                        reviewed_at=datetime.now(timezone.utc), review_day=date.today())
+            database.execute_native('INSERT INTO opening_card_schedule_seeds(card_id,source_card_id,baseline_successful_days,baseline_recent_clean,verification_due,created_at) VALUES(%s,%s,2,1,%s,%s)', (shared, ordinary, date.today().isoformat(), datetime.now(timezone.utc).isoformat()))
+            database.execute_native("UPDATE daily_queue SET status='queued' WHERE card_id=ANY(%s)", (card_ids,))
+            database.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,status) SELECT %s,card_id,0,'queued' FROM unnest(%s::text[]) card_id ON CONFLICT(queue_date,card_id,cycle) DO UPDATE SET status='queued'", (date.today().isoformat(), card_ids))
+        def history():
+            with postgres_store.connection(read_only=True) as database:
+                return {table: [dict(row) for row in database.execute_native(query, (card_ids,)).fetchall()]
+                        for table, query in {
+                            'reviews': 'SELECT * FROM reviews WHERE card_id=ANY(%s) ORDER BY id',
+                            'seeds': 'SELECT * FROM opening_card_schedule_seeds WHERE card_id=ANY(%s) ORDER BY card_id',
+                            'schedules': 'SELECT ' + ','.join(('id', *SCHEDULE_COLUMNS)) + ' FROM cards WHERE id=ANY(%s) ORDER BY id',
+                        }.items()}
+        before = history()
+        with postgres_store.connection(read_only=False) as database:
+            remove_obsolete_graph_memberships(database, rep, 2, card_ids)
+        assert history() == before
+        with postgres_store.connection(read_only=True) as database:
+            retained_links = {row[0] for row in database.execute_native('SELECT card_id FROM repertoire_cards WHERE repertoire_id=%s', (rep,)).fetchall()}
+            assert retained_links == {authored_link, current}
+            cards = {row['id']: dict(row) for row in database.execute_native('SELECT id,repertoire_id,archived FROM cards WHERE id=ANY(%s)', (card_ids,)).fetchall()}
+            assert {identifier for identifier, row in cards.items() if row['archived']} == {ordinary, second_ordinary, authored_orphan}
+            assert cards[shared]['repertoire_id'] == first_retained_owner
+            assert all(cards[identifier]['repertoire_id'] == other for identifier in (shared_tail, implicit_owner))
+            superseded = {row[0] for row in database.execute_native("SELECT card_id FROM daily_queue WHERE card_id=ANY(%s) AND status='superseded'", (card_ids,)).fetchall()}
+            assert superseded == {ordinary, second_ordinary, authored_orphan}
+    print('PASS test_pr102_bulk_cleanup_preserves_authored_shared_history_and_owner_semantics')
+
+
+def test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    original_cleanup = application.remove_obsolete_graph_memberships
+    original_publish = application.publish_graph_generation
+    with fixture('bulk-rollback') as (rep, other, lines, steps):
+        plan, payload = ready_plan(rep, lines)
+        execute(payload)
+        drain(application.TASK_KIND, application.execute_application_slice)
+        def product_state():
+            with postgres_store.connection(read_only=True) as database:
+                return {table: [dict(row) for row in database.execute_native(query, (rep,)).fetchall()]
+                        for table, query in {
+                            'cards': 'SELECT * FROM cards WHERE repertoire_id=%s ORDER BY id',
+                            'memberships': 'SELECT * FROM repertoire_cards WHERE repertoire_id=%s ORDER BY card_id',
+                            'depths': 'SELECT depth.* FROM repertoire_line_training_depths depth JOIN repertoire_lines line ON line.id=depth.line_id WHERE line.repertoire_id=%s ORDER BY line_id',
+                            'queue': 'SELECT queue.* FROM daily_queue queue JOIN cards card ON card.id=queue.card_id WHERE card.repertoire_id=%s ORDER BY queue.id',
+                            'publication': 'SELECT * FROM opening_graph_publications WHERE repertoire_id=%s',
+                        }.items()}
+        before = product_state()
+        for failure_boundary in ('after_cleanup', 'before_publication'):
+            def interrupted_cleanup(*arguments):
+                original_cleanup(*arguments)
+                raise psycopg.errors.SerializationFailure('Injected interruption after bulk cleanup')
+            def interrupted_publish(*_arguments):
+                raise psycopg.errors.SerializationFailure('Injected interruption before publication')
+            application.remove_obsolete_graph_memberships = interrupted_cleanup if failure_boundary == 'after_cleanup' else original_cleanup
+            application.publish_graph_generation = interrupted_publish if failure_boundary == 'before_publication' else original_publish
+            try:
+                try:
+                    execute(payload)
+                except psycopg.errors.SerializationFailure:
+                    pass
+                else:
+                    raise AssertionError('Injected bulk activation interruption was not observed')
+            finally:
+                application.remove_obsolete_graph_memberships = original_cleanup
+                application.publish_graph_generation = original_publish
+            assert product_state() == before, failure_boundary
+            with postgres_store.connection(read_only=False) as database:
+                assert database.execute_native("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:prefix-transition:reservations',0))").fetchone()[0]
+                database.execute_native('UPDATE daily_queue SET status=status WHERE card_id=%s', (steps[0].card_id,))
+
+        activation_reached = threading.Event()
+        allow_commit = threading.Event()
+        def held_cleanup(*arguments):
+            original_cleanup(*arguments)
+            activation_reached.set()
+            assert allow_commit.wait(timeout=5), 'Activation concurrency proof was not released'
+        application.remove_obsolete_graph_memberships = held_cleanup
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                activation = executor.submit(execute, payload)
+                try:
+                    assert activation_reached.wait(timeout=5)
+                    with postgres_store.connection(read_only=False) as database:
+                        assert not database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))").fetchone()[0]
+                finally:
+                    allow_commit.set()
+                assert activation.result(timeout=5) == {'status': 'pending'}
+        finally:
+            application.remove_obsolete_graph_memberships = original_cleanup
+        with postgres_store.connection(read_only=False) as database:
+            assert database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))").fetchone()[0]
+            database.execute_native('UPDATE daily_queue SET status=status WHERE card_id=%s', (steps[0].card_id,))
+        assert publish(payload)['operation_id'] == payload['operation_id']
+    print('PASS test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier')
+
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Prefix application proofs require the disposable runner')
@@ -1133,6 +1409,12 @@ def main():
     time.tzset()
     os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_PREFIX_APPLICATION_PROOF_URL','postgresql://postgres@postgres:5432/tempo')
     os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+    if '--activation-scaling' in sys.argv:
+        with isolate_unrelated_publication_tasks():
+            test_pr102_activation_sql_statement_count_is_independent_of_transition_size()
+            test_pr102_bulk_cleanup_preserves_authored_shared_history_and_owner_semantics()
+            test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier()
+        return
     if '--seed-retained' in sys.argv:
         with isolate_unrelated_publication_tasks():
             seed_retained_applications()
@@ -1154,6 +1436,9 @@ def main():
             test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity()
         return
     with isolate_unrelated_publication_tasks():
+        test_pr102_activation_sql_statement_count_is_independent_of_transition_size()
+        test_pr102_bulk_cleanup_preserves_authored_shared_history_and_owner_semantics()
+        test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier()
         test_issue80_application_rehearsal_preserves_unrelated_publication_tasks()
         test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows()
         test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer()

@@ -287,3 +287,24 @@ Its backup stage dumps both phases, verifies every public table, then behavioral
 resumes the restored operations in the isolated restore database. No live study
 resources are used. CI owns final required broad candidate validation. No #81 UI
 or boundary recommendation is included.
+
+### Atomic activation workload
+
+Acceptance installs card/repertoire fences with typed set-based inserts. Activation
+creates strict replacement cards, changes depths, inserts generated memberships,
+and updates generated roles using typed bulk inputs. Attempt retirement already
+uses identity sets. The authoritative read set and nonwaiting reservation/row
+locking remain unchanged.
+
+Obsolete-membership cleanup locks the eligible generated identities once and uses
+six ordered set-based mutations: queue supersession, departing-owner archival,
+retained-owner reassignment, membership deletion, integrity-block deletion, and
+final generated-orphan archival. Owner changes happen before link deletion to
+preserve authored fallback semantics. Normal graph cleanup still processes only
+two cards per durable slice; application cleanup remains inside its single atomic
+activation transaction. No activation-size limit, planner capacity, timeout,
+public contract or migration 038/039 change accompanies this optimization.
+
+Replacement preparation indexes proposed steps by card identity and root role,
+retaining the first matching step in proposed order. Missing matches retain the
+existing internal failure. The preparation deadline remains enforced.
