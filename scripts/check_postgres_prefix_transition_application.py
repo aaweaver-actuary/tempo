@@ -703,9 +703,13 @@ def main():
     os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_PREFIX_APPLICATION_PROOF_URL','postgresql://postgres@postgres:5432/tempo')
     os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
     if '--seed-retained' in sys.argv:
-        seed_retained_applications(); return
+        with isolate_unrelated_publication_tasks():
+            seed_retained_applications()
+        return
     if '--recover-retained' in sys.argv or '--verify-retained' in sys.argv:
-        recover_retained_applications(cleanup='--cleanup-retained' in sys.argv,verify_only='--verify-retained' in sys.argv); return
+        with isolate_unrelated_publication_tasks():
+            recover_retained_applications(cleanup='--cleanup-retained' in sys.argv,verify_only='--verify-retained' in sys.argv)
+        return
     with isolate_unrelated_publication_tasks():
         test_issue80_application_rehearsal_preserves_unrelated_publication_tasks()
         test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget()
