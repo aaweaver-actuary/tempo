@@ -1,5 +1,11 @@
 # Test scopes and exact full coverage
 
+`npm run check:conflicts` checks tracked text files for unresolved merge-conflict
+artifacts without installing dependencies. It also runs before local gate execution
+and before dependencies and browser collection in the CI planning job. Separators,
+quoted marker strings, binary files, and symlinks are not treated as conflicts;
+deliberate complete examples require an exact path and block digest exemption.
+
 Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the complete local gate; `npm test` and `npm run test:full` use the same runner. CI owns required final-candidate verification by default; run a local full gate only for the reasons in `AGENTS.md`. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
 
 Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.

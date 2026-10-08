@@ -6,6 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "check:conflicts": "node scripts/check-merge-conflicts.mjs",
     "dev": "vinext dev",
     "dev:local": "TEMPO_TARGET=local vite --config vite.static.config.ts",
     "build": "vinext build",

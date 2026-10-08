@@ -1,3 +1,8 @@
+Committed merge-conflict integration repair (October 8, 2026):
+
+- `tests/runner/merge-conflict-guard.test.mjs`: `committed conflict guard detects Python and JSON integration conflicts with line diagnostics`; `committed conflict guard catches diff3 variable-width CRLF and malformed boundaries`; `committed conflict guard permits separators and quoted documentation or test strings`; `committed conflict guard exemptions bind one exact block and tracked path`; `committed conflict guard scans tracked text only and never follows symlinks`.
+- `tests/unit/ci-reliability-regressions.test.ts`: `committed merge-conflict guard regressions pass in the regular suite` executes all five detector regressions. `npm run check:conflicts`, local verification entry, and the early CI planning job run the dependency-free tracked-file check. The unrepaired `48d7df1` failed with 130 regions in 36 files; the repaired tree retains the named daily-study, freshness, prefix, and browser-selection regressions below.
+
 Issue #79 — read-only shorter-prefix transition planning (October 7, 2026):
 
 - `backend/tests/test_prefix_transition.py`: `test_issue79_equal_depth_and_empty_selection_are_explicit_no_ops`; `test_issue79_depth_only_shortening_is_distinct_from_no_op`; `test_issue79_selected_caro_routes_preserve_unselected_qgd_and_alias_decisions`; `test_issue79_shared_card_retains_other_membership_history_queue_and_owner`; `test_issue79_implicit_authored_owner_retains_card_without_explicit_other_link`.
