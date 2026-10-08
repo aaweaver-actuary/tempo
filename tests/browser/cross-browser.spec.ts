@@ -1,3 +1,4 @@
+import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
 import { test, expect } from "./observability";
 import { readFileSync } from "node:fs";
 import { navigate, noPageOverflow } from "./ui-fixtures";
@@ -255,4 +256,8 @@ test("phone opening identity and move input work across browser engines", async 
   await expect(menu).not.toHaveAttribute("open", "");
   await expect(menu.locator("summary")).toBeFocused();
   await noPageOverflow(page);
+});
+test("Study board promotion places the selected knight across browser engines", async ({ page }) => {
+  const { fen, move } = await preparePromotionStudy(page);
+  await dragStudyKnightPromotion(page, fen, move);
 });

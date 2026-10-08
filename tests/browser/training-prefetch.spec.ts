@@ -125,6 +125,10 @@ test("completed tactic advances while an earlier review save is still pending", 
 });
 
 test("poisoned online A becomes inspectable while B and C save and conflict retry survives reload", async ({ page }) => {
+  // Install the ordinary shell before seeding recovery. Otherwise its initial
+  // navigation can start replay before the review handlers below are installed,
+  // and reload legitimately resends an interrupted, unacknowledged B transport.
+  await prepareVisualUI(page);
   await page.addInitScript(() => {
     // prepareVisualUI mounts once before this test installs its review routes.
     // Seed only the controlled reload, so setup cannot interrupt an earlier save.
@@ -140,7 +144,6 @@ test("poisoned online A becomes inspectable while B and C save and conflict retr
   const saved: string[] = [];
   const reconciliations: Array<{ key: string; body: unknown }> = [];
   let retrySucceeds = false;
-  await prepareVisualUI(page);
   await page.route("**/api/cards/*/review", async route => {
     const body = route.request().postDataJSON();
     if (body.attempt_id === "original-a")
@@ -159,6 +162,10 @@ test("poisoned online A becomes inspectable while B and C save and conflict retr
   await page.reload();
   await expect.poll(() => saved).toEqual(["original-b", "original-c"]);
   await expect(page.getByRole("button", { name: "Review conflicts (1)" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() =>
+    JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]")
+      .map((review: { attemptId: string }) => review.attemptId),
+  )).toEqual(["original-a"]);
   await page.reload();
   await page.getByRole("button", { name: "Review conflicts (1)" }).click();
   const dialog = page.getByRole("dialog", { name: "Review conflicts" });

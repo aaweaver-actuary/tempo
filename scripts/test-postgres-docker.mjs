@@ -1039,6 +1039,8 @@ const actions = {
     await verifyCurrentCanonicalRouteAdmission();
     await verifyStudyBurialRetainsQuota();
     await verifyBlockedBurialRecovery();
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_stalemate_swindles.py"]);
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
     if (resourcesCreated) {
