@@ -25,6 +25,8 @@ function readPending(): PendingRevision | null {
 }
 
 export async function reviseCardCommand(revision: CardRevision) {
+  if (localStorage.getItem("tempo-pending-card-delete-v1"))
+    throw new Error("Resolve the pending card deletion before editing a card.");
   const request = JSON.stringify(revision);
   let pending = readPending();
   if (pending) {

@@ -226,6 +226,7 @@ try {
   if (!skipBrowser) {
     await timeStage("browser", () => run("npx", ["playwright", "test"], {
       TEMPO_DOCKER_URL: `http://127.0.0.1:${testPort}`,
+      TEMPO_TEST_COMPOSE_PROJECT: project,
       TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-docker-${process.pid}`),
     }));
   }
