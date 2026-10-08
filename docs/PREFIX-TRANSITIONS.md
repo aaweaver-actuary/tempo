@@ -319,3 +319,6 @@ Once size metadata identifies the safe table prefix, its native reads use one
 PostgreSQL pipeline. Payload validation retains the established table order,
 including stale-membership rejection before a later size-limit failure. Recorded
 bulk evidence retains the same server SHA256 and authoritative replay queries.
+
+The size query binds the card lookup array and repertoire identity once through a
+materialized scope, avoiding duplicate large-array parameters for every table.

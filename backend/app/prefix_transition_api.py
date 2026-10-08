@@ -79,17 +79,27 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline, *
         # Bind every size to this same MVCC snapshot in one round trip. Keep
         # the cumulative checks in table order, before each native payload,
         # including the original membership-race/error precedence.
-        size_queries = [
-            f'SELECT {table_index} table_index,COUNT(*) count,'
-            f'COALESCE(SUM(octet_length(row_to_json(bounded)::text)),0) bytes FROM ({query}) bounded'
-            for table_index, (_name, query, _parameters) in enumerate(table_queries)
-        ]
+        size_queries = []
+        for table_index, (_name, query, parameters) in enumerate(table_queries):
+            scoped_query = query
+            for parameter in parameters:
+                scope_column = 'repertoire_id' if parameter == identifier else 'card_ids'
+                scope_expression = f'(SELECT {scope_column} FROM snapshot_scope)'
+                if scope_column == 'card_ids':
+                    scope_expression += '::text[]'
+                scoped_query = scoped_query.replace('%s', scope_expression, 1)
+            size_queries.append(
+                f'SELECT {table_index} table_index,COUNT(*) count,'
+                f'COALESCE(SUM(octet_length(row_to_json(bounded)::text)),0) bytes FROM ({scoped_query}) bounded')
         sizes = database.execute_native(
+            # Bind the potentially large lookup array once rather than sending
+            # and planning another copy for every table in this same snapshot.
+            'WITH snapshot_scope AS MATERIALIZED (SELECT %s::text[] card_ids,%s::text repertoire_id) '
             'SELECT SUM(count)::bigint count,SUM(bytes) bytes,'
             'array_agg(count ORDER BY table_index) table_counts,'
             'array_agg(bytes ORDER BY table_index) table_bytes FROM ('
             + ' UNION ALL '.join(size_queries) + ') sizes',
-            tuple(parameter for _name, _query, parameters in table_queries for parameter in parameters),
+            (list(lookup_card_ids), identifier),
         ).fetchone()
         # Only enqueue payloads whose cumulative transfer has passed the same
         # limits. Read/validate them in original order, including stale links

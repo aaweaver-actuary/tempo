@@ -153,7 +153,7 @@ def test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_c
     else:
         captured = api.load_transition_snapshot('rep', fixture.lookup_card_ids, fixture.study_day, 999999999)
         assert captured.rows('cards') == fixture.rows('cards')
-        assert all(query.startswith('SELECT ') for query in queries)
+        assert all(query.startswith(('SELECT ', 'WITH snapshot_scope AS MATERIALIZED (SELECT ')) for query in queries)
 
 
 def test_issue79_runtime_guard_is_background_query_only_without_command_dispatch(monkeypatch):
@@ -213,6 +213,7 @@ def test_pr102_snapshot_size_checks_use_one_statement_with_unchanged_native_rows
         table_name = re.search(r'FROM (\w+)', query).group(1)
         table_rows = captured_fixture.rows(table_name)
         if 'octet_length(row_to_json(bounded)::text)' in query:
+            assert len(parameters) == 2, 'Repeated lookup arrays must be bound once for metadata'
             table_names = [re.search(r'FROM (\w+)', component).group(1)
                            for component in re.findall(r'FROM \((SELECT .*?)\) bounded', query)]
             table_counts = [len(captured_fixture.rows(name)) for name in table_names]

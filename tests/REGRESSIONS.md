@@ -2762,3 +2762,9 @@ indexes the proposed steps once and uses constant-time lookups.
   transfers only the bounded table prefix and retains a stale-membership error
   before a later cumulative limit error. The 512-card fixture also runs in the
   regular durability environment: read budgets and planner limits are unchanged.
+
+The size-check regression also requires only two metadata parameters: one card-ID
+array and one repertoire ID, shared through a materialized snapshot scope. It
+failed with 25 repeated parameters before the scoped binding repair. All table
+queries and ordered count/byte results remain identical; this reduces wire and
+planning work for the full-size snapshot without changing its read budget.
