@@ -75,6 +75,37 @@ def test_repertoire_delete_policies_preserve_shared_history_and_non_main_selecti
         assert all(RETAINED_REPERTOIRE_ID not in [rep["id"] for rep in card["repertoires"]] for card in main.comparison_cards()["cards"])
 
 
+@pytest.mark.parametrize("policy", ["keep", "delete"])
+@pytest.mark.parametrize("deleted_owner", [True, False], ids=["primary-owner", "non-owning-membership"])
+def test_repertoire_delete_reassigns_shared_queued_admission_without_rewriting_origins(workspace, policy, deleted_owner):
+    with database.connection() as connection:
+        if not deleted_owner:
+            connection.execute("UPDATE cards SET repertoire_id='other' WHERE id='shared'")
+        # A third membership sorts before the primary owner; primary ownership wins.
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('aaa','Third','fixture','2026-10-01')")
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('aaa','shared')")
+        if deleted_owner:
+            connection.execute("DELETE FROM repertoire_cards WHERE repertoire_id='aaa' AND card_id='shared'")
+        connection.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_repertoire_id,status,review_result_json) VALUES(?,'shared',1,100,'old','complete','{\"persisted\":true}')", (date.today().isoformat(),))
+        card_before = dict(connection.execute("SELECT * FROM cards WHERE id='shared'").fetchone())
+        queues_before = [dict(row) for row in connection.execute("SELECT * FROM daily_queue WHERE card_id='shared' ORDER BY id")]
+        origins_before = [dict(row) for row in connection.execute("SELECT * FROM queue_attempt_origins WHERE card_id='shared' ORDER BY queue_entry_id")]
+        reviews_before = [dict(row) for row in connection.execute("SELECT * FROM reviews WHERE card_id='shared' ORDER BY id")]
+        delete_repertoire_data(connection, "old", policy)
+        assert dict(connection.execute("SELECT * FROM cards WHERE id='shared'").fetchone()) == {**card_before, "repertoire_id": "other"}
+        assert [dict(row) for row in connection.execute("SELECT * FROM daily_queue WHERE card_id='shared' ORDER BY id")] == [
+            {**row, "admission_repertoire_id": "other"} if row["status"] == "queued" else row for row in queues_before
+        ]
+        assert [dict(row) for row in connection.execute("SELECT * FROM queue_attempt_origins WHERE card_id='shared' ORDER BY queue_entry_id")] == origins_before
+        assert [dict(row) for row in connection.execute("SELECT * FROM reviews WHERE card_id='shared' ORDER BY id")] == reviews_before
+        assert connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='other' AND card_id='shared'").fetchone()
+        assert connection.execute("SELECT 1 FROM deleted_cards WHERE card_id='shared'").fetchone() is None
+        assert connection.execute("SELECT 1 FROM cards WHERE id='unlearned'").fetchone() is None
+        assert connection.execute("SELECT 1 FROM deleted_cards WHERE card_id='unlearned'").fetchone()
+        with pytest.raises(sqlite3.IntegrityError, match="permanently deleted"):
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES('unlearned','other','prefix',?,'[]','new','2026-10-08')", (chess.STARTING_FEN,))
+
+
 def test_individual_permanent_deletion_removes_all_memberships_history_and_rejects_delayed_review(workspace):
     with database.connection() as connection:
         with pytest.raises(HTTPException, match="changed"):

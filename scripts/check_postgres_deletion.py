@@ -1,5 +1,5 @@
 """Real PostgreSQL deletion, replay, escaped-null, and stale-worker regressions."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 import random
@@ -13,7 +13,7 @@ import chess
 import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from app import main, postgres_store, card_commands, repertoire_commands
+from app import main, postgres_store, card_commands, repertoire_commands, review_commands
 from app.command_gateway import execute_command, read_operation
 from app.card_deletion import RETAINED_REPERTOIRE_ID, permanent_delete_card
 from app.services.durable_tasks import enqueue_task_in_transaction, lock_current_slice
@@ -125,6 +125,129 @@ def main_check():
                 database.execute("UPDATE tactic_rotation SET last_pack_id=? WHERE id=1", (rotation_before,))
         print("PASS test_postgres_tactical_deletion_batches_and_publication_race; unrelated exclusions, real deletion after prepare, no spent allowance and next eligible admission")
 
+    def prove_shared_admission_history_and_review_fallback():
+        from app.services.postgres_opening_evidence import queue_manifests
+
+        for policy in ("keep", "delete"):
+            for deleted_owner in (True, False):
+                for explicit_color in (True, False):
+                    case_id = f"{prefix}-scope-{policy}-{deleted_owner}-{explicit_color}"
+                    removed, survivor, third = (f"{case_id}-{suffix}" for suffix in ("removed", "survivor", "aaa"))
+                    identifier, exclusive = f"{case_id}-shared", f"{case_id}-exclusive"
+                    repertoire_ids.extend((removed, survivor, third))
+                    card_ids.extend((identifier, exclusive))
+                    now = datetime.now(timezone.utc).isoformat()
+                    with postgres_store.connection() as database:
+                        for repertoire_id in (removed, survivor, third):
+                            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repertoire_id, repertoire_id, "shared admission proof", today))
+                        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Original scope','white',?,'[\"e2e4\"]',?)", (f"{case_id}-line", removed, chess.STARTING_FEN, now))
+                        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,introduced_at,interval_days) VALUES(?,?,'prefix',?,'[\"e2e4\"]',?,'mature',?,?,7)", (identifier, removed if deleted_owner else survivor, chess.STARTING_FEN, "white" if explicit_color else None, tomorrow, today))
+                        for repertoire_id in (removed, survivor) + (() if deleted_owner else (third,)):
+                            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (repertoire_id, identifier))
+                        # This exclusive unintroduced card must still be purged under either policy.
+                        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"d2d4\"]','new',?)", (exclusive, removed, chess.STARTING_FEN, today))
+                        queue_ids = [database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_repertoire_id) VALUES(?,?,?,?,?) RETURNING id", (today, identifier, cycle, 120000 + len(card_ids) + cycle, removed)).fetchone()[0] for cycle in (0, 1)]
+                    transport = {"id": identifier, "queue_entry_id": queue_ids[1], "content_type": "opening",
+                                 "revision": 1, "start_fen": chess.STARTING_FEN, "moves": ["e2e4"],
+                                 "trained_color": "white" if explicit_color else None}
+                    queue_manifests([transport])
+                    manifest = transport["opening_decision_manifest"]
+                    decision = manifest["decisions"][0]
+                    historical_attempt = f"{case_id}-historical-review"
+                    completion = {"attempt_id": historical_attempt, "manifest": manifest,
+                                  "origin_queue_entry_id": queue_ids[1], "queue_entry_id": queue_ids[1],
+                                  "started_at": now, "study_timezone": "America/New_York", "source": "live",
+                                  "events": [{"sequence": 1, "decision_index": 0, "decision_id": decision["decision_id"],
+                                              "expected_uci": "e2e4", "kind": "first_response", "observed_at": now,
+                                              "response_uci": "e2e4", "disposition": "expected"}],
+                                  "terminal": {"state": "complete", "final_sequence": 1, "ended_at": now}}
+                    historical_payload = {"card_id": identifier, "review": {"outcome": "correct",
+                                          "attempt_id": historical_attempt, "queue_entry_id": queue_ids[1],
+                                          "expected_revision": 1, "recorded_at": now,
+                                          "opening_evidence_completion": completion}, "prepared_manifest": manifest}
+                    assert command("cards.review", historical_payload)["persisted"]
+                    historical_operation = operation_ids[-1]
+
+                    def history_snapshot(database):
+                        return {name: [dict(row) for row in database.execute(statement, (identifier,))]
+                                for name, statement in (
+                                    ("reviews", "SELECT * FROM reviews WHERE card_id=? ORDER BY id"),
+                                    ("origins", "SELECT * FROM queue_attempt_origins WHERE card_id=? ORDER BY queue_entry_id"),
+                                    ("receipts", "SELECT * FROM review_attempt_receipts WHERE card_id=? ORDER BY attempt_id"),
+                                    ("presentations", "SELECT * FROM opening_evidence_presentations WHERE card_id=? ORDER BY id"),
+                                    ("attempts", "SELECT * FROM opening_evidence_attempts WHERE card_id=? ORDER BY attempt_id"),
+                                    ("events", "SELECT event.* FROM opening_evidence_events event JOIN opening_evidence_attempts attempt ON attempt.attempt_id=event.attempt_id WHERE attempt.card_id=? ORDER BY event.sequence"),
+                                    ("observations", "SELECT observation.* FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=? ORDER BY observation.decision_index"),
+                                    ("summaries", "SELECT summary.* FROM opening_evidence_summaries summary WHERE decision_id IN (SELECT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=?) ORDER BY decision_id"),
+                                    ("clean_days", "SELECT clean_day.* FROM opening_evidence_clean_days clean_day WHERE decision_id IN (SELECT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=?) ORDER BY decision_id,study_day"),
+                                )}
+
+                    with postgres_store.connection() as database:
+                        card_before = dict(database.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone())
+                        queues_before = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=? ORDER BY id", (identifier,))]
+                        history_before = history_snapshot(database)
+                        contexts_before = [dict(row) for row in database.execute("SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id IN (?,?) ORDER BY queue_entry_id", queue_ids)]
+                        assert len(history_before["observations"]) == 1
+                        assert len(history_before["attempts"]) == 1 and history_before["attempts"][0]["state"] == "complete"
+                        operation_before = dict(database.execute("SELECT * FROM operation_receipts WHERE operation_id=?", (historical_operation,)).fetchone())
+                    deletion_statements = []
+                    original_execute = postgres_store.PostgresConnection.execute_native
+                    original_compatible_execute = postgres_store.PostgresConnection.execute
+
+                    def record_deletion_statement(database, statement, parameters=()):
+                        deletion_statements.append((statement, parameters))
+                        return original_execute(database, statement, parameters)
+
+                    def record_compatible_deletion_statement(database, statement, parameters=()):
+                        deletion_statements.append((statement, parameters))
+                        return original_compatible_execute(database, statement, parameters)
+
+                    with patch.object(postgres_store.PostgresConnection, "execute_native", record_deletion_statement), patch.object(postgres_store.PostgresConnection, "execute", record_compatible_deletion_statement):
+                        command("repertoires.delete", {"repertoire_id": removed, "learned_cards": policy})
+                    locked_cards = [parameters[0].removeprefix("tempo:card-edit:") for statement, parameters in deletion_statements
+                                    if "pg_advisory_xact_lock" in statement and parameters[0].startswith("tempo:card-edit:")]
+                    assert locked_cards == sorted((identifier, exclusive)), locked_cards
+                    queue_update_index = next(index for index, (statement, _) in enumerate(deletion_statements) if "UPDATE daily_queue SET admission_repertoire_id" in statement)
+                    assert all(index < queue_update_index for index, (statement, parameters) in enumerate(deletion_statements)
+                               if "pg_advisory_xact_lock" in statement and parameters[0].startswith("tempo:card-edit:"))
+                    postgres_store.close_pools()
+                    with postgres_store.connection() as database:
+                        assert dict(database.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()) == {**card_before, "repertoire_id": survivor}
+                        queues_after = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=? ORDER BY id", (identifier,))]
+                        expected_queues = [{**row, "admission_repertoire_id": survivor}
+                                           if row["status"] == "queued" and row["admission_repertoire_id"] == removed
+                                           else row for row in queues_before]
+                        assert queues_after == expected_queues, (case_id, queues_after, expected_queues)
+                        assert history_snapshot(database) == history_before
+                        assert dict(database.execute("SELECT * FROM operation_receipts WHERE operation_id=?", (historical_operation,)).fetchone()) == operation_before
+                        assert [dict(row) for row in database.execute("SELECT * FROM opening_evidence_queue_contexts WHERE queue_entry_id IN (?,?) AND repertoire_id=? ORDER BY queue_entry_id", (*queue_ids, removed))] == contexts_before
+                        assert database.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?", (survivor, identifier)).fetchone()
+                        assert not database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (identifier,)).fetchone()
+                        assert not database.execute("SELECT 1 FROM cards WHERE id=?", (exclusive,)).fetchone()
+                        assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (exclusive,)).fetchone()
+                        try:
+                            with database.raw.transaction():
+                                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[]','new',?)", (exclusive, survivor, chess.STARTING_FEN, today))
+                        except psycopg.errors.CheckViolation as error:
+                            assert error.diag.constraint_name == "deleted_card_content"
+                        else:
+                            raise AssertionError("Exclusive deleted content was recreated")
+                    current_transport = {**transport, "queue_entry_id": queue_ids[0]}
+                    current_transport.pop("opening_decision_manifest")
+                    queue_manifests([current_transport])
+                    if explicit_color:
+                        assert current_transport["opening_decision_manifest"]["repertoire_id"] == survivor
+                    else:
+                        assert "opening_decision_manifest" not in current_transport
+                        assert "Normal review remains available" in current_transport["opening_evidence_diagnostic"]
+                    assert command("cards.review", {"card_id": identifier, "review": {"outcome": "correct", "attempt_id": f"{case_id}-current-review", "queue_entry_id": queue_ids[0], "expected_revision": 1}})["persisted"]
+                    with postgres_store.connection() as database:
+                        current_history = history_snapshot(database)
+                        for evidence_table in ("presentations", "attempts", "events", "observations", "summaries", "clean_days"):
+                            assert current_history[evidence_table] == history_before[evidence_table]
+                        task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key IN (?,?,?,?)", (removed, survivor, third, identifier)))
+        print("PASS test_postgres_repertoire_delete_reassigns_both_shared_admission_scopes_without_rewriting_history; keep/delete, reconnect/replay, actual completed evidence and review receipts, valid current manifests and ordinary-review fallback")
+
     def prove_repeated_route_dependencies():
         repetition_repertoire = f"{prefix}-repetition"
         repetition_line = f"{prefix}-repetition-line"
@@ -234,6 +357,7 @@ def main_check():
         print("PASS test_repertoire_keep_delete_preserves_shared_schedules_history_and_non_main_selection; durable policy replay")
         print("PASS test_retained_introduced_cards_survive_queue_refresh_and_next_day_without_a_review")
         prove_tactical_deletion_batches_and_publication_race()
+        prove_shared_admission_history_and_review_fallback()
 
         line_id = f"{prefix}-line"
         fixture_random = random.Random(20261008)

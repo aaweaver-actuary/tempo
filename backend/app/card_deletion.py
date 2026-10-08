@@ -127,9 +127,9 @@ def delete_repertoire_data(database, repertoire_id: str, learned_cards: str) -> 
     if repertoire is None:
         raise HTTPException(404, "Repertoire not found")
     if hasattr(database, "execute_native"):
-        owned_ids = database.execute("SELECT id FROM cards WHERE repertoire_id=? ORDER BY id", (repertoire_id,)).fetchall()
-        for owned_card in owned_ids:
-            database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{owned_card[0]}",))
+        affected_card_ids = database.execute("SELECT id FROM cards WHERE repertoire_id=? UNION SELECT card_id FROM daily_queue WHERE admission_repertoire_id=? AND status='queued' ORDER BY 1", (repertoire_id, repertoire_id)).fetchall()
+        for affected_card in affected_card_ids:
+            database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{affected_card[0]}",))
     owned = database.execute("SELECT card.id,card.start_fen,card.moves_json,COALESCE(card.trained_color,(SELECT line.trained_color FROM repertoire_lines line WHERE line.repertoire_id=card.repertoire_id ORDER BY line.created_at,line.id LIMIT 1)) AS effective_trained_color,card.introduced_at,card.first_correct_at,EXISTS(SELECT 1 FROM reviews WHERE card_id=card.id) AS has_reviews,(SELECT MIN(link.repertoire_id) FROM repertoire_cards link WHERE link.card_id=card.id AND link.repertoire_id<>?) AS replacement FROM cards card WHERE card.repertoire_id=? ORDER BY card.id" + (" FOR UPDATE OF card" if hasattr(database, "execute_native") else ""), (repertoire_id, repertoire_id)).fetchall()
     deleted_ids = []
     for card in owned:
@@ -149,12 +149,16 @@ def delete_repertoire_data(database, repertoire_id: str, learned_cards: str) -> 
                     retained_color = ("white" if starts_white == bool(move_count % 2) else "black") if move_count else None
                 database.execute("UPDATE cards SET trained_color=? WHERE id=? AND trained_color IS NULL", (retained_color, card["id"]))
             database.execute("UPDATE cards SET repertoire_id=?,pending_validation=CASE WHEN ?=? THEN 0 ELSE pending_validation END WHERE id=?", (replacement, replacement, RETAINED_REPERTOIRE_ID, card["id"]))
-            # Current admission follows the retained/shared owner; immutable
-            # origins still identify what a previously displayed attempt saw.
-            database.execute("UPDATE daily_queue SET admission_repertoire_id=? WHERE card_id=? AND admission_repertoire_id=? AND status='queued'", (replacement, card["id"], repertoire_id))
     # The same identity-only exclusions protect both permanent deletion paths
     # from stale submissions and later source rebuilds or imports.
     purge_card_data(database, deleted_ids)
+    # All surviving admissions follow the surviving primary owner, including
+    # cards owned elsewhere. Existing triggers retain the original attempt scope.
+    database.execute("""UPDATE daily_queue SET admission_repertoire_id=(
+        SELECT card.repertoire_id FROM cards card WHERE card.id=daily_queue.card_id
+    ) WHERE admission_repertoire_id=? AND status='queued'
+      AND EXISTS(SELECT 1 FROM cards card JOIN repertoires owner ON owner.id=card.repertoire_id
+                 WHERE card.id=daily_queue.card_id AND owner.id<>?)""", (repertoire_id, repertoire_id))
     database.execute("UPDATE game_findings SET repertoire_id=NULL WHERE repertoire_id=?", (repertoire_id,))
     for table in (("repertoire_comparisons_legacy", "repertoire_comparisons_staged") if hasattr(database, "execute_native") else ("repertoire_comparisons",)):
         database.execute(f"DELETE FROM {table} WHERE repertoire_id=?", (repertoire_id,))
