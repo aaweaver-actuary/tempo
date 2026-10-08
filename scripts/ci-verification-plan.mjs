@@ -1,13 +1,34 @@
 import { protectRegressionSuite } from "./verification-stages.mjs";
+import { postgresTestStages } from "./postgres-test-plan.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const mandatoryLayers = ["frontend", "backend", "build", "postgres", "browser"];
-export const allLayers = [...mandatoryLayers, "visual", "quarantine"];
+export const allLayers = [...mandatoryLayers, "lifecycle", "visual", "quarantine"];
 export const inventory = JSON.parse(readFileSync(new URL("./ci-verification-inventory.json", import.meta.url), "utf8"));
 export const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export function lifecycleApplicability({ paths, comparisonAvailable, complete, sourceInventory = inventory }) {
+  const lifecycleRules = sourceInventory.lifecycle;
+  const selectionReasons = [];
+  if (complete) selectionReasons.push("Complete verification requested");
+  if (!comparisonAvailable) selectionReasons.push("Comparison history missing or uncertain");
+  if (!lifecycleRules) selectionReasons.push("Lifecycle source classification unavailable");
+  else for (const path of paths) {
+    const sensitive = lifecycleRules.sensitivePaths.includes(path)
+      || lifecycleRules.sensitivePrefixes.some(prefix => path.startsWith(prefix))
+      || lifecycleRules.sensitivePatterns.some(pattern => new RegExp(pattern).test(path));
+    const ordinary = lifecycleRules.ordinaryPaths.includes(path)
+      || lifecycleRules.ordinaryPrefixes.some(prefix => path.startsWith(prefix))
+      || lifecycleRules.ordinaryPatterns.some(pattern => new RegExp(pattern).test(path));
+    if (sensitive) selectionReasons.push(`${path}: lifecycle-sensitive source`);
+    else if (!ordinary) selectionReasons.push(`${path}: unclassified infrastructure; lifecycle required`);
+  }
+  return { applicable: selectionReasons.length > 0,
+    reason: selectionReasons.length ? selectionReasons.join("; ") : "No lifecycle-sensitive change or complete verification request" };
+}
 
 export function changedPathsFromNameStatus(output) {
   const tokens = output.split("\0");
@@ -106,10 +127,17 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
   // Partial selection binds project/file/title and permits only collected tags
   // at suite/test boundaries. Complete selection runs the unfiltered inventory.
   const browserGrep = selected.map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|");
-  const plan = { version: 1, scope: broad ? "complete" : "targeted", comparisonAvailable, paths, reasons,
-    families: [...families].sort(), jobs: Object.fromEntries(allLayers.map(layer => [layer,
+  const lifecycle = lifecycleApplicability({ paths, comparisonAvailable, complete, sourceInventory });
+  const jobs = Object.fromEntries(allLayers.map(layer => [layer,
       { required: layer !== "quarantine" && (layer !== "visual" || visual), applicable: layer === "quarantine" ? quarantine.length > 0 : layer !== "visual" || visual,
-        reason: layer === "visual" && !visual ? "No rendering change or broad coverage trigger" : layer === "quarantine" ? "Confirmed harness defects only" : "Required verification" }])),
+        reason: layer === "visual" && !visual ? "No rendering change or broad coverage trigger" : layer === "quarantine" ? "Confirmed harness defects only" : "Required verification" }]));
+  jobs.lifecycle = { ...lifecycle, required: lifecycle.applicable };
+  for (const [layer, mode] of [["postgres", "durability"], ["lifecycle", "lifecycle"]]) {
+    jobs[layer].mode = mode;
+    jobs[layer].planned_stages = postgresTestStages({ mode });
+  }
+  const plan = { version: 1, scope: broad && lifecycle.applicable ? "complete" : "targeted", comparisonAvailable, paths, reasons,
+    families: [...families].sort(), jobs,
     browserGrep, collection, quarantine,
     pinnedCollection: pinnedCases.map(item => ({ ...item, selected: visual, nightly: true, release: true })) };
   return { ...plan, hash: createHash("sha256").update(JSON.stringify(plan)).digest("hex") };
@@ -159,6 +187,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   mkdirSync("test-results/ci", { recursive: true });
   writeFileSync("test-results/ci/plan.json", JSON.stringify(plan, null, 2));
   writeFileSync("test-results/ci/collection.json", JSON.stringify({ browser: plan.collection, pinned: plan.pinnedCollection, core: "All frontend/backend unit tests, engine smoke and Rust/build checks run on every PR" }, null, 2));
-  console.log(`${plan.scope}: ${plan.collection.filter(item => item.selected).length}/${plan.collection.length} regular browser cases; ${plan.collection.filter(item => item.critical).length} global critical; visual=${plan.jobs.visual.applicable}`);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `visual=${plan.jobs.visual.applicable}\nquarantine=${plan.jobs.quarantine.applicable}\nscope=${plan.scope}\n`);
+  console.log(`${plan.scope}: ${plan.collection.filter(item => item.selected).length}/${plan.collection.length} regular browser cases; ${plan.collection.filter(item => item.critical).length} global critical; visual=${plan.jobs.visual.applicable}; lifecycle=${plan.jobs.lifecycle.applicable}`);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `visual=${plan.jobs.visual.applicable}\nlifecycle=${plan.jobs.lifecycle.applicable}\nquarantine=${plan.jobs.quarantine.applicable}\nscope=${plan.scope}\n`);
 }

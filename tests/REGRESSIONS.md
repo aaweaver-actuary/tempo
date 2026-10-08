@@ -1227,7 +1227,7 @@ The regular Python suite includes `backend/tests/test_background_diagnostics.py`
 `tests/unit/background-diagnostics-regressions.test.ts` supplies the named
 Python/TypeScript schema parity, bounded cache and monotonic engine outcome
 regressions. `debug bundle includes only validated aggregate background diagnostics` in `debug-reporting-regressions.test.tsx` protects
-export redaction. The normal PostgreSQL `schema_upgrade` scenario executes
+export redaction. The normal PostgreSQL `background_diagnostics` scenario executes
 `check_postgres_background_diagnostics.py` against a runner-owned database for
 real migration/replay/concurrent counters/lease reclaim/rollback and query cost.
 These are new instrumentation contracts; there was no prior snapshot endpoint
@@ -1573,7 +1573,7 @@ allows the intended derived-label change. The parameterized
 protects queue identity/order/results/admission, review outcomes/invalidation,
 and receipt request/result history through explicit semantic column sets.
 
-The regular PostgreSQL `schema_upgrade` stage invokes
+The PostgreSQL `deployment_lifecycle` stage in full mode and independently selected lifecycle verification invokes
 `scripts/check-tempo-cli.mjs` on its own project/ports/volumes with populated
 schema 16. It proves a real restore-verified backup and upgrade to current,
 including migration 025 normalization of an archived `tactics` card in
@@ -2368,3 +2368,41 @@ This is a new read-only feature; there was no existing diagnostic implementation
 - `PD-82 prefix selectors distinguish identical learner moves across opponent branches` and `test_prefix_diagnostics_full_saved_route_distinguishes_identical_learner_moves` protect full saved-presentation SAN labels (including opponent replies). The missing label/contract regression failed before the display repair. Labels derive from the saved presentation after connection closure and do not reconstruct study attempts.
 
 - `test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes` — diagnostics rehearsal removes only its owned active cards/repertoires so later global comparisons remain isolated; retained shadow evidence stays durable. Covered by `scripts/check_postgres_prefix_diagnostics.py` in the regular PostgreSQL evidence rehearsal.
+
+## PostgreSQL deployment lifecycle verification boundary
+
+The regular CI planning and runner wrappers protect the independently selected, mandatory deployment lifecycle boundary. Ordinary durability retains every direct migration, recovery, workload, backup/restore, and study proof; full verification includes the entire CLI rehearsal. Named regressions:
+
+- `lifecycle-sensitive changes require deployment lifecycle verification`
+- `ordinary product changes omit deployment lifecycle independently of browser breadth`
+- `complete verification always requires deployment lifecycle`
+- `migration and schema changes cannot omit deployment lifecycle`
+- `unknown infrastructure and unavailable comparison history require lifecycle`
+- `selected lifecycle failure or missing results blocks aggregate quality`
+- `unselected lifecycle is explicitly inapplicable`
+- `lifecycle reports must match the immutable plan revision mode and scenarios`
+- `full and split PostgreSQL verification preserve every existing proof`
+- `standalone lifecycle mode requires the complete rehearsal without parent startup or browser work`
+- `standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons`
+- `lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent`
+- `lifecycle --list exposes the executable plan without Docker, ports, secrets, or timing files`
+- `lifecycle executor invokes exactly its planned actions once, including cleanup`
+- `complete release evidence requires the lifecycle job`
+
+The first nine CI cases and the release-evidence case failed against main `6511093` before implementation. The ordinary-product regression also failed against `52d05bb` when combined with its required `tests/REGRESSIONS.md` registration; known prose and product test additions must not inadvertently require lifecycle. Sensitive source takes precedence over these exemptions. The cold-image regression failed against the initial separation candidate `74dd70f`; a fresh CI daemon exposed missing dependency images because standalone mode does not start a parent stack. They run through the existing CI reliability, PostgreSQL runner, and Tempo CLI Vitest wrappers in the regular gate. Related: roadmap #29, historical completed #45, and merged shutdown repair PR #94 (non-closing references).
+
+### PR #96 review: conservative backend lifecycle classification
+
+- `unclassified root backend application modules require deployment lifecycle` fails against `b452b374` for `backend/app/new_runtime.py`; unknown root modules and existing unclassified runtime entrypoints now require the blocking lifecycle layer, even with ordinary regression companions.
+- `reviewed backend domain changes with ordinary regressions omit deployment lifecycle` preserves service/domain/API/contract/model exclusions alongside normal backend, unit and browser tests and `tests/REGRESSIONS.md`.
+- `lifecycle-sensitive changes require deployment lifecycle verification` now checks every explicit sensitive path; existing complete-verification and schema/migration regressions remain required. All cases run through the existing CI reliability Vitest wrapper.
+
+### PR #96 review: missing-only lifecycle dependency preparation
+
+- `standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons` fails against `b452b374` because the pull lacks `--policy missing`. It checks the exact policy and dependency services, cold/warm/partial cache acquisition semantics, unchanged other modes, and no parent startup.
+- `standalone lifecycle propagates missing dependency acquisition failures with cleanup armed` preserves genuinely missing-image failure propagation and owned cleanup. These cases run through the existing PostgreSQL speedups Vitest wrapper; product Compose images and rehearsal assertions are unchanged.
+
+### PR #96 review: conservative service lifecycle classification
+
+- `unclassified backend service modules require deployment lifecycle with ordinary companions` fails against `2db9058` for `backend/app/services/postgres_connection.py`. Unknown connection, storage, worker, deployment and domain service modules require lifecycle, alone or with ordinary registry/backend/unit-test companions; new files never become ordinary through subtree membership.
+- `reviewed ordinary and sensitive service classifications survive ordinary companions` preserves exact reviewed domain-service exemptions and mandatory lifecycle for `database_executor.py` and `background_runtime.py`, with the same companions. `complete verification always requires deployment lifecycle` also covers ordinary and unknown service paths. These cases run through the existing CI reliability Vitest wrapper in the regular suite.
