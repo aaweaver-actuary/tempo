@@ -2747,3 +2747,10 @@ indexes the proposed steps once and uses constant-time lookups.
   while the injected route never observed service-worker-owned API fetches. Its
   online-only context now blocks service workers so fault injection is reliable;
   the other study cases continue to exercise actual offline service workers.
+
+- `test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent`
+  protects the required deletion rehearsal's three distinct legal tactical records.
+  A local required run on `5bb135f` reached checkmate during UUID-seeded random
+  setup and failed before the deletion assertions. Setup now uses a verified fixed
+  seed; invocation-owned puzzle/pack identities, PostgreSQL assertions and cleanup
+  remain unchanged. This is a fixture correction, not a deletion behavior change.

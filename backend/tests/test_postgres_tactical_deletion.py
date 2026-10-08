@@ -76,3 +76,32 @@ def test_tactical_publication_rechecks_deleted_candidate_before_reserving_allowa
         ("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:card-edit:deleted-after-preparation",)),
         ("SELECT 1 FROM deleted_cards WHERE card_id=%s", ("deleted-after-preparation",)),
     ]
+
+
+def test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    import chess
+    from app.services.cards import card_id
+    from app.services.puzzles import validate_puzzle_record
+
+    script_path = Path(__file__).resolve().parents[2] / "scripts/check_postgres_deletion.py"
+    monkeypatch.syspath_prepend(str(script_path.parent))
+    specification = importlib.util.spec_from_file_location("pr102_deletion_proof", script_path)
+    rehearsal = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(rehearsal)
+    first = rehearsal.tactical_deletion_fixture_records("first-random-invocation")
+    second = rehearsal.tactical_deletion_fixture_records("another-random-invocation")
+    assert len(first) == len(second) == 3
+    assert [(record["FEN"], record["Moves"]) for record in first] == [
+        (record["FEN"], record["Moves"]) for record in second]
+    identifiers = []
+    for record in first:
+        board = chess.Board(record["FEN"])
+        assert board.is_valid() and not board.is_game_over()
+        for uci_move in record["Moves"]:
+            move = chess.Move.from_uci(uci_move)
+            assert move in board.legal_moves
+            board.push(move)
+        identifiers.append(card_id(*validate_puzzle_record(record)))
+    assert len(set(identifiers)) == 3

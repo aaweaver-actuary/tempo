@@ -24,6 +24,22 @@ from app.review_conflicts import ReviewConflict
 from check_postgres_repertoire_limits import snapshot_queue_environment, restore_queue_environment
 
 
+def tactical_deletion_fixture_records(pack_id):
+    """Legal, repeatable positions independent of the invocation's random UUID."""
+    fixture_random = random.Random(20261009)
+    board = chess.Board()
+    for _ in range(16):
+        board.push(fixture_random.choice(list(board.legal_moves)))
+    records = []
+    for index, setup_move in enumerate(list(board.legal_moves)[:3]):
+        after_setup = board.copy()
+        after_setup.push(setup_move)
+        response = next(iter(after_setup.legal_moves))
+        records.append({"PuzzleId": f"{pack_id}-{index}", "FEN": board.fen(),
+                        "Moves": [setup_move.uci(), response.uci()]})
+    return records
+
+
 def main_check():
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Deletion proof requires runner-owned disposable PostgreSQL")
@@ -58,17 +74,7 @@ def main_check():
         from app.services.tactic_admission import count_daily_tactic_introductions
 
         pack_id = f"{prefix}-tactics"
-        fixture_random = random.Random(prefix)
-        board = chess.Board()
-        for _ in range(16):
-            board.push(fixture_random.choice(list(board.legal_moves)))
-        records = []
-        for index, setup_move in enumerate(list(board.legal_moves)[:3]):
-            after_setup = board.copy()
-            after_setup.push(setup_move)
-            response = next(iter(after_setup.legal_moves))
-            records.append({"PuzzleId": f"{pack_id}-{index}", "FEN": board.fen(),
-                            "Moves": [setup_move.uci(), response.uci()]})
+        records = tactical_deletion_fixture_records(pack_id)
         identifiers = [card_id(*validate_puzzle_record(record)) for record in records]
         unrelated_ids = [f"{prefix}-unrelated-tombstone-{index}" for index in range(128)]
         card_ids.extend(identifiers + unrelated_ids)
