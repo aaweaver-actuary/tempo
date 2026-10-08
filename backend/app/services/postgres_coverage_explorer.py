@@ -8,16 +8,6 @@ from typing import Any
 
 from ..database import background_read_connection, connection
 from ..postgres_store import PostgresConnection
-<<<<<<< HEAD
-from .canonical_scope_freshness import coverage_run_is_current
-from .canonical_prefix import read_prefix
-from .durable_tasks import (
-    advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    enqueue_compact_postgres_task_in_transaction, lock_current_slice,
-)
-from .postgres_coverage_candidates import recalculate_coverage_node
-from .introduction_priorities import enqueue_priority_refresh_in_transaction
-=======
 from .canonical_scope_freshness import coverage_run_is_current, latest_coverage_attempt_predicate
 from .canonical_prefix import read_prefix
 from .durable_tasks import (
@@ -27,7 +17,6 @@ from .durable_tasks import (
 from .postgres_coverage_candidates import recalculate_coverage_node
 from .introduction_priorities import enqueue_priority_refresh_in_transaction
 from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
->>>>>>> main
 from .repertoire_coverage import (
     ExplorerAuthenticationError, _cached_explorer_payload, _fetch_explorer,
     get_explorer_session_token,
@@ -55,13 +44,8 @@ def _prepare_next_node(task: dict[str, Any]) -> dict[str, Any] | None:
             "LEFT JOIN background_activity control ON control.source='coverage' "
             "AND control.work_id=n.run_id "
             "WHERE n.run_id=%s AND n.id>%s AND n.explorer_status='queued' "
-<<<<<<< HEAD
-            "AND r.status IN ('queued','running') AND COALESCE(control.paused,0)=0 "
-            "ORDER BY n.id LIMIT 1",
-=======
             "AND r.status IN ('queued','running','failed') AND COALESCE(control.paused,0)=0 "
             f"AND {latest_coverage_attempt_predicate(database, native=True)} ORDER BY n.id LIMIT 1",
->>>>>>> main
             (payload["run_id"], payload.get("after_node_id", "")),
         ).fetchone()
         return dict(row) if row and coverage_run_is_current(database, row, row["repertoire_id"]) else None
@@ -123,10 +107,7 @@ def _fail_for_missing_token(task: dict[str, Any], node: dict[str, Any]) -> bool:
             "WHERE id=%s AND status IN ('queued','running')",
             (message, _now(), node["run_id"]),
         )
-<<<<<<< HEAD
-=======
         enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
->>>>>>> main
         return complete_task_slice_in_transaction(database, task)
 
 
@@ -140,15 +121,9 @@ def _publish_node(
     node = database.execute_native(
         "SELECT n.*,r.settings_json,r.status AS run_status,r.total_nodes "
         "FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id "
-<<<<<<< HEAD
-        "WHERE n.id=%s FOR UPDATE OF n,r", (prepared["id"],),
-    ).fetchone()
-    if node is None or node["run_status"] not in {"queued", "running"} or not coverage_run_is_current(database, node, prepared["repertoire_id"]):
-=======
         f"WHERE n.id=%s AND {latest_coverage_attempt_predicate(database, native=True)} FOR UPDATE OF n,r", (prepared["id"],),
     ).fetchone()
     if node is None or node["run_status"] not in {"queued", "running", "failed"} or not coverage_run_is_current(database, node, prepared["repertoire_id"]):
->>>>>>> main
         return complete_task_slice_in_transaction(database, task)
     if node["explorer_status"] != "queued":
         return advance_task_slice_in_transaction(
@@ -202,16 +177,7 @@ def _publish_node(
          progress["total_nodes"] * 2, _now()),
     )
     enqueue_priority_refresh_in_transaction(database, node["repertoire_id"])
-<<<<<<< HEAD
-    if progress["status"] == "complete":
-        enqueue_compact_postgres_task_in_transaction(
-            database, "repertoire_opportunity", node["repertoire_id"],
-            {"repertoire_id": node["repertoire_id"], "phase": "summaries", "cursor": ""},
-            priority=130, delay_seconds=5,
-        )
-=======
     enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
->>>>>>> main
     return advance_task_slice_in_transaction(
         database, task, next_phase="explorer",
         next_payload={**task["payload"], "after_node_id": node["id"]},

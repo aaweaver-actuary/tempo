@@ -1170,11 +1170,8 @@ def main():
         prove_selected_batch_canonical_routes()
         prove_deterministic_route_certification()
         prove_canonical_scope_lifecycle()
-<<<<<<< HEAD
-=======
         from check_postgres_opportunity_freshness import prove_opportunity_dismissal_and_source_freshness
         prove_opportunity_dismissal_and_source_freshness(run_bounded_task_slices)
->>>>>>> main
     finally:
         opportunities._calculate_node_opportunities = saved_calculate
         with postgres_store.connection() as database:

@@ -16,8 +16,6 @@ import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
 
 
-<<<<<<< HEAD
-=======
 def test_game_sync_public_projection_preserves_coordinator_import_contract():
     from app.services.game_sync_serialization import serialize_job
 
@@ -32,7 +30,6 @@ def test_game_sync_public_projection_preserves_coordinator_import_contract():
     assert saved_job == unchanged_saved_job
 
 
->>>>>>> main
 @pytest.mark.parametrize("state", ["queued", "running", "paused", "retrying", "failed"])
 def test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result(state):
     row = {"id": "job", "status": state, "created_at": "2026-09-29T10:00:00Z",

@@ -130,25 +130,6 @@ complete verification. Selection changes follow in a separate commit.
 The CI workflow preserves local `make full` and uses separate frontend,
 backend/engine, Rust/WASM/build, PostgreSQL durability, browser, and pinned
 visual/performance jobs. Every PR runs all units and build checks, all
-<<<<<<< HEAD
-PostgreSQL durability scenarios, and seven critical browser cases covering
-review/reload, offline replay, fail-closed reads, Study grading, foreground
-contention and held drags. Each PostgreSQL/browser invocation owns fresh
-ports, credentials, volumes and containers and remains serial within its
-stack. GitHub's **Re-run failed jobs** repeats a failed layer and its aggregate,
-without repeating successful unrelated layers.
-
-`scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
-Mapped leaf edits add complete browser families; shared board/state/contracts,
-scheduling, migrations, fixtures, runner and dependency changes, unknown paths,
-or missing comparison history select every browser case and pinned checks.
-Both names of renamed/copied files and deleted paths are classified. All TSX
-rendering edits and rendering assets select pinned visual/performance.
-Documentation under `docs/` and the root README retain required core,
-durability and critical checks. Adding an unclassified browser spec fails
-planning. PR #50 is merged into main; its opening-segmentation spec belongs to
-the repertoire family and participates in current collection and selection.
-=======
 PostgreSQL durability scenarios, and the global browser smoke below. Each
 PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
 containers and remains serial within its stack. GitHub's **Re-run failed jobs**
@@ -225,7 +206,6 @@ The [October 7 browser-selection validation](browser-selection-validation.md)
 records comparable counts/timings, tested revisions, isolation repairs and
 disposable-resource cleanup evidence.
 
->>>>>>> main
 
 The plan job actually collects all regular and pinned cases. Its immutable
 plan and collection report record IDs, projects, titles, selection reasons,

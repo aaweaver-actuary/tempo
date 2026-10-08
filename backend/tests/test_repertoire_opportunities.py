@@ -970,11 +970,7 @@ def test_issue4_personal_common_move_surfaces_without_masters_or_cohort_data(tmp
         now = datetime.now(timezone.utc).isoformat()
         db.execute("""INSERT INTO repertoire_coverage_runs(id,repertoire_id,status,settings_json,created_at,updated_at)
                       VALUES('run','rep','complete',?, ?,?)""",
-<<<<<<< HEAD
-                   (json.dumps({"path_floor": 0.0005, "maia_elo": 1500}), now, now))
-=======
                    (json.dumps({"path_floor": 0.0005, "maia_elo": 1500, "reply_denominator": 20, "cumulative_target": 0.95}), now, now))
->>>>>>> main
         db.execute("""INSERT INTO repertoire_coverage_nodes(
             id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,
             covered_replies_json,explorer_status,maia_status,updated_at)
@@ -1438,8 +1434,6 @@ def test_direct_training_requires_revision_before_opening_write_transaction(fing
 
     with pytest.raises(ValueError, match="evidence revision"):
         repertoire_opportunities.admit_existing_decision(Database(), "rep", "discovery", fingerprint)
-<<<<<<< HEAD
-=======
 
 
 def _seed_source_transition_coverage(db, *, run_id="transition-run", created_at=None,
@@ -1775,4 +1769,3 @@ def test_issue8_independent_claim_skips_superseded_failed_attempt(tmp_path, monk
     with database.connection() as db:
         assert dict(db.execute("SELECT * FROM repertoire_coverage_nodes WHERE id=?", (old_node,)).fetchone()) == before
         assert db.execute("SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id=?", (old_node,)).fetchone()[0] == 0.2
->>>>>>> main

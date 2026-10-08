@@ -9,11 +9,8 @@ import sys
 import threading
 import time
 import uuid
-<<<<<<< HEAD
-=======
 import psycopg
 from psycopg.rows import dict_row
->>>>>>> main
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -70,9 +67,6 @@ def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(reper
     assert result['selected']['proposed']['metrics']['learner_decision_occurrences'] == 2
     assert result['whole_repertoire']['current']['metrics']['distinct_cards'] == 3
     assert result['whole_repertoire']['proposed']['metrics']['distinct_cards'] == 4
-<<<<<<< HEAD
-    assert product_snapshot() == before, 'Deployed reader-only prefix diagnostics wrote product state'
-=======
     test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes(
         endpoint, source, lines, product_snapshot, reader_api_response)
     assert product_snapshot() == before, 'Deployed reader-only prefix diagnostics wrote product state'
@@ -88,7 +82,6 @@ def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(reper
     assert product_snapshot() == before, 'Deployed reader-only transition planner wrote product state'
     print(json.dumps({'test': 'test_issue79_reader_only_deployed_api_plans_without_product_writes',
                       'plan_http_status': 200, 'status': transition['status'], 'product_state_unchanged': True}))
->>>>>>> main
     print(json.dumps({'test': 'test_issue77_reader_only_deployed_api_evaluates_without_product_writes',
                       'source_http_status': 200, 'evaluate_http_status': 200,
                       'current_selected_cards': 1, 'proposed_selected_cards': 2,
@@ -96,8 +89,6 @@ def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(reper
                       'product_state_unchanged': True, 'foreground_rejections': foreground_rejections}))
 
 
-<<<<<<< HEAD
-=======
 def test_issue78_multiple_candidates_are_readonly_and_preserve_unselected_routes(
         endpoint, source, lines, product_snapshot, reader_api_response):
     before = product_snapshot()
@@ -140,7 +131,6 @@ def idle_prefix_response(client, method, path, **options):
     raise AssertionError('Prefix rehearsal never obtained foreground-idle admission within 10 seconds')
 
 
->>>>>>> main
 def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids):
     """Real primary/query-only HTTP reads, response fencing and idle traversal."""
     from fastapi.testclient import TestClient
@@ -150,13 +140,9 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
     tables = ('cards', 'reviews', 'repertoire_cards', 'repertoire_lines',
               'repertoire_line_training_depths', 'opening_graph_steps', 'opening_graph_publications',
               'prefix_splits', 'opening_card_schedule_seeds', 'daily_queue', 'queue_projections',
-<<<<<<< HEAD
-              'background_tasks', 'operation_receipts')
-=======
               'background_tasks', 'operation_receipts', 'card_revisions', 'review_schedule_snapshots',
               'queue_attempt_origins', 'review_attempt_receipts', 'opening_evidence_attempts',
               'opening_evidence_observations', 'opening_evidence_events', 'study_attempts')
->>>>>>> main
     def product_snapshot():
         with postgres_store.connection(read_only=True) as database:
             return {table: sorted(json.dumps(dict(row), sort_keys=True, default=str) for row in
@@ -166,28 +152,17 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
     client = TestClient(app)  # No lifespan: the existing disposable product already owns startup.
     base_path = f'/api/repertoires/{repertoire_id}/prefix-evaluation'
     before = product_snapshot()
-<<<<<<< HEAD
-    source_response = client.get(base_path + '/source')
-=======
     source_response = idle_prefix_response(client, 'GET', base_path + '/source')
->>>>>>> main
     assert source_response.status_code == 200, source_response.text
     source = source_response.json()
     for selection, depths in (([], None), ([lines[0]['id']], None),
                               ([line['id'] for line in lines[:2]], {line['id']: 1 for line in lines[:2]})):
-<<<<<<< HEAD
-        response = client.post(base_path + '/evaluate', json={
-            'snapshot_id': source['snapshot_id'], 'selected_line_ids': selection, 'candidate_depths': depths})
-        assert response.status_code == 200, response.text
-    assert product_snapshot() == before, 'Prefix diagnostics wrote product state'
-=======
         response = idle_prefix_response(client, 'POST', base_path + '/evaluate', json={
             'snapshot_id': source['snapshot_id'], 'selected_line_ids': selection, 'candidate_depths': depths})
         assert response.status_code == 200, response.text
     assert product_snapshot() == before, 'Prefix diagnostics wrote product state'
     test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(
         repertoire_id, lines, card_ids, product_snapshot)
->>>>>>> main
 
     original_connection = postgres_store.connection
     original_calculation = evaluator_api.iter_prefix_evaluation
@@ -217,14 +192,6 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
     evaluator_api.iter_prefix_evaluation = paused_calculation
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-<<<<<<< HEAD
-            future = executor.submit(client.post, base_path + '/evaluate', json={
-                'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
-            assert prepared.wait(5), 'Evaluation did not reach its closed-connection calculation'
-            with original_connection(read_only=True) as database:
-                readers = database.execute_native('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
-                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers)
-=======
             future = executor.submit(idle_prefix_response, client, 'POST', base_path + '/evaluate', json={
                 'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
             assert prepared.wait(5), 'Evaluation did not reach its closed-connection calculation'
@@ -234,7 +201,6 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
                 observer.execute('SET TRANSACTION READ ONLY')
                 readers = observer.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
                 assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers), readers
->>>>>>> main
             started = time.perf_counter()
             with original_connection(read_only=False) as database:
                 database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
@@ -259,11 +225,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
         return result
     evaluator_api.iter_prefix_evaluation = changed_source
     try:
-<<<<<<< HEAD
-        response = client.post(base_path + '/evaluate', json={
-=======
         response = idle_prefix_response(client, 'POST', base_path + '/evaluate', json={
->>>>>>> main
             'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
         assert response.status_code == 409 and response.json()['detail']['code'] == 'stale_snapshot', response.text
         assert 'whole_repertoire' not in response.json()
@@ -271,11 +233,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
         evaluator_api.iter_prefix_evaluation = original_calculation
         with original_connection(read_only=False) as database:
             database.execute_native('UPDATE repertoire_lines SET name=%s WHERE id=%s', (lines[0]['name'], lines[0]['id']))
-<<<<<<< HEAD
-    replay = client.post(base_path + '/evaluate', json={
-=======
     replay = idle_prefix_response(client, 'POST', base_path + '/evaluate', json={
->>>>>>> main
         'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']]})
     assert replay.status_code == 200, replay.text
     print(json.dumps({'test': 'test_issue77_readonly_snapshot_and_foreground_concurrency',
@@ -283,8 +241,6 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
                       'source_changed_response': 409, 'background_transaction_budget_ms': 50}))
 
 
-<<<<<<< HEAD
-=======
 def post_transition_when_foreground_idle(client, path, payload):
     """Honor real foreground leases without hiding database or planner failures."""
     from app.services import redis_admission_gate
@@ -414,7 +370,6 @@ def test_issue79_pending_command_bindings_are_accounted_before_delivery(client, 
                       'product_state_unchanged': True}))
 
 
->>>>>>> main
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Segmentation rehearsal requires the disposable PostgreSQL instance')
@@ -423,9 +378,6 @@ def main():
     os.environ['TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS'] = '50'
     repertoire_id = 'segmentation-rehearsal-' + uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
-<<<<<<< HEAD
-    starting_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
-=======
     import chess
     fixture_board = chess.Board()
     # Keep the route family independent of retained standard e4 targets from
@@ -433,7 +385,6 @@ def main():
     for move_uci in ('a2a3', 'a7a6', 'h2h3', 'h7h6', 'a3a4', 'a6a5', 'h3h4', 'h6h5'):
         fixture_board.push_uci(move_uci)
     starting_fen = fixture_board.fen()
->>>>>>> main
     lines = tuple({'id': f'{repertoire_id}-{index}', 'name': f'Branch {index}', 'start_fen': starting_fen,
                    'moves_json': json.dumps(['e2e4', reply, 'g1f3']), 'trained_color': 'white', 'learner_decision_count': 2}
                   for index, reply in enumerate(['e7e5', 'c7c5', 'e7e6']))
@@ -448,10 +399,7 @@ def main():
                         'queue': 'SELECT * FROM daily_queue WHERE card_id=ANY(%s) ORDER BY id',
                     }.items()}
     owned_card_ids = []
-<<<<<<< HEAD
-=======
     shared_target_repertoire_id = repertoire_id + '-authored-target'
->>>>>>> main
     operation_id = None
     traversals = []
     original_traverse = worker.presentation_occurrences
@@ -466,8 +414,6 @@ def main():
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)',
                                     (repertoire_id, 'Segmentation rehearsal', 'test.pgn', now))
-<<<<<<< HEAD
-=======
             database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)',
                                     (shared_target_repertoire_id, 'Authored compatible target', 'test.pgn', now))
             target_step = build_graph(GraphInput(shared_target_repertoire_id, ({'id': 'authored-target',
@@ -482,26 +428,17 @@ def main():
             owned_card_ids.append(target_step.card_id)
             database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',
                                     (shared_target_repertoire_id, target_step.card_id))
->>>>>>> main
             for line, step in zip(lines, steps):
                 database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s)',
                     (line['id'], repertoire_id, line['name'], 'white', starting_fen, line['moves_json'], now))
                 database.execute_native('INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,%s)',
                     (line['id'], line['learner_decision_count']))
-<<<<<<< HEAD
-                created_card = database.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color) VALUES(%s,%s,'prefix',%s,%s,%s,'white') ON CONFLICT DO NOTHING RETURNING id",
-=======
                 created_card = database.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,trained_color,canonical_route_source) VALUES(%s,%s,'prefix',%s,%s,%s,'white',0) ON CONFLICT DO NOTHING RETURNING id",
->>>>>>> main
                     (step.card_id, repertoire_id, starting_fen, line['moves_json'], date.today().isoformat())).fetchone()
                 if created_card is None:
                     raise RuntimeError('Segmentation fixture overlaps an existing card; preserve existing data')
                 owned_card_ids.append(step.card_id)
-<<<<<<< HEAD
-                database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (repertoire_id, step.card_id))
-=======
                 database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)', (repertoire_id, step.card_id))
->>>>>>> main
                 database.execute_native('INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color) VALUES(%s,1,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                     (repertoire_id, line['id'], step.decision_index, step.segment_kind, step.first_decision_index, step.last_decision_index,
                      json.dumps(step.decision_fen_keys), step.card_id, step.parent_card_id, step.decision_fen_key, step.starting_fen, json.dumps(step.moves), step.trained_color))
@@ -624,10 +561,7 @@ def main():
             database.execute_native('DELETE FROM background_tasks WHERE kind=%s AND deduplication_key=%s', ('opening_segmentation', repertoire_id))
             database.execute_native('DELETE FROM cards WHERE id=ANY(%s)', (owned_card_ids,))
             database.execute_native('DELETE FROM repertoires WHERE id=%s', (repertoire_id,))
-<<<<<<< HEAD
-=======
             database.execute_native('DELETE FROM repertoires WHERE id=%s', (shared_target_repertoire_id,))
->>>>>>> main
         postgres_store.close_pools()
 
 
