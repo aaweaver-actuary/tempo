@@ -22,6 +22,18 @@ productTest("daily study opens while background analysis remains queued", async 
     docker("start", "background-worker");
     const initialActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
     expect(initialActivity.counts.queued).toBeGreaterThan(1000);
+    // A cold focused run can reach the browser before the restarted worker
+    // publishes the fixture's due card. Establish the real queue boundary
+    // without waiting for the independent analysis backlog to drain.
+    await expect.poll(async () => {
+      const publishedQueueResponse = await request.get(`${api}/queue/window?limit=20`);
+      expect(publishedQueueResponse.ok()).toBeTruthy();
+      const publishedQueue = await publishedQueueResponse.json();
+      return publishedQueue.cards.some((card: { id: string }) => card.id === `${fixtureId}-due`);
+    }, { message: "Fixture due card is published before browser interaction", timeout: 30_000 })
+      .toBe(true);
+    const publishedActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
+    expect(publishedActivity.counts.queued).toBeGreaterThan(1000);
     await prepareUI(page);
     await expect(page.locator('.persistent-board-shell[data-unavailable="true"]')).toHaveCount(0);
     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");

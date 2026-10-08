@@ -175,6 +175,8 @@ test("Chess.com puzzle import starts at the solver position across browser engin
 
 test("contextual board keys and nested popup Escape work across browser engines", async ({ page }) => {
   await prepareVisualUI(page); await navigate(page, "Builder");
+  // Initial repertoire binding changes the board identity and cancels selection.
+  await expect(page.getByRole("combobox", { name: "Active repertoire" })).toHaveValue("visual-repertoire");
   const board = page.locator(".board-frame");
   const root = await board.getAttribute("data-fen");
   await playMove(page, board, "e2", "e4");
