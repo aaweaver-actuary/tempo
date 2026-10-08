@@ -30,12 +30,15 @@ CREATE FUNCTION guard_prefix_transition_scope(scope_kind TEXT, scope_id TEXT) RE
 DECLARE owning_operation TEXT;
 BEGIN
     IF scope_id IS NULL THEN RETURN; END IF;
+    -- One shared lock per writing transaction closes the fence-installation race
+    -- without allocating a lock for every unfenced identity in a bulk import.
+    PERFORM pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0));
     IF scope_kind='card' THEN
-        PERFORM pg_advisory_xact_lock(hashtextextended('tempo:card-edit:'||scope_id,0));
         SELECT fence.operation_id INTO owning_operation FROM prefix_transition_card_fences fence WHERE fence.card_id=scope_id;
+        IF owning_operation IS NOT NULL THEN PERFORM pg_advisory_xact_lock(hashtextextended('tempo:card-edit:'||scope_id,0)); END IF;
     ELSE
-        PERFORM pg_advisory_xact_lock(hashtextextended('tempo:opening-graph:'||scope_id,0));
         SELECT fence.operation_id INTO owning_operation FROM prefix_transition_repertoire_fences fence WHERE fence.repertoire_id=scope_id;
+        IF owning_operation IS NOT NULL THEN PERFORM pg_advisory_xact_lock(hashtextextended('tempo:opening-graph:'||scope_id,0)); END IF;
     END IF;
     IF owning_operation IS NOT NULL AND (owning_operation IS DISTINCT FROM current_setting('tempo.prefix_transition_operation',true) OR NOT EXISTS(SELECT 1 FROM prefix_transition_applications application WHERE application.operation_id=owning_operation AND application.state IN ('staging','staged','publishing','recovery_required'))) THEN
         RAISE EXCEPTION USING ERRCODE='P0080', MESSAGE='Prefix transition '||owning_operation||' is in progress; retry this structural edit after publication or recovery.';

@@ -2359,6 +2359,8 @@ This is a new read-only feature; there was no existing diagnostic implementation
 | Structural edits, membership adoption or absent-target creation bypass reservations; duplicate plans or changed payloads apply twice | `test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery` |
 | Source, target, history, membership or graph changes after preparation partially apply | `test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation` |
 | Study during staging applies a stale plan or leaves structural fences stuck | `test_issue80_review_during_staging_rejects_activation_and_releases_fences` |
+| Application rehearsal consumes unrelated retained publication tasks from earlier regular proofs | `test_issue80_application_rehearsal_preserves_unrelated_publication_tasks` |
+| Unfenced bulk imports/graph writes exhaust PostgreSQL lock memory | `test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget` |
 | Real concurrent target creation, source edit or membership adoption escapes authoritative locks | `test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict` |
 | Concurrent same-operation delivery, stale stage lease, activation interruption, lost response or worker restart repeats mutation | `test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback` |
 | Reviews, schedules, seeds, shared memberships, implicit ownership or authored checkpoint kinds are rewritten | `test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved` |

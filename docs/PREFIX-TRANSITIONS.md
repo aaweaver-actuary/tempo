@@ -160,7 +160,8 @@ repair. This is an application readiness check; planner semantics remain unchang
 ### Acceptance and identity reservations
 
 The acceptance write acquires foreground admission only after preparation. It
-locks the command receipt, relevant pending receipts and graph tasks, then sorted
+locks the command receipt, relevant pending receipts and graph tasks, then the
+exclusive `tempo:prefix-transition:reservations` advisory lock and sorted
 graph advisory identities, sorted card advisory identities, source/depth rows,
 repertoire/publication state, cards/memberships and attempt/queue rows. Queue date
 locks use the existing queue-position identity. Pending receipt locks use NOWAIT;
@@ -175,8 +176,15 @@ identity fences, including cards that were absent at approval. Database triggers
 check both arriving and departing structural scopes. Imports, source/depth edits,
 card edits/creation, membership adoption, split changes, graph requests and step
 writes cannot bypass the reservations through another writer path. The existing
-`tempo:opening-graph:` and `tempo:card-edit:` locks serialize creators with fence
-installation. A transaction-local owner setting is accepted only for a persisted
+`tempo:opening-graph:` and `tempo:card-edit:` identities remain in use. Structural
+writers take one shared reservation lock before checking fences; acceptance and
+activation take its exclusive counterpart before graph/card locks. This waits for
+prior structural writers and prevents an absent target or source edit from passing
+between revalidation and fence installation. Unfenced writes allocate no per-card
+advisory locks, preserving the lock budget for bulk graph/import operations. Card
+edit and graph-request entry points take the shared reservation lock before their
+explicit identity locks. Trigger-only writers with preexisting row locks may still
+encounter ordinary PostgreSQL contention; existing durable retries handle it. A transaction-local owner setting is accepted only for a persisted
 active application. The staging handler verifies its task generation/lease before
 using that owner; activation verifies the original receipt and exact prepared
 inputs. Structural fences remain until completion or explicit recovery resolution.

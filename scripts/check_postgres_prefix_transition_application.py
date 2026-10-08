@@ -56,6 +56,23 @@ def ready_plan(repertoire_id, lines):
     return plan, {'operation_id': operation_id, 'repertoire_id': repertoire_id, 'request': request}
 
 
+
+@contextmanager
+def isolate_unrelated_publication_tasks():
+    """Use real admission controls; claim only this rehearsal's publication work.
+
+    Earlier regular proofs may deliberately retain queued work for deleted source
+    fixtures. Do not consume, repair, or discard those unrelated task identities.
+    """
+    with postgres_store.connection(read_only=False) as database:
+        paused=[row[0] for row in database.execute_native("INSERT INTO background_activity(source,work_id,paused,updated_at) SELECT 'durable',id,1,%s FROM background_tasks WHERE kind IN ('opening_graph_rebuild','integrity_scan') AND deduplication_key NOT LIKE 'issue80-%%' ON CONFLICT DO NOTHING RETURNING work_id",(datetime.now(timezone.utc).isoformat(),)).fetchall()]
+    try:
+        yield
+    finally:
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native("DELETE FROM background_activity WHERE source='durable' AND work_id=ANY(%s)",(paused,))
+
+
 def drain(kind, handler):
     count = 0
     while task := claim_task(kind):
@@ -160,6 +177,35 @@ def fixture(label):
         yield created
     finally:
         cleanup_fixture(created[0],created[1])
+
+
+
+
+def test_issue80_application_rehearsal_preserves_unrelated_publication_tasks():
+    unrelated='unrelated-prefix-proof-'+uuid.uuid4().hex
+    with postgres_store.connection(read_only=False) as database:
+        task=enqueue_task_in_transaction(database,'opening_graph_rebuild',unrelated,{'repertoire_id':unrelated,'local_day':date.today().isoformat()},priority=0)
+    try:
+        with isolate_unrelated_publication_tasks():
+            with fixture('isolated-claims'):
+                with postgres_store.connection(read_only=True) as database:
+                    row=database.execute_native('SELECT state,generation,attempt_count FROM background_tasks WHERE id=%s',(task['id'],)).fetchone()
+                    assert tuple(row)==('queued',task['generation'],0)
+    finally:
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('DELETE FROM background_tasks WHERE id=%s',(task['id'],))
+    print('PASS test_issue80_application_rehearsal_preserves_unrelated_publication_tasks')
+
+
+def test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget():
+    with fixture('bulk-locks') as (rep,other,lines,steps):
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) SELECT %s||'-bulk-'||ordinal,%s,'prefix',%s,'[]',%s FROM generate_series(1,8000) ordinal",(rep,rep,lines[0]['start_fen'],date.today().isoformat()))
+            database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id) SELECT %s,id FROM cards WHERE repertoire_id=%s AND id LIKE %s",(rep,rep,rep+'-bulk-%'))
+            database.execute_native("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color) SELECT %s,99,%s,ordinal,%s||'-bulk-'||ordinal,'synthetic',%s,'[]','black' FROM generate_series(1,8000) ordinal",(rep,lines[0]['id'],rep,lines[0]['start_fen']))
+            held=database.execute_native("SELECT COUNT(*) FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'").fetchone()[0]
+            assert held==1,('Unfenced writes allocated per-card locks',held)
+    print('PASS test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget')
 
 
 def test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state():
@@ -660,19 +706,22 @@ def main():
         seed_retained_applications(); return
     if '--recover-retained' in sys.argv or '--verify-retained' in sys.argv:
         recover_retained_applications(cleanup='--cleanup-retained' in sys.argv,verify_only='--verify-retained' in sys.argv); return
-    test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state()
-    test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery()
-    test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation()
-    test_issue80_review_during_staging_rejects_activation_and_releases_fences()
-    test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict()
-    test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback()
-    test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved()
-    test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements()
-    test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks()
-    test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue()
-    test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay()
-    test_issue80_unclean_source_integrity_rejects_before_acceptance()
-    test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result()
+    with isolate_unrelated_publication_tasks():
+        test_issue80_application_rehearsal_preserves_unrelated_publication_tasks()
+        test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget()
+        test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state()
+        test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery()
+        test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation()
+        test_issue80_review_during_staging_rejects_activation_and_releases_fences()
+        test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict()
+        test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback()
+        test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved()
+        test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements()
+        test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks()
+        test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue()
+        test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay()
+        test_issue80_unclean_source_integrity_rejects_before_acceptance()
+        test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result()
 
 
 if __name__ == '__main__':

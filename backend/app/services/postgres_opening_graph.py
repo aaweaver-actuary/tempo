@@ -30,6 +30,7 @@ def request_graph_rebuild_in_transaction(
         "SELECT id FROM background_tasks WHERE kind='opening_graph_rebuild' "
         "AND deduplication_key=%s FOR UPDATE", (repertoire_id,),
     ).fetchone()
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
     database.execute_native(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
         (f"tempo:opening-graph:{repertoire_id}",),

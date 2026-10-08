@@ -137,6 +137,7 @@ def lock_and_revalidate(database, prepared):
     pending_ids = list(prepared.pending_ids)
     database.execute_native('SELECT operation_id FROM operation_receipts WHERE operation_id=ANY(%s) ORDER BY operation_id FOR UPDATE NOWAIT', (pending_ids,)).fetchall()
     database.execute_native("SELECT id FROM background_tasks WHERE kind IN ('opening_graph_rebuild','integrity_scan') AND deduplication_key=ANY(%s) ORDER BY id FOR UPDATE", (repertoire_ids,)).fetchall()
+    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended('tempo:prefix-transition:reservations',0))")
     for repertoire_id in repertoire_ids:
         database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (f'tempo:opening-graph:{repertoire_id}',))
     for card_id in snapshot.lookup_card_ids:
