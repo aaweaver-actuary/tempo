@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
-import { backgroundWorkloadConsumers, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
+import { backgroundWorkloadConsumers, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
@@ -193,6 +193,8 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
   let overrideReplayed = false;
   const context = {
     assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
+    workloadConsumers: ['background-worker','background-scheduler','defense-engine'],
+    runPrefixApplicationProof: () => {},
     repertoireLimitRecreationPgn, limitRecreationRepertoireId: null,
     console: { log() {} },
     importFixture: async () => {
@@ -539,4 +541,57 @@ test("background workload preserves benchmark and consumer restoration failures"
     restoreConsumers: () => { throw restorationFailure; },
   }), (error) => error instanceof AggregateError
     && error.errors[0] === benchmarkFailure && error.errors[1] === restorationFailure);
+});
+
+test("issue80 durable application proofs cover recreation and restored pre/post activation state", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const recreate = source.slice(source.indexOf('  command_recreation: async () => {'), source.indexOf('  backup_restore: async () => {'));
+  assert(recreate.indexOf('runPrefixApplicationProof("--seed-retained")') < recreate.indexOf('...compose, "down"'));
+  assert(recreate.indexOf('...compose, "up"') < recreate.indexOf('runPrefixApplicationProof("--verify-retained")'));
+  const backup = source.slice(source.indexOf('  backup_restore: async () => {'), source.indexOf('  browser: async () => {'));
+  assert(backup.indexOf('runPrefixApplicationProof("--seed-retained")') < backup.indexOf('pg_dump'));
+  assert(backup.indexOf('verify_postgres_backup.py') < backup.indexOf('TEMPO_PREFIX_APPLICATION_PROOF_URL='));
+  assert(backup.indexOf('TEMPO_PREFIX_APPLICATION_PROOF_URL=postgresql://postgres@postgres:5432/tempo_restore_check') < backup.indexOf('dropdb'));
+  assert.match(backup, /runPrefixApplicationProof\("--recover-retained", "--cleanup-retained"\)/);
+});
+
+
+test("pr102 background restoration recovers API health before starting dependent engine", async () => {
+  let apiHealthy = false;
+  const runningConsumers = new Set();
+  const events = [];
+  await restoreBackgroundWorkloadConsumers({
+    startConsumers: (services) => {
+      if (services.includes("defense-engine")) assert(apiHealthy, "Compose rejects an unhealthy API dependency");
+      for (const service of services) runningConsumers.add(service);
+      events.push(services);
+    },
+    waitForReady: async () => {
+      assert(runningConsumers.has("background-worker"));
+      assert(runningConsumers.has("background-scheduler"));
+      apiHealthy = true;
+      events.push("original readiness passed");
+    },
+    verifyConsumers: (state) => {
+      assert.equal(state, "running");
+      assert.deepEqual([...runningConsumers].sort(), [...backgroundWorkloadConsumers].sort());
+      events.push("verified all running");
+    },
+  });
+  assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
+    ["defense-engine"], "verified all running"]);
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 2);
+});
+
+
+test("pr102 background restoration preserves readiness rejection before engine start", async () => {
+  const readinessFailure = new Error("API is still unhealthy");
+  const events = [];
+  await assert.rejects(restoreBackgroundWorkloadConsumers({
+    startConsumers: (services) => events.push(services),
+    waitForReady: () => { throw readinessFailure; },
+    verifyConsumers: () => { throw new Error("Must not verify before readiness"); },
+  }), error => error === readinessFailure);
+  assert.deepEqual(events, [["background-worker", "background-scheduler"]]);
 });

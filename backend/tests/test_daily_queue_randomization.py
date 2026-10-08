@@ -282,7 +282,7 @@ def test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_reject
 
         def execute_native(self, statement, parameters=()):
             assert "pg_advisory_xact_lock" in statement
-            lock_requests.append(parameters)
+            lock_requests.append((statement, parameters))
 
     with TestClient(app) as client:
         _seed_cards()
@@ -303,7 +303,10 @@ def test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_reject
                 queue_commands.bury_queue_entry(CommandDatabase(db), {"entry_id": buried["queue_entry_id"]})
             assert stale.value.status_code == 409
         assert [card["id"] for card in client.get("/api/queue/today").json()["cards"]] == [card["id"] for card in before[1:]]
-        assert lock_requests == [(f"tempo:daily-queue-position:{date.today().isoformat()}",)] * 2
+        assert lock_requests == [
+            ("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))", ()),
+            ("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"tempo:daily-queue-position:{date.today().isoformat()}",)),
+        ] * 2
 
 
 def test_buried_new_study_card_consumes_daily_quota_without_replacement(tmp_path, monkeypatch):

@@ -125,6 +125,12 @@ class PostgresConnection:
 
         return self._database.execute(statement, parameters)
 
+    def execute_native_batch(self, statements):
+        """Fetch a caller-bounded native read set without per-query round trips."""
+        with self._database.pipeline():
+            cursors = [self.execute_native(statement, parameters) for statement, parameters in statements]
+        return cursors
+
     def execute(self, statement: str, parameters: tuple | list = ()) -> psycopg.Cursor[TempoRow]:
         translated = postgres_sql(statement)
         if translated is None:

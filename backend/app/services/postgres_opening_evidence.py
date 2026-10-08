@@ -164,6 +164,28 @@ def _validate_checkpoint_scope(database, request: OpeningEvidenceCheckpoint, *, 
     database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{manifest.card_id}",))
     from ..card_deletion import require_card_not_deleted
     require_card_not_deleted(database, manifest.card_id)
+    # Lock the original identity before attempt/queue rows, just as aggregate
+    # reviews do. Never follow superseded_by to another presentation.
+    card = database.execute_native(
+        "SELECT revision,archived FROM cards WHERE id=%s FOR UPDATE", (manifest.card_id,),
+    ).fetchone()
+    completed = database.execute_native(
+        "SELECT 1 FROM review_attempt_receipts receipt JOIN opening_evidence_attempts attempt "
+        "ON attempt.attempt_id=receipt.attempt_id WHERE receipt.attempt_id=%s "
+        "AND receipt.card_id=%s AND attempt.state='complete'",
+        (request.attempt_id, manifest.card_id),
+    ).fetchone() if completing_review else None
+    if not completed and (card is None or card['archived']):
+        raise HTTPException(409, {'code': 'card_archived' if card and card['archived'] else 'card_unavailable',
+                                 'message': 'The original opening presentation is no longer available for this checkpoint.',
+                                 'aggregate_review_allowed': False})
+    retired = database.execute_native(
+        'SELECT retired_operation_id FROM opening_evidence_attempts WHERE attempt_id=%s', (request.attempt_id,),
+    ).fetchone()
+    if not completed and retired and retired[0]:
+        raise HTTPException(409, {'code': 'card_archived', 'message': 'The original opening attempt was retired.',
+                                 'aggregate_review_allowed': False})
+
     if request.terminal and request.terminal.state == "complete" and not completing_review:
         raise EvidenceConflict("A complete shadow attempt must commit with its aggregate review")
     proof = database.execute_native(

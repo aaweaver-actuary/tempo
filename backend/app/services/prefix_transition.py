@@ -151,6 +151,10 @@ def iter_transition_plan(snapshot: TransitionSnapshot, selected_line_ids, candid
         if integrity_block['card_id'] in affected_ids:
             block('integrity_conflict', integrity_block['card_id'],
                   f"Resolve integrity issue {integrity_block['issue_id']} in repertoire {integrity_block['repertoire_id']} before shortening.")
+    for deleted_card in snapshot.rows('deleted_cards'):
+        if deleted_card['card_id'] in proposed_by_id:
+            block('permanently_deleted_target', deleted_card['card_id'],
+                  'This proposed presentation was permanently deleted. Choose a transition that preserves its exclusion.')
     for publication in snapshot.rows('publications'):
         if (publication['state'] != 'ready' or publication.get('task_generation', 0) is not None
                 and (publication.get('task_generation', 0) > publication['generation']

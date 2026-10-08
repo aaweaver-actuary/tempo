@@ -113,14 +113,23 @@ def test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_c
         def fetchone(self): return self.value
         def fetchall(self): return self.value
     class Database:
+        def execute_native_batch(self, statements):
+            return [self.execute_native(query, parameters) for query, parameters in statements]
+
         def execute_native(self, query, parameters):
             assert active_read
             queries.append(query)
             name = re.search(r'FROM (\w+)', query).group(1)
             rows = fixture.rows(name)
-            if query.startswith('SELECT COUNT(*)'):
-                return Cursor({'count': api.MAX_TRANSITION_ROWS + 1 if oversized == 'rows' else len(rows),
-                               'bytes': api.MAX_TRANSITION_BYTES + 1 if oversized == 'bytes' else len(canonical_json(rows))})
+            if 'octet_length(row_to_json(bounded)::text)' in query:
+                table_names = [re.search(r'FROM (\w+)', component).group(1)
+                               for component in re.findall(r'FROM \((SELECT .*?)\) bounded', query)]
+                table_counts = [len(fixture.rows(name)) for name in table_names]
+                table_bytes = [len(canonical_json(fixture.rows(name))) for name in table_names]
+                if oversized == 'rows': table_counts[0] = api.MAX_TRANSITION_ROWS + 1
+                if oversized == 'bytes': table_bytes[0] = api.MAX_TRANSITION_BYTES + 1
+                return Cursor(dict(count=sum(table_counts), bytes=sum(table_bytes),
+                                   table_counts=table_counts, table_bytes=table_bytes))
             return Cursor(rows)
     def loader(_identifier, _deadline, *, capture):
         nonlocal active_read
@@ -144,7 +153,7 @@ def test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_c
     else:
         captured = api.load_transition_snapshot('rep', fixture.lookup_card_ids, fixture.study_day, 999999999)
         assert captured.rows('cards') == fixture.rows('cards')
-        assert all(query.startswith('SELECT ') for query in queries)
+        assert all(query.startswith(('SELECT ', 'WITH snapshot_scope AS MATERIALIZED (SELECT ')) for query in queries)
 
 
 def test_issue79_runtime_guard_is_background_query_only_without_command_dispatch(monkeypatch):
@@ -193,3 +202,96 @@ def test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejecti
     response = rehearsal.post_transition_when_foreground_idle(SimpleNamespace(post=post), '/plan', {'snapshot_id': 'same'})
     assert len(requests) == expected_requests
     assert response is (ready if expected_requests == 2 else busy)
+
+
+def test_pr102_snapshot_size_checks_use_one_statement_with_unchanged_native_rows(monkeypatch):
+    from types import SimpleNamespace
+    captured_fixture = prepared_snapshot()
+    statements = []
+    def execute(query, parameters):
+        statements.append(query)
+        table_name = re.search(r'FROM (\w+)', query).group(1)
+        table_rows = captured_fixture.rows(table_name)
+        if 'octet_length(row_to_json(bounded)::text)' in query:
+            assert len(parameters) == 2, 'Repeated lookup arrays must be bound once for metadata'
+            table_names = [re.search(r'FROM (\w+)', component).group(1)
+                           for component in re.findall(r'FROM \((SELECT .*?)\) bounded', query)]
+            table_counts = [len(captured_fixture.rows(name)) for name in table_names]
+            table_bytes = [len(canonical_json(captured_fixture.rows(name))) for name in table_names]
+            return SimpleNamespace(fetchone=lambda: dict(count=sum(table_counts), bytes=sum(table_bytes),
+                                                        table_counts=table_counts, table_bytes=table_bytes))
+        return SimpleNamespace(fetchall=lambda: table_rows)
+    monkeypatch.setattr(api.structural, 'load_snapshot', lambda _identifier, _deadline, *, capture: (
+        captured_fixture.source, capture(SimpleNamespace(execute_native=execute, execute_native_batch=lambda statements: [execute(query, parameters) for query, parameters in statements]))))
+    monkeypatch.setattr(api.structural, 'check_available', lambda *_args: None)
+    captured = api.load_transition_snapshot('rep', captured_fixture.lookup_card_ids, captured_fixture.study_day, 999999999)
+    assert captured.rows('cards') == captured_fixture.rows('cards')
+    assert captured.rows('repertoire_cards') == captured_fixture.rows('repertoire_cards')
+    size_checks = [query for query in statements if 'octet_length(row_to_json(bounded)::text)' in query]
+    assert len(size_checks) == 1, f'Preparation executed {len(size_checks)} separate size queries'
+
+
+def test_pr102_native_snapshot_batch_preserves_digest_evidence_and_read_order():
+    from contextlib import contextmanager
+    from decimal import Decimal
+    from types import SimpleNamespace
+    from app.postgres_store import PostgresConnection, TempoRow
+    from app.snapshot_reads import RecordingReader
+
+    pipeline_active = False
+    pipeline_events = []
+    statements = []
+    native_value = Decimal('1.234567890123456789')
+    @contextmanager
+    def pipeline():
+        nonlocal pipeline_active
+        pipeline_events.append('enter')
+        pipeline_active = True
+        try:
+            yield
+        finally:
+            pipeline_active = False
+            pipeline_events.append('exit')
+    def execute(query, parameters):
+        assert pipeline_active
+        statements.append((query, parameters))
+        assert 'encode(sha256(convert_to(row_to_json(captured)::text' in query
+        def fetchall():
+            assert not pipeline_active
+            return [TempoRow(('id', 'value', '__transition_evidence'), (parameters[0], native_value, 'digest'))]
+        return SimpleNamespace(fetchall=fetchall)
+    reads = []
+    reader = RecordingReader(PostgresConnection(SimpleNamespace(pipeline=pipeline, execute=execute)), reads)
+    queries = [('SELECT id,value FROM cards WHERE id=%s', ('first',)),
+               ('SELECT id,value FROM cards WHERE id=%s', ('second',))]
+    cursors = reader.execute_native_batch(queries)
+    assert pipeline_events == ['enter', 'exit'] and len(statements) == 2
+    rows = [cursor.fetchall()[0] for cursor in cursors]
+    assert [row['id'] for row in rows] == ['first', 'second']
+    assert all(row['value'] is native_value for row in rows)
+    assert [(read.query, read.parameters, read.rows, read.uses_sha256_evidence) for read in reads] == [
+        (query, parameters, ('digest',), True) for query, parameters in queries]
+
+
+@pytest.mark.parametrize('stale_link', [False, True])
+def test_pr102_snapshot_batch_respects_cumulative_limits_and_stale_link_precedence(monkeypatch, stale_link):
+    from types import SimpleNamespace
+    fixture = prepared_snapshot()
+    batches = []
+    def execute(query, parameters):
+        assert 'octet_length(row_to_json(bounded)::text)' in query
+        table_counts = [0, 0, 1, api.MAX_TRANSITION_ROWS] + [0] * 16
+        return SimpleNamespace(fetchone=lambda: dict(count=sum(table_counts), bytes=0,
+                                                    table_counts=table_counts, table_bytes=[0] * 20))
+    def batch(statements):
+        batches.append(statements)
+        assert len(statements) == 3  # Never transfer the first oversized table or its suffix.
+        card_identifier = 'not-in-approved-lookup' if stale_link else fixture.lookup_card_ids[0]
+        return [SimpleNamespace(fetchall=lambda: []), SimpleNamespace(fetchall=lambda: []),
+                SimpleNamespace(fetchall=lambda: [{'card_id': card_identifier, 'repertoire_id': 'rep'}])]
+    monkeypatch.setattr(api.structural, 'load_snapshot', lambda _identifier, _deadline, *, capture: (
+        fixture.source, capture(SimpleNamespace(execute_native=execute, execute_native_batch=batch))))
+    with pytest.raises(api.PrefixEvaluationError) as error:
+        api.load_transition_snapshot('rep', fixture.lookup_card_ids, fixture.study_day, 999999999)
+    assert error.value.code == ('stale_snapshot' if stale_link else 'limit_exceeded')
+    assert len(batches) == 1

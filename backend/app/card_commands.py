@@ -82,6 +82,7 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
         "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id", (identifier, identifier))]
     validated_routes = {repertoire_id: ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in repertoire_ids}
     replacement_id = card_id(request.starting_fen, moves)
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
     for locked_id in sorted({identifier, replacement_id}):
         database.execute_native(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
@@ -196,6 +197,7 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
 @refresh_game_publications_after_mutation
 def archive_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     identifier = str(payload["card_id"])
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
     database.execute_native(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
         (f"tempo:card-edit:{identifier}",),

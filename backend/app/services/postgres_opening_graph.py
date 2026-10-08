@@ -27,7 +27,11 @@ def request_graph_rebuild_in_transaction(
     database: postgres_store.PostgresConnection, repertoire_id: str, local_day: str,
 ) -> dict[str, Any]:
     """Enqueue a new graph generation after all imported and staged generations."""
-
+    database.execute_native(
+        "SELECT id FROM background_tasks WHERE kind='opening_graph_rebuild' "
+        "AND deduplication_key=%s FOR UPDATE", (repertoire_id,),
+    ).fetchone()
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))")
     database.execute_native(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
         (f"tempo:opening-graph:{repertoire_id}",),
@@ -92,6 +96,51 @@ def prepare_next_graph_line(repertoire_id: str, after_line_id: str) -> PreparedG
     return PreparedGraphLine(source_line["id"], build_graph(graph_input))
 
 
+def stage_graph_steps(database, batch, generation):
+    """Shared publisher writer; transition staging intentionally creates no cards."""
+    with database.raw.cursor() as cursor:
+        cursor.executemany(
+            "INSERT INTO opening_graph_steps("
+            "repertoire_id,generation,line_id,decision_index,segment_kind,"
+            "first_decision_index,last_decision_index,decision_fen_keys_json,"
+            "card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color"
+            ") VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT(repertoire_id,generation,line_id,decision_index) DO NOTHING",
+            [
+                (step.repertoire_id, generation, step.line_id, step.decision_index,
+                 step.segment_kind, step.first_decision_index, step.last_decision_index,
+                 json.dumps(step.decision_fen_keys), step.card_id, step.parent_card_id,
+                 step.decision_fen_key, step.starting_fen, json.dumps(step.moves),
+                 step.trained_color)
+                for step in batch
+            ],
+        )
+
+
+def create_graph_cards(database, batch, study_day, *, strict=False):
+    """Use publisher defaults; strict application never adopts an absent-ID race."""
+    if not batch:
+        return
+    card_rows = [
+        (step.card_id, step.repertoire_id,
+         "prefix" if step.segment_kind == "prefix" else "response",
+         step.starting_fen, json.dumps(step.moves),
+         "new" if step.parent_card_id is None else "locked", study_day, step.trained_color)
+        for step in batch
+    ]
+    database.execute_native(
+        "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,"
+        "due_date,content_type,trained_color,pending_validation,canonical_route_source) "
+        "SELECT prepared.card_id,prepared.repertoire_id,prepared.kind,prepared.start_fen,"
+        "prepared.moves_json,prepared.state,prepared.due_date,'opening',prepared.trained_color,0,0 "
+        "FROM UNNEST(%s::text[],%s::text[],%s::text[],%s::text[],%s::text[],"
+        "%s::text[],%s::text[],%s::text[]) AS prepared("
+        "card_id,repertoire_id,kind,start_fen,moves_json,state,due_date,trained_color) "
+        + ("" if strict else "ON CONFLICT(id) DO NOTHING"),
+        tuple(list(column) for column in zip(*card_rows)),
+    )
+
+
 def stage_graph_line_in_transaction(
     database: postgres_store.PostgresConnection,
     task: dict[str, Any],
@@ -120,36 +169,8 @@ def stage_graph_line_in_transaction(
     batch = tuple(retained_steps[step.decision_index] for step in original_batch if step.decision_index in retained_steps)
     generation = int(task["generation"])
     study_day = str(payload["local_day"])
-    with database.raw.cursor() as cursor:
-        cursor.executemany(
-            "INSERT INTO opening_graph_steps("
-            "repertoire_id,generation,line_id,decision_index,segment_kind,"
-            "first_decision_index,last_decision_index,decision_fen_keys_json,"
-            "card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color"
-            ") VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-            "ON CONFLICT(repertoire_id,generation,line_id,decision_index) DO NOTHING",
-            [
-                (step.repertoire_id, generation, step.line_id, step.decision_index,
-                 step.segment_kind, step.first_decision_index, step.last_decision_index,
-                 json.dumps(step.decision_fen_keys), step.card_id, step.parent_card_id,
-                 step.decision_fen_key, step.starting_fen, json.dumps(step.moves),
-                 step.trained_color)
-                for step in batch
-            ],
-        )
-        cursor.executemany(
-            "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,"
-            "due_date,content_type,trained_color,pending_validation,canonical_route_source) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,'opening',%s,0,0) ON CONFLICT(id) DO NOTHING",
-            [
-                (step.card_id, step.repertoire_id,
-                 "prefix" if step.segment_kind == "prefix" else "response",
-                 step.starting_fen, json.dumps(step.moves),
-                 "new" if step.parent_card_id is None else "locked",
-                 study_day, step.trained_color)
-                for step in batch
-            ],
-        )
+    stage_graph_steps(database, batch, generation)
+    create_graph_cards(database, batch, study_day)
     next_offset = offset + len(original_batch)
     next_payload = {
         **payload,
@@ -232,16 +253,8 @@ def execute_graph_link_slice(task: dict[str, Any]) -> bool:
             return link_graph_cards_in_transaction(database, task, card_ids)
 
 
-def publish_graph_in_transaction(
-    database: postgres_store.PostgresConnection, task: dict[str, Any],
-) -> bool:
-    """Change the visible generation only after every staged card is linked."""
-
-    if not lock_current_slice(database, task):
-        return False
-    payload = dict(task["payload"])
-    repertoire_id = str(payload["repertoire_id"])
-    generation = int(task["generation"])
+def publish_graph_generation(database, repertoire_id, generation):
+    """Shared atomic visibility boundary after all generated identities are linked."""
     missing_link = database.execute_native(
         "SELECT 1 FROM opening_graph_steps step WHERE step.repertoire_id=%s "
         "AND step.generation=%s AND NOT EXISTS("
@@ -258,6 +271,19 @@ def publish_graph_in_transaction(
         "published_at=excluded.published_at",
         (repertoire_id, generation, datetime.now(timezone.utc).isoformat()),
     )
+
+
+def publish_graph_in_transaction(
+    database: postgres_store.PostgresConnection, task: dict[str, Any],
+) -> bool:
+    """Change the visible generation only after every staged card is linked."""
+
+    if not lock_current_slice(database, task):
+        return False
+    payload = dict(task["payload"])
+    repertoire_id = str(payload["repertoire_id"])
+    generation = int(task["generation"])
+    publish_graph_generation(database, repertoire_id, generation)
     return advance_task_slice_in_transaction(
         database, task, next_phase="classify",
         next_payload={**payload, "after_card_id": ""},
@@ -427,6 +453,67 @@ def prepare_obsolete_graph_cards(
     return PreparedGraphCleanupSlice(tuple(obsolete_card_ids), checkpoint_card_id)
 
 
+def remove_obsolete_graph_memberships(database, repertoire_id, generation, card_ids):
+    """Clean an explicitly bounded identity set with constant client SQL work.
+
+    Lock the eligible links/cards together before mutations. Keep queue retirement,
+    archival and owner reassignment before deleting links: those links suppress
+    implicit authored-owner fallback until the retained owner is established.
+    Ordinary graph cleanup still supplies at most two identities per durable slice.
+    """
+    if not card_ids:
+        return
+    eligible_card_ids = [row[0] for row in database.execute_native(
+        "SELECT link.card_id FROM repertoire_cards link JOIN cards card ON card.id=link.card_id "
+        "WHERE link.repertoire_id=%s AND link.card_id=ANY(%s::text[]) "
+        "AND link.canonical_route_source=0 AND NOT EXISTS("
+        "SELECT 1 FROM opening_graph_steps step WHERE step.repertoire_id=%s "
+        "AND step.generation=%s AND step.card_id=link.card_id) "
+        "ORDER BY link.card_id FOR UPDATE OF link,card",
+        (repertoire_id, list(card_ids), repertoire_id, generation),
+    ).fetchall()]
+    if not eligible_card_ids:
+        return
+    database.execute_native(
+        "UPDATE daily_queue queue SET status='superseded' "
+        "WHERE queue.card_id=ANY(%s::text[]) AND queue.status='queued' "
+        "AND EXISTS(SELECT 1 FROM cards card WHERE card.id=queue.card_id "
+        "AND (card.canonical_route_source=0 OR card.repertoire_id=%s)) "
+        "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
+        "WHERE retained.card_id=queue.card_id AND retained.repertoire_id<>%s)",
+        (eligible_card_ids, repertoire_id, repertoire_id),
+    )
+    # Also retire a globally authored card whose only effective scope is this
+    # generated owner association; retain its card row and all real history.
+    database.execute_native(
+        "UPDATE cards SET archived=1 WHERE id=ANY(%s::text[]) AND repertoire_id=%s "
+        "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
+        "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
+        (eligible_card_ids, repertoire_id, repertoire_id),
+    )
+    database.execute_native(
+        "UPDATE cards SET repertoire_id=(SELECT MIN(retained.repertoire_id) "
+        "FROM repertoire_cards retained WHERE retained.card_id=cards.id "
+        "AND retained.repertoire_id<>%s) WHERE id=ANY(%s::text[]) AND repertoire_id=%s "
+        "AND EXISTS(SELECT 1 FROM repertoire_cards retained "
+        "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
+        (repertoire_id, eligible_card_ids, repertoire_id, repertoire_id),
+    )
+    database.execute_native(
+        "DELETE FROM repertoire_cards WHERE repertoire_id=%s AND card_id=ANY(%s::text[]) "
+        "AND canonical_route_source=0", (repertoire_id, eligible_card_ids),
+    )
+    database.execute_native(
+        "DELETE FROM repertoire_integrity_card_blocks "
+        "WHERE repertoire_id=%s AND card_id=ANY(%s::text[])", (repertoire_id, eligible_card_ids),
+    )
+    database.execute_native(
+        "UPDATE cards SET archived=1 WHERE id=ANY(%s::text[]) AND canonical_route_source=0 "
+        "AND NOT EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id)",
+        (eligible_card_ids,),
+    )
+
+
 def cleanup_graph_cards_in_transaction(
     database: postgres_store.PostgresConnection,
     task: dict[str, Any],
@@ -443,66 +530,7 @@ def cleanup_graph_cards_in_transaction(
         )
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
-    for card_id in prepared.obsolete_card_ids:
-        # Selection happens before this write slice. An intervening foreground
-        # adoption must protect the now-authored membership and its queue.
-        membership = database.execute_native(
-            "SELECT card.canonical_route_source,card.repertoire_id FROM repertoire_cards link "
-            "JOIN cards card ON card.id=link.card_id "
-            "WHERE link.repertoire_id=%s AND link.card_id=%s "
-            "AND link.canonical_route_source=0 FOR UPDATE OF link,card",
-            (repertoire_id, card_id),
-        ).fetchone()
-        if membership is None:
-            continue
-        still_current = database.execute_native(
-            "SELECT 1 FROM opening_graph_steps WHERE repertoire_id=%s "
-            "AND generation=%s AND card_id=%s LIMIT 1",
-            (repertoire_id, generation, card_id),
-        ).fetchone()
-        if still_current:
-            continue
-        if not membership[0] or membership[1] == repertoire_id:
-            database.execute_native(
-                "UPDATE daily_queue SET status='superseded' "
-                "WHERE card_id=%s AND status='queued' "
-                "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
-                "WHERE retained.card_id=%s AND retained.repertoire_id<>%s)",
-                (card_id, card_id, repertoire_id),
-            )
-        # A globally authored card with only this generated owner association
-        # has no effective authored scope. Retire it before deleting that link;
-        # keep its row and history without activating unlinked owner fallback.
-        database.execute_native(
-            "UPDATE cards SET archived=1 WHERE id=%s AND repertoire_id=%s "
-            "AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained "
-            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
-            (card_id, repertoire_id, repertoire_id),
-        )
-        # Move a retained card's owner while the explicit generated membership
-        # still suppresses fallback in the departing repertoire.
-        database.execute_native(
-            "UPDATE cards SET repertoire_id=("
-            "SELECT MIN(retained.repertoire_id) FROM repertoire_cards retained "
-            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s) "
-            "WHERE id=%s AND repertoire_id=%s "
-            "AND EXISTS(SELECT 1 FROM repertoire_cards retained "
-            "WHERE retained.card_id=cards.id AND retained.repertoire_id<>%s)",
-            (repertoire_id, card_id, repertoire_id, repertoire_id),
-        )
-        database.execute_native(
-            "DELETE FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s",
-            (repertoire_id, card_id),
-        )
-        database.execute_native(
-            "DELETE FROM repertoire_integrity_card_blocks "
-            "WHERE repertoire_id=%s AND card_id=%s", (repertoire_id, card_id),
-        )
-        database.execute_native(
-            "UPDATE cards SET archived=1 WHERE id=%s AND canonical_route_source=0 "
-            "AND NOT EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id)",
-            (card_id,),
-        )
+    remove_obsolete_graph_memberships(database, repertoire_id, generation, prepared.obsolete_card_ids)
     return advance_task_slice_in_transaction(
         database, task, next_phase="cleanup",
         next_payload={**payload, "after_card_id": prepared.checkpoint_card_id},
