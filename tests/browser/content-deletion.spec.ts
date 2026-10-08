@@ -105,13 +105,21 @@ test("permanently deleting the active training card clears its attempt and survi
 test("pending card deletion recovers after reload and reports a queue refresh failure", async ({ page }) => {
   await prepareVisualUI(page);
   await page.evaluate(() => localStorage.setItem("tempo-pending-card-delete-v1", JSON.stringify({ operationId: "recovered-delete", cardId: "visual-card", expectedRevision: 1 })));
-  await page.route("**/api/operations/recovered-delete", route => route.fulfill({ json: { state: "complete", response: { deleted: true, card_id: "visual-card" } } }));
-  let refreshRequests = 0;
-  await page.route("**/api/queue/window?**", route => {
-    refreshRequests += 1;
-    return refreshRequests > 1 ? route.fulfill({ status: 503, json: { detail: "Queue unavailable after deletion" } }) : route.fallback();
-  });
+  let confirmDeletion = false;
+  let failDeletionRefresh = false;
+  await page.route("**/api/operations/recovered-delete", route => route.fulfill({ json: confirmDeletion
+    ? { state: "complete", response: { deleted: true, card_id: "visual-card" } }
+    : { state: "pending" },
+  }));
+  await page.route("**/api/queue/window?**", route => failDeletionRefresh
+    ? route.fulfill({ status: 503, json: { detail: "Queue unavailable after deletion" } }) : route.fallback());
   await page.reload();
+  const checkDeletion = page.getByRole("button", { name: "Check card deletion", exact: true });
+  await expect(checkDeletion).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-card-delete-v1"))).not.toBeNull();
+  confirmDeletion = true;
+  failDeletionRefresh = true;
+  await checkDeletion.click();
   await expect(page.getByText("Card deleted. Training queue refresh failed; retry loading the queue.", { exact: true }).first()).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("tempo-pending-card-delete-v1"))).toBeNull();
 });
