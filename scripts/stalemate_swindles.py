@@ -342,9 +342,16 @@ def load_candidates(paths: list[str], receipts: list[dict]):
     verified_candidate_hashes: set[str] = set()
     for filename in paths:
         path = Path(filename)
-        receipt = json.loads(Path(str(path) + ".metadata.json").read_text(encoding="utf-8"))
+        metadata_path = Path(str(path) + ".metadata.json")
+        receipt = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if not isinstance(receipt, dict):
+            raise ValueError(f"Invalid mining metadata {metadata_path}: expected a JSON object")
         if receipt.get("schema_version") != 1 or receipt.get("candidate_sha256") != file_sha256(path):
             raise ValueError(f"Candidate file/metadata mismatch: {path}")
+        for section_name, field_name in (("completion", "complete"), ("source", "sha256_verified")):
+            receipt_section = receipt.get(section_name)
+            if not isinstance(receipt_section, dict) or type(receipt_section.get(field_name)) is not bool:
+                raise ValueError(f"Invalid mining metadata {metadata_path}: {section_name}.{field_name} must be a JSON Boolean (true or false)")
         candidate_sha256 = receipt["candidate_sha256"]
         if candidate_sha256 in verified_candidate_hashes:
             raise ValueError(f"Candidate inputs contain duplicate mined output: {path}")
@@ -383,7 +390,7 @@ def run_build(arguments):
     # identities cannot reveal overlapping source records that yielded nothing.
     if len(receipts) != 1:
         raise ValueError("Multiple mining receipts cannot be aggregated: disjoint source coverage cannot be verified; build from one mining output")
-    complete = all(receipt["completion"]["complete"] and receipt["source"]["sha256_verified"] for receipt in receipts)
+    complete = all(receipt["completion"]["complete"] is True and receipt["source"]["sha256_verified"] is True for receipt in receipts)
     canonical_corpus = bool(re.fullmatch(r"lichess-standard-\d{4}-\d{2}-v[1-9]\d*", arguments.corpus_id))
     if canonical_corpus:
         if not complete or not arguments.corpus_id.startswith(f"lichess-standard-{source_month}-v"):

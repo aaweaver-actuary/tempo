@@ -261,6 +261,127 @@ def test_stalemate_build_rejects_duplicate_verified_candidate_receipts(tmp_path,
     assert not list(tmp_path.rglob("*.partial"))
 
 
+@pytest.fixture
+def synthetic_receipt_build(tmp_path):
+    candidate_path = tmp_path / "candidates.jsonl"
+    result = run_cli("mine", "--source-month", "2026-09", "--output", str(candidate_path), input_text=synthetic_pgn())
+    assert result.returncode == 0, result.stderr
+    metadata_path = Path(str(candidate_path) + ".metadata.json")
+    receipt = json.loads(metadata_path.read_text())
+    # Synthetic build-input metadata only; real archive certification is covered
+    # by test_stalemate_cli_archive_verifies_source_and_rejects_failed_pipeline.
+    synthetic_source_hash = hashlib.sha256(synthetic_pgn().encode()).hexdigest()
+    receipt["source"].update({"filename": "lichess_db_standard_rated_2026-09.pgn.zst",
+        "sha256": synthetic_source_hash, "expected_sha256": synthetic_source_hash, "sha256_verified": True})
+    receipt["completion"]["complete"] = True
+    metadata_path.write_text(json.dumps(receipt))
+    return candidate_path, metadata_path, receipt
+
+
+@pytest.mark.parametrize("receipt_section,boolean_field", [("completion", "complete"), ("source", "sha256_verified")])
+@pytest.mark.parametrize("metadata_case,invalid_value", [
+    pytest.param("value", "false", id="string-false"),
+    pytest.param("value", "true", id="string-true"),
+    pytest.param("value", 0, id="zero"),
+    pytest.param("value", 1, id="one"),
+    pytest.param("value", None, id="null"),
+    pytest.param("value", [], id="array"),
+    pytest.param("value", {}, id="object"),
+    pytest.param("missing_field", None, id="missing-field"),
+    pytest.param("missing_section", None, id="missing-section"),
+    pytest.param("section", None, id="null-section"),
+    pytest.param("section", [], id="array-section"),
+    pytest.param("section", "false", id="string-section"),
+    pytest.param("section", 0, id="number-section"),
+    pytest.param("section", True, id="boolean-section"),
+])
+def test_stalemate_load_candidates_rejects_malformed_receipt_booleans(
+        synthetic_receipt_build, receipt_section, boolean_field, metadata_case, invalid_value):
+    candidate_path, metadata_path, receipt = synthetic_receipt_build
+    if metadata_case == "missing_field":
+        del receipt[receipt_section][boolean_field]
+    elif metadata_case == "missing_section":
+        del receipt[receipt_section]
+    elif metadata_case == "section":
+        receipt[receipt_section] = invalid_value
+    else:
+        receipt[receipt_section][boolean_field] = invalid_value
+    metadata_path.write_text(json.dumps(receipt))
+    module_spec = importlib.util.spec_from_file_location("stalemate_receipt_validation", CLI)
+    cli_module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(cli_module)
+    accepted_receipts, accepted_candidates = [], []
+    with pytest.raises(ValueError) as invalid_metadata:
+        for candidate in cli_module.load_candidates([str(candidate_path)], accepted_receipts):
+            accepted_candidates.append(candidate)
+    assert str(metadata_path) in str(invalid_metadata.value)
+    assert f"{receipt_section}.{boolean_field}" in str(invalid_metadata.value)
+    assert "JSON Boolean (true or false)" in str(invalid_metadata.value)
+    assert accepted_receipts == accepted_candidates == []
+
+
+@pytest.mark.parametrize("receipt_section,boolean_field", [("completion", "complete"), ("source", "sha256_verified")])
+@pytest.mark.parametrize("canonical_corpus", [False, True])
+@pytest.mark.parametrize("previous_outputs", [False, True])
+def test_stalemate_build_rejects_malformed_receipt_booleans_without_publishing(
+        tmp_path, synthetic_receipt_build, receipt_section, boolean_field, canonical_corpus, previous_outputs):
+    candidate_path, metadata_path, receipt = synthetic_receipt_build
+    bundle, manifest = tmp_path / "bundle.json", tmp_path / "manifest.json"
+    corpus_id = "lichess-standard-2026-09-v1" if canonical_corpus else "synthetic-receipt-booleans-v1"
+    build_arguments = ("build", "--candidates", str(candidate_path), "--corpus-id", corpus_id,
+                       "--output", str(bundle), "--manifest", str(manifest))
+    if previous_outputs:
+        result = run_cli(*build_arguments)
+        assert result.returncode == 0, result.stderr
+        previous_bytes = (bundle.read_bytes(), manifest.read_bytes())
+    receipt[receipt_section][boolean_field] = "false"
+    metadata_path.write_text(json.dumps(receipt))
+    rejected_metadata_bytes = metadata_path.read_bytes()
+    candidate_bytes = candidate_path.read_bytes()
+    result = run_cli(*build_arguments)
+    assert result.returncode == 1, "Truthy receipt strings must never authorize a build"
+    assert str(metadata_path) in result.stderr
+    assert f"{receipt_section}.{boolean_field}" in result.stderr
+    assert "JSON Boolean (true or false)" in result.stderr
+    if previous_outputs:
+        assert (bundle.read_bytes(), manifest.read_bytes()) == previous_bytes
+    else:
+        assert not bundle.exists() and not manifest.exists()
+    assert metadata_path.read_bytes() == rejected_metadata_bytes
+    assert candidate_path.read_bytes() == candidate_bytes
+    assert not list(tmp_path.rglob("*.partial"))
+
+
+@pytest.mark.parametrize("complete,sha256_verified", [(True, True), (False, True), (True, False), (False, False)])
+@pytest.mark.parametrize("canonical_corpus", [False, True])
+def test_stalemate_build_certification_requires_literal_boolean_true(
+        tmp_path, synthetic_receipt_build, complete, sha256_verified, canonical_corpus):
+    candidate_path, metadata_path, receipt = synthetic_receipt_build
+    receipt["completion"]["complete"] = complete
+    receipt["source"]["sha256_verified"] = sha256_verified
+    metadata_path.write_text(json.dumps(receipt))
+    original_metadata_bytes, original_candidate_bytes = metadata_path.read_bytes(), candidate_path.read_bytes()
+    bundle, manifest = tmp_path / "bundle.json", tmp_path / "manifest.json"
+    corpus_id = "lichess-standard-2026-09-v1" if canonical_corpus else "synthetic-receipt-booleans-v1"
+    result = run_cli("build", "--candidates", str(candidate_path), "--corpus-id", corpus_id,
+                     "--output", str(bundle), "--manifest", str(manifest))
+    verified_complete = complete is True and sha256_verified is True
+    if canonical_corpus and not verified_complete:
+        assert result.returncode == 1
+        assert "Canonical corpus requires complete checksum-verified input" in result.stderr
+        assert not bundle.exists() and not manifest.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        report = json.loads(manifest.read_text())
+        assert report["complete_verified_source"] is verified_complete
+        assert report["source"]["sha256_verified"] is sha256_verified
+        assert report["counts"]["selected_puzzles"] == 1
+        assert report["bundle_sha256"] == hashlib.sha256(bundle.read_bytes()).hexdigest()
+    assert metadata_path.read_bytes() == original_metadata_bytes
+    assert candidate_path.read_bytes() == original_candidate_bytes
+    assert not list(tmp_path.rglob("*.partial"))
+
+
 def assert_unverifiable_receipts_are_rejected(tmp_path, source_scans, previous_outputs, *, overlapping_candidates):
     candidate_paths = [tmp_path / "first.jsonl", tmp_path / "second.jsonl"]
     receipts = []
