@@ -36,3 +36,11 @@ Issues #29 and #39 were reviewed against current main and their acceptance crite
 They remain open: this patch repairs browser recovery identities and messaging;
 it does not implement the background admission/dispatch roadmap. Stockfish engine
 timeouts are a separate reported symptom and are outside this patch.
+
+Follow-up candidate proof: an in-flight receipt crossing a foreground-readiness
+change initially failed `phone receipt confirmed during a foreground pause refreshes
+once after resume` (0 callbacks after resume). Confirmations now survive the effect
+boundary and wait for safe readiness. The complete pending-review recovery file
+passed all 8 cases in 21.36 seconds, including readiness toggles retaining one
+in-flight request/callback. Focused ESLint passed. The phone browser fixture now
+models the queue becoming available only after authoritative receipt completion.

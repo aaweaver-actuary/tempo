@@ -101,10 +101,15 @@ test("Long phone repertoire names wrap without hiding the board or overflowing",
 
 test("Phone pending review keeps one inline status until its original receipt confirms", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await prepareVisualUI(page, true, [openingCard("pending-london", "London System", "d2d4", 41), openingCard("next-ruy", "Ruy Lopez", "e2e4", 42)]);
+  await prepareVisualUI(page, true, [openingCard("pending-london", "London System", "d2d4", 41)]);
   let complete = false;
   let submissions = 0;
   let originalOperation = "";
+  await page.route("**/api/queue/window?**", route => {
+    const cards = complete ? [openingCard("next-ruy", "Ruy Lopez", "e2e4", 42)]
+      : [openingCard("pending-london", "London System", "d2d4", 41)];
+    return route.fulfill({ json: { cards, count: cards.length } });
+  });
   await page.route("**/api/cards/pending-london/review", async route => {
     submissions++;
     originalOperation = route.request().headers()["idempotency-key"];
@@ -122,6 +127,7 @@ test("Phone pending review keeps one inline status until its original receipt co
   complete = true;
   // Automatic recovery checks the receipt without resubmitting the completed move.
   await expect(page.getByRole("button", { name: "Check save", exact: true })).toHaveCount(0, { timeout: 10000 });
+  await expect(page.locator(".phone-study-heading h2")).toHaveText("Ruy Lopez");
   expect(submissions).toBe(1);
   await noPageOverflow(page);
 });

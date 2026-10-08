@@ -83,3 +83,31 @@ it("phone recovery replays a missing receipt with the original immutable review 
   expect(JSON.parse(fetcher.mock.calls[1][1].body)).toMatchObject({ queue_entry_id: 101, outcome: "correct" });
   expect(pendingReviews()).toEqual([]); expect(confirmed).toHaveBeenCalledOnce();
 });
+
+it("phone receipt confirmed during a foreground pause refreshes once after resume", async () => {
+  enqueuePendingReview(review);
+  let finishReceipt: ((response: Response) => void) | undefined;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finishReceipt = resolve; })));
+  const confirmed = vi.fn(); const mounted = render(<Harness confirmed={confirmed} />);
+  await advance(1000);
+  mounted.rerender(<Harness blocked confirmed={confirmed} />);
+  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); });
+  expect(pendingReviews()).toEqual([]); expect(confirmed).not.toHaveBeenCalled();
+  mounted.rerender(<Harness confirmed={confirmed} />);
+  expect(confirmed).toHaveBeenCalledOnce();
+  await advance(30000); expect(fetch).toHaveBeenCalledOnce();
+});
+
+it("phone readiness toggles retain one in-flight recovery and one confirmation callback", async () => {
+  enqueuePendingReview(review);
+  let finishReceipt: ((response: Response) => void) | undefined;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finishReceipt = resolve; })));
+  const confirmed = vi.fn(); const mounted = render(<Harness confirmed={confirmed} />);
+  await advance(1000);
+  mounted.rerender(<Harness blocked confirmed={confirmed} />);
+  mounted.rerender(<Harness confirmed={confirmed} />);
+  await advance(1000);
+  await act(async () => { finishReceipt!(Response.json({ state: "complete", response: { persisted: true } })); });
+  expect(fetch).toHaveBeenCalledOnce(); expect(confirmed).toHaveBeenCalledOnce();
+  await advance(30000); expect(confirmed).toHaveBeenCalledOnce();
+});
