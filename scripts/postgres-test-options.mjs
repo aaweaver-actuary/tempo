@@ -28,17 +28,17 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   if (options.browserFile && options.browserGrep) {
     throw new Error("Choose one browser focus: --browser-file or --browser-grep");
   }
-  if (options.mode !== null && !["full", "browser", "durability", "priority-benchmark"].includes(options.mode)) {
-    throw new Error("--mode must be full, browser, durability, or priority-benchmark");
+  if (options.mode !== null && !["full", "browser", "durability", "lifecycle", "priority-benchmark"].includes(options.mode)) {
+    throw new Error("--mode must be full, browser, durability, lifecycle, or priority-benchmark");
   }
   if (options.skipBrowser && options.mode !== null && options.mode !== "durability") {
-    throw new Error("--skip-browser cannot be combined with full or browser mode");
+    throw new Error("--skip-browser cannot be combined with a mode other than durability");
   }
   const hasBrowserFocus = Boolean(options.browserFile || options.browserGrep);
   options.mode ??= options.skipBrowser ? "durability" : hasBrowserFocus ? "browser" : "full";
-  options.skipBrowser = options.mode === "durability";
+  options.skipBrowser = ["durability", "lifecycle"].includes(options.mode);
   if (hasBrowserFocus && options.mode !== "browser") {
-    throw new Error("Browser focus cannot be combined with full/durability mode or --skip-browser; use --mode browser");
+    throw new Error("Browser focus cannot be combined with non-browser mode or --skip-browser; use --mode browser");
   }
   if (options.browserFile) {
     if (/[\\/]/.test(options.browserFile) || basename(options.browserFile) !== options.browserFile

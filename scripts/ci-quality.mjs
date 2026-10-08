@@ -1,13 +1,16 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { layerCommands } from "./ci-run-layer.mjs";
+import { layerCommands, validatePostgresScenarios } from "./ci-run-layer.mjs";
 import { allLayers } from "./ci-verification-plan.mjs";
 
 export function evaluateQuality(plan, needs, reports) {
   const failures = [], nonblocking = [];
   if (!plan || plan.version !== 1 || !plan.hash || needs.plan?.result !== "success") failures.push("Required plan did not succeed or its report is missing");
   if (!plan) return { success: false, failures, nonblocking };
+  if (plan.scope === "complete" && (!plan.jobs.lifecycle?.applicable || !plan.jobs.lifecycle.required)) {
+    failures.push("Complete verification must require deployment lifecycle");
+  }
   for (const layer of allLayers) {
     const planned = plan.jobs[layer];
     const result = needs[layer]?.result;
@@ -16,18 +19,24 @@ export function evaluateQuality(plan, needs, reports) {
       if (result !== "skipped") failures.push(`${layer}: inapplicable job must be explicitly skipped and reported`);
       continue;
     }
+    if (layer === "lifecycle" && !planned.required) failures.push("lifecycle: selected verification must be mandatory");
     if (result === undefined || ["cancelled", "skipped"].includes(result)) failures.push(`${layer}: applicable work is missing, cancelled or unexpectedly skipped`);
     const report = reports[layer];
     if (!report || report.layer !== layer || report.planHash !== plan.hash || report.commit !== plan.commit || !report.completed || !report.commands?.length) {
       failures.push(`${layer}: missing, incomplete or mismatched result report`); continue;
     }
-    const expectedCommands = layerCommands(layer, plan).map(([name]) => name);
+    let expectedCommands;
+    try { expectedCommands = layerCommands(layer, plan).map(([name]) => name); }
+    catch (error) { failures.push(`${layer}: ${error.message}`); continue; }
     if (JSON.stringify(expectedCommands) !== JSON.stringify(report.commands.map(command => command.name))) failures.push(`${layer}: absent required command results`);
     if (planned.required) {
       if (result !== "success" || report.status !== "success" || report.commands.some(command => command.exit_code !== 0 || command.error)) failures.push(`${layer}: mandatory verification ${result ?? "absent"}`);
     } else if (result !== "success" || report.status !== "success") nonblocking.push(`${layer}: confirmed harness failures remain visible (${result ?? "absent"})`);
     if (["frontend", "backend"].includes(layer) && !report.test_count) failures.push(`${layer}: no unit test results`);
-    if (layer === "postgres" && (!report.scenarios?.planned_stages?.length || report.scenarios.planned_stages.some(stage => report.scenarios.stages[stage]?.exit_code !== 0))) failures.push("postgres: absent required integration results");
+    if (["postgres", "lifecycle"].includes(layer)) {
+      try { validatePostgresScenarios(layer, plan, report.scenarios); }
+      catch (error) { failures.push(error.message); }
+    }
     if (layer === "browser") {
       const expected = plan.collection.filter(item => item.selected).map(item => item.id).sort();
       const observed = (report.tests ?? []).map(item => item.id).sort();

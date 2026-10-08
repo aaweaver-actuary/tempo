@@ -5,13 +5,38 @@ import { fileURLToPath } from "node:url";
 import { protectRegressionSuite, verificationStages } from "./verification-stages.mjs";
 import { escapeRegex, allLayers } from "./ci-verification-plan.mjs";
 import { resolvePython } from "./resolve-python.mjs";
+import { postgresTestStages } from "./postgres-test-plan.mjs";
+
+function postgresVerification(layer, plan) {
+  const mode = layer === "postgres" ? "durability" : "lifecycle";
+  const planned = plan.jobs[layer];
+  if (planned?.mode !== mode || JSON.stringify(planned.planned_stages) !== JSON.stringify(postgresTestStages({ mode }))) {
+    throw new Error(`${layer}: PostgreSQL scenario inventory differs from the immutable plan`);
+  }
+  return planned;
+}
+
+export function validatePostgresScenarios(layer, plan, scenarios) {
+  const planned = postgresVerification(layer, plan);
+  if (!scenarios || scenarios.runner !== "postgres" || scenarios.mode !== planned.mode
+    || scenarios.commit !== plan.commit || scenarios.plan_hash !== plan.hash
+    || JSON.stringify(scenarios.planned_stages) !== JSON.stringify(planned.planned_stages)
+    || JSON.stringify(Object.keys(scenarios.stages ?? {}).sort()) !== JSON.stringify([...planned.planned_stages].sort())
+    || planned.planned_stages.some(stage => scenarios.stages[stage]?.exit_code !== 0)) {
+    throw new Error(`${layer}: missing, failed or mismatched PostgreSQL scenario results`);
+  }
+}
 
 export function layerCommands(layer, plan) {
   if (!allLayers.includes(layer) || !plan.jobs[layer]?.applicable) throw new Error(`Layer ${layer} is not applicable in the captured plan`);
   const tier = `ci-${layer}`;
   const { stages, stagesByTier } = verificationStages({ python: resolvePython(), tier, outputDirectory: "test-results/performance" });
   if (stagesByTier[tier]) return stages.filter(([name]) => stagesByTier[tier].includes(name));
-  if (layer === "postgres") return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]], ["durability", "node", ["scripts/test-postgres-docker.mjs", "--mode", "durability"]]];
+  if (["postgres", "lifecycle"].includes(layer)) {
+    const { mode } = postgresVerification(layer, plan);
+    return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
+      [mode, "node", ["scripts/test-postgres-docker.mjs", "--mode", mode]]];
+  }
   if (layer === "visual") return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--workspace-mount"]], ["visual", "npm", ["run", "test:visual"]]];
   const grep = layer === "quarantine" ? plan.collection.filter(item => item.quarantined).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|") : plan.browserGrep;
   if (!grep) throw new Error("Selected browser collection cannot be empty");
@@ -65,7 +90,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (revision.stdout.trim() !== plan.commit) throw new Error("Layer checkout differs from the immutable plan revision");
     protectRegressionSuite("tests"); protectRegressionSuite("backend/tests");
     const commands = layerCommands(layer, plan);
-    const env = { ...process.env, PYTHONPATH: "backend", TEMPO_CI_REPORT: `test-results/ci/${layer}-tests.json` };
+    const env = { ...process.env, PYTHONPATH: "backend", TEMPO_CI_PLAN_HASH: plan.hash, TEMPO_CI_REPORT: `test-results/ci/${layer}-tests.json` };
     Object.assign(report, executeLayer(commands, (command, args, diagnostic) => {
       if (diagnostic) for (const path of [env.TEMPO_CI_REPORT, "test-results/ci/backend-tests.xml", "test-results/performance/unit-files-ci-frontend.json"]) {
         if (existsSync(path)) copyFileSync(path, `${path}.first-failure`);
@@ -88,11 +113,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const suites = [...readFileSync("test-results/ci/backend-tests.xml", "utf8").matchAll(/<testsuite\b[^>]*>/g)].map(match => match[0]);
       report.test_count = suites.reduce((count, suite) => count + Number(suite.match(/\btests="(\d+)"/)?.[1] ?? 0), 0);
       if (!report.test_count || suites.some(suite => ["failures", "errors", "skipped"].some(attribute => Number(suite.match(new RegExp(`\\b${attribute}="(\\d+)"`))?.[1] ?? 0)))) throw new Error("Missing, failed or skipped backend results");
-    } else if (layer === "postgres") {
-      const files = readdirSync("test-results/performance").filter(file => file.startsWith("postgres-scenarios-durability-"));
+    } else if (["postgres", "lifecycle"].includes(layer)) {
+      const { mode } = postgresVerification(layer, plan);
+      const files = readdirSync("test-results/performance").filter(file => file.startsWith(`postgres-scenarios-${mode}-`));
       if (files.length !== 1) throw new Error("Missing or ambiguous PostgreSQL scenario report");
       const scenarios = JSON.parse(readFileSync(`test-results/performance/${files[0]}`, "utf8"));
-      if (scenarios.planned_stages.some(stage => scenarios.stages[stage]?.exit_code !== 0)) throw new Error("Missing or failed PostgreSQL scenario");
+      validatePostgresScenarios(layer, plan, scenarios);
       report.scenarios = scenarios;
     }
     report.completed = true;
