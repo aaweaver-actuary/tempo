@@ -1,5 +1,5 @@
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
-import { confirmOperationResponse, FailedOperationError } from "./operation-status";
+import { confirmOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
 import { rejectOpeningEvidence } from "./opening-evidence-journal";
 
 function definitiveEvidenceFailure(error: unknown): string | undefined {
@@ -10,15 +10,23 @@ export async function saveEvidenceAwareReview(options: {
   endpoint: string; operationKey: string; body: Record<string, unknown>; completion?: OpeningEvidenceCheckpoint;
   evidenceRejected?: string; signal?: AbortSignal;
   aggregateOnly?: boolean;
+  verifyReceiptFirst?: boolean;
   onEvidenceRejected: (message: string) => void | Promise<void>;
   request?: (url: string, options: RequestInit) => Promise<Response>;
 }): Promise<Response> {
   const request = options.request ?? fetch;
   let rejection = options.evidenceRejected;
-  const send = () => request(options.endpoint, { method: "POST", signal: options.signal,
+  const send = async (): Promise<Response> => {
+    if (options.verifyReceiptFirst) {
+      const receipt = await readOperationResponse(`${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}`,
+        { signal: options.signal, allowMissing: true });
+      if (receipt.status !== 404) return receipt;
+    }
+    return request(options.endpoint, { method: "POST", signal: options.signal,
     headers: { "Content-Type": "application/json", "Idempotency-Key": `${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}` },
     body: JSON.stringify({ ...options.body, ...(options.completion && !rejection && !options.aggregateOnly ? { opening_evidence_completion: options.completion } : {}) }),
   }).then(response => confirmOperationResponse(response, { signal: options.signal }));
+  };
   let response: Response;
   try { response = await send(); }
   catch (error) {

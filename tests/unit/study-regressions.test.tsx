@@ -258,10 +258,10 @@ describe("reported study regressions", () => {
     vi.useRealTimers();
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(913);
     finishFirstReview?.(Response.json({ detail: "Database busy" }, { status: 503 }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
     expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
     expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([911, 912]);
-    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
     expect(savedEntries).toEqual([911, 911, 912]);
   });
@@ -373,11 +373,11 @@ describe("reported study regressions", () => {
     fireEvent.click(screen.getByText("f7f8"));
     await pause(751);
     vi.useRealTimers();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(832);
     expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
     expect(pendingReviews()).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
     expect(reviews).toBe(2);
   });
@@ -495,14 +495,14 @@ describe("reported study regressions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
     await waitFor(
-      () => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy(),
+      () => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy(),
       { timeout: 2_000 },
     );
     expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(
       queueCard.start_fen,
     );
-    expect(screen.getByText(/The local database could not save this result/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    expect(screen.getByText(/Waiting for the computer to confirm this result/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Retry loading the queue" }),

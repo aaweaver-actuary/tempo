@@ -2835,3 +2835,16 @@ Stalemate Swindles (October 5, 2026):
 ## PR #91 PostgreSQL reviewed-history preservation — October 8, 2026
 
 - `test_postgres_stalemate_import_reimport_preserves_existing_review_history` runs in the regular disposable PostgreSQL study-durability stage after the self-contained checked-in corpus proof. It explicitly enrolls and reviews a separate synthetic Study through production foreground commands, requires nonempty review/Study-attempt/receipt/scheduling snapshots, and verifies every existing reviewed card and history row is unchanged after real-corpus import, reversed-row reimport, and changed-content rejection. The 300 corpus exercises remain draft and unenrolled; only the independent disposable fixture is enrolled.
+
+## Phone recovery and messaging — October 8, 2026
+
+- `phone accepted discovery reload confirms the original intent without readmission` and `phone stale discovery failure with retained intent repairs by confirming that intent` preserve accepted identities after reload and recover the reported stale discovery state without inventing success.
+- `phone discovery projection does not count one stored failure as repeated incidents` prevents UI projections from inflating the reported occurrence count.
+- `phone pending review uses inline confirmation status and no error popup` separates pending confirmation from failure and resolves the same notice on confirmation.
+- `phone review recovery confirms the original receipt after reload without another POST`, `phone pending receipt retries with bounded backoff and yields to foreground work`, `phone receipt recovery yields after one result and preserves another pending review`, and `phone blocked review receipt preserves the attempt and stops automatic retries` cover bounded, serialized retained-review recovery without false confirmation.
+- `Phone pending review keeps one inline status until its original receipt confirms` exercises real phone board input, compact status, receipt confirmation, no duplicate submission, and viewport overflow in the browser suite.
+- `phone review receipt confirmation waits for held pointer release before refreshing training` protects foreground board input when an already running confirmation finishes during a held pointer.
+- `phone review diagnostics retain raw errors without publishing a second incident` keeps detailed diagnostic evidence while the save-status owner publishes the single user-facing notice.
+- `Phone actionable save warning keeps its severity and dismiss control readable` covers the screenshot's narrow-phone severity wrapping and dismissal with one actionable blocked-save notice.
+- `phone recovery replays a missing receipt with the original immutable review identity` covers lost admission responses while preserving the original POST key and completed review payload.
+- `phone passive queue refresh leaves review delivery to bounded receipt recovery` prevents periodic queue reads and receipt-completion refreshes from bypassing the retry scheduler or draining multiple results in one idle slice.

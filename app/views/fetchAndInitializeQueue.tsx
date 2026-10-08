@@ -208,7 +208,7 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
 
 export async function fetchAndInitializeQueue(
   advance = false,
-  options: { preparePhoneQueue?: boolean } = {},
+  options: { preparePhoneQueue?: boolean; replaySavedReviews?: boolean } = {},
 ): Promise<void> {
   if (!usesLocalApi()) return;
   const generation = ++requestGeneration;
@@ -283,7 +283,7 @@ export async function fetchAndInitializeQueue(
         });
       }
     }
-    if (pendingReviews().length) {
+    if (options.replaySavedReviews !== false && pendingReviews().length) {
       try {
         await flushPendingReviews();
       } catch (error) {
@@ -291,7 +291,7 @@ export async function fetchAndInitializeQueue(
         if (generation === requestGeneration)
           reportDebugError(error, {
             kind: "api",
-            source: "training-review-replay",
+            source: "training-review-replay", notify: false,
             operation: "save pending review",
             endpoint: error instanceof ReviewReplayError ? error.endpoint : `${API_URL}/api/cards/review`,
             ...(error instanceof ReviewReplayError ? { cardId: error.backendId, queueEntryId: error.queueEntryId,

@@ -98,3 +98,47 @@ test("Long phone repertoire names wrap without hiding the board or overflowing",
   await expect(page.locator(".phone-study-heading h2")).toBeVisible();
   await noPageOverflow(page);
 });
+
+test("Phone pending review keeps one inline status until its original receipt confirms", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page, true, [openingCard("pending-london", "London System", "d2d4", 41), openingCard("next-ruy", "Ruy Lopez", "e2e4", 42)]);
+  let complete = false;
+  let submissions = 0;
+  let originalOperation = "";
+  await page.route("**/api/cards/pending-london/review", async route => {
+    submissions++;
+    originalOperation = route.request().headers()["idempotency-key"];
+    await route.fulfill({ status: 202, json: { operation_id: originalOperation, state: "queued" } });
+  });
+  await page.route("**/api/operations/**", async route => {
+    expect(decodeURIComponent(route.request().url().split("/api/operations/")[1])).toBe(originalOperation);
+    await route.fulfill({ json: complete ? { state: "complete", response: { persisted: true } } : { state: "queued" } });
+  });
+  await move(page, "d2", "d4");
+  await expect(page.getByRole("status").filter({ hasText: "Waiting for the computer to confirm this result." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check save", exact: true })).toBeVisible();
+  await expect(page.locator(".notification-toast")).toHaveCount(0);
+  await expect(page.locator(".phone-study-heading h2")).toHaveText("London System");
+  complete = true;
+  // Automatic recovery checks the receipt without resubmitting the completed move.
+  await expect(page.getByRole("button", { name: "Check save", exact: true })).toHaveCount(0, { timeout: 10000 });
+  expect(submissions).toBe(1);
+  await noPageOverflow(page);
+});
+
+test("Phone actionable save warning keeps its severity and dismiss control readable", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await prepareVisualUI(page, true, [openingCard("blocked-london", "London System", "d2d4", 51)]);
+  await page.route("**/api/cards/blocked-london/review", route => route.fulfill({ status: 202,
+    json: { operation_id: "blocked-review", state: "queued" } }));
+  await page.route("**/api/operations/blocked-review", route => route.fulfill({ json: {
+    state: "blocked", last_error: { message: "Database access needs attention" } } }));
+  await move(page, "d2", "d4");
+  const toast = page.locator(".notification-toast");
+  await expect(toast).toHaveCount(1);
+  await expect(toast).toContainText("Saving is blocked.");
+  await expect(toast.getByRole("button", { name: /Dismiss/ })).toBeInViewport();
+  const severity = toast.locator(".notification-severity");
+  expect(await severity.evaluate(element => element.clientHeight)).toBeLessThan(30);
+  await noPageOverflow(page);
+});

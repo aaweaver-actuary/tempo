@@ -1,3 +1,4 @@
+import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
 import { backgroundFetch } from "../lib/background-fetch";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
@@ -186,6 +187,7 @@ export default function Home() {
   const [reviewPersistenceState, setReviewPersistenceState] = useState<
     | "idle"
     | "saving"
+    | "pendingConfirmation"
     | "saveFailed"
     | "saved"
     | "conflicted"
@@ -287,12 +289,14 @@ export default function Home() {
     publishNotification({ severity, source: "training", message });
   }
   useEffect(() => {
-    if (pendingReviewError) publishNotification({ severity: "error", source: "training review",
-      key: "pending-review-error", message: `Could not save a previous training review. ${pendingReviewError}` });
-    else {
-      const previous = notifications().find((record) => record.key === "pending-review-error" && !record.resolvedAt);
-      if (previous) resolveNotification(previous.id, { severity: "success", message: "Previous training review saved." });
-    }
+    if (!pendingReviewError) return;
+    // Exact attempt notices are owned by the outbox. Only failures outside it need a separate notice.
+    try {
+      if (pendingReviews().length || conflictedReviews().length) return;
+    } catch { /* Surface unreadable storage below. */ }
+    publishNotification({ severity: "warning", source: "training review", key: "pending-review-storage",
+      message: "Saved reviews could not be read. Keep this browser's data and open Notifications for details.",
+      details: { error: pendingReviewError } });
   }, [pendingReviewError]);
   useEffect(() => {
     if (serviceError) publishNotification({ severity: "error", source: "training service",
@@ -332,6 +336,15 @@ export default function Home() {
     pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
     reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue" ||
     reviewPersistenceState === "saveFailed");
+  usePendingReviewRecovery(usesLocalApi() && !offlineQueue, queueReadiness === "ready",
+    pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
+    reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue", result => {
+      if (reviewPersistenceIdentity?.attemptId && result.persistedAttemptIds.includes(reviewPersistenceIdentity.attemptId)) {
+        setReviewPersistenceState("saved"); setReviewSaveError("");
+      }
+      if (!pendingReviews().length) setPendingReviewError("");
+      void refreshDatabaseQueue(false, false).catch(() => undefined);
+    });
   const repertoireLine = card.moves;
 
   useEffect(() => {
@@ -398,9 +411,9 @@ export default function Home() {
   }, [openRepairDialog]);
 
   const refreshDatabaseQueue = useCallback(
-    async (advance = false) => {
+    async (advance = false, replaySavedReviews = true) => {
       invalidateWorkspaceData();
-      await fetchAndInitializeQueue(advance);
+      await fetchAndInitializeQueue(advance, { replaySavedReviews });
       await checkPendingIntegrity();
     },
     [checkPendingIntegrity],
@@ -477,7 +490,7 @@ export default function Home() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     if (usesLocalApi() && currentView === "train") {
-      queueMicrotask(() => void refreshDatabaseQueue().catch(() => undefined));
+      queueMicrotask(() => void refreshDatabaseQueue(false, false).catch(() => undefined));
     }
   }, [currentView, refreshDatabaseQueue]);
 
@@ -488,14 +501,14 @@ export default function Home() {
       if (document.visibilityState !== "visible") return;
       if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
       visibleRefreshCount = 0;
-      void fetchAndInitializeQueue(false, { preparePhoneQueue: true }).catch(() => undefined);
+      void fetchAndInitializeQueue(false, { preparePhoneQueue: true, replaySavedReviews: false }).catch(() => undefined);
     };
     const refreshTimer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
       visibleRefreshCount += 1;
       void fetchAndInitializeQueue(false, {
-        preparePhoneQueue: visibleRefreshCount % 2 === 0,
+        preparePhoneQueue: visibleRefreshCount % 2 === 0, replaySavedReviews: false,
       }).catch(() => undefined);
     }, 30_000);
     window.addEventListener("online", refreshWhenVisible);
@@ -1132,15 +1145,14 @@ export default function Home() {
           reportDebugError(error, { kind: "api", source: "training-review-replay", operation: "save pending review",
             endpoint: error.endpoint, status: error.status, retryable: error.retryable,
             cardId: error.backendId, queueEntryId: error.queueEntryId, attemptId: error.attemptId, code: error.code,
-            classification: error.classification });
+            classification: error.classification, notify: false });
         }
-        setReviewPersistenceState("saveFailed");
+        const awaitingConfirmation = error instanceof ReviewReplayError && !error.blocked && ["pending", "transient"].includes(error.classification);
+        setReviewPersistenceState(awaitingConfirmation ? "pendingConfirmation" : "saveFailed");
         setReviewSaveError(
-          error instanceof Error && error.message
-            ? `${error instanceof ReviewReplayError && error.queueEntryId !== card.queueEntryId
-              ? "An earlier completed result could not be saved. Your result remains queued."
-              : "The local database could not save this result."} ${error.message}`
-            : "The local database could not save this result. Please retry.",
+          awaitingConfirmation ? "Waiting for the computer to confirm this result." :
+          error instanceof ReviewReplayError && error.blocked ? "Saving is blocked. Resolve and retry the operation in Jobs." :
+          "The computer could not save this result. Open Notifications for details before retrying.",
         );
         setQueueNotice("");
         if (!advancedFromCache && !retryPending)
@@ -1608,10 +1620,10 @@ export default function Home() {
               </div>
             )}
             {pendingReviewError && !offlineQueue && (
-              <div className="ui-notice error" role="alert">
-                <span>Could not save a previous training review. Its card is paused until the save is resolved. {pendingReviewError}</span>
+              <div className="ui-notice" role="status">
+                <span>A previous result needs confirmation or attention. Open Notifications for details.</span>
                 <Button onClick={() => void refreshDatabaseQueue().catch(() => undefined)}>
-                  Retry saving review
+                  Check saved reviews
                 </Button>
               </div>
             )}

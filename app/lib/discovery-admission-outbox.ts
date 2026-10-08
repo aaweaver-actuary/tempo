@@ -1,3 +1,4 @@
+import { notifications, publishNotification } from "./notifications";
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError } from "./operation-status";
 
@@ -97,11 +98,14 @@ export function recoverUnacknowledgedDiscoveryAdmissions() {
       admission.error === legacyOversizedKeyError;
     const oldTimeoutNeedsRecovery = admission.state === "failed" &&
       admission.error?.startsWith("Discovery save timed out after 15 seconds.");
-    if (admission.state !== "accepted" && !oldTimeoutNeedsRecovery && !oldKeyWasRejected)
-      return admission;
+    if (admission.intentId && admission.state === "failed" && admission.error?.includes("Active discovery not found")) {
+      changed = true;
+      return { ...admission, state: "accepted" as const, error: undefined };
+    }
+    if (!oldTimeoutNeedsRecovery && !oldKeyWasRejected) return admission;
     changed = true;
     return { ...admission, intentId: undefined, state: "pending" as const,
-      operationId: admission.state === "accepted" || oldKeyWasRejected
+      operationId: oldKeyWasRejected
         ? crypto.randomUUID() : admission.operationId,
       error: oldKeyWasRejected ? undefined : admission.state === "failed"
         ? "Discovery save timed out after 15 seconds; confirmation is pending."
@@ -226,4 +230,20 @@ export function flushPendingDiscoveryAdmissions(preferredOpportunityId?: string)
       .then(() => undefined).finally(() => { activeFlush = undefined; });
   }
   return activeFlush;
+}
+
+/** Rendering saved state is not a new delivery failure. */
+export function reportDiscoveryAdmissionErrors(admissions: PendingDiscoveryAdmission[]): void {
+  for (const admission of admissions) {
+    if (!admission.error) continue;
+    const key = `discovery-save:${admission.opportunityId}`;
+    const severity = admission.state === "failed" ? "error" as const : "info" as const;
+    const message = admission.state === "failed" ? "This discovery could not be added. Open Discoveries to review and retry."
+      : "This discovery is waiting for confirmation. Tempo will retry.";
+    if (notifications().some(record => record.key === key && !record.resolvedAt && record.severity === severity &&
+      record.details?.error === admission.error)) continue;
+    publishNotification({ key, severity, source: "discovery save", message,
+      details: { error: admission.error, operationId: admission.operationId,
+        ...(admission.intentId ? { intentId: admission.intentId } : {}) } });
+  }
 }

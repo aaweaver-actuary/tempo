@@ -1,3 +1,4 @@
+import { confirmReviewSaveNotice, reportReviewSaveStatus } from "./review-save-notice";
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
 import { publishNotification, notifications, resolveNotification } from "./notifications";
@@ -31,21 +32,24 @@ const storageKey = "tempo-pending-training-reviews-v1";
 const reviewRequestTimeoutMs = 15_000;
 const evidenceStorageErrors = new WeakSet<object>();
 let activeFlush: Promise<ReviewFlushResult> | undefined;
+let activeFlushMaximumReviews = Infinity;
 
 export class ReviewReplayError extends Error {
+  readonly blocked: boolean;
   readonly backendId: string;
   readonly queueEntryId: number;
   readonly attemptId: string;
-  readonly classification: "conflict" | "pending" | "transient";
+  readonly classification: "conflict" | "pending" | "transient" | "failed";
   constructor(message: string, readonly endpoint: string, review: PendingReview,
     readonly status?: number, readonly code?: string, readonly retryable = true, options?: ErrorOptions) {
     super(message, options);
     this.name = "ReviewReplayError";
+    this.blocked = options?.cause instanceof PendingOperationError && options.cause.blocked;
     this.backendId = review.backendId;
     this.queueEntryId = review.queueEntryId;
     this.attemptId = logicalAttemptId(review);
     this.classification = options?.cause instanceof PendingOperationError ? "pending"
-      : status === 409 && !retryable ? "conflict" : "transient";
+      : status === 409 && !retryable ? "conflict" : options?.cause instanceof FailedOperationError || (status !== undefined && status < 500 && status !== 408 && status !== 429) ? "failed" : "transient";
   }
 }
 
@@ -191,7 +195,7 @@ async function responseError(response: Response, endpoint: string, review: Pendi
     endpoint, review, response.status, body.code, body.retryable ?? response.status >= 500);
 }
 
-async function sendReview(review: PendingReview): Promise<Response> {
+async function sendReview(review: PendingReview, verifyReceiptFirst = false): Promise<Response> {
   const attemptId = logicalAttemptId(review);
   const reconciling = review.state === "reconciling";
   const endpoint = `${API_URL}/api/cards/${encodeURIComponent(review.backendId)}/review${reconciling ? "/reconcile" : ""}`;
@@ -199,6 +203,7 @@ async function sendReview(review: PendingReview): Promise<Response> {
     endpoint, signal, request: requestReviewSave,
     operationKey: reconciling ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`,
     completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
+    verifyReceiptFirst,
     aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
     onEvidenceRejected: (message) => {
       const updated = savedReviews().map((item) =>
@@ -247,10 +252,10 @@ function retainConflict(review: PendingReview, conflict: ReviewConflictInformati
   updateReviewConflictNotice();
 }
 
-async function savePendingReviews(): Promise<ReviewFlushResult> {
+async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false): Promise<ReviewFlushResult> {
   const result: ReviewFlushResult = { persistedAttemptIds: [], conflictedAttemptIds: [] };
   updateReviewConflictNotice();
-  while (pendingReviews().length) {
+  while (pendingReviews().length && result.persistedAttemptIds.length + result.conflictedAttemptIds.length < maximumReviews) {
     let review = pendingReviews()[0];
     const attemptId = logicalAttemptId(review);
     try {
@@ -281,12 +286,12 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
         }
       }
       let response: Response;
-      try { response = await sendReview(review); }
+      try { response = await sendReview(review, verifyReceiptFirst); }
       catch (error) {
         if (!(error instanceof ReviewReplayError) || error.status !== 409 || error.retryable || review.state === "reconciling") throw error;
         review = { ...savedReviews().find(item => logicalAttemptId(item) === attemptId)!, state: "reconciling", reconciliationSequence: 1 };
         replaceReview(review, review);
-        response = await sendReview(review);
+        response = await sendReview(review, verifyReceiptFirst);
       }
       const persisted = await response.clone().json() as { persisted?: boolean; conflict?: unknown; warning?: string;
         competing_review?: { outcome?: string | null; completed_at?: string | null } };
@@ -300,6 +305,7 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
         throw new ReviewReplayError("The computer did not confirm this review. Retry saving it.",
           `${API_URL}/api/cards/${review.backendId}/review`, review);
       replaceReview(review);
+      confirmReviewSaveNotice(review);
       if (review.openingEvidenceCompletion)
         void acknowledgeOpeningReview(attemptId).catch(() => undefined);
       clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
@@ -310,7 +316,8 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
         details: { cardId: review.backendId, queueEntryId: review.queueEntryId, attemptId,
           outcome: review.outcome, completedAt: review.completedAt ?? "unknown" } });
     } catch (error) {
-      if (error instanceof ReviewReplayError || (error !== null && typeof error === "object" && evidenceStorageErrors.has(error))) throw error;
+      if (error instanceof ReviewReplayError) { reportReviewSaveStatus(error); throw error; }
+      if ((error !== null && typeof error === "object" && evidenceStorageErrors.has(error))) throw error;
       throw new ReviewReplayError(error instanceof Error ? error.message : String(error),
         `${API_URL}/api/cards/${review.backendId}/review`, review, undefined, undefined, true, { cause: error });
     }
@@ -318,7 +325,16 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
   return result;
 }
 
-export function flushPendingReviews(): Promise<ReviewFlushResult> {
-  if (!activeFlush) activeFlush = savePendingReviews().finally(() => { activeFlush = undefined; });
+export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false): Promise<ReviewFlushResult> {
+  if (activeFlush && activeFlushMaximumReviews !== Infinity && maximumReviews === Infinity) return activeFlush.then(async result => {
+    if (!pendingReviews().length) return result;
+    const remainder = await flushPendingReviews();
+    return { persistedAttemptIds: [...result.persistedAttemptIds, ...remainder.persistedAttemptIds],
+      conflictedAttemptIds: [...result.conflictedAttemptIds, ...remainder.conflictedAttemptIds] };
+  });
+  if (!activeFlush) {
+    activeFlushMaximumReviews = maximumReviews;
+    activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst).finally(() => { activeFlush = undefined; });
+  }
   return activeFlush;
 }

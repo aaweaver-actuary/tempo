@@ -18,6 +18,7 @@ export type DebugErrorKind =
   | "ui";
 
 export type DebugErrorContext = {
+  notify?: boolean;
   kind?: DebugErrorKind;
   source?: string;
   operation?: string;
@@ -29,7 +30,7 @@ export type DebugErrorContext = {
   queueEntryId?: number;
   attemptId?: string;
   code?: string;
-  classification?: "conflict" | "pending" | "transient";
+  classification?: "conflict" | "pending" | "transient" | "failed";
   script?: string;
   line?: number;
   column?: number;
@@ -53,7 +54,7 @@ export type DebugErrorRecord = {
     queueEntryId?: number;
     attemptId?: string;
     code?: string;
-    classification?: "conflict" | "pending" | "transient";
+    classification?: "conflict" | "pending" | "transient" | "failed";
     scriptPath?: string;
     line?: number;
     column?: number;
@@ -185,7 +186,7 @@ export function reportDebugError(
   records = [...records.slice(-(MAX_ERROR_RECORDS - 1)), record];
   if (failure instanceof Error) alreadyReported.set(failure, record);
   notify();
-  if (normalizedContext.source !== "browser-extension") publishNotification({
+  if (context.notify !== false && normalizedContext.source !== "browser-extension") publishNotification({
     severity: "error", source: normalizedContext.source,
     message: record.message, key: debugIncidentKey(signature),
     details: {

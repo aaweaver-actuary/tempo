@@ -64,18 +64,20 @@ it("uncertain discovery retries retain one operation key and the same choice", a
   } finally { vi.useRealTimers(); }
 });
 
-it("accepted discovery readmission after reload uses a new operation key", async () => {
+it("accepted discovery reload preserves its operation and confirms its original intent", async () => {
   enqueuePendingDiscoveryAdmission(hashAdmission);
   const fetcher = vi.fn()
-    .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }))
-    .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }));
+    .mockResolvedValueOnce(Response.json({ intent_id: "intent" }))
+    .mockResolvedValueOnce(Response.json({ state: "queued" }));
   vi.stubGlobal("fetch", fetcher);
   await flushPendingDiscoveryAdmissions();
+  const original = pendingDiscoveryAdmissions()[0];
   recoverUnacknowledgedDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0]).toEqual(original);
   await flushPendingDiscoveryAdmissions();
-  expect(new Headers(fetcher.mock.calls[0][1].headers).get("Idempotency-Key")).not.toBe(
-    new Headers(fetcher.mock.calls[1][1].headers).get("Idempotency-Key"));
-  expect(fetcher.mock.calls[0][1].body).toBe(fetcher.mock.calls[1][1].body);
+  expect(fetcher.mock.calls[1][0]).toContain("/api/discovery-admissions/intent");
+  expect(fetcher.mock.calls[1][1]?.method).not.toBe("POST");
+  expect(pendingDiscoveryAdmissions()).toEqual([]);
 });
 
 it("terminal discovery retry uses a new operation key for the same choice", async () => {
@@ -284,17 +286,17 @@ it("legacy failed discovery timeout reopens as an unconfirmed save with the same
   expect(fetcher.mock.calls[0][1].body).toContain("f3e5");
 });
 
-it("accepted discovery save replays its same choice after reopen to unblock preparation", async () => {
+it("legacy accepted discovery keeps its intent while waiting for preparation after reopen", async () => {
   localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
     ...admission, intentId: "old-intent", state: "accepted",
   }]));
   recoverUnacknowledgedDiscoveryAdmissions();
-  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "pending" });
-  expect(pendingDiscoveryAdmissions()[0].intentId).toBeUndefined();
-  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "old-intent" }));
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "accepted", intentId: "old-intent" });
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ state: "preparing" }));
   vi.stubGlobal("fetch", fetcher);
   await flushPendingDiscoveryAdmissions();
-  expect(fetcher.mock.calls[0][1].body).toContain("f3e5");
+  expect(fetcher.mock.calls[0][0]).toContain("/api/discovery-admissions/old-intent");
+  expect(fetcher.mock.calls[0][1]?.method).not.toBe("POST");
   expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "accepted", intentId: "old-intent" });
 });
 
