@@ -2768,3 +2768,16 @@ array and one repertoire ID, shared through a materialized snapshot scope. It
 failed with 25 repeated parameters before the scoped binding repair. All table
 queries and ordered count/byte results remain identical; this reduces wire and
 planning work for the full-size snapshot without changing its read budget.
+
+- `pr102 background restoration recovers API health before starting dependent engine`
+  failed against the runner's original combined restart order. Required CI run
+  `37823043024` passed every application regression, then Compose refused engine
+  restoration while the API was unhealthy because its background worker had been
+  intentionally stopped. Restoration starts broker consumers first, obtains both
+  HTTP and Docker API health within the existing readiness loop, then starts the
+  dependent engine and verifies all consumers. Isolation, failure propagation,
+  cleanup and readiness assertions remain required; no timeout is increased.
+
+  `pr102 background restoration preserves readiness rejection before engine start`
+  also requires the original readiness failure to propagate, with no engine start
+  or successful-consumer assertion after a failed health check.

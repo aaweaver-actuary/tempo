@@ -23,6 +23,14 @@ export function postgresTestStages({ mode }) {
 
 export const backgroundWorkloadConsumers = ["defense-engine", "background-worker", "background-scheduler"];
 
+export async function restoreBackgroundWorkloadConsumers({ startConsumers, waitForReady, verifyConsumers }) {
+  // Broker consumers restore API readiness before its dependent engine starts.
+  await startConsumers(["background-worker", "background-scheduler"]);
+  await waitForReady();
+  await startConsumers(["defense-engine"]);
+  await verifyConsumers("running");
+}
+
 // The benchmark owns its synthetic rows until its cleanup completes. Real
 // engine callbacks otherwise enqueue claims against those same eligible rows.
 export async function executeIsolatedBackgroundWorkload({ stopConsumers, measureWorkload, restoreConsumers }) {
