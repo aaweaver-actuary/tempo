@@ -21,18 +21,20 @@ itself prove that the complete offline queue is ready.
 
 Pending checkpoint notices mean evidence remains saved locally. Normal training
 continues. Recovery runs one checkpoint at a time after foreground work is ready,
-with a bounded retry delay. Reopening while connected resumes recovery. An
+with an independent bounded retry delay for each journal. A successful delivery
+for another journal does not shorten that delay. Reopening while connected resumes recovery. An
 uncertain delivery checks its original receipt and preserves its request identity
 and captured events. Newer events wait for a later slice.
 
 A blocked operation requires resolving its reported service error and explicitly
 retrying that operation from operation status. A rejected or retained journal stays
 available for diagnosis and does not claim evidence was saved. Other eligible
-journals can continue recovering.
+journals can continue recovering. Recovery reconciles saved attempts before clearing
+obsolete warnings after another tab confirms delivery; uncertain work stays saved.
 
 ## Worker and timeout errors
 
-If a study worker cannot start or its response cannot be decoded, reopen Tempo
+If a study worker cannot start or its response is incompatible or cannot be decoded, reopen Tempo
 while connected so its current worker bundle can load. Prepare the queue again
 before depending on offline study. The offline-ready check includes the worker
 and generated JavaScript dependencies.

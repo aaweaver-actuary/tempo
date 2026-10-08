@@ -1,5 +1,91 @@
 # Phone study reliability validation
 
+## October 8 current-main candidate
+
+Product/test source validated at clean commit `834bc51708f3311519218fdcedb50dc9d9154e52`,
+after merging main `197204d16874bf0c65e7890d7a5bace35b1c3a1c`. The five unpublished
+repairs through `c768063` are preserved. Main's #84 repair outbox/readiness,
+#96 separate deployment lifecycle, #97 defensive replay, and #103 conflict guard
+remain authoritative. Only CI title/documentation and regression conflicts needed
+manual integration; newer product implementations were not replaced.
+
+The four review findings are repaired: offline replay retains global critical
+coverage; malformed worker responses reset the Worker and old callbacks are
+fenced; retry history/deadlines belong to each journal; successful persisted reads
+prune obsolete local guards without clearing uncertain evidence or warnings.
+No migration, storage reset, live-data mutation, new polling, or recovery framework.
+
+### Selected scope and regression evidence
+
+Changed client worker/scheduling/storage boundaries are proved first by deterministic
+unit cases, then producer/consumer contracts and real PostgreSQL-backed browser
+workflows. Current-main repair compatibility includes active-attempt preservation,
+empty-queue reconciliation, nonblocking repair during held drag, and retry after reload.
+CI owns final current-head/current-base durability, deployment lifecycle, complete
+browser matrix, and pinned rendering/performance checks. No redundant local full gate.
+
+The new stale-callback extension first failed with `retrySettled` true, then passed
+with Worker identity fencing and handler detachment. The existing A/B/C deadline
+and external deletion/acknowledgment regressions remain; added boundary cases prove
+one accepted operation per journal, no invented aggregate review, and warning/data
+retention after failed storage reads. Names are registered in `tests/REGRESSIONS.md`.
+
+The previously failed `AS-15 ambiguous checkpoint retries frozen events and delivery
+key before newer work` used a fixture freezing Date.now(), making absolute retry
+deadlines unreachable. Its moving-clock option repairs the fixture without changing
+body/key/event-order assertions or raising timeouts.
+
+### Commands and observed results
+
+Commands ran from `.dev-copies/phone-study-reliability` on macOS ARM64, Node 26.10.0,
+Python 3.14. Backend dependencies were verified once via `uv sync` and
+`uv pip install --python .venv/bin/python -r requirements.txt` in `backend/`.
+Existing unchanged Node lockfile dependencies were reused. Results are focused
+execution, not a full-gate or production-performance claim. Durations below are
+wall time unless browser execution is explicitly distinguished.
+
+| Command | Result / duration |
+| --- | --- |
+| `npm run test:unit -- UNIT_SELECTION` (expanded below) | 23 files, 367 passed / 20.20 s |
+| `npm run test:unit -- tests/unit/validated-data-regressions.test.ts tests/unit/ci-reliability-regressions.test.ts` | 2 files, 19 passed / 5.43 s |
+| `node --test tests/runner/ci-reliability.test.mjs tests/runner/merge-conflict-guard.test.mjs` | 46 passed / 3.52 s; includes real collection and missing-critical-case failure |
+| `make python-file FILE=backend/tests/test_opening_evidence_contracts.py` | 39 passed / 6.51 s |
+| `make python-file FILE=backend/tests/test_queue_attempt_recovery.py` | 41 passed / 6.67 s |
+| `make python-file FILE=backend/tests/test_phone_offline_training.py` | 10 passed / 6.06 s |
+| `npm run typecheck` | Passed / 7.26 s |
+| `npm run lint` | Zero errors, 10 existing warnings / 16.72 s |
+| `npm run build:local` | Passed / 1.86 s; generated shell inventory contains all four JS/CSS bundles including study Worker |
+| `make view VIEW='AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work'` | 1 passed / 44.08 s total, 5.5 s browser execution |
+| `make view VIEW='BROWSER_SELECTION'` (expanded below) | 37 passed / 120.76 s total, 94.49 s browser stage |
+| `node scripts/ci-verification-plan.mjs --base origin/main` | Passed; 231/231 browsers, six global critical, pinned checks and lifecycle selected |
+| `npm run check:conflicts`; `git diff --check`; `git merge-base --is-ancestor origin/main HEAD` | Passed |
+
+```sh
+npm run test:unit -- tests/unit/opening-evidence tests/unit/study-worker tests/unit/offline-training-regressions.test.ts tests/unit/phone-queue-preparation-regressions.test.ts tests/unit/offline-shell tests/unit/storage-cache-regressions.test.ts tests/unit/review-outbox-regressions.test.ts tests/unit/operation-status-events.test.ts tests/unit/discovery-admission-outbox-regressions.test.ts tests/unit/desktop-queue-regressions.test.ts tests/unit/study-regressions.test.tsx tests/unit/integrity-repair
+make view VIEW='phone-offline-training.spec.ts|phone-opening-study.spec.ts|opening-evidence.spec.ts|unaffected opening reviews remain mixed with tactics during repertoire repair|repair confirmation during a held training piece preserves the drag and active attempt|asynchronous repair validation retry survives reload without repeating the retry command'
+```
+
+### Resources, issues and final CI
+
+Browser checks used projects `tempo-pg-regressions-27751-c5e65795` (single regression)
+and `tempo-pg-regressions-28457-848e415a` (37 workflows). Their ownership records
+retain exact container/image IDs, revision, creation/activity times and teardown
+commands. Both runners completed teardown successfully; independent exact-project
+checks found no leftover containers, volumes, networks or tagged images.
+Browser checks use fresh disposable projects; no mutable test state or live study
+services are reused. Raw logs, baseline proof, collected plan, ownership and stage
+timings are preserved outside the clone under
+`test-results/2026-10-08-pr92-finish/`. The checkout remains for review.
+The historical results below describe earlier inputs and are superseded by this
+candidate record. Broader issues #29 and #39 remain open; #84 is now merged and
+its recovery contracts are retained. No closing keywords apply to those roadmaps.
+Current-head/current-base CI is pending until the final candidate passes; review
+readiness will be determined from required checks, not these focused successes.
+
+---
+
+## Historical October 6 validation
+
 ## Scope and ownership
 
 The October 6 phone notification export exposed preparation-warning repetition,
