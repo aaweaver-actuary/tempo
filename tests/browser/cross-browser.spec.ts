@@ -1,3 +1,4 @@
+import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
 import { test, expect } from "./observability";
 import { readFileSync } from "node:fs";
 import { navigate, noPageOverflow } from "./ui-fixtures";
@@ -260,4 +261,9 @@ test("phone opening identity and move input work across browser engines", async 
 import { crossTabOpeningCompletion } from "./opening-evidence-cross-tab-fixture";
 for (const fallback of [false, true]) test(`cross-tab opening completion wakes reconciliation through ${fallback ? "BroadcastChannel fallback" : "storage events"}`, async ({ page, context }) => {
   await crossTabOpeningCompletion(page, context, fallback);
+});
+
+test("Study board promotion places the selected knight across browser engines", async ({ page }) => {
+  const { fen, move } = await preparePromotionStudy(page);
+  await dragStudyKnightPromotion(page, fen, move);
 });
