@@ -25,6 +25,16 @@ from app.services.threat_validation import AnalysisLine, AnalysisReport, EngineS
 FEN = "4k3/8/8/8/1n6/8/P7/R3K3 w Q - 0 1"
 
 
+def test_issue12_three_anchors_persist_one_incident_and_replay_without_recurrence_inflation(
+    tmp_path, monkeypatch,
+):
+    from issue12_persistence_scenario import verify_three_anchor_persistence
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        verify_three_anchor_persistence()
+
+
 def seed_candidate(*, game_id: str = "lichess:defense-one", fen: str = FEN,
                    played_at: str | None = None):
     game = GameSnapshot(game_id, 1, fen, ("a2a3",), "white")
@@ -375,6 +385,11 @@ def test_issue12_played_fork_evidence_resurfaces_dismissed_engine_candidate(tmp_
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         candidate_id = seed_candidate()
+        with database.connection() as db:
+            engine_evidence = json.loads(db.execute(
+                "SELECT evidence_json FROM threat_training_candidates WHERE id=?", (candidate_id,),
+            ).fetchone()[0])
+            assert engine_evidence["seed"]["source_line"]["origin"] == "engine"
         assert client.post(f"/api/defensive-threats/candidates/{candidate_id}/dismiss").status_code == 200
         played_game = GameSnapshot("lichess:defense-one", 1, FEN,
                                    ("a2a3", "b4c2"), "white")
@@ -389,6 +404,9 @@ def test_issue12_played_fork_evidence_resurfaces_dismissed_engine_candidate(tmp_
             assert changed["dismissed_at"] is None
             assert changed["exercise_revision"] == 2
             assert changed["validation_state"] == "needs_analysis"
+            assert json.loads(changed["evidence_json"])["seed"]["source_line"] == {
+                "origin": "played", "start_ply": 1, "moves_uci": ["b4c2"],
+            }
             assert db.execute("SELECT COUNT(*) FROM threat_training_candidates").fetchone()[0] == 1
 
 
