@@ -299,40 +299,45 @@ test("unknown prepared study grader versions are unavailable offline", async ({ 
   await expect(page.getByRole("main").getByText(/1 exercise requires the computer/)).toBeVisible();
 });
 
-test("saved study attempt can retry feedback without a duplicate review", async ({ page, request }) => {
-  const study = await (await request.post(`${api}/studies`, { data: { title: "Feedback recovery" } })).json();
-  const chapter = await (await request.post(`${api}/studies/${study.id}/chapters`, { data: { title: "Recovery" } })).json();
-  const preview = await (await request.post(`${api}/studies/${study.id}/import/preview`, {
-    data: { chapter_id: chapter.id, raw_pgn: originalPgn },
-  })).json();
-  await request.post(`${api}/studies/${study.id}/import/commit`, {
-    data: { chapter_id: chapter.id, raw_pgn: originalPgn, preview_digest: preview.digest, selected_records: [0] },
+test.describe("online study feedback recovery", () => {
+  // Network fault injection must observe requests rather than service-worker fetches.
+  test.use({ serviceWorkers: "block" });
+
+  test("saved study attempt can retry feedback without a duplicate review", async ({ page, request }) => {
+    const study = await (await request.post(`${api}/studies`, { data: { title: "Feedback recovery" } })).json();
+    const chapter = await (await request.post(`${api}/studies/${study.id}/chapters`, { data: { title: "Recovery" } })).json();
+    const preview = await (await request.post(`${api}/studies/${study.id}/import/preview`, {
+      data: { chapter_id: chapter.id, raw_pgn: originalPgn },
+    })).json();
+    await request.post(`${api}/studies/${study.id}/import/commit`, {
+      data: { chapter_id: chapter.id, raw_pgn: originalPgn, preview_digest: preview.digest, selected_records: [0] },
+    });
+    const chapterContent = await (await request.get(`${api}/studies/${study.id}/chapters/${chapter.id}`)).json();
+    const created = await request.post(`${api}/studies/${study.id}/exercises`, { data: {
+      position_id: chapterContent.positions[0].id,
+      specification: { type: "choice", prompt: "Is the white knight on g1?", hint: "", explanation: "The knight starts on g1.",
+        options: [{ id: "yes", text: "Yes" }, { id: "no", text: "No" }], correct_option_ids: ["yes"] },
+    } });
+    expect(created.ok()).toBeTruthy();
+    await page.goto("/");
+    await nav(page, "Studies");
+    await page.getByRole("combobox", { name: "Study" }).selectOption(study.id);
+    await page.getByRole("button", { name: /Is the white knight on g1\? · draft/ }).click();
+    await page.getByRole("button", { name: "Practice without scheduling" }).click();
+    let feedbackCalls = 0;
+    await page.route("**/api/studies/*/exercises/*/attempts/*/feedback", (route) => {
+      feedbackCalls += 1;
+      return feedbackCalls === 1 ? route.fulfill({ status: 503, json: { detail: "Temporary outage" } }) : route.continue();
+    });
+    await page.getByLabel("Yes", { exact: true }).check();
+    await page.getByRole("button", { name: "Submit" }).click();
+    await expect(page.getByRole("button", { name: "Retry feedback" })).toBeVisible();
+    await page.getByRole("button", { name: "Retry feedback" }).click();
+    await expect(page.getByText("The knight starts on g1.")).toBeVisible();
+    expect(feedbackCalls).toBe(2);
+    const summary = await (await request.get(`${api}/studies/${study.id}/summary`)).json();
+    expect(summary.chapters[0].attempts).toBe(1);
   });
-  const chapterContent = await (await request.get(`${api}/studies/${study.id}/chapters/${chapter.id}`)).json();
-  const created = await request.post(`${api}/studies/${study.id}/exercises`, { data: {
-    position_id: chapterContent.positions[0].id,
-    specification: { type: "choice", prompt: "Is the white knight on g1?", hint: "", explanation: "The knight starts on g1.",
-      options: [{ id: "yes", text: "Yes" }, { id: "no", text: "No" }], correct_option_ids: ["yes"] },
-  } });
-  expect(created.ok()).toBeTruthy();
-  await page.goto("/");
-  await nav(page, "Studies");
-  await page.getByRole("combobox", { name: "Study" }).selectOption(study.id);
-  await page.getByRole("button", { name: /Is the white knight on g1\? · draft/ }).click();
-  await page.getByRole("button", { name: "Practice without scheduling" }).click();
-  let feedbackCalls = 0;
-  await page.route("**/api/studies/*/exercises/*/attempts/*/feedback", (route) => {
-    feedbackCalls += 1;
-    return feedbackCalls === 1 ? route.fulfill({ status: 503, json: { detail: "Temporary outage" } }) : route.continue();
-  });
-  await page.getByLabel("Yes", { exact: true }).check();
-  await page.getByRole("button", { name: "Submit" }).click();
-  await expect(page.getByRole("button", { name: "Retry feedback" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry feedback" }).click();
-  await expect(page.getByText("The knight starts on g1.")).toBeVisible();
-  expect(feedbackCalls).toBe(2);
-  const summary = await (await request.get(`${api}/studies/${study.id}/summary`)).json();
-  expect(summary.chapters[0].attempts).toBe(1);
 });
 
 test("Study workspace reports an actionable local service outage", async ({ page }) => {

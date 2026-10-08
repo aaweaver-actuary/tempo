@@ -2741,3 +2741,9 @@ indexes the proposed steps once and uses constant-time lookups.
   existing oversized-transfer and post-transaction hashing cases remain required.
   This removes 19 commands from preparation and authoritative revalidation without
   increasing the 250 ms read-transaction budget or planner capacity.
+- `saved study attempt can retry feedback without a duplicate review` retains its
+  injected first-feedback failure, successful retry, exactly two feedback requests
+  and exactly one saved attempt. CI run `37817557370` showed successful feedback
+  while the injected route never observed service-worker-owned API fetches. Its
+  online-only context now blocks service workers so fault injection is reliable;
+  the other study cases continue to exercise actual offline service workers.
