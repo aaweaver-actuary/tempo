@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 import uuid
+import pytest
 from datetime import date
 from pathlib import Path
 
@@ -241,6 +242,38 @@ def test_study_migration_preserves_legacy_cards_reviews_and_foreign_keys(tmp_pat
     assert (tmp_path / "tempo.db.before-studies-v1.bak").exists()
     with sqlite3.connect(tmp_path / "tempo.db.before-studies-v1.bak") as backup:
         assert backup.execute("SELECT COUNT(*) FROM reviews WHERE card_id='legacy-card'").fetchone()[0] == 1
+
+
+def test_study_native_bundle_multi_source_reimport_ignores_table_row_order():
+    from copy import deepcopy
+    from app.services.stalemate_swindles import build_bundle
+    from app.services.study_portable import import_bundle
+    from app.study_migration import STUDY_TABLES
+    from test_stalemate_swindles import BLACK_FEN, mined, synthetic_pgn
+
+    candidates = mined()[0] + mined(synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5")))[0]
+    bundle = build_bundle(candidates, "synthetic-reimport-v1")
+    revision = deepcopy(bundle["tables"]["study_exercise_revisions"][0])
+    revision["revision"] = 2
+    bundle["tables"]["study_exercise_revisions"].append(revision)
+    bundle["tables"]["study_exercises"][0]["current_revision"] = 2
+    with sqlite3.connect(":memory:") as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys=ON")
+        for statement in STUDY_TABLES[:7]:
+            connection.execute(statement)
+        assert not import_bundle(connection, bundle)["idempotent"]
+        reordered = deepcopy(bundle)
+        for table_rows in reordered["tables"].values():
+            table_rows.reverse()
+        assert import_bundle(connection, reordered)["idempotent"]
+        assert connection.execute("SELECT COUNT(*) FROM study_sources").fetchone()[0] == 2
+        assert connection.execute("SELECT COUNT(*) FROM study_positions").fetchone()[0] == 6
+        assert connection.execute("SELECT COUNT(*) FROM study_exercise_revisions").fetchone()[0] == 3
+        changed = deepcopy(reordered)
+        changed["tables"]["study_exercise_revisions"][0]["created_at"] = "changed"
+        with pytest.raises(ValueError, match="different content"):
+            import_bundle(connection, changed)
 
 
 def test_study_python_grader_matches_original_golden_cases():

@@ -18,6 +18,7 @@ import { playChessMoveSound, playMoveSound } from "../../lib/move-sound";
 
 export type BoardTheme = "brown" | "blue" | "green";
 export type PieceSet = "cburnett" | "merida";
+export type PromotionPiece = "q" | "r" | "b" | "n";
 const EMPTY_SHAPES: DrawShape[] = [];
 const DRAW_BRUSHES = {
   green: { key: "g", color: "#4f8a59", opacity: 0.88, lineWidth: 10 },
@@ -33,6 +34,7 @@ type ChessboardProps = {
   keyboard?: BoardKeyboardActions;
   owner?: string;
   fen: string;
+  promotion?: PromotionPiece;
   expectedSan?: string;
   lastMove?: readonly [string, string];
   locked: boolean;
@@ -58,6 +60,7 @@ export function Chessboard({
   showShortcutButton = true,
   layoutAnchor,
   fen,
+  promotion = "q",
   keyboard,
   owner,
   expectedSan,
@@ -95,6 +98,7 @@ export function Chessboard({
   const appliedAutoShapes = useRef<{ shapes: DrawShape[]; version: number } | undefined>(undefined);
   const appliedDrawnShapes = useRef<{ shapes: DrawShape[]; version: number } | undefined>(undefined);
   const handlers = useRef({
+    promotion,
     onMove,
     onFreeMove,
     onSquareSelect,
@@ -133,6 +137,7 @@ export function Chessboard({
 
   useLayoutEffect(() => {
     handlers.current = {
+      promotion,
       onMove,
       onFreeMove,
       onSquareSelect,
@@ -143,6 +148,7 @@ export function Chessboard({
     };
     positionRef.current = position;
   }, [
+    promotion,
     onMove,
     onFreeMove,
     onSquareSelect,
@@ -206,7 +212,7 @@ export function Chessboard({
         } else {
           try {
             const nextPosition = new Chess(chess.fen());
-            const move = nextPosition.move({ from, to, promotion: "q" });
+            const move = nextPosition.move({ from, to, promotion: handlers.current.promotion });
             playChessMoveSound(move, nextPosition.isCheck());
           } catch {
             playMoveSound();
