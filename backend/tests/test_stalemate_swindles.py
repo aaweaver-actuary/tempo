@@ -9,6 +9,7 @@ import io
 import json
 import os
 import signal
+import selectors
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -321,7 +322,8 @@ def test_stalemate_cli_archive_verifies_source_and_rejects_failed_pipeline(tmp_p
         assert bundle.read_bytes() == original_bytes
 
 
-def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=False, sampling=False):
+def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=False, sampling=False,
+                             cancellation_signal=None, ignore_termination=False):
     """Use real owned pipes; an undrained producer cannot finish its 32 MiB write."""
     tool_directory = tmp_path / "bin"
     tool_directory.mkdir()
@@ -333,20 +335,23 @@ def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=F
     producer_handshake = (f"with open({str(consumer_ready_path)!r}, 'rb', buffering=0) as ready:\n    assert ready.read(1) == b'1'\n"
                           if downloader_failure else "")
     producer_body = (
-        f"import os\nfrom pathlib import Path\nPath({str(producer_pid_path)!r}).write_text(str(os.getpid()))\n"
+        f"import os, signal\nfrom pathlib import Path\nPath({str(producer_pid_path)!r}).write_text(str(os.getpid()))\n"
+        + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if ignore_termination else "") +
         f"{producer_handshake}"
         f"remaining = {producer_bytes}\n"
         "while remaining:\n    remaining -= os.write(1, b'x' * min(65536, remaining))\n"
         f"raise SystemExit({int(downloader_failure)})\n"
     )
     consumer_body = f"import os, signal, sys\nfrom pathlib import Path\nPath({str(consumer_pid_path)!r}).write_text(str(os.getpid()))\n"
-    if downstream_mode == "ignore_termination":
+    if downstream_mode == "ignore_termination" or ignore_termination:
         consumer_body += "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
     if downloader_failure:
         consumer_body += f"with open({str(consumer_ready_path)!r}, 'wb', buffering=0) as ready:\n    ready.write(b'1')\nsignal.pause()\n"
     else:
         consumer_body += f"os.read(0, 1)\nsys.stdout.write({(synthetic_pgn() * (2 if sampling else 1))!r})\nsys.stdout.flush()\n"
-        if sampling:
+        if cancellation_signal is not None:
+            consumer_body += f"with open({str(consumer_ready_path)!r}, 'wb', buffering=0) as ready:\n    ready.write(b'1')\nsignal.pause()\n"
+        elif sampling:
             consumer_body += "signal.pause()\n"
         elif downstream_mode in ("close_input", "ignore_termination"):
             consumer_body += "os.close(0)\nsignal.pause()\n"
@@ -366,12 +371,25 @@ def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=F
     miner = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              env=environment, cwd=ROOT, start_new_session=True)
     try:
+        if cancellation_signal is not None:
+            readiness_descriptor = os.open(consumer_ready_path, os.O_RDWR | os.O_NONBLOCK)
+            try:
+                with selectors.DefaultSelector() as readiness:
+                    readiness.register(readiness_descriptor, selectors.EVENT_READ)
+                    assert readiness.select(timeout=5), "Archive consumer never reached blocked-stream readiness"
+                    assert os.read(readiness_descriptor, 1) == b'1'
+                miner.send_signal(cancellation_signal)
+            finally:
+                os.close(readiness_descriptor)
         try:
             _, diagnostics = miner.communicate(timeout=20)
         except subprocess.TimeoutExpired:
             pytest.fail("Archive pipeline deadlocked with an owned child blocked by pipe backpressure")
-        assert miner.returncode == (0 if sampling else 1), diagnostics
-        if not sampling:
+        expected_status = 128 + cancellation_signal if cancellation_signal is not None else (0 if sampling else 1)
+        assert miner.returncode == expected_status, diagnostics
+        if cancellation_signal is not None:
+            assert "interrupted; no completed output published" in diagnostics
+        elif not sampling:
             assert "Archive pipeline failed" in diagnostics
         for pid_path in (producer_pid_path, consumer_pid_path):
             assert pid_path.exists(), "Both real pipeline stages must have started"
@@ -392,7 +410,20 @@ def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=F
             try:
                 miner.communicate(timeout=12)
             except subprocess.TimeoutExpired:
-                os.killpg(miner.pid, signal.SIGKILL)
+                pass
+        # Target only fixture-owned children. Killing them first lets a live
+        # miner reap its children; never signal a process group.
+        for pid_path in (producer_pid_path, consumer_pid_path):
+            if pid_path.exists():
+                try:
+                    os.kill(int(pid_path.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        if miner.poll() is None:
+            try:
+                miner.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                miner.kill()
                 miner.communicate(timeout=5)
 
 
@@ -407,6 +438,33 @@ def test_stalemate_archive_downloader_failure_terminates_blocked_decompressor(tm
 
 def test_stalemate_archive_sampling_cancels_owned_pipeline_without_certifying_checksum(tmp_path):
     run_backpressured_archive(tmp_path, "sampling", sampling=True)
+
+
+@pytest.mark.parametrize("cancellation_signal", [signal.SIGINT, signal.SIGTERM], ids=["ctrl_c", "term"])
+@pytest.mark.parametrize("ignore_termination", [False, True], ids=["ordinary_children", "term_resistant_children"])
+def test_stalemate_archive_external_cancellation_reaps_owned_children(tmp_path, cancellation_signal, ignore_termination):
+    run_backpressured_archive(tmp_path, "cancellation", cancellation_signal=cancellation_signal,
+                             ignore_termination=ignore_termination)
+
+
+@pytest.mark.parametrize("received_signal", [signal.SIGINT, signal.SIGTERM])
+def test_stalemate_cli_cancellation_restores_signal_handlers_and_defers_repeated_signals(monkeypatch, received_signal):
+    module_spec = importlib.util.spec_from_file_location("stalemate_cli_cancellation", CLI)
+    cli_module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(cli_module)
+    previous_handlers = {signal.SIGINT: object(), signal.SIGTERM: object()}
+    installed_handlers = dict(previous_handlers)
+    monkeypatch.setattr(cli_module.signal, "getsignal", installed_handlers.__getitem__)
+    monkeypatch.setattr(cli_module.signal, "signal", installed_handlers.__setitem__)
+    with cli_module.cli_cancellation_signals():
+        with pytest.raises(cli_module.ArchiveCancellation) as interruption:
+            installed_handlers[received_signal](received_signal, None)
+        assert interruption.value.received_signal == received_signal
+        assert all(handler == signal.SIG_IGN for handler in installed_handlers.values())
+    assert installed_handlers == previous_handlers
+    with cli_module.cli_cancellation_signals():
+        assert all(callable(handler) for handler in installed_handlers.values())
+    assert installed_handlers == previous_handlers
 
 
 @pytest.mark.parametrize("proof_name", [

@@ -2554,3 +2554,8 @@ Stalemate Swindles (October 5, 2026):
 - `test_stalemate_postgres_proofs_configure_and_restore_database_environment` covers both logical proofs with absent and pre-existing URLs, verifies pool reset before database work, and verifies restoration after failure. Both proof paths failed on the original implementation.
 - `test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances` protects successful teardown and the disposable-instance boundary.
 - `test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content` now runs first in the regular durability runner's fresh schema process, without synthetic-proof setup. Each bundle scopes its own URLs and pools; the synthetic proof subsequently starts independently after restoration. Persisted trees, reversed-row idempotence, changed-content rejection, draft status, and zero enrollment assertions remain intact.
+
+## PR #91 external archive cancellation — October 8, 2026
+
+- `test_stalemate_archive_external_cancellation_reaps_owned_children` covers Ctrl-C and TERM while real archive pipes are blocked, with ordinary and TERM-resistant children. The pre-fix TERM cases failed by leaving children and inherited pipes alive. Each repaired case proves signal-appropriate exit, both owned PIDs absent, no certified final pair and no staging files.
+- `test_stalemate_cli_cancellation_restores_signal_handlers_and_defers_repeated_signals` protects one cleanup unwind and restoration after cancellation and successful commands. CLI signal handling stays outside application/runtime behavior. Timeout diagnostics clean up exact fixture-owned processes without process-group signals.

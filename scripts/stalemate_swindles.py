@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,32 @@ from app.services.stalemate_swindles import (  # noqa: E402
     MiningFilters, build_bundle, json_bytes, mine_candidates, new_counts,
     select_candidates, selected_distribution, validate_month,
 )
+
+
+class ArchiveCancellation(BaseException):
+    def __init__(self, received_signal: int):
+        self.received_signal = received_signal
+
+
+@contextmanager
+def cli_cancellation_signals():
+    """Unwind owned resources once, without interrupting their bounded cleanup."""
+    cancellation_signals = (signal.SIGINT, signal.SIGTERM)
+    previous_handlers = {received_signal: signal.getsignal(received_signal)
+                         for received_signal in cancellation_signals}
+
+    def cancel_command(received_signal, _frame):
+        for deferred_signal in cancellation_signals:
+            signal.signal(deferred_signal, signal.SIG_IGN)
+        raise ArchiveCancellation(received_signal)
+
+    try:
+        for received_signal in cancellation_signals:
+            signal.signal(received_signal, cancel_command)
+        yield
+    finally:
+        for received_signal, previous_handler in previous_handlers.items():
+            signal.signal(received_signal, previous_handler)
 
 
 def positive_integer(value: str) -> int:
@@ -396,13 +423,14 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     arguments = parser().parse_args()
     try:
-        arguments.run(arguments)
+        with cli_cancellation_signals():
+            arguments.run(arguments)
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f"Stalemate Swindles: {error}", file=sys.stderr)
         return 1
-    except KeyboardInterrupt:
+    except (ArchiveCancellation, KeyboardInterrupt) as interruption:
         print("Stalemate Swindles: interrupted; no completed output published", file=sys.stderr)
-        return 130
+        return 128 + (interruption.received_signal if isinstance(interruption, ArchiveCancellation) else signal.SIGINT)
     return 0
 
 
