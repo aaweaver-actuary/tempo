@@ -20,6 +20,7 @@ from kombu.exceptions import OperationalError as BrokerUnavailable
 import pytest
 
 from app import command_dispatch
+from test_card_deletion import workspace as deletion_workspace
 from app.command_gateway import CommandConflict, request_digest
 from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
@@ -1946,67 +1947,30 @@ def test_postgres_repertoire_delete_dispatches_idempotent_foreground_command(mon
         "/api/repertoires/rep", headers={"Idempotency-Key": "delete-rep-1"},
     )
     assert response.status_code == 200, response.text
-    assert dispatched == [("repertoires.delete", {"repertoire_id": "rep"}, "delete-rep-1")]
+    assert dispatched == [("repertoires.delete", {"repertoire_id": "rep", "learned_cards": "delete"}, "delete-rep-1")]
 
 
-def test_postgres_repertoire_delete_preserves_shared_cards_and_queues_game_refresh(monkeypatch):
-    from app import repertoire_commands
-
-    statements = []
-    queued = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append((statement, parameters))
-            if "SELECT id FROM repertoires WHERE id=%s FOR UPDATE" in statement:
-                return SimpleNamespace(fetchone=lambda: ("old",))
-            if "ORDER BY created_at DESC LIMIT 1" in statement:
-                return SimpleNamespace(fetchone=lambda: ("new",))
-            return SimpleNamespace(fetchone=lambda: None)
-
-    monkeypatch.setattr(repertoire_commands, "enqueue_task_in_transaction",
-                        lambda database, kind, key, payload, *, priority:
-                        queued.append((database, kind, key, payload, priority)))
-    database = Database()
-    assert repertoire_commands.delete_repertoire(database, {
-        "repertoire_id": "old",
-    }) == {"deleted": True, "id": "old"}
-    assert any("MIN(link.repertoire_id) AS replacement" in sql and
-               parameters == ("old", "old") for sql, parameters in statements)
-    assert any(sql == "DELETE FROM repertoires WHERE id=%s" and
-               parameters == ("old",) for sql, parameters in statements)
-    cancel_index = next(index for index, (statement, _) in enumerate(statements)
-                        if "WITH obsolete AS" in statement)
-    delete_index = next(index for index, (statement, _) in enumerate(statements)
-                        if statement == "DELETE FROM repertoires WHERE id=%s")
-    assert cancel_index < delete_index
-    assert "ORDER BY id FOR UPDATE" in statements[cancel_index][0]
-    assert statements[cancel_index][1][:2] == ("old", "old")
-    assert any("SET is_main=CASE WHEN id=%s THEN 1 ELSE 0 END" in sql
-               for sql, _ in statements)
-    assert queued == [(database, "repertoire_game_refresh", "all",
-                       {"after_game_id": ""}, 90)]
+def test_postgres_repertoire_delete_preserves_shared_cards_and_queues_game_refresh(deletion_workspace):
+    # Shared business rules run on the real compatibility database here; native
+    # PostgreSQL persistence/replay is proved in check_postgres_deletion.py.
+    from app import database, repertoire_commands
+    with database.connection() as connection:
+        assert repertoire_commands.delete_repertoire(connection, {"repertoire_id": "old"}) == {"deleted": True, "id": "old"}
+        assert connection.execute("SELECT repertoire_id FROM cards WHERE id='shared'").fetchone()[0] == 'other'
+        assert connection.execute("SELECT COUNT(*) FROM reviews WHERE card_id='shared'").fetchone()[0] == 1
+        refresh = connection.execute("SELECT payload_json FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
+        assert json.loads(refresh[0]) == {"after_game_id": ""}
 
 
-def test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal(monkeypatch):
-    from app import repertoire_commands
-
-    statements = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append(statement)
-            return SimpleNamespace(fetchone=lambda: ("old",) if
-                                   "SELECT id FROM repertoires WHERE id=%s FOR UPDATE" in statement else None)
-
-    monkeypatch.setattr(repertoire_commands, "enqueue_task_in_transaction", lambda *_args, **_kwargs: None)
-    repertoire_commands.delete_repertoire(Database(), {"repertoire_id": "old"})
-    cancel_index = next(index for index, statement in enumerate(statements)
-                        if "WITH obsolete AS" in statement)
-    delete_index = statements.index("DELETE FROM repertoires WHERE id=%s")
-    assert cancel_index < delete_index
-    assert "state IN ('queued','leased','retrying')" in statements[cancel_index]
-    assert "lease_token=NULL" in statements[cancel_index]
+def test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal(deletion_workspace):
+    from app import database, repertoire_commands
+    from app.services.durable_tasks import enqueue_task_in_transaction
+    with database.connection() as connection:
+        task = enqueue_task_in_transaction(connection, 'opening_graph_rebuild', 'old', {"repertoire_id": "old"})
+        connection.execute("UPDATE background_tasks SET state='leased',lease_token='stale' WHERE id=?", (task['id'],))
+        repertoire_commands.delete_repertoire(connection, {"repertoire_id": "old"})
+        assert tuple(connection.execute("SELECT state,phase,lease_token FROM background_tasks WHERE id=?", (task['id'],)).fetchone()) == ('complete','cancelled',None)
+        assert connection.execute("SELECT 1 FROM repertoires WHERE id='old'").fetchone() is None
 
 
 def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(monkeypatch):
@@ -3945,8 +3909,12 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
 
     class RecordingDatabase:
         def execute(self, statement, parameters=()):
-            observed.append(("card_lock", statement, parameters))
+            if "deleted_cards" not in statement:
+                observed.append(("card_lock", statement, parameters))
             return self
+
+        def fetchone(self):
+            return None
 
     monkeypatch.setattr(review_commands, "lock_queue_date_for_position",
                         lambda database, queue_date: observed.append(("queue_lock", queue_date)))
@@ -4950,13 +4918,13 @@ def test_postgres_queue_opening_reset_phases_are_idempotent_and_preserve_active_
 
     with sqlite3.connect(":memory:") as database:
         database.executescript("""
-            CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,introduced_at TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,introduced_at TEXT,repertoire_id TEXT DEFAULT 'rep');
             CREATE TABLE reviews(card_id TEXT);
             CREATE TABLE daily_queue(card_id TEXT,queue_date TEXT);
-            INSERT INTO cards VALUES('never','opening','learning',NULL);
-            INSERT INTO cards VALUES('stale','opening','learning','2026-09-26');
-            INSERT INTO cards VALUES('reviewed','opening','learning','2026-09-26');
-            INSERT INTO cards VALUES('queued','opening','learning','2026-09-26');
+            INSERT INTO cards(id,content_type,state,introduced_at) VALUES('never','opening','learning',NULL);
+            INSERT INTO cards(id,content_type,state,introduced_at) VALUES('stale','opening','learning','2026-09-26');
+            INSERT INTO cards(id,content_type,state,introduced_at) VALUES('reviewed','opening','learning','2026-09-26');
+            INSERT INTO cards(id,content_type,state,introduced_at) VALUES('queued','opening','learning','2026-09-26');
             INSERT INTO reviews VALUES('reviewed');
             INSERT INTO daily_queue VALUES('queued','2026-09-27');
         """)
@@ -5211,7 +5179,7 @@ def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out
                 return QueryResult([("pack-a",)])
             if "tactic_rotation" in statement:
                 return QueryResult([("",)])
-            if "tactic_progress" in statement:
+            if "tactic_progress" in statement or "deleted_cards" in statement:
                 return QueryResult([])
             raise AssertionError(statement)
 

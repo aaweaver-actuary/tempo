@@ -95,6 +95,9 @@ def test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor(monk
     class Database:
         raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
 
+        def execute_native(self, _statement, _parameters=()):
+            return []
+
     monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
 
     def advance(_database, _task, *, next_phase, next_payload):
@@ -336,6 +339,9 @@ def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(m
 
     class Database:
         raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
+
+        def execute_native(self, _statement, _parameters=()):
+            return []
 
     @contextmanager
     def gated_lease():

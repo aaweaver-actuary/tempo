@@ -93,7 +93,7 @@ def _postgres_repertoire_input_rows() -> tuple[list[dict], list[dict], list[dict
     with background_read_connection() as database:
         repertoires = [dict(row) for row in database.execute(
             "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires "
-            "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"
+            "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
         )]
     line_rows: list[dict] = []
     line_cursor = ""
@@ -134,7 +134,7 @@ def _load_repertoire_index_snapshot(*, background: bool = False) -> tuple[str, l
         with background_read_connection() as database:
             repertoires = [dict(row) for row in database.execute(
                 "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires "
-                "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"
+                "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
             )]
         signature = _postgres_repertoire_source_signature(repertoires)
         with _index_lock:
@@ -147,7 +147,7 @@ def _load_repertoire_index_snapshot(*, background: bool = False) -> tuple[str, l
     else:
         with connection(background=background) as database:
             repertoires = [dict(row) for row in database.execute(
-                "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"
+                "SELECT id,is_main,canonical_prefix_moves_json,canonical_prefix_revision FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY id"
             )]
             line_rows = [dict(row) for row in database.execute(
                 "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"

@@ -122,6 +122,7 @@ def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
     seen_puzzles = {row[0] for row in _bounded_read(
         "SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL",
     )}
+    deleted_ids = {row[0] for row in _bounded_read("SELECT card_id FROM deleted_cards")}
     ordered_packs = ([pack for pack in active_packs if pack > rotation_cursor]
                      + [pack for pack in active_packs if pack <= rotation_cursor])
     for pack_id in ordered_packs:
@@ -129,10 +130,13 @@ def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
             if record["PuzzleId"] in seen_puzzles:
                 continue
             training_fen, solution = validate_puzzle_record(record)
+            identifier = card_id(training_fen, solution)
+            if identifier in deleted_ids:
+                continue
             return {
                 "pack_id": pack_id,
                 "puzzle_id": record["PuzzleId"],
-                "card_id": card_id(training_fen, solution),
+                "card_id": identifier,
                 "training_fen": training_fen,
                 "solution_json": json.dumps(solution),
                 "source_fen": record["FEN"],
@@ -147,6 +151,10 @@ def _publish_tactical_introduction(database, queue_date: str,
 
     if prepared is None:
         return False
+    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{prepared['card_id']}",))
+    from ..card_deletion import is_card_deleted
+    if is_card_deleted(database, prepared["card_id"]):
+        return True
     lock_daily_tactic_admission(database, queue_date)
     limit = database.execute_native("SELECT tactics_new_per_day FROM settings WHERE id=1").fetchone()[0]
     reserved = count_daily_tactic_introductions(database, queue_date)
@@ -225,6 +233,7 @@ def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
         """SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=%s AND q.status='queued' AND c.content_type='opening'
+             AND c.repertoire_id<>'__retained_cards__'
              AND COALESCE(q.admission_kind,'')!='explicit'
              AND (c.introduced_at IS NULL OR c.introduced_at=%s)
              AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
@@ -257,6 +266,7 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
         """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.id=%s AND q.queue_date=%s AND q.status='queued'
              AND c.content_type='opening' AND COALESCE(q.admission_kind,'')!='explicit'
+             AND c.repertoire_id<>'__retained_cards__'
              AND (c.introduced_at IS NULL OR c.introduced_at=%s)
              AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
            FOR UPDATE OF q,c""",

@@ -9,6 +9,7 @@ from typing import Any
 
 from ..database import background_read_connection
 from .. import postgres_store
+from ..card_deletion import omit_deleted_graph_steps
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_task_in_transaction, lock_current_slice,
@@ -108,7 +109,15 @@ def stage_graph_line_in_transaction(
     offset = int(payload.get("step_offset", 0))
     if offset < 0 or offset >= max(1, len(prepared.steps)):
         raise ValueError("Opening graph slice cursor is outside its source line")
-    batch = prepared.steps[offset:offset + _STEP_BATCH_SIZE]
+    original_batch = prepared.steps[offset:offset + _STEP_BATCH_SIZE]
+    # Synchronize with permanent deletion before checking identity exclusions.
+    # Parents must be fenced too: a child cannot retain a removed prerequisite.
+    route_ids = sorted({step.card_id for step in prepared.steps})
+    for identifier in route_ids:
+        database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{identifier}",))
+    deleted_ids = {row[0] for row in database.execute_native("SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s)", (route_ids,))}
+    retained_steps = {step.decision_index: step for step in omit_deleted_graph_steps(prepared.steps, deleted_ids)}
+    batch = tuple(retained_steps[step.decision_index] for step in original_batch if step.decision_index in retained_steps)
     generation = int(task["generation"])
     study_day = str(payload["local_day"])
     with database.raw.cursor() as cursor:
@@ -141,7 +150,7 @@ def stage_graph_line_in_transaction(
                 for step in batch
             ],
         )
-    next_offset = offset + len(batch)
+    next_offset = offset + len(original_batch)
     next_payload = {
         **payload,
         "after_line_id": prepared.line_id if next_offset == len(prepared.steps)

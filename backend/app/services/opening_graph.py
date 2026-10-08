@@ -61,6 +61,7 @@ class GraphRebuildInput:
     reviews_by_card: dict[str, list[dict]]
     existing_card_ids: frozenset[str]
     study_day: str
+    deleted_card_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -528,12 +529,16 @@ def prepare_opening_graph_rebuild(task: dict) -> GraphRebuildInput:
     local_day = task["payload"].get("local_day") or date.today().isoformat()
     graph_input = load_graph_input(repertoire_id)
     legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(repertoire_id)
+    from ..database import background_read_connection
+    with background_read_connection() as database:
+        deleted_ids = frozenset(row[0] for row in database.execute("SELECT card_id FROM deleted_cards"))
     return GraphRebuildInput(
         graph_input=graph_input,
         legacy_cards=legacy_cards,
         reviews_by_card=reviews_by_card,
         existing_card_ids=frozenset(existing_card_ids),
         study_day=local_day,
+        deleted_card_ids=deleted_ids,
     )
 
 
@@ -542,7 +547,8 @@ def calculate_opening_graph_artifacts(
 ) -> GraphRebuildArtifacts:
     """Perform chess traversal and migration scoring without SQLite access."""
 
-    graph_steps = build_graph(rebuild_input.graph_input)
+    from ..card_deletion import omit_deleted_graph_steps
+    graph_steps = omit_deleted_graph_steps(build_graph(rebuild_input.graph_input), set(rebuild_input.deleted_card_ids))
     legacy_mappings = _legacy_mappings(graph_steps, rebuild_input.legacy_cards)
     schedule_seeds = _seed_values(
         graph_steps,
@@ -572,7 +578,12 @@ def publish_opening_graph_rebuild(
     legacy_mappings = artifacts.legacy_mappings
     schedule_seeds = artifacts.schedule_seeds
 
+    def current_task(database):
+        return database.execute("SELECT 1 FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'", (task["id"], generation, task["lease_token"])).fetchone() is not None
+
     def clear_staging(database: sqlite3.Connection) -> None:
+        if not current_task(database):
+            return
         database.execute(
             "DELETE FROM opening_graph_steps WHERE repertoire_id=? AND generation=?",
             (repertoire_id, generation),
@@ -587,6 +598,12 @@ def publish_opening_graph_rebuild(
             database: sqlite3.Connection,
             values: tuple[GraphStep, ...] = graph_step_chunk,
         ) -> None:
+            if not current_task(database):
+                return
+            from ..card_deletion import omit_deleted_graph_steps
+            deleted_ids = {row[0] for row in database.execute("SELECT card_id FROM deleted_cards")}
+            retained_steps = {(step.line_id, step.decision_index): step for step in omit_deleted_graph_steps(graph_steps, deleted_ids)}
+            values = tuple(retained_steps[(step.line_id, step.decision_index)] for step in values if (step.line_id, step.decision_index) in retained_steps)
             database.executemany(
                 """INSERT INTO opening_graph_steps(
                        repertoire_id,generation,line_id,decision_index,
@@ -643,6 +660,9 @@ def publish_opening_graph_rebuild(
         mapping_chunk = legacy_mappings[mapping_offset : mapping_offset + 500]
 
         def stage_mappings(database: sqlite3.Connection, values=mapping_chunk) -> None:
+            if not current_task(database):
+                return
+            values = tuple((source, target) for source, target in values if database.execute("SELECT 1 FROM cards WHERE id=?", (source,)).fetchone() and database.execute("SELECT 1 FROM cards WHERE id=?", (target,)).fetchone())
             database.executemany(
                 """INSERT OR IGNORE INTO opening_graph_legacy_mappings(
                        repertoire_id,generation,legacy_card_id,decision_card_id
@@ -663,8 +683,12 @@ def publish_opening_graph_rebuild(
         seed_chunk = seed_items[seed_offset : seed_offset + 100]
 
         def apply_seeds(database: sqlite3.Connection, values=seed_chunk) -> None:
+            if not current_task(database):
+                return
             now = datetime.now(timezone.utc).isoformat()
             for decision_card_id, seed in values:
+                if not database.execute("SELECT 1 FROM cards WHERE id=?", (decision_card_id,)).fetchone():
+                    continue
                 database.execute(
                     """UPDATE cards SET state=?,due_date=?,interval_days=?,stability=?,
                            fsrs_card_json=?,first_correct_at=?,reinforcement_pending=0,
