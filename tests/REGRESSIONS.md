@@ -2581,3 +2581,11 @@ The first nine CI cases and the release-evidence case failed against main `65110
 
 - `unclassified backend service modules require deployment lifecycle with ordinary companions` fails against `2db9058` for `backend/app/services/postgres_connection.py`. Unknown connection, storage, worker, deployment and domain service modules require lifecycle, alone or with ordinary registry/backend/unit-test companions; new files never become ordinary through subtree membership.
 - `reviewed ordinary and sensitive service classifications survive ordinary companions` preserves exact reviewed domain-service exemptions and mandatory lifecycle for `database_executor.py` and `background_runtime.py`, with the same companions. `complete verification always requires deployment lifecycle` also covers ordinary and unknown service paths. These cases run through the existing CI reliability Vitest wrapper in the regular suite.
+
+## PR #92 final integration: stale worker callback fencing
+
+`schema-invalid study worker reply rejects all callers and replaces the worker before retry`
+now invokes captured old message/runtime-error/decoding-error callbacks after reconstruction.
+They cannot resolve a fresh request, mark it running, produce new diagnostics, or terminate
+the replacement. Failed-worker handlers are detached and a fresh response still succeeds.
+The extended case failed before the worker-identity fence (`retrySettled` was true).

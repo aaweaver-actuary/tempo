@@ -20,8 +20,11 @@ function failStudyRequests(cause?: unknown): void {
     request.reject(new Error("Study worker failed. Reopen Tempo while connected to retry.", { cause }));
   }
   pending.clear();
-  worker?.terminate();
-  worker = undefined;
+  if (worker) {
+    worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null;
+    worker.terminate();
+    worker = undefined;
+  }
 }
 
 export function runStudyTask<T>(
@@ -62,7 +65,9 @@ export function runStudyTask<T>(
     updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
     return Promise.reject(new Error("Study worker failed. Reopen Tempo while connected to retry.", { cause: error }));
   }
-  worker.onmessage = ({ data: raw }) => {
+  const requestWorker = worker;
+  requestWorker.onmessage = ({ data: raw }) => {
+    if (worker !== requestWorker) return;
     let data;
     try {
       data = parseData(studyReplySchema, raw, "study worker response", undefined, "study-worker");
@@ -97,7 +102,8 @@ export function runStudyTask<T>(
       request.resolve(data.result);
     }
   };
-  worker.onerror = (event) => {
+  requestWorker.onerror = (event) => {
+    if (worker !== requestWorker) return;
     reportDebugError(event.message || "Study worker failed to load or run", {
       kind: "uncaught-exception", source: "study-worker",
       script: event.filename, line: event.lineno || undefined,
@@ -105,7 +111,8 @@ export function runStudyTask<T>(
     });
     failStudyRequests(event);
   };
-  worker.onmessageerror = () => {
+  requestWorker.onmessageerror = () => {
+    if (worker !== requestWorker) return;
     const error = new Error("Study worker response could not be decoded");
     reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
     failStudyRequests(error);
@@ -129,7 +136,7 @@ export function runStudyTask<T>(
         reject(error);
       },
     });
-    try { worker!.postMessage({ id, task }); }
+    try { requestWorker.postMessage({ id, task }); }
     catch (error) {
       reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
       failStudyRequests(error);

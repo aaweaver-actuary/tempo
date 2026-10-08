@@ -18,6 +18,8 @@ it("schema-invalid study worker reply rejects all callers and replaces the worke
   const workers: ProtocolWorker[] = [];
   class ProtocolWorker {
     onmessage: ((event: MessageEvent) => void) | null = null;
+    onerror: ((event: ErrorEvent) => void) | null = null;
+    onmessageerror: (() => void) | null = null;
     terminate = vi.fn();
     postMessage = vi.fn();
     constructor() { workers.push(this); }
@@ -30,6 +32,9 @@ it("schema-invalid study worker reply rejects all callers and replaces the worke
   const first = runTask({ kind: "queue", payload: { cards: [], count: 0 } }, firstController.signal);
   const second = runTask({ kind: "workspace", url: "/api/repertoire/lines", payload: [] }, secondController.signal);
   const settled = Promise.allSettled([first, second]);
+  const staleMessage = workers[0].onmessage!;
+  const staleError = workers[0].onerror!;
+  const staleMessageError = workers[0].onmessageerror!;
   const invalidReply = structuredClone({ id: "stale-worker-protocol", result: [] });
   workers[0].onmessage!({ data: invalidReply } as MessageEvent);
   const failures = await settled;
@@ -50,6 +55,20 @@ it("schema-invalid study worker reply rejects all callers and replaces the worke
   const retry = runTask({ kind: "queue", payload: { cards: [], count: 0 } });
   expect(workers).toHaveLength(2);
   const requestId = workers[1].postMessage.mock.calls[0][0].id;
+  let retrySettled = false;
+  void retry.then(() => { retrySettled = true; }, () => { retrySettled = true; });
+  staleMessage({ data: { id: requestId, state: "running" } } as MessageEvent);
+  staleMessage({ data: { id: requestId, result: ["stale-worker"] } } as MessageEvent);
+  staleMessage({ data: invalidReply } as MessageEvent);
+  staleError({ message: "Late failure from terminated worker" } as ErrorEvent);
+  staleMessageError();
+  await Promise.resolve();
+  expect(retrySettled).toBe(false);
+  expect(workers[1].terminate).not.toHaveBeenCalled();
+  expect(currentDebugErrors()).toHaveLength(1);
+  expect(workers[0].onmessage).toBeNull();
+  expect(workers[0].onerror).toBeNull();
+  expect(workers[0].onmessageerror).toBeNull();
   workers[1].onmessage!({ data: { id: requestId, result: ["fresh-worker"] } } as MessageEvent);
   await expect(retry).resolves.toEqual(["fresh-worker"]);
 });
