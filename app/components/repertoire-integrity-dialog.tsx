@@ -13,7 +13,7 @@ import {
   repertoireIntegritySchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
-import { saveIntegrityRepairCommand } from "../lib/integrity-repair-command";
+import { enqueueIntegrityRepair, pendingIntegrityRepairs, subscribeIntegrityRepairs, INTEGRITY_REPAIR_CONFIRMED, type PendingIntegrityRepair } from "../lib/integrity-repair-outbox";
 import { asFenString, asUciMove } from "../types";
 import { MoveComparisonTable } from "./move-comparison-table";
 import { reportDebugError } from "../lib/debug-reporting";
@@ -23,31 +23,36 @@ export function RepertoireIntegrityDialog({
   theme,
   pieceSet,
   onClose,
-  onClean,
 }: {
   repertoireId: string;
   theme: BoardTheme;
   pieceSet: PieceSet;
   onClose: () => void;
-  onClean: () => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [payload, setPayload] =
     useState<ReturnType<typeof repertoireIntegritySchema.parse>>();
-  const [selected, setSelected] = useState<string>();
+  const [selectedChoice, setSelectedChoice] = useState<{ identity: string; move: string }>();
   const [personal, setPersonal] = useState<
     { move_uci: string; games: number; score_percentage: number }[]
   >([]);
   const [lichess, setLichess] = useState<CandidateMove[]>([]);
   const [masters, setMasters] = useState<CandidateMove[]>([]);
   const [error, setError] = useState("");
-  const [working, setWorking] = useState(false);
-  const [taskState, setTaskState] = useState<
-    "queued" | "running" | "retrying" | "complete" | "failed"
-  >();
-
-  const issue = payload?.issues[0];
+  const [integrityLoadError, setIntegrityLoadError] = useState("");
+  const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
+  const observedRepairs = useRef<PendingIntegrityRepair[]>([]);
+  const [removedChoiceIdentities, setRemovedChoiceIdentities] = useState<Set<string>>(new Set());
+  const suppressedIssues = new Set(repairs.filter(repair => repair.repertoireId === repertoireId && repair.phase !== "stale")
+    .map(repair => repair.issueId));
+  const remainingIssues = payload?.issues.filter(candidate => !suppressedIssues.has(candidate.id)
+    && !removedChoiceIdentities.has(JSON.stringify([repertoireId, candidate.id, candidate.signature]))) ?? [];
+  const issue = remainingIssues[0];
+  const issueIdentity = issue ? JSON.stringify([repertoireId, issue.id, issue.signature]) : "";
+  const selected = selectedChoice?.identity === issueIdentity ? selectedChoice.move : undefined;
+  const setSelected = (move: string | undefined) => setSelectedChoice(move ? { identity: issueIdentity, move } : undefined);
+  const loadController = useRef<AbortController | null>(null);
   const board = useMemo(() => {
     try {
       return issue?.fen ? new Chess(issue.fen) : undefined;
@@ -61,155 +66,93 @@ export function RepertoireIntegrityDialog({
   );
 
   const load = useCallback(async () => {
-    setError("");
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
     try {
-      const response = await fetch(
-        `${API_URL}/api/repertoires/${repertoireId}/integrity`,
-      );
-      const next = await readJsonResponse(
-        response,
-        repertoireIntegritySchema,
-        "repertoire integrity",
-      );
-      setPayload(next);
-      setSelected(undefined);
-      const nextIssue = next.issues[0];
-      if (nextIssue?.fen) {
-        const [gamesResponse, explorer] = await Promise.all([
-          fetch(
-            `${API_URL}/api/games/position-summary?fen=${encodeURIComponent(nextIssue.fen)}`,
-          ),
-          loadExplorer(
-            nextIssue.fen,
-            "blitz,rapid,classical",
-            "1600,1800,2000,2200,2500",
-            readLichessSessionToken(),
-          ),
-        ]);
-        if (gamesResponse.ok) {
-          const games = (await gamesResponse.json()) as {
-            moves?: {
-              move_uci: string;
-              games: number;
-              score_percentage: number;
-            }[];
-          };
-          setPersonal(games.moves ?? []);
-        } else setPersonal([]);
-        if (explorer) {
-          setLichess(adaptExplorerMoves(nextIssue.fen, explorer.lichess.moves));
-          setMasters(adaptExplorerMoves(nextIssue.fen, explorer.masters.moves));
-        } else {
-          setLichess([]);
-          setMasters([]);
-        }
+      const response = await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/integrity`, { signal: controller.signal });
+      const next = await readJsonResponse(response, repertoireIntegritySchema, "repertoire integrity");
+      if (!controller.signal.aborted) {
+        setPayload(next);
+        setIntegrityLoadError("");
+        setRemovedChoiceIdentities(new Set());
       }
     } catch (failure) {
-      reportDebugError(failure, {
-        kind: "api",
-        source: "repertoire-integrity",
-        operation: "load integrity data",
-        endpoint: `${API_URL}/api/repertoires/${repertoireId}/integrity`,
-      });
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Integrity data unavailable.",
-      );
+      if (controller.signal.aborted) return;
+      reportDebugError(failure, { kind: "api", source: "repertoire-integrity", operation: "load integrity data" });
+      setIntegrityLoadError(failure instanceof Error ? failure.message : "Integrity data unavailable.");
     }
   }, [repertoireId]);
 
   useEffect(() => {
-    if (
-      !payload ||
-      !["queued", "running", "retrying"].includes(payload.scan_status)
-    )
-      return;
-    const timer = window.setTimeout(() => void load(), 500);
+    let active = true;
+    const update = () => {
+      try {
+        const nextRepairs = pendingIntegrityRepairs();
+        const removedChoices = observedRepairs.current.filter(repair => repair.repertoireId === repertoireId
+          && repair.phase !== "stale" && !nextRepairs.some(next => next.operationId === repair.operationId));
+        observedRepairs.current = nextRepairs;
+        setRepairs(nextRepairs);
+        if (removedChoices.length) {
+          // The loaded snapshot can still contain completed choices until a refresh succeeds.
+          setRemovedChoiceIdentities(current => new Set([...current, ...removedChoices.map(repair =>
+            JSON.stringify([repair.repertoireId, repair.issueId, repair.signature]))]));
+          void load();
+        }
+      }
+      catch (failure) { setError(failure instanceof Error ? failure.message : "Saved choices could not be read."); }
+    };
+    const confirmed = () => { update(); void load(); };
+    queueMicrotask(() => { if (active) { update(); void load(); } });
+    const unsubscribe = subscribeIntegrityRepairs(update);
+    window.addEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
+    return () => {
+      active = false;
+      loadController.current?.abort();
+      unsubscribe();
+      window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
+    };
+  }, [load, repertoireId]);
+
+  useEffect(() => {
+    if (!payload || !["queued", "running", "retrying"].includes(payload.scan_status)) return;
+    const timer = window.setTimeout(() => void load(), 3_000);
     return () => window.clearTimeout(timer);
   }, [payload, load]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [load]);
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      setSelectedChoice(current => current?.identity === issueIdentity ? current : undefined);
+      setPersonal([]); setLichess([]); setMasters([]);
+    });
+    if (issue?.fen) {
+      const fen = issue.fen;
+      void fetch(`${API_URL}/api/games/position-summary?fen=${encodeURIComponent(fen)}`, { signal: controller.signal })
+        .then(async response => {
+          if (!response.ok) return;
+          const games = await response.json() as { moves?: { move_uci: string; games: number; score_percentage: number }[] };
+          if (!controller.signal.aborted) setPersonal(games.moves ?? []);
+        }).catch(() => { /* Optional evidence remains unavailable; selection is independent. */ });
+      void loadExplorer(fen, "blitz,rapid,classical", "1600,1800,2000,2200,2500", readLichessSessionToken())
+        .then(explorer => {
+          if (controller.signal.aborted || !explorer) return;
+          setLichess(adaptExplorerMoves(fen, explorer.lichess.moves));
+          setMasters(adaptExplorerMoves(fen, explorer.masters.moves));
+        }).catch(() => { /* Explorer already reports source failures. */ });
+    }
+    return () => controller.abort();
+  }, [issueIdentity, issue?.fen]);
 
-  async function resolve() {
+  function resolve() {
     if (!issue || !selected) return;
-    setWorking(true);
-    setTaskState(undefined);
-    setError("");
     try {
-      const submission = await saveIntegrityRepairCommand(
-        repertoireId, issue.id, issue.signature, selected,
-      );
-      setTaskState(
-        submission.state === "leased" ? "running" : submission.state,
-      );
-      for (let poll = 0; poll < 300; poll += 1) {
-        await new Promise((resolveDelay) =>
-          window.setTimeout(resolveDelay, 500),
-        );
-        const [taskResponse, integrityResponse] = await Promise.all([
-          fetch(`${API_URL}/api/system/tasks`),
-          fetch(`${API_URL}/api/repertoires/${repertoireId}/integrity`),
-        ]);
-        if (!taskResponse.ok || !integrityResponse.ok) continue;
-        const tasks = (await taskResponse.json()) as {
-          tasks?: { id: string; state: string; last_error?: string | null }[];
-        };
-        const task = tasks.tasks?.find(
-          (candidate) => candidate.id === submission.task_id,
-        );
-        if (task)
-          setTaskState(
-            task.state === "leased"
-              ? "running"
-              : (task.state as "queued" | "retrying" | "complete" | "failed"),
-          );
-        if (task?.state === "failed")
-          throw new Error(task.last_error || "The guided repair failed.");
-        const next = repertoireIntegritySchema.parse(
-          await integrityResponse.json(),
-        );
-        if (next.scan_status === "failed")
-          throw new Error(next.last_scan_error || "The integrity scan failed. Check Activity and retry the task.");
-        if (
-          !next.issues.some(
-            (candidate) => candidate.id === submission.issue_id,
-          ) &&
-          next.scan_status === "idle"
-        ) {
-          if (next.status === "clean") onClean();
-          else {
-            setPayload(next);
-            setSelected(undefined);
-          }
-          setTaskState(undefined);
-          return;
-        }
-      }
-      throw new Error(
-        "The repair is still processing. It is safe to close this dialog and return later.",
-      );
+      // Persist the whole choice before the changed event advances the dialog.
+      enqueueIntegrityRepair({ repertoireId, issueId: issue.id, signature: issue.signature, selectedMoveUci: selected });
+      setSelected(undefined); setError("");
     } catch (failure) {
-      reportDebugError(failure, {
-        kind: "api",
-        source: "repertoire-integrity",
-        operation: "resolve integrity issue",
-        endpoint: `${API_URL}/api/repertoires/${repertoireId}/integrity/issues/${issue.id}/resolve`,
-        method: "POST",
-      });
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "The repair could not be saved.",
-      );
-      setTaskState("failed");
-    } finally {
-      setWorking(false);
+      setError(failure instanceof Error ? failure.message : "The choice could not be saved on this device.");
     }
   }
 
@@ -227,17 +170,25 @@ export function RepertoireIntegrityDialog({
         <CloseButton onClose={onClose} ariaLabel="Defer repertoire repair" />
         <p className="eyebrow">Repertoire repair</p>
         <h2 id="integrity-title">Choose one response per position</h2>
-        {!payload && !error && <p>Checking saved lines…</p>}
+        {!payload && !error && !integrityLoadError && <p>Checking saved lines…</p>}
+        {integrityLoadError && <p className="editor-error" role="alert">{integrityLoadError}</p>}
         {error && (
           <p className="editor-error" role="alert">
             {error}
           </p>
         )}
-        {payload && !issue && <p role="status">This repertoire is clean.</p>}
+        {payload && !issue && <>
+          <p role="status">{repairs.some(repair => repair.repertoireId === repertoireId)
+            ? "All choices queued. Repairs are still awaiting confirmation."
+            : payload.scan_status === "failed" ? payload.last_scan_error ?? "The integrity scan failed. Check Analysis activity."
+              : payload.scan_status !== "idle" || payload.status === "unchecked" ? "Checking repertoire integrity…"
+                : payload.status === "clean" ? "This repertoire is clean." : "Refresh repair evidence to review remaining issues."}</p>
+          <Button onClick={onClose}>Return to study</Button>
+        </>}
         {issue && (
           <>
             <p className="dialog-copy">
-              {payload.issue_count} issue{payload.issue_count === 1 ? "" : "s"}{" "}
+              {remainingIssues.length} issue{remainingIssues.length === 1 ? "" : "s"}{" "}
               remaining ·{" "}
               {issue.kind === "missing_response"
                 ? "a response is missing"
@@ -318,18 +269,13 @@ export function RepertoireIntegrityDialog({
                     Selected response:{" "}
                     <strong>{selected ?? "Choose a legal move"}</strong>
                   </p>
-                  {taskState && (
-                    <p className="source-status" role="status">
-                      Repair task: {taskState}.
-                    </p>
-                  )}
                   <Button
                     variant="primary"
                     className="primary-button"
-                    disabled={!selected || working}
+                    disabled={!selected}
                     onClick={() => void resolve()}
                   >
-                    {working ? "Saving…" : "Keep this response"}
+                    Keep this response
                   </Button>
                 </div>
               </div>

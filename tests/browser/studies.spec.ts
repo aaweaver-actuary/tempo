@@ -67,6 +67,14 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   // Compose's local queue day can differ from the browser after UTC midnight.
   // Pin this workflow to that day while its timers continue running normally.
   const serverQueue = await (await request.get(`${api}/queue/today`)).json();
+  // A small smoke can reach this case before the initial durable queue slice
+  // finishes. Establish its ready boundary before browser preparation starts.
+  await expect.poll(async () => {
+    const preparedQueue = await request.get(`${api}/queue/prepared`);
+    expect(preparedQueue.ok()).toBeTruthy();
+    return preparedQueue.json();
+  }, { message: "Initial disposable queue is ready for phone preparation", timeout: 30_000 })
+    .toMatchObject({ local_date: serverQueue.local_date, projection: { state: "ready" } });
   await page.clock.setFixedTime(new Date(`${serverQueue.local_date}T12:00:00Z`));
   const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
   expect(catalog.packs.filter((pack: { active: boolean }) => pack.active)).toEqual([]);
@@ -96,6 +104,13 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
     const queue = await (await request.get(`${api}/queue/today`)).json();
     return queue.cards.find((card: { content_type: string }) => card.content_type === "study_exercise")?.queue_entry_id;
   }).toBeGreaterThan(0);
+  // Online study may start with an admitted card while refresh continues. The
+  // complete offline phone copy additionally requires the published projection.
+  await expect.poll(async () => {
+    const prepared = await (await request.get(`${api}/queue/prepared`)).json();
+    return prepared.projection.state === "ready" && prepared.count === prepared.cards.length &&
+      prepared.cards.some((card: { content_type: string }) => card.content_type === "study_exercise");
+  }).toBe(true);
   await nav(page, "Train");
   await expect(page.getByText("Select the white knight square")).toBeVisible();
   await expect(page.getByText("Original synthetic study")).toHaveCount(0);

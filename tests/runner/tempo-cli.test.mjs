@@ -223,7 +223,7 @@ test("blocked updates can start only recorded immutable images with the same dat
 test("release evidence requires the exact main revision and successful complete quality jobs", () => {
   const sha = "a".repeat(40);
   const run = { id: 12, head_sha: sha, head_branch: "main", event: "push", status: "completed", html_url: "https://github.com/example/actions/runs/12" };
-  const jobs = ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, conclusion: "success", status: "completed" }));
+  const jobs = ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify", "lifecycle / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, conclusion: "success", status: "completed" }));
   assert.equal(qualityEvidence(sha, run, jobs).commit, sha);
   assert.throws(() => qualityEvidence("b".repeat(40), run, jobs), /revision/);
   assert.throws(() => qualityEvidence(sha, run, jobs.filter(job => job.name !== "browser / verify")), /browser/);
@@ -1062,7 +1062,7 @@ function sourceSelectionFixture({ changedSource, runs = [{ id: 1 }], failedRuns 
     if (changedSource === "head") head = "d".repeat(40);
     if (changedSource === "branch") branch = "personal-work";
     const id = Number(path.match(/runs\/(\d+)/)[1]);
-    return { jobs: ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed", conclusion: failedRuns.includes(id) && name === "quality" ? "failure" : "success" })).filter(job => !incompleteRuns.includes(id) || job.name !== "browser / verify") };
+    return { jobs: ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify", "lifecycle / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed", conclusion: failedRuns.includes(id) && name === "quality" ? "failure" : "success" })).filter(job => !incompleteRuns.includes(id) || job.name !== "browser / verify") };
   };
   return { run, fetchJson, calls, revision, source: () => ({ head, branch, dirty }) };
 }
@@ -1610,7 +1610,7 @@ test("actual CLI diagnostics explain pending exact-main verification without a d
 
 test("actual CLI diagnostics identify a failed required job without a deployment receipt", t => {
   const fixture = diagnosticFixture(t, { diagnostics: { jobs: ["plan", "frontend / verify", "backend / verify", "build / verify",
-    "postgres / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed",
+    "postgres / verify", "lifecycle / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed",
       conclusion: name === "backend / verify" ? "failure" : "success" })) } });
   const result = fixture.command("status", "--verbose");
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -1638,8 +1638,20 @@ test("actual CLI diagnostics distinguish local schema debt from running API HTTP
   assert.match(result.stdout, /running API.*does not prove.*background/);
 });
 
-const diagnosticJobs = ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify",
+const diagnosticJobs = ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify", "lifecycle / verify",
   "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed", conclusion: "success" }));
+
+test("complete release evidence requires the lifecycle job", () => {
+  const lifecycleJob = { name: "lifecycle / verify", status: "completed", conclusion: "success" };
+  const completedJobs = [...diagnosticJobs.filter(job => job.name !== lifecycleJob.name), lifecycleJob];
+  assert.doesNotThrow(() => qualityEvidence(diagnosticMainRun.head_sha, diagnosticMainRun, completedJobs));
+  assert.throws(() => qualityEvidence(diagnosticMainRun.head_sha, diagnosticMainRun,
+    completedJobs.filter(job => job.name !== lifecycleJob.name)), /lifecycle/);
+  for (const conclusion of ["failure", "cancelled", "skipped", null]) {
+    assert.throws(() => qualityEvidence(diagnosticMainRun.head_sha, diagnosticMainRun,
+      completedJobs.map(job => job.name === lifecycleJob.name ? { ...job, conclusion } : job)), /lifecycle/);
+  }
+});
 
 function assessmentClient(runs, jobs = diagnosticJobs) {
   return async path => path.includes("workflows/") ? { workflow_runs: runs } : { jobs };

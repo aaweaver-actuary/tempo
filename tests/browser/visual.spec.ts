@@ -285,6 +285,23 @@ for (const width of [390, 1280]) {
 }
 
 for (const width of [390, 1280]) {
+  test(`Queued repertoire repairs ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+    await prepareVisualUI(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "onLine", { get: () => false, configurable: true });
+      for (const [index, phase] of ["queued", "validating", "blocked"].entries()) localStorage.setItem(
+        `tempo-pending-integrity-repairs-v3:visual-repair-${index}`, JSON.stringify({
+          repertoireId: "visual-repertoire", issueId: `visual-issue-${index}`, signature: "visual-signature",
+          selectedMoveUci: ["e2e4", "g1f3", "d2d4"][index], operationId: `visual-repair-${index}`, phase, queuedAt: index,
+        }));
+    });
+    await page.goto("/");
+    await expect(page.getByText("3 repair choices awaiting confirmation")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry repair" })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page.locator(".integrity-repair-status")).toHaveScreenshot(`queued-repertoire-repairs-${width}.png`);
+  });
   test(`review-conflicts-${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
     await page.addInitScript(() => {
@@ -306,3 +323,33 @@ for (const width of [390, 1280]) {
     await expect(page).toHaveScreenshot(`review-conflicts-${width}.png`, { animations: "disabled", fullPage: true });
   });
 }
+
+for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ page }) => {
+  const fixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8"));
+  await page.setViewportSize({ width, height: 844 });
+  await prepareVisualUI(page);
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{
+    id: "rep", name: "Combined Black", source_name: "Combined Black.pgn", line_count: 4,
+    card_count: 5, active_prefix_count: 4, graph_updated_at: "2026-09-18T12:00:00Z", due_count: 0, trained_color: "black",
+  }] } }));
+  await page.route("**/api/system/foreground-active", route => route.fulfill({ json: { active: false } }));
+  await page.route("**/api/repertoires/rep/prefix-evaluation/**", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: fixture.source });
+    return route.fulfill({ json: fixture.comparisons["a,b:2"] });
+  });
+  await navigate(page, "Repertoire");
+  await page.locator("details.card-menu summary").click();
+  await page.getByRole("menuitem", { name: "Compare prefix depths", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: /Compare prefix depths/ });
+  await dialog.getByLabel("Starting position and trained color").selectOption(JSON.stringify([fixture.source.lines[0].start_fen, "black"]));
+  await dialog.getByRole("combobox", { name: "Move 1", exact: true }).selectOption("e2e4");
+  await dialog.getByRole("combobox", { name: "Move 2", exact: true }).selectOption("c7c6");
+  await dialog.getByRole("checkbox", { name: /^alias ·/ }).uncheck();
+  await dialog.getByLabel("Candidate learner-decision depths").fill("2");
+  await dialog.getByRole("button", { name: "Compare depths", exact: true }).click();
+  await expect(dialog.getByRole("region", { name: "Candidate depth 2", exact: true })).toBeVisible();
+  await dialog.getByRole("heading", { name: "Candidate depth 2", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
+  await expect(page).toHaveScreenshot(`prefix-comparison-${width}.png`, { animations: "disabled", fullPage: true });
+  await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).getByRole("heading", { name: "Whole repertoire", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
+  await expect(page).toHaveScreenshot(`prefix-comparison-whole-${width}.png`, { animations: "disabled", fullPage: true });
+});

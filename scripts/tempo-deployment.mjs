@@ -213,7 +213,7 @@ export function targetKey(target) {
 }
 
 const requiredVerificationJobs = ["plan", "frontend / verify", "backend / verify", "build / verify",
-  "postgres / verify", "browser / verify", "visual / verify", "quality"];
+  "postgres / verify", "lifecycle / verify", "browser / verify", "visual / verify", "quality"];
 
 export function qualityEvidence(revision, run, jobs) {
   if (run.head_sha !== revision || run.head_branch !== "main" || !["push", "workflow_dispatch", "schedule"].includes(run.event))

@@ -77,6 +77,7 @@ compose.push("-f", buildLabels);
 const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
+  plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
 });
@@ -606,6 +607,22 @@ async function verifyForegroundAndStudyDurability() {
     afterRestartQueue.cards.map(card => card.queue_entry_id), "Burial replay cannot bury the next card");
   console.log("PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
+  // These fixtures have completed their restart/replay proof. Independent Maia
+  // results can keep arriving after Explorer fails; release their owned work
+  // before the next scenario measures compatibility retention.
+  const completedFixtureIds = [importedStudy.repertoire_id, importedBackground.repertoire_id];
+  for (const repertoireId of completedFixtureIds) {
+    await postCommand(`repertoires/${repertoireId}`, {}, { method: "DELETE" });
+  }
+  const afterFixtureCleanup = await get("migration/snapshot");
+  assert(!afterFixtureCleanup.tables.repertoires.some(row => completedFixtureIds.includes(row.id)),
+    "Completed study fixtures are removed before compatibility retention");
+  const remainingFixtureTasks = readScopedPostgresRows(`SELECT COALESCE(json_agg(row_to_json(task)),'[]'::json)
+    FROM (SELECT kind,state FROM background_tasks WHERE state IN ('queued','leased','retrying')
+      AND (deduplication_key IN ('${completedFixtureIds.join("','")}')
+        OR payload_json::jsonb->>'repertoire_id' IN ('${completedFixtureIds.join("','")}'))) task`);
+  assert.deepEqual(remainingFixtureTasks, [], "Completed study fixtures leave no active background tasks");
+  console.log("PASS test_postgres_completed_study_fixtures_release_background_work_before_retention");
   activeStudyRepertoireId = null;
 }
 
@@ -799,6 +816,9 @@ const actions = {
   image_build: async () => {
     resourcesCreated = true;
     run("docker", [...compose, "build"]);
+    // The rehearsal records dependency images before starting its child stack.
+    // Standalone mode has no parent startup to pull these images first.
+    if (options.mode === "lifecycle") run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
   },
   maintenance_cli: async () => {
     run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]);
@@ -832,18 +852,29 @@ const actions = {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_operation_recovery.py"]);
   },
-  schema_upgrade: async () => {
+  schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_upgrade.py"]);
+  },
+  priority_recovery: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_priority_recovery.py"]);
+  },
+  background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_background_diagnostics.py"]);
+  },
+  deployment_lifecycle: async () => {
+    const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
+      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+    if (options.mode === "lifecycle") {
+      await verifyLifecycle();
+      return;
+    }
     const consumers = ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"];
     run("docker", [...compose, "stop", ...consumers]);
     try {
-      await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
-        composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+      await verifyLifecycle();
     } finally {
       run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...consumers]);
       await waitForReady();
@@ -856,6 +887,8 @@ const actions = {
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/scripts/check_postgres_daily_study_dispatch.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -990,6 +1023,7 @@ const actions = {
       const browserArguments = buildPostgresPlaywrightArguments(options);
       run("npx", browserArguments, { env: { ...environment,
         TEMPO_DOCKER_URL: origin,
+        TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
   },

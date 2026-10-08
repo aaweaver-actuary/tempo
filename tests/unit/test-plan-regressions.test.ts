@@ -162,6 +162,7 @@ it("focused browser and Docker Make targets preflight before launching tests", (
     visual: "--docker --workspace-mount",
     perf: "--docker --workspace-mount",
     "docker-durability": "--docker --loopback",
+    "docker-lifecycle": "--docker --loopback --workspace-mount",
   };
   for (const [target, checks] of Object.entries(expectedChecks)) {
     const planned = spawnSync("make", ["-n", target, "FILE=fixture.spec.ts", "VIEW=Builder"], {

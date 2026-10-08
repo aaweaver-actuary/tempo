@@ -1,13 +1,34 @@
 import { protectRegressionSuite } from "./verification-stages.mjs";
+import { postgresTestStages } from "./postgres-test-plan.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const mandatoryLayers = ["frontend", "backend", "build", "postgres", "browser"];
-export const allLayers = [...mandatoryLayers, "visual", "quarantine"];
+export const allLayers = [...mandatoryLayers, "lifecycle", "visual", "quarantine"];
 export const inventory = JSON.parse(readFileSync(new URL("./ci-verification-inventory.json", import.meta.url), "utf8"));
 export const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export function lifecycleApplicability({ paths, comparisonAvailable, complete, sourceInventory = inventory }) {
+  const lifecycleRules = sourceInventory.lifecycle;
+  const selectionReasons = [];
+  if (complete) selectionReasons.push("Complete verification requested");
+  if (!comparisonAvailable) selectionReasons.push("Comparison history missing or uncertain");
+  if (!lifecycleRules) selectionReasons.push("Lifecycle source classification unavailable");
+  else for (const path of paths) {
+    const sensitive = lifecycleRules.sensitivePaths.includes(path)
+      || lifecycleRules.sensitivePrefixes.some(prefix => path.startsWith(prefix))
+      || lifecycleRules.sensitivePatterns.some(pattern => new RegExp(pattern).test(path));
+    const ordinary = lifecycleRules.ordinaryPaths.includes(path)
+      || lifecycleRules.ordinaryPrefixes.some(prefix => path.startsWith(prefix))
+      || lifecycleRules.ordinaryPatterns.some(pattern => new RegExp(pattern).test(path));
+    if (sensitive) selectionReasons.push(`${path}: lifecycle-sensitive source`);
+    else if (!ordinary) selectionReasons.push(`${path}: unclassified infrastructure; lifecycle required`);
+  }
+  return { applicable: selectionReasons.length > 0,
+    reason: selectionReasons.length ? selectionReasons.join("; ") : "No lifecycle-sensitive change or complete verification request" };
+}
 
 export function changedPathsFromNameStatus(output) {
   const tokens = output.split("\0");
@@ -27,6 +48,17 @@ export function changedPathsFromNameStatus(output) {
 }
 
 export function validateInventory(files, sourceInventory = inventory) {
+  const mappedPaths = new Set();
+  for (const mapping of sourceInventory.sources) {
+    if (!mapping.paths?.length || !mapping.families?.length || new Set(mapping.families).size !== mapping.families.length
+      || mapping.families.some(family => family === "pinned" || !Object.hasOwn(sourceInventory.families, family)))
+      throw new Error("Invalid source mapping: require unique complete browser families");
+    for (const path of mapping.paths) {
+      if (typeof path !== "string" || !path || path.startsWith("/") || path.includes("..") || mappedPaths.has(path))
+        throw new Error(`Invalid source mapping: duplicate or ambiguous path ${path}`);
+      mappedPaths.add(path);
+    }
+  }
   const classified = Object.values(sourceInventory.families).flat();
   if (new Set(classified).size !== classified.length) throw new Error("A browser spec belongs to multiple inventory families");
   for (const file of files) if (!classified.includes(file.startsWith("tests/browser/") ? file.slice("tests/browser/".length) : file)) throw new Error(`Unclassified browser spec: ${file}. Register its complete family before planning.`);
@@ -61,16 +93,19 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
   if (complete) reasons.push("complete verification requested");
   if (!comparisonAvailable) reasons.push("comparison history missing or uncertain");
   for (const path of paths) {
-    // Only explicitly mapped leaf sources or test specs narrow integration coverage.
-    // Every other executable/configuration path is deliberately conservative.
+    // Exact reviewed consumer mappings narrow browser families. Core tests still
+    // run in full; shared fixtures and unknown executable paths stay conservative.
     const mapping = sourceInventory.sources.find(entry => entry.paths.includes(path));
     const specFamily = Object.entries(sourceInventory.families).find(([, specs]) => path.startsWith("tests/browser/") && specs.includes(path.slice("tests/browser/".length)))?.[0];
     const rendering = /\.(css|scss|svg|png|jpe?g|webp)$/.test(path) || /(?:layout|chessboard|board-|visual|theme|pieces)/i.test(path);
     if (rendering || (path.startsWith("app/") && path.endsWith(".tsx"))) visual = true;
-    if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: mapped leaf source`); }
+    const ordinaryProse = (path.startsWith("docs/") && path.endsWith(".md")) || /(?:^|\/)README\.md$/.test(path) || sourceInventory.prosePaths?.includes(path);
+    const standaloneCoreTest = /^tests\/unit\/[^/]+\.test\.tsx?$/.test(path) || /^backend\/tests\/test_[^/]+\.py$/.test(path);
+    if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: reviewed consumer families; ${mapping.reason}`); }
     else if (specFamily && specFamily !== "pinned") { families.add(specFamily); reasons.push(`${path}: complete ${specFamily} browser family`); }
     else if (specFamily === "pinned") { visual = true; reasons.push(`${path}: pinned rendering verification`); }
-    else if ((path.startsWith("docs/") && path.endsWith(".md")) || path === "README.md") reasons.push(`${path}: prose; core and critical verification still required`);
+    else if (ordinaryProse) reasons.push(`${path}: prose; core and critical verification still required`);
+    else if (standaloneCoreTest) reasons.push(`${path}: standalone test; complete core and critical verification still required`);
     else { broad = true; reasons.push(`${path}: shared or unclassified path; broad verification`); }
   }
   if (broad) { Object.keys(sourceInventory.families).filter(family => family !== "pinned").forEach(family => families.add(family)); visual = true; }
@@ -92,10 +127,17 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
   // Partial selection binds project/file/title and permits only collected tags
   // at suite/test boundaries. Complete selection runs the unfiltered inventory.
   const browserGrep = selected.map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|");
-  const plan = { version: 1, scope: broad ? "complete" : "targeted", comparisonAvailable, paths, reasons,
-    families: [...families].sort(), jobs: Object.fromEntries(allLayers.map(layer => [layer,
+  const lifecycle = lifecycleApplicability({ paths, comparisonAvailable, complete, sourceInventory });
+  const jobs = Object.fromEntries(allLayers.map(layer => [layer,
       { required: layer !== "quarantine" && (layer !== "visual" || visual), applicable: layer === "quarantine" ? quarantine.length > 0 : layer !== "visual" || visual,
-        reason: layer === "visual" && !visual ? "No rendering change or broad coverage trigger" : layer === "quarantine" ? "Confirmed harness defects only" : "Required verification" }])),
+        reason: layer === "visual" && !visual ? "No rendering change or broad coverage trigger" : layer === "quarantine" ? "Confirmed harness defects only" : "Required verification" }]));
+  jobs.lifecycle = { ...lifecycle, required: lifecycle.applicable };
+  for (const [layer, mode] of [["postgres", "durability"], ["lifecycle", "lifecycle"]]) {
+    jobs[layer].mode = mode;
+    jobs[layer].planned_stages = postgresTestStages({ mode });
+  }
+  const plan = { version: 1, scope: broad && lifecycle.applicable ? "complete" : "targeted", comparisonAvailable, paths, reasons,
+    families: [...families].sort(), jobs,
     browserGrep, collection, quarantine,
     pinnedCollection: pinnedCases.map(item => ({ ...item, selected: visual, nightly: true, release: true })) };
   return { ...plan, hash: createHash("sha256").update(JSON.stringify(plan)).digest("hex") };
@@ -145,6 +187,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   mkdirSync("test-results/ci", { recursive: true });
   writeFileSync("test-results/ci/plan.json", JSON.stringify(plan, null, 2));
   writeFileSync("test-results/ci/collection.json", JSON.stringify({ browser: plan.collection, pinned: plan.pinnedCollection, core: "All frontend/backend unit tests, engine smoke and Rust/build checks run on every PR" }, null, 2));
-  console.log(`${plan.scope}: ${plan.collection.filter(item => item.selected).length}/${plan.collection.length} regular browser cases; visual=${plan.jobs.visual.applicable}`);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `visual=${plan.jobs.visual.applicable}\nquarantine=${plan.jobs.quarantine.applicable}\nscope=${plan.scope}\n`);
+  console.log(`${plan.scope}: ${plan.collection.filter(item => item.selected).length}/${plan.collection.length} regular browser cases; ${plan.collection.filter(item => item.critical).length} global critical; visual=${plan.jobs.visual.applicable}; lifecycle=${plan.jobs.lifecycle.applicable}`);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `visual=${plan.jobs.visual.applicable}\nlifecycle=${plan.jobs.lifecycle.applicable}\nquarantine=${plan.jobs.quarantine.applicable}\nscope=${plan.scope}\n`);
 }

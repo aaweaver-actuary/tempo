@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 // remain serial; a larger aggregate group must not exceed that deadline as
 // safety cases grow. Prefixes are disjoint and cover every actual CLI case.
 const regressionGroups = [
-  { name: "contracts", pattern: "^(?:restart|CLI(?! automatic)|blocked updates|release evidence|target maintenance|deployment records|start after merge|changed dependency|dependency recreation|repeated compatible|failed|source update)" },
+  { name: "contracts", pattern: "^(?:restart|CLI(?! automatic)|blocked updates|release evidence|complete release evidence|target maintenance|deployment records|start after merge|changed dependency|dependency recreation|repeated compatible|failed|source update)" },
   ...["start waits", "start timeout preserves", "start timeout validates", "migrate timeout", "start cancels", "start relaunch"].map(name => ({ name: `automatic ${name}`, pattern: `^CLI automatic ${name}` })),
   ...["migration guard partial", "migration guard completed", "migration guard newer", "migration guard interrupted",
     "migration diagnostics applying", "migration diagnostics failed", "migration diagnostics invalid", "migration diagnostics verified",

@@ -6,7 +6,7 @@ After a merge, run:
 tempo start
 ```
 
-Tempo checks the latest main revision and its complete GitHub quality gate. If
+Tempo checks the latest main revision and its complete GitHub quality gate, including the required `lifecycle / verify` deployment rehearsal. If
 checks are still running, it waits up to 30 minutes and continues automatically.
 It leaves existing services untouched while waiting; Ctrl-C cancels that wait.
 Once eligible, it prepares one coherent image set, checks the existing database, and performs

@@ -1,10 +1,16 @@
 # Test scopes and exact full coverage
 
+`npm run check:conflicts` checks tracked text files for unresolved merge-conflict
+artifacts without installing dependencies. It also runs before local gate execution
+and before dependencies and browser collection in the CI planning job. Separators,
+quoted marker strings, binary files, and symlinks are not treated as conflicts;
+deliberate complete examples require an exact path and block digest exemption.
+
 Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the complete local gate; `npm test` and `npm run test:full` use the same runner. CI owns required final-candidate verification by default; run a local full gate only for the reasons in `AGENTS.md`. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
 
 Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.
 
-**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`. The default sandbox can deny `127.0.0.1` binding or Docker access. Full, UI, visual, and performance scopes also verify that the pinned container can read the checkout through its Docker bind mount, including `package-lock.json`, before tests begin. This catches isolated checkouts under paths Docker Desktop cannot share. `make preflight` checks all three capabilities alone when diagnosing the environment. This preflight is a capability check, not another test family.
+**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`, plus `make docker-lifecycle`. The default sandbox can deny `127.0.0.1` binding or Docker access. Full, UI, visual, and performance scopes also verify that the pinned container can read the checkout through its Docker bind mount, including `package-lock.json`, before tests begin. This catches isolated checkouts under paths Docker Desktop cannot share. `make preflight` checks all three capabilities alone when diagnosing the environment. This preflight is a capability check, not another test family.
 
 ## Full gate
 
@@ -62,7 +68,8 @@ For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-re
 | View title filter | `make view VIEW=Builder` | Browser tests whose titles match the pattern; focused subset only |
 | Visual and performance | `make visual` | Pinned visual and performance specs |
 | Performance only | `make perf` | Pinned performance specs; subset of `visual` |
-| PostgreSQL durability only | `make docker-durability` | All PostgreSQL recovery and study-durability checks; no browser specs |
+| PostgreSQL durability only | `make docker-durability` | Ordinary PostgreSQL migrations, recovery, workloads, backup/restore and study durability; no browser or deployment lifecycle |
+| Deployment lifecycle only | `make docker-lifecycle` | Complete CLI migration, backup, Redis loading, deployment and recovery rehearsal on its own disposable project |
 | Legacy SQLite compatibility | `make legacy-sqlite` | Former SQLite runtime/browser runner; optional, outside the default full gate |
 
 `make plan TIER=fast`, `TIER=python`, `TIER=backend`, `TIER=rust`, `TIER=integration`, `TIER=ui`, or `TIER=browser` prints that scope's exact stages. A view title filter is convenient during development but is not a claim of complete coverage for that view; use `make ui` or `make full` for the broader gate. Make rejects multiple verification targets in one invocation so a combined command cannot accidentally repeat a suite.
@@ -80,20 +87,33 @@ Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.
 
 ## PostgreSQL execution modes and timings
 
-The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full or durability mode so a filtered run cannot masquerade as a full gate.
+The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability, deployment lifecycle and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full, durability or lifecycle mode so a filtered run cannot masquerade as a full gate.
 
 ```sh
 node scripts/test-postgres-docker.mjs --list --mode browser
 node scripts/test-postgres-docker.mjs --list --mode durability
+node scripts/test-postgres-docker.mjs --list --mode lifecycle
 make ui-file FILE=games-board-context.spec.ts
 make docker-durability
 ```
 
 These are alternative development scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, the relevant subsystem when stable, and the full gate on the final candidate before release. A passing focused run is not evidence that the full gate passed.
 
-Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
+Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. The independent lifecycle mode builds the required current images and maintenance tools, runs the entire CLI rehearsal, and cleans up; it does not start an unused parent application stack. Before the rehearsal, standalone mode acquires PostgreSQL and Redis with `docker compose pull --policy missing postgres redis`: cold dependencies are required, while cached images avoid registry acquisition. Missing-image pull failures still fail verification. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
 
 The executable scenario plan also drives `--list`. Every invocation writes a separate `postgres-scenarios-<mode>-<project>.json` under `test-results/performance/` (or the explicitly selected `TEMPO_TEST_TIMING_DIR`). It records commit, mode, requested browser filter, planned stages, and measured duration/exit status after each executed stage, including failures and cleanup. It does not copy environment variables or exception payloads into the timing report. Never sum these scenario durations with the enclosing `postgres_docker` duration: they are nested measurements of the same work. CI's existing artifact upload includes the raw scenario reports.
+
+## Deployment lifecycle selection
+
+`schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
+
+The existing immutable CI plan adds a blocking `lifecycle` layer. Its sensitivity rules live alongside the browser inventory, but lifecycle selection does not use browser families or rendering breadth. Migrations/schema readiness, PostgreSQL storage/credential infrastructure, Tempo deployment scripts and entrypoints, backup/restore, Redis recovery, Compose/service images, dependencies and lifecycle/verification harness inputs require it. Sensitive matches override ordinary product/prose exemptions; unclassified infrastructure and missing comparison history select it conservatively. Both names of renames/copies and deleted paths remain classified.
+
+The backend ordinary exemption is limited to exact reviewed service files and root domain command handlers, API modules, contracts and models listed in the lifecycle inventory. It does not exempt all of `backend/app/` or `backend/app/services/`, or introduce suffix-based exemptions for future command/API modules. New service or root modules require lifecycle until explicitly reviewed and classified; existing sensitive rules still override exact ordinary exemptions. Normal product tests and `tests/REGRESSIONS.md` remain ordinary companions to domain changes.
+
+Every complete, nightly, main, merge-group, manual and publishing verification requires lifecycle. Ordinary unrelated PRs record it explicitly as inapplicable, with the corresponding workflow skip and aggregate explanation. Broad browser coverage alone does not make overall verification complete: the overall scope is complete only when lifecycle and the existing full browser/pinned coverage are selected. Browser selection, critical cases, pinned applicability and parallelism are unchanged.
+
+The hashed plan captures the expected PostgreSQL mode and ordered scenario inventory. Layer and quality checks require the matching revision, plan hash, exact scenario inventory and successful results including cleanup; a missing, cancelled, unexpectedly skipped, failed or stale selected lifecycle result blocks quality. The release CLI requires `lifecycle / verify` in complete exact-main CI evidence. No previous-revision results are reused.
 
 ## Cache behavior and isolation
 
@@ -112,7 +132,7 @@ CI retains npm caching and adds pip downloads plus Rust compiler/dependency cach
 `scripts/verification-stages.mjs` defines the existing commands for both the
 unchanged local `make full` and independent CI owners: `ci-frontend` (all units,
 lint, typecheck), `ci-backend` (all Python tests and defense-engine smoke), and
-`ci-build` (Rust format/lint/tests, WASM and local build). PostgreSQL durability,
+`ci-build` (Rust format/lint/tests, WASM and local build). PostgreSQL durability, independently selected deployment lifecycle,
 regular browser verification and pinned visual/performance remain separate
 runner modes. Splitting durability and browsers gives each its own disposable
 stack; the full runner's intervening study isolation is replaced by separate
@@ -128,25 +148,86 @@ complete verification. Selection changes follow in a separate commit.
 ## CI verification tiers and reliability evidence
 
 The CI workflow preserves local `make full` and uses separate frontend,
-backend/engine, Rust/WASM/build, PostgreSQL durability, browser, and pinned
+backend/engine, Rust/WASM/build, PostgreSQL durability, source-selected deployment lifecycle, browser, and pinned
 visual/performance jobs. Every PR runs all units and build checks, all
-PostgreSQL durability scenarios, and seven critical browser cases covering
-review/reload, offline replay, fail-closed reads, Study grading, foreground
-contention and held drags. Each PostgreSQL/browser invocation owns fresh
-ports, credentials, volumes and containers and remains serial within its
-stack. GitHub's **Re-run failed jobs** repeats a failed layer and its aggregate,
-without repeating successful unrelated layers.
+ordinary PostgreSQL durability scenarios, deployment lifecycle when selected,
+and the global browser smoke below. Each
+PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
+containers and remains serial within its stack. GitHub's **Re-run failed jobs**
+repeats a failed layer and its aggregate without repeating successful layers.
+
+Global critical browser smoke: **6 cases**.
+
+The table audits all 14 cases previously designated critical. A global case
+protects a shared browser invariant needed on ordinary PRs. A family case stays
+unchanged and required whenever its complete family is selected, and at every
+complete boundary. Lower-level coverage is complementary; it does not replace
+the retained browser proof. All listed unit/backend files remain in mandatory
+PR verification.
+
+| Spec | Exact case title | Required tier | Unique browser invariant and decision | Complete family | Existing lower-level coverage |
+| --- | --- | --- | --- | --- | --- |
+| `recovery.spec.ts` | `intentional training failure is saved once and reload resumes it without another failure` | global | Browser failure outbox drains once, and reload resumes guided state without a duplicate failure. Shared save/reload invariant. | training | `tests/unit/training-failure-outbox-regressions.test.ts` |
+| `phone-offline-training.spec.ts` | `prepared phone queue and study worker survive full offline reload and sync one review per attempt` | global | Real browser shell/storage survives outage and reload; ordered review replay does not repeat after confirmation. Shared offline invariant. | training | `tests/unit/offline-shell-regressions.test.ts`, `backend/tests/test_phone_offline_training.py` |
+| `recovery.spec.ts` | `failed initial loads never display empty records or zero statistics` | global | Service failure shows an actionable error instead of fabricated empty Games/Progress data. Shared fail-closed invariant. | training | Complementary validation/error boundaries in `tests/unit/validated-data-regressions.test.ts` and `tests/unit/status-polling-regressions.test.tsx` |
+| `studies.spec.ts` | `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` | global | A real PostgreSQL-backed Study can be authored, enrolled, answered and assessed through the workspace. One shared Study workflow. | studies | `tests/unit/study-exercise-grading.test.ts`, `backend/tests/test_studies.py` |
+| `training-queue-contention.spec.ts` | `discovery preview backlog leaves a prompt foreground training queue refresh` | global | Background previews retain bounded concurrency/work classification while foreground queue refresh completes promptly. Shared foreground priority invariant. | discoveries | `tests/unit/discovery-preview-scheduler-regressions.test.ts` |
+| `held-drag-preservation.spec.ts` | `held training drag survives sync, service, notification and parent updates and drops once` | global | A real held piece survives unrelated updates without lease resets and drops exactly once. Shared input-preservation invariant. | board | `tests/unit/board-drag-preservation-regressions.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-15 a real tab lease releases stranded evidence into a later idle slice` | family | Real cross-tab Web Locks release wakes stranded evidence without reconnect; one-journal slices preserve ownership. Opening-specific recovery. | training | `tests/unit/opening-evidence-recovery-lifecycle.test.tsx`, `tests/unit/opening-evidence-recovery-slices.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive` | family | A stalled optional checkpoint cannot block real piece placement or aggregate review. Opening-specific persistence seam; shared foreground smoke remains global. | training | `tests/unit/opening-evidence-regressions.test.ts`, `tests/unit/opening-evidence-background-admission.test.ts` |
+| `opening-evidence.spec.ts` | `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity` | family | Recovered journals wait for startup readiness and browser idle admission before delivery. Opening-specific admission policy. | training | `tests/unit/opening-evidence-home-lifecycle.test.tsx`, `tests/unit/opening-evidence-recovery-policy.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-16 restarted opening board records guided arrows and retains the prior partial attempt` | family | Restart preserves prior partial evidence and records newly rendered guidance as assistance. Opening-specific provenance. | training | `tests/unit/opening-evidence-home-lifecycle.test.tsx`, `tests/unit/opening-evidence-regressions.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` | family | Optional-evidence quota fallback preserves the aggregate and IndexedDB journal despite a late receipt. Opening-specific quota/recovery boundary. | training | `tests/unit/opening-evidence-regressions.test.ts`, `tests/unit/opening-evidence-review-deadlines.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 offline compact quota failure blocks advancement until durable retry` | family | Failure to persist the essential compact phone review blocks advancement until storage retry succeeds. Opening-specific fallback path. | training | `tests/unit/opening-evidence-offline-quota.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync` | family | Optional-evidence quota permits a durable compact phone review with stable aggregate-only identity and retained evidence after sync. Opening-specific quota path. | training | `tests/unit/opening-evidence-offline-quota.test.ts`, `tests/unit/opening-evidence-regressions.test.ts` |
+| `studies.spec.ts` | `prepared study response is graded offline and replayed with its actual squares` | family | Prepared Study grading stores and replays the actual square answer with its revision/queue identity. Study-specific grading; shared phone replay remains global. | studies | `tests/unit/study-exercise-grading.test.ts`, `backend/tests/test_phone_offline_training.py`, `backend/tests/test_studies.py` |
+
+The guided-failure smoke intercepts its failure API; it proves browser outbox
+persistence and reload behavior, not authoritative PostgreSQL review persistence.
+The offline replay smoke likewise intercepts its review response. The existing
+always-required PostgreSQL durability layer retains real review/receipt,
+restart, replay and recovery proof. The separate lifecycle boundary retains
+the complete deployment rehearsal when selected.
 
 `scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
-Mapped leaf edits add complete browser families; shared board/state/contracts,
-scheduling, migrations, fixtures, runner and dependency changes, unknown paths,
-or missing comparison history select every browser case and pinned checks.
-Both names of renamed/copied files and deleted paths are classified. All TSX
-rendering edits and rendering assets select pinned visual/performance.
-Documentation under `docs/` and the root README retain required core,
-durability and critical checks. Adding an unclassified browser spec fails
-planning. PR #50 is merged into main; its opening-segmentation spec belongs to
-the repertoire family and participates in current collection and selection.
+Exact leaf and subsystem mappings add complete consumer families. Study
+contracts/grading select both Studies and training; opening recovery selects
+training; the review-delivery helper also selects defense because it serves
+ordinary defensive-card saves. Backend segmentation helpers additionally
+select training because they build opening-evidence manifests. Mapping reasons
+record these consumers; missing families and duplicate/ambiguous paths fail
+planning. New executable paths do not inherit coverage from a directory prefix.
+
+Ordinary Markdown under `docs/`, repository README files, explicitly listed
+root prose and `tests/REGRESSIONS.md` retain mandatory core/durability checks
+and the global smoke. Standalone `tests/unit/*.test.ts(x)` and
+`backend/tests/test_*.py` likewise retain the always-complete core tests without
+adding browser families. Consequently, adding a feature's regression and
+registration cannot erase its reviewed source selection. Shared helpers,
+fixtures, executable examples/data and runner configuration do not receive
+this exception. Unknown Markdown outside these reviewed prose locations stays
+conservative too.
+
+Shared board/state/contracts, global browser fixtures, runners, dependencies,
+migrations, unknown executable paths and missing comparison history select
+every browser family and pinned checks. Both names of renamed/copied files and
+deleted paths participate in the union. All TSX rendering edits and rendering
+assets retain pinned visual/performance selection. Adding an unclassified
+browser spec fails planning; all regular and pinned specs have exactly one
+family. Unknown or cross-cutting changes remain complete even when another
+changed source has a narrow mapping.
+
+The regular CI reliability suite checks this documented smoke count and the
+exact global titles against the inventory and actual Playwright collection.
+The planner prints the collected global-critical and selected/total counts
+dynamically. Intentional smoke changes must update the inventory, audit and
+regressions together. Complete coverage uses all collected cases rather than
+a frozen numeric total, including Firefox/WebKit cross-browser projects.
+
+The [October 7 browser-selection validation](browser-selection-validation.md)
+records comparable counts/timings, tested revisions, isolation repairs and
+disposable-resource cleanup evidence.
+
 
 The plan job actually collects all regular and pinned cases. Its immutable
 plan and collection report record IDs, projects, titles, selection reasons,

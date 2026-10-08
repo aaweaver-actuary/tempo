@@ -1,4 +1,5 @@
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
+import { backgroundFetch } from "../lib/background-fetch";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
@@ -101,6 +102,7 @@ import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
+import { IntegrityRepairStatus } from "../components/integrity-repair-status";
 import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { NotificationCenter } from "../components/notification-center";
@@ -157,6 +159,24 @@ export default function Home() {
     blockedDue: number;
   }>();
   const deferredRepairIds = useRef(new Set<string>());
+  const nextIntegrityRequestSequence = useRef(0);
+  const lastAcceptedIntegritySnapshotSequence = useRef(0);
+  const pendingPreferredRepairIntent = useRef<{ repertoireId: string; minimumRequestSequence: number } | undefined>(undefined);
+  const openRepairRepertoireId = useRef<string | undefined>(undefined);
+  // Update dialog intent before React commits so an in-flight read observes direct actions.
+  const openRepairDialog = useCallback((repertoireId: string) => {
+    pendingPreferredRepairIntent.current = undefined;
+    deferredRepairIds.current.delete(repertoireId);
+    openRepairRepertoireId.current = repertoireId;
+    setRepairRepertoireId(repertoireId);
+  }, []);
+  const deferRepairDialog = useCallback(() => {
+    pendingPreferredRepairIntent.current = undefined;
+    const currentRepairRepertoireId = openRepairRepertoireId.current;
+    if (currentRepairRepertoireId) deferredRepairIds.current.add(currentRepairRepertoireId);
+    openRepairRepertoireId.current = undefined;
+    setRepairRepertoireId(undefined);
+  }, []);
   const [insightsTab, setInsightsTab] = useState<"training" | "games">(
     "training",
   );
@@ -182,10 +202,7 @@ export default function Home() {
   }, []);
   const changeWorkspace = useCallback((view: View) => {
     const finished = measureTempoOperation("view-switch");
-    setRepairRepertoireId((currentRepairId) => {
-      if (currentRepairId) deferredRepairIds.current.add(currentRepairId);
-      return undefined;
-    });
+    deferRepairDialog();
     if (view === "progress" || view === "statistics") {
       setInsightsTab(view === "statistics" ? "games" : "training");
       setCurrentView("insights");
@@ -193,7 +210,7 @@ export default function Home() {
       setCurrentView(view);
     }
     requestAnimationFrame(() => requestAnimationFrame(finished));
-  }, []);
+  }, [deferRepairDialog]);
   const branchPositions = useRef<IndexedPosition[] | null>(null);
   const [branchIndexLoadError, setBranchIndexLoadError] = useState("");
   const [branchIndexRetry, setBranchIndexRetry] = useState(0);
@@ -320,24 +337,41 @@ export default function Home() {
     setActiveDebugWorkspace(currentView);
   }, [currentView]);
 
-  const checkPendingIntegrity = useCallback(async (preferred?: string) => {
+  const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
     if (!usesLocalApi()) return;
+    const integrityRequestSequence = ++nextIntegrityRequestSequence.current;
+    if (preferred && !passive) {
+      deferredRepairIds.current.delete(preferred);
+      pendingPreferredRepairIntent.current = { repertoireId: preferred, minimumRequestSequence: integrityRequestSequence };
+    }
     try {
-      const response = await fetch(`${API_URL}/api/repertoires`);
+      const response = await (passive ? backgroundFetch : fetch)(`${API_URL}/api/repertoires`);
+      if (!response.ok) return;
       const data = await response.json();
       const parsed = repertoiresResponseSchema.parse(data);
+      // Only a validated newer snapshot fences an older response; a started or failed read has no authority.
+      if (integrityRequestSequence <= lastAcceptedIntegritySnapshotSequence.current) return;
+      lastAcceptedIntegritySnapshotSequence.current = integrityRequestSequence;
       const candidate = parsed.repertoires.find(
         (item) =>
           item.integrity_status === "needs_repair" &&
           !deferredRepairIds.current.has(item.id),
       );
-      const preferredCandidate = preferred
+      const currentPreferredRepairIntent = pendingPreferredRepairIntent.current;
+      const preferredRepairIntent = currentPreferredRepairIntent
+        && integrityRequestSequence >= currentPreferredRepairIntent.minimumRequestSequence
+        ? currentPreferredRepairIntent : undefined;
+      const preferredCandidate = preferredRepairIntent
         ? parsed.repertoires.find(
             (item) =>
-              item.id === preferred && item.integrity_status === "needs_repair",
+              item.id === preferredRepairIntent.repertoireId && item.integrity_status === "needs_repair",
           )
         : undefined;
-      setRepairRepertoireId(preferredCandidate?.id);
+      // Accepted reads settle current intent only when they began with or after that intent.
+      if (preferredRepairIntent) {
+        pendingPreferredRepairIntent.current = undefined;
+        if (preferredCandidate && !openRepairRepertoireId.current) openRepairDialog(preferredCandidate.id);
+      }
       const paused = preferredCandidate ?? candidate;
       const repairItems = parsed.repertoires.filter(
         (item) => item.integrity_status === "needs_repair",
@@ -360,7 +394,7 @@ export default function Home() {
     } catch {
       // The normal workspace refresh path reports the service error.
     }
-  }, []);
+  }, [openRepairDialog]);
 
   const refreshDatabaseQueue = useCallback(
     async (advance = false) => {
@@ -397,7 +431,6 @@ export default function Home() {
     const onIntegrity = (event: Event) => {
       const detail = (event as CustomEvent<{ repertoireId?: string }>).detail;
       if (detail?.repertoireId) {
-        deferredRepairIds.current.delete(detail.repertoireId);
         void checkPendingIntegrity(detail.repertoireId);
       } else void checkPendingIntegrity();
     };
@@ -489,7 +522,7 @@ export default function Home() {
           sessionStorage.getItem("tempo-return-view") ?? "",
         )
       ) {
-        setCurrentView("builder");
+        changeWorkspace("builder");
         sessionStorage.removeItem("tempo-return-view");
       }
       if (usesLocalApi()) {
@@ -618,6 +651,7 @@ export default function Home() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
+    changeWorkspace,
     initializeCardState,
     refreshDatabaseQueue,
     setActiveCardIndex,
@@ -1564,10 +1598,7 @@ export default function Home() {
               repairNotice={pausedIntegrity && <TrainingRepairNotice
                 blockedDue={pausedIntegrity.blockedDue}
                 issueCount={pausedIntegrity.issueCount}
-                onResume={() => {
-                  deferredRepairIds.current.delete(pausedIntegrity.id);
-                  setRepairRepertoireId(pausedIntegrity.id);
-                }}
+                onResume={() => openRepairDialog(pausedIntegrity.id)}
               />}
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}
@@ -1684,12 +1715,9 @@ export default function Home() {
                   JSON.stringify({ ...existing, activeRepertoireId: id }),
                 );
               else localStorage.setItem("tempo-active-repertoire-white", id);
-              setCurrentView("builder");
+              changeWorkspace("builder");
             }}
-            onRepair={(id) => {
-              deferredRepairIds.current.delete(id);
-              setRepairRepertoireId(id);
-            }}
+            onRepair={openRepairDialog}
             onResolveGap={(repertoireId, gap) => {
               const position = new Chess(gap.fen);
               const played = position.move({
@@ -1720,17 +1748,17 @@ export default function Home() {
                 "tempo-builder-session",
                 JSON.stringify(session),
               );
-              setCurrentView("builder");
+              changeWorkspace("builder");
             }}
             onDeleteLocal={deleteLocalRepertoire}
             onShowGamesAtPosition={(fen, repertoireId) => {
               setGamesFenFilter(fen);
               setGamesRepertoireFilter(repertoireId ?? "");
-              setCurrentView("games");
+              changeWorkspace("games");
             }}
             onRenameLocal={renameLocalRepertoire}
             onQueueChanged={refreshDatabaseQueue}
-            onTrain={() => setCurrentView("train")}
+            onTrain={() => changeWorkspace("train")}
           />
         )}
         {currentView === "builder" && (
@@ -1779,7 +1807,7 @@ export default function Home() {
               onSync={() => void gameSync.sync(true)}
               onRepair={() => void gameSync.sync(true, true)}
               onQueueUpdated={refreshQueueOnly}
-              onSettings={() => setCurrentView("settings")}
+              onSettings={() => changeWorkspace("settings")}
               onAnalyze={(game, gameCursor) => {
                 const position = new Chess(game.startFen);
                 const history = game.moves.slice(0, gameCursor).map((san) => {
@@ -1803,7 +1831,7 @@ export default function Home() {
                     branchStart: history.length,
                   }),
                 );
-                setCurrentView("builder");
+                changeWorkspace("builder");
               }}
               theme={boardTheme}
               pieceSet={pieceSet}
@@ -1839,7 +1867,7 @@ export default function Home() {
           }}
           onImported={addImportedRepertoire}
           onDatabaseUpdated={refreshQueueOnly}
-          onViewRepertoire={() => setCurrentView("repertoire")}
+          onViewRepertoire={() => changeWorkspace("repertoire")}
         />
       )}
       {pasteContext && (
@@ -1855,7 +1883,7 @@ export default function Home() {
             void refreshQueueOnly();
             setPasteContext(null);
             if (conflictingRepertoireIds.length)
-              setRepairRepertoireId(conflictingRepertoireIds[0]);
+              openRepairDialog(conflictingRepertoireIds[0]);
             for (const repertoireId of affectedRepertoireIds) {
               window.dispatchEvent(
                 new CustomEvent("tempo:integrity", {
@@ -1907,7 +1935,7 @@ export default function Home() {
               JSON.stringify(mergedSession),
             );
             setEditorCard(null);
-            setCurrentView("builder");
+            changeWorkspace("builder");
           }}
           onSave={(updated) => {
             setPracticeCards((current) =>
@@ -1928,21 +1956,25 @@ export default function Home() {
           }}
         />
       )}
+      <IntegrityRepairStatus
+        onReconcile={(repertoireId) => {
+          deferredRepairIds.current.delete(repertoireId);
+          invalidateWorkspaceData();
+          invalidateTrainingQueueCache();
+          void checkPendingIntegrity(undefined, true);
+          const currentTrainingState = useTrainingStore.getState();
+          const hasPlayableTrainingCard = currentTrainingState.cardsLeft > 0
+            && Boolean(currentTrainingState.practiceCards[currentTrainingState.activeCardIndex]);
+          if (!hasPlayableTrainingCard) void refreshDatabaseQueue(false).catch(() => undefined);
+        }}
+        onResume={openRepairDialog}
+      />
       {repairRepertoireId && (
         <RepertoireIntegrityDialog
           repertoireId={repairRepertoireId}
           theme={boardTheme}
           pieceSet={pieceSet}
-          onClose={() => {
-            deferredRepairIds.current.add(repairRepertoireId);
-            setRepairRepertoireId(undefined);
-          }}
-          onClean={() => {
-            deferredRepairIds.current.delete(repairRepertoireId);
-            setRepairRepertoireId(undefined);
-            setPausedIntegrity(undefined);
-            void refreshDatabaseQueue();
-          }}
+          onClose={deferRepairDialog}
         />
       )}
       <DataDiagnosticsNotice />
