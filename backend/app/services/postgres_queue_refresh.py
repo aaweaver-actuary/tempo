@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from itertools import islice
 import json
 from typing import Any
 
@@ -33,6 +34,7 @@ _ELIGIBILITY_PHASES = (
 _UNLOCK_BATCH_SIZE = 8
 _QUARANTINE_READ_BATCH_SIZE = 32
 _OPENING_CANDIDATE_READ_BATCH_SIZE = 16
+_TACTICAL_CANDIDATE_READ_BATCH_SIZE = 16
 
 _PRIORITY_OPENING_PAGE_SQL = """WITH active_miss AS MATERIALIZED (
     SELECT unnest(%s::text[]) AS card_id
@@ -122,26 +124,32 @@ def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
     seen_puzzles = {row[0] for row in _bounded_read(
         "SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL",
     )}
-    deleted_ids = {row[0] for row in _bounded_read("SELECT card_id FROM deleted_cards")}
     ordered_packs = ([pack for pack in active_packs if pack > rotation_cursor]
                      + [pack for pack in active_packs if pack <= rotation_cursor])
     for pack_id in ordered_packs:
-        for record in pack_records(pack_id):
-            if record["PuzzleId"] in seen_puzzles:
-                continue
-            training_fen, solution = validate_puzzle_record(record)
-            identifier = card_id(training_fen, solution)
-            if identifier in deleted_ids:
-                continue
-            return {
-                "pack_id": pack_id,
-                "puzzle_id": record["PuzzleId"],
-                "card_id": identifier,
-                "training_fen": training_fen,
-                "solution_json": json.dumps(solution),
-                "source_fen": record["FEN"],
-                "rotation_cursor": rotation_cursor,
-            }
+        unseen_records = (record for record in pack_records(pack_id)
+                          if record["PuzzleId"] not in seen_puzzles)
+        while candidate_records := list(islice(unseen_records, _TACTICAL_CANDIDATE_READ_BATCH_SIZE)):
+            prepared_candidates = []
+            for record in candidate_records:
+                training_fen, solution = validate_puzzle_record(record)
+                prepared_candidates.append({
+                    "pack_id": pack_id,
+                    "puzzle_id": record["PuzzleId"],
+                    "card_id": card_id(training_fen, solution),
+                    "training_fen": training_fen,
+                    "solution_json": json.dumps(solution),
+                    "source_fen": record["FEN"],
+                    "rotation_cursor": rotation_cursor,
+                })
+            candidate_ids = [candidate["card_id"] for candidate in prepared_candidates]
+            deleted_ids = {row[0] for row in _bounded_read(
+                "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])",
+                (candidate_ids,), native=True,
+            )}
+            for candidate in prepared_candidates:
+                if candidate["card_id"] not in deleted_ids:
+                    return candidate
     return None
 
 

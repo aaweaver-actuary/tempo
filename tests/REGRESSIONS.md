@@ -1,3 +1,9 @@
+PR #104 tactical deletion correction (October 8, 2026):
+
+- `backend/tests/test_postgres_tactical_deletion.py`: `test_tactical_deleted_candidate_batches_preserve_rotated_order` covers 0/10,000 unrelated tombstones, exhausted candidates, rotated pack order, partial batches and the next eligible puzzle. Every tombstone lookup is restricted to at most 16 candidate identities; all four variants failed on the original whole-table query. `test_tactical_publication_rechecks_deleted_candidate_before_reserving_allowance` preserves the card-lock/recheck ordering and prohibits later reservation writes for excluded content.
+- Existing `test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out_read` retains preparation outside transactions and timeout retry coverage with the native candidate lookup.
+- Regular real PostgreSQL durability, `scripts/check_postgres_deletion.py`: `test_postgres_tactical_deletion_batches_and_publication_race` adds 128 unrelated exclusions, selects past a deleted candidate, permanently deletes the prepared candidate through the actual command, proves publication changes no card/progress/introduction/queue/rotation/allowance, then admits exactly the next eligible candidate under the same daily limit. Only fixture-owned exclusions are removed during teardown.
+
 Repertoire and permanent card deletion (October 8, 2026):
 
 Both permanent deletion paths record identity-only exclusions: removed repertoire cards reject delayed reviews and cannot be recreated by imports. Shared and kept cards receive no exclusion. Browser cases reset exclusions only between cases in the verified runner-owned disposable database; restart and reload assertions inside each case retain them.

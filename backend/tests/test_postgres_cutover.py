@@ -5166,6 +5166,11 @@ def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out
             return self.rows
 
     class ReadDatabase:
+        def execute_native(self, statement, parameters):
+            assert statement == "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])"
+            assert parameters == (["card-a"],)
+            return QueryResult([])
+
         def execute(self, statement, parameters):
             nonlocal settings_attempts
             if "tactics_new_per_day" in statement:
@@ -5179,7 +5184,7 @@ def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out
                 return QueryResult([("pack-a",)])
             if "tactic_rotation" in statement:
                 return QueryResult([("",)])
-            if "tactic_progress" in statement or "deleted_cards" in statement:
+            if "tactic_progress" in statement:
                 return QueryResult([])
             raise AssertionError(statement)
 

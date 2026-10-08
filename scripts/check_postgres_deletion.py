@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import threading
 import uuid
+from unittest.mock import patch
 
 import chess
 import psycopg
@@ -48,6 +49,81 @@ def main_check():
         assert read_operation(operation_id)["state"] == "complete", read_operation(operation_id)
         assert execute_command(operation_id, name, payload) == result
         return result
+
+    def prove_tactical_deletion_batches_and_publication_race():
+        from app.card_deletion import purge_card_data
+        from app.services import postgres_queue_refresh
+        from app.services.cards import card_id
+        from app.services.puzzles import validate_puzzle_record
+        from app.services.tactic_admission import count_daily_tactic_introductions
+
+        pack_id = f"{prefix}-tactics"
+        fixture_random = random.Random(prefix)
+        board = chess.Board()
+        for _ in range(16):
+            board.push(fixture_random.choice(list(board.legal_moves)))
+        records = []
+        for index, setup_move in enumerate(list(board.legal_moves)[:3]):
+            after_setup = board.copy()
+            after_setup.push(setup_move)
+            response = next(iter(after_setup.legal_moves))
+            records.append({"PuzzleId": f"{pack_id}-{index}", "FEN": board.fen(),
+                            "Moves": [setup_move.uci(), response.uci()]})
+        identifiers = [card_id(*validate_puzzle_record(record)) for record in records]
+        unrelated_ids = [f"{prefix}-unrelated-tombstone-{index}" for index in range(128)]
+        card_ids.extend(identifiers + unrelated_ids)
+        with postgres_store.connection() as database:
+            assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", (identifiers,)).fetchone()
+            active_before = [row[0] for row in database.execute("SELECT pack_id FROM tactic_pack_activation WHERE active=1")]
+            limit_before = database.execute("SELECT tactics_new_per_day FROM settings WHERE id=1").fetchone()[0]
+            rotation_before = database.execute("SELECT last_pack_id FROM tactic_rotation WHERE id=1").fetchone()[0]
+            reservations_before = count_daily_tactic_introductions(database, today)
+            database.execute("UPDATE tactic_pack_activation SET active=0")
+            database.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES(?,1)", (pack_id,))
+            database.execute("UPDATE settings SET tactics_new_per_day=? WHERE id=1", (reservations_before + 1,))
+            purge_card_data(database, [identifiers[0], *unrelated_ids])
+        original_read = postgres_queue_refresh._bounded_read
+        lookup_batches = []
+
+        def candidate_read(statement, parameters=(), *, native=False):
+            if "deleted_cards" in statement:
+                assert "WHERE card_id=ANY(%s::text[])" in statement and native
+                assert 1 <= len(parameters[0]) <= 16
+                lookup_batches.append(list(parameters[0]))
+            return original_read(statement, parameters, native=native)
+
+        try:
+            with patch.object(postgres_queue_refresh, "pack_records", return_value=records), patch.object(postgres_queue_refresh, "_bounded_read", candidate_read):
+                prepared = postgres_queue_refresh._prepare_tactical_introduction(today)
+                assert prepared["card_id"] == identifiers[1]
+                with postgres_store.connection() as database:
+                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,?,'checkpoint',?,?,'new',?,'tactic')", (identifiers[1], other, prepared["training_fen"], prepared["solution_json"], today))
+                command("cards.delete", {"card_id": identifiers[1], "expected_revision": 1})
+                with postgres_store.connection() as database:
+                    assert postgres_queue_refresh._publish_tactical_introduction(database, today, prepared)
+                    assert count_daily_tactic_introductions(database, today) == reservations_before
+                    assert database.execute("SELECT last_pack_id FROM tactic_rotation WHERE id=1").fetchone()[0] == rotation_before
+                    assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", (identifiers[:2],)).fetchone()
+                    assert not database.execute_native("SELECT 1 FROM tactic_progress WHERE puzzle_id=ANY(%s)", ([record["PuzzleId"] for record in records[:2]],)).fetchone()
+                    assert not database.execute_native("SELECT 1 FROM tactic_introductions WHERE puzzle_id=ANY(%s)", ([record["PuzzleId"] for record in records[:2]],)).fetchone()
+                    assert not database.execute_native("SELECT 1 FROM daily_queue WHERE card_id=ANY(%s)", (identifiers[:2],)).fetchone()
+                eligible = postgres_queue_refresh._prepare_tactical_introduction(today)
+                assert eligible["card_id"] == identifiers[2]
+                with postgres_store.connection() as database:
+                    assert postgres_queue_refresh._publish_tactical_introduction(database, today, eligible)
+                    assert count_daily_tactic_introductions(database, today) == reservations_before + 1
+                    assert database.execute("SELECT card_id FROM tactic_progress WHERE puzzle_id=?", (records[2]["PuzzleId"],)).fetchone()[0] == identifiers[2]
+                assert postgres_queue_refresh._prepare_tactical_introduction(today) is None
+                assert lookup_batches == [identifiers, identifiers]
+        finally:
+            with postgres_store.connection() as database:
+                purge_card_data(database, identifiers)
+                database.execute("DELETE FROM tactic_introductions WHERE pack_id=?", (pack_id,))
+                database.execute("DELETE FROM tactic_pack_activation WHERE pack_id=?", (pack_id,))
+                database.execute_native("UPDATE tactic_pack_activation SET active=CASE WHEN pack_id=ANY(%s) THEN 1 ELSE 0 END", (active_before,))
+                database.execute("UPDATE settings SET tactics_new_per_day=? WHERE id=1", (limit_before,))
+                database.execute("UPDATE tactic_rotation SET last_pack_id=? WHERE id=1", (rotation_before,))
+        print("PASS test_postgres_tactical_deletion_batches_and_publication_race; unrelated exclusions, real deletion after prepare, no spent allowance and next eligible admission")
 
     def prove_repeated_route_dependencies():
         repetition_repertoire = f"{prefix}-repetition"
@@ -157,6 +233,7 @@ def main_check():
         print("PASS test_repertoire_delete_ignores_unrelated_null_job_payload; exact cancellation fences stale workers")
         print("PASS test_repertoire_keep_delete_preserves_shared_schedules_history_and_non_main_selection; durable policy replay")
         print("PASS test_retained_introduced_cards_survive_queue_refresh_and_next_day_without_a_review")
+        prove_tactical_deletion_batches_and_publication_race()
 
         line_id = f"{prefix}-line"
         fixture_random = random.Random(20261008)
