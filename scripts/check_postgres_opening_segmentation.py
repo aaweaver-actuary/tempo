@@ -268,7 +268,10 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
     from app import prefix_evaluation_api as evaluator_api
 
     client = TestClient(app)
-    source = client.get(f'/api/repertoires/{repertoire_id}/prefix-evaluation/source').json()
+    source_response = idle_prefix_response(
+        client, 'GET', f'/api/repertoires/{repertoire_id}/prefix-evaluation/source')
+    assert source_response.status_code == 200, source_response.text
+    source = source_response.json()
     path = f'/api/repertoires/{repertoire_id}/prefix-transition/plan'
     payload = {'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
                'candidate_depths': {lines[0]['id']: 1}}

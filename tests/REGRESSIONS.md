@@ -2258,6 +2258,8 @@ unchanged structure on a short source route.
 
 Prefix rehearsal admission: `test_prefix_rehearsal_replay_waits_only_for_documented_foreground_admission` and `test_prefix_rehearsal_admission_is_bounded_and_retains_retry_header_contract` preserve non-admission failures, stale responses, the exact retry-header contract and a bounded deadline while real health probes contend with read-only requests.
 
+Transition rehearsal source admission: `backend/tests/test_prefix_rehearsal_admission.py::test_transition_rehearsal_source_waits_for_foreground_admission_before_reading_snapshot` and `test_transition_rehearsal_source_reports_database_failure_without_snapshot_key_error` cover the CI-exposed source-read race. The transition rehearsal honors the existing bounded foreground admission protocol before reading the snapshot, while reporting database failures without retrying them or obscuring them with a missing-key error.
+
 ## Issue #7 — durable opportunity dismissals
 
 `backend/tests/test_repertoire_opportunities.py` runs in the regular backend gate:
