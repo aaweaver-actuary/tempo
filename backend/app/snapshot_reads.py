@@ -11,7 +11,10 @@ class SnapshotRead:
 
 
 def snapshot_rows(database, query, parameters):
-    statement = f'SELECT row_to_json(captured)::text evidence FROM ({query}) captured ORDER BY evidence'
+    # RecordingReader orders JSON strings in Python. Locale collation can ignore
+    # punctuation and reorder multi-digit IDs, falsely rejecting unchanged rows.
+    statement = (f'SELECT evidence FROM (SELECT row_to_json(captured)::text evidence '
+                 f'FROM ({query}) captured) serialized ORDER BY evidence COLLATE "C"')
     return tuple(row[0] for row in database.execute_native(statement, parameters).fetchall())
 
 

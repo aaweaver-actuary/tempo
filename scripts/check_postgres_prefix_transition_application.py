@@ -209,6 +209,18 @@ def test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budg
     print('PASS test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget')
 
 
+def test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows():
+    from app.snapshot_reads import RecordingReader, snapshot_rows
+    reads = []
+    query = "SELECT ordinal AS id,CASE WHEN ordinal %% 2 = 0 THEN 'éclair' ELSE 'zebra' END AS name FROM generate_series(1,128) ordinal"
+    with postgres_store.connection(read_only=True) as database:
+        rows = RecordingReader(database, reads).execute_native(query).fetchall()
+        assert len(rows) == 128
+        assert snapshot_rows(database, query, ()) == reads[0].rows
+    print('PASS test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows')
+
+
+
 def test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state():
     with fixture('success') as (rep, other, lines, steps):
         plan, payload = ready_plan(rep, lines)
@@ -715,6 +727,7 @@ def main():
         return
     with isolate_unrelated_publication_tasks():
         test_issue80_application_rehearsal_preserves_unrelated_publication_tasks()
+        test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows()
         test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget()
         test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state()
         test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery()

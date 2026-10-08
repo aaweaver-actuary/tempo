@@ -2550,3 +2550,8 @@ The first nine CI cases and the release-evidence case failed against main `65110
 
 - `unclassified backend service modules require deployment lifecycle with ordinary companions` fails against `2db9058` for `backend/app/services/postgres_connection.py`. Unknown connection, storage, worker, deployment and domain service modules require lifecycle, alone or with ordinary registry/backend/unit-test companions; new files never become ordinary through subtree membership.
 - `reviewed ordinary and sensitive service classifications survive ordinary companions` preserves exact reviewed domain-service exemptions and mandatory lifecycle for `database_executor.py` and `background_runtime.py`, with the same companions. `complete verification always requires deployment lifecycle` also covers ordinary and unknown service paths. These cases run through the existing CI reliability Vitest wrapper in the regular suite.
+
+
+PR #102 authoritative snapshot ordering:
+
+- `test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows` compares real PostgreSQL JSON ordering with preparation on 128 numeric/Unicode rows. The scaling regression first failed before explicit C collation because unchanged queue/origin/presentation rows sorted differently under PostgreSQL locale and Python ordering.
