@@ -379,6 +379,10 @@ def run_build(arguments):
     filter_records = {json.dumps(receipt["filters"], sort_keys=True) for receipt in receipts}
     if len(source_records) != 1 or len(filter_records) != 1:
         raise ValueError("Candidate inputs must have identical provenance and filters")
+    # Version 1 receipts have no verifiable ranges or partitions. Candidate
+    # identities cannot reveal overlapping source records that yielded nothing.
+    if len(receipts) != 1:
+        raise ValueError("Multiple mining receipts cannot be aggregated: disjoint source coverage cannot be verified; build from one mining output")
     complete = all(receipt["completion"]["complete"] and receipt["source"]["sha256_verified"] for receipt in receipts)
     canonical_corpus = bool(re.fullmatch(r"lichess-standard-\d{4}-\d{2}-v[1-9]\d*", arguments.corpus_id))
     if canonical_corpus:
@@ -389,7 +393,7 @@ def run_build(arguments):
             raise ValueError("Canonical source receipt is inconsistent")
     bundle = build_bundle(selected, arguments.corpus_id, arguments.title)
     bundle_bytes = json_bytes(bundle)
-    counts = {name: sum(receipt["counts"][name] for receipt in receipts) for name in new_counts()}
+    counts = {name: receipts[0]["counts"][name] for name in new_counts()}
     counts.update(selection_counts)
     manifest = {"format": "tempo-stalemate-swindle-manifest", "schema_version": 1,
         "corpus_id": arguments.corpus_id, "generator_version": 1, "source": receipts[0]["source"], "source_month": source_month,
@@ -429,7 +433,8 @@ def parser() -> argparse.ArgumentParser:
     mine.add_argument("--strict", action="store_true")
     mine.set_defaults(run=run_mine)
     build = subcommands.add_parser("build", help="Build a deterministic portable Study and manifest")
-    build.add_argument("--candidates", nargs="+", required=True)
+    build.add_argument("--candidates", nargs="+", required=True,
+                       help="One mined JSONL with its receipt; multiple receipts cannot prove disjoint source coverage")
     build.add_argument("--corpus-id", required=True)
     build.add_argument("--title", default="Stalemate Swindles")
     build.add_argument("--max-puzzles", type=positive_integer, default=300)

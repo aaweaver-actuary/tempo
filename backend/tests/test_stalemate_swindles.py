@@ -261,27 +261,96 @@ def test_stalemate_build_rejects_duplicate_verified_candidate_receipts(tmp_path,
     assert not list(tmp_path.rglob("*.partial"))
 
 
-def test_stalemate_build_accepts_distinct_candidate_outputs_with_shared_provenance(tmp_path):
-    candidate_paths = [tmp_path / "white.jsonl", tmp_path / "black.jsonl"]
+def assert_unverifiable_receipts_are_rejected(tmp_path, source_scans, previous_outputs, *, overlapping_candidates):
+    candidate_paths = [tmp_path / "first.jsonl", tmp_path / "second.jsonl"]
     receipts = []
-    for candidate_path, pgn in zip(candidate_paths, [synthetic_pgn(), synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5"))]):
+    candidate_identities = []
+    for candidate_path, pgn in zip(candidate_paths, source_scans):
         result = run_cli("mine", "--source-month", "2026-09", "--output", str(candidate_path), input_text=pgn)
         assert result.returncode == 0, result.stderr
         receipt = json.loads(Path(str(candidate_path) + ".metadata.json").read_text())
         assert receipt["candidate_sha256"] == hashlib.sha256(candidate_path.read_bytes()).hexdigest()
         receipts.append(receipt)
+        candidate_identities.append({json.loads(line)["candidate_key"] for line in candidate_path.read_text().splitlines()})
     assert receipts[0]["candidate_sha256"] != receipts[1]["candidate_sha256"]
+    assert bool(candidate_identities[0] & candidate_identities[1]) == overlapping_candidates
     for field in ("source_month", "source", "filters", "completion"):
         assert receipts[0][field] == receipts[1][field]
     bundle, manifest = tmp_path / "bundle.json", tmp_path / "manifest.json"
+    build_options = ("--corpus-id", "synthetic-distinct-receipts-v1", "--output", str(bundle), "--manifest", str(manifest))
+    if previous_outputs:
+        result = run_cli("build", "--candidates", str(candidate_paths[0]), *build_options)
+        assert result.returncode == 0, result.stderr
+        previous_bytes = (bundle.read_bytes(), manifest.read_bytes())
     result = run_cli("build", "--candidates", *(str(candidate_path) for candidate_path in candidate_paths),
-                     "--corpus-id", "synthetic-distinct-receipts-v1", "--output", str(bundle), "--manifest", str(manifest))
+                     *build_options)
+    assert result.returncode == 1, "Different candidate hashes cannot justify adding scan populations"
+    assert "disjoint source coverage cannot be verified" in result.stderr
+    assert "one mining output" in result.stderr
+    if previous_outputs:
+        assert (bundle.read_bytes(), manifest.read_bytes()) == previous_bytes
+    else:
+        assert not bundle.exists() and not manifest.exists()
+    assert not list(tmp_path.rglob("*.partial"))
+    return receipts
+
+
+@pytest.mark.parametrize("previous_outputs", [False, True])
+def test_stalemate_build_rejects_overlapping_candidate_receipts(tmp_path, previous_outputs):
+    first = synthetic_pgn()
+    shared = synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5"), Site="https://lichess.org/synthet2")
+    last = synthetic_pgn(FORCED_FEN, Site="https://lichess.org/synthet3")
+    receipts = assert_unverifiable_receipts_are_rejected(tmp_path, [first + shared, shared + last],
+        previous_outputs, overlapping_candidates=True)
+    assert all(receipt["counts"]["games_scanned"] == receipt["counts"]["draw_games_parsed"] ==
+               receipt["counts"]["eligible_candidates"] == 2 for receipt in receipts)
+
+
+@pytest.mark.parametrize("previous_outputs", [False, True])
+def test_stalemate_build_rejects_overlapping_scans_without_shared_candidates(tmp_path, previous_outputs):
+    first = synthetic_pgn()
+    shared_non_candidate = synthetic_pgn(moves=("h4h3",), Site="https://lichess.org/synthet2")
+    last = synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5"), Site="https://lichess.org/synthet3")
+    assert mined(shared_non_candidate)[0] == []
+    receipts = assert_unverifiable_receipts_are_rejected(tmp_path, [first + shared_non_candidate, shared_non_candidate + last],
+        previous_outputs, overlapping_candidates=False)
+    assert all(receipt["counts"]["games_scanned"] == receipt["counts"]["draw_games_parsed"] == 2 and
+               receipt["counts"]["eligible_candidates"] == 1 for receipt in receipts)
+
+
+@pytest.mark.parametrize("previous_outputs", [False, True])
+def test_stalemate_build_rejects_distinct_candidate_outputs_without_verifiable_coverage(tmp_path, previous_outputs):
+    assert_unverifiable_receipts_are_rejected(tmp_path, [synthetic_pgn(), synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5"))],
+        previous_outputs, overlapping_candidates=False)
+
+
+def test_stalemate_build_single_receipt_preserves_counts_and_bundle_identity(tmp_path):
+    source_scan = synthetic_pgn() * 2 + synthetic_pgn(BLACK_FEN, ("h5d5", "d4d5"), Site="https://lichess.org/synthet2") + synthetic_pgn(moves=("h4h3",), Site="https://lichess.org/synthet3")
+    candidates, bundle, manifest = (tmp_path / name for name in ("candidates.jsonl", "bundle.json", "manifest.json"))
+    result = run_cli("mine", "--source-month", "2026-09", "--output", str(candidates), input_text=source_scan)
     assert result.returncode == 0, result.stderr
-    counts = json.loads(manifest.read_text())["counts"]
+    receipt = json.loads(Path(str(candidates) + ".metadata.json").read_text())
+    build_arguments = ("build", "--candidates", str(candidates), "--corpus-id", "synthetic-single-receipt-v1",
+                       "--output", str(bundle), "--manifest", str(manifest))
+    result = run_cli(*build_arguments)
+    assert result.returncode == 0, result.stderr
+    report = json.loads(manifest.read_text())
+    counts = report["counts"]
     for name in swindles.new_counts():
-        assert counts[name] == sum(receipt["counts"][name] for receipt in receipts)
-    assert counts["games_scanned"] == counts["eligible_candidates"] == counts["unique_candidates"] == counts["selected_puzzles"] == 2
+        assert counts[name] == receipt["counts"][name]
+    assert counts["games_scanned"] == counts["draw_games_parsed"] == 4
+    assert counts["eligible_candidates"] == 3
+    assert counts["unique_candidates"] == counts["selected_puzzles"] == 2
     assert len(json.loads(bundle.read_text())["tables"]["study_exercises"]) == 2
+    assert report["source"] == receipt["source"] and report["filters"] == receipt["filters"]
+    assert not report["complete_verified_source"]
+    # Pin the pre-fix single-input bytes, including all manifest semantics.
+    assert hashlib.sha256(bundle.read_bytes()).hexdigest() == "26845dab8689a9b462a5230376bb1748a8673c25be7533f242d00e93960d2056"
+    assert hashlib.sha256(manifest.read_bytes()).hexdigest() == "ed31c0273915301366a2797c2e344729e3dcd11c55ef5a4cddfdfdfc6d330be3"
+    previous_bytes = (bundle.read_bytes(), manifest.read_bytes())
+    result = run_cli(*build_arguments)
+    assert result.returncode == 0, result.stderr
+    assert (bundle.read_bytes(), manifest.read_bytes()) == previous_bytes
     assert not list(tmp_path.rglob("*.partial"))
 
 
