@@ -19,6 +19,12 @@ async function prepareQueue(page: Page) {
   await page.route("**/api/queue/window?**", route => route.fulfill({ json: payload }));
   await page.route("**/api/queue/prepared?**", route => route.fulfill({ json: { ...payload, prepared_at: new Date().toISOString() } }));
   await page.route("**/api/repertoire/lines", route => route.fulfill({ json: { lines: [] } }));
+  // The visual fixture's generic {} response is not a command receipt. Model
+  // the production missing-admission contract for aborted checkpoint requests.
+  await page.route("**/api/operations/opening-checkpoint**", route => route.fulfill({ json: {
+    operation_id: decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-1)!),
+    state: "unknown", message: "No durable receipt exists yet. Retry with the same Idempotency-Key.",
+  } }));
 }
 
 for (const compactFails of [false, true]) {
@@ -197,12 +203,25 @@ test("AS-15 recovered evidence waits for foreground queue readiness and an idle 
 
 test("AS-15 a real tab lease releases stranded evidence into a later idle slice", async ({ page: owner, context }) => {
   await prepareVisualUI(owner); await prepareQueue(owner);
-  // This tab owns active board work; only the second tab runs recovery in this fixture.
-  await owner.addInitScript(() => { window.requestIdleCallback = () => 1; window.cancelIdleCallback = () => undefined; });
+  // Permit one initial live checkpoint, then leave this tab's later idle slices
+  // queued while the second tab verifies real ownership and recovery.
+  await owner.addInitScript(() => {
+    const callbacks = new Map<number, IdleRequestCallback>(); let sequence = 0;
+    window.requestIdleCallback = callback => { callbacks.set(++sequence, callback); return sequence; };
+    window.cancelIdleCallback = id => { callbacks.delete(id); };
+    Object.assign(window, { evidenceIdleCallbacks: callbacks });
+  });
   await owner.route("**/api/opening-evidence/checkpoints", route => route.abort("failed"));
   await owner.goto("/");
   const failed = owner.waitForEvent("requestfailed", { predicate: request => request.url().endsWith("/api/opening-evidence/checkpoints") });
-  await move(owner, "e2", "e4"); await failed;
+  await move(owner, "e2", "e4");
+  await expect.poll(async () => (await savedEvents(owner)).length).toBeGreaterThan(0);
+  await expect.poll(() => owner.evaluate(() => (window as unknown as { evidenceIdleCallbacks: Map<number, unknown> }).evidenceIdleCallbacks.size)).toBe(1);
+  await owner.evaluate(() => {
+    const callbacks = (window as unknown as { evidenceIdleCallbacks: Map<number, IdleRequestCallback> }).evidenceIdleCallbacks;
+    const [id, callback] = [...callbacks][0]; callbacks.delete(id); callback({ didTimeout: false, timeRemaining: () => 50 });
+  });
+  await failed;
   const original = (await savedAttempts(owner))[0];
   const frozen = original.delivery as { checkpoint: OpeningEvidenceCheckpoint; operationKey: string };
   const recovering = await context.newPage();
@@ -368,7 +387,8 @@ test("AS-08 deferred evidence persistence leaves rendered moves and aggregate re
 });
 
 test("AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work", async ({ page }) => {
-  await prepareVisualUI(page); await prepareQueue(page);
+  // Absolute retry deadlines need a moving clock; visual fixtures freeze Date.now().
+  await prepareVisualUI(page, false); await prepareQueue(page);
   const sends: { key: string; body: OpeningEvidenceCheckpoint }[] = [];
   await page.route("**/api/opening-evidence/checkpoints", async route => {
     sends.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON() });
@@ -587,3 +607,12 @@ test(rejectParentEvidence
   }
 });
 }
+
+// Shared native-transport proof also runs in Firefox/WebKit via cross-browser.spec.ts.
+import { crossTabOpeningCompletion } from "./opening-evidence-cross-tab-fixture";
+test.describe("cross-tab completion", () => {
+  test.use({ serviceWorkers: "block" });
+  for (const fallback of [false, true]) test(`cross-tab opening completion wakes reconciliation through ${fallback ? "BroadcastChannel fallback" : "storage events"}`, async ({ page, context }) => {
+    await crossTabOpeningCompletion(page, context, fallback);
+  });
+});

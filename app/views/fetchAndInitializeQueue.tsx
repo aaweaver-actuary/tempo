@@ -5,7 +5,7 @@ import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
 import { conflictedReviews, flushPendingReviews, pendingReviews, ReviewReplayError, updateReviewConflictNotice } from "../lib/review-outbox";
-import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining, type OfflineAttempt, type PreparedTraining } from "../lib/offline-training";
+import { describeOfflineQueue, OfflineReplayError, PhoneQueueRefreshingError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining, type OfflineAttempt, type PreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureContexts, isLegacyTrainingFailure } from "../lib/training-failure-outbox";
 import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
@@ -49,6 +49,22 @@ export async function loadEligibleOfflineQueue(prepared: PreparedTraining): Prom
 function showQueueNotice(message: string, severity: NotificationSeverity = "info") {
   useTrainingStore.getState().setQueueNotice(message);
   if (message) publishNotification({ severity, source: "training queue", message });
+}
+
+export function showPhoneQueuePreparationNotice(message: string, severity: NotificationSeverity = "info", ready = false): void {
+  useTrainingStore.getState().setQueueNotice(message);
+  hydrateNotifications();
+  const priorRecords = notifications().filter(record => record.key === "phone-queue-preparation" ||
+    (!record.key && record.source === "training queue" && record.message.startsWith("Phone queue could not be prepared.")));
+  if (ready) {
+    const unresolved = priorRecords.filter(record => !record.resolvedAt);
+    if (unresolved.length) {
+      for (const record of unresolved) resolveNotification(record.id, { severity: "info", message });
+      return;
+    }
+    if (priorRecords.some(record => record.message === message)) return;
+  }
+  publishNotification({ severity, source: "training queue", key: "phone-queue-preparation", message });
 }
 
 function showGuidedAttemptSaveNotice(error?: string | null) {
@@ -377,18 +393,19 @@ export async function fetchAndInitializeQueue(
         await waitForOfflineShell();
         if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey() &&
             !useTrainingStore.getState().serviceError.includes("no longer in today's queue"))
-          showQueueNotice(
+          showPhoneQueuePreparationNotice(
             `Phone queue prepared for ${prepared.localDate}.` +
             (prepared.cards.some(requiresConnectedGrading)
               ? ` ${prepared.cards.filter(requiresConnectedGrading).length} exercise(s) still require the computer.`
-              : ""),
+              : ""), "info", true,
           );
       })
       .catch((error) => {
         if (generation === requestGeneration && !hasConflicts && !controller.signal.aborted)
-          showQueueNotice(
-            `Phone queue could not be prepared. ${error instanceof Error ? error.message : "Keep the computer connected and retry loading the queue."}`,
-            "warning",
+          showPhoneQueuePreparationNotice(
+            error instanceof PhoneQueueRefreshingError ? error.message :
+              `Phone queue could not be prepared. ${error instanceof Error ? error.message : "Keep the computer connected and retry loading the queue."}`,
+            error instanceof PhoneQueueRefreshingError ? "info" : "warning",
           );
       });
   } catch (error) {

@@ -377,6 +377,13 @@ test("actual browser collection grep selects exactly the planned tests", () => {
     const planned = plan({ paths, cases: realCases });
     assert.deepEqual(collectBrowserCases(planned.browserGrep).map(item => item.id).sort(), selectedIds(planned));
   }
+  const planned = plan({ cases: realCases });
+  const offlineReplay = planned.collection.filter(item => item.file === "phone-offline-training.spec.ts" &&
+    item.title === "prepared phone queue and study worker survive full offline reload and sync one review per attempt");
+  assert(offlineReplay.length > 0, "Phone offline replay must resolve to actual collected cases");
+  assert(offlineReplay.every(item => item.critical && item.selected));
+  assert.throws(() => plan({ cases: realCases.filter(item => !offlineReplay.some(offline => offline.id === item.id)) }),
+    /Missing critical browser coverage: offline replay/);
   assert.equal(selectedIds(plan({ cases: realCases })).length, inventory.critical.length);
   const results = browserResults({ suites: [{ specs: [{ id: "case", title: "title", tests: [{ projectName: "chromium", status: "skipped", results: [{ status: "skipped", duration: 0 }] }] }] }] });
   assert.equal(results[0].status, "failed");

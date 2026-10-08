@@ -14,6 +14,19 @@ const pending = new Map<
   { title: string; queuedAt: number; startedAt?: number; resolve: (value: unknown) => void; reject: (error: Error) => void }
 >();
 
+function failStudyRequests(cause?: unknown): void {
+  for (const [requestId, request] of pending) {
+    updateBrowserActivity(`study:${requestId}`, request.title, "failed", "Failed", "Study worker failed");
+    request.reject(new Error("Study worker failed. Reopen Tempo while connected to retry.", { cause }));
+  }
+  pending.clear();
+  if (worker) {
+    worker.onmessage = null; worker.onerror = null; worker.onmessageerror = null;
+    worker.terminate();
+    worker = undefined;
+  }
+}
+
 export function runStudyTask<T>(
   task: StudyTask,
   signal?: AbortSignal,
@@ -45,21 +58,21 @@ export function runStudyTask<T>(
         }
       }, 0);
     });
-  worker ??= new Worker(new URL("./study.worker.ts", import.meta.url), {
-    type: "module",
-  });
-  worker.onmessage = ({ data: raw }) => {
+  try {
+    worker ??= new Worker(new URL("./study.worker.ts", import.meta.url), { type: "module" });
+  } catch (error) {
+    reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
+    updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
+    return Promise.reject(new Error("Study worker failed. Reopen Tempo while connected to retry.", { cause: error }));
+  }
+  const requestWorker = worker;
+  requestWorker.onmessage = ({ data: raw }) => {
+    if (worker !== requestWorker) return;
     let data;
     try {
-      data = parseData(studyReplySchema, raw, "study worker response");
+      data = parseData(studyReplySchema, raw, "study worker response", undefined, "study-worker");
     } catch (error) {
-      for (const [requestId, request] of pending) {
-        updateBrowserActivity(`study:${requestId}`, request.title, "failed", "Failed", String(error));
-        request.reject(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-      pending.clear();
+      failStudyRequests(error);
       return;
     }
     const request = pending.get(data.id);
@@ -89,21 +102,20 @@ export function runStudyTask<T>(
       request.resolve(data.result);
     }
   };
-  worker.onerror = (event) => {
+  requestWorker.onerror = (event) => {
+    if (worker !== requestWorker) return;
     reportDebugError(event.message || "Study worker failed to load or run", {
       kind: "uncaught-exception", source: "study-worker",
       script: event.filename, line: event.lineno || undefined,
       column: event.colno || undefined,
     });
-    for (const [requestId, request] of pending)
-      updateBrowserActivity(`study:${requestId}`, request.title, "failed", "Failed", "Study worker failed");
-    for (const request of pending.values())
-      request.reject(
-        new Error("Study worker failed. Reopen Tempo while connected to retry."),
-      );
-    pending.clear();
-    worker?.terminate();
-    worker = undefined;
+    failStudyRequests(event);
+  };
+  requestWorker.onmessageerror = () => {
+    if (worker !== requestWorker) return;
+    const error = new Error("Study worker response could not be decoded");
+    reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
+    failStudyRequests(error);
   };
   return new Promise<T>((resolve, reject) => {
     const cancel = () => {
@@ -124,7 +136,11 @@ export function runStudyTask<T>(
         reject(error);
       },
     });
-    worker!.postMessage({ id, task });
+    try { requestWorker.postMessage({ id, task }); }
+    catch (error) {
+      reportDebugError(error, { kind: "uncaught-exception", source: "study-worker" });
+      failStudyRequests(error);
+    }
   });
 }
 

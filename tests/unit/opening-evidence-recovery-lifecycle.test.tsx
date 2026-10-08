@@ -141,6 +141,7 @@ it("AS-15 orphan completion verification timeout yields and retries safely", asy
   const original = structuredClone(state.stores.opening_attempts.get("orphan"));
   const journal = await import("../../app/lib/opening-evidence-journal");
   vi.useFakeTimers(); let release!: (response: Response) => void; let verificationSignal: AbortSignal | null | undefined;
+  let verificationTimedOutAt = 0;
   const posts: string[] = [];
   vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
     expect(new Headers(init?.headers).get("X-Tempo-Work-Class")).toBe("background");
@@ -148,7 +149,7 @@ it("AS-15 orphan completion verification timeout yields and retries safely", asy
       return Promise.resolve(Response.json({ persisted: true, attempt_id: "orphan", received_sequences: [1, 2, 3], contiguous_sequence: 3 })); }
     expect(url).toContain("/attempts/orphan"); verificationSignal = init?.signal;
     return new Promise<Response>((resolve, reject) => { release = resolve;
-      init?.signal?.addEventListener("abort", () => reject(new DOMException("Verification aborted", "AbortError")), { once: true }); });
+      init?.signal?.addEventListener("abort", () => { verificationTimedOutAt = Date.now(); reject(new DOMException("Verification aborted", "AbortError")); }, { once: true }); });
   }));
   let failed = false; let settled = false;
   const active = journal.recoverOpeningEvidence(); expect(journal.recoverOpeningEvidence()).toBe(active);
@@ -164,6 +165,12 @@ it("AS-15 orphan completion verification timeout yields and retries safely", asy
       const checkpoint = JSON.parse(init.body as string); expect(checkpoint.terminal).toEqual({ ...completion.terminal, state: "partial" }); posts.push(checkpoint.attempt_id);
       return Response.json({ persisted: true, attempt_id: "orphan", received_sequences: [1, 2, 3], contiguous_sequence: 3 });
     });
+    const deadline = verificationTimedOutAt + 1000;
+    expect(await journal.recoverOpeningEvidence()).toEqual({ moreWork: false, nextRetryAt: deadline });
+    expect(posts).toEqual([]);
+    await vi.advanceTimersByTimeAsync(deadline - Date.now() - 1);
+    expect(await journal.recoverOpeningEvidence()).toEqual({ moreWork: false, nextRetryAt: deadline }); expect(posts).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
     expect(await journal.recoverOpeningEvidence()).toEqual({ moreWork: false }); expect(posts).toEqual(["orphan"]);
     expect(state.stores.opening_attempts.has("orphan")).toBe(false);
   } finally { release?.(Response.json({}, { status: 404 })); await first; }

@@ -1,3 +1,9 @@
+PR #92 cross-tab completion wakeup (October 8, 2026):
+
+- `opening-evidence-cross-tab-signals.test.ts`: `opening acknowledgment publishes only after atomic evidence removal and never leaks journal content`; `aborted acknowledgment preserves saved evidence and emits no completion`; retained/rejected acknowledgment, native transport fallback/failure, malformed/self/duplicate signals, first/last subscription cleanup, unavailable BroadcastChannel, and atomic checkpoint confirmation regressions.
+- `opening-evidence-recovery-policy.test.tsx`: `cross-tab completion signal schedules persisted guard reconciliation without delivery` (pending/blocked); `unrelated cross-tab completion preserves pending evidence and independent deadlines` (pending/blocked); `cross-tab completion during an active slice retains a later idle reconciliation`; `cross-tab completion with failed storage reads preserves warnings and permits lifecycle recovery`; `cross-tab completion respects foreground admission and unsubscription`. Both primary wakeup variants failed before the signal receiver existed. Existing stale-guard and per-journal backoff/receipt-first replay regressions remain required.
+- `opening-evidence.spec.ts` and `cross-browser.spec.ts`: `cross-tab opening completion wakes reconciliation through storage events` and `cross-tab opening completion wakes reconciliation through BroadcastChannel fallback`. Two actual same-origin tabs share native IndexedDB and native transport, independently mount the application, show blocked recovery in A, confirm the existing frozen receipt in B, and prove A receives the signal and rereads IndexedDB through the existing idle hook. No manual recovery call, connectivity event, reload, new checkpoint POST, aggregate review, or receipt creation supplies the result. Duplicate signals and sender closure are covered; Chromium, Firefox, and WebKit run the shared fixture. The storage case failed before signaling in all browser engines at the missing signal observation. Network receipt responses are controlled fixtures; native persistence and transport are real.
+
 PR #104 shared admission correction (October 8, 2026):
 
 - SQLite: `test_repertoire_delete_reassigns_shared_queued_admission_without_rewriting_origins` covers deleting primary and non-owning repertoires under both keep/delete policies, prefers the surviving primary over another membership, compares schedules/reviews and completed queue rows exactly, preserves original admission proof, and rejects exclusive-card recreation. Both non-owning variants failed before the fix; owning controls already passed.
@@ -27,6 +33,14 @@ The pending-card queue-failure browser proof waits for the recovered pending ope
 - `tests/unit/deletion-dialogs-regressions.test.tsx`: accessible Keep default and Delete selection, cancellation, pending choice lock, failure display, global repertoire names, red card deletion action, durable confirmation before closing and stale preview rejection. Existing editor and queue-attempt suites remain required.
 - `tests/browser/content-deletion.spec.ts`: actual PostgreSQL keep/delete confirmations, cancellation and reload; deleting the active training card clears its attempt and advances training; pending deletion recovery reports refresh failure explicitly; repertoire recovery preserves its selected policy and never reports a failed receipt as success. `recovering an older deletion preserves a different active card's board and attempt` first failed with a reset to the initial board before restricting forced advancement to the deleted active card. `workspace-flows.spec.ts` exercises the new repertoire dialog in the existing real workflow. Pinned `repertoire-deletion-390/1280` and `card-deletion-390/1280` screenshots cover phone/desktop layout and readable red controls.
 - API inventory and upgrades: `test_postgres_route_contract_matches_registered_endpoints` covers the deletion preview reader; `test_queue_origin_migration_follows_current_main_without_renumbering_published_versions` requires migration 037. Regular durability covers populated upgrade, restart/recreation and backup restoration; immutable admission evidence and operation receipts remain available for safe replay.
+Phone study reliability from the October 6 notification export:
+
+- Opening delivery: `live opening appends request idle recovery without bypassing pending receipt backoff` and `pending opening receipt yields to another journal and keeps its warning until confirmed` in `opening-evidence-recovery-policy.test.tsx` prove idle admission, unchanged retry deadlines, receipt-first confirmation, fairness and truthful notice resolution. The live-append case first failed because main sent a checkpoint before any idle opportunity. Existing lifecycle/slice/lease/storage/quota regressions remain required.
+- Frozen admission: `AS-15 frozen checkpoint replays a missing admission with unchanged body and identity (%s)` in `opening-evidence-background-admission.test.ts` covers HTTP 404 and the production HTTP-200 `unknown` receipt. `frozen command recovery may replay an unknown receipt without treating pending receipts as missing` in `operation-status-events.test.ts` preserves the conservative default for other consumers. Existing complete/failed/blocked/timeout and foreground-header cases remain required.
+- Worker failures: `phone worker construction failure rejects asynchronously with actionable diagnostics` first failed for main's synchronous throw; `phone worker message decoding failure releases every caller and permits a fresh worker` in `study-worker-regressions.test.ts` covers all waiting callers and a fresh successful retry. Existing safe-script-path and request-coalescing tests remain required.
+- Worker shell: `offline build inventories generated workers and shared imports for root and Pages shells` in `offline-shell-build-regressions.test.ts`, plus the expanded `Pages service worker caches scoped static assets and bypasses API and external GETs` in `storage-cache-regressions.test.ts`, prove worker/dependency inventory, incomplete-shell refusal and retention under cache pressure. The readiness assertion first failed on main because it reported ready with those bundles absent. `prepared phone queue and study worker survive full offline reload and sync one review per attempt` in `phone-offline-training.spec.ts` verifies the actual cached worker and board/replay workflow during a complete network outage.
+- Preparation: `phone preparation treats a refreshing projection as pending and preserves the saved queue` first failed for main's generic failure. `phone preparation coalesces repeated failures and resolves them only when ready` and `phone preparation keeps genuine $state failures actionable without replacing stored attempts` in `phone-queue-preparation-regressions.test.ts` cover pending, failed, incomplete and confirmed projections. `phone projection refresh retains its saved queue and coalesces preparation notices across reloads` verifies the actual notification tray and saved IndexedDB queue. Browser fixtures wait for the product's prepared notice, which follows both storage and shell verification, before switching offline.
+- Historical discovery-key and queue/review-timeout errors already have fixes on current main: `legacy rejected discovery saves recover with a bounded key after reload`, `legacy oversized stored operation key is repaired only after its confirmed rejection`, `uncertain invalid stored operation key remains intact with an actionable error`, and `timed out discovery save remains unconfirmed and replays the same choice after reload` in `discovery-admission-outbox-regressions.test.ts`; `review timeout also bounds deferred operation receipt polling` in `review-outbox-regressions.test.ts`; and existing opening-contract and queue-attempt-recovery backend tests. This repair retains and reruns these protections rather than changing authoritative data based on historical notices.
 
 Committed merge-conflict integration repair (October 8, 2026):
 
@@ -2276,6 +2290,61 @@ fallback regressions remain required. The concurrent-source regression now
 cancels without restarting fallback rather than silently accepting changed work.
 No live study fixture, background audit, release bypass or schema change is used.
 
+## PR #92 review: critical phone offline coverage
+
+`actual browser collection grep selects exactly the planned tests` in
+`tests/runner/ci-reliability.test.mjs`, invoked by the regular CI reliability unit
+file, now explicitly checks that `offline replay` resolves to the collected
+`prepared phone queue and study worker survive full offline reload and sync one review per attempt`
+case and remains critical/selected. Removing that case must still fail planning.
+The reviewed head failed this named regression and the real PR-diff planner with
+`Missing critical browser coverage: offline replay`; only the inventory title is
+repaired, with no planner-enforcement change.
+
+## PR #92 review: study-worker protocol failures
+
+`schema-invalid study worker reply rejects all callers and replaces the worker before retry`
+in `tests/unit/study-worker-regressions.test.ts` supplies a transferable invalid
+reply through `onmessage`, rejects two pending callers, checks abort cleanup and
+failed activity, requires termination, and completes a retry using a new Worker.
+`schema validation reports the caller debug source once` in
+`tests/unit/validated-data-regressions.test.ts` protects single reporting with
+`source: "study-worker"`, retained data diagnostics, and the default validation
+source/endpoint. Both failed on the reviewed implementation. Existing startup,
+message-error, worker timing, and coalescing regressions remain required.
+
+## PR #92 review: independent and authoritative journal recovery
+
+`pending journal backoff survives healthy journal successes and idle timer wakeups`
+and `recovery wakes at the earliest independent journal retry deadline` in
+`tests/unit/opening-evidence-recovery-policy.test.tsx` use independent receipt
+responses, saved A/B/C journals, a controlled clock, and explicit idle callbacks.
+Healthy B/C progress immediately while A retains its 1/2/4/8/16/30/30-second
+progression; timers send no requests, and separately delayed identities wake at
+their own earliest deadline. Both failed under the reviewed global admission gate.
+
+`externally completed opening journal prunes stale recovery guards` in that file
+covers pending and blocked local state with both external deletion and durable
+acknowledgment to idle, bypassing this module's cleanup functions. Both guard
+variants failed before reconciliation. The test requires no network replay and
+resolution of both aggregate delivery and recovery notices. Still-persisted
+blocked operations remain covered by `AS-15 blocked opening-evidence operations do not automatically resubmit during idle recovery`
+and `AS-15 explicit operation status recovery resumes a deferred journal without starving backlog`.
+
+Updated existing live-append, independent-receipt, storm, successful-reset,
+offline, warning-subscriber, and active-failure cases retain their named regular
+coverage. An event may request one bounded idle reconciliation slice; request
+eligibility and failure history belong to the journal, never to hook success.
+`AS-15 orphan completion verification timeout yields and retries safely` now also
+checks that direct recovery calls cannot bypass its post-timeout deadline.
+Foreground blocking, unmount/disable cleanup, frozen receipt bodies/keys,
+queue retention, saved reviews, and offline-shell completeness remain required.
+
+`AS-15 re-enabling after an inactive failed slice recovers the journal deadline`
+failed on the first repair candidate and covers a failure settling while the hook
+is disabled. Re-enabling requests metadata reconciliation through idle admission,
+restores the per-journal wake-up, and sends no request before that saved deadline.
+
 ## Daily study sparse unlock recovery — October 7, 2026
 
 - `backend/tests/test_daily_queue_sparse_unlock.py::test_daily_queue_sparse_unlock_does_not_scan_locked_backlog` reproduces the live queue blocker with 15,000 locked cards and 21 eligible cards: 1,875 slices before the fix, three after. Published generation, mature incoming transposition, and locked/learning-parent exclusions remain authoritative.
@@ -2547,3 +2616,29 @@ The first nine CI cases and the release-evidence case failed against main `65110
 
 - `unclassified backend service modules require deployment lifecycle with ordinary companions` fails against `2db9058` for `backend/app/services/postgres_connection.py`. Unknown connection, storage, worker, deployment and domain service modules require lifecycle, alone or with ordinary registry/backend/unit-test companions; new files never become ordinary through subtree membership.
 - `reviewed ordinary and sensitive service classifications survive ordinary companions` preserves exact reviewed domain-service exemptions and mandatory lifecycle for `database_executor.py` and `background_runtime.py`, with the same companions. `complete verification always requires deployment lifecycle` also covers ordinary and unknown service paths. These cases run through the existing CI reliability Vitest wrapper in the regular suite.
+
+## PR #92 final integration: stale worker callback fencing
+
+`schema-invalid study worker reply rejects all callers and replaces the worker before retry`
+now invokes captured old message/runtime-error/decoding-error callbacks after reconstruction.
+They cannot resolve a fresh request, mark it running, produce new diagnostics, or terminate
+the replacement. Failed-worker handlers are detached and a fresh response still succeeds.
+The extended case failed before the worker-identity fence (`retrySettled` was true).
+
+## PR #92 final integration: accepted operation and uncertain recovery proof
+
+`independent pending journals replay missing admissions once without duplicate accepted operations or reviews`
+uses A/B/C receipt states and a controlled clock. Missing admissions are posted once per frozen
+operation, B/C confirm independently, A keeps capped backoff and its saved envelope, and recovery
+never invents an aggregate review. `uncertain cross-tab recovery retains saved work and warnings
+after a failed storage read (%s)` covers pending and blocked guards: unavailable storage cannot
+clear evidence or warnings, and restored reads preserve guards for still-persisted work. These
+are additional boundary proofs for the existing fixes, not newly discovered production defects.
+
+## PR #92 final integration: moving browser recovery clock
+
+`AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work`
+uses the existing moving-clock fixture option. The prior run failed with one checkpoint
+instead of three because the visual fixture froze Date.now() before the retry deadline.
+The browser still proves the identical frozen body/key is replayed before event 2; no
+assertion or timeout is weakened.

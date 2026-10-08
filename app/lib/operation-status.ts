@@ -2,7 +2,7 @@ import { API_URL } from "../const";
 import { backgroundFetch } from "./background-fetch";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
-type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch };
+type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean };
 
 export class PendingOperationError extends Error {
   constructor(readonly operationId: string, message?: string, readonly blocked = false) {
@@ -33,6 +33,7 @@ export async function readOperationResponse(operationId: string, options: Operat
   const request = options.fetch ?? (options.background ? backgroundFetch : fetch);
   const status = await request(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`,
     options.signal ? { signal: options.signal } : undefined);
+  if (status.status === 404 && options.allowMissing) return status;
   if (!status.ok)
     throw new PendingOperationError(operationId);
   const receipt = await status.json() as {
@@ -42,6 +43,10 @@ export async function readOperationResponse(operationId: string, options: Operat
     last_error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
     message?: string;
   };
+  // A lost admission response can leave no receipt at all. Only callers that
+  // retain the original immutable command may replay that missing admission.
+  if (receipt.state === "unknown" && options.allowMissing)
+    return new Response(null, { status: 404 });
   if (["queued", "executing", "retrying", "pending", "complete", "failed"].includes(receipt.state ?? ""))
     notifyOperationStatusChange(operationId);
   if (receipt.state === "complete")

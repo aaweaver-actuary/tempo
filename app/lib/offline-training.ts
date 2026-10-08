@@ -117,12 +117,22 @@ async function updatePreparedTraining(
   });
 }
 
+export class PhoneQueueRefreshingError extends Error {
+  constructor() {
+    super("Phone offline queue is refreshing. The saved queue is retained. Keep the computer connected and retry loading the queue.");
+    this.name = "PhoneQueueRefreshingError";
+  }
+}
+
 export async function savePreparedTraining(raw: unknown): Promise<PreparedTraining> {
   if (!raw || typeof raw !== "object" || typeof (raw as { prepared_at?: unknown }).prepared_at !== "string")
     throw new Error("Prepared queue has no preparation time");
   const queuePayload = { ...(raw as Record<string, unknown>) };
   delete queuePayload.prepared_at;
   const envelope = queueEnvelopeSchema.parse(queuePayload);
+  if (envelope.projection?.state === "refreshing") throw new PhoneQueueRefreshingError();
+  if (envelope.projection?.state === "failed")
+    throw new Error(envelope.projection.last_error ?? "Daily queue preparation failed. Check the computer worker and retry.");
   if (!envelope.local_date || envelope.projection?.state !== "ready" || envelope.count !== envelope.cards.length)
     throw new Error("The daily queue is not fully prepared yet");
   const cards = envelope.cards.map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card)));

@@ -4,6 +4,14 @@ import { subscribeOperationStatusChange } from "../../app/lib/operation-status-e
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it("frozen command recovery may replay an unknown receipt without treating pending receipts as missing", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "unknown" })));
+  expect((await readOperationResponse("frozen-command", { allowMissing: true })).status).toBe(404);
+  await expect(readOperationResponse("frozen-command")).rejects.toMatchObject({ name: "PendingOperationError" });
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ state: "pending" }));
+  await expect(readOperationResponse("frozen-command", { allowMissing: true })).rejects.toMatchObject({ name: "PendingOperationError" });
+});
+
 it.each(["blocked", "unknown", "invalid", "pending", "queued", "executing", "retrying", "complete", "failed"])(
   "operation status resume signal preserves receipt semantics (%s)", async state => {
     const listener = vi.fn(); const unsubscribe = subscribeOperationStatusChange(listener);

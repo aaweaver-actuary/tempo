@@ -1,4 +1,5 @@
-const CACHE = "tempo-static-v6";
+const CACHE = "tempo-static-v7";
+const BUILD_SHELL_ASSETS = [];
 const MAX_CACHE_ENTRIES = 120;
 const STATIC_DESTINATIONS = new Set(["script", "style", "image", "font", "worker", "manifest"]);
 const FETCHED_STATIC_DIRECTORIES = ["assets/", "data/", "ort/", "tempo-core/", "engines/"];
@@ -17,6 +18,7 @@ async function requiredShellUrls(cache) {
   return [...new Set([
     ...SHELL_ASSETS.map((path) => new URL(path, scope).href),
     ...referencedAssets.map((url) => url.href),
+    ...BUILD_SHELL_ASSETS.map((path) => new URL(path, scope).href),
   ])];
 }
 

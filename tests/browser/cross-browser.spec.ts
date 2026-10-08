@@ -256,3 +256,8 @@ test("phone opening identity and move input work across browser engines", async 
   await expect(menu.locator("summary")).toBeFocused();
   await noPageOverflow(page);
 });
+
+import { crossTabOpeningCompletion } from "./opening-evidence-cross-tab-fixture";
+for (const fallback of [false, true]) test(`cross-tab opening completion wakes reconciliation through ${fallback ? "BroadcastChannel fallback" : "storage events"}`, async ({ page, context }) => {
+  await crossTabOpeningCompletion(page, context, fallback);
+});

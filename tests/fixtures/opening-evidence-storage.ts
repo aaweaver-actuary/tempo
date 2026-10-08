@@ -23,7 +23,8 @@ export async function openingEvidenceStorage() {
   const stores: Record<string, Map<unknown, unknown>> = { training: new Map(), opening_attempts: new Map(), opening_events: new Map() };
   const writes: { store: string; value: unknown }[] = [];
   const commits: string[][] = [];
-  const controls = { beforePut: undefined as ((store: string, value: unknown) => Error | undefined) | undefined };
+  const controls = { beforePut: undefined as ((store: string, value: unknown) => Error | undefined) | undefined,
+    beforeCommit: undefined as (() => Error | undefined) | undefined };
   const database = {
     transaction: (names: string | string[], mode?: string) => {
       const selected = Array.isArray(names) ? names : [names];
@@ -34,17 +35,20 @@ export async function openingEvidenceStorage() {
         onerror: null as (() => void) | null, onabort: null as (() => void) | null,
         abort: () => { aborted = true; queueMicrotask(() => transaction.onabort?.()); },
         objectStore: (name: string) => {
-          const request = (action: () => unknown) => {
+          const request = (action: () => unknown, cloneResult = true) => {
             pendingRequests++;
             const result = { result: undefined as unknown, error: null as Error | null, onsuccess: null as (() => void) | null, onerror: null as (() => void) | null };
             queueMicrotask(() => {
               if (aborted) return;
-              try { result.result = structuredClone(action()); }
+              try { const value = action(); result.result = cloneResult ? structuredClone(value) : value; }
               catch (error) { result.error = transaction.error = error as Error; aborted = true; result.onerror?.(); transaction.onerror?.(); transaction.onabort?.(); return; }
               result.onsuccess?.();
               if (--pendingRequests === 0) queueMicrotask(() => {
                 if (pendingRequests || aborted) return;
-                if (mode === "readwrite") { for (const store of selected) stores[store] = rows[store]; commits.push(selected); }
+                if (mode === "readwrite") {
+                  const error = controls.beforeCommit?.();
+                  if (error) { transaction.error = error; aborted = true; transaction.onabort?.(); return; }
+                  for (const store of selected) stores[store] = rows[store]; commits.push(selected); }
                 transaction.oncomplete?.();
               });
             });
@@ -63,7 +67,19 @@ export async function openingEvidenceStorage() {
             }),
             delete: (key: unknown) => request(() => rows[name].delete(Array.isArray(key) ? JSON.stringify(key) : key)),
             index: (field: string) => ({ get: (key: unknown) => request(() => matching(field, key)[0]),
-              getAll: (key: unknown) => request(() => matching(field, key)), count: (key: unknown) => request(() => matching(field, key).length) }),
+              getAll: (key: unknown) => request(() => matching(field, key)), count: (key: unknown) => request(() => matching(field, key).length),
+              openCursor: (key: unknown) => {
+                const entries = ordered().filter(([, value]) => (value as Record<string, unknown>)[field] === key);
+                let position = 0;
+                const cursor = request(() => entries.length ? next() : null, false);
+                const next = (): unknown => {
+                  if (position >= entries.length) return null;
+                  const primaryKey = entries[position][0];
+                  return { delete: () => request(() => rows[name].delete(primaryKey)),
+                    continue: () => { position++; request(() => { cursor.result = next(); cursor.onsuccess?.(); }); } };
+                };
+                return cursor;
+              } }),
             openCursor: () => {
               const entries = ordered(); let position = 0;
               const result = { result: null as unknown, onsuccess: null as (() => void) | null, onerror: null as (() => void) | null };
