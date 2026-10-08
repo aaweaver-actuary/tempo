@@ -2754,3 +2754,11 @@ indexes the proposed steps once and uses constant-time lookups.
   setup and failed before the deletion assertions. Setup now uses a verified fixed
   seed; invocation-owned puzzle/pack identities, PostgreSQL assertions and cleanup
   remain unchanged. This is a fixture correction, not a deletion behavior change.
+
+- `test_pr102_native_snapshot_batch_preserves_digest_evidence_and_read_order`
+  protects one PostgreSQL pipeline, native values, ordered capture and unchanged
+  server-digest authoritative evidence.
+- `test_pr102_snapshot_batch_respects_cumulative_limits_and_stale_link_precedence`
+  transfers only the bounded table prefix and retains a stale-membership error
+  before a later cumulative limit error. The 512-card fixture also runs in the
+  regular durability environment: read budgets and planner limits are unchanged.

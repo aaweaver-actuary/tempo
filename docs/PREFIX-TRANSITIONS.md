@@ -314,3 +314,8 @@ reading native payloads in their established order. Cumulative transfer limits,
 membership-race checks, read-only MVCC consistency and post-transaction hashing
 remain unchanged. This avoids separate size-check round trips for every captured
 table during preparation and authoritative activation revalidation.
+
+Once size metadata identifies the safe table prefix, its native reads use one
+PostgreSQL pipeline. Payload validation retains the established table order,
+including stale-membership rejection before a later size-limit failure. Recorded
+bulk evidence retains the same server SHA256 and authoritative replay queries.

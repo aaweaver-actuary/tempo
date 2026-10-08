@@ -91,6 +91,18 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline, *
             + ' UNION ALL '.join(size_queries) + ') sizes',
             tuple(parameter for _name, _query, parameters in table_queries for parameter in parameters),
         ).fetchone()
+        # Only enqueue payloads whose cumulative transfer has passed the same
+        # limits. Read/validate them in original order, including stale links
+        # before a later limit error. PostgreSQL retains their native types.
+        allowed_payload_queries = []
+        row_count = byte_count = 0
+        for table_index, (_name, query, parameters) in enumerate(table_queries):
+            row_count += sizes['table_counts'][table_index]
+            byte_count += sizes['table_bytes'][table_index]
+            if row_count > MAX_TRANSITION_ROWS or byte_count > MAX_TRANSITION_BYTES:
+                break
+            allowed_payload_queries.append((query, parameters))
+        payload_cursors = database.execute_native_batch(allowed_payload_queries)
         raw_tables = []
         row_count = byte_count = 0
         for table_index, (name, query, parameters) in enumerate(table_queries):
@@ -98,7 +110,7 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline, *
             byte_count += sizes['table_bytes'][table_index]
             if row_count > MAX_TRANSITION_ROWS or byte_count > MAX_TRANSITION_BYTES:
                 raise PrefixEvaluationError('limit_exceeded', 'Transition state exceeds 40,000 rows or 4 MiB. This snapshot needs validated planner capacity beyond the current limits; retain its history and source data.')
-            rows = database.execute_native(query, parameters).fetchall()
+            rows = payload_cursors[table_index].fetchall()
             raw_tables.append((name, rows))
             if name == 'repertoire_cards' and any(row['card_id'] not in lookup_card_ids for row in rows):
                 raise PrefixEvaluationError('stale_snapshot', 'Memberships changed during planning. Refresh and retry.')

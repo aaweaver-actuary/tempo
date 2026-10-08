@@ -26,8 +26,9 @@ def evidence_expression(uses_sha256_evidence):
 
 
 class RecordingCursor:
-    def __init__(self, database, query, parameters, reads):
+    def __init__(self, database, query, parameters, reads, prefetched_cursor=None):
         self.database, self.query, self.parameters, self.reads = database, query, parameters, reads
+        self.prefetched_cursor = prefetched_cursor
 
     def _record(self, rows, *, uses_sha256_evidence):
         self.reads.append(SnapshotRead(self.query, tuple(self.parameters),
@@ -40,15 +41,18 @@ class RecordingCursor:
             f'SELECT captured.*,{expression} __transition_evidence FROM ({self.query}) captured', self.parameters)
 
     def fetchone(self):
-        row = self._execute(uses_sha256_evidence=False).fetchone()
-        result = self._record([row] if row else [], uses_sha256_evidence=False)
+        uses_sha256_evidence = self.prefetched_cursor is not None
+        cursor = self.prefetched_cursor if uses_sha256_evidence else self._execute(uses_sha256_evidence=False)
+        row = cursor.fetchone()
+        result = self._record([row] if row else [], uses_sha256_evidence=uses_sha256_evidence)
         return result[0] if result else None
 
     def fetchall(self):
         # Bulk rows retain native PostgreSQL values for the unchanged planner.
         # A server-computed SHA256 binds their exact raw JSON without sending a
         # second potentially 4 MiB payload through the bounded read transaction.
-        rows = self._execute(uses_sha256_evidence=True).fetchall()
+        cursor = self.prefetched_cursor if self.prefetched_cursor is not None else self._execute(uses_sha256_evidence=True)
+        rows = cursor.fetchall()
         return self._record(rows, uses_sha256_evidence=True)
 
 
@@ -59,3 +63,12 @@ class RecordingReader:
     def execute_native(self, query, parameters=()):
         # Select scalar/raw or bulk/digest evidence at fetch time, in one query.
         return RecordingCursor(self.database, query, parameters, self.reads)
+
+    def execute_native_batch(self, statements):
+        expression = evidence_expression(True)
+        cursors = self.database.execute_native_batch([
+            (f'SELECT captured.*,{expression} __transition_evidence FROM ({query}) captured', parameters)
+            for query, parameters in statements
+        ])
+        return [RecordingCursor(self.database, query, parameters, self.reads, cursor)
+                for (query, parameters), cursor in zip(statements, cursors, strict=True)]
