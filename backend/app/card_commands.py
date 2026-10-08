@@ -87,6 +87,9 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
             "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
             (f"tempo:card-edit:{locked_id}",),
         )
+    from .card_deletion import require_card_not_deleted
+    require_card_not_deleted(database, identifier)
+    require_card_not_deleted(database, replacement_id)
     old = database.execute_native(
         "SELECT * FROM cards WHERE id=%s FOR UPDATE", (identifier,),
     ).fetchone()
@@ -224,3 +227,12 @@ def archive_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[
 
 register_command("cards.revise", revise_card)
 register_command("cards.archive", archive_card)
+
+
+@refresh_game_publications_after_mutation
+def delete_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    from .card_deletion import permanent_delete_card
+    return permanent_delete_card(database, str(payload["card_id"]), int(payload["expected_revision"]))
+
+
+register_command("cards.delete", delete_card)

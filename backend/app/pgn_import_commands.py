@@ -92,7 +92,7 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     existing_repertoire = database.execute_native(
         "SELECT repertoire.id FROM repertoires repertoire "
         "WHERE repertoire.source_name=%s "
-        "AND repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') "
+        "AND repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') "
         "AND EXISTS(SELECT 1 FROM repertoire_lines line "
         "WHERE line.repertoire_id=repertoire.id AND line.trained_color=%s) "
         "ORDER BY repertoire.created_at DESC LIMIT 1",
@@ -101,7 +101,7 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     repertoire_id = existing_repertoire[0] if existing_repertoire else str(uuid.uuid4())
     database.execute_native(
         "UPDATE repertoires SET is_main=0 "
-        "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
+        "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"
     )
     database.execute_native(
         "INSERT INTO repertoires(id,name,source_name,created_at,is_main) "
@@ -173,21 +173,29 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
             "SELECT id FROM cards WHERE id=ANY(%s::text[])", (payload.segment_ids,),
         )
     } if segment_ids else set()
-    prefix_created = len(prefix_ids - existing_card_ids)
-    descendant_created = len((segment_ids - prefix_ids) - existing_card_ids)
+    deleted_ids = {row[0] for row in database.execute_native(
+        "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])", (payload.segment_ids,),
+    )} if segment_ids else set()
+    excluded_segments = [segment for line in payload.lines
+        for segment in decision_segments(line.starting_fen, line.moves, trained_color, payload.depth)
+        if segment.card_id in deleted_ids] if deleted_ids else []
+    excluded_prefix_count = sum(segment.segment_kind == "prefix" for segment in excluded_segments)
+    excluded_decision_count = len(excluded_segments) - excluded_prefix_count
+    prefix_created = len(prefix_ids - existing_card_ids - deleted_ids)
+    descendant_created = len((segment_ids - prefix_ids) - existing_card_ids - deleted_ids)
     invalidate_integrity_in_transaction(database, repertoire_id)
     request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
     return {
         "repertoire_id": repertoire_id, "source_name": source_name,
         "games_found": payload.games_found, "unique_lines": payload.unique_lines,
-        "cards_created": len(segment_ids - existing_card_ids),
-        "duplicates_merged": max(0, payload.imported_segments_count - len(segment_ids)),
+        "cards_created": len(segment_ids - existing_card_ids - deleted_ids),
+        "duplicates_merged": max(0, payload.imported_segments_count - len(excluded_segments) - len(segment_ids - deleted_ids)),
         "cards_admitted_today": 0,
         "integrity": integrity_summary(database, repertoire_id),
         "decision_cards_created": descendant_created,
-        "shared_decisions_reused": max(0, payload.decision_segments_count - descendant_created),
+        "shared_decisions_reused": max(0, payload.decision_segments_count - excluded_decision_count - descendant_created),
         "prefix_cards_created": prefix_created,
-        "shared_prefixes_reused": max(0, payload.prefix_segments_count - prefix_created),
+        "shared_prefixes_reused": max(0, payload.prefix_segments_count - excluded_prefix_count - prefix_created),
         "descendant_decision_cards_created": descendant_created,
         "graph_state": "refreshing",
     }

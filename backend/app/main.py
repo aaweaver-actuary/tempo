@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from typing import Literal
 
 import chess
 import chess.pgn
@@ -755,6 +756,13 @@ async def prioritize_foreground_requests(request: Request, call_next):
             request_scope.__exit__(None, None, None)
 
 
+@app.exception_handler(sqlite3.IntegrityError)
+async def deleted_content_conflict(_request: Request, error: sqlite3.IntegrityError):
+    if str(error) == "This card was permanently deleted and cannot be recreated":
+        return JSONResponse(status_code=409, content={"detail": "This card was permanently deleted. Refresh the workspace before retrying."})
+    raise error
+
+
 @app.exception_handler(sqlite3.OperationalError)
 async def storage_unavailable(request: Request, error: sqlite3.OperationalError):
     is_busy = "locked" in str(error).lower() or "busy" in str(error).lower()
@@ -1015,7 +1023,7 @@ def put_settings(s: Settings,
             for row in db.execute(
                 """SELECT r.id FROM repertoires r
                    JOIN repertoire_integrity_state state ON state.repertoire_id=r.id
-                   WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')
+                   WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')
                      AND state.status='clean'"""
             )
         ] if coverage_changed or previous_settings["discovery_window_days"] != s.discovery_window_days else []
@@ -1053,6 +1061,7 @@ def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
         SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id FROM daily_queue q
         JOIN cards c ON c.id=q.card_id
         WHERE q.queue_date=? AND q.status='queued' AND c.content_type='opening'
+          AND c.repertoire_id<>'__retained_cards__'
           AND COALESCE(q.admission_kind,'')!='explicit'
           AND (c.introduced_at IS NULL OR c.introduced_at=?)
           AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
@@ -1393,7 +1402,7 @@ def _reset_unintroduced_opening_cards(database, queue_date: str) -> None:
 def _reset_stale_opening_introductions(database, queue_date: str) -> None:
     database.execute(
         """UPDATE cards SET state='new',introduced_at=NULL
-           WHERE content_type='opening' AND state='learning' AND introduced_at<?
+           WHERE content_type='opening' AND repertoire_id<>'__retained_cards__' AND state='learning' AND introduced_at<?
              AND NOT EXISTS(SELECT 1 FROM reviews review WHERE review.card_id=cards.id)
              AND NOT EXISTS(SELECT 1 FROM daily_queue queue
                             WHERE queue.card_id=cards.id AND queue.queue_date=?)""",
@@ -2070,14 +2079,14 @@ async def import_pgn(
         if not db.in_transaction:
             db.execute("BEGIN IMMEDIATE")
         existing_repertoire = db.execute(
-            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
+            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
             (file.filename, trained_color),
         ).fetchone()
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
         validated_routes = ensure_batch_lines_in_scope(db, [(rid, line.starting_fen, line.moves) for line in lines]) if existing_repertoire else [{} for line in lines]
         admitted_routes = []
         db.execute(
-            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
+            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"
         )
         db.execute(
             "INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",
@@ -2145,10 +2154,14 @@ async def import_pgn(
                 else []
             )
         }
-        created = len(segment_ids - existing_segment_ids)
-        prefix_cards_created = len(prefix_segment_ids - existing_segment_ids)
+        deleted_segment_ids = {row[0] for row in db.execute(
+            f"SELECT card_id FROM deleted_cards WHERE card_id IN ({placeholders})", tuple(sorted(segment_ids)),
+        )} if segment_ids else set()
+        eligible_segments = [segment for segment in imported_segments if segment.card_id not in deleted_segment_ids]
+        created = len(segment_ids - existing_segment_ids - deleted_segment_ids)
+        prefix_cards_created = len(prefix_segment_ids - existing_segment_ids - deleted_segment_ids)
         descendant_cards_created = len(
-            descendant_segment_ids - existing_segment_ids
+            descendant_segment_ids - existing_segment_ids - deleted_segment_ids
         )
         integrity = integrity_summary(db, rid)
         admitted = 0
@@ -2185,7 +2198,7 @@ async def import_pgn(
         games_found=games,
         unique_lines=len(unique_line_keys),
         cards_created=created,
-        duplicates_merged=max(0, len(imported_segments) - len(segment_ids)),
+        duplicates_merged=max(0, len(eligible_segments) - len(segment_ids - deleted_segment_ids)),
         cards_admitted_today=admitted,
         integrity=integrity,
         decision_cards_created=descendant_cards_created,
@@ -2193,7 +2206,7 @@ async def import_pgn(
             0,
             sum(
                 segment.segment_kind == "decision"
-                for segment in imported_segments
+                for segment in eligible_segments
             )
             - descendant_cards_created,
         ),
@@ -2202,7 +2215,7 @@ async def import_pgn(
             0,
             sum(
                 segment.segment_kind == "prefix"
-                for segment in imported_segments
+                for segment in eligible_segments
             )
             - prefix_cards_created,
         ),
@@ -2297,7 +2310,8 @@ def list_repertoires():
             LEFT JOIN background_tasks graph_task
               ON graph_task.kind='opening_graph_rebuild'
              AND graph_task.deduplication_key=r.id
-            WHERE r.id NOT IN ({system_placeholders})
+            WHERE r.id NOT IN ({system_placeholders}) OR (r.id='__retained_cards__' AND EXISTS(
+                SELECT 1 FROM cards retained WHERE retained.repertoire_id=r.id))
             ORDER BY r.created_at DESC
         """,
             (date.today().isoformat(), date.today().isoformat(), *SYSTEM_REPERTOIRES),
@@ -2322,7 +2336,7 @@ def repertoire_lines():
         rows = db.execute("""SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
                                   r.name repertoire_name,r.is_main
                            FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
-                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY r.created_at,l.created_at""").fetchall()
+                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__') ORDER BY r.created_at,l.created_at""").fetchall()
     return {
         "lines": [{**dict(row), "moves": json.loads(row["moves_json"])} for row in rows]
     }
@@ -2337,7 +2351,7 @@ def comparison_cards():
                            FROM cards c
                            JOIN repertoire_cards rc ON rc.card_id=c.id
                            JOIN repertoires r ON r.id=rc.repertoire_id
-                           WHERE c.content_type='opening' AND c.archived=0
+                           WHERE c.content_type='opening' AND c.archived=0 AND r.id<>'__retained_cards__'
                              AND c.pending_validation=0
                            ORDER BY c.id,r.id""").fetchall()
         records = [dict(row) for row in rows]
@@ -2673,56 +2687,26 @@ def make_main_repertoire(identifier: str,
         )
     with connection() as db, refreshing_game_scope(db):
         if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
+            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
             (identifier,),
         ).fetchone():
             raise HTTPException(404, "Repertoire not found")
         db.execute(
-            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
+            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')",
             (identifier,),
         )
     return {"id": identifier, "is_main": True}
 
 
 @app.delete("/api/repertoires/{identifier}")
-def delete_repertoire(identifier: str,
+def delete_repertoire(identifier: str, learned_cards: Literal["keep", "delete"] = "delete",
                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "repertoires.delete", {"repertoire_id": identifier},
-            idempotency_key=idempotency_key,
-        )
-    if identifier in {"__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__"}:
-        raise HTTPException(400, "This system repertoire cannot be deleted")
-    with connection() as db, refreshing_game_scope(db):
-        if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
-        ).fetchone():
-            raise HTTPException(404, "Repertoire not found")
-        shared = db.execute(
-            """SELECT c.id,(SELECT rc2.repertoire_id FROM repertoire_cards rc2
-                                          WHERE rc2.card_id=c.id AND rc2.repertoire_id!=? LIMIT 1) replacement
-                             FROM cards c WHERE c.repertoire_id=? AND EXISTS(
-                                 SELECT 1 FROM repertoire_cards rc3 WHERE rc3.card_id=c.id AND rc3.repertoire_id!=?)""",
-            (identifier, identifier, identifier),
-        ).fetchall()
-        for card in shared:
-            db.execute(
-                "UPDATE cards SET repertoire_id=? WHERE id=?",
-                (card["replacement"], card["id"]),
-            )
-        db.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
-        replacement = db.execute(
-            "SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
-        if replacement:
-            db.execute(
-                "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
-                (replacement[0],),
-            )
-    coordinator.wake()
-    return {"deleted": True, "id": identifier}
+        return dispatch_command("repertoires.delete", {"repertoire_id": identifier, "learned_cards": learned_cards}, idempotency_key=idempotency_key)
+    from .card_deletion import delete_repertoire_data
+    with connection() as db:
+        return delete_repertoire_data(db, identifier, learned_cards)
 
 
 def requeue(db, day, cid, after, attempt):
@@ -2930,6 +2914,9 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
         original_payload["recorded_at"] = now.isoformat()
     request_json = json.dumps(original_payload, sort_keys=True)
     with (nullcontext(database) if database is not None else connection()) as db:
+        from .card_deletion import is_card_deleted
+        if is_card_deleted(db, identifier):
+            raise ReviewConflict("card_deleted", "This card was permanently deleted. Discard the old attempt and refresh training.")
         if request.attempt_id:
             receipt = db.execute(
                 "SELECT card_id,queue_entry_id,outcome,guided,completed_at,result_json,request_json "
@@ -3638,6 +3625,9 @@ def revise_card(identifier: str, request: CardRevisionRequest,
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db, refreshing_game_scope(db):
         old = db.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()
+        from .card_deletion import require_card_not_deleted
+        require_card_not_deleted(db, identifier)
+        require_card_not_deleted(db, replacement)
         if not old:
             raise HTTPException(404, "Card not found")
         affected_repertoire_ids = [row[0] for row in db.execute(
@@ -3767,14 +3757,28 @@ def revise_card(identifier: str, request: CardRevisionRequest,
     }
 
 
+@app.get("/api/cards/{identifier}/deletion-preview")
+def preview_card_deletion(identifier: str):
+    from .card_deletion import card_deletion_preview
+    with read_connection() as db:
+        return card_deletion_preview(db, identifier)
+
+
 @app.delete("/api/cards/{identifier}")
-def archive_card(identifier: str,
+def archive_card(identifier: str, permanent: bool = False, expected_revision: int | None = None,
                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if permanent and (expected_revision is None or expected_revision < 1):
+        raise HTTPException(422, "expected_revision is required for permanent deletion")
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "cards.archive", {"card_id": identifier}, idempotency_key=idempotency_key,
-        )
+        payload = {"card_id": identifier}
+        if permanent:
+            payload["expected_revision"] = expected_revision
+        return dispatch_command("cards.delete" if permanent else "cards.archive", payload, idempotency_key=idempotency_key)
+    if permanent:
+        from .card_deletion import permanent_delete_card
+        with connection() as db, refreshing_game_scope(db):
+            return permanent_delete_card(db, identifier, expected_revision)
     with connection() as db, refreshing_game_scope(db):
         repertoire_ids = [
             row["repertoire_id"]
@@ -3991,7 +3995,7 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
                  AND opportunity.canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=opportunity.repertoire_id)
                  AND opportunity.handled_evidence_json IS NULL
                  AND opportunity.repertoire_id NOT IN
-                     ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')""",
+                     ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')""",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         identifiers = [dict(row) for row in database.execute(
@@ -3999,7 +4003,7 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
                WHERE status='active'
                  AND handled_evidence_json IS NULL
                  AND repertoire_id NOT IN
-                   ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
+                   ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')
                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
             (limit, offset),
         )]
@@ -4450,6 +4454,8 @@ def tactic_attempt(request: TacticAttemptRequest,
     light_days = get_settings().light_first_interval_days
     calendar_day = date.today()
     with connection() as db:
+        from .card_deletion import require_card_not_deleted
+        require_card_not_deleted(db, cid)
         if request.attempt_id:
             previous = db.execute(
                 "SELECT result_json FROM tactic_discovery_attempts WHERE id=?",

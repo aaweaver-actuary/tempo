@@ -894,6 +894,8 @@ const actions = {
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_repertoire_limits.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_deletion.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_tactic_capture.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_background_workloads.py"]);

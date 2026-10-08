@@ -23,6 +23,8 @@ function readPending(): PendingDecision | null {
 }
 
 async function decidePrefixSplit(cardId: string, revision: number, decision: Decision) {
+  if (localStorage.getItem("tempo-pending-card-delete-v1"))
+    throw new Error("Resolve the pending card deletion before editing a card.");
   let pending = readPending();
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);

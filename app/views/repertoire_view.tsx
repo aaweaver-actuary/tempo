@@ -10,7 +10,8 @@ import {
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
-import { deleteRepertoireCommand } from "../lib/repertoire-delete-command";
+import { deleteRepertoireCommand, pendingRepertoireDeletion, type LearnedCardsPolicy } from "../lib/repertoire-delete-command";
+import { RepertoireDeleteDialog } from "../components/repertoire-delete-dialog";
 import { applyOpportunityCommand } from "../lib/opportunity-command";
 import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
 import { requestCoverageRefresh } from "../lib/coverage-refresh-command";
@@ -95,6 +96,10 @@ export default function RepertoireView({
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
   const [error, setError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<RepertoireItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [pendingDeletePolicy, setPendingDeletePolicy] = useState<LearnedCardsPolicy>();
   const [coverageByRepertoire, setCoverageByRepertoire] = useState<
     Record<string, CoverageSummary>
   >({});
@@ -154,7 +159,7 @@ export default function RepertoireView({
             side: item.trained_color === "black" ? "black" : "white",
             title: item.name,
             sourceName: item.source_name,
-            detail: `${item.line_count} unique ${item.line_count === 1 ? "line" : "lines"} · ${item.card_count} cards · ${item.graph_updated_at ? `${item.active_prefix_count ?? 0} active prefixes` : "active prefixes awaiting graph"}${priorityDetail}`,
+            detail: item.id === "__retained_cards__" ? `${item.card_count} kept cards · original schedules and history` : `${item.line_count} unique ${item.line_count === 1 ? "line" : "lines"} · ${item.card_count} cards · ${item.graph_updated_at ? `${item.active_prefix_count ?? 0} active prefixes` : "active prefixes awaiting graph"}${priorityDetail}`,
             progress: 0,
             due: item.due_count,
             blockedDueCount: item.blocked_due_count ?? 0,
@@ -169,6 +174,14 @@ export default function RepertoireView({
       );
       setLoaded(true);
       setError("");
+      const pending = pendingRepertoireDeletion();
+      if (pending) {
+        setPendingDeletePolicy(pending.learnedCards);
+        setDeleteTarget(current => current ?? {
+          id: asRepertoireId(pending.repertoireId), title: body.repertoires.find(item => item.id === pending.repertoireId)?.name ?? "Pending repertoire",
+          side: "white", detail: "", sourceName: "", progress: 0, due: 0, backend: true,
+        });
+      }
     } catch (failure) {
       reportDebugError(failure, {
         kind: "api",
@@ -219,18 +232,16 @@ export default function RepertoireView({
     } else onRenameLocal(item.id, value);
   }
 
-  async function remove(item: RepertoireItem) {
-    if (
-      !window.confirm(
-        `Delete “${item.title}”? Its cards and review history will also be removed.`,
-      )
-    )
-      return;
+  async function remove(item: RepertoireItem, learnedCards: LearnedCardsPolicy) {
+    setDeleteBusy(true);
+    setDeleteError("");
     if (item.backend) {
       try {
-        await deleteRepertoireCommand(item.id);
+        await deleteRepertoireCommand(item.id, learnedCards);
       } catch (deleteError) {
-        setError(deleteError instanceof Error ? deleteError.message : "Could not delete this repertoire");
+        setDeleteError(deleteError instanceof Error ? deleteError.message : "Could not delete this repertoire");
+        try { setPendingDeletePolicy(pendingRepertoireDeletion()?.learnedCards); } catch { /* The validation error is displayed above. */ }
+        setDeleteBusy(false);
         return;
       }
       invalidateWorkspaceData();
@@ -245,6 +256,9 @@ export default function RepertoireView({
       if (queueRefreshFailed)
         setError("Repertoire deleted. Training queue refresh failed; retry loading the workspace.");
     } else onDeleteLocal(item.id);
+    setDeleteTarget(null);
+    setPendingDeletePolicy(undefined);
+    setDeleteBusy(false);
   }
 
   function exportPgn(item?: RepertoireItem) {
@@ -366,6 +380,10 @@ export default function RepertoireView({
   }
   return (
     <section className="library-page" id="repertoire">
+      {deleteTarget && <RepertoireDeleteDialog key={deleteTarget.id} name={deleteTarget.title}
+        localDemo={!deleteTarget.backend}
+        pendingPolicy={pendingDeletePolicy} busy={deleteBusy} error={deleteError}
+        onClose={() => setDeleteTarget(null)} onConfirm={policy => remove(deleteTarget, policy)} />}
       {backendItems.filter(item => item.id === comparisonRepertoireId).map(item => <PrefixComparisonDialog
         key={`${item.id}:${refreshRevision}`} repertoireId={item.id} repertoireName={item.title}
         onClose={() => setComparisonRepertoireId(null)} />)}
@@ -425,7 +443,7 @@ export default function RepertoireView({
               </div>
               <div className="repertoire-name">
                 <h2>{item.title}</h2>
-                <ActionMenu
+                {item.id !== "__retained_cards__" && <ActionMenu
                   className="card-menu"
                   label="•••"
                   summaryAriaLabel={`More actions for ${item.title}`}
@@ -449,11 +467,19 @@ export default function RepertoireView({
                     role="menuitem"
                     variant="danger"
                     className="delete-repertoire"
-                    onClick={() => void remove(item)}
+                    onClick={event => {
+                      try {
+                        const pending = pendingRepertoireDeletion();
+                        if (pending && pending.repertoireId !== item.id) throw new Error("Confirm the earlier repertoire deletion before removing another repertoire.");
+                        event.currentTarget.closest("details")?.querySelector("summary")?.focus();
+                        setPendingDeletePolicy(pending?.learnedCards);
+                        setDeleteError(""); setDeleteTarget(item); setOpenMenu(null);
+                      } catch (failure) { setError(String(failure)); }
+                    }}
                   >
                     Delete
                   </Button>
-                </ActionMenu>
+                </ActionMenu>}
               </div>
               <p>{item.detail}</p>
               {Boolean(item.canonicalPrefix?.moves_uci.length) && <p className="canonical-prefix-summary">
@@ -741,18 +767,19 @@ export default function RepertoireView({
               )}
               <div className="repertoire-actions">
                 <Button
+                  disabled={item.id === "__retained_cards__"}
                   className="browse-button"
                   onClick={() => onBrowse(item.id)}
                 >
                   Browse tree
                 </Button>
-                {item.backend && (
+                {item.backend && item.id !== "__retained_cards__" && (
                   <Button onClick={() => {
                     sessionStorage.setItem("tempo-statistics-repertoire", item.id);
                     setStatisticsRepertoireId(item.id);
                   }}>Statistics</Button>
                 )}
-                {item.backend && (
+                {item.backend && item.id !== "__retained_cards__" && (
                   <Button
                     onClick={() =>
                       void (
@@ -779,7 +806,7 @@ export default function RepertoireView({
                       : "Check coverage"}
                   </Button>
                 )}
-                {item.backend && (
+                {item.backend && item.id !== "__retained_cards__" && (
                   <Button
                     onClick={() =>
                       void loadOpportunities(item.id).catch((failure) =>

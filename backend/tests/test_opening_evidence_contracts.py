@@ -356,7 +356,7 @@ def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch)
       'queue_entry_id':None,'started_at':'2026-09-30T12:00:00Z','study_timezone':'UTC',
       'terminal':{'state':'complete','final_sequence':0,'ended_at':'2026-09-30T12:01:00Z'}}
     with pytest.raises(HTTPException) as rejected:
-        review_commands.submit_review(SimpleNamespace(execute=lambda *args:None),
+        review_commands.submit_review(SimpleNamespace(execute=lambda *args:SimpleNamespace(fetchone=lambda:None)),
           {'card_id':'shadow-card','review':{'outcome':'correct','attempt_id':'unbound-repeat',
             'opening_evidence_completion':completion}})
     assert rejected.value.detail['code']=='opening_evidence_conflict'
@@ -426,7 +426,7 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
         if 'INSERT INTO opening_evidence_queue_contexts' in statement:
             assert validation_order == ['validated', 'reviewed', 'completed']
             corrections.append(parameters)
-        return SimpleNamespace(fetchone=lambda:('complete',))
+        return SimpleNamespace(fetchone=lambda:None if 'FROM deleted_cards' in statement else ('complete',))
 
     database = SimpleNamespace(execute=execute, execute_native=execute_native, raw=SimpleNamespace(execute=lambda *args:None))
     def apply_review(*arguments, **options):

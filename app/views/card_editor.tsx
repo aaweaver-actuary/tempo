@@ -27,6 +27,7 @@ import { readJsonResponse, validRecords } from "../lib/validated-data";
 import { movesToSanFormat } from "../utils/chess";
 import { acceptPrefixSplitCommand } from "../lib/prefix-split-command";
 import { reviseCardCommand } from "../lib/card-revision-command";
+import { deleteCardCommand, deletionPreviewSchema, pendingCardDeletion } from "../lib/card-delete-command";
 import type { z } from "zod";
 
 type PrefixSplitPreview = z.infer<typeof prefixSplitResponseSchema>;
@@ -37,6 +38,7 @@ export default function CardEditor({
   pieceSet,
   onClose,
   onSave,
+  onDelete,
   onOpenBuilderForLineRemoval,
 }: {
   practiceCard: PracticeCard;
@@ -44,10 +46,24 @@ export default function CardEditor({
   pieceSet: PieceSet;
   onClose: () => void;
   onSave: (card: PracticeCard) => void;
+  onDelete?: (card: PracticeCard) => Promise<void>;
   onOpenBuilderForLineRemoval?: (session: BuilderSession) => void;
 }) {
   const dialogRef = useDialogRef<HTMLDivElement>(null);
-  useDialogFocus(dialogRef, onClose);
+  const [deletePreview, setDeletePreview] = useState<z.infer<typeof deletionPreviewSchema>>();
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deletionJournal] = useState(() => {
+    try { return { pending: pendingCardDeletion() !== null, error: "" }; }
+    catch (failure) { return { pending: true, error: String(failure) }; }
+  });
+  const [deletePending, setDeletePending] = useState(deletionJournal.pending);
+  const [saveBusy, setSaveBusy] = useState(false);
+  function closeEditor() {
+    if (deleteBusy || saveBusy) return;
+    if (deletePreview && !deletePending) setDeletePreview(undefined);
+    else onClose();
+  }
+  useDialogFocus(dialogRef, closeEditor);
   const editor = usePositionSolutionEditor(card.startingFen, card.moves);
   const { startingFen: currentFenString, setStartingFen: setCurrentFenString,
     moves: solutionSanMovesList, setMoves: setSolutionSanMovesList,
@@ -59,6 +75,40 @@ export default function CardEditor({
   );
   const [prefixSplitPreview, setPrefixSplitPreview] =
     useState<PrefixSplitPreview>();
+
+  async function previewDeletion() {
+    if (!card.backendId || !onDelete || deleteBusy || saveBusy) return;
+    setDeleteBusy(true);
+    setError("");
+    try {
+      const pending = pendingCardDeletion();
+      if (pending) {
+        await deleteCardCommand(card.backendId, card.revision ?? 1);
+        await onDelete(card);
+        onClose();
+        return;
+      }
+      const preview = await readJsonResponse(await fetch(`${API_URL}/api/cards/${encodeURIComponent(card.backendId)}/deletion-preview`), deletionPreviewSchema, "preview card deletion");
+      if (preview.card_id !== card.backendId || preview.revision !== (card.revision ?? 1))
+        throw new Error("This card changed. Close the editor and refresh training before deleting it.");
+      setDeletePreview(preview);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not check this card."); }
+    finally { setDeleteBusy(false); }
+  }
+
+  async function confirmDeletion() {
+    if (!deletePreview || !onDelete || deleteBusy) return;
+    setDeleteBusy(true);
+    setError("");
+    try {
+      await deleteCardCommand(deletePreview.card_id, deletePreview.revision);
+      await onDelete(card);
+      onClose();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not delete this card.");
+      setDeletePending(pendingCardDeletion() !== null);
+    } finally { setDeleteBusy(false); }
+  }
 
   useEffect(() => {
     if (
@@ -133,6 +183,8 @@ export default function CardEditor({
   }
 
   async function save() {
+    if (saveBusy || deleteBusy || deletePending || deletePreview) return;
+    setSaveBusy(true);
     try {
       if (card.editingIntent === "shorten-prefix" && usesLocalApi()) {
         if (!card.backendId || !prefixSplitPreview)
@@ -191,7 +243,7 @@ export default function CardEditor({
           ? error.message
           : "The position or solution contains an illegal move.",
       );
-    }
+    } finally { setSaveBusy(false); }
   }
 
   function openBuilderForLineRemoval() {
@@ -227,9 +279,9 @@ export default function CardEditor({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" onMouseDown={closeEditor}>
       <section
-        className="ui-dialog card-editor"
+        className={`ui-dialog card-editor${deletePreview ? " deletion-dialog" : ""}`}
         ref={dialogRef}
         tabIndex={-1}
         role="dialog"
@@ -237,7 +289,18 @@ export default function CardEditor({
         aria-labelledby="card-editor-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <CloseButton onClose={onClose} />
+        <CloseButton onClose={closeEditor} />
+        {deletePreview ? <>
+          <h2 id="card-editor-title">Permanently delete “{card.title}”?</h2>
+          <p>This removes this card from every repertoire and permanently deletes its training history. Its source lines and other cards remain available.</p>
+          <p>Affected repertoires: {deletePreview.repertoires.map(item => item.name).join(", ") || "Current training deck"}.</p>
+          {deletePending && <p role="status">Deletion is awaiting confirmation. Retry to check its result.</p>}
+          {error && <p className="editor-error" role="alert">{error}</p>}
+          <div className="editor-actions">
+            <Button disabled={deleteBusy} onClick={closeEditor}>{deletePending ? "Close" : "Cancel"}</Button>
+            <Button variant="danger" pending={deleteBusy} onClick={() => void confirmDeletion()}>{deletePending ? "Check deletion" : "Permanently delete card"}</Button>
+          </div>
+        </> : <>
         <div className="editor-heading">
           <div>
             <p className="eyebrow">Card repair</p>
@@ -308,18 +371,21 @@ export default function CardEditor({
                 </label>
               </fieldset>
             )}
-            {error && <p className="editor-error">{error}</p>}
+            {(error || deletionJournal.error) && <p className="editor-error" role="alert">{error || deletionJournal.error}</p>}
             <div className="editor-actions">
               {usesLocalApi() && card.kind === "opening" && (
                 <Button onClick={openBuilderForLineRemoval}>
                   Open Builder to remove line
                 </Button>
               )}
-              <Button onClick={onClose}>Cancel</Button>
+              {usesLocalApi() && card.backendId && onDelete && <Button variant="danger" pending={deleteBusy} disabled={saveBusy} onClick={() => void previewDeletion()}>{deletePending ? "Check deletion" : "Delete card"}</Button>}
+              <Button onClick={closeEditor} disabled={deleteBusy || saveBusy}>Cancel</Button>
               <Button
                 variant="primary"
                 className="primary-button"
                 onClick={save}
+                disabled={deleteBusy || deletePending}
+                pending={saveBusy}
               >
                 {card.editingIntent === "shorten-prefix"
                   ? "Accept split"
@@ -328,6 +394,7 @@ export default function CardEditor({
             </div>
           </div>
         </div>
+        </>}
       </section>
     </div>
   );

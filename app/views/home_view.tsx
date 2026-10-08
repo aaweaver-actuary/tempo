@@ -4,6 +4,7 @@ import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
 import { acceptPrefixSplitCommand, rejectPrefixSplitCommand } from "../lib/prefix-split-command";
+import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
 import {
   readJsonResponse,
   readStoredValue,
@@ -404,6 +405,40 @@ export default function Home() {
     },
     [checkPendingIntegrity],
   );
+  const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
+  const deletionRecoveryStarted = useRef(false);
+  const finishPermanentDeletion = useCallback(async (cardId: string) => {
+    const training = useTrainingStore.getState();
+    const cachedCards = training.practiceCards.slice(training.activeCardIndex);
+    const deletesActiveCard = cachedCards[0]?.backendId === cardId;
+    const remainingCards = cachedCards.filter(item => item.backendId !== cardId);
+    training.hydrateLocalQueue(remainingCards, deletesActiveCard,
+      Math.max(0, training.cardsLeft - Number(remainingCards.length !== cachedCards.length)));
+    if (training.editorCard?.backendId === cardId) training.setEditorCard(null);
+    if (deletesActiveCard) {
+      activeQueueEntry.current = undefined;
+      setSafeBreakCounter(count => count + 1);
+    }
+    invalidateTrainingQueueCache();
+    try { await refreshDatabaseQueue(deletesActiveCard); }
+    catch {
+      useTrainingStore.getState().setServiceError("Card deleted. Training queue refresh failed; retry loading the queue.");
+    }
+  }, [refreshDatabaseQueue]);
+  const recoverCardDeletion = useCallback(async () => {
+    try {
+      const pending = pendingCardDeletion();
+      if (!pending) { setDeletionRecoveryError(""); return; }
+      await deleteCardCommand(pending.cardId, pending.expectedRevision);
+      await finishPermanentDeletion(pending.cardId);
+      setDeletionRecoveryError("");
+    } catch (failure) { setDeletionRecoveryError(failure instanceof Error ? failure.message : "Could not confirm the earlier card deletion."); }
+  }, [finishPermanentDeletion]);
+  useEffect(() => {
+    if (!databaseQueue || offlineQueue || deletionRecoveryStarted.current) return;
+    deletionRecoveryStarted.current = true;
+    void recoverCardDeletion();
+  }, [databaseQueue, offlineQueue, recoverCardDeletion]);
   useEffect(() => {
     if (!databaseQueue || offlineQueue || burialRecoveryStarted.current) return;
     burialRecoveryStarted.current = true;
@@ -1559,6 +1594,7 @@ export default function Home() {
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
         {comparisonOpenError && currentView === "train" && <div className="ui-notice error" role="alert">{comparisonOpenError}</div>}
+        {deletionRecoveryError && <div className="ui-notice error" role="alert">{deletionRecoveryError} <Button onClick={() => void recoverCardDeletion()}>Check card deletion</Button></div>}
         {currentView === "train" && (
           <>
             <OfflineReviewConflicts />
@@ -1953,6 +1989,10 @@ export default function Home() {
                   }),
                 );
             }
+          }}
+          onDelete={async deleted => {
+            if (!deleted.backendId) throw new Error("The card has no database identity. Refresh training.");
+            await finishPermanentDeletion(deleted.backendId);
           }}
         />
       )}

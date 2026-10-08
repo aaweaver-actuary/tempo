@@ -3449,6 +3449,36 @@ button {
   background: #fff;
   cursor: pointer;
 }
+.deletion-dialog {
+  position: relative;
+  width: min(600px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  box-shadow: 0 28px 80px rgba(20, 24, 19, 0.3);
+}
+.deletion-dialog > h2 {
+  margin: 0;
+  padding-right: 32px;
+  font: 500 24px/1.25 Georgia, serif;
+  overflow-wrap: anywhere;
+}
+.deletion-dialog p { margin: 0; line-height: 1.5; }
+.deletion-dialog fieldset { padding: 0; border: 0; min-width: 0; }
+.deletion-dialog legend { margin-bottom: 10px; font-weight: 700; }
+.deletion-dialog label { display: flex; align-items: center; gap: 10px; min-height: 36px; cursor: pointer; }
+.deletion-dialog input[type="radio"] { width: 16px; height: 16px; min-height: 0; margin: 0; flex-shrink: 0; accent-color: var(--green-dark); }
+.deletion-dialog fieldset p { margin: 0 0 12px 26px; color: var(--muted); font-size: 14px; }
+.deletion-dialog .editor-actions { margin-top: 8px; flex-wrap: wrap; }
+.deletion-dialog [role="alert"] { color: var(--rust); }
+.deletion-dialog .ui-button[data-variant="danger"],
+.card-editor .ui-button[data-variant="danger"] {
+  border-color: var(--rust);
+  background: var(--rust);
+  color: #fff;
+}
+.deletion-dialog .ui-button[data-variant="danger"]:hover:not(:disabled),
+.card-editor .ui-button[data-variant="danger"]:hover:not(:disabled) { background: #854432; }
 .outcome-flash {
   position: absolute;
   z-index: 6;

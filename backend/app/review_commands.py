@@ -17,6 +17,12 @@ def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict
 
     request = ReviewRequest.model_validate(payload["review"])
     card_id = str(payload["card_id"])
+    if hasattr(database, "execute_native"):
+        database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{card_id}",))
+    from .card_deletion import is_card_deleted
+    from .review_conflicts import ReviewConflict
+    if is_card_deleted(database, card_id):
+        raise ReviewConflict("card_deleted", "This card was permanently deleted. Discard this attempt and refresh training.")
     database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (card_id,))
     lock_queue_date_for_position(database, date.today().isoformat())
     completion = request.opening_evidence_completion

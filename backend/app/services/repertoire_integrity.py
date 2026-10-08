@@ -19,7 +19,8 @@ from .database_executor import submit_background_write
 from .cards import card_id
 from .repertoire_comparison import canonical_fen
 
-SYSTEM_REPERTOIRES = {"__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__"}
+from ..card_deletion import SYSTEM_REPERTOIRE_IDS
+SYSTEM_REPERTOIRES = set(SYSTEM_REPERTOIRE_IDS)
 _LOGGER = logging.getLogger("tempo.background")
 
 
