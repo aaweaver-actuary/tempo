@@ -606,6 +606,22 @@ async function verifyForegroundAndStudyDurability() {
     afterRestartQueue.cards.map(card => card.queue_entry_id), "Burial replay cannot bury the next card");
   console.log("PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
+  // These fixtures have completed their restart/replay proof. Independent Maia
+  // results can keep arriving after Explorer fails; release their owned work
+  // before the next scenario measures compatibility retention.
+  const completedFixtureIds = [importedStudy.repertoire_id, importedBackground.repertoire_id];
+  for (const repertoireId of completedFixtureIds) {
+    await postCommand(`repertoires/${repertoireId}`, {}, { method: "DELETE" });
+  }
+  const afterFixtureCleanup = await get("migration/snapshot");
+  assert(!afterFixtureCleanup.tables.repertoires.some(row => completedFixtureIds.includes(row.id)),
+    "Completed study fixtures are removed before compatibility retention");
+  const remainingFixtureTasks = readScopedPostgresRows(`SELECT COALESCE(json_agg(row_to_json(task)),'[]'::json)
+    FROM (SELECT kind,state FROM background_tasks WHERE state IN ('queued','leased','retrying')
+      AND (deduplication_key IN ('${completedFixtureIds.join("','")}')
+        OR payload_json::jsonb->>'repertoire_id' IN ('${completedFixtureIds.join("','")}'))) task`);
+  assert.deepEqual(remainingFixtureTasks, [], "Completed study fixtures leave no active background tasks");
+  console.log("PASS test_postgres_completed_study_fixtures_release_background_work_before_retention");
   activeStudyRepertoireId = null;
 }
 
@@ -856,6 +872,8 @@ const actions = {
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/scripts/check_postgres_daily_study_dispatch.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -990,6 +1008,7 @@ const actions = {
       const browserArguments = buildPostgresPlaywrightArguments(options);
       run("npx", browserArguments, { env: { ...environment,
         TEMPO_DOCKER_URL: origin,
+        TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
   },

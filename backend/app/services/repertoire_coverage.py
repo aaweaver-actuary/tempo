@@ -18,7 +18,7 @@ from ..database import connection
 from .. import postgres_store
 from .redis_admission_gate import client as redis_client
 from .repertoire_comparison import canonical_fen
-from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity
+from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity, latest_coverage_attempt_predicate, latest_coverage_run_id
 from .canonical_prefix import read_prefix, scope_line
 from .activity_gate import activity_gate
 
@@ -350,7 +350,7 @@ def claim_coverage_node() -> dict | None:
         node = database.execute(
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
-               WHERE n.explorer_status='queued' AND r.status IN ('queued','running') AND {coverage_scope_predicate(database)} AND {claimable('coverage', 'n.run_id')}
+               WHERE n.explorer_status='queued' AND r.status IN ('queued','running','failed') AND {coverage_scope_predicate(database)} AND {latest_coverage_attempt_predicate(database)} AND {claimable('coverage', 'n.run_id')}
                ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
         if not node:
@@ -531,7 +531,7 @@ def execute_coverage_node(node: dict) -> None:
         )
         ratings = str(rating_bucket)
         with connection(background=True) as database:
-            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
                 return
             payload, cache_key = _cached_explorer_payload(
                 database, node["fen"], speeds, ratings
@@ -555,7 +555,7 @@ def execute_coverage_node(node: dict) -> None:
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
             database.execute("BEGIN IMMEDIATE")
-            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
                 return
             database.execute(
                 """INSERT INTO explorer_position_cache(
@@ -622,12 +622,11 @@ def execute_coverage_node(node: dict) -> None:
                    FROM repertoire_coverage_nodes WHERE run_id=?""",
                 (node["run_id"],),
             ).fetchone()
+            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
         from .introduction_priorities import enqueue_priority_refresh
-        from .repertoire_opportunities import enqueue_opportunity_refresh
 
         enqueue_priority_refresh(node["repertoire_id"], background=True)
-        if not remaining:
-            enqueue_opportunity_refresh(node["repertoire_id"], background=True)
         emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                         progress_counts["total"] * 2)
@@ -638,7 +637,7 @@ def execute_coverage_node(node: dict) -> None:
         set_explorer_session_token(None)
         with connection(background=True) as database:
             database.execute("BEGIN IMMEDIATE")
-            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
                 return
             database.execute(
                 "UPDATE repertoire_coverage_nodes SET explorer_status='queued',last_error=?,updated_at=? WHERE id=?",
@@ -648,10 +647,12 @@ def execute_coverage_node(node: dict) -> None:
                 "UPDATE repertoire_coverage_runs SET status='queued',last_error=?,updated_at=? WHERE id=?",
                 (str(error), _now(), node["run_id"]),
             )
+            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     except Exception as error:
         with connection(background=True) as database:
             database.execute("BEGIN IMMEDIATE")
-            if not coverage_run_is_current(database, node, node["repertoire_id"]):
+            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
                 return
             database.execute(
                 "UPDATE repertoire_coverage_nodes SET explorer_status='failed',last_error=?,updated_at=? WHERE id=?",
@@ -661,6 +662,8 @@ def execute_coverage_node(node: dict) -> None:
                 "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? WHERE id=?",
                 (str(error), _now(), node["run_id"]),
             )
+            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
 
 
 def coverage_summary(repertoire_id: str) -> dict:
@@ -769,8 +772,9 @@ def claim_maia_coverage_node() -> dict | None:
         node = database.execute(
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
-               WHERE n.explorer_status='complete' AND n.maia_status='queued'
-               AND r.status IN ('queued','running','complete') AND {coverage_scope_predicate(database)}
+               WHERE n.maia_status='queued'
+               AND r.status IN ('queued','running','complete','failed') AND {coverage_scope_predicate(database)}
+               AND {latest_coverage_attempt_predicate(database)}
                AND {claimable('coverage', 'n.run_id')}
                ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
@@ -805,7 +809,7 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
                JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE n.id=?""",
             (node_id,),
         ).fetchone()
-        if not node or node["maia_status"] != "leased" or node["lease_id"] != lease_id or not coverage_run_is_current(database, node, node["repertoire_id"]):
+        if not node or node["maia_status"] != "leased" or node["lease_id"] != lease_id or not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
             raise RuntimeError("Coverage MAIA lease is no longer active")
         repertoire_id = node["repertoire_id"]
         covered_replies = set(json.loads(node["covered_replies_json"]))
@@ -836,13 +840,12 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
                SUM(CASE WHEN maia_status='complete' THEN 1 ELSE 0 END) AS maia_done
                FROM repertoire_coverage_nodes WHERE run_id=?""", (node["run_id"],)
         ).fetchone()
+        from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                     (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                     progress_counts["total"] * 2)
     if repertoire_id:
         from .introduction_priorities import enqueue_priority_refresh
-        from .repertoire_opportunities import enqueue_opportunity_refresh
 
         enqueue_priority_refresh(repertoire_id, background=True)
-        if (progress_counts["maia_done"] or 0) == progress_counts["total"]:
-            enqueue_opportunity_refresh(repertoire_id, background=True)

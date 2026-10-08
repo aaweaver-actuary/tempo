@@ -423,9 +423,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
     request_path_parts = request.url.path.strip("/").split("/")
     prefix_evaluation_read = (
         len(request_path_parts) == 5 and request_path_parts[:2] == ["api", "repertoires"]
-        and request_path_parts[3] == "prefix-evaluation"
-        and ((request.method == "GET" and request_path_parts[4] == "source")
-             or (request.method == "POST" and request_path_parts[4] == "evaluate"))
+        and ((request_path_parts[3] == "prefix-evaluation"
+              and ((request.method == "GET" and request_path_parts[4] == "source")
+                   or (request.method == "POST" and request_path_parts[4] == "evaluate")))
+             or (request.method == "POST" and request_path_parts[3:] == ["prefix-transition", "plan"]))
     )
     read_only_post = (
         request.method == "POST"
@@ -716,8 +717,13 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
             )
+    prefix_diagnostics_read = (
+        request.method == "GET" and len(request_path_parts) in {4, 5}
+        and request_path_parts[:2] == ["api", "repertoires"]
+        and request_path_parts[3] == "prefix-diagnostics"
+    )
     is_background = (
-        prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
         # Its receipt read uses background admission too; a foreground request
         # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
@@ -1248,6 +1254,20 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
     return next_position
 
 
+_OPENING_UNLOCK_ELIGIBILITY_SQL = """content_type='opening' AND state='locked' AND archived=0
+    AND EXISTS(
+        SELECT 1 FROM opening_graph_steps step
+        JOIN opening_graph_publications publication
+          ON publication.repertoire_id=step.repertoire_id
+         AND publication.generation=step.generation
+        WHERE step.card_id=cards.id
+          AND (step.parent_card_id IS NULL OR EXISTS(
+              SELECT 1 FROM cards parent
+              WHERE parent.id=step.parent_card_id AND parent.state='mature'
+          ))
+    )"""
+
+
 def _unlock_eligible_opening_cards(
     db, day, *, after_card_id: str | None = None, batch_size: int | None = None,
 ) -> str | None:
@@ -1257,27 +1277,16 @@ def _unlock_eligible_opening_cards(
         if batch_size < 1:
             raise ValueError("Queue unlock batch size must be positive")
         candidates = db.execute(
-            """SELECT id FROM cards WHERE content_type='opening' AND state='locked'
-               AND archived=0 AND id>? ORDER BY id LIMIT ?""",
+            f"SELECT id FROM cards WHERE {_OPENING_UNLOCK_ELIGIBILITY_SQL} "
+            "AND id>? ORDER BY id LIMIT ?",
             (after_card_id or "", batch_size + 1),
         ).fetchall()
         selected_card_ids = [row[0] for row in candidates[:batch_size]]
         has_more_candidates = len(candidates) > batch_size
         if not selected_card_ids:
             return None
-    update_statement = """UPDATE cards SET state='new'
-           WHERE content_type='opening' AND state='locked' AND archived=0
-             AND EXISTS(
-                 SELECT 1 FROM opening_graph_steps step
-                 JOIN opening_graph_publications publication
-                   ON publication.repertoire_id=step.repertoire_id
-                  AND publication.generation=step.generation
-                 WHERE step.card_id=cards.id
-                   AND (step.parent_card_id IS NULL OR EXISTS(
-                       SELECT 1 FROM cards parent
-                       WHERE parent.id=step.parent_card_id AND parent.state='mature'
-                   ))
-             )"""
+    # Recheck the same published eligibility when applying the bounded update.
+    update_statement = f"UPDATE cards SET state='new' WHERE {_OPENING_UNLOCK_ELIGIBILITY_SQL}"
     if selected_card_ids:
         update_statement += " AND cards.id IN (" + ",".join("?" for _ in selected_card_ids) + ")"
     db.execute(update_statement, selected_card_ids)
@@ -4168,6 +4177,7 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str,
 
 @app.get("/api/repertoire-coverage/maia/available")
 def coverage_maia_available():
+    from .services.canonical_scope_freshness import coverage_scope_predicate, latest_coverage_attempt_predicate
     if not postgres_store.configured():
         return {"available": True}
     read_section = background_read_connection if activity_gate.in_background else read_connection
@@ -4177,9 +4187,11 @@ def coverage_maia_available():
             "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
             "LEFT JOIN background_activity control ON control.source='coverage' "
             "AND control.work_id=n.run_id "
-            "WHERE n.explorer_status='complete' AND r.status IN ('queued','running','complete') "
+            "WHERE r.status IN ('queued','running','complete','failed') "
             "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
-            "AND COALESCE(control.paused,0)=0)",
+            "AND COALESCE(control.paused,0)=0 "
+            f"AND {coverage_scope_predicate(database, native=True)} "
+            f"AND {latest_coverage_attempt_predicate(database, native=True)})",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
     return {"available": bool(row[0])}
@@ -4282,7 +4294,7 @@ def coverage_maia_failure(request: dict,
         raise HTTPException(422, "Invalid coverage failure report")
     with connection(background=activity_gate.in_background) as database:
         node = database.execute(
-            "SELECT run_id FROM repertoire_coverage_nodes WHERE id=? AND maia_status='leased' AND lease_id=?",
+            "SELECT run_id,repertoire_id FROM repertoire_coverage_nodes WHERE id=? AND maia_status='leased' AND lease_id=?",
             (node_id, lease_id),
         ).fetchone()
         if not node:
@@ -4298,6 +4310,8 @@ def coverage_maia_failure(request: dict,
             "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? WHERE id=?",
             (message, now, node["run_id"]),
         )
+        from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+        enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
     return {"status": "failed"}
 
 
@@ -6449,7 +6463,12 @@ from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
 from .prefix_evaluation_api import router as prefix_evaluation_router
 app.include_router(prefix_evaluation_router)
+from .prefix_transition_api import router as prefix_transition_router
+app.include_router(prefix_transition_router)
 from .opening_evidence_api import router as opening_evidence_router
 app.include_router(opening_evidence_router)
 from .canonical_prefix_api import router as canonical_prefix_router
 app.include_router(canonical_prefix_router)
+
+from .prefix_diagnostics_api import router as prefix_diagnostics_router
+app.include_router(prefix_diagnostics_router)
