@@ -232,32 +232,16 @@ def recover_operations() -> bool:
     return True
 
 
-<<<<<<< HEAD
 @celery_app.task(name="app.tasks.poll_background_tasks", bind=True)
 def poll_background_tasks(self) -> bool:
     """Claim and run one slice at worker capacity, then yield to the broker."""
-=======
-@celery_app.task(name="app.tasks.poll_background_tasks")
-def poll_background_tasks() -> bool:
-    """Admit at most one durable slice per poll; failed dispatch reclaims later."""
->>>>>>> main
 
     claimed_task = claim_task(allowed_kinds=_SUPPORTED_BACKGROUND_KINDS)
     if claimed_task is None:
         return False
-<<<<<<< HEAD
     return _execute_claimed_background_slice(
         claimed_task, (self.request.headers or {}).get("submitted_at"),
     )
-=======
-    celery_app.send_task(
-        "app.tasks.execute_background_slice",
-        args=[claimed_task],
-        queue="background",
-        headers={"submitted_at": time.time()},
-    )
-    return True
->>>>>>> main
 
 
 @celery_app.task(name="app.tasks.recover_active_coverage")
@@ -268,7 +252,6 @@ def recover_active_coverage() -> bool:
 
 @celery_app.task(name="app.tasks.execute_background_slice", bind=True)
 def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
-<<<<<<< HEAD
     """Process fenced legacy deliveries already queued before execution-time claims."""
     return _execute_claimed_background_slice(
         claimed_task, (self.request.headers or {}).get("submitted_at"),
@@ -278,8 +261,6 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
 def _execute_claimed_background_slice(
     claimed_task: dict[str, Any], submitted_at: float | None,
 ) -> bool:
-=======
->>>>>>> main
     background_handlers = {
         "daily_queue": execute_postgres_queue_refresh_slice,
         "defensive_rubric_audit": execute_defense_rubric_audit_slice,
@@ -316,11 +297,7 @@ def _execute_claimed_background_slice(
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
         raise ValueError(f"Unported background handler: {claimed_task['kind']}")
-<<<<<<< HEAD
     with measure_handler(claimed_task["kind"], submitted_at), \
-=======
-    with measure_handler(claimed_task["kind"], (self.request.headers or {}).get("submitted_at")), \
->>>>>>> main
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
             if defer_paused_defensive_task(claimed_task):

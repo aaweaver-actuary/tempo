@@ -606,8 +606,6 @@ async function verifyForegroundAndStudyDurability() {
     afterRestartQueue.cards.map(card => card.queue_entry_id), "Burial replay cannot bury the next card");
   console.log("PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
-<<<<<<< HEAD
-=======
   // These fixtures have completed their restart/replay proof. Independent Maia
   // results can keep arriving after Explorer fails; release their owned work
   // before the next scenario measures compatibility retention.
@@ -624,7 +622,6 @@ async function verifyForegroundAndStudyDurability() {
         OR payload_json::jsonb->>'repertoire_id' IN ('${completedFixtureIds.join("','")}'))) task`);
   assert.deepEqual(remainingFixtureTasks, [], "Completed study fixtures leave no active background tasks");
   console.log("PASS test_postgres_completed_study_fixtures_release_background_work_before_retention");
->>>>>>> main
   activeStudyRepertoireId = null;
 }
 
@@ -875,11 +872,8 @@ const actions = {
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
-<<<<<<< HEAD
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_daily_study_dispatch.py"]);
-=======
->>>>>>> main
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -1014,10 +1008,7 @@ const actions = {
       const browserArguments = buildPostgresPlaywrightArguments(options);
       run("npx", browserArguments, { env: { ...environment,
         TEMPO_DOCKER_URL: origin,
-<<<<<<< HEAD
         TEMPO_TEST_COMPOSE_PROJECT: project,
-=======
->>>>>>> main
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
   },

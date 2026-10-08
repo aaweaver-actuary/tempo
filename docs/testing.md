@@ -1,5 +1,11 @@
 # Test scopes and exact full coverage
 
+`npm run check:conflicts` checks tracked text files for unresolved merge-conflict
+artifacts without installing dependencies. It also runs before local gate execution
+and before dependencies and browser collection in the CI planning job. Separators,
+quoted marker strings, binary files, and symlinks are not treated as conflicts;
+deliberate complete examples require an exact path and block digest exemption.
+
 Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the complete local gate; `npm test` and `npm run test:full` use the same runner. CI owns required final-candidate verification by default; run a local full gate only for the reasons in `AGENTS.md`. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
 
 Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.
@@ -130,25 +136,6 @@ complete verification. Selection changes follow in a separate commit.
 The CI workflow preserves local `make full` and uses separate frontend,
 backend/engine, Rust/WASM/build, PostgreSQL durability, browser, and pinned
 visual/performance jobs. Every PR runs all units and build checks, all
-<<<<<<< HEAD
-PostgreSQL durability scenarios, and seven critical browser cases covering
-review/reload, offline replay, fail-closed reads, Study grading, foreground
-contention and held drags. Each PostgreSQL/browser invocation owns fresh
-ports, credentials, volumes and containers and remains serial within its
-stack. GitHub's **Re-run failed jobs** repeats a failed layer and its aggregate,
-without repeating successful unrelated layers.
-
-`scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
-Mapped leaf edits add complete browser families; shared board/state/contracts,
-scheduling, migrations, fixtures, runner and dependency changes, unknown paths,
-or missing comparison history select every browser case and pinned checks.
-Both names of renamed/copied files and deleted paths are classified. All TSX
-rendering edits and rendering assets select pinned visual/performance.
-Documentation under `docs/` and the root README retain required core,
-durability and critical checks. Adding an unclassified browser spec fails
-planning. PR #50 is merged into main; its opening-segmentation spec belongs to
-the repertoire family and participates in current collection and selection.
-=======
 PostgreSQL durability scenarios, and the global browser smoke below. Each
 PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
 containers and remains serial within its stack. GitHub's **Re-run failed jobs**
@@ -225,7 +212,6 @@ The [October 7 browser-selection validation](browser-selection-validation.md)
 records comparable counts/timings, tested revisions, isolation repairs and
 disposable-resource cleanup evidence.
 
->>>>>>> main
 
 The plan job actually collects all regular and pinned cases. Its immutable
 plan and collection report record IDs, projects, titles, selection reasons,

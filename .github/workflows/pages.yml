@@ -45,6 +45,8 @@ jobs:
         with:
           node-version: '22.23.3'
           cache: npm
+      - name: Reject committed merge-conflict artifacts
+        run: node scripts/check-merge-conflicts.mjs
       - run: npm ci
       - name: Collect complete inventory and select required work
         id: inventory

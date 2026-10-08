@@ -20,10 +20,7 @@ from .game_findings import refresh_game_findings
 from .real_game_feedback import apply_real_game_misses
 from .gameplay_events import refresh_gameplay_events
 from .game_sync import sync_providers
-<<<<<<< HEAD
-=======
 from .game_sync_serialization import serialize_job
->>>>>>> main
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
 from .repertoire_coverage import claim_coverage_node, execute_coverage_node
@@ -646,22 +643,3 @@ def _requeue_interrupted_background_work() -> None:
 
 
 coordinator = GameSyncCoordinator()
-<<<<<<< HEAD
-
-
-def serialize_job(row: dict | None) -> dict | None:
-    if not row:
-        return None
-    return {
-        "id": row["id"],
-        "status": row["status"],
-        "created_at": row["created_at"],
-        "started_at": row["started_at"],
-        "completed_at": row["completed_at"],
-        "updated_at": row["updated_at"],
-        "error": row["error"],
-        "result": (json.loads(row["result_json"])
-                   if row["status"] == "complete" and row["result_json"] else None),
-    }
-=======
->>>>>>> main
