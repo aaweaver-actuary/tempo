@@ -159,7 +159,7 @@ def lock_and_revalidate(database, prepared):
     for table, identity in (('daily_queue', 'id'), ('opening_evidence_attempts', 'attempt_id'), ('study_attempts', 'id')):
         database.execute_native(f'SELECT {identity} FROM {table} WHERE card_id=ANY(%s) ORDER BY {identity} FOR UPDATE NOWAIT', (list(snapshot.lookup_card_ids),)).fetchall()
     for captured in prepared.reads:
-        if snapshot_rows(database, captured.query, captured.parameters) != captured.rows:
+        if snapshot_rows(database, captured.query, captured.parameters, uses_sha256_evidence=captured.uses_sha256_evidence) != captured.rows:
             _LOGGER.warning('prefix_transition_stale_input query=%s', captured.query[:160])
             raise conflict('stale_plan', 'Source, cards, schedules, memberships or attempts changed before the write. Approve a fresh plan.')
     if prepared.plan.study_day != date.today().isoformat():

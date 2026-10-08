@@ -168,8 +168,14 @@ operation; it does not reject a valid plan or persist partial acceptance. NOWAIT
 also closes lock-order inversions with a producer that locked a domain row before
 reaching its shared barrier. Captured raw PostgreSQL JSON evidence must match
 under these locks, without Python decoding or chess classification in the write
-transaction. Revalidation sorts raw JSON using C collation to match preparation’s
-Python string ordering, including multi-digit identities and Unicode. Existing finite snapshot limits remain unchanged.
+transaction. Bulk evidence uses PostgreSQL SHA256 of each exact raw UTF8 JSON row,
+transferring only 64 hex bytes alongside its unchanged native planner values.
+Revalidation computes the same bounded SQL digest; this avoids transferring a
+second copy of potentially 4 MiB of input during the 250ms preparation read.
+Scalar and staged evidence retain raw JSON. C collation matches preparation's
+Python ordering for either representation, including multi-digit identities and
+Unicode. Approved plan fingerprints and finite snapshot/transaction limits remain
+unchanged; this evidence format is ephemeral preparation data, not a persisted API.
 
 Acceptance reserves a new unpublished graph generation and repertoire/card
 identity fences, including cards that were absent at approval. Database triggers

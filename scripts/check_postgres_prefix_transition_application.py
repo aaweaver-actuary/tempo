@@ -211,13 +211,17 @@ def test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budg
 
 
 def test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows():
+    import hashlib
     from app.snapshot_reads import RecordingReader, snapshot_rows
     reads = []
     query = "SELECT ordinal AS id,CASE WHEN ordinal %% 2 = 0 THEN 'éclair' ELSE 'zebra' END AS name FROM generate_series(1,128) ordinal"
     with postgres_store.connection(read_only=True) as database:
         rows = RecordingReader(database, reads).execute_native(query).fetchall()
         assert len(rows) == 128
-        assert snapshot_rows(database, query, ()) == reads[0].rows
+        raw = snapshot_rows(database, query, ())
+        assert reads[0].uses_sha256_evidence
+        assert snapshot_rows(database, query, (), uses_sha256_evidence=True) == reads[0].rows
+    assert tuple(sorted(hashlib.sha256(row.encode('utf8')).hexdigest() for row in raw)) == reads[0].rows
     print('PASS test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows')
 
 
@@ -228,6 +232,25 @@ def advisory_lock_measurement(database):
             'relation_identities': relation_identities}
 
 
+def test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer():
+    import hashlib
+    from app.snapshot_reads import RecordingReader, snapshot_rows
+    query = "SELECT ordinal,repeat('r',524288) provenance,TIMESTAMPTZ '2026-10-08T12:00:00Z' observed_at FROM generate_series(1,2) ordinal"
+    reads = []
+    with postgres_store.connection(read_only=True) as database:
+        native = database.execute_native(query).fetchall()
+    with postgres_store.connection(read_only=True) as database:
+        recorded = RecordingReader(database, reads).execute_native(query).fetchall()
+    with postgres_store.connection(read_only=True) as database:
+        raw = snapshot_rows(database, query, ())
+        replayed = snapshot_rows(database, query, (), uses_sha256_evidence=True)
+    assert [dict(row) for row in recorded] == [dict(row) for row in native]
+    assert isinstance(recorded[0]['observed_at'], datetime)
+    assert all(len(evidence) == 64 for evidence in reads[0].rows)
+    assert tuple(sorted(hashlib.sha256(row.encode('utf8')).hexdigest() for row in raw)) == reads[0].rows == replayed
+    print('PASS test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer')
+
+
 def test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling():
     import random
     from app.services.cards import card_id
@@ -236,6 +259,7 @@ def test_issue80_real_application_acceptance_and_activation_have_constant_lock_s
     measurements = []
     largest_snapshot_bytes = None
     for requested_count in (128, 1024, None):
+        print(json.dumps({'application_scaling_fixture': requested_count or 'exact_byte_ceiling'}), flush=True)
         shared_repertoire_ids = []
         with fixture('application-scaling-' + str(requested_count), extra_repertoire_ids=shared_repertoire_ids) as (rep, other, lines, steps):
             # Authored memberships outside the generated graph are legitimate,
@@ -316,6 +340,7 @@ def test_issue80_real_application_acceptance_and_activation_have_constant_lock_s
                                    shared_repertoires=len(captured.repertoire_ids), historical_days=64,
                                    transition_bytes=raw_transition_bytes(captured), lock_seconds=time.perf_counter()-started)
                 measurements.append(measurement)
+                print(json.dumps({'application_lock_measurement': measurement}), flush=True)
                 assert measurement['distinct_identities'] == 2, measurement
             def measured_activation(database, captured, current):
                 original_activate(database, captured, current)
@@ -973,6 +998,7 @@ def main():
     if '--lock-scaling' in sys.argv:
         with isolate_unrelated_publication_tasks():
             test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows()
+            test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer()
             test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling()
             test_issue80_queue_and_row_contention_yield_without_losing_operation_identity()
             test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention()
@@ -981,6 +1007,7 @@ def main():
     with isolate_unrelated_publication_tasks():
         test_issue80_application_rehearsal_preserves_unrelated_publication_tasks()
         test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows()
+        test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer()
         test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget()
         test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling()
         test_issue80_queue_and_row_contention_yield_without_losing_operation_identity()
