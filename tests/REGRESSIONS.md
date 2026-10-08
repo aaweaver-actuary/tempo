@@ -2559,3 +2559,7 @@ Stalemate Swindles (October 5, 2026):
 
 - `test_stalemate_archive_external_cancellation_reaps_owned_children` covers Ctrl-C and TERM while real archive pipes are blocked, with ordinary and TERM-resistant children. The pre-fix TERM cases failed by leaving children and inherited pipes alive. Each repaired case proves signal-appropriate exit, both owned PIDs absent, no certified final pair and no staging files.
 - `test_stalemate_cli_cancellation_restores_signal_handlers_and_defers_repeated_signals` protects one cleanup unwind and restoration after cancellation and successful commands. CLI signal handling stays outside application/runtime behavior. Timeout diagnostics clean up exact fixture-owned processes without process-group signals.
+
+## PR #91 PostgreSQL reviewed-history preservation — October 8, 2026
+
+- `test_postgres_stalemate_import_reimport_preserves_existing_review_history` runs in the regular disposable PostgreSQL study-durability stage after the self-contained checked-in corpus proof. It explicitly enrolls and reviews a separate synthetic Study through production foreground commands, requires nonempty review/Study-attempt/receipt/scheduling snapshots, and verifies every existing reviewed card and history row is unchanged after real-corpus import, reversed-row reimport, and changed-content rejection. The 300 corpus exercises remain draft and unenrolled; only the independent disposable fixture is enrolled.

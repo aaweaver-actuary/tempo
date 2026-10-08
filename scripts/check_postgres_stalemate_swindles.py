@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import uuid
 
 import chess
 import chess.pgn
@@ -18,6 +19,11 @@ from app.services.study_portable import import_bundle
 
 
 def test_postgres_stalemate_bundle_import_reimport_preserves_draft_content():
+    prove_bundle_import(synthetic_bundle("synthetic-postgres-stalemate-regression-v1"))
+    print("test_postgres_stalemate_bundle_import_reimport_preserves_draft_content passed")
+
+
+def synthetic_bundle(corpus_id):
     games = []
     for fen, moves in [("8/4p3/8/3k4/7R/1q6/8/K7 w - - 0 1", ("h4d4", "d5d4")),
                        ("k7/8/1Q6/7r/3K4/8/4P3/8 b - - 0 1", ("h5d5", "d4d5"))]:
@@ -29,9 +35,7 @@ def test_postgres_stalemate_bundle_import_reimport_preserves_draft_content():
         games.append(str(game))
     candidates = list(mine_candidates(io.StringIO("\n\n".join(games)), "2026-09", MiningFilters(), new_counts(), strict=True))
     assert len(candidates) == 2
-    bundle = build_bundle(candidates, "synthetic-postgres-stalemate-regression-v1")
-    prove_bundle_import(bundle)
-    print("test_postgres_stalemate_bundle_import_reimport_preserves_draft_content passed")
+    return build_bundle(candidates, corpus_id)
 
 
 @contextmanager
@@ -56,7 +60,20 @@ def disposable_postgres_configuration():
                     os.environ[variable] = previous_value
 
 
-def prove_bundle_import(bundle):
+def review_history_snapshot(database):
+    histories = {
+        table: sorted(json.dumps(dict(row), sort_keys=True, default=str)
+                      for row in database.execute(f"SELECT * FROM {table}"))
+        for table in ("reviews", "study_attempts", "review_attempt_receipts", "review_schedule_snapshots")
+    }
+    # Background publication may update unrelated cards; scheduling belongs to
+    # the foreground and must preserve every already-reviewed card exactly.
+    histories["reviewed_cards"] = sorted(json.dumps(dict(row), sort_keys=True, default=str)
+        for row in database.execute("SELECT * FROM cards WHERE id IN (SELECT card_id FROM reviews)"))
+    return histories
+
+
+def prove_bundle_import(bundle, preserved_review_history=None):
     with disposable_postgres_configuration():
         expected_exercise_count = len(bundle["tables"]["study_exercises"])
         study_id = bundle["tables"]["studies"][0]["id"]
@@ -66,12 +83,16 @@ def prove_bundle_import(bundle):
                 assert not database.execute("SELECT 1 FROM studies WHERE id=?", (study_id,)).fetchone()
                 assert not import_bundle(database, bundle)["idempotent"]
                 owned_study = True
+                if preserved_review_history is not None:
+                    assert review_history_snapshot(database) == preserved_review_history, "Import changed review history"
             postgres_store.close_pools()
             with postgres_store.connection() as database:
                 reordered = deepcopy(bundle)
                 for table_rows in reordered["tables"].values():
                     table_rows.reverse()
                 assert import_bundle(database, reordered)["idempotent"]
+                if preserved_review_history is not None:
+                    assert review_history_snapshot(database) == preserved_review_history, "Reimport changed review history"
                 exercises = list(database.execute("SELECT * FROM study_exercises WHERE study_id=?", (study_id,)))
                 assert len(exercises) == expected_exercise_count and all(row["status"] == "draft" for row in exercises)
                 assert database.execute("SELECT COUNT(*) FROM cards WHERE study_exercise_id IN (SELECT id FROM study_exercises WHERE study_id=?)", (study_id,)).fetchone()[0] == 0
@@ -90,6 +111,8 @@ def prove_bundle_import(bundle):
                     assert "different content" in str(error)
                 else:
                     raise AssertionError("Changed stable Study content was silently accepted")
+                if preserved_review_history is not None:
+                    assert review_history_snapshot(database) == preserved_review_history, "Rejected import changed review history"
         finally:
             if owned_study:
                 with postgres_store.connection() as database:
@@ -109,7 +132,41 @@ def test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_c
         print(f"test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content passed: {corpus_path.name}")
 
 
+def test_postgres_stalemate_import_reimport_preserves_existing_review_history():
+    from app import study_commands, study_attempt_commands  # Register the real foreground handlers.
+    from app.command_gateway import execute_command
+
+    with disposable_postgres_configuration():
+        reviewed_fixture = synthetic_bundle("synthetic-postgres-stalemate-reviewed-history-v1")
+        fixture_study_id = reviewed_fixture["tables"]["studies"][0]["id"]
+        fixture_exercise_id = reviewed_fixture["tables"]["study_exercises"][0]["id"]
+        with postgres_store.connection() as database:
+            assert not import_bundle(database, reviewed_fixture)["idempotent"]
+        payload = {"study_id": fixture_study_id, "exercise_id": fixture_exercise_id}
+        enrolled = execute_command(str(uuid.uuid4()), "studies.exercises.enroll", payload)
+        queued = execute_command(str(uuid.uuid4()), "studies.exercises.train_now", payload)
+        with postgres_store.connection() as database:
+            cycle = database.execute("SELECT cycle FROM daily_queue WHERE id=?", (queued["queue_entry_id"],)).fetchone()[0]
+        reference = json.loads(reviewed_fixture["tables"]["study_exercise_revisions"][0]["specification_json"])
+        result = execute_command(str(uuid.uuid4()), "studies.attempts.submit", {**payload, "attempt": {
+            "attempt_id": str(uuid.uuid4()), "revision": 1, "context": "review",
+            "card_id": enrolled["card_id"], "queue_entry_id": queued["queue_entry_id"], "queue_cycle": cycle,
+            "answer": {"type": "move_line", "moves": reference["accepted_lines"][0]},
+        }})
+        assert result["persisted"] and result["rating"] == "correct" and result["review"]["review_id"]
+        with postgres_store.connection() as database:
+            preserved = review_history_snapshot(database)
+            assert all(preserved.values()), "History protection must use nonempty real reviewed fixtures"
+        corpus_directory = Path(__file__).resolve().parents[1] / "public/data/studies"
+        for corpus_path in sorted(corpus_directory.glob("stalemate-swindles-*.tempo-study.json")):
+            prove_bundle_import(json.loads(corpus_path.read_text()), preserved)
+        # The reviewed fixture belongs to this disposable stack and remains for
+        # runner teardown, preserving its real command receipts and history.
+        print("test_postgres_stalemate_import_reimport_preserves_existing_review_history passed")
+
+
 if __name__ == "__main__":
     # A fresh schema process has no read/write URLs: the real corpus must work first.
     test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content()
     test_postgres_stalemate_bundle_import_reimport_preserves_draft_content()
+    test_postgres_stalemate_import_reimport_preserves_existing_review_history()
