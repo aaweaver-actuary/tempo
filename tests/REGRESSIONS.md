@@ -492,6 +492,22 @@ Append every new reported issue and its test names here. All listed tests belong
 - Issue 10 real learner-turn anchors, bounded to three previous decisions and excluding hypothetical future turns: `backend/tests/test_defensive_threat_detection.py` (`test_issue10_*`).
 - Issue 11 compatible full-history requests, typed scores, legal refutations, capturable knights, net material exchange, mate and centipawn handling, and report lease identity: `backend/tests/test_defensive_threat_validation.py` (`test_issue11_*`); `backend/tests/test_defensive_threat_persistence.py::test_issue11_analysis_report_requires_matching_lease_and_request`.
 - Issue 12 stable candidate identity, dismissal and resurface on materially changed played evidence, no offensive or FSRS side effects, analysis supersession, foreground concurrency, and restart replay: `backend/tests/test_defensive_threat_persistence.py` (`test_issue12_*`).
+- Issue 12 three real precursor anchors from one played knight fork persist as three candidates sharing one finding/incident and one distinct incident/supporting-game recurrence unit: `test_issue12_three_anchors_persist_one_incident_and_replay_without_recurrence_inflation` in that file. The shared scenario in `backend/tests/issue12_persistence_scenario.py` validates the immediate anchor with legal saved reports, retains earlier lesson-only precursors under existing grading, recovers each anchor's provenance/report references, and reprocesses across committed connections without identity/revision inflation or changes to existing cards, memory state, reviews, queue entries, or offensive records. Only the supported anchor enqueues admission work, keyed by kind and queue date; replay preserves its task ID while advancing its generation and recording one enqueue event. Lesson-only anchors neither enqueue nor advance admission work, and no unrelated tasks appear. Claims, completions, and other legitimate lifecycle events are permitted.
+- The same scenario runs on fully migrated PostgreSQL tables in a private disposable database: `issue12_three_anchors_persist_one_incident_and_replay_without_recurrence_inflation_postgres` in `scripts/check_postgres_threat_candidate_upsert.py`, executed by the regular PostgreSQL durability runner. Pool closure before each assertion proves reconnect visibility. The existing upsert replay/changed-evidence proof remains required.
+
+Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promotion/pack policy):
+
+| Acceptance criterion | Named coverage in `test_defensive_threat_persistence.py` unless indicated |
+| --- | --- |
+| Same finding reprocessing does not duplicate candidates | `test_issue12_reprocessing_preserves_identity_dismissal_and_no_fsrs`; new three-anchor regression and PostgreSQL scenario |
+| Three anchors count as one incident/supporting game | New three-anchor regression and PostgreSQL scenario |
+| Played/engine provenance is retained | `test_issue12_played_fork_evidence_resurfaces_dismissed_engine_candidate`; new per-anchor evidence assertions; `test_issue9_*` detector cases |
+| New analysis supersedes old evidence | `test_issue12_new_analysis_supersedes_approved_defense_and_blocks_its_card` |
+| Unchanged dismissal survives reprocessing | `test_issue12_reprocessing_preserves_identity_dismissal_and_no_fsrs` |
+| Materially changed evidence revises/resurfaces | `test_issue12_played_fork_evidence_resurfaces_dismissed_engine_candidate`; existing PostgreSQL upsert proof |
+| Candidate creation leaves FSRS/scheduling untouched | New three-anchor regression and PostgreSQL scenario; existing no-FSRS regression |
+| Defensive evidence stays out of offensive conversion records | New three-anchor regression and PostgreSQL scenario; existing no-FSRS/offensive-record regression |
+
 - Issue 13 manual approval, active queue admission, minimal prompt, flexible legal-move grading, ambiguous or illegal no-review outcomes, one definitive review, and idempotent retry: `backend/tests/test_defensive_threat_persistence.py::test_issue13_approved_rubric_grades_unlisted_move_and_schedules_once`; `backend/tests/test_defensive_threat_grading.py` (`test_issue13_*`).
 
 ## Tactical pack catalog expansion
