@@ -2717,7 +2717,7 @@ indexes the proposed steps once and uses constant-time lookups.
   real archival/membership changes and fresh scheduling without invented history,
   and obtains a separate reservation lock and ordinary queue write after commit.
   Baseline acceptance counts were 462/1,614 and activation counts 2,003/7,763;
-  corrected counts are 79 and 94 respectively at both sizes. These are client
+  corrected counts are 60 and 75 respectively at both sizes. These are client
   top-level statements, excluding row-trigger-internal SQL.
 - `test_pr102_bulk_cleanup_preserves_authored_shared_history_and_owner_semantics`
   retains authored/current links, authored implicit ownership, shared memberships,
@@ -2731,3 +2731,13 @@ indexes the proposed steps once and uses constant-time lookups.
   through the original receipt. Existing real structural/queue contention,
   advisory-lock-budget, permanent deletion, recreation/restore and lifecycle
   regressions remain required.
+
+## PR #102 — Required-candidate snapshot and browser proofs
+
+- `test_pr102_snapshot_size_checks_use_one_statement_with_unchanged_native_rows`
+  failed with 20 size-check round trips before the repair. Snapshot capture now
+  obtains ordered size metadata in one statement, then preserves the same native
+  payloads, cumulative row/byte limits and membership-race error precedence. The
+  existing oversized-transfer and post-transaction hashing cases remain required.
+  This removes 19 commands from preparation and authoritative revalidation without
+  increasing the 250 ms read-transaction budget or planner capacity.

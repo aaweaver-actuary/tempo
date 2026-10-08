@@ -308,3 +308,9 @@ public contract or migration 038/039 change accompanies this optimization.
 Replacement preparation indexes proposed steps by card identity and root role,
 retaining the first matching step in proposed order. Missing matches retain the
 existing internal failure. The preparation deadline remains enforced.
+
+Snapshot capture obtains per-table size metadata in one set-based query before
+reading native payloads in their established order. Cumulative transfer limits,
+membership-race checks, read-only MVCC consistency and post-transaction hashing
+remain unchanged. This avoids separate size-check round trips for every captured
+table during preparation and authoritative activation revalidation.

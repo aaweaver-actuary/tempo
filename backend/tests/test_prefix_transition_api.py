@@ -118,9 +118,15 @@ def test_issue79_capture_bounds_raw_transfer_and_hashes_only_after_transaction_c
             queries.append(query)
             name = re.search(r'FROM (\w+)', query).group(1)
             rows = fixture.rows(name)
-            if query.startswith('SELECT COUNT(*)'):
-                return Cursor({'count': api.MAX_TRANSITION_ROWS + 1 if oversized == 'rows' else len(rows),
-                               'bytes': api.MAX_TRANSITION_BYTES + 1 if oversized == 'bytes' else len(canonical_json(rows))})
+            if 'octet_length(row_to_json(bounded)::text)' in query:
+                table_names = [re.search(r'FROM (\w+)', component).group(1)
+                               for component in re.findall(r'FROM \((SELECT .*?)\) bounded', query)]
+                table_counts = [len(fixture.rows(name)) for name in table_names]
+                table_bytes = [len(canonical_json(fixture.rows(name))) for name in table_names]
+                if oversized == 'rows': table_counts[0] = api.MAX_TRANSITION_ROWS + 1
+                if oversized == 'bytes': table_bytes[0] = api.MAX_TRANSITION_BYTES + 1
+                return Cursor(dict(count=sum(table_counts), bytes=sum(table_bytes),
+                                   table_counts=table_counts, table_bytes=table_bytes))
             return Cursor(rows)
     def loader(_identifier, _deadline, *, capture):
         nonlocal active_read
@@ -193,3 +199,29 @@ def test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejecti
     response = rehearsal.post_transition_when_foreground_idle(SimpleNamespace(post=post), '/plan', {'snapshot_id': 'same'})
     assert len(requests) == expected_requests
     assert response is (ready if expected_requests == 2 else busy)
+
+
+def test_pr102_snapshot_size_checks_use_one_statement_with_unchanged_native_rows(monkeypatch):
+    from types import SimpleNamespace
+    captured_fixture = prepared_snapshot()
+    statements = []
+    def execute(query, parameters):
+        statements.append(query)
+        table_name = re.search(r'FROM (\w+)', query).group(1)
+        table_rows = captured_fixture.rows(table_name)
+        if 'octet_length(row_to_json(bounded)::text)' in query:
+            table_names = [re.search(r'FROM (\w+)', component).group(1)
+                           for component in re.findall(r'FROM \((SELECT .*?)\) bounded', query)]
+            table_counts = [len(captured_fixture.rows(name)) for name in table_names]
+            table_bytes = [len(canonical_json(captured_fixture.rows(name))) for name in table_names]
+            return SimpleNamespace(fetchone=lambda: dict(count=sum(table_counts), bytes=sum(table_bytes),
+                                                        table_counts=table_counts, table_bytes=table_bytes))
+        return SimpleNamespace(fetchall=lambda: table_rows)
+    monkeypatch.setattr(api.structural, 'load_snapshot', lambda _identifier, _deadline, *, capture: (
+        captured_fixture.source, capture(SimpleNamespace(execute_native=execute))))
+    monkeypatch.setattr(api.structural, 'check_available', lambda *_args: None)
+    captured = api.load_transition_snapshot('rep', captured_fixture.lookup_card_ids, captured_fixture.study_day, 999999999)
+    assert captured.rows('cards') == captured_fixture.rows('cards')
+    assert captured.rows('repertoire_cards') == captured_fixture.rows('repertoire_cards')
+    size_checks = [query for query in statements if 'octet_length(row_to_json(bounded)::text)' in query]
+    assert len(size_checks) == 1, f'Preparation executed {len(size_checks)} separate size queries'
