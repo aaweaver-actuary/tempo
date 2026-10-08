@@ -2408,6 +2408,10 @@ button {
 .integrity-train-notice { display:flex; align-items:center; gap:12px; margin:12px 0; padding:12px 16px; border:1px solid var(--rust); border-radius:12px; background:color-mix(in srgb, var(--rust) 10%, transparent); }
 .integrity-train-notice span { color:var(--muted); }
 .integrity-train-notice button { margin-left:auto; }
+.integrity-repair-status { flex-direction:column; align-items:stretch; }
+.integrity-repair-status > div { display:flex; flex-wrap:wrap; align-items:center; gap:8px; overflow-wrap:anywhere; }
+.integrity-repair-status > div > span { flex:1 1 180px; }
+.integrity-repair-status button { margin-left:0; }
 .integrity-dialog h2 {
   margin: 4px 0 10px;
   font-family: Georgia, serif;

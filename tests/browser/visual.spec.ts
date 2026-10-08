@@ -285,6 +285,23 @@ for (const width of [390, 1280]) {
 }
 
 for (const width of [390, 1280]) {
+  test(`Queued repertoire repairs ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+    await prepareVisualUI(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "onLine", { get: () => false, configurable: true });
+      for (const [index, phase] of ["queued", "validating", "blocked"].entries()) localStorage.setItem(
+        `tempo-pending-integrity-repairs-v3:visual-repair-${index}`, JSON.stringify({
+          repertoireId: "visual-repertoire", issueId: `visual-issue-${index}`, signature: "visual-signature",
+          selectedMoveUci: ["e2e4", "g1f3", "d2d4"][index], operationId: `visual-repair-${index}`, phase, queuedAt: index,
+        }));
+    });
+    await page.goto("/");
+    await expect(page.getByText("3 repair choices awaiting confirmation")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry repair" })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page.locator(".integrity-repair-status")).toHaveScreenshot(`queued-repertoire-repairs-${width}.png`);
+  });
   test(`review-conflicts-${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
     await page.addInitScript(() => {

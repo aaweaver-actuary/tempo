@@ -1259,6 +1259,20 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
     return next_position
 
 
+_OPENING_UNLOCK_ELIGIBILITY_SQL = """content_type='opening' AND state='locked' AND archived=0
+    AND EXISTS(
+        SELECT 1 FROM opening_graph_steps step
+        JOIN opening_graph_publications publication
+          ON publication.repertoire_id=step.repertoire_id
+         AND publication.generation=step.generation
+        WHERE step.card_id=cards.id
+          AND (step.parent_card_id IS NULL OR EXISTS(
+              SELECT 1 FROM cards parent
+              WHERE parent.id=step.parent_card_id AND parent.state='mature'
+          ))
+    )"""
+
+
 def _unlock_eligible_opening_cards(
     db, day, *, after_card_id: str | None = None, batch_size: int | None = None,
 ) -> str | None:
@@ -1268,27 +1282,16 @@ def _unlock_eligible_opening_cards(
         if batch_size < 1:
             raise ValueError("Queue unlock batch size must be positive")
         candidates = db.execute(
-            """SELECT id FROM cards WHERE content_type='opening' AND state='locked'
-               AND archived=0 AND id>? ORDER BY id LIMIT ?""",
+            f"SELECT id FROM cards WHERE {_OPENING_UNLOCK_ELIGIBILITY_SQL} "
+            "AND id>? ORDER BY id LIMIT ?",
             (after_card_id or "", batch_size + 1),
         ).fetchall()
         selected_card_ids = [row[0] for row in candidates[:batch_size]]
         has_more_candidates = len(candidates) > batch_size
         if not selected_card_ids:
             return None
-    update_statement = """UPDATE cards SET state='new'
-           WHERE content_type='opening' AND state='locked' AND archived=0
-             AND EXISTS(
-                 SELECT 1 FROM opening_graph_steps step
-                 JOIN opening_graph_publications publication
-                   ON publication.repertoire_id=step.repertoire_id
-                  AND publication.generation=step.generation
-                 WHERE step.card_id=cards.id
-                   AND (step.parent_card_id IS NULL OR EXISTS(
-                       SELECT 1 FROM cards parent
-                       WHERE parent.id=step.parent_card_id AND parent.state='mature'
-                   ))
-             )"""
+    # Recheck the same published eligibility when applying the bounded update.
+    update_statement = f"UPDATE cards SET state='new' WHERE {_OPENING_UNLOCK_ELIGIBILITY_SQL}"
     if selected_card_ids:
         update_statement += " AND cards.id IN (" + ",".join("?" for _ in selected_card_ids) + ")"
     db.execute(update_statement, selected_card_ids)

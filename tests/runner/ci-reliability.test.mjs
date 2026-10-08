@@ -44,10 +44,209 @@ function successfulResults(planned) {
     reports[layer] = { layer, commit: planned.commit, planHash: planned.hash, completed: true, status: "success", test_count: 123,
       commands: layerCommands(layer, planned).map(([name]) => ({ name, exit_code: 0 })),
       tests: (layer === "visual" ? [{ id: "visual" }] : planned.collection.filter(item => layer === "quarantine" ? item.quarantined : item.selected)).map(item => ({ id: item.id, status: "passed", retries: 0 })),
-      scenarios: { planned_stages: postgresTestStages({ mode: "durability" }), stages: Object.fromEntries(postgresTestStages({ mode: "durability" }).map(name => [name, { exit_code: 0 }])) } };
+      scenarios: { runner: "postgres", mode: layer === "lifecycle" ? "lifecycle" : "durability", commit: planned.commit, plan_hash: planned.hash,
+        planned_stages: planned.jobs[layer].planned_stages ?? postgresTestStages({ mode: "durability" }),
+        stages: Object.fromEntries((planned.jobs[layer].planned_stages ?? postgresTestStages({ mode: "durability" })).map(name => [name, { exit_code: 0 }])) } };
   }
   return { needs, reports };
 }
+
+test("lifecycle-sensitive changes require deployment lifecycle verification", () => {
+  for (const path of ["scripts/tempo-runtime.mjs", "scripts/tempo-deployment.mjs", "scripts/tempo-cli.mjs",
+    "scripts/check-tempo-cli.mjs", "docker-compose.yml", "docker-compose.postgres-maintenance.yml",
+    "scripts/verify_postgres_backup.py", "scripts/check-redis-readiness.mjs", "backend/app/postgres_store.py",
+    "tests/runner/tempo-cli-fixture.mjs", "tests/unit/tempo-cli-regressions.test.ts", "backend/Dockerfile", "package-lock.json",
+    ...inventory.lifecycle.sensitivePaths]) {
+    const planned = plan({ paths: [path, "tests/REGRESSIONS.md"] });
+    assert.equal(planned.jobs.lifecycle?.applicable, true, path);
+    assert.equal(planned.jobs.lifecycle.required, true, path);
+  }
+});
+
+test("unclassified root backend application modules require deployment lifecycle", () => {
+  for (const path of ["backend/app/new_runtime.py", "backend/app/worker_bootstrap.py", "backend/app/storage_adapter.py",
+    "backend/app/new_domain_commands.py", "backend/app/command_gateway.py", "backend/app/command_dispatch.py",
+    "backend/app/background_worker.py", "backend/app/tasks.py"]) {
+    for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_new_runtime.py"]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, true, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, true, paths.join(", "));
+      assert.match(planned.jobs.lifecycle.reason, /unclassified infrastructure/);
+    }
+  }
+});
+
+test("unclassified backend service modules require deployment lifecycle with ordinary companions", () => {
+  const ordinaryCompanions = ["tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+    "tests/unit/study-regressions.test.tsx"];
+  for (const servicePath of ["backend/app/services/postgres_connection.py", "backend/app/services/storage_adapter.py",
+    "backend/app/services/worker_runtime.py", "backend/app/services/deployment_state.py",
+    "backend/app/services/new_domain_service.py", "backend/app/services/unclassified_future_service.py"]) {
+    assert(!inventory.lifecycle.ordinaryPaths.includes(servicePath), servicePath);
+    for (const paths of [[servicePath], ...ordinaryCompanions.map(companionPath => [servicePath, companionPath]),
+      [servicePath, ...ordinaryCompanions]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, true, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, true, paths.join(", "));
+      assert.match(planned.jobs.lifecycle.reason, /unclassified infrastructure/);
+    }
+  }
+});
+
+test("reviewed ordinary and sensitive service classifications survive ordinary companions", () => {
+  const ordinaryCompanions = ["tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+    "tests/unit/study-regressions.test.tsx"];
+  for (const [servicePath, lifecycleRequired] of [
+    ["backend/app/services/study_grading.py", false],
+    ["backend/app/services/opening_segmentation.py", false],
+    ["backend/app/services/repertoire_statistics.py", false],
+    ["backend/app/services/database_executor.py", true],
+    ["backend/app/services/background_runtime.py", true],
+  ]) {
+    assert(existsSync(servicePath), servicePath);
+    for (const paths of [[servicePath], ...ordinaryCompanions.map(companionPath => [servicePath, companionPath]),
+      [servicePath, ...ordinaryCompanions]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, lifecycleRequired, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, lifecycleRequired, paths.join(", "));
+    }
+  }
+});
+
+test("reviewed backend domain changes with ordinary regressions omit deployment lifecycle", () => {
+  for (const path of ["backend/app/services/study_grading.py", "backend/app/study_commands.py",
+    "backend/app/opening_segmentation_api.py", "backend/app/study_contracts.py", "backend/app/models.py"]) {
+    for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
+      "tests/unit/study-regressions.test.tsx", "tests/browser/studies.spec.ts"]]) {
+      const planned = plan({ paths });
+      assert.equal(planned.jobs.lifecycle.applicable, false, paths.join(", "));
+      assert.equal(planned.jobs.lifecycle.required, false, paths.join(", "));
+    }
+  }
+});
+
+test("ordinary product changes omit deployment lifecycle independently of browser breadth", () => {
+  const ordinaryChangeGroups = [
+    ...["app/components/chessboard.tsx", "backend/app/services/study_grading.py",
+      "app/domain/opening-segmentation.ts", "tests/browser/studies.spec.ts", "docs/testing.md",
+      ...inventory.lifecycle.ordinaryPaths].map(path => [path]),
+    ["app/domain/opening-segmentation.ts", "tests/unit/opening-segmentation-regressions.test.tsx",
+      "backend/tests/test_opening_segmentation.py", "tests/REGRESSIONS.md", "docs/testing.md"],
+  ];
+  for (const paths of ordinaryChangeGroups) {
+    const planned = plan({ paths });
+    assert.equal(planned.jobs.lifecycle?.applicable, false, paths.join(", "));
+    assert.equal(planned.jobs.postgres.required, true);
+    assert.equal(planned.scope, "targeted");
+  }
+  const broadBrowser = plan({ paths: ["app/components/chessboard.tsx", "tests/REGRESSIONS.md"] });
+  assert.equal(broadBrowser.jobs.lifecycle.applicable, false);
+  assert.equal(broadBrowser.collection.filter(item => item.selected).length, cases.length);
+  assert.equal(broadBrowser.jobs.visual.applicable, true);
+});
+
+test("complete verification always requires deployment lifecycle", () => {
+  for (const paths of [[], ["docs/testing.md"], ["app/components/chessboard.tsx"],
+    ["backend/app/services/study_grading.py"], ["backend/app/services/new_domain_service.py"]]) {
+    const planned = plan({ paths, complete: true });
+    assert.equal(planned.scope, "complete");
+    assert.equal(planned.jobs.lifecycle?.applicable, true);
+    assert.equal(planned.jobs.lifecycle.required, true);
+  }
+});
+
+test("migration and schema changes cannot omit deployment lifecycle", () => {
+  for (const path of ["backend/migrations/036_new.sql", "backend/app/schema_version.py",
+    "backend/app/postgres_readiness.py", "scripts/apply_postgres_migrations.py", "scripts/generate_postgres_schema.py",
+    "backend/tests/test_postgres_upgrade_regressions.py", "backend/app/new_schema_policy.py"]) {
+    assert.equal(plan({ paths: [path] }).jobs.lifecycle?.required, true, path);
+  }
+  const renamed = changedPathsFromNameStatus("R100\0backend/app/schema_version.py\0backend/app/version.py\0D\0backend/migrations/036_new.sql\0");
+  assert.equal(plan({ paths: renamed }).jobs.lifecycle?.required, true);
+});
+
+test("unknown infrastructure and unavailable comparison history require lifecycle", () => {
+  for (const options of [{ paths: ["infrastructure/new-contract.json"] }, { comparisonAvailable: false },
+    { paths: ["scripts/new-runner.mjs"] }, { paths: [".github/workflows/new.yml"] }]) {
+    assert.equal(plan(options).jobs.lifecycle?.required, true);
+  }
+});
+
+test("selected lifecycle failure or missing results blocks aggregate quality", () => {
+  const planned = plan({ complete: true });
+  assert.equal(planned.jobs.lifecycle?.required, true);
+  const valid = successfulResults(planned);
+  assert.equal(evaluateQuality(planned, valid.needs, valid.reports).success, true);
+  for (const result of ["failure", "cancelled", "skipped", undefined]) {
+    const { needs, reports } = successfulResults(planned);
+    needs.lifecycle.result = result;
+    assert.equal(evaluateQuality(planned, needs, reports).success, false, String(result));
+  }
+  for (const missing of ["report", "command", "scenario"]) {
+    const { needs, reports } = successfulResults(planned);
+    if (missing === "report") delete reports.lifecycle;
+    else if (missing === "command") reports.lifecycle.commands.pop();
+    else delete reports.lifecycle.scenarios.stages.deployment_lifecycle;
+    assert.equal(evaluateQuality(planned, needs, reports).success, false, missing);
+  }
+  const nonblockingPlan = structuredClone(planned);
+  const nonblockingResults = successfulResults(nonblockingPlan);
+  nonblockingPlan.jobs.lifecycle.required = false;
+  assert.equal(evaluateQuality(nonblockingPlan, nonblockingResults.needs, nonblockingResults.reports).success, false);
+  const incompletePlan = plan();
+  const incompleteResults = successfulResults(incompletePlan);
+  incompletePlan.scope = "complete";
+  assert.equal(evaluateQuality(incompletePlan, incompleteResults.needs, incompleteResults.reports).success, false);
+});
+
+test("unselected lifecycle is explicitly inapplicable", () => {
+  const planned = plan();
+  assert.equal(planned.jobs.lifecycle?.applicable, false);
+  assert.equal(planned.jobs.lifecycle.required, false);
+  assert.match(planned.jobs.lifecycle.reason, /No lifecycle-sensitive/);
+  const { needs, reports } = successfulResults(planned);
+  assert.equal(needs.lifecycle.result, "skipped");
+  assert.equal(evaluateQuality(planned, needs, reports).success, true);
+  delete needs.lifecycle;
+  assert.equal(evaluateQuality(planned, needs, reports).success, false);
+  assert.throws(() => layerCommands("lifecycle", planned), /not applicable/);
+});
+
+test("lifecycle reports must match the immutable plan revision mode and scenarios", () => {
+  const planned = plan({ complete: true });
+  assert.equal(planned.jobs.lifecycle?.required, true);
+  const modifications = [
+    report => { report.planHash = "older-plan"; },
+    report => { report.commit = "older-revision"; },
+    report => { report.scenarios.plan_hash = "older-plan"; },
+    report => { report.scenarios.commit = "older-revision"; },
+    report => { report.scenarios.mode = "durability"; },
+    report => { report.scenarios.planned_stages = ["cleanup"]; },
+    report => { delete report.scenarios.stages.cleanup; },
+    report => { report.scenarios.stages.deployment_lifecycle.exit_code = 1; },
+  ];
+  for (const modify of modifications) {
+    const { needs, reports } = successfulResults(planned);
+    modify(reports.lifecycle);
+    assert.equal(evaluateQuality(planned, needs, reports).success, false);
+  }
+  const { needs, reports } = successfulResults(planned);
+  reports.postgres.scenarios.planned_stages = ["cleanup"];
+  reports.postgres.scenarios.stages = { cleanup: { exit_code: 0 } };
+  assert.equal(evaluateQuality(planned, needs, reports).success, false);
+});
+
+test("full and split PostgreSQL verification preserve every existing proof", () => {
+  const full = postgresTestStages({ mode: "full" });
+  const durability = postgresTestStages({ mode: "durability" });
+  const lifecycle = postgresTestStages({ mode: "lifecycle" });
+  assert(full.includes("deployment_lifecycle"));
+  assert(lifecycle.includes("deployment_lifecycle"));
+  assert(!durability.includes("deployment_lifecycle"));
+  for (const stage of ["schema_migrations", "priority_recovery", "background_diagnostics"]) assert(durability.includes(stage));
+  const split = new Set([...durability, ...lifecycle, ...postgresTestStages({ mode: "browser" })]);
+  assert.deepEqual([...split].sort(), full.filter(stage => stage !== "study_isolation").sort());
+});
 
 test("core and required integration failures block quality", () => {
   const planned = plan();
@@ -115,7 +314,8 @@ test("rename deletion unknown paths and missing history select conservative cove
   const paths = changedPathsFromNameStatus("R100\0app/components/discoveries-tray.tsx\0backend/app/main.py\0D\0backend/migrations/021.sql\0");
   assert(paths.includes("app/components/discoveries-tray.tsx")); assert(paths.includes("backend/app/main.py")); assert(paths.includes("backend/migrations/021.sql"));
   for (const options of [{ paths }, { paths: ["unknown/new-file.txt"] }, { paths: ["unknown/new-file.md"] }, { comparisonAvailable: false }, { paths: ["package-lock.json"] }, { paths: ["app/components/chessboard.tsx"] }]) {
-    const planned = plan(options); assert.equal(planned.scope, "complete"); assert.equal(planned.collection.filter(item => item.selected).length, cases.length);
+    const planned = plan(options); assert.equal(planned.collection.filter(item => item.selected).length, cases.length);
+    assert.equal(planned.scope, planned.jobs.lifecycle.applicable ? "complete" : "targeted");
   }
   assert.throws(() => changedPathsFromNameStatus("R100\0one\0"), /Invalid/);
   assert.throws(() => changedPathsFromNameStatus("U\0app/components/discoveries-tray.tsx\0"), /Uncertain/);
@@ -137,7 +337,7 @@ test("leaf source selection includes complete families and rendering selects pin
 
 test("split complete coverage preserves every PostgreSQL product scenario", () => {
   const full = postgresTestStages({ mode: "full" });
-  const split = new Set([...postgresTestStages({ mode: "durability" }), ...postgresTestStages({ mode: "browser" })]);
+  const split = new Set([...postgresTestStages({ mode: "durability" }), ...postgresTestStages({ mode: "lifecycle" }), ...postgresTestStages({ mode: "browser" })]);
   assert.deepEqual([...split].sort(), full.filter(stage => stage !== "study_isolation").sort());
   // study_isolation destroys the old browser volume; the split owners instead
   // each create fresh ports, credentials and volumes in the existing runner.
@@ -154,6 +354,9 @@ test("deployment requires complete verification and scheduled or verification-on
   assert(workflow.includes("cron: '0 7 * * *'")); assert(workflow.includes("if: always()\n    needs: [plan,"));
   assert.equal(workflow.split("inputs.verification_only == false").length - 1, 2);
   for (const layer of mandatoryLayers) assert(workflow.includes(`  ${layer}:\n    needs: plan\n    uses: ./.github/workflows/verify-layer.yml`));
+  assert(workflow.includes("lifecycle: ${{ steps.inventory.outputs.lifecycle }}"));
+  assert(workflow.includes("  lifecycle:\n    needs: plan\n    if: needs.plan.outputs.lifecycle == 'true'\n    uses: ./.github/workflows/verify-layer.yml"));
+  assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]"));
 });
 
 test("failed-layer rerun leaves successful unrelated jobs intact and diagnostic retry cannot green the gate", () => {
@@ -346,7 +549,7 @@ test("cross-cutting browser infrastructure and uncertain inputs require the comp
     "package.json", "package-lock.json", ".github/workflows/pages.yml", "unclassified/new-source.ts", "unclassified/new-file.md"];
   for (const path of crossCuttingPaths) {
     const planned = plan({ paths: ["app/domain/opening-segmentation.ts", path] });
-    assert.equal(planned.scope, "complete", path);
+    assert.equal(planned.scope, planned.jobs.lifecycle.applicable ? "complete" : "targeted", path);
     assert.equal(selectedIds(planned).length, cases.length, path);
     assert(planned.jobs.visual.required, path);
   }

@@ -1,5 +1,7 @@
 import { test, expect, navigate, prepareUI } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
+import { test as productTest, api } from "./product-fixtures";
+import { heldDrag, prepareHeldDrag } from "./held-drag-fixtures";
 import type { Page } from "@playwright/test";
 
 const startFen =
@@ -664,4 +666,149 @@ test("discarding an unknown PGN import permits a different file after reload", a
   await expect(page.getByRole("heading", { name: "Imported", exact: true })).toBeVisible();
   expect(submittedKeys).toHaveLength(1);
   expect(submittedKeys[0]).not.toBe(oldOperationId);
+});
+
+productTest("repair choices advance before a delayed save and survive reload through real PostgreSQL receipts", async ({ page, request }) => {
+  await prepareUI(page);
+  const repairPgn = '[Event "First e4"]\n\n1. e4 *\n\n[Event "First d4"]\n\n1. d4 *\n\n' +
+    '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *\n\n' +
+    '[Event "Second d4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. d4 *';
+  const imported = await request.post(`${api}/imports/pgn`, { multipart: {
+    file: { name: "queued-repair.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(repairPgn) }, initial_depth: "1",
+  } });
+  expect(imported.ok()).toBe(true);
+  let repertoireId = "";
+  await expect.poll(async () => {
+    const result = await (await request.get(`${api}/repertoires`, { headers: { "X-Tempo-Work-Class": "background" } })).json();
+    const repertoire = result.repertoires.find((item: { name: string }) => item.name === "queued-repair");
+    repertoireId = repertoire?.id ?? "";
+    return repertoire?.integrity_issue_count;
+  }, { timeout: 20_000 }).toBe(2);
+  let releaseSave: (() => void) | undefined;
+  const saveHold = new Promise<void>(resolve => { releaseSave = resolve; });
+  let savedOnServer = false;
+  const submittedKeys: string[] = [];
+  await page.route("**/integrity/issues/*/resolve", async route => {
+    submittedKeys.push(route.request().headers()["idempotency-key"]);
+    const response = await route.fetch();
+    savedOnServer = true;
+    if (submittedKeys.length === 1) await saveHold;
+    await route.fulfill({ response }).catch(() => { /* Reload intentionally loses the first response. */ });
+  });
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Resume repair", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Choose one response per position" });
+    await expect(dialog).toContainText("2 issues remaining");
+    await dialog.getByRole("button", { name: "e2e4", exact: true }).click();
+    await dialog.getByRole("button", { name: "Keep this response", exact: true }).click();
+    await expect(dialog).toContainText("1 issue remaining");
+    await dialog.getByRole("button", { name: "e2e4", exact: true }).click();
+    await dialog.getByRole("button", { name: "Keep this response", exact: true }).click();
+    await expect(dialog).toContainText("All choices queued");
+    await expect.poll(() => savedOnServer).toBe(true);
+    expect(submittedKeys).toHaveLength(1);
+    const savedChoices = await page.evaluate(() => Object.keys(localStorage)
+      .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:"))
+      .map(key => JSON.parse(localStorage.getItem(key)!)));
+    expect(savedChoices).toHaveLength(2);
+    await page.reload(); releaseSave?.();
+    await expect(page.getByRole("dialog", { name: "Choose one response per position" })).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => Object.keys(localStorage)
+      .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:")).length), { timeout: 20_000 }).toBe(0);
+    expect(submittedKeys).toHaveLength(2);
+    expect(submittedKeys.sort()).toEqual(savedChoices.map(choice => choice.operationId).sort());
+    const integrity = await (await request.get(`${api}/repertoires/${repertoireId}/integrity`)).json();
+    expect(integrity).toMatchObject({ status: "clean", scan_status: "idle", issue_count: 0 });
+    for (const operationId of submittedKeys) {
+      const receipt = await (await request.get(`${api}/operations/${operationId}`)).json();
+      expect(receipt.state).toBe("complete");
+    }
+  } finally { releaseSave?.(); }
+});
+
+test("repair confirmation during a held training piece preserves the drag and active attempt", async ({ page }, testInfo) => {
+  let releaseIntegrity: (() => void) | undefined;
+  let validationStarted = false;
+  let validationCompleted = false;
+  const integrityHold = new Promise<void>(resolve => { releaseIntegrity = resolve; });
+  await prepareHeldDrag(page, true, async () => {
+    await page.addInitScript(() => localStorage.setItem("tempo-pending-integrity-repairs-v3:held-repair", JSON.stringify({
+      repertoireId: "visual-repertoire", issueId: "held-issue", signature: "held-signature", selectedMoveUci: "e2e4",
+      operationId: "held-repair", phase: "validating", taskId: "held-graph", queuedAt: 1,
+    })));
+    await page.route("**/api/system/tasks", route => route.fulfill({ json: { tasks: [{ id: "held-graph", kind: "opening_graph_rebuild",
+      deduplication_key: "visual-repertoire", generation: 1, state: "complete", last_error: null }] } }));
+    await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{ id: "visual-repertoire", name: "Spanish opening",
+      source_name: "fixture.pgn", line_count: 1, card_count: 1, due_count: 1, graph_state: "ready", graph_generation: 1,
+      integrity_status: "clean" }] } }));
+    await page.route("**/api/repertoires/*/integrity", async route => {
+      validationStarted = true; await integrityHold;
+      await route.fulfill({ json: { repertoire_id: "visual-repertoire", status: "clean", issue_count: 0, first_issue_id: null,
+        scan_status: "idle", scan_generation: "held-scan:1", scan_progress: { completed: 1, total: 1 }, last_scan_error: null, issues: [] } });
+      validationCompleted = true;
+    });
+  });
+  try {
+    await expect.poll(() => validationStarted).toBe(true);
+    const fenBefore = await page.locator(".board-frame").getAttribute("data-fen");
+    const result = await heldDrag(page, async step => {
+      if (step === 10) releaseIntegrity?.();
+      if (step === 25) await expect.poll(async () => page.evaluate(() => localStorage.getItem("tempo-pending-integrity-repairs-v3:held-repair"))).toBeNull();
+    }, false);
+    expect(validationCompleted).toBe(true); expect(result.probe.sawDragging).toBe(true); expect(result.probe.interrupted).toBe(false);
+    await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", fenBefore!);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await testInfo.attach("held-repair-confirmation", { body: JSON.stringify(result), contentType: "application/json" });
+  } finally { releaseIntegrity?.(); await page.mouse.up(); }
+});
+
+test("asynchronous repair validation retry survives reload without repeating the retry command", async ({ page }) => {
+  await prepareVisualUI(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("tempo-repair-retry-fixture-initialized")) {
+      localStorage.setItem("tempo-repair-retry-fixture-initialized", "true");
+      localStorage.setItem("tempo-pending-integrity-repairs-v3:retry-repair", JSON.stringify({
+        repertoireId: "visual-repertoire", issueId: "retry-issue", signature: "retry-signature", selectedMoveUci: "e2e4",
+        operationId: "retry-repair", phase: "validating", taskId: "retry-graph", queuedAt: 1,
+      }));
+    }
+  });
+  let taskComplete = false;
+  let retryOperationId = "";
+  let retryPosts = 0;
+  let retryReads = 0;
+  await page.route("**/api/system/tasks", route => route.fulfill({ json: { tasks: [{ id: "retry-graph", kind: "opening_graph_rebuild",
+    deduplication_key: "visual-repertoire", generation: 1, state: taskComplete ? "complete" : "failed", last_error: "Worker needs retry" }] } }));
+  await page.route("**/api/system/tasks/retry-graph/retry", route => {
+    retryPosts += 1; retryOperationId = route.request().headers()["idempotency-key"];
+    return route.fulfill({ status: 202, json: { operation_id: retryOperationId, state: "pending" } });
+  });
+  await page.route("**/api/operations/*", route => {
+    const operationId = new URL(route.request().url()).pathname.split("/").at(-1);
+    if (operationId === retryOperationId) {
+      retryReads += 1;
+      return route.fulfill({ json: { state: taskComplete ? "complete" : "pending", operation_id: retryOperationId,
+        ...(taskComplete ? { response: { id: "retry-graph" } } : {}) } });
+    }
+    return route.fulfill({ json: { state: "unknown" } });
+  });
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{ id: "visual-repertoire", name: "Spanish opening",
+    source_name: "fixture.pgn", line_count: 1, card_count: 1, due_count: 1, graph_state: "ready", graph_generation: 1, integrity_status: "clean" }] } }));
+  await page.route("**/api/repertoires/*/integrity", route => route.fulfill({ json: { repertoire_id: "visual-repertoire", status: "clean",
+    issue_count: 0, first_issue_id: null, scan_status: "idle", scan_generation: "retry-scan:1",
+    scan_progress: { completed: 1, total: 1 }, last_scan_error: null, issues: [] } }));
+  await page.goto("/");
+  await page.locator(".integrity-repair-status").getByRole("button", { name: "Retry repair", exact: true }).click();
+  await expect.poll(() => retryPosts).toBe(1);
+  await expect.poll(() => retryReads).toBeGreaterThan(0);
+  await page.reload();
+  await expect.poll(() => retryReads).toBeGreaterThan(1);
+  await expect(page.locator(".integrity-repair-status")).toContainText("Validating");
+  await expect(page.locator(".integrity-repair-status").getByRole("button", { name: "Retry repair", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v3:retry-repair")!).retryOperationId)).toBe(retryOperationId);
+  taskComplete = true;
+  await expect.poll(async () => page.evaluate(() => localStorage.getItem("tempo-pending-integrity-repairs-v3:retry-repair")), { timeout: 15_000 }).toBeNull();
+  expect(retryPosts).toBe(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

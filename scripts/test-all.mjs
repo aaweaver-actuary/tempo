@@ -5,6 +5,7 @@ import { platform, release, arch } from "node:os";
 import { performance } from "node:perf_hooks";
 import { protectRegressionSuite, verificationStages } from "./verification-stages.mjs";
 import { resolvePython } from "./resolve-python.mjs";
+import { assertNoTrackedConflicts } from "./check-merge-conflicts.mjs";
 
 
 function version(command, args) {
@@ -12,6 +13,7 @@ function version(command, args) {
   return result.status === 0 ? result.stdout.trim() : null;
 }
 
+assertNoTrackedConflicts();
 protectRegressionSuite("tests");
 protectRegressionSuite("backend/tests");
 const listOnly = process.argv[2] === "--list";

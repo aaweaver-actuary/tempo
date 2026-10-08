@@ -98,7 +98,7 @@ async function fixtureNetwork() {
         if (fixture.mode === "race-dirty") fs.writeFileSync(fixture.root + "/personal-work", "preserved study notes");
       }
       return Response.json({ jobs: fixture.diagnostics?.jobs ?? ["plan", "frontend / verify", "backend / verify", "build / verify",
-        "postgres / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed",
+        "postgres / verify", "lifecycle / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed",
           conclusion: fixture.mode === "ci-fail" && name === "quality" ? "failure" : "success" })) });
     }
     if (String(url).endsWith("/api/health")) return Response.json({ status: "ok", storage: "postgresql", test_instance: false });

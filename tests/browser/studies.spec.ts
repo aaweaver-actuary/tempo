@@ -104,6 +104,13 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
     const queue = await (await request.get(`${api}/queue/today`)).json();
     return queue.cards.find((card: { content_type: string }) => card.content_type === "study_exercise")?.queue_entry_id;
   }).toBeGreaterThan(0);
+  // Online study may start with an admitted card while refresh continues. The
+  // complete offline phone copy additionally requires the published projection.
+  await expect.poll(async () => {
+    const prepared = await (await request.get(`${api}/queue/prepared`)).json();
+    return prepared.projection.state === "ready" && prepared.count === prepared.cards.length &&
+      prepared.cards.some((card: { content_type: string }) => card.content_type === "study_exercise");
+  }).toBe(true);
   await nav(page, "Train");
   await expect(page.getByText("Select the white knight square")).toBeVisible();
   await expect(page.getByText("Original synthetic study")).toHaveCount(0);

@@ -4629,7 +4629,12 @@ def test_postgres_cutover_rubric_audit_yields_and_discards_stale_replay(monkeypa
         lambda *, allowed_kinds: claimed_filters.append(allowed_kinds) or claimed_task,
     )
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda *_args, **_kwargs: None)
-    assert tasks.poll_background_tasks.run() is True
+    directly_executed = []
+    with monkeypatch.context() as dispatch_patch:
+        dispatch_patch.setattr(tasks, "_execute_claimed_background_slice",
+            lambda task, submitted_at: directly_executed.append(task) or True)
+        assert tasks.poll_background_tasks.run() is True
+    assert directly_executed == [claimed_task]
     assert "defensive_rubric_audit" in claimed_filters[0]
 
 
@@ -5377,9 +5382,14 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
         lambda *, allowed_kinds: claimed_filters.append(allowed_kinds) or claimed_task,
     )
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda task_name, **_arguments: sent_tasks.append(task_name))
-    assert tasks.poll_background_tasks.run() is True
+    directly_executed = []
+    with monkeypatch.context() as dispatch_patch:
+        dispatch_patch.setattr(tasks, "_execute_claimed_background_slice",
+            lambda task, submitted_at: directly_executed.append(task) or True)
+        assert tasks.poll_background_tasks.run() is True
+    assert directly_executed == [claimed_task]
     assert claimed_filters == [tasks._SUPPORTED_BACKGROUND_KINDS]
-    assert sent_tasks == ["app.tasks.execute_background_slice"]
+    assert sent_tasks == []
     completed_tasks: list[str] = []
     monkeypatch.setattr(tasks, "execute_repertoire_game_refresh_slice", lambda _task: False)
     monkeypatch.setattr(
@@ -5606,9 +5616,14 @@ def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatc
         lambda *, allowed_kinds: polled_filters.append(allowed_kinds) or claimed_task,
     )
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda task_name, **_arguments: sent_tasks.append(task_name))
-    assert tasks.poll_background_tasks.run() is True
+    directly_executed = []
+    with monkeypatch.context() as dispatch_patch:
+        dispatch_patch.setattr(tasks, "_execute_claimed_background_slice",
+            lambda task, submitted_at: directly_executed.append(task) or True)
+        assert tasks.poll_background_tasks.run() is True
+    assert directly_executed == [claimed_task]
     assert polled_filters == [tasks._SUPPORTED_BACKGROUND_KINDS]
-    assert sent_tasks == ["app.tasks.execute_background_slice"]
+    assert sent_tasks == []
 
 
 def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_restart_replay(monkeypatch, unscoped_canonical_prefix):
