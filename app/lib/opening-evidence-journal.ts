@@ -26,11 +26,56 @@ const leasedRecoveryAttempts = new Set<string>();
 const blockedRecoveryAttempts = new Map<string, string>();
 const retryingRecoveryAttempts = new Map<string, { failures: number; retryAt: number; operationKey?: string }>();
 const appendListeners = new Set<() => void>();
+const completionSignalKey = "tempo-opening-evidence-completion-v1";
+type CompletionSignal = { attemptId: string; signalId: string; sourceSessionId: string };
+let completionChannel: BroadcastChannel | undefined;
 
-/** Local appends request foreground-safe recovery; they never send network work. */
+function receiveCompletionSignal(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  const signal = value as Partial<CompletionSignal>;
+  if (![signal.attemptId, signal.signalId, signal.sourceSessionId].every(field => typeof field === "string" && field.length > 0) ||
+    signal.sourceSessionId === sessionId) return;
+  // A signal is only a wakeup hint. The idle slice checks IndexedDB before changing any guards.
+  for (const listener of appendListeners) listener();
+}
+
+function completionStorageChanged(event: StorageEvent): void {
+  if (event.key !== completionSignalKey || !event.newValue) return;
+  try { receiveCompletionSignal(JSON.parse(event.newValue)); } catch { /* Ignore malformed external hints. */ }
+}
+
+function publishCompletionSignal(attemptId: string): void {
+  const signal: CompletionSignal = { attemptId, signalId: crypto.randomUUID(), sourceSessionId: sessionId };
+  try { localStorage.setItem(completionSignalKey, JSON.stringify(signal)); return; }
+  catch { /* IndexedDB may work even when local storage is full or disabled. */ }
+  let sender: BroadcastChannel | undefined;
+  try {
+    sender = new BroadcastChannel(completionSignalKey);
+    sender.postMessage(signal);
+  } catch {
+    try { publishNotification({ severity: "warning", source: "opening evidence", key: "opening-evidence-completion-signal",
+      message: "Opening evidence was saved, but other tabs could not be notified. Reload other Tempo tabs to refresh their recovery warnings." }); }
+    catch { /* Notification failures cannot reverse confirmed persistence. */ }
+  } finally { sender?.close(); }
+}
+
+/** Local appends and external completions request foreground-safe recovery, never network work. */
 export function subscribeOpeningEvidenceAppend(listener: () => void): () => void {
+  if (!appendListeners.size && typeof window !== "undefined") {
+    window.addEventListener("storage", completionStorageChanged);
+    try {
+      completionChannel = new BroadcastChannel(completionSignalKey);
+      completionChannel.onmessage = event => receiveCompletionSignal(event.data);
+    } catch { /* Storage events remain available when BroadcastChannel is unsupported. */ }
+  }
   appendListeners.add(listener);
-  return () => { appendListeners.delete(listener); };
+  return () => {
+    appendListeners.delete(listener);
+    if (!appendListeners.size) {
+      if (typeof window !== "undefined") window.removeEventListener("storage", completionStorageChanged);
+      if (completionChannel) { completionChannel.onmessage = null; completionChannel.close(); completionChannel = undefined; }
+    }
+  };
 }
 
 function resolveDeliveryNotice(): void {
@@ -281,6 +326,7 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
   if (typeof indexedDB === "undefined") return;
   await writeTail.catch(() => undefined);
   const database = await offlineTrainingDatabase();
+  let attemptRemoved = false;
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
     const attempts = transaction.objectStore("opening_attempts");
@@ -288,6 +334,7 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
     read.onsuccess = () => {
       if (!read.result || ["rejected", "retained"].includes(read.result.delivery_state)) return;
       attempts.delete(attemptId);
+      attemptRemoved = true;
       const cursor = transaction.objectStore("opening_events").index("attempt_id").openCursor(attemptId);
       cursor.onsuccess = () => { if (cursor.result) { cursor.result.delete(); cursor.result.continue(); } };
     };
@@ -298,6 +345,7 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
   captures.delete(attemptId);
   retryingRecoveryAttempts.delete(attemptId);
   blockedRecoveryAttempts.delete(attemptId);
+  if (attemptRemoved) publishCompletionSignal(attemptId);
   for (const listener of appendListeners) listener();
 }
 
@@ -392,6 +440,7 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
       throw error;
     } finally { clearTimeout(timeout); }
     const database = await offlineTrainingDatabase();
+    let checkpointConfirmed = false;
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
       const attemptStore = transaction.objectStore("opening_attempts");
@@ -399,6 +448,7 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
       const current = attemptStore.get(checkpoint.attempt_id);
       current.onsuccess = () => {
         if (!current.result || ["rejected", "retained"].includes(current.result.delivery_state)) return;
+        checkpointConfirmed = true;
         for (const event of checkpoint.events) if (receipt.received_sequences!.includes(event.sequence)) eventStore.delete([checkpoint.attempt_id, event.sequence]);
         const remaining = eventStore.index("attempt_id").count(checkpoint.attempt_id);
         remaining.onsuccess = () => {
@@ -414,6 +464,7 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
+    if (checkpointConfirmed) publishCompletionSignal(checkpoint.attempt_id);
     retryingRecoveryAttempts.delete(checkpoint.attempt_id);
     if (attemptId) return;
   }

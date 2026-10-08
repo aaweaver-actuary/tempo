@@ -607,3 +607,12 @@ test(rejectParentEvidence
   }
 });
 }
+
+// Shared native-transport proof also runs in Firefox/WebKit via cross-browser.spec.ts.
+import { crossTabOpeningCompletion } from "./opening-evidence-cross-tab-fixture";
+test.describe("cross-tab completion", () => {
+  test.use({ serviceWorkers: "block" });
+  for (const fallback of [false, true]) test(`cross-tab opening completion wakes reconciliation through ${fallback ? "BroadcastChannel fallback" : "storage events"}`, async ({ page, context }) => {
+    await crossTabOpeningCompletion(page, context, fallback);
+  });
+});

@@ -3,6 +3,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { evidenceCompletion, openingEvidenceStorage } from "../fixtures/opening-evidence-storage";
 
 const browserStorage = localStorage;
+const completionSignalKey = "tempo-opening-evidence-completion-v1";
+function announceCompletion(attemptId = "A") {
+  window.dispatchEvent(new StorageEvent("storage", { key: completionSignalKey,
+    newValue: JSON.stringify({ attemptId, signalId: crypto.randomUUID(), sourceSessionId: "another-tab" }) }));
+}
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); browserStorage.clear(); });
 
 async function recoveryHarness(ids = ["A"], fallback = false) {
@@ -180,6 +185,75 @@ it("recovery wakes at the earliest independent journal retry deadline", async ()
   expect(state.requests.at(-1)!.at - startedAt).toBe(3000);
   expect(decodeURIComponent(state.requests.at(-1)!.url)).toContain("opening-checkpoint:A");
   expect(vi.getTimerCount()).toBe(1);
+});
+
+it.each(["pending", "blocked"] as const)("cross-tab completion signal schedules persisted guard reconciliation without delivery (%s)", async mode => {
+  const state = await recoveryHarness(); state.response.mode = mode;
+  const { notifications } = await import("../../app/lib/notifications");
+  await state.idle();
+  const requestCount = state.requests.length;
+  state.stores.opening_attempts.delete("A"); state.stores.opening_events.clear();
+  act(() => { announceCompletion(); announceCompletion(); });
+  expect(state.callbacks.size).toBe(1); expect(state.requests).toHaveLength(requestCount);
+  await state.idle();
+  expect(state.requests).toHaveLength(requestCount); expect(state.callbacks.size).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeTruthy();
+});
+
+it.each(["pending", "blocked"] as const)("unrelated cross-tab completion preserves pending evidence and independent deadlines (%s)", async mode => {
+  const state = await recoveryHarness(); state.response.mode = mode;
+  const { notifications } = await import("../../app/lib/notifications");
+  await state.idle(); const requestCount = state.requests.length;
+  act(() => announceCompletion("unrelated")); await state.idle();
+  state.unchanged(); expect(state.requests).toHaveLength(requestCount);
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeNull();
+  if (mode === "pending") {
+    await state.advance(999); expect(state.callbacks.size).toBe(0);
+    await state.advance(1); await state.idle(); expect(state.requests).toHaveLength(requestCount + 1);
+  }
+});
+
+it("cross-tab completion during an active slice retains a later idle reconciliation", async () => {
+  const state = await recoveryHarness(); state.response.mode = "blocked";
+  await state.idle();
+  let finish!: (result: { moreWork: boolean }) => void;
+  state.recovery.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  act(() => announceCompletion("unrelated")); await state.idle(false);
+  state.stores.opening_attempts.delete("A"); state.stores.opening_events.clear();
+  act(() => announceCompletion()); expect(state.callbacks.size).toBe(0);
+  await act(async () => { finish({ moreWork: false }); });
+  expect(state.callbacks.size).toBe(1); await state.idle();
+  const { notifications } = await import("../../app/lib/notifications");
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeTruthy();
+  expect(state.requests).toHaveLength(1);
+});
+
+it("cross-tab completion with failed storage reads preserves warnings and permits lifecycle recovery", async () => {
+  const state = await recoveryHarness(); state.response.mode = "blocked";
+  await state.idle();
+  const database = await (await import("../../app/lib/offline-training-storage")).offlineTrainingDatabase();
+  const read = vi.spyOn(database, "transaction").mockImplementation(() => { throw new DOMException("Storage unavailable", "InvalidStateError"); });
+  act(() => announceCompletion()); await state.idle();
+  const { notifications } = await import("../../app/lib/notifications");
+  state.unchanged(); expect(state.requests).toHaveLength(1);
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")).toMatchObject({ resolvedAt: null,
+    message: expect.stringContaining("Restore browser storage/access") });
+  read.mockRestore(); state.mounted.unmount();
+  state.stores.opening_attempts.delete("A"); state.stores.opening_events.clear();
+  render(<state.Harness />); await state.idle();
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeTruthy();
+  expect(state.requests).toHaveLength(1);
+});
+
+it("cross-tab completion respects foreground admission and unsubscription", async () => {
+  const state = await recoveryHarness(); state.response.mode = "blocked"; await state.idle();
+  act(() => state.useTrainingStore.getState().setAttemptPhase("opponentReplyPending"));
+  state.stores.opening_attempts.delete("A"); state.stores.opening_events.clear();
+  act(() => announceCompletion()); expect(state.callbacks.size).toBe(0); expect(state.requests).toHaveLength(1);
+  act(() => state.useTrainingStore.getState().setAttemptPhase("playerTurn"));
+  await state.idle(); expect(state.requests).toHaveLength(1);
+  state.mounted.unmount(); act(() => announceCompletion()); expect(state.callbacks.size).toBe(0);
 });
 
 it.each(["pending", "blocked"] as const)("externally completed opening journal prunes stale recovery guards (%s)", async mode => {
