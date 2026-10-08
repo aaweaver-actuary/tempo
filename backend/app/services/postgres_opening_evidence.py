@@ -161,6 +161,9 @@ def persist_checkpoint(database, payload: dict, *, completing_review: bool = Fal
 
 def _validate_checkpoint_scope(database, request: OpeningEvidenceCheckpoint, *, completing_review: bool) -> None:
     manifest = request.manifest
+    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{manifest.card_id}",))
+    from ..card_deletion import require_card_not_deleted
+    require_card_not_deleted(database, manifest.card_id)
     # Lock the original identity before attempt/queue rows, just as aggregate
     # reviews do. Never follow superseded_by to another presentation.
     card = database.execute_native(
@@ -182,6 +185,7 @@ def _validate_checkpoint_scope(database, request: OpeningEvidenceCheckpoint, *, 
     if not completed and retired and retired[0]:
         raise HTTPException(409, {'code': 'card_archived', 'message': 'The original opening attempt was retired.',
                                  'aggregate_review_allowed': False})
+
     if request.terminal and request.terminal.state == "complete" and not completing_review:
         raise EvidenceConflict("A complete shadow attempt must commit with its aggregate review")
     proof = database.execute_native(

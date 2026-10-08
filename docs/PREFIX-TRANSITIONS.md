@@ -148,7 +148,7 @@ Only a completed receipt returns the saved final result.
 Preparation uses the unchanged production evaluator and transition planner. All
 read connections close before JSON decoding, chess traversal, hashing and plan
 classification. The original request belongs to the existing durable command
-receipt; migration 037 stores its recomputed immutable plan, publication targets,
+receipt; migration 038 stores its recomputed immutable plan, publication targets,
 progress and final result. Equal-depth and empty-selection plans validate and
 complete without application records or publication tasks. Lengthening, blockers,
 wrong fingerprints, malformed input and changed study day fail before activation.
@@ -182,7 +182,7 @@ identity fences, including cards that were absent at approval. Database triggers
 check both arriving and departing structural scopes. Imports, source/depth edits,
 card edits/creation, membership adoption, split changes, graph requests and step
 writes cannot bypass the reservations through another writer path. Structural writers share the reservation barrier before checking persistent
-fences; acceptance and activation take its exclusive counterpart. Migration 038
+fences; acceptance and activation take its exclusive counterpart. Migration 039
 removes redundant per-identity trigger locks. Queue writes join the barrier through
 statement triggers on `daily_queue`, `daily_queue_days`, and `queue_projections`;
 position allocation joins before reading positions and retains its ordinary date
@@ -204,6 +204,20 @@ Existing card-edit and graph-request identity locks remain for ordinary producer
 Two distinct applications can stage/publish concurrently after brief acceptance
 serialization. Neither PostgreSQL lock/transaction budgets nor planner limits are
 increased.
+
+Published migration 037's permanent-deletion exclusions remain authoritative.
+Migration 039 replaces its per-card recreation trigger lock with the shared
+reservation barrier. Tombstone writes try the exclusive counterpart before the
+statement and check persistent card fences before each row. This closes the
+absent-identity race: creation cannot miss an uncommitted deletion, deletion
+cannot bypass a staged replacement reservation, and contention rolls back the
+original deletion operation for retry. Existing deletion card/row locks remain;
+the try acquisition avoids an inverse-order wait. An approved snapshot captures
+applicable tombstones, and a proposed permanently deleted target is explicitly
+blocked before acceptance. Ordinary bulk inserts therefore retain one shared
+advisory identity, including the deletion guard; application boundaries retain
+the same two identities. The barrier can serialize unrelated deletions briefly,
+so deterministic real-session regressions cover both creation/deletion orders.
 
 A transaction-local owner setting is accepted only for a persisted
 active application. The staging handler verifies its task generation/lease before

@@ -454,6 +454,10 @@ def prove_last_generated_membership_cleanup():
             with postgres_store.connection() as database:
                 database.execute("DELETE FROM background_tasks WHERE deduplication_key IN (?,?) OR json_extract(payload_json,'$.repertoire_id') IN (?,?)", (authored_scope, generated_scope, authored_scope, generated_scope))
                 database.execute('DELETE FROM repertoires WHERE id IN (?,?)', (authored_scope, generated_scope))
+                # These independent cases deliberately reuse the same card
+                # content. Retain exclusions during each deletion/rebuild proof,
+                # then release only its fixture identities before the next case.
+                database.execute('DELETE FROM deleted_cards WHERE card_id IN (?,?)', (first_id, replacement_id))
     print('PASS CF-11 deleting authored X then cleaning last generated Y retires orphan presentation with history intact; legitimate unlinked authored owner remains playable and Y stays unchanged', flush=True)
 
 

@@ -36,6 +36,8 @@ def submit_tactic_attempt(database: PostgresConnection, payload: dict[str, Any])
     training_fen = str(payload["training_fen"])
     solution = [str(move) for move in payload["solution"]]
     tactic_card_id = card_id(training_fen, solution)
+    from .card_deletion import require_card_not_deleted
+    require_card_not_deleted(database, tactic_card_id)
     lock_daily_tactic_admission(database, date.today().isoformat())
     database.execute_native(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",

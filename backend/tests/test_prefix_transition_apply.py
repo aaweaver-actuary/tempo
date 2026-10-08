@@ -29,6 +29,19 @@ def test_issue80_accepts_only_the_exact_approved_shortening_plan():
         assert failure.value.detail['code'] == 'stale_plan'
 
 
+def test_issue80_permanently_deleted_replacement_is_blocked_before_application():
+    captured = prepared_snapshot()
+    plan = plan_transition(captured, ['caro'], {'caro': 2})
+    deleted_target = next(card.card_id for card in plan.cards if card.lifecycle == 'create')
+    from test_prefix_transition import changed_snapshot
+    blocked = plan_transition(changed_snapshot(captured, 'deleted_cards', [dict(card_id=deleted_target, deleted_at='2026-10-07')]), ['caro'], {'caro': 2})
+    assert blocked.status == 'blocked'
+    assert any(blocker.code == 'permanently_deleted_target' and blocker.object_id == deleted_target for blocker in blocked.blockers)
+    with pytest.raises(HTTPException) as failure:
+        validate_approved_plan(approved_request(blocked), blocked, today=blocked.study_day)
+    assert failure.value.detail['code'] == 'blocked_plan'
+
+
 def test_issue80_changed_study_day_and_blocked_plan_never_authorize_mutation():
     plan = plan_transition(prepared_snapshot(), ['caro'], {'caro': 2})
     with pytest.raises(HTTPException) as failure:
@@ -85,13 +98,17 @@ def test_issue80_checkpoint_locks_original_card_and_rejects_retirement_before_ev
         def execute_native(self, query, parameters):
             statements.append(query)
             assert query.startswith('SELECT')
-            return SimpleNamespace(fetchone=lambda: {'revision':1,'archived':1})
+            return SimpleNamespace(fetchone=lambda: None if 'FROM deleted_cards' in query else {'revision':1,'archived':1})
     request = SimpleNamespace(manifest=SimpleNamespace(card_id='old-card',card_revision=1))
     with pytest.raises(HTTPException) as failure:
         _validate_checkpoint_scope(Database(), request, completing_review=False)
     assert failure.value.detail['code'] == 'card_archived'
     assert failure.value.detail['aggregate_review_allowed'] is False
-    assert statements == ['SELECT revision,archived FROM cards WHERE id=%s FOR UPDATE']
+    assert statements == [
+        'SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+        'SELECT 1 FROM deleted_cards WHERE card_id=%s',
+        'SELECT revision,archived FROM cards WHERE id=%s FOR UPDATE',
+    ]
 
 
 def test_issue80_external_worker_claims_transition_slices_and_owns_atomic_cursor_completion(monkeypatch):

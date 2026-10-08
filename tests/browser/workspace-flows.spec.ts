@@ -132,7 +132,6 @@ test("sample deletion uses repertoire identity and does not delete its same-file
   await page.goto("/");
   await nav(page, "Repertoire");
   await expect(page.locator(".repertoire-card")).toHaveCount(2);
-  page.on("dialog", (dialog) => dialog.accept());
   await page
     .locator(".repertoire-card")
     .first()
@@ -143,6 +142,8 @@ test("sample deletion uses repertoire identity and does not delete its same-file
     .first()
     .getByRole("menuitem", { name: "Delete", exact: true })
     .click();
+  await page.getByRole("radio", { name: "Delete learned cards" }).check();
+  await page.getByRole("button", { name: "Delete repertoire", exact: true }).click();
   await expect(page.locator(".repertoire-card")).toHaveCount(1);
   await nav(page, "Builder");
   await nav(page, "Repertoire");

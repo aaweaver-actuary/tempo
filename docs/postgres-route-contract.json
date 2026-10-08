@@ -1,5 +1,12 @@
 [
   {
+    "method": "GET",
+    "path": "/api/cards/{identifier}/deletion-preview",
+    "handler": "preview_card_deletion",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
     "method": "POST",
     "path": "/api/repertoires/{identifier}/prefix-transition/plan",
     "handler": "prefix_transition_plan",

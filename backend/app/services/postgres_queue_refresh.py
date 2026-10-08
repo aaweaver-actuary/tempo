@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from itertools import islice
 import json
 from typing import Any
 
@@ -33,6 +34,7 @@ _ELIGIBILITY_PHASES = (
 _UNLOCK_BATCH_SIZE = 8
 _QUARANTINE_READ_BATCH_SIZE = 32
 _OPENING_CANDIDATE_READ_BATCH_SIZE = 16
+_TACTICAL_CANDIDATE_READ_BATCH_SIZE = 16
 
 _PRIORITY_OPENING_PAGE_SQL = """WITH active_miss AS MATERIALIZED (
     SELECT unnest(%s::text[]) AS card_id
@@ -125,19 +127,29 @@ def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
     ordered_packs = ([pack for pack in active_packs if pack > rotation_cursor]
                      + [pack for pack in active_packs if pack <= rotation_cursor])
     for pack_id in ordered_packs:
-        for record in pack_records(pack_id):
-            if record["PuzzleId"] in seen_puzzles:
-                continue
-            training_fen, solution = validate_puzzle_record(record)
-            return {
-                "pack_id": pack_id,
-                "puzzle_id": record["PuzzleId"],
-                "card_id": card_id(training_fen, solution),
-                "training_fen": training_fen,
-                "solution_json": json.dumps(solution),
-                "source_fen": record["FEN"],
-                "rotation_cursor": rotation_cursor,
-            }
+        unseen_records = (record for record in pack_records(pack_id)
+                          if record["PuzzleId"] not in seen_puzzles)
+        while candidate_records := list(islice(unseen_records, _TACTICAL_CANDIDATE_READ_BATCH_SIZE)):
+            prepared_candidates = []
+            for record in candidate_records:
+                training_fen, solution = validate_puzzle_record(record)
+                prepared_candidates.append({
+                    "pack_id": pack_id,
+                    "puzzle_id": record["PuzzleId"],
+                    "card_id": card_id(training_fen, solution),
+                    "training_fen": training_fen,
+                    "solution_json": json.dumps(solution),
+                    "source_fen": record["FEN"],
+                    "rotation_cursor": rotation_cursor,
+                })
+            candidate_ids = [candidate["card_id"] for candidate in prepared_candidates]
+            deleted_ids = {row[0] for row in _bounded_read(
+                "SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])",
+                (candidate_ids,), native=True,
+            )}
+            for candidate in prepared_candidates:
+                if candidate["card_id"] not in deleted_ids:
+                    return candidate
     return None
 
 
@@ -147,6 +159,10 @@ def _publish_tactical_introduction(database, queue_date: str,
 
     if prepared is None:
         return False
+    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{prepared['card_id']}",))
+    from ..card_deletion import is_card_deleted
+    if is_card_deleted(database, prepared["card_id"]):
+        return True
     lock_daily_tactic_admission(database, queue_date)
     limit = database.execute_native("SELECT tactics_new_per_day FROM settings WHERE id=1").fetchone()[0]
     reserved = count_daily_tactic_introductions(database, queue_date)
@@ -225,6 +241,7 @@ def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
         """SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=%s AND q.status='queued' AND c.content_type='opening'
+             AND c.repertoire_id<>'__retained_cards__'
              AND COALESCE(q.admission_kind,'')!='explicit'
              AND (c.introduced_at IS NULL OR c.introduced_at=%s)
              AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
@@ -257,6 +274,7 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
         """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.id=%s AND q.queue_date=%s AND q.status='queued'
              AND c.content_type='opening' AND COALESCE(q.admission_kind,'')!='explicit'
+             AND c.repertoire_id<>'__retained_cards__'
              AND (c.introduced_at IS NULL OR c.introduced_at=%s)
              AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
            FOR UPDATE OF q,c""",

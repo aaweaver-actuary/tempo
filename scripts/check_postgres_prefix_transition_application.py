@@ -457,7 +457,148 @@ def test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after
     print('PASS test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention')
 
 
-def test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity():
+def test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets():
+    from app import card_commands  # Register the actual foreground deletion command.
+    from app.snapshot_reads import snapshot_rows
+    with fixture('deletion-fences') as (rep, other, lines, steps):
+        plan, payload = ready_plan(rep, lines)
+        target = next(card.card_id for card in plan.cards if card.lifecycle == 'create')
+        failed_operation = payload['operation_id']
+        deletion_operation = uuid.uuid4().hex
+        deleted_after_publication = None
+        try:
+            with postgres_store.connection(read_only=False) as database:
+                database.execute_native('INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s)', (target, datetime.now(timezone.utc).isoformat()))
+            blocked = idle_call(lambda: prefix_transition_api.prefix_transition_plan(rep, prefix_transition_api.PrefixTransitionRequest(**{key:value for key,value in payload['request'].items() if key in ('snapshot_id','selected_line_ids','candidate_depths')})))
+            assert blocked.status == 'blocked' and any(blocker.code == 'permanently_deleted_target' for blocker in blocked.blockers), blocked
+            assert execute(payload) is None
+            assert read_operation(failed_operation)['error']['detail']['code'] == 'blocked_plan'
+            with postgres_store.connection(read_only=False) as database:
+                assert not database.execute_native('SELECT 1 FROM prefix_transition_applications WHERE operation_id=%s', (failed_operation,)).fetchone()
+                assert not database.execute_native('SELECT 1 FROM cards WHERE id=%s', (target,)).fetchone()
+                database.execute_native('DELETE FROM deleted_cards WHERE card_id=%s', (target,))
+            plan, payload = ready_plan(rep, lines)
+            assert execute(payload) == {'status':'pending'}
+            with postgres_store.connection(read_only=True) as database:
+                before = snapshot_rows(database, 'SELECT * FROM cards WHERE repertoire_id=%s', (rep,))
+            for tombstone_only in (True, False):
+                try:
+                    with postgres_store.connection(read_only=False) as database:
+                        if tombstone_only:
+                            database.execute_native('INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s)', (target, datetime.now(timezone.utc).isoformat()))
+                        else:
+                            card_commands.delete_card(database, {'card_id':steps[0].card_id,'expected_revision':1})
+                except psycopg.Error as error:
+                    assert error.sqlstate == 'P0080', error
+                else:
+                    raise AssertionError('Permanent deletion bypassed a retained transition fence')
+            with postgres_store.connection(read_only=True) as database:
+                assert snapshot_rows(database, 'SELECT * FROM cards WHERE repertoire_id=%s', (rep,)) == before
+                assert not database.execute_native('SELECT 1 FROM deleted_cards WHERE card_id=%s', (target,)).fetchone()
+            publish(payload)
+            deleted_after_publication = next(step.card_id for step in steps if step.line_id == lines[2]['id'])
+            deletion_payload = {'card_id':deleted_after_publication,'expected_revision':1}
+            from concurrent.futures import ThreadPoolExecutor
+            import threading
+            held, release = threading.Event(), threading.Event()
+            def queue_writer():
+                with postgres_store.connection(read_only=False) as database:
+                    database.execute_native('UPDATE daily_queue SET status=status WHERE card_id=%s', (deleted_after_publication,))
+                    held.set()
+                    assert release.wait(5), 'Deletion command did not yield to the queue writer'
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                writer = executor.submit(queue_writer)
+                try:
+                    assert held.wait(5)
+                    try:
+                        execute_command(deletion_operation, 'cards.delete', deletion_payload)
+                    except psycopg.errors.LockNotAvailable:
+                        pass
+                    else:
+                        raise AssertionError('Deletion command did not retry under queue contention')
+                finally:
+                    release.set()
+                writer.result(timeout=5)
+            with postgres_store.connection(read_only=True) as database:
+                assert database.execute_native('SELECT 1 FROM cards WHERE id=%s', (deleted_after_publication,)).fetchone()
+                assert not database.execute_native('SELECT 1 FROM deleted_cards WHERE card_id=%s', (deleted_after_publication,)).fetchone()
+            response = execute_command(deletion_operation, 'cards.delete', deletion_payload)
+            assert response == {'deleted':True,'card_id':deleted_after_publication}
+            assert execute_command(deletion_operation, 'cards.delete', deletion_payload) == response
+        finally:
+            with postgres_store.connection(read_only=False) as database:
+                database.execute_native('DELETE FROM deleted_cards WHERE card_id=ANY(%s)', ([target, *([deleted_after_publication] if deleted_after_publication else [])],))
+                database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', ([failed_operation,deletion_operation],))
+    print('PASS test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets')
+
+
+def test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from app.card_deletion import permanent_delete_card
+    with fixture('deletion-races') as (rep, other, lines, steps):
+        plan, payload = ready_plan(rep, lines)
+        prepared = idle_call(lambda:application.prepare_application(payload))
+        creation = prepared.creations[0]
+        held, release = threading.Event(), threading.Event()
+        def create_and_hold():
+            with postgres_store.connection(read_only=False) as database:
+                create_graph_cards(database, (creation,), plan.study_day, strict=True)
+                held.set()
+                assert release.wait(5), 'Deletion did not yield to identity creation'
+        def delete_and_hold():
+            with postgres_store.connection(read_only=False) as database:
+                permanent_delete_card(database, creation.card_id, 1)
+                held.set()
+                assert release.wait(5), 'Recreation did not yield to deletion exclusion'
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                creator = executor.submit(create_and_hold)
+                try:
+                    assert held.wait(5)
+                    try:
+                        with postgres_store.connection(read_only=False) as database:
+                            database.execute_native('INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s)', (creation.card_id, datetime.now(timezone.utc).isoformat()))
+                    except psycopg.errors.LockNotAvailable:
+                        pass
+                    else:
+                        raise AssertionError('Exclusion bypassed an uncommitted identity creation')
+                finally:
+                    release.set()
+                creator.result(timeout=5)
+                held.clear(); release.clear()
+                deletion = executor.submit(delete_and_hold)
+                try:
+                    assert held.wait(5)
+                    try:
+                        # Use the actual bounded background writer profile;
+                        # the admin fixture connection has no lock timeout.
+                        with postgres_store.connection(read_only=False, background=True) as database:
+                            create_graph_cards(database, (creation,), plan.study_day, strict=True)
+                    except psycopg.errors.LockNotAvailable:
+                        pass
+                    else:
+                        raise AssertionError('Recreation bypassed an uncommitted permanent deletion')
+                finally:
+                    release.set()
+                deletion.result(timeout=5)
+            try:
+                with postgres_store.connection(read_only=False) as database:
+                    create_graph_cards(database, (creation,), plan.study_day, strict=True)
+            except psycopg.errors.CheckViolation as error:
+                assert error.diag.constraint_name == 'deleted_card_content'
+            else:
+                raise AssertionError('Retry recreated a permanently deleted identity')
+            with postgres_store.connection(read_only=True) as database:
+                assert not database.execute_native('SELECT 1 FROM cards WHERE id=%s', (creation.card_id,)).fetchone()
+                assert database.execute_native('SELECT 1 FROM deleted_cards WHERE card_id=%s', (creation.card_id,)).fetchone()
+        finally:
+            with postgres_store.connection(read_only=False) as database:
+                database.execute_native('DELETE FROM deleted_cards WHERE card_id=%s', (creation.card_id,))
+    print('PASS test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier')
+
+
+def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity():
     from app.snapshot_reads import snapshot_rows
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root))
@@ -466,14 +607,19 @@ def test_issue80_schema37_transition_upgrade_preserves_original_recovery_identit
         plan, payload = ready_plan(rep, lines)
         assert execute(payload) == {'status': 'pending'}
         # All workload consumers are stopped by the owning disposable runner.
-        # Recreate only migration038's predecessor, retaining actual application
+        # Recreate only migration039's predecessor, retaining actual application
         # and reservation data. No published migration is edited or skipped.
-        migration37 = (root / 'backend/migrations/037_prefix_transition_application.sql').read_text()
-        guard = migration37[migration37.index('CREATE FUNCTION guard_prefix_transition_scope('):migration37.index('CREATE FUNCTION guard_prefix_transition_write()')].replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1)
+        migration38 = (root / 'backend/migrations/038_prefix_transition_application.sql').read_text()
+        guard = migration38[migration38.index('CREATE FUNCTION guard_prefix_transition_scope('):migration38.index('CREATE FUNCTION guard_prefix_transition_write()')].replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1)
+        deletion37 = (root / 'backend/migrations/037_card_deletion.sql').read_text()
+        deletion_guard = deletion37[deletion37.index('CREATE FUNCTION prevent_deleted_card_recreation()'):deletion37.index('CREATE TRIGGER deleted_card_recreation_guard')].replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1)
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('DROP FUNCTION reserve_prefix_transition_queue_write() CASCADE')
+            database.execute_native('DROP FUNCTION reserve_permanent_deletion_write() CASCADE')
+            database.execute_native('DROP FUNCTION guard_permanent_deletion_scope() CASCADE')
             database.raw.execute(guard, prepare=False)
-            database.execute_native('DELETE FROM tempo_schema_migrations WHERE version=38')
+            database.raw.execute(deletion_guard, prepare=False)
+            database.execute_native('DELETE FROM tempo_schema_migrations WHERE version=39')
         queries = [('SELECT * FROM prefix_transition_applications WHERE operation_id=%s', (payload['operation_id'],)),
                    ('SELECT * FROM prefix_transition_card_fences WHERE operation_id=%s', (payload['operation_id'],)),
                    ('SELECT * FROM prefix_transition_repertoire_fences WHERE operation_id=%s', (payload['operation_id'],)),
@@ -485,10 +631,10 @@ def test_issue80_schema37_transition_upgrade_preserves_original_recovery_identit
         apply_migrations(os.environ['TEMPO_DATABASE_WRITE_URL'])
         with postgres_store.connection(read_only=True) as database:
             assert before == [snapshot_rows(database, query, parameters) for query, parameters in queries]
-            assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 38
+            assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 39
         final = publish(payload)
         assert final['operation_id'] == payload['operation_id'] and execute(payload) == final
-    print('PASS test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity')
+    print('PASS test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity')
 
 
 def test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state():
@@ -997,12 +1143,15 @@ def main():
         return
     if '--lock-scaling' in sys.argv:
         with isolate_unrelated_publication_tasks():
+            test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget()
             test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows()
             test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer()
             test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling()
             test_issue80_queue_and_row_contention_yield_without_losing_operation_identity()
             test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention()
-            test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity()
+            test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets()
+            test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier()
+            test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity()
         return
     with isolate_unrelated_publication_tasks():
         test_issue80_application_rehearsal_preserves_unrelated_publication_tasks()
@@ -1012,7 +1161,9 @@ def main():
         test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling()
         test_issue80_queue_and_row_contention_yield_without_losing_operation_identity()
         test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention()
-        test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity()
+        test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets()
+        test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier()
+        test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity()
         test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state()
         test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery()
         test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation()

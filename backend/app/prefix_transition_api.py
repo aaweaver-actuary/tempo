@@ -50,6 +50,7 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline, *
 
         card_parameters = (list(lookup_card_ids),)
         read('cards', 'SELECT * FROM cards WHERE id=ANY(%s)', card_parameters)
+        read('deleted_cards', 'SELECT * FROM deleted_cards WHERE card_id=ANY(%s)', card_parameters)
         read('repertoire_cards', 'SELECT * FROM repertoire_cards WHERE card_id=ANY(%s) OR repertoire_id=%s',
              (*card_parameters, identifier))
         captured_links = raw_tables[-1][1]

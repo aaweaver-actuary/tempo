@@ -1547,7 +1547,7 @@ def initialize() -> None:
         ).fetchone():
             for repertoire in database.execute(
                 """SELECT id FROM repertoires
-                   WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"""
+                   WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')"""
             ).fetchall():
                 repertoire_id = repertoire["id"]
                 database.execute(
@@ -1675,7 +1675,7 @@ def initialize() -> None:
                       repertoire.id,1,40,'queued','queued',1,
                       json_object('repertoire_id',repertoire.id),0,5,?,?,?
                FROM repertoires repertoire
-               WHERE repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')
+               WHERE repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__','__retained_cards__')
                  AND NOT EXISTS(
                      SELECT 1 FROM opening_graph_publications publication
                      WHERE publication.repertoire_id=repertoire.id
@@ -1689,3 +1689,10 @@ def initialize() -> None:
     from .queue_attempt_origins import initialize_sqlite_origins
     with connection() as database:
         initialize_sqlite_origins(database)
+        database.execute("CREATE TABLE IF NOT EXISTS deleted_cards(card_id TEXT PRIMARY KEY,deleted_at TEXT NOT NULL)")
+        database.execute("""CREATE TRIGGER IF NOT EXISTS deleted_card_recreation_guard
+            BEFORE INSERT ON cards WHEN EXISTS(SELECT 1 FROM deleted_cards WHERE card_id=NEW.id)
+            BEGIN SELECT RAISE(ABORT,'This card was permanently deleted and cannot be recreated'); END""")
+        database.execute("""CREATE TRIGGER IF NOT EXISTS deleted_card_identity_update_guard
+            BEFORE UPDATE OF id ON cards WHEN EXISTS(SELECT 1 FROM deleted_cards WHERE card_id=NEW.id)
+            BEGIN SELECT RAISE(ABORT,'This card was permanently deleted and cannot be recreated'); END""")

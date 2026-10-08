@@ -3,6 +3,36 @@ import { readFileSync } from "node:fs";
 import { navigate } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import type { ActivityResponse } from "../../app/lib/service-status";
+
+for (const width of [390, 1280]) {
+  test(`repertoire-deletion-${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 720 });
+    await prepareVisualUI(page);
+    await navigate(page, "Repertoire");
+    const repertoire = page.locator(".repertoire-card").first();
+    await repertoire.locator("summary").click();
+    await repertoire.getByRole("menuitem", { name: "Delete", exact: true }).click();
+    await expect(page.getByRole("radio", { name: "Keep learned cards" })).toBeChecked();
+    await expect(page.getByRole("button", { name: "Delete repertoire", exact: true })).toHaveCSS("background-color", "rgb(160, 82, 61)");
+    await expect(page).toHaveScreenshot(`repertoire-deletion-${width}.png`, { animations: "disabled", fullPage: true });
+  });
+  test(`card-deletion-${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 720 });
+    await prepareVisualUI(page);
+    await page.route("**/api/cards/visual-card/deletion-preview", route => route.fulfill({ json: {
+      card_id: "visual-card", revision: 1,
+      repertoires: [{ id: "visual-repertoire", name: "Spanish opening — tournament preparation" }, { id: "shared", name: "Shared tournament lines" }],
+    } }));
+    await navigate(page, "Train");
+    const editCard = page.getByRole("button", { name: /Edit card/ });
+    if (!await editCard.isVisible()) await page.locator(".phone-study-actions summary").click();
+    await editCard.click();
+    await expect(page.getByRole("button", { name: "Delete card", exact: true })).toHaveCSS("background-color", "rgb(160, 82, 61)");
+    await page.getByRole("button", { name: "Delete card", exact: true }).click();
+    await expect(page.getByRole("heading", { name: /Permanently delete/ })).toBeVisible();
+    await expect(page).toHaveScreenshot(`card-deletion-${width}.png`, { animations: "disabled", fullPage: true });
+  });
+}
 for (const viewport of [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },

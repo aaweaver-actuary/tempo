@@ -97,4 +97,4 @@ CREATE TRIGGER prefix_transition_graph_request BEFORE INSERT OR UPDATE ON backgr
 CREATE TRIGGER prefix_transition_publication_write BEFORE INSERT OR UPDATE OR DELETE ON opening_graph_publications FOR EACH ROW EXECUTE FUNCTION guard_prefix_transition_write();
 CREATE TRIGGER prefix_transition_split_write BEFORE INSERT OR UPDATE OR DELETE ON prefix_splits FOR EACH ROW EXECUTE FUNCTION guard_prefix_transition_write();
 CREATE TRIGGER prefix_transition_steps_write BEFORE INSERT OR UPDATE OR DELETE ON opening_graph_steps FOR EACH ROW EXECUTE FUNCTION guard_prefix_transition_write();
-INSERT INTO tempo_schema_migrations(version) VALUES(37);
+INSERT INTO tempo_schema_migrations(version) VALUES(38);

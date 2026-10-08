@@ -274,6 +274,8 @@ def execute_command(
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
             }
+            if getattr(getattr(error, "diag", None), "constraint_name", None) == "deleted_card_content":
+                error_payload.update(status_code=409, message="This card was permanently deleted. Refresh the workspace before retrying.")
             error_payload.update({"code": error.code, "retryable": error.retryable} if hasattr(error, "code") and hasattr(error, "retryable") else {})
             if isinstance(error, HTTPException):
                 try:

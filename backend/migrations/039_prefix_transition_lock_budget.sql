@@ -1,4 +1,4 @@
--- Keep 037 immutable: upgrade existing application/fence rows without rewriting history.
+-- Keep 038 immutable: upgrade existing application/fence rows without rewriting history.
 -- The shared/exclusive reservation barrier serializes fence installation and all
 -- structural/queue writes. Per-identity advisory locks are redundant under it.
 CREATE OR REPLACE FUNCTION guard_prefix_transition_scope(scope_kind TEXT, scope_id TEXT) RETURNS void LANGUAGE plpgsql AS $$
@@ -32,4 +32,35 @@ CREATE TRIGGER prefix_transition_queue_day_write BEFORE INSERT OR UPDATE OR DELE
 FOR EACH STATEMENT EXECUTE FUNCTION reserve_prefix_transition_queue_write();
 CREATE TRIGGER prefix_transition_queue_projection_write BEFORE INSERT OR UPDATE OR DELETE ON queue_projections
 FOR EACH STATEMENT EXECUTE FUNCTION reserve_prefix_transition_queue_write();
-INSERT INTO tempo_schema_migrations(version) VALUES(38);
+
+-- Published 037's deletion exclusions remain authoritative. Bulk recreation
+-- checks share one barrier; tombstone mutations take its exclusive counterpart
+-- before changing exclusions, so an insert cannot miss an uncommitted deletion.
+-- Try acquisition avoids inversion with deletion's existing card/row locks.
+CREATE OR REPLACE FUNCTION prevent_deleted_card_recreation() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0));
+    IF EXISTS(SELECT 1 FROM deleted_cards WHERE card_id=NEW.id) THEN
+        RAISE EXCEPTION 'This card was permanently deleted and cannot be recreated'
+            USING ERRCODE='23514',CONSTRAINT='deleted_card_content';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE FUNCTION reserve_permanent_deletion_write() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT pg_try_advisory_xact_lock(hashtextextended('tempo:prefix-transition:reservations',0)) THEN
+        RAISE EXCEPTION USING ERRCODE='55P03',MESSAGE='Permanent deletion yielded to a structural or queue writer; retry the original operation.';
+    END IF;
+    RETURN NULL;
+END $$;
+CREATE TRIGGER permanent_deletion_reservation BEFORE INSERT OR UPDATE OR DELETE ON deleted_cards
+FOR EACH STATEMENT EXECUTE FUNCTION reserve_permanent_deletion_write();
+CREATE FUNCTION guard_permanent_deletion_scope() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP<>'INSERT' THEN PERFORM guard_prefix_transition_scope('card',OLD.card_id); END IF;
+    IF TG_OP<>'DELETE' THEN PERFORM guard_prefix_transition_scope('card',NEW.card_id); END IF;
+    IF TG_OP='DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END $$;
+CREATE TRIGGER permanent_deletion_scope BEFORE INSERT OR UPDATE OR DELETE ON deleted_cards
+FOR EACH ROW EXECUTE FUNCTION guard_permanent_deletion_scope();
+INSERT INTO tempo_schema_migrations(version) VALUES(39);

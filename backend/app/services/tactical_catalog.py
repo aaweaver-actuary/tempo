@@ -82,6 +82,10 @@ def seed_tactical_introductions(db, day):
         pack,record = selection
         fen,solution = validate_puzzle_record(record)
         cid = card_id(fen,solution)
+        from ..card_deletion import is_card_deleted
+        if is_card_deleted(db, cid):
+            seen.add(record['PuzzleId'])
+            continue
         db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,scheduling_mode,source_ref,source_fen,introduced_at) VALUES(?,'__tactics__','checkpoint',?,?,'learning',?,'tactic','light',?,?,?)",(cid,fen,json.dumps(solution),day,record['PuzzleId'],record['FEN'],day))
         db.execute('INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,admitted_at,admission_mode) VALUES(?,?,?,?,?) ON CONFLICT(puzzle_id) DO UPDATE SET card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at)',(record['PuzzleId'],pack,cid,day,'light'))
         db.execute('INSERT INTO tactic_introductions(puzzle_id,pack_id,introduction_date) VALUES(?,?,?)',(record['PuzzleId'],pack,day))

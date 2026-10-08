@@ -216,6 +216,8 @@ def _approve_in_transaction(database, candidate, *, reports_verified: bool = Fal
                             admission_mode: str = "manual") -> str:
     _require_current(candidate)
     candidate_id = candidate["id"]
+    from ..card_deletion import require_card_not_deleted
+    require_card_not_deleted(database, candidate["card_id"] or hashlib.sha256(f"defense\0{candidate_id}".encode()).hexdigest())
     if candidate["validation_state"] not in {"engine_supported", "validated_control"}:
         raise ValueError("Only a validated candidate can enter training")
     if not reports_verified:
@@ -442,7 +444,9 @@ def execute_defense_admission_slice(task: dict) -> bool:
             (candidate_position, candidate_position),
         ).fetchone()
         refreshed = _candidate(database, candidate["id"])
-        if (reports_verified and (candidate["card_id"] or not same_incident and not same_position)
+        from ..card_deletion import is_card_deleted
+        excluded = is_card_deleted(database, hashlib.sha256(f"defense\0{candidate['id']}".encode()).hexdigest())
+        if (not excluded and reports_verified and (candidate["card_id"] or not same_incident and not same_position)
                 and refreshed
                 and refreshed["validation_state"] in {"engine_supported", "validated_control"}
                 and not refreshed["approved_at"]
