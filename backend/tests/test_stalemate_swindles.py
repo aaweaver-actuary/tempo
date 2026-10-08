@@ -323,7 +323,7 @@ def test_stalemate_cli_archive_verifies_source_and_rejects_failed_pipeline(tmp_p
 
 
 def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=False, sampling=False,
-                             cancellation_signal=None, ignore_termination=False):
+                             cancellation_signal=None, ignore_termination=False, suppress_interruption=False):
     """Use real owned pipes; an undrained producer cannot finish its 32 MiB write."""
     tool_directory = tmp_path / "bin"
     tool_directory.mkdir()
@@ -368,6 +368,26 @@ def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=F
                "--source-sha256", "0" * 64, "--source-month", "2026-09", "--output", str(output)]
     if sampling:
         command += ["--stop-after-candidates", "1"]
+    if suppress_interruption:
+        interruption_wrapper = tmp_path / "suppressed-interruption.py"
+        interruption_wrapper.write_text(f"""import importlib.util
+specification = importlib.util.spec_from_file_location('cli', {str(CLI)!r})
+cli = importlib.util.module_from_spec(specification)
+specification.loader.exec_module(cli)
+original_signal = cli.signal.signal
+def install_handler(received_signal, handler):
+    if callable(handler) and handler.__name__ == 'cancel_command':
+        def suppress_exception(signal_number, frame, cancellation_handler=handler):
+            try:
+                cancellation_handler(signal_number, frame)
+            except cli.ArchiveCancellation:
+                pass
+        handler = suppress_exception
+    return original_signal(received_signal, handler)
+cli.signal.signal = install_handler
+raise SystemExit(cli.main())
+""")
+        command[1] = str(interruption_wrapper)
     miner = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              env=environment, cwd=ROOT, start_new_session=True)
     try:
@@ -383,8 +403,9 @@ def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=F
                 os.close(readiness_descriptor)
         try:
             _, diagnostics = miner.communicate(timeout=20)
-        except subprocess.TimeoutExpired:
-            pytest.fail("Archive pipeline deadlocked with an owned child blocked by pipe backpressure")
+        except subprocess.TimeoutExpired as timeout:
+            pytest.fail("Archive pipeline deadlocked with an owned child blocked by pipe backpressure; "
+                        f"miner_status={miner.poll()}; diagnostics={timeout.stderr!r}")
         expected_status = 128 + cancellation_signal if cancellation_signal is not None else (0 if sampling else 1)
         assert miner.returncode == expected_status, diagnostics
         if cancellation_signal is not None:
@@ -447,6 +468,45 @@ def test_stalemate_archive_external_cancellation_reaps_owned_children(tmp_path, 
                              ignore_termination=ignore_termination)
 
 
+def test_stalemate_archive_cancellation_reaps_children_when_interruption_is_suppressed(tmp_path):
+    # An asynchronous exception can be swallowed by an unraisable callback.
+    # Cancellation must still wake a blocked read and reap the owned pipeline.
+    run_backpressured_archive(tmp_path, "cancellation", cancellation_signal=signal.SIGTERM,
+                             ignore_termination=True, suppress_interruption=True)
+
+
+def test_stalemate_archive_workers_reserve_cancellation_signals_for_main_thread(monkeypatch):
+    module_spec = importlib.util.spec_from_file_location("stalemate_cli_worker_signals", CLI)
+    cli_module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(cli_module)
+    original_popen = cli_module.subprocess.Popen
+    original_start = cli_module.threading.Thread.start
+    worker_masks = []
+    main_mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+
+    def record_worker_mask(worker):
+        original_target = worker._target
+        def run_with_recorded_mask(*arguments, **keywords):
+            worker_masks.append(signal.pthread_sigmask(signal.SIG_BLOCK, []))
+            return original_target(*arguments, **keywords)
+        worker._target = run_with_recorded_mask
+        original_start(worker)
+
+    def start_fixture_stage(command, **options):
+        stage_program = ("import sys; sys.stdout.buffer.write(b'archive')" if command[0] == "curl"
+                         else "import sys; sys.stdin.buffer.read()")
+        return original_popen([sys.executable, "-c", stage_program], **options)
+
+    monkeypatch.setattr(cli_module.threading.Thread, "start", record_worker_mask)
+    monkeypatch.setattr(cli_module.subprocess, "Popen", start_fixture_stage)
+    with cli_module.ArchiveStream("fixture", hashlib.sha256(b"archive").hexdigest()) as archive:
+        assert archive.text_stream.read() == ""
+        archive.verify_complete()
+    assert len(worker_masks) == 3
+    assert all({signal.SIGINT, signal.SIGTERM} <= worker_mask for worker_mask in worker_masks)
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, []) == main_mask
+
+
 @pytest.mark.parametrize("received_signal", [signal.SIGINT, signal.SIGTERM])
 def test_stalemate_cli_cancellation_restores_signal_handlers_and_defers_repeated_signals(monkeypatch, received_signal):
     module_spec = importlib.util.spec_from_file_location("stalemate_cli_cancellation", CLI)
@@ -456,11 +516,16 @@ def test_stalemate_cli_cancellation_restores_signal_handlers_and_defers_repeated
     installed_handlers = dict(previous_handlers)
     monkeypatch.setattr(cli_module.signal, "getsignal", installed_handlers.__getitem__)
     monkeypatch.setattr(cli_module.signal, "signal", installed_handlers.__setitem__)
-    with cli_module.cli_cancellation_signals():
-        with pytest.raises(cli_module.ArchiveCancellation) as interruption:
-            installed_handlers[received_signal](received_signal, None)
-        assert interruption.value.received_signal == received_signal
-        assert all(handler == signal.SIG_IGN for handler in installed_handlers.values())
+    with pytest.raises(cli_module.ArchiveCancellation) as final_interruption:
+        with cli_module.cli_cancellation_signals() as cancellation:
+            with pytest.raises(cli_module.ArchiveCancellation) as interruption:
+                installed_handlers[received_signal](received_signal, None)
+            assert interruption.value.received_signal == received_signal
+            assert cancellation.received_signal == received_signal
+            for deferred_signal in previous_handlers:
+                installed_handlers[deferred_signal](deferred_signal, None)
+            assert cancellation.received_signal == received_signal
+    assert final_interruption.value.received_signal == received_signal
     assert installed_handlers == previous_handlers
     with cli_module.cli_cancellation_signals():
         assert all(callable(handler) for handler in installed_handlers.values())

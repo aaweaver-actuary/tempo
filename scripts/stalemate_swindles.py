@@ -32,25 +32,34 @@ class ArchiveCancellation(BaseException):
         self.received_signal = received_signal
 
 
+class ArchiveCancellationState:
+    def __init__(self):
+        self.received_signal: int | None = None
+
+
 @contextmanager
 def cli_cancellation_signals():
-    """Unwind owned resources once, without interrupting their bounded cleanup."""
+    """Retain cancellation even if an asynchronous exception is suppressed."""
     cancellation_signals = (signal.SIGINT, signal.SIGTERM)
     previous_handlers = {received_signal: signal.getsignal(received_signal)
                          for received_signal in cancellation_signals}
+    cancellation = ArchiveCancellationState()
 
     def cancel_command(received_signal, _frame):
-        for deferred_signal in cancellation_signals:
-            signal.signal(deferred_signal, signal.SIG_IGN)
-        raise ArchiveCancellation(received_signal)
+        if cancellation.received_signal is None:
+            cancellation.received_signal = received_signal
+            raise ArchiveCancellation(received_signal)
+        # Repeated signals defer to the first bounded cleanup unwind.
 
     try:
         for received_signal in cancellation_signals:
             signal.signal(received_signal, cancel_command)
-        yield
+        yield cancellation
     finally:
         for received_signal, previous_handler in previous_handlers.items():
             signal.signal(received_signal, previous_handler)
+        if cancellation.received_signal is not None:
+            raise ArchiveCancellation(cancellation.received_signal)
 
 
 def positive_integer(value: str) -> int:
@@ -120,7 +129,8 @@ class ArchiveStream:
 
     TERMINATION_GRACE_SECONDS = 5
 
-    def __init__(self, source_url: str, expected_sha256: str):
+    def __init__(self, source_url: str, expected_sha256: str, cancellation: ArchiveCancellationState | None = None):
+        self.cancellation = cancellation
         self.source_url = source_url
         self.expected_sha256 = expected_sha256
         self.digest = hashlib.sha256()
@@ -167,6 +177,9 @@ class ArchiveStream:
 
     def monitor_process(self, stage: str, process):
         while not self.stopping.is_set():
+            if self.cancellation is not None and self.cancellation.received_signal is not None:
+                self.stop()
+                return
             try:
                 result = process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
             except subprocess.TimeoutExpired:
@@ -215,11 +228,17 @@ class ArchiveStream:
                             self.pump_errors.append(error)
                             self.stop(f"compressed-byte pump close failed: {error}")
             self.pump = threading.Thread(target=transfer_compressed_bytes, name="stalemate-archive-pump")
-            self.pump.start()
-            for stage, process in (("curl", self.downloader), ("zstd", self.decompressor)):
-                monitor = threading.Thread(target=self.monitor_process, args=(stage, process), name=f"stalemate-archive-{stage}")
-                self.monitors.append(monitor)
-                monitor.start()
+            # Process-directed signals must wake the main thread's blocked read.
+            # Workers inherit this mask; restore the main mask after all start.
+            previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+            try:
+                self.pump.start()
+                for stage, process in (("curl", self.downloader), ("zstd", self.decompressor)):
+                    monitor = threading.Thread(target=self.monitor_process, args=(stage, process), name=f"stalemate-archive-{stage}")
+                    self.monitors.append(monitor)
+                    monitor.start()
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
             self.text_stream = io.TextIOWrapper(self.decompressor.stdout, encoding="utf-8", errors="strict")
             return self
         except BaseException:
@@ -305,7 +324,8 @@ def run_mine(arguments):
             raise ValueError("Archive filename must match source-month")
         source = {"filename": expected_filename, "url": arguments.source_url,
                   "expected_sha256": arguments.source_sha256.lower(), "sha256": None, "sha256_verified": False}
-        with ArchiveStream(arguments.source_url, arguments.source_sha256.lower()) as archive:
+        with ArchiveStream(arguments.source_url, arguments.source_sha256.lower(),
+                           getattr(arguments, "cancellation", None)) as archive:
             mine_to_file(arguments, archive.text_stream, source, archive)
     else:
         input_path = arguments.input or "-"
@@ -423,7 +443,8 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     arguments = parser().parse_args()
     try:
-        with cli_cancellation_signals():
+        with cli_cancellation_signals() as cancellation:
+            arguments.cancellation = cancellation
             arguments.run(arguments)
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f"Stalemate Swindles: {error}", file=sys.stderr)
