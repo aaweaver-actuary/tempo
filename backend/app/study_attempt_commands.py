@@ -186,6 +186,8 @@ def self_assess_study_attempt(database: PostgresConnection, payload: dict[str, A
         if result.get("requested_rating", result["rating"]) != request.rating:
             raise HTTPException(409, "Attempt already finalized with a different rating")
         return result
+    if attempt["retired_operation_id"]:
+        raise HTTPException(409, "The original presentation was retired before self-assessment")
     if exercise["current_revision"] != attempt["revision"]:
         raise HTTPException(409, "Exercise changed before self-assessment")
     assessment = json.loads(attempt["assessment_json"])

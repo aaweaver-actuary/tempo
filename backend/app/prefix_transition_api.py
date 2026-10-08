@@ -30,7 +30,7 @@ def discover_memberships(identifier, deadline):
     return tuple(row['card_id'] for row in rows)
 
 
-def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline):
+def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline, *, reads=None):
     """All transition inputs and structure share one read-only MVCC snapshot."""
     lookup_card_ids = tuple(sorted(set(lookup_card_ids)))
     def capture(database):
@@ -50,6 +50,7 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline):
 
         card_parameters = (list(lookup_card_ids),)
         read('cards', 'SELECT * FROM cards WHERE id=ANY(%s)', card_parameters)
+        read('deleted_cards', 'SELECT * FROM deleted_cards WHERE card_id=ANY(%s)', card_parameters)
         read('repertoire_cards', 'SELECT * FROM repertoire_cards WHERE card_id=ANY(%s) OR repertoire_id=%s',
              (*card_parameters, identifier))
         captured_links = raw_tables[-1][1]
@@ -89,7 +90,7 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline):
              '(SELECT repertoire_id FROM repertoire_cards WHERE card_id=ANY(%s))', (identifier, *card_parameters))
         return raw_tables
 
-    source, raw_tables = structural.load_snapshot(identifier, deadline, capture=capture)
+    source, raw_tables = structural.load_snapshot(identifier, deadline, capture=capture, **({'reads': reads} if reads is not None else {}))
     tables = []
     for name, rows in raw_tables:
         tables.append(SnapshotTable(name, tuple(canonical_json(dict(row)) for row in rows)))

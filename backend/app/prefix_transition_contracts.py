@@ -94,3 +94,26 @@ class PrefixTransitionPlan(FrozenRecord):
     submissions: tuple[SubmissionDisposition, ...]
     blockers: tuple[Blocker, ...]
     offline_visibility: Literal['client_local_attempts_not_enumerable'] = 'client_local_attempts_not_enumerable'
+
+
+class PrefixTransitionApplyRequest(PrefixTransitionRequest):
+    plan_id: str = Field(min_length=1, max_length=128)
+    transition_snapshot_id: str = Field(min_length=1, max_length=128)
+    graph_generation: int = Field(ge=1, strict=True)
+    study_day: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+
+
+class PrefixTransitionApplicationResult(FrozenRecord):
+    status: Literal['complete']
+    operation_id: str
+    plan_id: str
+    repertoire_id: str
+    graph_generation: int
+    no_op: bool
+    queue_date: str | None = None
+
+
+class PrefixTransitionPendingResponse(FrozenRecord):
+    operation_id: str
+    state: str
+    message: str | None = None

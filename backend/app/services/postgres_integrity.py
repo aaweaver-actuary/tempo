@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 from typing import Any
 
@@ -62,6 +62,8 @@ def request_integrity_scan_in_transaction(
         "WHERE repertoire_id=%s",
         (f"{queued_task['id']}:{queued_task['generation']}", repertoire_id),
     )
+    from .prefix_transition_application import record_integrity_target
+    record_integrity_target(database, repertoire_id, graph_generation, queued_task)
     return queued_task
 
 
@@ -524,7 +526,14 @@ def complete_integrity_scan_in_transaction(
 
     from ..queue_commands import request_queue_refresh_in_transaction
 
-    request_queue_refresh_in_transaction(database, str(payload["local_day"]))
+    from .prefix_transition_application import record_queue_target
+    transitioning = database.execute_native(
+        "SELECT 1 FROM prefix_transition_applications WHERE repertoire_id=%s AND graph_generation=%s "
+        "AND state IN ('publishing','recovery_required')", (repertoire_id, int(payload['graph_generation'])),
+    ).fetchone()
+    queue_day = date.today().isoformat() if transitioning else str(payload['local_day'])
+    queue_task = request_queue_refresh_in_transaction(database, queue_day)
+    record_queue_target(database, repertoire_id, int(payload['graph_generation']), queue_task, queue_day)
     if not complete_task_slice_in_transaction(database, task):
         raise RuntimeError("Integrity lease changed before publication")
     return False

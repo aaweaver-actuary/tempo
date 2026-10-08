@@ -2579,6 +2579,39 @@ This is a new read-only feature; there was no existing diagnostic implementation
 
 - `test_postgres_prefix_diagnostics_fixture_does_not_leave_eligible_routes` — diagnostics rehearsal removes only its owned active cards/repertoires so later global comparisons remain isolated; retained shadow evidence stays durable. Covered by `scripts/check_postgres_prefix_diagnostics.py` in the regular PostgreSQL evidence rehearsal.
 
+## Issue #80 — durable approved shorter-prefix application
+
+| Failure / behavior | Named regular regression |
+| --- | --- |
+| Wrong immutable identity, changed study day or blockers authorize mutation | `test_issue80_accepts_only_the_exact_approved_shortening_plan`; `test_issue80_changed_study_day_and_blocked_plan_never_authorize_mutation` |
+| API writes/plans directly, lacks required command identity, or holds its own foreground lease during preparation | `test_issue80_http_apply_requires_stable_identity_and_keeps_preparation_outside_api`; `test_issue80_apply_dispatch_does_not_hold_a_foreground_lease_during_preparation` |
+| OpenAPI omits immutable request fields or deferred completion/location contract | `test_issue80_openapi_binds_the_exact_request_and_deferred_completion_contract` |
+| Retired study self-assessment grades or loses a completed receipt | `test_issue80_retired_study_self_assessment_conflicts_before_grading_and_completed_receipt_replays` |
+| Unchecked source integrity commits an unrecoverable fenced transition | `test_issue80_unclean_source_integrity_rejects_before_acceptance` |
+| Deployed reader-only API bypasses command transport, falsely completes pending publication or loses replay identity | `test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result` |
+| External worker omits the new durable kind or completes its cursor separately | `test_issue80_external_worker_claims_transition_slices_and_owns_atomic_cursor_completion` |
+| Checkpoints write evidence after original-card retirement | `test_issue80_checkpoint_locks_original_card_and_rejects_retirement_before_evidence_writes` |
+| Selected Caro-Kann routes change QGD depths/ordered graph coverage, or replacements inherit fabricated learning | `test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state` |
+| Structural edits, membership adoption or absent-target creation bypass reservations; duplicate plans or changed payloads apply twice | `test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery` |
+| Source, target, history, membership or graph changes after preparation partially apply | `test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation` |
+| Study during staging applies a stale plan or leaves structural fences stuck | `test_issue80_review_during_staging_rejects_activation_and_releases_fences` |
+| Application rehearsal consumes unrelated retained publication tasks from earlier regular proofs | `test_issue80_application_rehearsal_preserves_unrelated_publication_tasks` |
+| Unfenced bulk imports/graph writes exhaust PostgreSQL lock memory | `test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget` |
+| Real concurrent target creation, source edit or membership adoption escapes authoritative locks | `test_issue80_concurrent_target_source_and_membership_writes_wait_then_conflict` |
+| Concurrent same-operation delivery, stale stage lease, activation interruption, lost response or worker restart repeats mutation | `test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback` |
+| Reviews, schedules, seeds, shared memberships, implicit ownership or authored checkpoint kinds are rewritten | `test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved` |
+| Queued, active, partial, pending or offline old presentations grade replacements or fabricate completion; completed receipts fail to replay | `test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements` |
+| Publication failure undoes committed activation, releases fences early, or cannot resume linked work | `test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks` |
+| Midnight recovery changes approved due dates or completes before the current queue is steady | `test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue` |
+| Staging failure changes product state, or validated equal/empty plans create publication work | `test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay` |
+| PostgreSQL recreation or restoration loses pending immutable plans, receipts, fences, or activated publication recovery | `test_issue80_retained_pre_and_post_activation_applications_recover_after_recreation_or_restore`; `issue80 durable application proofs cover recreation and restored pre/post activation state` |
+
+Python/API regressions live in `backend/tests/test_prefix_transition_apply.py`.
+PostgreSQL behavior proofs live in `scripts/check_postgres_prefix_transition_application.py`
+and run through the regular disposable durability runner, including recreation and
+backup/restore stages. Orchestration coverage lives in the regular runner contract file.
+
+Issue #80 fixture integration: `test_standalone_opening_checkpoint_reduces_outside_background_transaction` retains its CPU/transaction proof with an available original card and no retirement; `test_postgres_graph_retention_timeout_backoff_preserves_checkpoint_and_stops_at_limit` and `test_postgres_graph_timeout_superseded_generation_does_not_retry_or_fail_replacement` retain task-only timeout semantics; `test_postgres_queue_projection_and_task_completion_commit_together` includes an empty application table; `test_postgres_study_practice_attempt_replays_and_self_assesses_once` includes nullable retirement metadata. These cases failed on the first complete CI head because their minimal harnesses predated the new persistence boundaries; the real linked-operation/retirement proofs remain in the regular PostgreSQL runner.
 ## PostgreSQL deployment lifecycle verification boundary
 
 The regular CI planning and runner wrappers protect the independently selected, mandatory deployment lifecycle boundary. Ordinary durability retains every direct migration, recovery, workload, backup/restore, and study proof; full verification includes the entire CLI rehearsal. Named regressions:
@@ -2642,3 +2675,19 @@ uses the existing moving-clock fixture option. The prior run failed with one che
 instead of three because the visual fixture froze Date.now() before the retry deadline.
 The browser still proves the identical frozen body/key is replayed before event 2; no
 assertion or timeout is weakened.
+PR #102 current-main application locking repair:
+
+- `backend/tests/test_prefix_transition_apply.py`: `test_issue80_application_reservation_lock_budget_is_independent_of_snapshot_size` failed before repair with 1,281 advisory requests for 1,024 identities / 128 repertoires / 128 queue dates. It also requires nonwaiting reservation and row acquisition. `test_issue80_sqlite_task_failure_and_retry_never_call_postgres_transition_hooks` protects the real SQLite failure/retry boundary; the existing HTTP application contract explicitly asserts `unsupported_backend`.
+- Real PostgreSQL, regular application rehearsal: `test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling` measures actual lock tags at 128, 1,024, and an exact 4 MiB accepted snapshot (one more byte is rejected), including absent replacements, 128 shared repertoires and 64 historical queue dates; only receipt and barrier identities are allowed. `test_issue80_queue_and_row_contention_yield_without_losing_operation_identity` proves real queue/card/graph writer contention yields without partial acceptance and retries the same identity to publication. `test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention` proves short cross-application serialization and durable convergence. Existing same-operation, edit/target/source, staging, stale lease, publication/recreation/restore proofs remain in the regular runner.
+- `test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity` upgrades real retained application/fence rows from the immutable schema38 guard to schema39, verifies unchanged application/card/review evidence and idempotent migration replay after retaining published deletion schema37, then publishes the original operation.
+- `test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows` compares real PostgreSQL JSON ordering with preparation on 128 numeric/Unicode rows. The scaling regression first failed before explicit C collation because unchanged queue/origin/presentation rows sorted differently under PostgreSQL locale and Python ordering.
+- `test_issue80_completion_handoff_uses_the_actual_completed_queue_generation` failed with a recorded target of 14 and completed shared generation 15: completion chained against 14, stranding the other application's target of 15. The real simultaneous-application regression also failed with the second receipt pending after all publication work. Completion now chains one bounded follow-up against the actual completed generation; both original identities converge.
+- `test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_rejects_stale_entry` was updated after current-candidate CI exposed its obsolete single-lock expectation. It now asserts the shared reservation barrier precedes the unchanged per-date position lock on both normal and stale requests, retaining all queue order, exclusion and stale-entry assertions. This is a changed lock contract, not a SQLite backend substitution.
+- `test_issue80_bulk_evidence_keeps_native_values_and_bounded_digest_transfer` verifies real PostgreSQL bulk rows retain exact native values (including timestamps) while evidence transfers only 64 SHA256 hex bytes per row, identical to hashing their raw JSON outside the transaction. Current-candidate CI first exposed the unchanged 250ms preparation transaction limit on the large application fixture because raw evidence duplicated its native payload. The same exact 4MiB/1,024-card application regression remains required; snapshot limits and transaction budgets are unchanged, and compact evidence does not alter plan fingerprints.
+
+### Issue 80 integration with published permanent deletion (#104)
+
+- `test_issue80_permanently_deleted_replacement_is_blocked_before_application` fails against the old planner, which returned `ready` for an excluded replacement identity. It requires an explicit `permanently_deleted_target` blocker and rejects application.
+- `test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets` uses real PostgreSQL to bind tombstones to approval, reject an old request without application writes, fence tombstone insertion and card deletion during staging, then force the actual deletion command to yield to a queue writer without partial deletion and retry its original identity to identical receipt replay after publication.
+- `test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier` holds real uncommitted creation and deletion transactions in both orders. Contending exclusion/recreation yields within the configured lock deadline, committed exclusions reject retries, and no card is recreated.
+- The retained `test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget` failed after integrating #104 with 8,001 advisory locks for 8,000 inserted cards. Migration 039 preserves immutable deletion migration 037 and removes per-card recreation locks only together with exclusive tombstone participation; the original one-lock proof remains required.

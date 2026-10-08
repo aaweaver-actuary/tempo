@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -224,7 +225,9 @@ def execute_command(
             # envelope, after checking delivery identity and the attempt fence.
             preparation_error = error
     command_connection = _writer_connection(background)
-    with command_connection as database:
+    from .services.activity_gate import activity_gate
+    write_admission = activity_gate.foreground() if command_name == 'repertoire.prefix_transition.apply' else nullcontext()
+    with write_admission, command_connection as database:
         raw = database.raw
         # Serialize two deliveries of one command across worker processes.
         raw.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (operation_id,))
@@ -249,6 +252,9 @@ def execute_command(
         raw.execute("SAVEPOINT command_handler")
         try:
             if preparation_error is not None:
+                if (command_name == 'repertoire.prefix_transition.apply' and
+                        isinstance(preparation_error, HTTPException) and preparation_error.status_code == 503):
+                    raise SerializationFailure('Transition preparation yielded to foreground work; retry its durable operation') from preparation_error
                 raise preparation_error
             result = _handlers[command_name](database, prepared)
         except (psycopg.OperationalError, psycopg.InterfaceError,
@@ -258,6 +264,12 @@ def execute_command(
             raise
         except Exception as error:
             raw.execute("ROLLBACK TO SAVEPOINT command_handler")
+            if isinstance(error, psycopg.Error) and error.sqlstate == 'P0080':
+                error = HTTPException(409, {'code': 'prefix_transition_in_progress', 'message': error.diag.message_primary})
+            committed_transition = False
+            if command_name == 'repertoire.prefix_transition.apply':
+                from .services.prefix_transition_application import reject_unactivated_application
+                committed_transition = reject_unactivated_application(database, operation_id, error)
             error_payload = {
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
@@ -277,6 +289,9 @@ def execute_command(
                     # Unsupported/cyclic detail retains the existing envelope.
                     pass
             error_json = json.dumps(error_payload)
+            if committed_transition:
+                raw.execute("UPDATE operation_receipts SET state='blocked',last_error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
+                return None
             raw.execute(
                 "UPDATE operation_receipts SET state='failed',error_json=%s,"
                 "attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() "
@@ -285,6 +300,9 @@ def execute_command(
             )
             return None
         raw.execute("RELEASE SAVEPOINT command_handler")
+        if command_name == 'repertoire.prefix_transition.apply' and result.get('status') == 'pending':
+            raw.execute("UPDATE operation_receipts SET state='pending',attempt_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
+            return result
         response_json = json.dumps(result, sort_keys=True, separators=(",", ":"))
         raw.execute(
             "UPDATE operation_receipts SET state='complete',response_json=%s,"
@@ -311,6 +329,10 @@ def read_operation(
             "FROM operation_receipts WHERE operation_id=%s",
             (operation_id,),
         ).fetchone()
+        transition_progress = None
+        if receipt and receipt[0] == 'repertoire.prefix_transition.apply':
+            progress = database.execute_native('SELECT state,graph_generation,staging_task_id,graph_task_id,integrity_task_id,integrity_generation,queue_task_id,queue_generation,queue_date,last_error FROM prefix_transition_applications WHERE operation_id=%s', (operation_id,)).fetchone()
+            transition_progress = dict(progress) if progress else None
     if receipt is None:
         return {"operation_id": operation_id, "state": "unknown",
                 "message": "No durable receipt exists yet. Retry with the same Idempotency-Key."}
@@ -320,6 +342,13 @@ def read_operation(
         raise CommandConflict("Operation ID was already used for another request")
     state, response_json, error_json = receipt[2], receipt[3], receipt[4]
     response: dict[str, Any] = {"operation_id": operation_id, "state": state}
+    if transition_progress is not None:
+        response["transition"] = transition_progress
+        response["transition"]["recovery"] = (
+            "Retry this operation through its existing retry endpoint to resume the linked tasks; the activated graph remains committed."
+            if transition_progress['state'] == 'recovery_required' else
+            "Approve a fresh plan with a new operation identity; activation did not occur."
+            if transition_progress['state'] == 'rejected' else None)
     response["attempt_count"] = int(receipt[5])
     response["retry_cycle"] = int(receipt[10])
     response["cycle_attempt_count"] = int(receipt[11])
