@@ -5,12 +5,11 @@ import json
 import logging
 
 from fastapi import HTTPException
-from psycopg.errors import SerializationFailure
+from psycopg.errors import LockNotAvailable, SerializationFailure
 
 from .. import postgres_store, prefix_evaluation_api as structural, prefix_transition_api as planner_api
 from ..command_gateway import register_command
 from ..prefix_transition_contracts import PrefixTransitionApplyRequest, PrefixTransitionPlan
-from ..queue_position_lock import lock_queue_date_for_position
 from ..snapshot_reads import SnapshotRead, snapshot_rows
 from .durable_tasks import enqueue_task_in_transaction, lock_current_slice, advance_task_slice_in_transaction, complete_task_slice_in_transaction
 from .prefix_evaluation import snapshot_identity
@@ -44,7 +43,6 @@ class PreparedApplication:
     creations: tuple = ()
     repertoire_ids: tuple = ()
     pending_ids: tuple = ()
-    queue_days: tuple = ()
     staged_generation: int | None = None
 
 
@@ -122,7 +120,6 @@ def prepare_application(payload):
     return PreparedApplication(payload, plan, snapshot, tuple(reads), tuple(creations),
                                tuple(sorted({row['id'] for row in snapshot.rows('repertoires')} | {plan.repertoire_id})),
                                tuple(sorted(attempt.object_id for attempt in plan.attempts if attempt.kind == 'pending_command')),
-                               tuple(sorted({row['queue_date'] for row in snapshot.rows('daily_queue')} | {plan.study_day})),
                                prior[1] if prior and prior[0] == 'staged' else None)
 
 
@@ -131,17 +128,21 @@ def own_application(database, operation_id):
 
 
 def lock_and_revalidate(database, prepared):
-    """Receipt/task -> repertoire -> card -> attempt/queue; raw comparisons only."""
+    """Receipt/task -> reservation barrier -> rows, yielding on contention.
+
+    Structural and queue producers share this barrier. Its exclusive mode closes
+    absent-identity races without allocating locks per card, repertoire or day.
+    NOWAIT row locks also avoid inversion with a producer that obtained a row
+    before reaching its shared barrier. Preparation is retried through the same
+    receipt after either kind of contention; no partial acceptance is persisted.
+    """
     snapshot = prepared.snapshot
     repertoire_ids = list(prepared.repertoire_ids)
     pending_ids = list(prepared.pending_ids)
     database.execute_native('SELECT operation_id FROM operation_receipts WHERE operation_id=ANY(%s) ORDER BY operation_id FOR UPDATE NOWAIT', (pending_ids,)).fetchall()
-    database.execute_native("SELECT id FROM background_tasks WHERE kind IN ('opening_graph_rebuild','integrity_scan') AND deduplication_key=ANY(%s) ORDER BY id FOR UPDATE", (repertoire_ids,)).fetchall()
-    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended('tempo:prefix-transition:reservations',0))")
-    for repertoire_id in repertoire_ids:
-        database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (f'tempo:opening-graph:{repertoire_id}',))
-    for card_id in snapshot.lookup_card_ids:
-        database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (f'tempo:card-edit:{card_id}',))
+    database.execute_native("SELECT id FROM background_tasks WHERE kind IN ('opening_graph_rebuild','integrity_scan') AND deduplication_key=ANY(%s) ORDER BY id FOR UPDATE NOWAIT", (repertoire_ids,)).fetchall()
+    if not database.execute_native("SELECT pg_try_advisory_xact_lock(hashtextextended('tempo:prefix-transition:reservations',0))").fetchone()[0]:
+        raise LockNotAvailable('Prefix transition yielded to a structural or queue writer')
     occupied = database.execute_native(
         'SELECT operation_id FROM prefix_transition_card_fences WHERE card_id=ANY(%s) AND operation_id<>%s '
         'UNION SELECT operation_id FROM prefix_transition_repertoire_fences WHERE repertoire_id=ANY(%s) AND operation_id<>%s',
@@ -149,17 +150,14 @@ def lock_and_revalidate(database, prepared):
     ).fetchone()
     if occupied and prepared.plan.status != 'no_op':
         raise conflict('prefix_transition_in_progress', 'A conflicting prefix application owns these identities. Wait for its publication or recovery.')
-    database.execute_native('SELECT id FROM repertoires WHERE id=ANY(%s) ORDER BY id FOR UPDATE', (repertoire_ids,)).fetchall()
-    database.execute_native('SELECT repertoire_id FROM repertoire_integrity_state WHERE repertoire_id=ANY(%s) ORDER BY repertoire_id FOR SHARE', (repertoire_ids,)).fetchall()
-    database.execute_native('SELECT id FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id FOR UPDATE', (prepared.plan.repertoire_id,)).fetchall()
-    database.execute_native('SELECT depth.line_id FROM repertoire_line_training_depths depth JOIN repertoire_lines line ON line.id=depth.line_id WHERE line.repertoire_id=%s ORDER BY depth.line_id FOR UPDATE OF depth', (prepared.plan.repertoire_id,)).fetchall()
-    database.execute_native('SELECT id FROM cards WHERE id=ANY(%s) ORDER BY id FOR UPDATE', (list(snapshot.lookup_card_ids),)).fetchall()
-    database.execute_native('SELECT card_id FROM repertoire_cards WHERE card_id=ANY(%s) OR repertoire_id=%s ORDER BY card_id,repertoire_id FOR UPDATE', (list(snapshot.lookup_card_ids), prepared.plan.repertoire_id)).fetchall()
-    queue_days = prepared.queue_days
-    for queue_day in queue_days:
-        lock_queue_date_for_position(database, queue_day)
+    database.execute_native('SELECT id FROM repertoires WHERE id=ANY(%s) ORDER BY id FOR UPDATE NOWAIT', (repertoire_ids,)).fetchall()
+    database.execute_native('SELECT repertoire_id FROM repertoire_integrity_state WHERE repertoire_id=ANY(%s) ORDER BY repertoire_id FOR SHARE NOWAIT', (repertoire_ids,)).fetchall()
+    database.execute_native('SELECT id FROM repertoire_lines WHERE repertoire_id=%s ORDER BY id FOR UPDATE NOWAIT', (prepared.plan.repertoire_id,)).fetchall()
+    database.execute_native('SELECT depth.line_id FROM repertoire_line_training_depths depth JOIN repertoire_lines line ON line.id=depth.line_id WHERE line.repertoire_id=%s ORDER BY depth.line_id FOR UPDATE OF depth NOWAIT', (prepared.plan.repertoire_id,)).fetchall()
+    database.execute_native('SELECT id FROM cards WHERE id=ANY(%s) ORDER BY id FOR UPDATE NOWAIT', (list(snapshot.lookup_card_ids),)).fetchall()
+    database.execute_native('SELECT card_id FROM repertoire_cards WHERE card_id=ANY(%s) OR repertoire_id=%s ORDER BY card_id,repertoire_id FOR UPDATE NOWAIT', (list(snapshot.lookup_card_ids), prepared.plan.repertoire_id)).fetchall()
     for table, identity in (('daily_queue', 'id'), ('opening_evidence_attempts', 'attempt_id'), ('study_attempts', 'id')):
-        database.execute_native(f'SELECT {identity} FROM {table} WHERE card_id=ANY(%s) ORDER BY {identity} FOR UPDATE', (list(snapshot.lookup_card_ids),)).fetchall()
+        database.execute_native(f'SELECT {identity} FROM {table} WHERE card_id=ANY(%s) ORDER BY {identity} FOR UPDATE NOWAIT', (list(snapshot.lookup_card_ids),)).fetchall()
     for captured in prepared.reads:
         if snapshot_rows(database, captured.query, captured.parameters) != captured.rows:
             _LOGGER.warning('prefix_transition_stale_input query=%s', captured.query[:160])
@@ -304,7 +302,7 @@ def finish_application(database, application, plan):
         task = request_queue_refresh_in_transaction(database, today)
         record_queue_target(database, application['repertoire_id'], application['graph_generation'], task, today)
         return
-    ready = database.execute_native("SELECT 1 FROM opening_graph_publications graph JOIN background_tasks graph_task ON graph_task.kind='opening_graph_rebuild' AND graph_task.deduplication_key=graph.repertoire_id JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=graph.repertoire_id JOIN background_tasks integrity_task ON integrity_task.id=%s JOIN background_tasks queue_task ON queue_task.id=%s JOIN queue_projections queue ON queue.queue_date=%s WHERE graph.repertoire_id=%s AND graph.generation=%s AND graph.state='ready' AND graph_task.generation=graph.generation AND graph_task.state='complete' AND integrity.status='clean' AND integrity.scan_status='idle' AND integrity.scan_generation=%s AND integrity_task.generation=%s AND integrity_task.state='complete' AND queue_task.generation>=%s AND queue_task.state='complete' AND queue_task.payload_json::jsonb->>'queue_date'=%s AND queue.state='ready' AND queue.refresh_pending=0", (application['integrity_task_id'], application['queue_task_id'], today, application['repertoire_id'], application['graph_generation'], f"{application['integrity_task_id']}:{application['integrity_generation']}", application['integrity_generation'], application['queue_generation'], today)).fetchone()
+    ready = database.execute_native("SELECT queue_task.generation FROM opening_graph_publications graph JOIN background_tasks graph_task ON graph_task.kind='opening_graph_rebuild' AND graph_task.deduplication_key=graph.repertoire_id JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=graph.repertoire_id JOIN background_tasks integrity_task ON integrity_task.id=%s JOIN background_tasks queue_task ON queue_task.id=%s JOIN queue_projections queue ON queue.queue_date=%s WHERE graph.repertoire_id=%s AND graph.generation=%s AND graph.state='ready' AND graph_task.generation=graph.generation AND graph_task.state='complete' AND integrity.status='clean' AND integrity.scan_status='idle' AND integrity.scan_generation=%s AND integrity_task.generation=%s AND integrity_task.state='complete' AND queue_task.generation>=%s AND queue_task.state='complete' AND queue_task.payload_json::jsonb->>'queue_date'=%s AND queue.state='ready' AND queue.refresh_pending=0", (application['integrity_task_id'], application['queue_task_id'], today, application['repertoire_id'], application['graph_generation'], f"{application['integrity_task_id']}:{application['integrity_generation']}", application['integrity_generation'], application['queue_generation'], today)).fetchone()
     if not ready:
         raise RuntimeError('Transition publication is not at the recorded clean graph/integrity/queue steady state; retry the existing operation after resolving its linked tasks.')
     result = json.dumps({'status': 'complete', 'operation_id': application['operation_id'], 'plan_id': plan.plan_id,
@@ -312,7 +310,10 @@ def finish_application(database, application, plan):
     database.execute_native("UPDATE prefix_transition_applications SET state='complete',result_json=%s,last_error=NULL,updated_at=NOW() WHERE operation_id=%s", (result, application['operation_id']))
     database.execute_native("UPDATE operation_receipts SET state='complete',response_json=%s,error_json=NULL,last_error_json=NULL,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (result, application['operation_id']))
     release_fences(database, application['operation_id'])
-    enqueue_completion(database, application['queue_task_id'], application['queue_generation'], today)
+    # The shared queue may have completed a newer generation for several
+    # applications. Chain the next bounded completion against that actual
+    # generation, rather than stranding a later target behind this older one.
+    enqueue_completion(database, application['queue_task_id'], ready[0], today)
 
 
 def record_integrity_target(database, repertoire_id, graph_generation, task):

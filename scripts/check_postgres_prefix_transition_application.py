@@ -148,7 +148,8 @@ def create_fixture(label):
     return repertoire_id, other_id, lines, steps
 
 
-def cleanup_fixture(repertoire_id,other_id):
+def cleanup_fixture(repertoire_id,other_id,extra_repertoire_ids=()):
+    owned_repertoire_ids = [repertoire_id,other_id,*extra_repertoire_ids]
     with postgres_store.connection(read_only=False) as database:
         operations = [row[0] for row in database.execute_native('SELECT operation_id FROM prefix_transition_applications WHERE repertoire_id=%s', (repertoire_id,)).fetchall()]
         for operation_id in operations:
@@ -159,25 +160,25 @@ def cleanup_fixture(repertoire_id,other_id):
         database.execute_native('DELETE FROM study_sources WHERE chapter_id=%s',(repertoire_id+'-chapter',))
         database.execute_native('DELETE FROM study_chapters WHERE study_id=%s',(repertoire_id,))
         database.execute_native('DELETE FROM studies WHERE id=%s',(repertoire_id,))
-        database.execute_native('DELETE FROM opening_evidence_attempts WHERE repertoire_id=ANY(%s)', ([repertoire_id,other_id],))
+        database.execute_native('DELETE FROM opening_evidence_attempts WHERE repertoire_id=ANY(%s)', (owned_repertoire_ids,))
         database.execute_native('DELETE FROM prefix_transition_applications WHERE repertoire_id=%s', (repertoire_id,))
-        owned_ids=[row[0] for row in database.execute_native('SELECT id FROM cards WHERE repertoire_id=ANY(%s)',([repertoire_id,other_id],)).fetchall()]
-        database.execute_native('DELETE FROM opening_evidence_queue_contexts WHERE repertoire_id=ANY(%s)',([repertoire_id,other_id],))
+        owned_ids=[row[0] for row in database.execute_native('SELECT id FROM cards WHERE repertoire_id=ANY(%s)',(owned_repertoire_ids,)).fetchall()]
+        database.execute_native('DELETE FROM opening_evidence_queue_contexts WHERE repertoire_id=ANY(%s)',(owned_repertoire_ids,))
         database.execute_native('DELETE FROM queue_attempt_origins WHERE card_id=ANY(%s)',(owned_ids,))
         database.execute_native('DELETE FROM review_attempt_receipts WHERE card_id=ANY(%s)',(owned_ids,))
         database.execute_native('DELETE FROM opening_evidence_presentations WHERE card_id=ANY(%s)',(owned_ids,))
-        database.execute_native('DELETE FROM repertoires WHERE id=ANY(%s)', ([repertoire_id,other_id],))
+        database.execute_native('DELETE FROM repertoires WHERE id=ANY(%s)', (owned_repertoire_ids,))
         database.execute_native('DELETE FROM background_tasks WHERE deduplication_key=ANY(%s)', ([repertoire_id,other_id,*operations],))
         database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', (operations,))
 
 
 @contextmanager
-def fixture(label):
+def fixture(label, *, extra_repertoire_ids=()):
     created=create_fixture(label)
     try:
         yield created
     finally:
-        cleanup_fixture(created[0],created[1])
+        cleanup_fixture(created[0],created[1],extra_repertoire_ids)
 
 
 
@@ -219,6 +220,250 @@ def test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode
         assert snapshot_rows(database, query, ()) == reads[0].rows
     print('PASS test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows')
 
+
+def advisory_lock_measurement(database):
+    rows = database.execute_native("SELECT classid,objid,objsubid,mode FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory' ORDER BY classid,objid,mode").fetchall()
+    relation_identities = database.execute_native("SELECT COUNT(DISTINCT (database,relation)) FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='relation'").fetchone()[0]
+    return {'distinct_identities': len({tuple(row)[:3] for row in rows}), 'mode_entries': len(rows),
+            'relation_identities': relation_identities}
+
+
+def test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling():
+    import random
+    from app.services.cards import card_id
+    original_lock = application.lock_and_revalidate
+    original_activate = application.activate_application
+    measurements = []
+    largest_snapshot_bytes = None
+    for requested_count in (128, 1024, None):
+        shared_repertoire_ids = []
+        with fixture('application-scaling-' + str(requested_count), extra_repertoire_ids=shared_repertoire_ids) as (rep, other, lines, steps):
+            # Authored memberships outside the generated graph are legitimate,
+            # unchanged inputs. Each card has a real legal presentation/identity.
+            generator = random.Random(80)
+            board = chess.Board(lines[0]['start_fen'])
+            board.push_uci('g2g3')
+            bulk_rows = []
+            unique_ids = set()
+            while len(bulk_rows) < 1024:
+                if board.is_game_over() or len(board.move_stack) > 80:
+                    board = chess.Board(lines[0]['start_fen']); board.push_uci('g2g3')
+                move = generator.choice(sorted(board.legal_moves, key=lambda item: item.uci()))
+                starting_fen, moves = board.fen(), [move.uci()]
+                identifier = card_id(starting_fen, moves)
+                if identifier not in unique_ids:
+                    unique_ids.add(identifier)
+                    bulk_rows.append((identifier, rep, starting_fen, json.dumps(moves), 'white' if board.turn else 'black'))
+                board.push(move)
+            inserted_count = 0
+            def resize(count):
+                nonlocal inserted_count
+                with postgres_store.connection(read_only=False) as database:
+                    database.execute_native('UPDATE repertoires SET new_cards_per_day=0 WHERE id=ANY(%s)', ([rep, other],))
+                    if count > inserted_count:
+                        with database.raw.cursor() as cursor:
+                            cursor.executemany("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,canonical_route_source,state,introduced_at,due_date) VALUES(%s,%s,'prefix',%s,%s,%s,1,'learning','2000-01-01','2099-01-01')", bulk_rows[inserted_count:count])
+                            cursor.executemany('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)', [(rep, row[0]) for row in bulk_rows[inserted_count:count]])
+                    elif count < inserted_count:
+                        database.execute_native('DELETE FROM cards WHERE id=ANY(%s)', ([row[0] for row in bulk_rows[count:inserted_count]],))
+                inserted_count = count
+            resize(128)
+            shared_repertoire_ids.extend(rep + '-scaling-shared-' + str(index) for index in range(126))
+            with postgres_store.connection(read_only=False) as database:
+                with database.raw.cursor() as cursor:
+                    cursor.executemany("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'scaling.pgn',%s)", [(identifier,identifier,datetime.now(timezone.utc).isoformat()) for identifier in shared_repertoire_ids])
+                    cursor.executemany('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)', [(identifier,bulk_rows[0][0]) for identifier in shared_repertoire_ids])
+                with database.raw.cursor() as cursor:
+                    cursor.executemany('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)', [(other,row[0]) for row in bulk_rows[:32]])
+                    cursor.executemany("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(%s,%s,0,'complete')", [(f'{2000+index}-01-01',bulk_rows[0][0]) for index in range(64)])
+            def prepared_for_count(count):
+                resize(count)
+                plan, payload = ready_plan(rep, lines)
+                return plan, payload, idle_call(lambda: application.prepare_application(payload))
+            count = requested_count or 1024
+            plan, payload, prepared = prepared_for_count(count)
+            def raw_transition_bytes(captured):
+                return sum(json.loads(read.rows[0])['bytes'] for read in captured.reads
+                           if 'octet_length(row_to_json(bounded)::text)' in read.query)
+            if requested_count is None:
+                # Reach the exact byte ceiling with valid authored provenance,
+                # while retaining 1024 identities and the same query budgets.
+                # One extra byte must reject before any application writes.
+                with postgres_store.connection(read_only=False) as database:
+                    database.execute_native("UPDATE cards SET source_ref='' WHERE id=%s", (bulk_rows[0][0],))
+                plan, payload, prepared = prepared_for_count(count)
+                padding = prefix_transition_api.MAX_TRANSITION_BYTES - raw_transition_bytes(prepared)
+                assert padding > 0
+                with postgres_store.connection(read_only=False) as database:
+                    database.execute_native("UPDATE cards SET source_ref=repeat('r',%s) WHERE id=%s", (padding+1, bulk_rows[0][0]))
+                try:
+                    prepared_for_count(count)
+                except HTTPException as error:
+                    assert error.status_code == 413, error
+                else:
+                    raise AssertionError('Oversized snapshot was accepted')
+                with postgres_store.connection(read_only=False) as database:
+                    database.execute_native("UPDATE cards SET source_ref=repeat('r',%s) WHERE id=%s", (padding, bulk_rows[0][0]))
+                plan, payload, prepared = prepared_for_count(count)
+                largest_snapshot_bytes = raw_transition_bytes(prepared)
+                assert largest_snapshot_bytes == prefix_transition_api.MAX_TRANSITION_BYTES
+            def measured_lock(database, captured):
+                started = time.perf_counter()
+                original_lock(database, captured)
+                measurement = advisory_lock_measurement(database)
+                measurement.update(phase='acceptance' if captured.staged_generation is None else 'activation',
+                                   authored_cards=count, captured_identities=len(captured.snapshot.lookup_card_ids),
+                                   shared_repertoires=len(captured.repertoire_ids), historical_days=64,
+                                   transition_bytes=raw_transition_bytes(captured), lock_seconds=time.perf_counter()-started)
+                measurements.append(measurement)
+                assert measurement['distinct_identities'] == 2, measurement
+            def measured_activation(database, captured, current):
+                original_activate(database, captured, current)
+                measurement = advisory_lock_measurement(database)
+                assert measurement['distinct_identities'] == 2, measurement
+                measurements[-1].update(after_write_mode_entries=measurement['mode_entries'],
+                                        after_write_relation_identities=measurement['relation_identities'])
+            application.lock_and_revalidate = measured_lock
+            application.activate_application = measured_activation
+            try:
+                assert execute(payload) == {'status': 'pending'}, read_operation(payload['operation_id'])
+                drain(application.TASK_KIND, application.execute_application_slice)
+                assert execute(payload) == {'status': 'pending'}
+            finally:
+                application.lock_and_revalidate = original_lock
+                application.activate_application = original_activate
+    print(json.dumps({'regression': 'test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling', 'largest_accepted_snapshot_bytes': largest_snapshot_bytes, 'measurements': measurements}))
+    print('PASS test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling')
+
+
+def test_issue80_queue_and_row_contention_yield_without_losing_operation_identity():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    for producer_kind in ('queue', 'card', 'graph'):
+        with fixture('foreground-' + producer_kind) as (rep, other, lines, steps):
+            plan, payload = ready_plan(rep, lines)
+            held, release = threading.Event(), threading.Event()
+            def producer():
+                with postgres_store.connection(read_only=False) as database:
+                    if producer_kind == 'queue':
+                        # Even a zero-row statement joins the database barrier.
+                        database.execute_native('UPDATE daily_queue SET status=status WHERE card_id=%s', (steps[0].card_id,))
+                    elif producer_kind == 'card':
+                        database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE', (steps[0].card_id,)).fetchone()
+                    else:
+                        database.execute_native("SELECT id FROM background_tasks WHERE kind='opening_graph_rebuild' AND deduplication_key=%s FOR UPDATE", (rep,)).fetchone()
+                    held.set()
+                    assert release.wait(5), 'Transition did not yield to foreground ownership'
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending = executor.submit(producer)
+                try:
+                    assert held.wait(5)
+                    started = time.perf_counter()
+                    try:
+                        execute(payload)
+                    except psycopg.errors.LockNotAvailable:
+                        pass
+                    else:
+                        raise AssertionError('Transition did not yield to ' + producer_kind)
+                    elapsed = time.perf_counter() - started
+                    assert elapsed < 1, (producer_kind, elapsed)
+                    with postgres_store.connection(read_only=True) as database:
+                        assert not database.execute_native('SELECT 1 FROM prefix_transition_applications WHERE operation_id=%s', (payload['operation_id'],)).fetchone()
+                        assert database.execute_native('SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s', (rep,)).fetchone()[0] == 1
+                finally:
+                    release.set()
+                pending.result(timeout=5)
+            assert execute(payload) == {'status': 'pending'}
+            final = publish(payload)
+            assert execute(payload) == final
+            print(json.dumps({'regression': 'test_issue80_queue_and_row_contention_yield_without_losing_operation_identity', 'producer': producer_kind, 'yield_seconds': elapsed}))
+    print('PASS test_issue80_queue_and_row_contention_yield_without_losing_operation_identity')
+
+
+def test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention():
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from app import command_gateway
+    original_prepare = command_gateway._preparers[application.COMMAND]
+    original_lock = application.lock_and_revalidate
+    with fixture('parallel-first') as (first_rep, first_other, first_lines, first_steps):
+        with fixture('activated-parallel-second') as (second_rep, second_other, second_lines, second_steps):
+            first_plan, first_payload = ready_plan(first_rep, first_lines)
+            second_plan, second_payload = ready_plan(second_rep, second_lines)
+            prepared = {payload['operation_id']: idle_call(lambda payload=payload: application.prepare_application(payload)) for payload in (first_payload, second_payload)}
+            held, release = threading.Event(), threading.Event()
+            def paused_lock(database, captured):
+                original_lock(database, captured)
+                measured = advisory_lock_measurement(database)
+                assert measured['distinct_identities'] == 2, measured
+                if captured.payload['operation_id'] == first_payload['operation_id']:
+                    held.set()
+                    assert release.wait(5), 'Independent application did not yield'
+            command_gateway._preparers[application.COMMAND] = lambda payload: prepared[payload['operation_id']]
+            application.lock_and_revalidate = paused_lock
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    first = executor.submit(execute, first_payload)
+                    try:
+                        assert held.wait(5)
+                        try:
+                            execute(second_payload)
+                        except psycopg.errors.LockNotAvailable:
+                            pass
+                        else:
+                            raise AssertionError('A second application did not yield to the short barrier')
+                    finally:
+                        release.set()
+                    assert first.result(timeout=5) == {'status': 'pending'}
+                assert execute(second_payload) == {'status': 'pending'}
+            finally:
+                application.lock_and_revalidate = original_lock
+                command_gateway._preparers[application.COMMAND] = original_prepare
+            # Activate both approved snapshots before global queue publication
+            # can legitimately change the other application's captured queue.
+            drain(application.TASK_KIND, application.execute_application_slice)
+            for payload in (first_payload, second_payload):
+                assert execute(payload) == {'status': 'pending'}
+                assert read_operation(payload['operation_id'])['transition']['state'] == 'publishing'
+            assert publish(first_payload)['operation_id'] == first_payload['operation_id']
+            second_result = read_operation(second_payload['operation_id'])
+            assert second_result['state'] == 'complete', second_result
+            assert execute(second_payload) == second_result['response']
+    print('PASS test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention')
+
+
+def test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity():
+    from app.snapshot_reads import snapshot_rows
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root))
+    from scripts.apply_postgres_migrations import apply_migrations
+    with fixture('upgrade-reservation') as (rep, other, lines, steps):
+        plan, payload = ready_plan(rep, lines)
+        assert execute(payload) == {'status': 'pending'}
+        # All workload consumers are stopped by the owning disposable runner.
+        # Recreate only migration038's predecessor, retaining actual application
+        # and reservation data. No published migration is edited or skipped.
+        migration37 = (root / 'backend/migrations/037_prefix_transition_application.sql').read_text()
+        guard = migration37[migration37.index('CREATE FUNCTION guard_prefix_transition_scope('):migration37.index('CREATE FUNCTION guard_prefix_transition_write()')].replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1)
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('DROP FUNCTION reserve_prefix_transition_queue_write() CASCADE')
+            database.raw.execute(guard, prepare=False)
+            database.execute_native('DELETE FROM tempo_schema_migrations WHERE version=38')
+        queries = [('SELECT * FROM prefix_transition_applications WHERE operation_id=%s', (payload['operation_id'],)),
+                   ('SELECT * FROM prefix_transition_card_fences WHERE operation_id=%s', (payload['operation_id'],)),
+                   ('SELECT * FROM prefix_transition_repertoire_fences WHERE operation_id=%s', (payload['operation_id'],)),
+                   ('SELECT * FROM cards WHERE repertoire_id=ANY(%s)', ([rep, other],)),
+                   ('SELECT review.* FROM reviews review JOIN cards card ON card.id=review.card_id WHERE card.repertoire_id=ANY(%s)', ([rep, other],))]
+        with postgres_store.connection(read_only=True) as database:
+            before = [snapshot_rows(database, query, parameters) for query, parameters in queries]
+        apply_migrations(os.environ['TEMPO_DATABASE_WRITE_URL'])
+        apply_migrations(os.environ['TEMPO_DATABASE_WRITE_URL'])
+        with postgres_store.connection(read_only=True) as database:
+            assert before == [snapshot_rows(database, query, parameters) for query, parameters in queries]
+            assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 38
+        final = publish(payload)
+        assert final['operation_id'] == payload['operation_id'] and execute(payload) == final
+    print('PASS test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity')
 
 
 def test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state():
@@ -725,10 +970,22 @@ def main():
         with isolate_unrelated_publication_tasks():
             recover_retained_applications(cleanup='--cleanup-retained' in sys.argv,verify_only='--verify-retained' in sys.argv)
         return
+    if '--lock-scaling' in sys.argv:
+        with isolate_unrelated_publication_tasks():
+            test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows()
+            test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling()
+            test_issue80_queue_and_row_contention_yield_without_losing_operation_identity()
+            test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention()
+            test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity()
+        return
     with isolate_unrelated_publication_tasks():
         test_issue80_application_rehearsal_preserves_unrelated_publication_tasks()
         test_issue80_raw_snapshot_order_matches_recording_for_multidigit_and_unicode_rows()
         test_issue80_unfenced_bulk_graph_writes_use_a_constant_reservation_lock_budget()
+        test_issue80_real_application_acceptance_and_activation_have_constant_lock_scaling()
+        test_issue80_queue_and_row_contention_yield_without_losing_operation_identity()
+        test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention()
+        test_issue80_schema37_transition_upgrade_preserves_original_recovery_identity()
         test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state()
         test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery()
         test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation()

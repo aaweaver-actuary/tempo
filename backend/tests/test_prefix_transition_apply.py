@@ -140,3 +140,67 @@ def test_issue80_retired_study_self_assessment_conflicts_before_grading_and_comp
     assert any('FROM cards' in query and parameters==('old',) for query,parameters in statements)
     saved['result_json']=json.dumps({'rating':'correct','persisted':True})
     assert self_assess_study_attempt(Database(),payload)=={'rating':'correct','persisted':True}
+
+
+def test_issue80_application_reservation_lock_budget_is_independent_of_snapshot_size():
+    """The write boundary must protect absent identities without one advisory lock each."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from app.services import prefix_transition_application as application
+    statements = []
+    class Database:
+        def execute_native(self, query, parameters=()):
+            statements.append(query)
+            return SimpleNamespace(fetchall=lambda: [], fetchone=lambda: (True,) if 'pg_try_advisory' in query else None)
+    prepared = application.PreparedApplication(
+        payload={'operation_id': 'approved'},
+        plan=SimpleNamespace(status='ready', repertoire_id='rep', study_day=date.today().isoformat()),
+        snapshot=replace(prepared_snapshot(), lookup_card_ids=tuple(f'absent-{index}' for index in range(1024))),
+        repertoire_ids=tuple(f'shared-{index}' for index in range(128)))
+    application.lock_and_revalidate(Database(), prepared)
+    advisory_calls = [query for query in statements if 'pg_advisory' in query or 'pg_try_advisory' in query]
+    assert len(advisory_calls) == 1, f'Application allocated {len(advisory_calls)} reservation locks'
+    assert 'pg_try_advisory_xact_lock' in advisory_calls[0]
+    assert all('NOWAIT' in query for query in statements if 'FOR UPDATE' in query or 'FOR SHARE' in query)
+
+
+def test_issue80_completion_handoff_uses_the_actual_completed_queue_generation(monkeypatch):
+    from types import SimpleNamespace
+    from app.services import prefix_transition_application as application
+    captured = []
+    class Database:
+        def execute_native(self, query, parameters=()):
+            return SimpleNamespace(fetchone=lambda: (15,))
+    monkeypatch.setattr(application, 'release_fences', lambda *_: None)
+    monkeypatch.setattr(application, 'enqueue_completion', lambda *arguments: captured.append(arguments[1:]))
+    today = date.today().isoformat()
+    current = dict(operation_id='first', repertoire_id='rep', graph_generation=2,
+                   integrity_task_id='integrity', integrity_generation=3,
+                   queue_task_id='shared-queue', queue_generation=14, queue_date=today)
+    application.finish_application(Database(), current, SimpleNamespace(plan_id='approved', repertoire_id='rep'))
+    assert captured == [('shared-queue', 15, today)]
+
+
+def test_issue80_sqlite_task_failure_and_retry_never_call_postgres_transition_hooks(tmp_path, monkeypatch):
+    from app import database
+    from app.services import durable_tasks, prefix_transition_application
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'compatibility.db')
+    monkeypatch.setattr(durable_tasks.postgres_store, 'configured', lambda: False)
+    for hook in ('lock_linked_receipts', 'record_linked_failure'):
+        monkeypatch.setattr(prefix_transition_application, hook, lambda *_args: pytest.fail('SQLite used a PostgreSQL transition hook'))
+    database.initialize()
+    from app.services.database_executor import database_writer
+    database_writer.start()
+    try:
+        task = durable_tasks.enqueue_task('opening_graph_rebuild', 'compatibility', {'repertoire_id': 'compatibility'})
+        claimed = durable_tasks.claim_task('opening_graph_rebuild')
+        assert claimed['id'] == task['id']
+        with database.connection() as connection:
+            connection.execute('UPDATE background_tasks SET max_attempts=1 WHERE id=?', (task['id'],))
+        result = durable_tasks.fail_task(task['id'], claimed['generation'], claimed['lease_token'], RuntimeError('compatibility failure'))
+        assert result['state'] == 'failed'
+        durable_tasks.retry_task(task['id'])
+        replay = durable_tasks.claim_task('opening_graph_rebuild')
+        assert replay['id'] == task['id'] and replay['generation'] == claimed['generation']
+    finally:
+        database_writer.stop()

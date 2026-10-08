@@ -148,7 +148,7 @@ Only a completed receipt returns the saved final result.
 Preparation uses the unchanged production evaluator and transition planner. All
 read connections close before JSON decoding, chess traversal, hashing and plan
 classification. The original request belongs to the existing durable command
-receipt; migration 036 stores its recomputed immutable plan, publication targets,
+receipt; migration 037 stores its recomputed immutable plan, publication targets,
 progress and final result. Equal-depth and empty-selection plans validate and
 complete without application records or publication tasks. Lengthening, blockers,
 wrong fingerprints, malformed input and changed study day fail before activation.
@@ -160,31 +160,46 @@ repair. This is an application readiness check; planner semantics remain unchang
 ### Acceptance and identity reservations
 
 The acceptance write acquires foreground admission only after preparation. It
-locks the command receipt, relevant pending receipts and graph tasks, then the
-exclusive `tempo:prefix-transition:reservations` advisory lock and sorted
-graph advisory identities, sorted card advisory identities, source/depth rows,
-repertoire/publication state, cards/memberships and attempt/queue rows. Queue date
-locks use the existing queue-position identity. Pending receipt locks use NOWAIT;
-contention retries through existing durable operation recovery instead of waiting
-behind a command whose card locks could invert the order. PostgreSQL raw-row
-JSON evidence captured during preparation must match under these locks. This is
-SQL serialization/comparison, with no Python decoding or chess classification
-inside the write transaction. Existing finite snapshot limits still apply.
+locks the command receipt, relevant pending receipts and graph tasks, then tries
+the exclusive `tempo:prefix-transition:reservations` advisory barrier. All domain
+row locks use NOWAIT, in receipt/task, repertoire/source/depth, card/membership,
+and attempt/queue order. Contention rolls back and retries the original durable
+operation; it does not reject a valid plan or persist partial acceptance. NOWAIT
+also closes lock-order inversions with a producer that locked a domain row before
+reaching its shared barrier. Captured raw PostgreSQL JSON evidence must match
+under these locks, without Python decoding or chess classification in the write
+transaction. Revalidation sorts raw JSON using C collation to match preparation’s
+Python string ordering, including multi-digit identities and Unicode. Existing finite snapshot limits remain unchanged.
 
 Acceptance reserves a new unpublished graph generation and repertoire/card
 identity fences, including cards that were absent at approval. Database triggers
 check both arriving and departing structural scopes. Imports, source/depth edits,
 card edits/creation, membership adoption, split changes, graph requests and step
-writes cannot bypass the reservations through another writer path. The existing
-`tempo:opening-graph:` and `tempo:card-edit:` identities remain in use. Structural
-writers take one shared reservation lock before checking fences; acceptance and
-activation take its exclusive counterpart before graph/card locks. This waits for
-prior structural writers and prevents an absent target or source edit from passing
-between revalidation and fence installation. Unfenced writes allocate no per-card
-advisory locks, preserving the lock budget for bulk graph/import operations. Card
-edit and graph-request entry points take the shared reservation lock before their
-explicit identity locks. Trigger-only writers with preexisting row locks may still
-encounter ordinary PostgreSQL contention; existing durable retries handle it. A transaction-local owner setting is accepted only for a persisted
+writes cannot bypass the reservations through another writer path. Structural writers share the reservation barrier before checking persistent
+fences; acceptance and activation take its exclusive counterpart. Migration 038
+removes redundant per-identity trigger locks. Queue writes join the barrier through
+statement triggers on `daily_queue`, `daily_queue_days`, and `queue_projections`;
+position allocation joins before reading positions and retains its ordinary date
+lock. A transition therefore does not allocate advisory identities for captured
+cards, shared repertoires or historical queue dates. It uses exactly two distinct
+advisory identities: its existing receipt lock and the reservation barrier. Shared
+and exclusive modes on the barrier can appear as separate `pg_locks` rows, but
+share one lock tag. Relation-lock identities are bounded by the fixed table set;
+row locks and persisted fences still scale with the bounded authoritative inputs.
+This is an advisory lock budget, not a claim of constant CPU, memory or row work.
+
+The barrier globally serializes the two short application write boundaries, and
+makes them yield to existing structural/queue writers. It is released on every
+transaction exit and is never held across preparation, traversal or network I/O.
+Staging retains at most eight steps per transaction. Between write boundaries,
+ordinary study, reviews and queue work continue; resulting state drift invalidates
+an unactivated plan. Structural fences alone persist through publication/recovery.
+Existing card-edit and graph-request identity locks remain for ordinary producers.
+Two distinct applications can stage/publish concurrently after brief acceptance
+serialization. Neither PostgreSQL lock/transaction budgets nor planner limits are
+increased.
+
+A transaction-local owner setting is accepted only for a persisted
 active application. The staging handler verifies its task generation/lease before
 using that owner; activation verifies the original receipt and exact prepared
 inputs. Structural fences remain until completion or explicit recovery resolution.
