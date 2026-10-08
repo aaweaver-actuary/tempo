@@ -1,7 +1,7 @@
 import { webcrypto } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import manifestFixture from "../fixtures/opening-evidence-manifest.json";
-import { openingDecisionManifestSchema } from "../../app/domain/opening-evidence";
+import { openingDecisionManifestSchema, openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
 import type { OpeningEvidenceCheckpoint } from "../../app/domain/opening-evidence";
 
 const manifest = openingDecisionManifestSchema.parse(manifestFixture);
@@ -25,11 +25,13 @@ async function savedJournal(complete = false) {
   } });
   vi.stubGlobal("localStorage", { getItem: () => null });
   const { events, ...header } = structuredClone(checkpoint);
-  const originalDelivery = { checkpoint: structuredClone(checkpoint), operationKey: "opening-checkpoint:frozen-key" };
+  const digest = await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(openingEvidenceCheckpointSchema.parse(checkpoint))));
+  const operationKey = `opening-checkpoint:${Buffer.from(digest).toString("hex")}`;
+  const originalDelivery = { checkpoint: openingEvidenceCheckpointSchema.parse(checkpoint), operationKey };
   const attempts = new Map([[header.attempt_id, { ...header, owner_session_id: "previous-browser",
     final_sequence: 1, delivery_state: complete ? "idle" : "pending",
     terminal: { ...header.terminal!, state: complete ? "complete" : "partial" },
-    delivery: complete ? undefined : originalDelivery }]]);
+    delivery: undefined as typeof originalDelivery | undefined }]]);
   const savedEvents = new Map(events.map(event => [JSON.stringify([header.attempt_id, event.sequence]),
     { ...event, attempt_id: header.attempt_id }]));
   const stores: Record<string, Map<unknown, unknown>> = { opening_attempts: attempts, opening_events: savedEvents, training: new Map() };
@@ -107,10 +109,10 @@ it.each([false, true])("AS-15 background checkpoint receipt polling remains back
     expect(attempts.get(checkpoint.attempt_id)?.delivery).toEqual(originalDelivery);
   }
   await journal.flushOpeningEvidence();
-  expect(requests).toHaveLength(pendingFirst ? 4 : 2);
+  expect(requests).toHaveLength(pendingFirst ? 3 : 2);
   for (const [index, request] of requests.entries()) {
     expect(new Headers(request.init?.headers).get("X-Tempo-Work-Class")).toBe("background");
-    if (index % 2 === 0) {
+    if (index === 0) {
       expect(request.url).toMatch(/\/opening-evidence\/checkpoints$/);
       expect(new Headers(request.init?.headers).get("Idempotency-Key")).toBe(originalDelivery.operationKey);
       expect(JSON.parse(request.init!.body as string)).toEqual(originalDelivery.checkpoint);
@@ -171,13 +173,16 @@ it.each([202, 500])("AS-15 checkpoint receipt polling is bounded by the delivery
   }
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push({ url, init });
-    return Response.json({ persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1 });
+    return Response.json(init?.method === "POST"
+      ? { persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1 }
+      : { state: "complete", response: { persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1 } });
   }));
   await journal.flushOpeningEvidence();
   const posts = requests.filter(request => request.init?.method === "POST");
-  expect(posts).toHaveLength(2);
-  expect(posts.map(request => new Headers(request.init?.headers).get("Idempotency-Key"))).toEqual([originalDelivery.operationKey, originalDelivery.operationKey]);
-  expect(posts.map(request => request.init?.body)).toEqual([JSON.stringify(originalDelivery.checkpoint), JSON.stringify(originalDelivery.checkpoint)]);
+  expect(posts).toHaveLength(1);
+  expect(new Headers(posts[0].init?.headers).get("Idempotency-Key")).toBe(originalDelivery.operationKey);
+  expect(posts[0].init?.body).toBe(JSON.stringify(originalDelivery.checkpoint));
+  expect(requests.at(-1)?.url).toContain(encodeURIComponent(originalDelivery.operationKey));
   expect(attempts.size).toBe(0); expect(savedEvents.size).toBe(0);
 });
 
@@ -185,7 +190,7 @@ it.each(["immediate", "deferred"])("AS-15 immediate and deferred durable checkpo
   const { journal, attempts, savedEvents, originalDelivery } = await savedJournal();
   const nextCheckpoint = { ...structuredClone(checkpoint), attempt_id: "next-valid-attempt" };
   attempts.set(nextCheckpoint.attempt_id, { ...attempts.get(checkpoint.attempt_id)!, attempt_id: nextCheckpoint.attempt_id,
-    delivery: { checkpoint: nextCheckpoint, operationKey: "opening-checkpoint:next-key" } });
+    delivery: undefined });
   savedEvents.set(JSON.stringify([nextCheckpoint.attempt_id, 1]), { ...nextCheckpoint.events[0], attempt_id: nextCheckpoint.attempt_id });
   const requests: { url: string; init?: RequestInit }[] = [];
   const error = { status_code: 409, message: "Durable handler failed", detail: {
@@ -220,7 +225,9 @@ it.each(["unknown", "pending", "retrying", "blocked", "missing", "network"])("AS
   let retry = false;
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push({ url, init });
-    if (retry) return Response.json({ persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1 });
+    if (retry) return Response.json(init?.method === "POST"
+      ? { persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1 }
+      : { state: "complete", response: { persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1 } });
     if (init?.method === "POST") return Response.json({ detail: "Proxy failure" }, { status: 500 });
     if (state === "network") throw new TypeError("Receipt network unavailable");
     return Response.json({ state, last_error: { message: "Service must be repaired" } }, { status: state === "missing" ? 404 : 200 });
@@ -233,8 +240,28 @@ it.each(["unknown", "pending", "retrying", "blocked", "missing", "network"])("AS
   expect(savedEvents.size).toBe(1);
   retry = true;
   await journal.flushOpeningEvidence();
-  expect(requests[2].init?.body).toBe(requests[0].init?.body);
-  expect(new Headers(requests[2].init?.headers).get("Idempotency-Key")).toBe(originalDelivery.operationKey);
+  expect(requests[2].url).toContain(encodeURIComponent(originalDelivery.operationKey));
+  expect(requests.filter(request => request.init?.method === "POST")).toHaveLength(1);
+  expect(attempts.size).toBe(0); expect(savedEvents.size).toBe(0);
+});
+
+it.each(["unknown", "missing"])("AS-15 frozen checkpoint replays a missing admission with unchanged body and identity (%s)", async state => {
+  const { journal, attempts, savedEvents, originalDelivery } = await savedJournal();
+  const posts: RequestInit[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method !== "POST") return state === "unknown"
+      ? Response.json({ state: "unknown" }) : new Response(null, { status: 404 });
+    posts.push(init);
+    return posts.length === 1 ? new Response(null, { status: 500 }) : Response.json({
+      persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1,
+    });
+  }));
+  await expect(journal.flushOpeningEvidence()).rejects.toMatchObject({ name: "PendingOperationError" });
+  expect(attempts.get(checkpoint.attempt_id)).toMatchObject({ delivery: originalDelivery });
+  await journal.flushOpeningEvidence();
+  expect(posts).toHaveLength(2);
+  expect(posts[1].body).toBe(posts[0].body);
+  expect(new Headers(posts[1].headers).get("Idempotency-Key")).toBe(originalDelivery.operationKey);
   expect(attempts.size).toBe(0); expect(savedEvents.size).toBe(0);
 });
 

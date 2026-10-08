@@ -156,7 +156,7 @@
   "prosePaths": ["AGENTS.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md", "DUCKDB_VS_SQLITE.md", "GAMES_SYNC_RESEARCH.md", "GAMES_SYNC_IMPLEMENTATION.md", "tests/REGRESSIONS.md"],
   "critical": [
     {"file": "recovery.spec.ts", "title": "intentional training failure is saved once and reload resumes it without another failure", "covers": "browser failure outbox persistence, reload resume and duplicate prevention; failure API intercepted"},
-    {"file": "phone-offline-training.spec.ts", "title": "prepared phone queue survives API outage reload and syncs its review", "covers": "offline replay"},
+    {"file": "phone-offline-training.spec.ts", "title": "prepared phone queue and study worker survive full offline reload and sync one review per attempt", "covers": "offline replay"},
     {"file": "recovery.spec.ts", "title": "failed initial loads never display empty records or zero statistics", "covers": "fail-closed service behavior"},
     {"file": "studies.spec.ts", "title": "FEN-only study square exercise is authored enrolled and reviewed through the real workspace", "covers": "Study grading"},
     {"file": "training-queue-contention.spec.ts", "title": "discovery preview backlog leaves a prompt foreground training queue refresh", "covers": "foreground contention"},

@@ -34,7 +34,9 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
     delete: vi.fn(async (request: { url: string }) => cached.delete(request.url)),
   };
   const fetchMock = vi.fn(async () => new Response("static asset"));
-  runInNewContext(readFileSync("public/sw.js", "utf8"), {
+  const serviceWorkerSource = readFileSync("public/sw.js", "utf8").replace("const BUILD_SHELL_ASSETS = [];",
+    'const BUILD_SHELL_ASSETS = ["assets/app.js", "assets/study.worker.js", "assets/shared.js"];');
+  runInNewContext(serviceWorkerSource, {
     self: {
       registration: { scope: "https://tempo.test/tempo/" },
       addEventListener: (name: string, listener: (event: unknown) => void) => listeners.set(name, listener),
@@ -98,7 +100,7 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
   const waitUntil = vi.fn();
   onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
   await waitUntil.mock.calls[0][0];
-  expect(postMessage).toHaveBeenCalledWith({ version: "tempo-static-v6", ready: false });
+  expect(postMessage).toHaveBeenCalledWith({ version: "tempo-static-v7", ready: false });
 
   for (const path of ["favicon.svg", "tempo-icon.png", "manifest.webmanifest",
     ...["w", "b"].flatMap((color) => ["P", "N", "B", "R", "Q", "K"]
@@ -106,5 +108,18 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
     cached.set(`https://tempo.test/tempo/${path}`, new Response(path));
   onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
   await waitUntil.mock.calls[1][0];
-  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v6", ready: true });
+  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v7", ready: false });
+  cached.set("https://tempo.test/tempo/assets/study.worker.js", new Response("worker"));
+  cached.set("https://tempo.test/tempo/assets/shared.js", new Response("shared dependency"));
+  onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
+  await waitUntil.mock.calls[2][0];
+  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v7", ready: true });
+
+  for (let index = 125; index < 250; index++) {
+    const asset = dispatch(`https://tempo.test/tempo/assets/${index}.js`, "script");
+    await asset.respondWith.mock.calls[0][0];
+    await Promise.all(asset.waitUntil.mock.calls.map(([promise]) => promise));
+  }
+  expect(cached.has("https://tempo.test/tempo/assets/study.worker.js")).toBe(true);
+  expect(cached.has("https://tempo.test/tempo/assets/shared.js")).toBe(true);
 });
