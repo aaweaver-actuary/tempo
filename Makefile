@@ -15,9 +15,9 @@
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability legacy-sqlite unit-file python-file ui-file view rust-case
+.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle legacy-sqlite unit-file python-file ui-file view rust-case
 
-VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability legacy-sqlite unit-file python-file ui-file view rust-case
+VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle legacy-sqlite unit-file python-file ui-file view rust-case
 SELECTED_VERIFY_TARGETS := $(filter $(VERIFY_TARGETS),$(MAKECMDGOALS))
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),0)
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),1)
@@ -37,7 +37,8 @@ help:
 	@printf '%s\n' 'Capability check: make preflight (full and browser scopes run it first automatically)'
 	@printf '%s\n' 'Focused scopes: make fast | python | backend | rust | integration | ui | browser | visual | perf'
 	@printf '%s\n' 'Browser scopes exclude recovery/backup checks; make full still requires them all.'
-	@printf '%s\n' 'Docker recovery: make docker-durability (PostgreSQL durability without browser specs)'
+	@printf '%s\n' 'Docker recovery: make docker-durability (ordinary PostgreSQL durability without browser/lifecycle)'
+	@printf '%s\n' 'Deployment rehearsal: make docker-lifecycle (complete CLI recovery/deployment lifecycle)'
 	@printf '%s\n' 'Optional compatibility: make legacy-sqlite (full SQLite runtime/browser runner)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
 	@printf '%s\n' '               make python-file FILE=backend/tests/test_services.py'
@@ -90,6 +91,10 @@ full:
 docker-durability:
 	node scripts/check-test-capabilities.mjs --docker --loopback
 	node scripts/test-postgres-docker.mjs --mode durability
+
+docker-lifecycle:
+	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
+	node scripts/test-postgres-docker.mjs --mode lifecycle
 
 legacy-sqlite:
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount

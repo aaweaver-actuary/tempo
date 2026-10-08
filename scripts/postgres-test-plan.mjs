@@ -1,11 +1,15 @@
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode }) {
-  if (!["full", "browser", "durability", "priority-benchmark"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
+  if (!["full", "browser", "durability", "lifecycle", "priority-benchmark"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   if (mode === "priority-benchmark") {
     return ["compose_config", "image_build", "startup", "service_health", "priority_benchmark", "cleanup"];
   }
+  if (mode === "lifecycle") {
+    return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle", "cleanup"];
+  }
   const durabilityStages = [
-    "background_budget", "operation_recovery", "schema_upgrade", "background_workloads",
+    "background_budget", "operation_recovery", "schema_migrations", "priority_recovery", "background_diagnostics",
+    ...(mode === "full" ? ["deployment_lifecycle"] : []), "background_workloads",
     "threat_candidate_upsert", "command_recreation", "backup_restore",
   ];
   return [
