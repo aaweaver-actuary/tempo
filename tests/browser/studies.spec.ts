@@ -1,10 +1,54 @@
 import { test, expect, api, nav } from "./product-fixtures";
 import type { Page } from "@playwright/test";
+import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
+import { noPageOverflow } from "./ui-fixtures";
 
 test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
 });
+
+for (const black of [false, true]) {
+  test(`Study ${black ? "Black" : "White"} board underpromotion survives offline journal and exact UCI replay`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: black ? 390 : 1280, height: 844 });
+    const { localDate, fen: promotionFen, move } = await preparePromotionStudy(page, black);
+    await waitForPreparedPhoneShell(page, localDate);
+    await page.getByRole("combobox", { name: "Promotion", exact: true }).scrollIntoViewIfNeeded();
+    await noPageOverflow(page);
+    await testInfo.attach("Study promotion control", { body: await page.screenshot({
+      path: `test-results/stalemate-swindles/promotion-control-${black ? "phone" : "desktop"}.png`,
+    }), contentType: "image/png" });
+    await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+    await page.reload();
+    await expect(page.getByText("Promote to a knight")).toBeVisible();
+    await dragStudyKnightPromotion(page, promotionFen, move);
+    await page.getByRole("button", { name: "Submit", exact: true }).click();
+    await expect(page.getByText("The original reference promotes to a knight.")).toBeVisible();
+    const savedAnswer = await page.evaluate(async () => {
+      const opened = indexedDB.open("tempo-offline-training", 2);
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        opened.onsuccess = () => resolve(opened.result); opened.onerror = () => reject(opened.error);
+      });
+      const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+      const answer = await new Promise<unknown>((resolve, reject) => {
+        read.onsuccess = () => resolve(read.result.attempts[0].answer); read.onerror = () => reject(read.error);
+      });
+      database.close();
+      return answer;
+    });
+    expect(savedAnswer).toEqual({ type: "move_line", moves: [move] });
+    const replayed: unknown[] = [];
+    await page.unroute("**/api/**");
+    await page.route("**/api/studies/promotion-study/exercises/promotion-exercise/attempts", (route) => {
+      replayed.push(route.request().postDataJSON());
+      return route.fulfill({ json: { attempt_id: "saved", rating: "correct", assessment: { outcome: "correct", feedback: "Saved" },
+        review: { review_id: 992, requeue_entry_id: 993 } } });
+    });
+    await page.reload();
+    await expect.poll(() => replayed.length).toBe(1);
+    expect(replayed[0]).toMatchObject({ answer: { type: "move_line", moves: [move] }, revision: 1, queue_entry_id: 991 });
+  });
+}
 
 const fen = "4k3/8/8/8/8/8/8/4K1N1 w - - 0 1";
 const originalPgn = `[Event "Original synthetic study"]\n[SetUp "1"]\n[FEN "${fen}"]\n\n*\n`;
@@ -100,17 +144,19 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   await expect(page.getByLabel("Learner preview")).toContainText("Select the white knight square");
   await page.getByRole("button", { name: "Enroll in daily queue" }).press("Enter");
   await expectStudyNoticeInHistory(page, "Exercise enrolled");
+  // Wait for an admitted card and the complete phone projection using the
+  // bounded readiness deadline from the opening-segmentation workflows.
   await expect.poll(async () => {
     const queue = await (await request.get(`${api}/queue/today`)).json();
     return queue.cards.find((card: { content_type: string }) => card.content_type === "study_exercise")?.queue_entry_id;
-  }).toBeGreaterThan(0);
+  }, { timeout: 30_000 }).toBeGreaterThan(0);
   // Online study may start with an admitted card while refresh continues. The
   // complete offline phone copy additionally requires the published projection.
   await expect.poll(async () => {
     const prepared = await (await request.get(`${api}/queue/prepared`)).json();
     return prepared.projection.state === "ready" && prepared.count === prepared.cards.length &&
       prepared.cards.some((card: { content_type: string }) => card.content_type === "study_exercise");
-  }).toBe(true);
+  }, { timeout: 30_000 }).toBe(true);
   await nav(page, "Train");
   await expect(page.getByText("Select the white knight square")).toBeVisible();
   await expect(page.getByText("Original synthetic study")).toHaveCount(0);

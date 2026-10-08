@@ -5,7 +5,7 @@ import { Button } from "./buttons/BaseButton";
 import { TextArea } from "./ui";
 import { SelectInput } from "./inputs/SelectInput";
 import { MoveNavigationControls } from "./board/MoveNavigationControls";
-import { Chessboard, type BoardTheme, type PieceSet } from "./chessboard";
+import { Chessboard, type BoardTheme, type PieceSet, type PromotionPiece } from "./chessboard";
 import { pieceSymbols, STANDARD_FEN } from "../const";
 import { EMPTY_SETUP_FEN, type PositionSolutionState } from "../hooks/use-position-solution-editor";
 
@@ -40,7 +40,7 @@ export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls =
     }} orientation={orientation} fen={editor.tab === "position" ? editor.boardFen : editor.previewFen}
       locked={locked || editor.pendingFen !== null} showHint={false} theme={theme} pieceSet={pieceSet}
       editMode={editor.tab === "position"} onSquareSelect={editor.placePiece}
-      onFreeMove={editor.moveSetupPiece} onMove={editor.playSolution} />
+      promotion={editor.promotion} onFreeMove={editor.moveSetupPiece} onMove={editor.playSolution} />
     {editor.tab === "solution" && <>
       <MoveNavigationControls cursor={editor.cursor} length={editor.moves.length} onChange={editor.setCursor} />
       <div className="solution-line">{editor.moves.length ? editor.moves.map((move, index) =>
@@ -59,7 +59,7 @@ export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls =
           Moves start at the selected position and replace any continuation.</p>
         <Button disabled={inputLocked || !sanText.trim()} onClick={addSanMoves}>Add moves</Button>
       </div>}
-      <label>Promotion <SelectInput value={editor.promotion} disabled={locked} onChange={event => editor.setPromotion(event.target.value)}>
+      <label>Promotion <SelectInput value={editor.promotion} disabled={locked} onChange={event => editor.setPromotion(event.target.value as PromotionPiece)}>
         <option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option>
       </SelectInput></label>
     </>}

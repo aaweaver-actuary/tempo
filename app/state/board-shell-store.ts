@@ -3,7 +3,7 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Square } from "chess.js";
 import { create } from "zustand";
 import type { View } from "../types";
-import type { BoardTheme, PieceSet } from "../components/chessboard";
+import type { BoardTheme, PieceSet, PromotionPiece } from "../components/chessboard";
 import { STANDARD_FEN } from "../const";
 import { recordBoardEvent } from "../lib/board-diagnostics";
 
@@ -14,6 +14,7 @@ export type BoardShellSnapshot = {
   keyboard?: BoardKeyboardActions;
   owner: BoardShellOwner;
   fen: string;
+  promotion?: PromotionPiece;
   expectedSan?: string;
   lastMove?: readonly [string, string];
   orientation: "white" | "black";
@@ -55,6 +56,7 @@ type BoardShellStore = {
 export const defaultBoardState: BoardShellSnapshot = {
   owner: "train",
   fen: STANDARD_FEN,
+  promotion: "q",
   orientation: "white",
   interactionMode: "readonly",
   showHint: false,

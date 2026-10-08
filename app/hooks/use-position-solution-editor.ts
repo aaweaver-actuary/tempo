@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import { asSanMove, type SanMove } from "../types";
 import { editFenSquare, fenAfterMoves, moveFenPiece } from "../utils/fen";
+import type { PromotionPiece } from "../components/chessboard";
 
 export const EMPTY_SETUP_FEN = "8/8/8/8/8/8/8/8 w - - 0 1";
 
@@ -43,7 +44,7 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
   const [workingCursor, setWorkingCursor] = useState(0);
   const [tab, setTab] = useState<"position" | "solution">("position");
   const [piece, setPiece] = useState<string | null>(confirmReset ? null : "B");
-  const [promotion, setPromotion] = useState("q");
+  const [promotion, setPromotion] = useState<PromotionPiece>("q");
   const [error, setError] = useState("");
   const [pendingFen, setPendingFen] = useState<string | null>(null);
   const setStartingFen = useCallback((fen: string) => {

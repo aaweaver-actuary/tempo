@@ -22,6 +22,7 @@ export function PersistentBoardShell({ layoutAnchor }: { layoutAnchor?: HTMLElem
         layoutAnchor={layoutAnchor}
         keyboard={board.keyboard}
         fen={board.fen}
+        promotion={board.promotion}
         expectedSan={board.expectedSan}
         lastMove={board.lastMove}
         locked={Boolean(board.unavailable) || board.interactionMode === "readonly"}
