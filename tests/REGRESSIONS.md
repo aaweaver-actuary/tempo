@@ -2589,3 +2589,13 @@ now invokes captured old message/runtime-error/decoding-error callbacks after re
 They cannot resolve a fresh request, mark it running, produce new diagnostics, or terminate
 the replacement. Failed-worker handlers are detached and a fresh response still succeeds.
 The extended case failed before the worker-identity fence (`retrySettled` was true).
+
+## PR #92 final integration: accepted operation and uncertain recovery proof
+
+`independent pending journals replay missing admissions once without duplicate accepted operations or reviews`
+uses A/B/C receipt states and a controlled clock. Missing admissions are posted once per frozen
+operation, B/C confirm independently, A keeps capped backoff and its saved envelope, and recovery
+never invents an aggregate review. `uncertain cross-tab recovery retains saved work and warnings
+after a failed storage read (%s)` covers pending and blocked guards: unavailable storage cannot
+clear evidence or warnings, and restored reads preserve guards for still-persisted work. These
+are additional boundary proofs for the existing fixes, not newly discovered production defects.

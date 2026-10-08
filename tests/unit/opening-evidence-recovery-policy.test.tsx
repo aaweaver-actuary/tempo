@@ -117,6 +117,50 @@ it("pending journal backoff survives healthy journal successes and idle timer wa
   expect(state.stores.opening_attempts.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
 });
 
+it("independent pending journals replay missing admissions once without duplicate accepted operations or reviews", async () => {
+  const state = await recoveryHarness(["A", "B"]);
+  const acceptedCheckpoints = new Map<string, { body: string; attemptId: string }>();
+  const checkpointPosts: string[] = [];
+  const aggregateReviews: string[] = [];
+  let aComplete = false;
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    const address = String(url);
+    if (address.includes("/review")) { aggregateReviews.push(address); throw new Error("Recovery must not invent an aggregate review"); }
+    const operationKey = init?.method === "POST" ? new Headers(init.headers).get("Idempotency-Key")!
+      : decodeURIComponent(address.split("/").at(-1)!);
+    if (init?.method === "POST") {
+      const body = String(init.body);
+      const checkpoint = JSON.parse(body);
+      checkpointPosts.push(checkpoint.attempt_id);
+      expect(acceptedCheckpoints.has(operationKey)).toBe(false);
+      acceptedCheckpoints.set(operationKey, { body, attemptId: checkpoint.attempt_id });
+      return Response.json({ operation_id: operationKey }, { status: 202 });
+    }
+    const accepted = acceptedCheckpoints.get(operationKey);
+    if (!accepted) return Response.json({ state: "unknown" });
+    if (accepted.attemptId === "A" && !aComplete) return Response.json({ state: "pending" });
+    return Response.json({ state: "complete", response: { persisted: true, attempt_id: accepted.attemptId,
+      received_sequences: [1, 2, 3], contiguous_sequence: 3 } });
+  });
+  await state.idle(); await state.idle();
+  expect(state.stores.opening_attempts.has("B")).toBe(false);
+  const frozenA = structuredClone(state.stores.opening_attempts.get("A"));
+  for (const [index, delay] of [1000, 2000, 4000, 8000, 16000, 30000, 30000].entries()) {
+    if (index === 1) {
+      state.seedPending("C"); act(() => window.dispatchEvent(new Event("online")));
+      await state.idle(); expect(state.stores.opening_attempts.has("C")).toBe(false);
+    }
+    await state.advance(delay - 1); expect(state.callbacks.size).toBe(0);
+    await state.advance(1); await state.idle();
+    expect(state.stores.opening_attempts.get("A")).toEqual(frozenA);
+    expect(checkpointPosts).toEqual(index === 0 ? ["A", "B"] : ["A", "B", "C"]);
+  }
+  aComplete = true; await state.advance(30000); await state.idle();
+  expect(state.stores.opening_attempts.size).toBe(0);
+  expect(acceptedCheckpoints.size).toBe(3); expect(checkpointPosts).toEqual(["A", "B", "C"]);
+  expect(aggregateReviews).toEqual([]); expect(vi.getTimerCount()).toBe(0);
+});
+
 it("recovery wakes at the earliest independent journal retry deadline", async () => {
   const state = await recoveryHarness(["A"]); state.response.mode = "pending";
   const startedAt = Date.now();
@@ -155,6 +199,26 @@ it.each(["pending", "blocked"] as const)("externally completed opening journal p
     expect(notifications().filter(record => ["opening-evidence-recovery", "opening-evidence-delivery"].includes(record.key ?? "")).every(record => Boolean(record.resolvedAt))).toBe(true);
     state.mounted.unmount();
   }
+});
+
+it.each(["pending", "blocked"] as const)("uncertain cross-tab recovery retains saved work and warnings after a failed storage read (%s)", async mode => {
+  const state = await recoveryHarness(); state.response.mode = mode;
+  const { notifications } = await import("../../app/lib/notifications");
+  await state.idle();
+  const savedAttempt = structuredClone(state.stores.opening_attempts.get("A"));
+  const requestCount = state.requests.length;
+  const storage = await import("../../app/lib/offline-training-storage");
+  const database = await storage.offlineTrainingDatabase();
+  const read = vi.spyOn(database, "transaction").mockImplementation(() => { throw new DOMException("Storage unavailable", "InvalidStateError"); });
+  await expect(state.journal.recoverOpeningEvidence()).rejects.toThrow("Storage unavailable");
+  expect(state.stores.opening_attempts.get("A")).toEqual(savedAttempt);
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeNull();
+  expect(state.requests).toHaveLength(requestCount);
+  read.mockRestore();
+  await state.journal.recoverOpeningEvidence();
+  expect(state.stores.opening_attempts.get("A")).toEqual(savedAttempt);
+  expect(state.requests).toHaveLength(requestCount);
+  expect(notifications().find(record => record.key === "opening-evidence-recovery")?.resolvedAt).toBeNull();
 });
 
 it("AS-15 blocked opening-evidence operations do not automatically resubmit during idle recovery", async () => {
