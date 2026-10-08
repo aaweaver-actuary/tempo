@@ -1,5 +1,6 @@
 """Issue 80 durable application proofs, exclusively on runner-owned PostgreSQL."""
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, datetime, timezone
 import json
 import os
@@ -356,7 +357,9 @@ def test_issue80_concurrent_target_source_and_membership_writes_wait_then_confli
                         producer_pids.append(database.execute_native('SELECT pg_backend_pid()').fetchone()[0])
                         producer_started.set()
                         if producer_kind=='target':
-                            create_graph_cards(database,(step,),plan.study_day,strict=True)
+                            # The destination repertoire has no repertoire fence:
+                            # only the globally absent card-ID reservation protects it.
+                            create_graph_cards(database,(replace(step,repertoire_id=other),),plan.study_day,strict=True)
                         elif producer_kind=='source':
                             database.execute_native("UPDATE repertoire_lines SET name=name||' concurrent' WHERE id=%s",(lines[0]['id'],))
                         else:
