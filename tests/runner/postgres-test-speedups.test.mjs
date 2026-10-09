@@ -604,3 +604,20 @@ test("issue107 process restart and foreground profile proof runs in regular dura
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
 });
+
+test("issue107 fixture and application queue dates agree across UTC midnight", () => {
+  const composeSource = readFileSync(join(root, "docker-compose.postgres.test.yml"), "utf8");
+  const instant = new Date("2026-10-09T01:00:00Z");
+  const serviceDates = Object.fromEntries(["schema", "api", "foreground-worker", "background-worker"].map(service => {
+    const serviceSource = composeSource.match(new RegExp(`^  ${service}:\\r?\\n([\\s\\S]*?)(?=^  \\S)`, "m"))?.[1];
+    assert(serviceSource, `Missing ${service} service`);
+    const timezone = serviceSource.match(/^      TZ: (\S+)$/m)?.[1] ?? "UTC";
+    const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone,
+      year: "numeric", month: "2-digit", day: "2-digit" }).format(instant);
+    return [service, localDate];
+  }));
+  assert.deepEqual(serviceDates, {
+    schema: "2026-10-08", api: "2026-10-08",
+    "foreground-worker": "2026-10-08", "background-worker": "2026-10-08",
+  });
+});
