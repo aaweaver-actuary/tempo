@@ -718,9 +718,13 @@ def test_postgres_manual_retry_requeues_and_unpauses_failed_task():
         "attempt_count": 5, "max_attempts": 5, "next_attempt_at": None,
         "created_at": "2026-09-27T00:00:00+00:00", "updated_at": "2026-09-27T00:00:00+00:00",
         "last_error": "temporary failure",
+        "payload_json": '{"queue_date":"2026-09-27"}',
     }
 
     class RetryDatabase:
+        def execute(self, statement, *_parameters):
+            return self.execute_native(statement, *_parameters)
+
         def execute_native(self, statement, *_parameters):
             statements.append(statement)
             if statement.startswith("SELECT * FROM background_tasks"):
@@ -3114,7 +3118,8 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
         database.executescript("""
             CREATE TABLE background_tasks(id TEXT PRIMARY KEY,generation INTEGER,
                 lease_token TEXT,state TEXT,phase TEXT,lease_expires_at TEXT,
-                last_error TEXT,completed_at TEXT,updated_at TEXT);
+                last_error TEXT,completed_at TEXT,updated_at TEXT,
+                transaction_timeout_count INTEGER DEFAULT 0,transaction_timeout_checkpoint TEXT);
             CREATE TABLE background_task_events(id INTEGER PRIMARY KEY,task_id TEXT,
                 generation INTEGER,event TEXT,phase TEXT,detail TEXT,created_at TEXT);
             CREATE TABLE prefix_transition_applications(operation_id TEXT PRIMARY KEY,
@@ -3231,6 +3236,7 @@ def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
     assert enqueued == [("daily_queue", "current", {"queue_date": "2026-09-27"}, 10)]
     assert len(database.writes) == 1
     database.task = {"id": "new-task", "state": "leased",
+                     "last_error": None,
                      "payload_json": '{"queue_date":"2026-09-27"}'}
     second = queue_commands.ensure_current_queue(
         database, {"queue_date": "2026-09-27"},
@@ -4442,6 +4448,7 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
                 max_attempts INTEGER,next_attempt_at TEXT,lease_token TEXT,
                 lease_expires_at TEXT,last_error TEXT,created_at TEXT,
                 started_at TEXT,completed_at TEXT,updated_at TEXT,
+                transaction_timeout_count INTEGER DEFAULT 0,transaction_timeout_checkpoint TEXT,
                 UNIQUE(kind,deduplication_key)
             );
             CREATE TABLE background_task_events(

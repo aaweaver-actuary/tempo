@@ -395,6 +395,32 @@ def test_postgres_opening_checkpoint_restart_recomputes_original_receipt():
     print('PASS test_postgres_opening_checkpoint_restart_recomputes_original_receipt (process exit 73, lease recovery, exact replay)')
 
 
+@contextmanager
+def _assert_owned_admission_cleanup():
+    """Check proof-owned leases without racing the deployed API health probe."""
+    from app.services import redis_admission_gate
+    server = redis_admission_gate.client()
+    original_eval = server.eval
+    owned_leases = set()
+
+    def record_owned_lease(script, *arguments):
+        result = original_eval(script, *arguments)
+        if script == redis_admission_gate._REGISTER_FOREGROUND:
+            owned_leases.add((arguments[1], arguments[3]))
+        elif script == redis_admission_gate._CLAIM_BACKGROUND and result:
+            owned_leases.add((arguments[2], arguments[4]))
+        return result
+
+    with patch.object(server, 'eval', record_owned_lease):
+        yield
+    # Every lease created by these local HTTP/worker threads must be removed.
+    # Other processes retain their own legitimate foreground/background leases.
+    unreleased = [(key, token) for key, token in owned_leases
+                  if server.zscore(key, token) is not None]
+    assert not unreleased, f'Admission proof leaked {len(unreleased)} owned leases'
+
+
+@_assert_owned_admission_cleanup()
 def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     from app import main, command_dispatch, command_gateway, database as database_module, tasks
     from app.services import redis_admission_gate
@@ -502,12 +528,11 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
         with postgres_store.connection(read_only=True) as connection:
             assert shadow_digest(connection, fixture['repertoire_id']) == digest
             assert _fixture_scheduling(connection, fixture) == scheduling
-    assert not redis_admission_gate.foreground_present()
-    assert server.zcard(redis_admission_gate._BACKGROUND_KEY) == 0
     _retain_color_provenance(fixture)
     print('PASS test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay (real Redis denial, authoritative read-only 250ms/25ms, old/new identity, queued/retrying recovery)')
 
 
+@_assert_owned_admission_cleanup()
 def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics():
     from app import main, opening_evidence_api, tasks
     from app.services import redis_admission_gate
@@ -559,7 +584,8 @@ def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostic
                 if outcome == 'error':
                     raise RuntimeError('HTTP evidence read failed')
             return original_sql(connection, statement, parameters)
-        with ThreadPoolExecutor(max_workers=1) as requests, \
+        with _assert_owned_admission_cleanup(), \
+                ThreadPoolExecutor(max_workers=1) as requests, \
                 patch.object(server, 'eval', observe_eval), \
                 patch.object(opening_evidence_api, 'background_read_connection', observe_read), \
                 patch.object(postgres_store.PostgresConnection, 'execute_native', observe_sql):
@@ -585,8 +611,6 @@ def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostic
                     assert response.json()['events'] == checkpoint['events'] and len(response.json()['events']) == 256
                 else:
                     assert response.json() == {'detail': 'Opening attempt evidence not found'}
-        assert not redis_admission_gate.foreground_present()
-        assert server.zcard(redis_admission_gate._BACKGROUND_KEY) == 0
         assert activity_gate.active_background_sections == 0
     with patch.object(opening_evidence_api, 'background_read_connection', side_effect=AssertionError('Foreground diagnostic self-admission')):
         diagnostic = client.get('/api/opening-evidence/attempts/' + checkpoint['attempt_id'])
@@ -597,7 +621,6 @@ def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostic
     with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as probe:
         sessions = probe.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s::int[])', (source_connection_pids,)).fetchall()
         assert sessions and all(row[0] == 'idle' and row[1] is None for row in sessions)
-    assert not redis_admission_gate.foreground_present()
     _retain_color_provenance(fixture)
     print('PASS test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics (real Redis denial, authoritative read-only 250ms/25ms, ordered 256-event bound, 404/error cleanup, foreground control)')
 

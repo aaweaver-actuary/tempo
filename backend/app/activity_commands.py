@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 from fastapi import HTTPException
@@ -10,7 +11,7 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.background_activity import set_control_in_transaction
-from .services.durable_tasks import serialize_task
+from .services.durable_tasks import serialize_task, update_queue_refresh_status_in_transaction
 
 
 def control_activity(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
@@ -68,9 +69,16 @@ def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> 
     now = datetime.now(timezone.utc).isoformat()
     database.execute_native(
         "UPDATE background_tasks SET state='queued',phase='queued',attempt_count=0,"
+        "transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,"
         "next_attempt_at=%s,lease_token=NULL,lease_expires_at=NULL,last_error=NULL,"
         "completed_at=NULL,updated_at=%s WHERE id=%s", (now, now, task_id),
     )
+    if failed["kind"] == "daily_queue":
+        from .services.queue_refresh_wakeup import mark_queue_refresh_requested
+        mark_queue_refresh_requested()
+        update_queue_refresh_status_in_transaction(
+            database, failed["kind"], json.loads(failed["payload_json"]), state="refreshing",
+        )
     database.execute_native(
         "INSERT INTO background_activity(source,work_id,paused,phase,updated_at) "
         "VALUES('durable',%s,0,'Queued',%s) ON CONFLICT(source,work_id) DO UPDATE SET "
