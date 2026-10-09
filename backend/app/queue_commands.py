@@ -91,16 +91,16 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
     if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
         return {"queue_date": queue_date, "refresh_pending": False}
     active_task = database.execute(
-        """SELECT id,state,payload_json FROM background_tasks
+        """SELECT id,state,payload_json,last_error FROM background_tasks
            WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE""",
     ).fetchone()
     if (active_task and active_task["state"] in {"queued", "leased", "retrying"}
             and json.loads(active_task["payload_json"]).get("queue_date") == queue_date):
         database.execute(
-            """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-               VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
-               state='refreshing',refresh_pending=1,last_error=NULL""",
-            (queue_date,),
+            """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,last_error)
+               VALUES(?,'refreshing',0,1,?) ON CONFLICT(queue_date) DO UPDATE SET
+               state='refreshing',refresh_pending=1,last_error=excluded.last_error""",
+            (queue_date, active_task["last_error"]),
         )
         return {"queue_date": queue_date, "refresh_pending": True,
                 "task_id": active_task["id"]}

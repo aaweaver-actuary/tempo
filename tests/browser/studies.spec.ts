@@ -2,6 +2,7 @@ import { test, expect, api, nav } from "./product-fixtures";
 import type { Page } from "@playwright/test";
 import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
 import { noPageOverflow } from "./ui-fixtures";
+import { attachQueueReadinessDiagnostics } from "./queue-readiness-diagnostics";
 
 test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 test.beforeEach(async ({ context }) => {
@@ -107,18 +108,23 @@ test("prepared study queue shares the disposable service calendar day", async ({
   expect((await prepared.json()).local_date).toBe(browserCalendar.localDate);
 });
 
-test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }) => {
+test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }, testInfo) => {
   // Compose's local queue day can differ from the browser after UTC midnight.
   // Pin this workflow to that day while its timers continue running normally.
   const serverQueue = await (await request.get(`${api}/queue/today`)).json();
   // A small smoke can reach this case before the initial durable queue slice
   // finishes. Establish its ready boundary before browser preparation starts.
-  await expect.poll(async () => {
-    const preparedQueue = await request.get(`${api}/queue/prepared`);
-    expect(preparedQueue.ok()).toBeTruthy();
-    return preparedQueue.json();
-  }, { message: "Initial disposable queue is ready for phone preparation", timeout: 30_000 })
-    .toMatchObject({ local_date: serverQueue.local_date, projection: { state: "ready" } });
+  try {
+    await expect.poll(async () => {
+      const preparedQueue = await request.get(`${api}/queue/prepared`);
+      expect(preparedQueue.ok()).toBeTruthy();
+      return preparedQueue.json();
+    }, { message: "Initial disposable queue is ready for phone preparation", timeout: 30_000 })
+      .toMatchObject({ local_date: serverQueue.local_date, projection: { state: "ready" } });
+  } catch (error) {
+    await attachQueueReadinessDiagnostics(request, api, testInfo);
+    throw error;
+  }
   await page.clock.setFixedTime(new Date(`${serverQueue.local_date}T12:00:00Z`));
   const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
   expect(catalog.packs.filter((pack: { active: boolean }) => pack.active)).toEqual([]);

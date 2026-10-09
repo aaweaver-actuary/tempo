@@ -38,14 +38,19 @@ _TASK_UPSERT_SQL = """INSERT INTO background_tasks(
                    priority=MIN(background_tasks.priority,excluded.priority),
                    state='queued',phase='queued',payload_version=excluded.payload_version,
                    payload_json=excluded.payload_json,attempt_count=0,
+                   transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
                    max_attempts=excluded.max_attempts,next_attempt_at=excluded.next_attempt_at,
                    lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
                    completed_at=NULL,updated_at=excluded.updated_at"""
 _TASK_BY_ID_SQL = "SELECT * FROM background_tasks WHERE id=?"
 _COMPLETE_SLICE_SQL = """UPDATE background_tasks SET state='complete',phase='published',
                lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
+               transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
                completed_at=?,updated_at=?
            WHERE id=? AND generation=? AND lease_token=? AND state='leased'"""
+_QUEUE_REFRESH_STATUS_SQL = """UPDATE queue_projections
+    SET state=?,refresh_pending=?,last_error=? WHERE queue_date=?"""
+_QUEUE_REFRESH_PROGRESS_SQL = "UPDATE queue_projections SET last_error=NULL WHERE queue_date=?"
 
 
 def warm_completion_sql() -> None:
@@ -56,6 +61,7 @@ def warm_completion_sql() -> None:
     for statement in (
         _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL,
         _EVENT_INSERT_SQL, _EVENT_PRUNE_SQL, _COMPLETE_SLICE_SQL,
+        _QUEUE_REFRESH_STATUS_SQL, _QUEUE_REFRESH_PROGRESS_SQL,
     ):
         postgres_sql(statement)
 
@@ -87,6 +93,35 @@ def _record_event(
         _EVENT_PRUNE_SQL,
         (task_id,),
     )
+
+
+def update_queue_refresh_status_in_transaction(
+    database, kind: str, payload: dict, *, state: str, error: str | None = None,
+) -> None:
+    """Mirror an accepted task transition while its row lock still fences publication."""
+
+    if kind != "daily_queue" or not payload.get("queue_date"):
+        return
+    database.execute(
+        _QUEUE_REFRESH_STATUS_SQL,
+        (state, int(state == "refreshing"), error, payload["queue_date"]),
+    )
+
+
+def clear_queue_refresh_error_in_transaction(
+    database, task_id: str, *, kind: str | None, payload: dict | None = None,
+) -> None:
+    """Committed progress clears its error without declaring the queue ready."""
+
+    if kind not in {None, "daily_queue"}:
+        return
+    if payload is None:
+        task_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
+        if task_row is None or task_row["kind"] != "daily_queue":
+            return
+        payload = json.loads(task_row["payload_json"])
+    if payload.get("queue_date"):
+        database.execute(_QUEUE_REFRESH_PROGRESS_SQL, (payload["queue_date"],))
 
 
 def enqueue_task(
@@ -181,6 +216,7 @@ def enqueue_compact_postgres_task_in_transaction(
         "priority=LEAST(background_tasks.priority,excluded.priority),"
         "state='queued',phase='queued',payload_version=1,payload_json=excluded.payload_json,"
         "attempt_count=0,max_attempts=5,next_attempt_at=excluded.next_attempt_at,"
+        "transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,"
         "lease_token=NULL,lease_expires_at=NULL,last_error=NULL,"
         "completed_at=NULL,updated_at=excluded.updated_at RETURNING id,generation) "
         "INSERT INTO background_task_events(task_id,generation,event,phase,detail,created_at) "
@@ -270,11 +306,13 @@ def complete_task(task_id: str, generation: int, lease_token: str, *, kind: str 
         changed = database.execute(
             """UPDATE background_tasks SET state='complete',phase='published',
                    lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
+                   transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
                    completed_at=?,updated_at=?
                WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
             (now, now, task_id, generation, lease_token),
         ).rowcount
         if changed:
+            clear_queue_refresh_error_in_transaction(database, task_id, kind=kind)
             _record_event(database, task_id, generation, "published", "published", kind=kind)
         else:
             _record_stale_result(database, task_id, generation, kind or "other")
@@ -308,12 +346,15 @@ def advance_task_slice_in_transaction(
     changed = database.execute(
         """UPDATE background_tasks SET state='queued',phase=?,payload_json=?,
                attempt_count=0,next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,
-               last_error=NULL,updated_at=?
+               last_error=NULL,updated_at=?,
+               transaction_timeout_count=0,transaction_timeout_checkpoint=NULL
            WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
         (next_phase, json.dumps(next_payload, separators=(",", ":")), now, now,
          task["id"], task["generation"], task["lease_token"]),
     ).rowcount
     if changed:
+        clear_queue_refresh_error_in_transaction(database, task["id"], kind=task.get("kind"),
+                                                payload=task.get("payload"))
         _record_event(database, task["id"], task["generation"], "slice_complete", next_phase, kind=task.get("kind"))
     return bool(changed)
 
@@ -327,6 +368,8 @@ def complete_task_slice_in_transaction(database, task: dict) -> bool:
         (now, now, task["id"], task["generation"], task["lease_token"]),
     ).rowcount
     if changed:
+        clear_queue_refresh_error_in_transaction(database, task["id"], kind=task.get("kind"),
+                                                payload=task.get("payload"))
         _record_event(database, task["id"], task["generation"], "published", "published", kind=task.get("kind"))
     else:
         _record_stale_result(database, task["id"], task["generation"], task.get("kind", "other"))
@@ -341,7 +384,7 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
             from .prefix_transition_application import lock_linked_receipts
             lock_linked_receipts(database, task_id, generation)
         row = database.execute(
-            "SELECT attempt_count,max_attempts,kind,payload_json FROM background_tasks WHERE id=? AND generation=? AND lease_token=?",
+            "SELECT attempt_count,max_attempts,kind,payload_json FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'",
             (task_id, generation, lease_token),
         ).fetchone()
         if not row:
@@ -351,10 +394,10 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
         state = "failed" if terminal else "retrying"
         now = _now()
         retry_phase = "phase" if postgres_store.configured() else "?"
-        database.execute(
+        changed = database.execute(
             f"""UPDATE background_tasks SET state=?,phase={retry_phase},next_attempt_at=?,
                    lease_token=NULL,lease_expires_at=NULL,last_error=?,
-                   completed_at=?,updated_at=? WHERE id=? AND generation=?""",
+                   completed_at=?,updated_at=? WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
             (
                 state,
                 *((state,) if not postgres_store.configured() else ()),
@@ -364,7 +407,14 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 _iso(now),
                 task_id,
                 generation,
+                lease_token,
             ),
+        ).rowcount
+        if not changed:
+            return {"state": "superseded"}
+        update_queue_refresh_status_in_transaction(
+            database, row["kind"], json.loads(row["payload_json"]),
+            state="failed" if terminal else "refreshing", error=sanitized_error,
         )
         if terminal and row["kind"] in {"game_sync_window", "game_sync_record"}:
             sync_payload = json.loads(row["payload_json"])
@@ -463,9 +513,13 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
         ).fetchone()
         if row is None:
             return False
-        checkpoint = json.dumps([row['phase'], json.loads(row['payload_json'])], sort_keys=True)
+        saved_payload = json.loads(row['payload_json'])
+        checkpoint = json.dumps([task['generation'], row['phase'], saved_payload], sort_keys=True)
+        # Upgrade an existing episode in place; old rows lack the generation
+        # prefix, and a process restart must not discard their current backoff.
+        legacy_checkpoint = json.dumps([row['phase'], saved_payload], sort_keys=True)
         timeout_count = (int(row['transaction_timeout_count']) + 1
-                         if row['transaction_timeout_checkpoint'] == checkpoint else 1)
+                         if row['transaction_timeout_checkpoint'] in {checkpoint, legacy_checkpoint} else 1)
         delay_seconds = min(60, 2 ** min(timeout_count - 1, 6))
         now = _now()
         sanitized_error = str(error)[:500]
@@ -480,6 +534,10 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
              sanitized_error, _iso(now), task['id'], task['generation'], task['lease_token']),
         ).rowcount
         if changed:
+            update_queue_refresh_status_in_transaction(
+                database, task['kind'], saved_payload,
+                state="refreshing", error=sanitized_error,
+            )
             _record_event(database, task['id'], task['generation'], 'yielded', row['phase'],
                           sanitized_error, kind=task['kind'])
         return bool(changed)
@@ -497,9 +555,13 @@ def retry_task(task_id: str) -> dict | None:
         manual_phase = "" if postgres_store.configured() else ",phase='queued'"
         database.execute(
             f"""UPDATE background_tasks SET state='queued'{manual_phase},attempt_count=0,
+                   transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
                    next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
                    completed_at=NULL,updated_at=? WHERE id=?""",
             (now, now, task_id),
+        )
+        update_queue_refresh_status_in_transaction(
+            database, row["kind"], json.loads(row["payload_json"]), state="refreshing",
         )
         database.execute(
             """UPDATE background_activity SET phase='Queued',completed_units=NULL,

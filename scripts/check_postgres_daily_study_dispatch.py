@@ -1,5 +1,5 @@
 """Disposable sparse-unlock, dispatch/replay, and real-browser backlog fixtures."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -10,12 +10,15 @@ from unittest.mock import patch
 import uuid
 
 import psycopg
+from psycopg.errors import TransactionTimeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import postgres_store, tasks
 from app.main import _unlock_eligible_opening_cards
 from app.queue_commands import request_queue_refresh_in_transaction
 from app.services import durable_tasks
+from app import activity_commands
+from app.services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 
 DSN = "postgresql://postgres@postgres:5432/tempo"
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -65,6 +68,135 @@ def cleanup(identifier):
         connection.execute("DELETE FROM reviews WHERE card_id IN (SELECT id FROM cards WHERE repertoire_id=%s)", (identifier,))
         connection.execute("DELETE FROM cards WHERE repertoire_id=%s", (identifier,))
         connection.execute("DELETE FROM repertoires WHERE id=%s", (identifier,))
+
+
+def proof_deadline_recovery(identifier):
+    """Real fenced deadline/projection writes, recreation, rollback and replay."""
+
+    queue_date = '2099-10-07'
+    observed_clock = [datetime.now(timezone.utc)]
+    publication_payload = {'queue_date': queue_date, '_queue_phase': 'publish_projection'}
+    with psycopg.connect(DSN) as connection:
+        assert connection.execute('SELECT 1 FROM queue_projections WHERE queue_date=%s', (queue_date,)).fetchone() is None
+        connection.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(%s,'refreshing',0,1)", (queue_date,))
+
+    def saved_state():
+        with psycopg.connect(DSN, row_factory=psycopg.rows.dict_row) as connection:
+            task = connection.execute("SELECT * FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=%s", (identifier,)).fetchone()
+            projection = connection.execute('SELECT * FROM queue_projections WHERE queue_date=%s', (queue_date,)).fetchone()
+            return task, projection
+
+    def claimed_owned():
+        claimed = durable_tasks.claim_task('daily_queue')
+        assert claimed and claimed['deduplication_key'] == identifier
+        return claimed
+
+    def deadline(claimed):
+        return durable_tasks.defer_task_for_transaction_timeout(claimed, TransactionTimeout('Controlled daily queue deadline'))
+
+    try:
+        with patch.object(durable_tasks, '_now', lambda: observed_clock[0]):
+            for _generation_number in range(7):
+                durable_tasks.enqueue_task('daily_queue', identifier, publication_payload, priority=1, foreground=False)
+                claimed = claimed_owned()
+                assert deadline(claimed)
+                saved_task, projection = saved_state()
+                assert saved_task['transaction_timeout_count'] == 1
+                assert datetime.fromisoformat(saved_task['next_attempt_at']) == observed_clock[0] + timedelta(seconds=1)
+                assert (projection['state'], projection['refresh_pending'], projection['last_error']) == ('refreshing', 1, 'Controlled daily queue deadline')
+                observed_clock[0] += timedelta(seconds=1)
+                resumed = claimed_owned()
+                assert not execute_postgres_queue_refresh_slice(resumed)
+                saved_task, projection = saved_state()
+                assert saved_task['state'] == 'complete' and saved_task['transaction_timeout_count'] == 0
+                assert projection['state'] == 'ready' and projection['refresh_pending'] == 0 and projection['last_error'] is None
+            print('PASS test_issue135_postgres_new_generations_do_not_inherit_deadline_cooldown')
+
+            durable_tasks.enqueue_task('daily_queue', identifier, publication_payload, priority=1, foreground=False)
+            claimed = claimed_owned()
+            before_failure = saved_state()
+            original_status_update = durable_tasks.update_queue_refresh_status_in_transaction
+
+            def interrupted_status_update(*args, **kwargs):
+                original_status_update(*args, **kwargs)
+                raise RuntimeError('Controlled interruption after projection update')
+
+            with patch.object(durable_tasks, 'update_queue_refresh_status_in_transaction', interrupted_status_update):
+                try:
+                    deadline(claimed)
+                except RuntimeError as error:
+                    assert str(error) == 'Controlled interruption after projection update'
+                else:
+                    raise AssertionError('Expected atomic publication interruption')
+            assert saved_state() == before_failure
+            print('PASS test_issue135_postgres_deadline_and_projection_roll_back_together')
+
+            for timeout_count, delay_seconds in enumerate((1, 2, 4, 8, 16, 32, 60, 60), start=1):
+                assert deadline(claimed)
+                saved_task, _projection = saved_state()
+                assert saved_task['transaction_timeout_count'] == timeout_count and saved_task['attempt_count'] == 0
+                assert datetime.fromisoformat(saved_task['next_attempt_at']) == observed_clock[0] + timedelta(seconds=delay_seconds)
+                postgres_store.close_pools()
+                assert not deadline(claimed)
+                assert saved_state()[0]['transaction_timeout_count'] == timeout_count
+                observed_clock[0] += timedelta(seconds=delay_seconds)
+                claimed = claimed_owned()
+            crashed_delivery = claimed
+            observed_clock[0] += timedelta(seconds=61)
+            postgres_store.close_pools()
+            resumed = claimed_owned()
+            assert resumed['lease_token'] != crashed_delivery['lease_token']
+            assert not deadline(crashed_delivery)
+            assert saved_state()[0]['transaction_timeout_count'] == 8
+            with postgres_store.connection(background=True) as connection:
+                assert durable_tasks.advance_task_slice_in_transaction(connection, resumed,
+                    next_phase='publish_projection', next_payload=publication_payload)
+            saved_task, projection = saved_state()
+            assert saved_task['transaction_timeout_count'] == 0 and saved_task['transaction_timeout_checkpoint'] is None
+            assert projection['last_error'] is None and projection['state'] == 'refreshing'
+            publication_delivery = claimed_owned()
+            assert not execute_postgres_queue_refresh_slice(publication_delivery)
+            published_state = saved_state()
+            assert not execute_postgres_queue_refresh_slice(publication_delivery)
+            assert not deadline(publication_delivery)
+            assert saved_state() == published_state
+            print('PASS test_issue135_postgres_deadline_restart_progress_and_publication_replay')
+
+            durable_tasks.enqueue_task('daily_queue', identifier, publication_payload, priority=1, foreground=False)
+            failed_delivery = claimed_owned()
+            with psycopg.connect(DSN) as connection:
+                connection.execute('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s', (failed_delivery['id'],))
+            failure = durable_tasks.fail_task(failed_delivery['id'], failed_delivery['generation'], failed_delivery['lease_token'], RuntimeError('Controlled terminal queue failure'))
+            assert failure['state'] == 'failed'
+            assert saved_state()[1]['state'] == 'failed' and saved_state()[1]['refresh_pending'] == 0
+            with postgres_store.connection() as connection:
+                activity_commands.retry_failed_task(connection, {'task_id': failed_delivery['id']})
+            saved_task, projection = saved_state()
+            assert saved_task['transaction_timeout_count'] == 0 and saved_task['transaction_timeout_checkpoint'] is None
+            assert projection['state'] == 'refreshing' and projection['refresh_pending'] == 1 and projection['last_error'] is None
+            replacement = durable_tasks.enqueue_task('daily_queue', identifier, publication_payload, priority=1, foreground=False)
+            assert replacement['generation'] > failed_delivery['generation']
+            assert not deadline(failed_delivery)
+            assert durable_tasks.fail_task(failed_delivery['id'], failed_delivery['generation'], failed_delivery['lease_token'], RuntimeError('Stale queue failure'))['state'] == 'superseded'
+            assert not execute_postgres_queue_refresh_slice(claimed_owned())
+            print('PASS test_issue135_postgres_terminal_retry_and_replacement_fencing')
+
+            durable_tasks.enqueue_task('daily_queue', identifier, publication_payload, priority=1, foreground=False)
+            compact_replaced_delivery = claimed_owned()
+            assert deadline(compact_replaced_delivery)
+            with postgres_store.connection(background=True) as connection:
+                durable_tasks.enqueue_compact_postgres_task_in_transaction(connection,
+                    'daily_queue', identifier, publication_payload, priority=1)
+            saved_task, _projection = saved_state()
+            assert saved_task['generation'] == compact_replaced_delivery['generation'] + 1
+            assert saved_task['transaction_timeout_count'] == 0 and saved_task['transaction_timeout_checkpoint'] is None
+            assert not deadline(compact_replaced_delivery)
+            assert not execute_postgres_queue_refresh_slice(claimed_owned())
+            print('PASS test_issue135_postgres_compact_enqueue_resets_deadline_episode')
+    finally:
+        postgres_store.close_pools()
+        with psycopg.connect(DSN) as connection:
+            connection.execute('DELETE FROM queue_projections WHERE queue_date=%s', (queue_date,))
 
 
 def proof():
@@ -132,6 +264,7 @@ def proof():
             with psycopg.connect(DSN) as connection:
                 assert connection.execute("SELECT state FROM background_tasks WHERE id=%s", (durable_task['id'],)).fetchone()[0] == 'complete'
         print('PASS test_postgres_background_execution_capacity_restart_and_legacy_replay')
+        proof_deadline_recovery(identifier)
     finally:
         cleanup(identifier)
 

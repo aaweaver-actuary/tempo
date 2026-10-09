@@ -3001,3 +3001,48 @@ Additional receipt and shared-flush boundaries:
   `reload retains an unprovable result as a conflict and opens independent cards`
   (`tests/unit/attempt-lifecycle-regressions.test.ts`) retain their original outcome
   assertions and now require receipt-first initialization before replay.
+
+## Issue 135 — daily-queue deadline episode recovery
+
+- `test_issue135_new_queue_generation_does_not_inherit_deadline_cooldown`:
+  seven generations with isolated deadlines retain one-second first retries,
+  including replacement of retrying and successfully completed generations.
+- `test_issue135_queue_progress_resets_deadline_episode`: accepted intermediate
+  progress and both completion paths clear deadline counters/checkpoints and errors.
+- `test_issue135_queue_retry_error_is_visible_and_generation_fenced`: current
+  deadline errors reach the still-refreshing projection; stale deadline, progress,
+  completion and failure deliveries cannot change replacement work.
+- `test_issue135_unchanged_checkpoint_backoff_survives_restart_and_stale_replay`:
+  consecutive failures retain 1/2/4/8/16/32/60-second backoff, reopened connections,
+  lease reclamation and replay preserve the episode without consuming failure attempts.
+- `test_issue135_terminal_queue_failure_and_explicit_retry_publish_recoverable_status`:
+  failure and both compatibility/PostgreSQL command retries publish matching status
+  and clear episodes on explicit retry while preserving payloads.
+- `test_issue135_queue_failure_and_projection_error_roll_back_together` and
+  `test_issue135_ordinary_queue_retry_reports_error_without_false_readiness`:
+  atomic rollback, visible ordinary retry and honest readiness.
+- `test_issue135_pre_upgrade_deadline_checkpoint_resumes_without_losing_backoff`
+  and `test_issue135_periodic_ensure_preserves_current_queue_retry_error`:
+  in-place legacy-checkpoint conversion preserves active cooldowns, and the
+  periodic ensure command cannot erase a current retry's diagnostic error.
+
+These regular backend cases are in `backend/tests/test_queue_refresh_deadline_recovery.py`.
+Seven of the initial eight cases failed before the production repair (18.63 s);
+the unchanged-checkpoint preservation case passed. The initial repaired eight
+passed in 9.19 s; subsequent expanded coverage and boundary evidence are recorded
+in `docs/issue-135-validation.md`.
+
+Regular PostgreSQL durability extends `check_postgres_daily_study_dispatch.proof`
+with `test_issue135_postgres_new_generations_do_not_inherit_deadline_cooldown`,
+`test_issue135_postgres_deadline_and_projection_roll_back_together`,
+`test_issue135_postgres_deadline_restart_progress_and_publication_replay`, and
+`test_issue135_postgres_terminal_retry_and_replacement_fencing`, and
+`test_issue135_postgres_compact_enqueue_resets_deadline_episode`. These use real
+transactions, pool recreation, the queue publication handler and foreground retry
+command in the existing isolated workload stage.
+
+`tests/unit/queue-readiness-diagnostics-regressions.test.ts` protects bounded
+read-only evidence, exact disposable ownership and unavailable diagnostics.
+The existing real FEN-only Studies workflow retains its 30-second readiness
+assertion and attaches task/checkpoint/lease/cooldown and #37 diagnostics on failure.
+No browser timeout, background transaction budget or assertion was weakened.
