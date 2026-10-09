@@ -673,8 +673,9 @@ def execute_coverage_node(node: dict) -> None:
                 (node["run_id"],),
             ).fetchone()[0]
             database.execute(
-                """UPDATE repertoire_coverage_runs SET completed_nodes=?,status=?,updated_at=?
-                   WHERE id=?""",
+                """UPDATE repertoire_coverage_runs SET completed_nodes=?,status=CASE
+                   WHEN EXISTS(SELECT 1 FROM repertoire_coverage_nodes n WHERE n.run_id=repertoire_coverage_runs.id AND (n.explorer_status='failed' OR n.maia_status='failed')) THEN 'failed' ELSE ? END,
+                   last_error=(SELECT COALESCE(n.explorer_error,n.last_error) FROM repertoire_coverage_nodes n WHERE n.run_id=repertoire_coverage_runs.id AND (n.explorer_failure_code IS NOT NULL OR n.maia_status='failed') ORDER BY n.id LIMIT 1),updated_at=? WHERE id=?""",
                 (
                     completed,
                     "complete" if not remaining else "running",

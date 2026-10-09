@@ -83,3 +83,12 @@ def test_sqlite_provider_delay_preserves_maia_result_and_excludes_old_attempt(tm
         assert result[0]=='rate_limited' and result[1] and result[2]=='complete'
         assert db.execute("SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id='current-node'").fetchone()[0]==.7
         assert db.execute("SELECT explorer_status FROM repertoire_coverage_nodes WHERE id='old-node'").fetchone()[0]=='queued'
+        db.execute("UPDATE repertoire_coverage_nodes SET explorer_retry_at='2000-01-01' WHERE id='current-node'")
+        db.execute("INSERT INTO repertoire_coverage_nodes(id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,covered_replies_json,explorer_status,maia_status,explorer_failure_code,explorer_error,last_error,updated_at) VALUES('invalid-node','current','rep',?,'invalid-source',1,'white','[]','[]','failed','complete','invalid_response','Invalid response','Invalid response','2026-10-02')",(chess.STARTING_FEN,))
+    monkeypatch.setattr(coverage,'_fetch_explorer',lambda *_:{'moves':[]})
+    recovered=coverage.claim_coverage_node()
+    assert recovered['run_id']=='current'
+    coverage.execute_coverage_node(recovered)
+    with database.connection() as db:
+        assert tuple(db.execute("SELECT status,last_error FROM repertoire_coverage_runs WHERE id='current'").fetchone())==('failed','Invalid response')
+        assert db.execute("SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id='current-node'").fetchone()[0]==.7

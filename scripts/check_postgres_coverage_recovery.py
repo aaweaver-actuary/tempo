@@ -64,6 +64,9 @@ def proof_coverage_recovery(parent_database_url):
                 assert (datetime.fromisoformat(node[2])-datetime.now(timezone.utc)).total_seconds()>115
             assert claim_task('coverage_explorer') is None and not recovery.recover_one_explorer_run()
             with postgres_store.connection() as database:
+                database.execute("UPDATE repertoire_coverage_runs SET total_nodes=3 WHERE id=?",(current,))
+                database.execute("INSERT INTO repertoire_coverage_nodes(id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,covered_replies_json,explorer_status,maia_status,explorer_failure_code,explorer_error,last_error,updated_at) VALUES(?,?,?,?,'invalid-source',2,'black','[]','[]','failed','complete','invalid_response','Invalid response','Invalid response',?)",(current+'-invalid',current,rep,chess.STARTING_FEN,now))
+            with postgres_store.connection() as database:
                 database.execute("UPDATE background_tasks SET next_attempt_at='2000-01-01' WHERE id=?",(first['id'],))
                 database.execute("UPDATE repertoire_coverage_nodes SET explorer_retry_at='2000-01-01' WHERE id=?",(current+'-auth',))
             task=claim_task('coverage_explorer');assert task
@@ -90,6 +93,7 @@ def proof_coverage_recovery(parent_database_url):
                 assert database.execute('SELECT maia_probability FROM repertoire_coverage_candidates WHERE node_id=? AND move_uci=?',(current+'-auth','e7e5')).fetchone()[0]==.8
                 assert tuple(database.execute('SELECT explorer_probability,maia_probability FROM repertoire_coverage_candidates WHERE node_id=?',(current+'-complete',)).fetchone())==(.6,.7)
                 assert database.execute('SELECT completed_nodes FROM repertoire_coverage_runs WHERE id=?',(current,)).fetchone()[0]==2
+                assert tuple(database.execute('SELECT status,last_error FROM repertoire_coverage_runs WHERE id=?',(current,)).fetchone())==('failed','Invalid response')
                 for run in (old,obsolete):
                     assert database.execute('SELECT explorer_status FROM repertoire_coverage_nodes WHERE id=?',(run+'-auth',)).fetchone()[0]=='failed'
             with postgres_store.connection() as database:
