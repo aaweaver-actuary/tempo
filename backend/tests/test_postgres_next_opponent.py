@@ -23,12 +23,15 @@ class Database:
     def __init__(self):
         self.account = "alice"
         self.state = {"input_generation": 1, "published_generation": None,
-                      "published_method": None, "profile_json": None, "published_at": None}
+                      "published_method": None, "profile_json": None, "published_at": None,
+                      "next_evidence_at": None}
         self.task = None
         self.sync = {"username": "alice", "status": "idle", "last_success_at": CUTOFF.isoformat()}
         self.statements = []
 
     def execute_native(self, statement, parameters=()):
+        if "AS next_evidence_at" in statement:
+            return cursor()
         return cursor(rows=[game()] if "LIMIT %s" in statement else [], row=game(speed=parameters[1]) if "LIMIT 1" in statement else None)
 
     def execute(self, statement, parameters=()):
@@ -42,7 +45,8 @@ class Database:
         if "FROM game_sync_state" in statement:
             return cursor(self.sync)
         if statement.startswith("UPDATE next_opponent_accounts"):
-            self.state.update(published_generation=parameters[0], published_method=parameters[1])
+            self.state.update(published_generation=parameters[0], published_method=parameters[1],
+                              next_evidence_at=parameters[3])
         if statement.startswith("INSERT INTO next_opponent_snapshots"):
             self.state.update(profile_json=parameters[3], published_at=parameters[4])
         return cursor()
@@ -69,6 +73,39 @@ def test_issue107_profile_refresh_coalesces_identical_intents_and_skips_publishe
     assert len(intents) == 2
 
 
+def test_pr116_future_evidence_refresh_waits_until_due_and_coalesces_same_generation(monkeypatch):
+    database = Database()
+    eligible_at = CUTOFF + timedelta(days=1)
+    database.state.update(published_generation=1, published_method=METHOD_VERSION, next_evidence_at=eligible_at)
+    clock = {"now": CUTOFF}
+    monkeypatch.setattr(service, "_current_utc_time", lambda: clock["now"])
+    intents = []
+    def enqueue(database, kind, account, payload, **kwargs):
+        intents.append(payload)
+        database.task = {"state": "queued", "payload_json": json.dumps(payload)}
+    monkeypatch.setattr(service, "enqueue_task_in_transaction", enqueue)
+    assert not service.request_profile_refresh(database)
+    clock["now"] = eligible_at - timedelta(microseconds=1)
+    assert not service.request_profile_refresh(database)
+    clock["now"] = eligible_at
+    assert service.request_profile_refresh(database)
+    assert not service.request_profile_refresh(database)
+    assert intents == [task()["payload"]]
+
+
+def test_pr116_due_future_evidence_is_pending_without_read_side_effects():
+    database = Database()
+    profile = build_profile("alice", [game()], as_of=CUTOFF)
+    database.state.update(profile_json=profile.model_dump_json(), published_at=CUTOFF.isoformat(),
+                          published_generation=1, published_method=METHOD_VERSION,
+                          next_evidence_at=CUTOFF + timedelta(days=1))
+    assert service.read_profile(database, now=CUTOFF).refresh_status == "idle"
+    response = service.read_profile(database, now=CUTOFF + timedelta(days=1))
+    assert response.refresh_status == "pending" and "inputs_pending" in response.stale_reasons
+    assert response.profile == profile and response.published_at == CUTOFF.isoformat()
+    assert all(statement.startswith("SELECT") for statement in database.statements)
+
+
 @pytest.mark.parametrize("change", ["source", "account", "delivery", "loaded_newer", "method"])
 def test_issue107_stale_source_account_and_delivery_cannot_replace_snapshot(monkeypatch, change):
     database = Database()
@@ -82,8 +119,9 @@ def test_issue107_stale_source_account_and_delivery_cannot_replace_snapshot(monk
         claimed["payload"]["method_version"] = "retired"
     monkeypatch.setattr(service, "lock_current_slice", lambda *_: change != "delivery")
     monkeypatch.setattr(service, "complete_task_slice_in_transaction", lambda *_: True)
-    service._publish(database, claimed, 2 if change == "loaded_newer" else 1, profile)
+    service._publish(database, claimed, 2 if change == "loaded_newer" else 1, profile, CUTOFF)
     assert not any(statement.startswith("INSERT INTO next_opponent_snapshots") for statement in database.statements)
+    assert database.state["next_evidence_at"] is None
 
 
 def test_issue107_computation_closes_database_and_interruption_replays_without_partial_publication(monkeypatch):
