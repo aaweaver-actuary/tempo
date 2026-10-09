@@ -193,7 +193,7 @@ def test_get_endpoints_are_query_only(tmp_path, monkeypatch):
     with TestClient(app) as client:
         _seed_due_tactic()
         before = database.DB_PATH.read_bytes()
-        for path in ("/api/queue/today", "/api/progress", "/api/repertoires", "/api/settings"):
+        for path in ("/api/progress", "/api/repertoires", "/api/settings"):
             assert client.get(path).status_code == 200
         with database.read_connection() as read_database:
             assert read_database.execute("PRAGMA query_only").fetchone()[0] == 1

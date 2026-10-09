@@ -42,12 +42,7 @@ def _lock_attempt_card(database, entry_id: int) -> None:
         database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (entry['card_id'],))
 
 
-def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
-    """A retained, identified attempt remains operable after queue promotion."""
-    identified = card_id is not None and expected_revision is not None
-    lock_clause = " FOR UPDATE OF q,c" if isinstance(database, PostgresConnection) else ""
-    available = database.execute(
-        f"""SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
+_AVAILABLE_ATTEMPT_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
             WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
               AND c.pending_validation=0 AND c.superseded_by IS NULL
               AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
@@ -59,7 +54,15 @@ def validate_available_attempt(database, entry_id: int, card_id=None, expected_r
                     AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks blocked
                         WHERE blocked.card_id=c.id AND blocked.repertoire_id=repertoire.id)))
               AND (c.content_type!='defense' OR
-                   (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+                   (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)"""
+
+
+def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
+    """A retained, identified attempt remains operable after queue promotion."""
+    identified = card_id is not None and expected_revision is not None
+    lock_clause = " FOR UPDATE OF q,c" if isinstance(database, PostgresConnection) else ""
+    available = database.execute(
+        f"""{_AVAILABLE_ATTEMPT_SQL}
               {"AND q.id=?" if identified else ""}
             ORDER BY q.position,q.id LIMIT 1{lock_clause}""",
         (date.today().isoformat(), entry_id) if identified else (date.today().isoformat(),),
@@ -68,6 +71,44 @@ def validate_available_attempt(database, entry_id: int, card_id=None, expected_r
         raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
     from .queue_attempt_origins import validate_failure_marker
     validate_failure_marker(database, entry_id, card_id, expected_revision)
+    if identified:
+        head = database.execute(
+            f"{_AVAILABLE_ATTEMPT_SQL} ORDER BY q.position,q.id LIMIT 1",
+            (date.today().isoformat(),),
+        ).fetchone()
+        issued_origin = database.execute(
+            "SELECT 1 FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=? "
+            "AND revision=? AND issued_as_head=1",
+            (entry_id, card_id, expected_revision),
+        ).fetchone()
+        if (not head or head["id"] != entry_id) and not issued_origin:
+            raise ReviewConflict("queue_attempt_inactive", "This queue attempt was never issued as the active attempt")
+
+
+def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
+    """Commit one head's issuance before returning it; never stamp prefetch."""
+    entry_id = int(payload["entry_id"])
+    if payload["queue_date"] != date.today().isoformat():
+        return {"issued": False}
+    _lock_attempt_card(database, entry_id)
+    if isinstance(database, PostgresConnection):
+        lock_queue_date_for_position(database, payload["queue_date"])
+    head = database.execute(
+        f"{_AVAILABLE_ATTEMPT_SQL} ORDER BY q.position,q.id LIMIT 1",
+        (payload["queue_date"],),
+    ).fetchone()
+    if not head or head["id"] != entry_id:
+        return {"issued": False}
+    try:
+        validate_available_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
+    except ReviewConflict:
+        return {"issued": False}
+    changed = database.execute(
+        "UPDATE queue_attempt_origins SET issued_as_head=1 "
+        "WHERE queue_entry_id=? AND card_id=? AND revision=?",
+        (entry_id, payload["card_id"], payload["expected_revision"]),
+    ).rowcount
+    return {"issued": bool(changed)}
 
 
 def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
@@ -160,6 +201,7 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
     return task
 
 
+register_command("queue.issue_head", issue_queue_head)
 register_command("queue.attempt_failed", mark_attempt_failed)
 register_command("queue.bury", bury_queue_entry)
 register_command("queue.ensure_current", ensure_current_queue)
