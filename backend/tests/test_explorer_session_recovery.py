@@ -33,6 +33,7 @@ class SessionStore:
             self.values.pop(rejected_key,None)
         else:
             if self.values.get(token_key) not in {None,token}: return 0
+            if not self.values.get(token_key) and self.values.get(rejected_key) not in {None,digest}: return 0
             self.values.pop(token_key,None)
             self.values[rejected_key]=digest
         return 1
@@ -133,3 +134,14 @@ def test_explorer_invalid_store_address_is_unavailable_not_credential_rejection(
         monkeypatch.setenv('TEMPO_EXPLORER_SESSION_REDIS_URL', invalid_address)
         with pytest.raises(redis.RedisError, match='valid dedicated'):
             sessions.client()
+
+
+def test_explorer_late_rejection_cannot_replace_another_credentials_rejected_fingerprint(monkeypatch):
+    from app.services import explorer_sessions as sessions
+    store=SessionStore()
+    monkeypatch.setattr(sessions,'client',lambda:store)
+    sessions.register('older-synthetic')
+    sessions.register('newer-synthetic')
+    assert sessions.reject('newer-synthetic')
+    assert not sessions.reject('older-synthetic')
+    assert store.values[sessions.REJECTED_KEY]==sessions.fingerprint('newer-synthetic')

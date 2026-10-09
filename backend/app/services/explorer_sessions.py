@@ -18,6 +18,8 @@ return 1
 _REJECT = """
 local current = redis.call('GET', KEYS[1])
 if current and current ~= ARGV[1] then return 0 end
+local rejected = redis.call('GET', KEYS[2])
+if not current and rejected and rejected ~= ARGV[2] then return 0 end
 redis.call('DEL', KEYS[1])
 redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
 return 1

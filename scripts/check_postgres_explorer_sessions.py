@@ -51,6 +51,7 @@ print('PASS Explorer credential is available to a separate backend process')
             assert not sessions.reject(first),'Late rejection removed the replacement'
             assert sessions.get_token()==replacement
             assert sessions.reject(replacement)
+            assert not sessions.reject(first), 'Late rejection replaced the newer rejected fingerprint'
             rejected_headers={'Authorization':'Bearer '+replacement,'X-Tempo-Work-Class':'background'}
             assert client.get(path,headers=rejected_headers).json()=={'status':'credential_rejected'}
             rejected=client.post(path,headers=rejected_headers)
