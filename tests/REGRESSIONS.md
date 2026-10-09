@@ -2976,3 +2976,8 @@ Additional receipt and shared-flush boundaries:
   (`tests/unit/pending-review-recovery-regressions.test.tsx`): repeatedly failing A
   keeps its immutable envelope while B confirms during A's backoff; A's successor
   is neither checked nor posted.
+
+- `PR105 non-replay save failure retains raw diagnostics in one attempt-owned incident`
+  (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): a native storage
+  exception leaves concise inline guidance, original exception details and a debug
+  reference on one attempt-owned notice, with no render-created incidents or POST.

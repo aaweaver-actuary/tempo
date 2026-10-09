@@ -7,6 +7,7 @@ import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { conflictedReviews, enqueuePendingReview, flushPendingReviews, pendingReviews, type PendingReview } from "../../app/lib/review-outbox";
 import { clearNotificationHistory, notifications } from "../../app/lib/notifications";
+import { clearDebugErrors, debugErrors, buildDebugBundle } from "../../app/lib/debug-reporting";
 import { asFenString } from "../../app/types";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
 
@@ -325,4 +326,35 @@ it.each(["queued", "unconfirmed"])("PR105 completion removed during feedback req
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
   expect(reviewPosts()).toHaveLength(1);
   expect(trainingProps.reviewPersistenceIdentity?.attemptId).toBe(originalAttemptId);
+});
+
+
+it("PR105 non-replay save failure retains raw diagnostics in one attempt-owned incident", async () => {
+  clearDebugErrors();
+  await readyHome(); vi.useRealTimers();
+  clearDebugErrors();
+  const attemptId = useTrainingStore.getState().attempt.attemptId!;
+  const failure = new DOMException("Browser denied retaining the completed review", "SecurityError");
+  const originalWrite = Storage.prototype.setItem;
+  const storageWrite = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+    if (key === "tempo-pending-training-reviews-v1") throw failure;
+    originalWrite.call(this, key, value);
+  });
+  try {
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
+    expect(document.querySelector(".review-save-status")?.textContent).toContain("open Notifications for details");
+    expect(document.querySelector(".review-save-status")?.textContent).not.toContain(failure.message);
+    const saveDiagnostics = debugErrors().filter(record => record.context.source === "training-review-save");
+    expect(saveDiagnostics).toEqual([expect.objectContaining({ name: "SecurityError", message: failure.message,
+      context: expect.objectContaining({ attemptId }) })]);
+    expect(buildDebugBundle()).toContain(failure.message);
+    const incidents = () => notifications().filter(record => record.source === "training review");
+    expect(incidents()).toHaveLength(1);
+    expect(incidents()[0]).toMatchObject({ key: `review-save:${attemptId}`, occurrenceCount: 1,
+      details: { error: failure.message, errorName: "SecurityError", debugRecordId: saveDiagnostics[0].id } });
+    act(() => useTrainingStore.getState().setQueueNotice("Unrelated projection"));
+    expect(incidents()).toHaveLength(1); expect(incidents()[0].occurrenceCount).toBe(1);
+    expect(reviewPosts()).toEqual([]);
+  } finally { storageWrite.mockRestore(); }
 });

@@ -83,7 +83,7 @@ function errorDetails(failure: unknown): {
   message: string;
   stack?: string;
 } {
-  if (failure instanceof Error) {
+  if (failure instanceof Error || (typeof DOMException !== "undefined" && failure instanceof DOMException)) {
     return {
       name: sanitizeText(failure.name || "Error"),
       message: sanitizeText(failure.message || "Unknown error"),

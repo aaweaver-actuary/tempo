@@ -119,6 +119,7 @@ import {
   DiscoveriesTray,
   type DiscoveryItem,
 } from "../components/discoveries-tray";
+import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
 export default function Home() {
@@ -1082,6 +1083,13 @@ export default function Home() {
     if (databaseQueue && card.backendId) {
       let advancedFromCache = false;
       let submittedAttemptId: string | undefined;
+      // Retention/capture can fail before an outbox envelope exists. Keep diagnostics
+      // owned by the original attempt even if a later projection replaces the card.
+      const saveIdentity = retryPending && reviewPersistenceIdentity ? reviewPersistenceIdentity : {
+        backendId: card.backendId, queueEntryId: card.queueEntryId ?? 0,
+        attemptId: retryPending ? retryAttemptId : useTrainingStore.getState().attempt.attemptId,
+      };
+      setReviewPersistenceIdentity(saveIdentity);
       const showSubmittedReviewUnconfirmed = () => {
         if (transitionGeneration !== reviewTransitionGeneration.current) return;
         const retainedReviews = pendingReviews();
@@ -1201,7 +1209,7 @@ export default function Home() {
             endpoint: error.endpoint, status: error.status, retryable: error.retryable,
             cardId: error.backendId, queueEntryId: error.queueEntryId, attemptId: error.attemptId, code: error.code,
             classification: error.classification, notify: false });
-        }
+        } else reportReviewSaveFailure(error, saveIdentity);
         if (transitionGeneration !== reviewTransitionGeneration.current) return;
         if (error instanceof ReviewReplayError && error.attemptId !== submittedAttemptId) {
           // The outbox reports that other attempt separately; it cannot settle this result.
