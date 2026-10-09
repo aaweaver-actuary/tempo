@@ -283,3 +283,40 @@ def test_issue80_sqlite_task_failure_and_retry_never_call_postgres_transition_ho
         assert replay['id'] == task['id'] and replay['generation'] == claimed['generation']
     finally:
         database_writer.stop()
+
+
+@pytest.mark.parametrize('scenario', ['eligible', 'not_due', 'unexpected_error', 'expired'])
+def test_issue80_http_proof_redelivers_only_eligible_original_foreground_yield(monkeypatch, scenario):
+    import importlib.util
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location('prefix_application_proof',
+        Path(__file__).resolve().parents[2] / 'scripts/check_postgres_prefix_transition_application.py')
+    proof = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(proof)
+    receipt = {'state': 'retrying', 'attempt_count': 1,
+        'next_retry_at': (datetime.now(timezone.utc) + timedelta(seconds=60 if scenario == 'not_due' else -1)).isoformat(),
+        'last_error': {'class': 'SerializationFailure',
+            'message': 'Transition preparation yielded to foreground work; retry its durable operation'}}
+    if scenario == 'unexpected_error':
+        receipt['last_error']['class'] = 'TransactionTimeout'
+    elapsed = [0.0]
+    delivered = []
+    monkeypatch.setattr(proof.time, 'monotonic', lambda: elapsed[0])
+    def advance(_seconds):
+        elapsed[0] += 1
+        if delivered and elapsed[0] == 2:
+            receipt.update(state='pending', transition={'state': 'staging'})
+    monkeypatch.setattr(proof.time, 'sleep', advance)
+    monkeypatch.setattr(proof, 'read_operation', lambda operation_id: dict(receipt, operation_id=operation_id))
+    def redeliver_original():
+        delivered.append('original-operation')
+    if scenario == 'eligible':
+        result = proof.wait_for_staged_http_application('original-operation', redeliver_original, 10)
+        assert result['operation_id'] == 'original-operation'
+        assert delivered == ['original-operation']
+    else:
+        with pytest.raises(AssertionError):
+            proof.wait_for_staged_http_application('original-operation', redeliver_original,
+                                                  0 if scenario == 'expired' else 10)
+        assert delivered == []

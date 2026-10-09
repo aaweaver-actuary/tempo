@@ -3086,3 +3086,6 @@ stopped; it does not clear exclusions. PostgreSQL durability scripts manipulate
 scoped exclusions in their isolated scenario boundaries; their deliberate
 production coordination/fence assertions remain unchanged. No general SQL retry,
 production guard disablement, worker pause or migration/API change was introduced.
+
+
+- `test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption` forces a real Redis foreground lease while the reader-only deployed API dispatches. The original receipt must record its precise preparation yield, then reach staging after eligible same-key/body redelivery with the proof's background scheduler stopped, within the original ten-second bound. Final publication replay and changed-identity rejection remain mandatory. `test_issue80_http_proof_redelivers_only_eligible_original_foreground_yield` covers one redelivery per attempt, future eligibility, unexpected errors and exhausted deadlines; no production retries or budgets change. CI reproduced the missing test-driver wake before this repair.
