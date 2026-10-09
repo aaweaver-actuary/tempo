@@ -197,6 +197,33 @@ def test_queue_issuance_upgrade_does_not_infer_historical_heads(queued_attempts)
         )] == [0, 0]
 
 
+def test_sqlite_issuance_upgrade_rolls_back_column_and_trigger_changes(queued_attempts):
+    from app.queue_attempt_origins import initialize_sqlite_origins
+
+    with database.connection() as connection:
+        connection.execute('ALTER TABLE queue_attempt_origins DROP COLUMN issued_as_head')
+        connection.commit()
+        original_triggers = connection.execute(
+            "SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name LIKE 'queue_attempt_origin_%' ORDER BY name"
+        ).fetchall()
+
+        class InterruptedSchemaUpgrade:
+            def execute(self, statement, *parameters):
+                result = connection.execute(statement, *parameters)
+                if statement.startswith('DROP TRIGGER IF EXISTS queue_attempt_origin_insert'):
+                    raise RuntimeError('Interrupted schema upgrade')
+                return result
+
+        with pytest.raises(RuntimeError, match='Interrupted schema upgrade'):
+            initialize_sqlite_origins(InterruptedSchemaUpgrade())
+        assert 'issued_as_head' not in {
+            row[1] for row in connection.execute('PRAGMA table_info(queue_attempt_origins)')
+        }
+        assert connection.execute(
+            "SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name LIKE 'queue_attempt_origin_%' ORDER BY name"
+        ).fetchall() == original_triggers
+
+
 def test_queue_issuance_is_only_queue_get_write_exception():
     import asyncio
     from starlette.requests import Request

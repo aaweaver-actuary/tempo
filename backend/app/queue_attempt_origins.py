@@ -2,35 +2,35 @@
 
 
 def initialize_sqlite_origins(database) -> None:
-    database.execute("""CREATE TABLE IF NOT EXISTS queue_attempt_origins (
-        queue_entry_id INTEGER NOT NULL, card_id TEXT NOT NULL, revision INTEGER NOT NULL,
-        queue_date TEXT NOT NULL, cycle INTEGER NOT NULL, admission_kind TEXT,
-        admission_repertoire_id TEXT, attempt_failed INTEGER NOT NULL DEFAULT 0,
-        last_status TEXT NOT NULL, review_result_json TEXT, legacy INTEGER NOT NULL DEFAULT 0,
-        start_fen TEXT NOT NULL, moves_json TEXT NOT NULL, trained_color TEXT, content_type TEXT NOT NULL,
-        issued_as_head INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY(queue_entry_id,card_id,revision)
-    )""")
-    origin_columns = {column[1] for column in database.execute("PRAGMA table_info(queue_attempt_origins)")}
-    if "issued_as_head" not in origin_columns:
-        database.execute("ALTER TABLE queue_attempt_origins ADD COLUMN issued_as_head INTEGER NOT NULL DEFAULT 0")
-    database.execute("CREATE INDEX IF NOT EXISTS idx_queue_attempt_origin_cycle ON queue_attempt_origins(queue_date,card_id,cycle)")
-    # Backfill only surviving projection rows. Missing historical identities
-    # cannot be inferred from a client's outbox and must remain explicit conflicts.
-    if not database.execute("SELECT 1 FROM internal_migrations WHERE name='queue-attempt-origins-v1'").fetchone():
-        database.execute("""INSERT OR IGNORE INTO queue_attempt_origins(queue_entry_id,card_id,revision,queue_date,cycle,admission_kind,admission_repertoire_id,attempt_failed,last_status,review_result_json,legacy,start_fen,moves_json,trained_color,content_type)
-            SELECT q.id,q.card_id,c.revision,q.queue_date,q.cycle,q.admission_kind,
-                   q.admission_repertoire_id,q.attempt_failed,q.status,q.review_result_json,1,
-                   c.start_fen,c.moves_json,c.trained_color,c.content_type
-            FROM daily_queue q JOIN cards c ON c.id=q.card_id""")
-        database.execute("INSERT INTO internal_migrations(name,applied_at) VALUES('queue-attempt-origins-v1',datetime('now'))")
-    receipt_columns = {column[1] for column in database.execute("PRAGMA table_info(review_attempt_receipts)")}
-    if "request_json" not in receipt_columns:
-        database.execute("ALTER TABLE review_attempt_receipts ADD COLUMN request_json TEXT")
-    # Replace every existing trigger within one savepoint, even for direct callers
-    # without an outer write transaction. Avoid executescript's implicit commit.
-    database.execute("SAVEPOINT queue_attempt_revision_trigger")
+    # Install the column and all triggers atomically, including direct callers
+    # without an outer transaction. Avoid executescript's implicit commit.
+    database.execute("SAVEPOINT queue_attempt_origins_schema")
     try:
+        database.execute("""CREATE TABLE IF NOT EXISTS queue_attempt_origins (
+            queue_entry_id INTEGER NOT NULL, card_id TEXT NOT NULL, revision INTEGER NOT NULL,
+            queue_date TEXT NOT NULL, cycle INTEGER NOT NULL, admission_kind TEXT,
+            admission_repertoire_id TEXT, attempt_failed INTEGER NOT NULL DEFAULT 0,
+            last_status TEXT NOT NULL, review_result_json TEXT, legacy INTEGER NOT NULL DEFAULT 0,
+            start_fen TEXT NOT NULL, moves_json TEXT NOT NULL, trained_color TEXT, content_type TEXT NOT NULL,
+            issued_as_head INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(queue_entry_id,card_id,revision)
+        )""")
+        origin_columns = {column[1] for column in database.execute("PRAGMA table_info(queue_attempt_origins)")}
+        if "issued_as_head" not in origin_columns:
+            database.execute("ALTER TABLE queue_attempt_origins ADD COLUMN issued_as_head INTEGER NOT NULL DEFAULT 0")
+        database.execute("CREATE INDEX IF NOT EXISTS idx_queue_attempt_origin_cycle ON queue_attempt_origins(queue_date,card_id,cycle)")
+        # Backfill only surviving projection rows. Missing historical identities
+        # cannot be inferred from a client's outbox and must remain explicit conflicts.
+        if not database.execute("SELECT 1 FROM internal_migrations WHERE name='queue-attempt-origins-v1'").fetchone():
+            database.execute("""INSERT OR IGNORE INTO queue_attempt_origins(queue_entry_id,card_id,revision,queue_date,cycle,admission_kind,admission_repertoire_id,attempt_failed,last_status,review_result_json,legacy,start_fen,moves_json,trained_color,content_type)
+                SELECT q.id,q.card_id,c.revision,q.queue_date,q.cycle,q.admission_kind,
+                       q.admission_repertoire_id,q.attempt_failed,q.status,q.review_result_json,1,
+                       c.start_fen,c.moves_json,c.trained_color,c.content_type
+                FROM daily_queue q JOIN cards c ON c.id=q.card_id""")
+            database.execute("INSERT INTO internal_migrations(name,applied_at) VALUES('queue-attempt-origins-v1',datetime('now'))")
+        receipt_columns = {column[1] for column in database.execute("PRAGMA table_info(review_attempt_receipts)")}
+        if "request_json" not in receipt_columns:
+            database.execute("ALTER TABLE review_attempt_receipts ADD COLUMN request_json TEXT")
         for trigger_name, trigger_event, row_reference in (
             ("queue_attempt_origin_insert", "AFTER INSERT", "NEW"),
             ("queue_attempt_origin_update", "AFTER UPDATE OF card_id,attempt_failed,status,review_result_json,admission_kind,admission_repertoire_id", "NEW"),
@@ -65,10 +65,10 @@ def initialize_sqlite_origins(database) -> None:
             FROM daily_queue q WHERE q.card_id=NEW.id AND q.status='queued';
             END""")
     except Exception:
-        database.execute("ROLLBACK TO queue_attempt_revision_trigger")
+        database.execute("ROLLBACK TO queue_attempt_origins_schema")
         raise
     finally:
-        database.execute("RELEASE queue_attempt_revision_trigger")
+        database.execute("RELEASE queue_attempt_origins_schema")
 
 
 def recover_queue_entry(database, card_id: str, request) -> dict:

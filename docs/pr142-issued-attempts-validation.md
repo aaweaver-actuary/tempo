@@ -109,3 +109,17 @@ Rebased candidate `d1e64e6` (only this evidence file edited afterward):
 `PYTHONPATH=backend backend/.venv/bin/python -m pytest -q -o cache_dir=.pytest_cache --rootdir=. backend/tests/test_queue_attempt_issuance.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_real_game_feedback.py backend/tests/test_daily_queue_randomization.py backend/tests/test_phone_offline_training.py backend/tests/test_guided_review.py backend/tests/test_durable_work_queue.py backend/tests/test_postgres_route_contract.py backend/tests/test_postgres_upgrade_regressions.py backend/tests/test_regressions.py backend/tests/test_prefix_evaluation_api.py backend/tests/test_study_durability.py`:
 223 passed, 85.20 s pytest / 86.18 s command wall. Fresh CI and Docker results are
 reported in the PR rather than attributing old results to this rebased revision.
+
+Final compatibility review found that SQLite's column addition preceded its
+trigger savepoint. The savepoint now covers the whole bounded schema update.
+`test_sqlite_issuance_upgrade_rolls_back_column_and_trigger_changes` failed on
+`79f5354` plus only the new test (1 failed, 1.07 s pytest / 1.80 s wall); a forced
+interruption left the column installed. It passes with the repair (1 passed,
+1.04 s pytest / 1.74 s wall). The regular regression registry includes it.
+
+After this SQLite-only initialization repair:
+`PYTHONPATH=backend backend/.venv/bin/python -m pytest -q -o cache_dir=.pytest_cache --rootdir=. backend/tests/test_queue_attempt_issuance.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_postgres_upgrade_regressions.py`:
+95 passed, 13.49 s pytest / 14.61 s wall. PostgreSQL migration, issuance, receipt,
+and browser product behavior are unchanged by this follow-up. CI owns fresh
+complete candidate qualification; earlier Docker/browser passes retain their
+original `79f5354` provenance and are not relabeled as new-commit results.
