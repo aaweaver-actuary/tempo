@@ -133,6 +133,13 @@ test('persistence drafts retain full durability and unknown shared changes expan
   const command = layerCommands('frontend',harness).find(([name]) => name === 'unit');
   assert(harness.core.frontend.every(file => command[2].includes(file)));
 });
+
+test('unclassified frontend source expands draft browser and pinned rendering boundaries', () => {
+  const planned = captured(pr, ['app/lib/unclassified-shared-source.ts']);
+  assert.equal(planned.core.frontend, 'all');
+  for (const layer of ['frontend', 'build', 'browser', 'visual']) assert(planned.jobs[layer].required, layer);
+  assert.deepEqual(planned.families, Object.keys(inventory.families).filter(family => family !== 'pinned').sort());
+});
 test('changed frontend and Python regressions must execute and zero filtered skipped evidence fails', () => {
   for (const [layer,file] of [['frontend','tests/unit/ci-reliability-regressions.test.ts'],['backend','backend/tests/test_studies.py']]) {
     const planned = captured(pr,[file]); const evidence = results(planned);

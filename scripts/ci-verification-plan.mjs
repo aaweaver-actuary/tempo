@@ -47,7 +47,10 @@ function developmentSelection(paths, comparisonAvailable, sourceInventory) {
       ["frontend", "postgres"].forEach(layer => selected.add(layer));
       sourceInventory.development.harnessTests.forEach(file => frontend.add(file));
     } else if (path.startsWith("app/")) {
-      if (!sourceInventory.sources.some(mapping => mapping.paths.includes(path))) broadBrowser = true;
+      if (!sourceInventory.sources.some(mapping => mapping.paths.includes(path))) {
+        broadBrowser = true;
+        selected.add("visual");
+      }
       allFrontend = true; ["frontend", "build", "browser"].forEach(layer => selected.add(layer));
       if (/\.(tsx|css|scss|svg|png|jpe?g|webp)$/.test(path)) selected.add("visual");
     } else if (path.startsWith("backend/app/") || path.startsWith("backend/migrations/")) {
