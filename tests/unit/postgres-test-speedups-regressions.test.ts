@@ -12,3 +12,9 @@ it("PostgreSQL test speedups preserve full coverage, failure propagation, and di
   assert.ifError(result.error);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 }, 35_000);
+
+it("Explorer schema workload owns the dedicated ephemeral session store configuration", () => {
+  const result = spawnSync(process.execPath, ["--test", "tests/runner/explorer-session-store.test.mjs"], { encoding: "utf8" });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});

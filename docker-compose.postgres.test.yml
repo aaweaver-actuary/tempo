@@ -62,6 +62,7 @@ services:
     environment:
       PGPASSFILE: /run/secrets/admin_pgpass
       TEMPO_TEST_INSTANCE: disposable
+      TEMPO_EXPLORER_SESSION_REDIS_URL: redis://explorer-session-store:6379/0
     secrets:
       - source: admin_pgpass
         mode: 0400
@@ -70,6 +71,7 @@ services:
     volumes: [".:/source:ro"]
     depends_on:
       postgres: {condition: service_healthy}
+      explorer-session-store: {condition: service_healthy}
     restart: "no"
 
   explorer-session-store:

@@ -821,6 +821,8 @@ const actions = {
     assert(Object.values(stack.networks ?? {}).every((network) => !network.external
       && network.name.startsWith(`${project}_`)));
     console.log("PASS PostgreSQL API has reader credentials and no SQLite mount");
+    assert.equal(stack.services.schema.environment.TEMPO_EXPLORER_SESSION_REDIS_URL,"redis://explorer-session-store:6379/0");
+    assert.equal(stack.services.schema.depends_on["explorer-session-store"].condition,"service_healthy");
     const defaultConfig = spawnSync("docker", ["compose", "-f", "docker-compose.yml",
       "config", "--format", "json"], { encoding: "utf8", env: environment });
     assert.equal(defaultConfig.status, 0, defaultConfig.stderr);

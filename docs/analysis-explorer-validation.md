@@ -60,3 +60,12 @@ Late rejection follow-up: a rejected newer connection also fences a delayed
 rejection of the older connection when no credential remains registered. The
 named fingerprint regression failed before this fix; nine storage/endpoint cases
 pass in 0.52 s. The actual Redis native proof asserts this CAS boundary too.
+
+CI native workload exposed a missing schema-runner environment entry (the API and
+worker consumers were correctly configured). The named configuration regression
+fails with `undefined` before the repair. The schema/native executor now receives
+the dedicated volatile-store address and healthy dependency. Forty-nine runner
+cases pass in 1.14s; regular Vitest also executes the new boundary regression.
+Actual Compose durability and current-head CI remain required. This configuration
+repair includes the rebased admission follow-up; prior CI evidence is not a pass
+for the updated head.
