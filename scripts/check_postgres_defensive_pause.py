@@ -21,7 +21,7 @@ from app.services.threat_detection import find_defensive_knight_forks
 from app.services.threat_models import GameSnapshot, SourceLine
 from app.services.threat_pipeline import _upsert_seed
 
-ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'
+ADMIN_DSN = os.environ.get('TEMPO_PAUSE_ADMIN_DSN', 'postgresql://postgres@postgres:5432/postgres')
 
 
 def verify_activity_pause_provenance(request_id, task_id, unrelated_task_id):
@@ -218,6 +218,12 @@ def verify_pause():
         state=connection.execute('SELECT state,attempt_count FROM background_tasks WHERE id=?',(queued['id'],)).fetchone()
         assert tuple(state)==('queued',0), state
     assert durable_tasks.claim_task('defensive_threat_scan') is None
+    from app.services.activity_health import monitor_one_pipeline
+    for _ in range(250):
+        if not monitor_one_pipeline(evidence={'available':False,'foreground':False}):
+            break
+    else:
+        raise AssertionError('Bounded pause diagnostics bootstrap failed to complete')
     snapshot = background_diagnostics.snapshot()
     assert snapshot.available, snapshot.model_dump()
     assert any(row.queue=='durable' and row.state=='paused' and row.count>0 for row in snapshot.queues)
@@ -245,7 +251,7 @@ def main():
     if os.getenv('TEMPO_TEST_INSTANCE')!='disposable':
         raise RuntimeError('Defensive pause proof requires the disposable test runner')
     database_name='tempo_defensive_pause_'+uuid.uuid4().hex
-    dsn=f'postgresql://postgres@postgres:5432/{database_name}'
+    dsn=psycopg.conninfo.make_conninfo(ADMIN_DSN,dbname=database_name)
     with psycopg.connect(ADMIN_DSN,autocommit=True) as administrator:
         administrator.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
     try:

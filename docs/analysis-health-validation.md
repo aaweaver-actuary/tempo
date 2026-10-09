@@ -52,6 +52,11 @@ MacOS ARM64, Python 3.14.8; disposable native PostgreSQL 18.6 and Redis 7.
   history events, concurrent counters and rollback assertions. This is focused
   evidence; a new complete durability run is still required. The failed runner's
   owned project tempo-pg-regressions-92386-b833ef9d was removed in 9.23s.
+- Complete durability on 96ee81e reached the defensive-pause proof, which also
+  expected an unpublished diagnostics cache. Its owned database now bootstraps
+  through bounded production monitor turns; the focused PostgreSQL proof passes
+  all pause, foreground, retry-allowance, restart and replay assertions. The
+  failed project's 95256-7ed05f2b containers/images were removed in 10.23s.
 
 Analysis worker stages distinguish control capacity. Engine availability and
 idle samples come from actual accepted claims/control probes, independently of
