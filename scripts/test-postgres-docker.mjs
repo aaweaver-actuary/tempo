@@ -821,10 +821,24 @@ const actions = {
     assert(Object.values(stack.networks ?? {}).every((network) => !network.external
       && network.name.startsWith(`${project}_`)));
     console.log("PASS PostgreSQL API has reader credentials and no SQLite mount");
+    assert.equal(stack.services.schema.environment.TEMPO_EXPLORER_SESSION_REDIS_URL,"redis://explorer-session-store:6379/0");
+    assert.equal(stack.services.schema.depends_on["explorer-session-store"].condition,"service_healthy");
     const defaultConfig = spawnSync("docker", ["compose", "-f", "docker-compose.yml",
       "config", "--format", "json"], { encoding: "utf8", env: environment });
     assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
     const defaultStack = JSON.parse(defaultConfig.stdout);
+    for (const configuration of [stack, defaultStack]) {
+      const sessionStore = configuration.services["explorer-session-store"];
+      assert.deepEqual(sessionStore.command, ["redis-server", "--save", "", "--appendonly", "no"]);
+      assert.deepEqual(sessionStore.tmpfs, ["/data"]);
+      assert.equal(sessionStore.volumes, undefined);
+      assert.equal(sessionStore.ports, undefined);
+      for (const consumer of ["api", "foreground-worker", "background-worker"]) {
+        assert.equal(configuration.services[consumer].environment.TEMPO_EXPLORER_SESSION_REDIS_URL,
+          "redis://explorer-session-store:6379/0");
+        assert.equal(configuration.services[consumer].depends_on["explorer-session-store"].condition, "service_healthy");
+      }
+    }
     assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
     assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
     assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
@@ -1006,9 +1020,13 @@ const actions = {
     assert(settingsCommitted, "Settings business effect commits after its response is discarded");
     run("docker", [...compose, "stop", ...workloadConsumers, "foreground-worker"]);
     runPrefixApplicationProof("--seed-retained");
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_explorer_sessions.py", "--seed-recreation"]);
     run("docker", [...compose, "down"]);
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_explorer_sessions.py", "--verify-recreation"]);
     assert.equal((await get("settings")).new_cards_per_day, updatedSettings.new_cards_per_day);
     await confirm(await sendSettings());
     const restored = (await get("repertoires")).repertoires.find(item => item.id === limitRepertoire.id);

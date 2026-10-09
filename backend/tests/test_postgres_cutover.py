@@ -5766,11 +5766,18 @@ def test_postgres_coverage_refresh_dispatches_durable_seed(monkeypatch):
 def test_postgres_explorer_session_token_reaches_separate_worker(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
-    from app.services import repertoire_coverage
+    from app.services import repertoire_coverage, explorer_sessions
 
     values = {}
 
     class TokenStore:
+        def config_get(self, *args): return {'save':'', 'appendonly':'no'}
+        def mget(self, *keys): return [values.get(key) for key in keys]
+        def eval(self, _script, _key_count, token_key, rejected_key, token, _fingerprint, seconds):
+            assert seconds == 24 * 60 * 60
+            values[token_key] = token
+            values.pop(rejected_key, None)
+            return 1
         def setex(self, key, seconds, token):
             assert seconds == 24 * 60 * 60
             values[key] = token.encode()
@@ -5784,7 +5791,7 @@ def test_postgres_explorer_session_token_reaches_separate_worker(monkeypatch):
     monkeypatch.delenv("TEMPO_LICHESS_EXPLORER_TOKEN", raising=False)
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(repertoire_coverage, "redis_client", lambda: TokenStore())
+    monkeypatch.setattr(explorer_sessions, "client", lambda: TokenStore())
     client = TestClient(main.app)
     response = client.post(
         "/api/repertoire-coverage/explorer-session",

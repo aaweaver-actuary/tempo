@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ensureExplorerSession } from "./explorer-session";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
@@ -7,6 +8,8 @@ const PENDING_PREFIX = "tempo-pending-coverage-refresh-v1:";
 const queuedResult = z.strictObject({ run_id: z.string(), status: z.literal("queued") });
 
 export async function requestCoverageRefresh(repertoireId: string): Promise<void> {
+  // Explorer registration is independent of the useful Maia coverage attempt.
+  await ensureExplorerSession().catch(() => undefined);
   const pendingKey = `${PENDING_PREFIX}${repertoireId}`;
   let operationId = localStorage.getItem(pendingKey);
   if (operationId) {

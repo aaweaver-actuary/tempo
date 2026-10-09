@@ -19,7 +19,7 @@ from typing import Literal
 import chess
 import chess.pgn
 import httpx
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -157,6 +157,7 @@ from .services.repertoire_coverage import (
     coverage_summary,
     enqueue_coverage_refresh,
     set_explorer_session_token,
+    explorer_session_status,
     submit_maia_coverage,
 )
 from .services.introduction_priorities import (
@@ -4277,11 +4278,24 @@ def coverage_explorer_session(authorization: str | None = Header(None)):
     token = authorization[7:].strip() if authorization and authorization[:7].lower() == "bearer " else None
     try:
         set_explorer_session_token(token)
+    except ValueError as error:
+        raise HTTPException(409, {'code':'explorer_credential_rejected',
+                                 'message':'Explorer rejected this credential. Reconnect with Lichess before retrying.'}) from error
     except RedisError as error:
         raise HTTPException(503, "Explorer token store unavailable; retry registration") from error
     if token and not postgres_store.configured():
         coordinator.wake()
     return {"registered": bool(token)}
+
+
+@app.get("/api/repertoire-coverage/explorer-session")
+def coverage_explorer_session_status(response: Response, authorization: str | None = Header(None)):
+    token = authorization[7:].strip() if authorization and authorization[:7].lower() == 'bearer ' else None
+    response.headers['Cache-Control'] = 'no-store'
+    try:
+        return explorer_session_status(token)
+    except RedisError as error:
+        raise HTTPException(503, 'Explorer session status unavailable; check the dedicated session store') from error
 
 
 @app.post("/api/repertoire-coverage/maia/submit")
