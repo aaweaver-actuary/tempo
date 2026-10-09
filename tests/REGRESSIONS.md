@@ -3020,3 +3020,10 @@ Existing Builder, shared-board training, study-worker failure/coalescing and ind
 regressions remain in the regular suite. No backend route, migration or grading
 contract changes; real browser persistence and required CI durability cover the
 existing command boundary.
+
+## Queue readiness failure evidence (2026-10-09)
+
+The unchanged FEN study queue-ready assertion failed on PR #133 integration `9dabbb13` with generation 55 frozen for 30 seconds. Later worker replacement discarded causal history. A failure-only, read-only snapshot now retains the task/projection and redacted worker history before replacement, without changing deadlines or the original failure.
+
+- `queue failure diagnostics retain the original assertion and redact runner secrets before workers are replaced`; `queue failure diagnostics refuse non-disposable target %s without masking the failure`; `queue diagnostics capture remaining evidence after one read fails and never run on success` (`queue-readiness-diagnostics-regressions.test.ts`).
+- `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` retains its existing real API/authoring/review assertions and initial 30-second deadline. Diagnostics inspect only the owning disposable Compose project; missing capture never converts the readiness failure to a pass.
