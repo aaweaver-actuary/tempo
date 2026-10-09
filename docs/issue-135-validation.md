@@ -240,3 +240,25 @@ passed 68 cases in 5.30 s before adding the final concurrent-context case.
 all seven cases in 1.38 s. Typecheck, lint (10 existing warnings) and diff check
 passed on the additional source. The native proof and whole 12-case Studies
 file are pending, as are fresh exact-head/current-base complete CI results.
+
+Settled runtime head `70f5a6c`: elevated `make ui-file FILE=studies.spec.ts`
+passed **12 cases**, including the new idle-worker wake and original FEN
+workflow, in a **63.82 s** browser stage. Cleanup passed in **6.97 s**, and
+absence of owned containers/volumes/image tags was verified. Project
+`tempo-pg-regressions-45472-5ababb66` ownership/scenario records are preserved
+outside the clone. No runtime sources changed after this run.
+
+The settled elevated `make docker-durability` has passed all six queue recovery
+proofs, including the native command post-commit/rollback check. Subsequent
+maintenance scripts without a broker configuration exercise the expected
+post-commit broker-unavailable fallback and log it; the new queue proof already
+uses the runner's real Redis broker. Its observer now records a wake only after
+real broker publication returns, so an unavailable publish cannot falsely count
+as proof. Full local durability and fresh complete CI remain pending at this
+recording point; final immutable evidence belongs to the PR handoff.
+
+Redis diagnostic probe cleanup limit: its container was removed and absence
+verified, but its anonymous `/data` mount identity was not retained before
+removal. A possible anonymous volume cannot be safely attributed among existing
+volumes; uncertain volumes are retained. No global prune or speculative removal
+was performed. Disposable runner resources have explicit ownership records.

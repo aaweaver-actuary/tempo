@@ -221,8 +221,9 @@ def proof_deadline_recovery(identifier):
                     # An independent writer can lock the task before broker I/O.
                     observed = observer.execute("SELECT state,lease_token FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=%s FOR UPDATE NOWAIT", (identifier,)).fetchone()
                     assert observed == ('queued', None)
+                publication = original_send(name, **options)
                 observed_wakes.append(name)
-                return original_send(name, **options)
+                return publication
 
             command_gateway.register_command(proof_command, enqueue_from_command)
             try:
