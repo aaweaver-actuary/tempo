@@ -103,12 +103,13 @@ export function pendingReviews(): PendingReview[] {
 
 // Skip suppressed attempts and their same-card successors, preserving FIFO among
 // eligible independent reviews. Conflicts still use the existing reconciliation path.
-export function recoverableReviews(explicitRetryAttemptId?: string): PendingReview[] {
+export function recoverableReviews(explicitRetryAttemptId?: string, deferredAttemptIds: ReadonlySet<string> = new Set()): PendingReview[] {
   const records = savedReviews();
   return records.filter((review, index) => review.state !== "conflicted" &&
+    !deferredAttemptIds.has(logicalAttemptId(review)) &&
     (!review.automaticRecoverySuppressed || logicalAttemptId(review) === explicitRetryAttemptId) &&
     !records.slice(0, index).some(earlier => earlier.backendId === review.backendId &&
-      earlier.state !== "conflicted" && earlier.automaticRecoverySuppressed));
+      earlier.state !== "conflicted" && (earlier.automaticRecoverySuppressed || deferredAttemptIds.has(logicalAttemptId(earlier)))));
 }
 
 export function conflictedReviews(): PendingReview[] {
@@ -293,11 +294,12 @@ function retainConflict(review: PendingReview, conflict: ReviewConflictInformati
   updateReviewConflictNotice();
 }
 
-async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false, explicitRetryAttemptId?: string): Promise<ReviewFlushResult> {
+async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false, explicitRetryAttemptId?: string,
+  deferredAttemptIds?: ReadonlySet<string>): Promise<ReviewFlushResult> {
   const result: ReviewFlushResult = { persistedAttemptIds: [], conflictedAttemptIds: [] };
   updateReviewConflictNotice();
-  while (recoverableReviews(explicitRetryAttemptId).length && result.persistedAttemptIds.length + result.conflictedAttemptIds.length < maximumReviews) {
-    let review = recoverableReviews(explicitRetryAttemptId)[0];
+  while (recoverableReviews(explicitRetryAttemptId, deferredAttemptIds).length && result.persistedAttemptIds.length + result.conflictedAttemptIds.length < maximumReviews) {
+    let review = recoverableReviews(explicitRetryAttemptId, deferredAttemptIds)[0];
     const attemptId = logicalAttemptId(review);
     try {
       if (!review.attemptId) {
@@ -374,13 +376,13 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
 // Only the Retry save action supplies an explicit attempt identity. Incidental
 // queue refreshes and saving another card must never release terminal suppression.
 export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false,
-  explicitRetryAttemptId?: string): Promise<ReviewFlushResult> {
+  explicitRetryAttemptId?: string, deferredAttemptIds?: ReadonlySet<string>): Promise<ReviewFlushResult> {
   if (activeFlush && explicitRetryAttemptId) {
-    return activeFlush.catch(() => undefined).then(() => flushPendingReviews(maximumReviews, true, explicitRetryAttemptId));
+    return activeFlush.catch(() => undefined).then(() => flushPendingReviews(maximumReviews, true, explicitRetryAttemptId, deferredAttemptIds));
   }
   if (activeFlush && activeFlushMaximumReviews !== Infinity && maximumReviews === Infinity) return activeFlush.then(async result => {
-    if (!recoverableReviews().length) return result;
-    const remainder = await flushPendingReviews(maximumReviews, verifyReceiptFirst);
+    if (!recoverableReviews(undefined, deferredAttemptIds).length) return result;
+    const remainder = await flushPendingReviews(maximumReviews, verifyReceiptFirst, undefined, deferredAttemptIds);
     return { persistedAttemptIds: [...result.persistedAttemptIds, ...remainder.persistedAttemptIds],
       conflictedAttemptIds: [...result.conflictedAttemptIds, ...remainder.conflictedAttemptIds] };
   });
@@ -389,7 +391,7 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
     if (retainedRetry && !recoverableReviews(explicitRetryAttemptId).some(review => logicalAttemptId(review) === explicitRetryAttemptId))
       return Promise.reject(new Error("An earlier result for this card needs attention before this result can retry."));
     activeFlushMaximumReviews = maximumReviews;
-    activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst || !!explicitRetryAttemptId, explicitRetryAttemptId)
+    activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst || !!explicitRetryAttemptId, explicitRetryAttemptId, deferredAttemptIds)
       .finally(() => { activeFlush = undefined; });
   }
   return activeFlush;

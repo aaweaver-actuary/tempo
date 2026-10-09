@@ -2971,3 +2971,8 @@ Additional receipt and shared-flush boundaries:
 - `PR105 guided recovery consumes a complete review receipt despite an unavailable advisory marker`
   (`tests/unit/review-outbox-regressions.test.ts`): confirms the original guided review
   and drains its envelope without an advisory marker or duplicate review POST.
+
+- `PR105 transient review backoff permits independent receipt confirmation without bypassing same-card successors`
+  (`tests/unit/pending-review-recovery-regressions.test.tsx`): repeatedly failing A
+  keeps its immutable envelope while B confirms during A's backoff; A's successor
+  is neither checked nor posted.

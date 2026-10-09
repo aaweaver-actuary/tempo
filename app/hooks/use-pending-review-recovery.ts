@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { flushPendingReviews, recoverableReviews, ReviewReplayError, type ReviewFlushResult } from "../lib/review-outbox";
+import { flushPendingReviews, logicalAttemptId, recoverableReviews, ReviewReplayError, type ReviewFlushResult } from "../lib/review-outbox";
 import { useCommittedCallback } from "./use-committed-callback";
 import { PendingOperationError } from "../lib/operation-status";
 import { subscribeOperationStatusChange } from "../lib/operation-status-events";
@@ -24,19 +24,31 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
       if (idleId !== undefined) { window.cancelIdleCallback(idleId); idleId = undefined; }
       if (disposed || running.current || pointerHeld.current || !ready || blocked || navigator.onLine === false || document.visibilityState === "hidden") return;
       for (const result of deferredConfirmations.current.splice(0)) confirmed(result);
+      const deferredAttemptIds = new Set([...deadlines.current]
+        .filter(([, deadline]) => deadline.retryAt > Date.now()).map(([attemptId]) => attemptId));
       let review;
-      try { review = recoverableReviews()[0]; }
+      let retainedCandidates;
+      try {
+        retainedCandidates = recoverableReviews();
+        review = recoverableReviews(undefined, deferredAttemptIds)[0];
+      }
       catch (error) { reportDebugError(error, { source: "training-review-storage", operation: "read saved reviews" }); return; }
-      if (!review) return;
-      const identity = review.attemptId ?? String(review.queueEntryId);
-      if (deadlines.current.get(identity)?.retryAt === Infinity) return;
+      if (!review) {
+        // With no independent work, reserve the earliest finite retry opportunity.
+        review = retainedCandidates.filter((candidate, index) => Number.isFinite(deadlines.current.get(logicalAttemptId(candidate))?.retryAt) &&
+          !retainedCandidates.slice(0, index).some(earlier => earlier.backendId === candidate.backendId))
+          .sort((left, right) => deadlines.current.get(logicalAttemptId(left))!.retryAt - deadlines.current.get(logicalAttemptId(right))!.retryAt)[0];
+        if (!review) return;
+        deferredAttemptIds.delete(logicalAttemptId(review));
+      }
+      const identity = logicalAttemptId(review);
       const delay = Math.max(1000, (deadlines.current.get(identity)?.retryAt ?? 0) - Date.now());
       timer = setTimeout(() => {
         const recover = () => {
           idleId = undefined;
           if (disposed || navigator.onLine === false || document.visibilityState === "hidden") return;
           running.current = true;
-          void flushPendingReviews(1, true).then(result => {
+          void flushPendingReviews(1, true, undefined, deferredAttemptIds).then(result => {
             for (const confirmedIdentity of [...result.persistedAttemptIds, ...result.conflictedAttemptIds])
               deadlines.current.delete(confirmedIdentity);
             // The receipt is authoritative even if foreground readiness changed during the read.

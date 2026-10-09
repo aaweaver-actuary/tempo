@@ -275,3 +275,27 @@ it("phone explicit retry after an idle terminal failure resumes automatic recove
   expect(pendingReviews()).toEqual([]);
   expect(posts).toBe(2); // The explicit replay lost confirmation; idle recovery only reads its receipt.
 });
+
+
+it("PR105 transient review backoff permits independent receipt confirmation without bypassing same-card successors", async () => {
+  enqueuePendingReview(review);
+  const original = pendingReviews()[0];
+  const fetcher = vi.fn<typeof fetch>(async input => String(input).includes("review-attempt%3Aindependent")
+    ? Response.json({ state: "complete", response: { persisted: true } })
+    : Response.json({ detail: "Service unavailable" }, { status: 503 }));
+  vi.stubGlobal("fetch", fetcher);
+  const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
+  await advance(1000); await advance(1000);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  enqueuePendingReview({ ...review, attemptId: "same-card-successor", queueEntryId: 102 });
+  enqueuePendingReview({ ...review, backendId: "independent-card", attemptId: "independent", queueEntryId: 103 });
+  await advance(1000);
+  expect(pendingReviews().map(item => item.attemptId)).toEqual(["original-attempt", "same-card-successor"]);
+  expect(pendingReviews()[0]).toEqual(original);
+  expect(confirmed).toHaveBeenCalledWith({ persistedAttemptIds: ["independent"], conflictedAttemptIds: [] });
+  expect(fetcher.mock.calls.some(([input]) => String(input).includes("same-card-successor"))).toBe(false);
+  await advance(1000);
+  expect(fetcher.mock.calls.filter(([input]) => String(input).includes("original-attempt"))).toHaveLength(3);
+  expect(pendingReviews()[0]).toEqual(original);
+  expect(fetcher.mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
+});
