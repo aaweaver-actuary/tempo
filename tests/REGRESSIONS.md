@@ -2964,3 +2964,10 @@ Additional receipt and shared-flush boundaries:
 - CI follow-up: `test_postgres_queue_contention_yields_without_spending_retry_or_replaying_stale_lease` now exercises lock/serialization contention separately. Its old fixture classified a transaction deadline as ordinary contention, contrary to the repaired contract. Deadline errors retain the new checkpoint/cooldown/stale-generation regressions above; this does not remove deadline coverage or change a budget.
 
 - Migration rehearsal follow-up: `test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity` replays immutable migration 039 and its receipt in one transaction after recreating its historical guard. Later migration objects/receipts remain intact. The normal driver then validates/replays the complete history twice and asserts its exact version list plus retained application/card/review snapshots. The old rehearsal exposed a registry gap after schema 040 was introduced; no published migration or strict history validation is changed.
+
+
+## PR #105 remaining recovery review findings (October 9, 2026)
+
+- `PR105 guided recovery consumes a complete review receipt despite an unavailable advisory marker`
+  (`tests/unit/review-outbox-regressions.test.ts`): confirms the original guided review
+  and drains its envelope without an advisory marker or duplicate review POST.

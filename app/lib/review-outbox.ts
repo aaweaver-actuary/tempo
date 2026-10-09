@@ -202,7 +202,7 @@ async function withReviewSaveDeadline(url: string, review: PendingReview,
   } catch (error) {
     const receiptError = error instanceof FailedOperationError ? error : undefined;
     // Required evidence-storage failures must propagate without initiating fallback.
-    if (error !== null && typeof error === "object" && evidenceStorageErrors.has(error)) throw error;
+    if (error instanceof ReviewReplayError || (error !== null && typeof error === "object" && evidenceStorageErrors.has(error))) throw error;
     throw new ReviewReplayError(controller.signal.aborted
       ? "Review save timed out after 15 seconds. Retry save."
       : error instanceof Error ? error.message : String(error), url, review,
@@ -220,8 +220,28 @@ async function sendReview(review: PendingReview, verifyReceiptFirst = false): Pr
   const attemptId = logicalAttemptId(review);
   const reconciling = review.state === "reconciling";
   const endpoint = `${API_URL}/api/cards/${encodeURIComponent(review.backendId)}/review${reconciling ? "/reconcile" : ""}`;
+  let failureMarkerSent = false;
   const response = await withReviewSaveDeadline(endpoint, review, signal => saveEvidenceAwareReview({
-    endpoint, signal, request: requestReviewSave,
+    endpoint, signal, request: async (url, options) => {
+      // Receipt-first recovery reaches this callback only when replay is necessary.
+      if (review.guided && !reconciling && !failureMarkerSent) {
+        failureMarkerSent = true;
+        const failureEndpoint = `${API_URL}/api/queue/entries/${review.queueEntryId}/fail`;
+        try {
+          const response = await withReviewSaveDeadline(failureEndpoint, review, async signal => confirmOperationResponse(await requestReviewSave(failureEndpoint, {
+            method: "POST", headers: { "Idempotency-Key": `queue-fail:${attemptId}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }), signal,
+          }), { signal }));
+          if (!response.ok) throw await responseError(response, failureEndpoint, review);
+        } catch (error) {
+          // The marker is advisory once a guided result is completed. A stale
+          // marker never confirms persistence: the authoritative review below
+          // still validates identity and grades the explicit guided=true result.
+          if (!(error instanceof ReviewReplayError) || error.status !== 409) throw error;
+        }
+      }
+      return requestReviewSave(url, options);
+    },
     operationKey: reconciling ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`,
     completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
     verifyReceiptFirst,
@@ -290,21 +310,6 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
       if (earlierConflict) {
         retainConflict(review, { code: "earlier_review_conflict", message: "An earlier result for this card needs review first.", retryable: false }, result);
         continue;
-      }
-      if (review.guided && review.state !== "reconciling") {
-        const failureEndpoint = `${API_URL}/api/queue/entries/${review.queueEntryId}/fail`;
-        try {
-          const response = await withReviewSaveDeadline(failureEndpoint, review, async signal => confirmOperationResponse(await requestReviewSave(failureEndpoint, {
-            method: "POST", headers: { "Idempotency-Key": `queue-fail:${attemptId}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }), signal,
-          }), { signal }));
-          if (!response.ok) throw await responseError(response, failureEndpoint, review);
-        } catch (error) {
-          // The marker is advisory once a guided result is completed. A stale
-          // marker never confirms persistence: the authoritative review below
-          // still validates identity and grades the explicit guided=true result.
-          if (!(error instanceof ReviewReplayError) || error.status !== 409) throw error;
-        }
       }
       let response: Response;
       try { response = await sendReview(review, verifyReceiptFirst); }

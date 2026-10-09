@@ -744,3 +744,19 @@ it("retryable failed operation receipt remains transient and retains the origina
   await expect(flushPendingReviews(1, true)).rejects.toMatchObject({ classification: "transient", retryable: true });
   expect(pendingReviews()).toEqual([original]);
 });
+
+
+it("PR105 guided recovery consumes a complete review receipt despite an unavailable advisory marker", async () => {
+  const review = { backendId: "guided-persisted", queueEntryId: 811, attemptId: "guided-original",
+    completedAt: "2026-10-08T12:00:00Z", outcome: "correct" as const, guided: true, expectedRevision: 3 };
+  enqueuePendingReview(review);
+  const fetcher = vi.fn<typeof fetch>(async (input, options) => options?.method === "POST"
+    ? Response.json({ detail: "Command broker unavailable" }, { status: 503 })
+    : Response.json({ state: "complete", response: { persisted: true, review_id: 88 } }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushPendingReviews(1, true)).resolves.toEqual({ persistedAttemptIds: [review.attemptId], conflictedAttemptIds: [] });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(fetcher.mock.calls[0][0]).toContain("/api/operations/review-attempt%3Aguided-original");
+  expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toEqual([]);
+  expect(pendingReviews()).toEqual([]);
+});
