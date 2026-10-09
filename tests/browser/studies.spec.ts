@@ -1,5 +1,8 @@
 import { test, expect, api, nav } from "./product-fixtures";
 import type { Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { assertDisposableTarget } from "./disposable-target";
 import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
 import { noPageOverflow } from "./ui-fixtures";
 import { verifyQueueReadinessWithDiagnostics } from "./queue-readiness-diagnostics";
@@ -7,6 +10,48 @@ import { verifyQueueReadinessWithDiagnostics } from "./queue-readiness-diagnosti
 test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
+});
+
+test("Issue135 foreground queue commit wakes an idle worker without periodic polling", async ({ request }) => {
+  assertDisposableTarget(await (await request.get(`${api}/health`)).json());
+  const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
+  if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
+    throw new Error("Queue wakeup proof requires its owning disposable PostgreSQL runner");
+  const docker = (...argumentsList: string[]) => execFileSync("docker", [
+    "compose", "-p", project, "-f", "docker-compose.postgres.test.yml", ...argumentsList,
+  ], { encoding: "utf8", timeout: 5_000, maxBuffer: 32 * 1024 });
+  const settings = await (await request.get(`${api}/settings`)).json();
+  try {
+    docker("stop", "--timeout=1", "background-scheduler");
+    // Drain earlier poll deliveries before creating the new queue generation.
+    // Inspect real worker capacity; no database/task/broker state is discarded.
+    await expect.poll(() => JSON.parse(docker("exec", "-T", "background-worker", "python", "-c", [
+      "import json, socket",
+      "from app.celery_app import celery_app",
+      "from redis import Redis",
+      "inspect = celery_app.control.inspect(destination=['celery@'+socket.gethostname()], timeout=1)",
+      "active = inspect.active(); reserved = inspect.reserved()",
+      "broker = Redis.from_url(celery_app.conf.broker_url, socket_timeout=1)",
+      "queued = sum(broker.llen('background' + ('\\x06\\x16'+str(priority) if priority else '')) for priority in (0,3,6,9))",
+      "print(json.dumps({'queued':queued,'active':sum(len(items) for items in (active or {}).values()),'reserved':sum(len(items) for items in (reserved or {}).values()),'worker_present':bool(active) and bool(reserved)}))",
+    ].join("; "))), { timeout: 20_000, message: "Earlier wakes are drained and the background worker is idle" })
+      .toEqual({ queued: 0, active: 0, reserved: 0, worker_present: true });
+    const saveKey = `issue135-queue-wakeup-${randomUUID()}`;
+    const changed = { ...settings, new_cards_per_day: settings.new_cards_per_day === 2 ? 3 : 2 };
+    const save = await request.put(`${api}/settings`, { data: changed, headers: { "Idempotency-Key": saveKey } });
+    expect(save.ok(), await save.text()).toBe(true);
+    await expect.poll(async () => (await (await request.get(`${api}/queue/prepared`)).json()).projection,
+      { timeout: 30_000, message: "Committed queue refresh publishes while periodic polling is stopped" })
+      .toMatchObject({ state: "ready", refresh_pending: 0, last_error: null });
+    const replay = await request.put(`${api}/settings`, { data: changed, headers: { "Idempotency-Key": saveKey } });
+    expect(replay.ok(), await replay.text()).toBe(true);
+    expect((await (await request.get(`${api}/queue/prepared`)).json()).projection)
+      .toMatchObject({ state: "ready", refresh_pending: 0, last_error: null });
+  } finally {
+    docker("start", "background-scheduler");
+    const restored = await request.put(`${api}/settings`, { data: settings });
+    expect(restored.ok(), await restored.text()).toBe(true);
+  }
 });
 
 for (const black of [false, true]) {

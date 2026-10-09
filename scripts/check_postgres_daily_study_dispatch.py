@@ -193,6 +193,52 @@ def proof_deadline_recovery(identifier):
             assert not deadline(compact_replaced_delivery)
             assert not execute_postgres_queue_refresh_slice(claimed_owned())
             print('PASS test_issue135_postgres_compact_enqueue_resets_deadline_episode')
+
+            # The worker is intentionally stopped for this proof. A real command
+            # must publish a capacity hint only after its transaction commits.
+            from app import command_gateway
+            from app.celery_app import celery_app
+            proof_command = 'proof.issue135.queue_refresh'
+            operation_id = identifier + '-wakeup'
+            failed_operation_id = identifier + '-rolled-back-wakeup'
+            observed_wakes = []
+            original_send = celery_app.send_task
+
+            def enqueue_from_command(database, payload):
+                durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', identifier,
+                    publication_payload, priority=1)
+                if payload.get('fail'):
+                    raise RuntimeError('Controlled queue request rollback')
+                return {'accepted': True}
+
+            def observe_committed_wake(name, **options):
+                assert name == 'app.tasks.poll_background_tasks'
+                assert options['queue'] == 'background' and options['ignore_result'] is True
+                assert options['retry'] is False
+                with psycopg.connect(DSN) as observer:
+                    receipt = observer.execute('SELECT state FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()
+                    assert receipt[0] == 'complete'
+                    # An independent writer can lock the task before broker I/O.
+                    observed = observer.execute("SELECT state,lease_token FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=%s FOR UPDATE NOWAIT", (identifier,)).fetchone()
+                    assert observed == ('queued', None)
+                observed_wakes.append(name)
+                return original_send(name, **options)
+
+            command_gateway.register_command(proof_command, enqueue_from_command)
+            try:
+                with patch.object(celery_app, 'send_task', observe_committed_wake):
+                    assert command_gateway.execute_command(operation_id, proof_command, {}) == {'accepted': True}
+                    committed_state = saved_state()
+                    assert command_gateway.execute_command(operation_id, proof_command, {}) == {'accepted': True}
+                    assert command_gateway.execute_command(failed_operation_id, proof_command, {'fail': True}) is None
+                    assert saved_state() == committed_state
+                    assert observed_wakes == ['app.tasks.poll_background_tasks']
+            finally:
+                command_gateway._handlers.pop(proof_command)
+                with psycopg.connect(DSN) as connection:
+                    connection.execute('DELETE FROM operation_receipts WHERE operation_id IN (%s,%s)', (operation_id, failed_operation_id))
+            assert not execute_postgres_queue_refresh_slice(claimed_owned())
+            print('PASS test_issue135_postgres_command_queue_wake_follows_commit_and_never_rollback')
     finally:
         postgres_store.close_pools()
         with psycopg.connect(DSN) as connection:

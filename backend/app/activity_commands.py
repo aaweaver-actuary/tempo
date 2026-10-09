@@ -74,6 +74,8 @@ def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> 
         "completed_at=NULL,updated_at=%s WHERE id=%s", (now, now, task_id),
     )
     if failed["kind"] == "daily_queue":
+        from .services.queue_refresh_wakeup import mark_queue_refresh_requested
+        mark_queue_refresh_requested()
         update_queue_refresh_status_in_transaction(
             database, failed["kind"], json.loads(failed["payload_json"]), state="refreshing",
         )

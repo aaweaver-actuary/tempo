@@ -189,3 +189,54 @@ Studies/full-workload evidence without duplicating or weakening that repair.
 Current sources still require fresh Studies browser, PostgreSQL durability,
 complete browser workload and all mandatory CI layers for both exact head and
 applicable current-base merge candidate. No earlier pass qualifies this candidate.
+
+## Fresh complete-workload diagnosis and additional repair
+
+Exact head `b0634af` run [37936220977](https://github.com/aaweaver-actuary/tempo/actions/runs/37936220977)
+and current-base merge run [37936228211](https://github.com/aaweaver-actuary/tempo/actions/runs/37936228211)
+both selected the complete plan: 263 regular browser cases and 66 pinned cases.
+Frontend (1416 tests), backend (1599), builds/Rust/WASM, PostgreSQL durability,
+lifecycle and pinned checks passed. Both browser runs passed 262/263 and failed
+the original FEN study readiness assertion. Quality correctly failed; these are
+not candidate readiness evidence. The five issue-135 PostgreSQL recovery proofs
+passed in both durability runs.
+
+The new bounded failure evidence proves a second mechanism: generation 104 was
+eligible and queued with no lease, no deadline episode and no error for over
+30 seconds, while the worker was idle. Only paused low-priority defensive work
+competed. Scheduler publication stopped before that generation and resumed
+after a later spec restarted the services. Foreground queue mutations committed
+durable work but emitted no immediate capacity hint. No admission redesign or
+scheduler internals change is needed to remove that dependency. The reason the
+periodic publisher itself paused remains unproven. A 5000-delivery real-Redis
+result-subscription probe took 7.88 s with zero retained subscriptions and no
+stall; no speculative result-policy change was made.
+
+Additional test plan: a foreground queue enqueue records a command-local flag;
+only accepted command results publish one bounded, fire-and-forget capacity hint
+after the writer commits and closes. Rolled-back/raised commands cannot publish;
+concurrent requests cannot inherit flags. The existing poll still claims at
+execution time and retains foreground priority, generation fences and bounded
+transactions. Broker loss logs pending durable recovery without invalidating an
+already committed receipt. Producer/command callers require focused Python
+coverage, native PostgreSQL commit/rollback proof, the whole Studies file and
+fresh complete head/current-base CI. CI owns final full validation.
+
+On `b0634af` with the new browser regression only, elevated
+`make view VIEW='Issue135 foreground queue commit wakes an idle worker without periodic polling'`
+failed the unchanged ready assertion after first verifying an idle real worker
+with its owning scheduler stopped. Test 34.7 s, browser stage 37.42 s, command
+77.71 s, cleanup 7.47 s. With the uncommitted post-commit wake fix, the same
+command passed: one test, 6.4 s; browser stage 7.32 s, command 40.95 s, cleanup
+6.83 s. This is deterministic fail-before/pass-after evidence on disposable
+PostgreSQL, not a complete workload pass. Projects
+`tempo-pg-regressions-43289-6d81b403` and
+`tempo-pg-regressions-44324-8972854a` left no owned containers/volumes/images.
+Logs, traces and runner ownership/timings are preserved outside the clone.
+
+`PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_queue_refresh_wakeup.py backend/tests/test_queue_refresh_deadline_recovery.py backend/tests/test_daily_study_dispatch.py backend/tests/test_command_transport_errors.py backend/tests/test_postgres_pgn_discard.py -q -o cache_dir=.pytest_cache --rootdir=.`
+passed 68 cases in 5.30 s before adding the final concurrent-context case.
+`make python-file FILE=backend/tests/test_queue_refresh_wakeup.py` then passed
+all seven cases in 1.38 s. Typecheck, lint (10 existing warnings) and diff check
+passed on the additional source. The native proof and whole 12-case Studies
+file are pending, as are fresh exact-head/current-base complete CI results.

@@ -205,6 +205,23 @@ def execute_command(
     operation_id: str, command_name: str, payload: dict[str, Any], *, background: bool = False,
     attempt_token: str | None = None,
 ) -> Any:
+    from .services.queue_refresh_wakeup import capture_queue_refresh_request, wake_queue_refresh
+
+    with capture_queue_refresh_request() as queue_request:
+        result = _execute_command(operation_id, command_name, payload,
+                                  background=background, attempt_token=attempt_token)
+    # The inner boundary commits and closes before returning. Failed handlers
+    # return None after rollback; their transient enqueue must never emit a wake.
+    if result is not None and (queue_request.requested or
+            (command_name == "queue.ensure_current" and result.get("refresh_pending"))):
+        wake_queue_refresh()
+    return result
+
+
+def _execute_command(
+    operation_id: str, command_name: str, payload: dict[str, Any], *, background: bool = False,
+    attempt_token: str | None = None,
+) -> Any:
     if command_name not in _handlers:
         raise ValueError(f"Unknown command: {command_name}")
     if not operation_id or len(operation_id) > 128:

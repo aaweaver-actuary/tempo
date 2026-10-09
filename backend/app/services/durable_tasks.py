@@ -14,6 +14,7 @@ from .database_executor import submit_background_write, submit_foreground_write
 from .background_activity import claimable, control_order
 from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, task_admission_sql
 from .background_metrics import increment, record_event_counts
+from .queue_refresh_wakeup import mark_queue_refresh_requested
 
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
@@ -191,6 +192,8 @@ def enqueue_task_in_transaction(
     queued_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
     if queued_row["replaced_pending_generation"]:
         _record_event(database, task_id, generation, "generation_replaced", "queued", kind=kind)
+    if kind == "daily_queue":
+        mark_queue_refresh_requested()
     return dict(queued_row)
 
 
@@ -230,6 +233,8 @@ def enqueue_compact_postgres_task_in_transaction(
     increment(database, kind, queued["id"], generations_started=1,
               generation_replacements=int(queued["replaced_pending_generation"]))
     database.execute(_EVENT_PRUNE_SQL, (queued["id"],))
+    if kind == "daily_queue":
+        mark_queue_refresh_requested()
 
 
 def claim_task(

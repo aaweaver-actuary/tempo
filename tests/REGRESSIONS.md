@@ -3134,3 +3134,37 @@ stopped; it does not clear exclusions. PostgreSQL durability scripts manipulate
 scoped exclusions in their isolated scenario boundaries; their deliberate
 production coordination/fence assertions remain unchanged. No general SQL retry,
 production guard disablement, worker pause or migration/API change was introduced.
+
+## Issue #135: post-commit daily-queue capacity wake
+
+Fresh complete head/merge CI exposed a second cause after the retry repair:
+eligible generation 104 remained queued for over 30 seconds with no lease,
+error or deadline episode, while the worker was idle and periodic scheduler
+deliveries had stopped. Foreground mutations committed work without a wake.
+
+- `Issue135 foreground queue commit wakes an idle worker without periodic polling`
+  (`tests/browser/studies.spec.ts`) stops only the owning disposable scheduler,
+  drains earlier deliveries without deleting broker/database state, verifies the
+  real worker is idle, commits settings and requires ready/error-free publication
+  within the unchanged 30 seconds. Receipt replay retains readiness. It failed
+  before the fix and passed after it; the scheduler/settings are restored.
+- `test_issue135_queue_wake_occurs_only_after_closed_committed_command`,
+  `test_issue135_queue_wake_does_not_escape_rolled_back_command` (handled/raised),
+  `test_issue135_queue_wake_coalesces_replacements_without_claiming`,
+  `test_issue135_queue_ensure_receipt_replay_wakes_without_replacing_work`,
+  `test_issue135_queue_wake_requests_do_not_cross_concurrent_commands`, and
+  `test_issue135_queue_wake_publish_failure_preserves_committed_result`
+  (`backend/tests/test_queue_refresh_wakeup.py`) protect closed-connection
+  publication, rollback isolation, request scoping, coalescing, receipt recovery
+  and bounded advisory broker failure. Seven cases run in the regular suite.
+- `test_issue135_postgres_command_queue_wake_follows_commit_and_never_rollback`
+  (`scripts/check_postgres_daily_study_dispatch.py`) uses real command receipts,
+  PostgreSQL and Redis: an independent writer locks the committed queued task
+  before publication, replay creates no generation/wake, and a rolled-back
+  handler leaves no wake or task change. Existing restart/contention/replay
+  proofs still exercise the real handler and execution-time claiming.
+
+The wake invokes the existing bounded capacity poll after commit/connection
+closure; it never claims tasks or bypasses priority/fencing. Durable recovery
+and periodic polling remain enabled. The underlying periodic publisher stall
+is not yet proven; this fix removes foreground dependence on its next tick.
