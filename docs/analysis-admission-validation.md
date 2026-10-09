@@ -237,3 +237,26 @@ transactions remained below 250 ms. Evidence: root
 `test-results/analysis-activity-2026-10-09/admission-contention-isolation-proof.log`.
 The earlier full durability run failed before the new integrity proof; its
 owned runner cleanup passed. Complete candidate CI remains pending.
+
+Current a045 CI saved diagnostics exposed explicit foreground denial at a direct
+prefix-transition task claim and browser import publication starvation. The
+three isolated claim sites now use the existing bounded, admission-only idle
+driver; stale-slice rejection is still executed and asserted. PGN import's
+50 ms passive publication polls now identify themselves as background reads
+so they do not claim capacity from graph/integrity/queue work they await. The
+named dialog regression failed before this change. Real browser and native
+transition proof remain required on this candidate.
+
+Settled follow-up evidence: nine dialog regressions pass in 0.94 s; typecheck
+and lint pass (ten existing warnings). `make ui-file
+FILE=board-interactions.spec.ts` passes six real PostgreSQL browser cases in
+44.5 s (browser stage 45.05 s, cleanup 8.78 s); both formerly failing imports
+complete publication and remain playable. `make ui-file
+FILE=prefix-comparison.spec.ts` passes phone/desktop cases in 36.7 s, cleanup
+7.49 s. All project containers/images/volumes are removed by the owning runners.
+Fresh schema40/Redis7 passes the exact three repaired prefix claim/concurrency/
+interruption cases, admission-driver proof, and 256-event HTTP read denial,
+404/error and foreground diagnostic proof under original 250 ms/25 ms budgets.
+The HTTP proof owns helper-database admission keys so unrelated parent health
+reads cannot invalidate its deliberate foreground lease/release assertion.
+These are focused validations; new complete current-candidate CI remains required.
