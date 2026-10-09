@@ -2,6 +2,8 @@
 from datetime import datetime, timezone
 import json
 
+from fastapi import HTTPException
+
 from ..next_opponent_contract import NextOpponentProfile, NextOpponentProfileResponse, SpeedWeight
 from ..postgres_store import connection
 from .durable_tasks import complete_task_slice_in_transaction, enqueue_task_in_transaction, lock_current_slice
@@ -107,7 +109,9 @@ def execute_profile_slice(task: dict) -> bool:
 def read_profile(database, speed: str = "auto", *, now: datetime | None = None) -> NextOpponentProfileResponse:
     now = now or datetime.now(timezone.utc)
     configured = database.execute("SELECT lichess_username FROM settings WHERE id=1").fetchone()
-    account = configured["lichess_username"].strip().lower() if configured else ""
+    if configured is None:
+        raise HTTPException(503, "Next-opponent profile settings are unavailable; check Tempo service status and database initialization.")
+    account = configured["lichess_username"].strip().lower()
     if not account:
         return NextOpponentProfileResponse(availability="unknown", refresh_status="idle", stale=True,
             stale_reasons=("no_account",), requested_speed=speed, detail="Configure a Lichess account and sync games.")

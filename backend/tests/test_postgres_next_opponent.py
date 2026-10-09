@@ -197,6 +197,19 @@ def test_issue107_http_contract_invalid_speed_unsupported_and_storage_error(monk
     assert "private internal details" not in response.text
 
 
+def test_issue107_missing_settings_is_service_error_not_unknown_account(monkeypatch):
+    database = Database()
+    original_execute = database.execute
+    monkeypatch.setattr(database, "execute", lambda statement, parameters=():
+                        cursor() if "FROM settings" in statement else original_execute(statement, parameters))
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(database))
+    response = TestClient(main.app).get("/api/games/next-opponent-profile")
+    assert response.status_code == 503
+    assert "check Tempo service status" in response.json()["detail"]
+
+
 def test_issue107_regular_worker_dispatch_completes_profile_receipt_once(monkeypatch):
     from app import tasks
     claimed = {**task(), "kind": service.TASK_KIND, "generation": 1}

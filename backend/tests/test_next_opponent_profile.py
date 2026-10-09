@@ -93,3 +93,24 @@ def test_issue107_timezones_invalid_dates_and_invalid_ratings_are_explicit():
     assert profile.evidence_watermark == "2026-10-07T12:00:00+00:00"
     assert profile.cohorts[0].player_rating is None
     assert "missing_player_rating" in profile.cohorts[0].quality_flags
+
+
+def test_issue107_naive_historical_cutoff_is_utc_in_every_host_timezone():
+    """Separate processes exercise real TZ handling without leaking global clocks."""
+    import json
+    import os
+    import subprocess
+    import sys
+    script = """import json,sys
+from datetime import datetime
+from app.services.next_opponent_profile import build_profile
+profile=build_profile('alice',json.loads(sys.argv[1]),as_of=datetime(2026,10,8))
+print(profile.model_dump_json())
+"""
+    future_record = game(played_at="2026-10-08T02:00:00Z")
+    profiles = [json.loads(subprocess.check_output(
+        [sys.executable, "-c", script, json.dumps([future_record])],
+        env={**os.environ, "TZ": zone}, text=True, timeout=10,
+    )) for zone in ("UTC", "America/New_York")]
+    assert [profile["game_count"] for profile in profiles] == [0, 0]
+    assert profiles[0] == profiles[1]
