@@ -710,6 +710,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   .notification-trigger-label { display: none; }
   .notification-viewport { bottom: calc(84px + env(safe-area-inset-bottom)); }
   .notification-tray { position: fixed; top: calc(var(--nav-height) + 8px); right: 8px; left: 8px; width: auto; max-height: calc(100dvh - var(--nav-height) - 100px); }
+  .tempo-activity-content { position: fixed; top: calc(var(--nav-height) + 8px); right: 8px; left: 8px; width: auto; max-height: calc(100dvh - var(--nav-height) - 100px); }
   .tempo-discoveries-label-desktop { display: none; }
   .tempo-discoveries-label-mobile { display: inline; }
   .tempo-discovery-backdrop { padding: 0; }

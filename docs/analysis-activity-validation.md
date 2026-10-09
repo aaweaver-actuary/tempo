@@ -42,3 +42,13 @@ the foreground-wait regression first produced an outage notification. The regula
 render-identity regression caught a redundant state update and now passes.
 Evidence: root test-results/analysis-activity-2026-10-09/activity-clear-browser-timestamps.log.
 Pinned visual and settled Docker durability remain pending.
+
+Settled panel follow-up on 0f9a8e7 plus CSS/bounds/baseline changes: `make visual`
+passes all 66 pinned visual/performance cases (3.0 minutes). Only the two activity
+snapshots were updated; inspection caught existing left-edge phone clipping and
+both real browser and pinned cases now assert viewport bounds. `make ui-file
+FILE=activity-tray.spec.ts` passes all 12 cases (15.1s; cleanup 8.72s); disposable
+project tempo-pg-regressions-82023-74f5e0e9 was removed by its runner. See
+activity-pinned-visual.log and activity-full-browser.log in the dated root
+results directory. Full PostgreSQL durability and required current-candidate
+CI remain pending, so this is focused development evidence, not release readiness.

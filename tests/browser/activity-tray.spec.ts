@@ -46,6 +46,9 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await expect(trigger).toBeVisible();
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const panelBounds = (await page.locator("#tempo-activity-content").boundingBox())!;
+    expect(panelBounds.x).toBeGreaterThanOrEqual(0);
+    expect(panelBounds.x + panelBounds.width).toBeLessThanOrEqual(viewport.width);
     await expect(page.getByText("Opening graph rebuild")).toBeVisible();
     await expect(page.getByRole("progressbar", { name: "Opening graph rebuild progress" })).toHaveAttribute("aria-valuetext", "Queued");
     await page.getByRole("button", { name: "Prioritize" }).click();

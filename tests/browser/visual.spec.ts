@@ -151,6 +151,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
     await prepareVisualUI(page, true, undefined, undefined, activityResponse);
     await page.getByRole("button", { name: /Analysis activity/ }).click();
     await expect(page.getByRole("progressbar", { name: "Spanish opening integrity progress" })).toBeVisible();
+    const panelBounds = (await page.locator("#tempo-activity-content").boundingBox())!;
+    expect(panelBounds.x).toBeGreaterThanOrEqual(0);
+    expect(panelBounds.x + panelBounds.width).toBeLessThanOrEqual(viewport.width);
     await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toHaveCount(0);
     await page.addStyleTag({ content: "#tempo-activity-content .tempo-activity-item:not(:first-of-type), #tempo-activity-content .tempo-activity-list h3:not(:first-child) { display: none; }" });
     await expect(page.locator(".notification-count")).toHaveCount(0);
