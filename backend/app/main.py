@@ -1165,7 +1165,7 @@ _PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_
              AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
              AND EXISTS(SELECT 1 FROM repertoires r_ok
                         WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
-                          AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                          AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                                          WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id))
              AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)"""
 _PRIORITY_OPENING_CANDIDATES_SQL = (
@@ -1374,7 +1374,7 @@ def _block_ineligible_opening_queue_entries(db, day):
                            SELECT 1 FROM repertoire_cards linked
                            WHERE linked.card_id=c.id AND linked.repertoire_id=eligible.id
                        )) AND NOT EXISTS(
-                           SELECT 1 FROM repertoire_integrity_card_blocks block
+                           SELECT 1 FROM integrity_training_blocks block
                            WHERE block.repertoire_id=eligible.id AND block.card_id=c.id
                        )
                    )
@@ -1416,7 +1416,7 @@ def _restore_eligible_due_queue_entries(db, day):
                          SELECT 1 FROM repertoire_cards linked
                          WHERE linked.card_id=c.id AND linked.repertoire_id=eligible.id
                      )) AND NOT EXISTS(
-                         SELECT 1 FROM repertoire_integrity_card_blocks block
+                         SELECT 1 FROM integrity_training_blocks block
                          WHERE block.repertoire_id=eligible.id AND block.card_id=c.id
                      )
                  )
@@ -1489,7 +1489,7 @@ def seed_queue(db, day):
         """SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0 AND COALESCE(pending_validation,0)=0
            AND (cards.content_type!='opening' OR EXISTS(SELECT 1 FROM repertoires rr
                       WHERE (rr.id=cards.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.card_id=cards.id AND rc.repertoire_id=rr.id))
-                        AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                        AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                                        WHERE block.repertoire_id=rr.id AND block.card_id=cards.id)))
            AND (cards.content_type!='study_exercise' OR (
              EXISTS(SELECT 1 FROM study_exercises exercise JOIN studies study ON study.id=exercise.study_id
@@ -1640,7 +1640,7 @@ def _quarantine_malformed_opening_cards(database, queue_date: str) -> list[dict]
                    WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
                      AND (c.content_type!='opening' OR EXISTS(SELECT 1 FROM repertoires r_ok
                                 WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
-                                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                                  AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                                                  WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id)))""",
         (queue_date,),
     ).fetchall()
@@ -1706,7 +1706,7 @@ def materialize_daily_queue(database, queue_date: str) -> None:
                WHERE c.content_type='opening' AND c.archived=0
                  AND c.state IN ('learning','mature') AND c.due_date<=?
                  AND EXISTS(
-                     SELECT 1 FROM repertoire_integrity_card_blocks block
+                     SELECT 1 FROM integrity_training_blocks block
                      WHERE block.card_id=c.id
                        AND (block.repertoire_id=c.repertoire_id OR EXISTS(
                            SELECT 1 FROM repertoire_cards rc
@@ -1892,7 +1892,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                                     WHERE primary_link.repertoire_id=linked.id)) OR EXISTS(
                                     SELECT 1 FROM repertoire_cards rc
                                     WHERE rc.card_id=c.id AND rc.repertoire_id=linked.id))
-                                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                                  AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                                                  WHERE block.repertoire_id=linked.id AND block.card_id=c.id)
                                 ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
                                c.repertoire_id)
@@ -1907,7 +1907,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                                      SELECT 1 FROM study_sibling_burials burial
                                      WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
                              AND (c.content_type!='opening' OR NOT EXISTS(
-                                 SELECT 1 FROM repertoire_integrity_card_blocks block
+                                 SELECT 1 FROM integrity_training_blocks block
                                  WHERE block.repertoire_id=r.id AND block.card_id=c.id
                              ))
                            ORDER BY q.position,q.id"""
@@ -1932,13 +1932,13 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                 "FROM active_queue queue_card JOIN cards c ON c.id=queue_card.card_id "
                 "JOIN repertoire_cards rc ON rc.card_id=c.id "
                 "JOIN repertoires linked ON linked.id=rc.repertoire_id "
-                "WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+                "WHERE NOT EXISTS(SELECT 1 FROM integrity_training_blocks block "
                 "WHERE block.repertoire_id=linked.id AND block.card_id=c.id) "
                 "UNION SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
                 "FROM active_queue queue_card JOIN cards c ON c.id=queue_card.card_id "
                 "JOIN repertoires linked ON linked.id=c.repertoire_id "
                 "WHERE EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.repertoire_id=linked.id) "
-                "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+                "AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block "
                 "WHERE block.repertoire_id=linked.id AND block.card_id=c.id)), "
                 "ranked_repertoires AS MATERIALIZED (SELECT card_id,repertoire_id,"
                 "ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY is_main DESC,created_at DESC) rank "
@@ -2001,7 +2001,7 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                          SELECT 1 FROM study_sibling_burials burial
                          WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
                  AND (c.content_type!='opening' OR NOT EXISTS(
-                     SELECT 1 FROM repertoire_integrity_card_blocks block
+                     SELECT 1 FROM integrity_training_blocks block
                      WHERE block.repertoire_id=COALESCE(c.repertoire_id,
                        (SELECT rc.repertoire_id FROM repertoire_cards rc WHERE rc.card_id=c.id LIMIT 1))
                        AND block.card_id=c.id))""",
@@ -2309,7 +2309,7 @@ def list_repertoires():
                 JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
                 WHERE card.kind='prefix' AND card.content_type='opening' AND card.archived=0
                   AND card.state!='locked' AND card.pending_validation=0
-                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                  AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                                  WHERE block.repertoire_id=step.repertoire_id AND block.card_id=card.id)
                 GROUP BY step.repertoire_id
             ), due_counts AS (
@@ -2317,7 +2317,7 @@ def list_repertoires():
                 FROM daily_queue q
                 JOIN repertoire_cards rc ON rc.card_id=q.card_id
                 WHERE q.queue_date=? AND q.status='queued' AND NOT EXISTS(
-                    SELECT 1 FROM repertoire_integrity_card_blocks block
+                    SELECT 1 FROM integrity_training_blocks block
                     WHERE block.repertoire_id=rc.repertoire_id AND block.card_id=q.card_id
                 )
                 GROUP BY rc.repertoire_id
@@ -2326,14 +2326,14 @@ def list_repertoires():
                        COUNT(DISTINCT block.card_id) AS blocked_card_count,
                        COUNT(DISTINCT CASE WHEN card.due_date<=? AND card.state IN ('learning','mature')
                                           THEN block.card_id END) AS blocked_due_count
-                FROM repertoire_integrity_card_blocks block
+                FROM current_repertoire_integrity_card_blocks block
                 JOIN cards card ON card.id=block.card_id AND card.archived=0
                 GROUP BY block.repertoire_id
             ), issue_counts AS (
                 SELECT repertoire_id,COUNT(*) AS issue_count,
                        SUM(CASE WHEN kind IN ('missing_response','multiple_responses','invalid_source')
                            THEN 1 ELSE 0 END) AS conflict_count
-                FROM repertoire_integrity_issues
+                FROM current_repertoire_integrity_issues
                 GROUP BY repertoire_id
             )
             SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,r.new_cards_per_day,
@@ -2341,7 +2341,7 @@ def list_repertoires():
                    COALESCE(r.new_cards_per_day,(SELECT new_cards_per_day FROM settings WHERE id=1)) effective_new_cards_per_day,
                    COALESCE(rs.status,'unchecked') integrity_status,
                    COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
-                   (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
+                   (SELECT ii.id FROM current_repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
                    COALESCE(lc.line_count,0) AS line_count,
                    COALESCE(cc.card_count,0) AS card_count,
                    COALESCE(apc.active_prefix_count,0) AS active_prefix_count,
@@ -2473,7 +2473,7 @@ def resolve_repertoire_integrity(
         )
     with read_connection() as database:
         issue = database.execute(
-            "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
+            "SELECT signature FROM current_repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
             (issue_id, identifier),
         ).fetchone()
     if not issue:
@@ -3016,7 +3016,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                WHERE c.id=? AND c.archived=0
                  AND COALESCE(c.pending_validation,0)=0
                  AND (c.content_type!='opening' OR NOT EXISTS(
-                     SELECT 1 FROM repertoire_integrity_card_blocks block
+                     SELECT 1 FROM integrity_training_blocks block
                      WHERE block.repertoire_id=r.id AND block.card_id=c.id
                  )) LIMIT 1""",
             (identifier,),

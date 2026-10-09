@@ -833,7 +833,7 @@ def test_postgres_integrity_repair_rejects_stale_issue_signature(monkeypatch, un
             observed.append(statement)
             if "FROM repertoires" in statement:
                 return SimpleNamespace(fetchone=lambda: (1,))
-            if "FROM repertoire_integrity_issues" in statement:
+            if "FROM current_repertoire_integrity_issues" in statement:
                 return SimpleNamespace(fetchone=lambda: ("new-signature",))
             raise AssertionError("A stale repair must not write source rows")
 
@@ -906,8 +906,9 @@ def test_postgres_integrity_source_closes_read_transaction_before_chess_scan(mon
             })
 
     @contextmanager
-    def read_source():
+    def read_source(*, authoritative):
         nonlocal connection_open
+        assert authoritative is True
         connection_open = True
         try:
             yield ReadDatabase()
@@ -1032,10 +1033,11 @@ def test_postgres_integrity_evaluation_stages_only_conflicting_positions(monkeyp
         def execute_native(self, *_args):
             return SimpleNamespace(fetchone=lambda: next(rows))
 
-    monkeypatch.setattr(
-        postgres_integrity, "background_read_connection",
-        lambda: nullcontext(ReadDatabase()),
-    )
+    def authoritative_read(*, authoritative):
+        assert authoritative is True
+        return nullcontext(ReadDatabase())
+
+    monkeypatch.setattr(postgres_integrity, "background_read_connection", authoritative_read)
     clean = postgres_integrity.prepare_next_integrity_position("rep", "run", "")
     conflict = postgres_integrity.prepare_next_integrity_position("rep", "run", "fen-a")
     assert clean is not None and clean.issue is None
@@ -2986,6 +2988,7 @@ def test_postgres_opening_quarantine_validates_outside_database_and_replays_once
             CREATE TABLE repertoires(id TEXT PRIMARY KEY);
             CREATE TABLE repertoire_cards(card_id TEXT,repertoire_id TEXT);
             CREATE TABLE repertoire_integrity_card_blocks(card_id TEXT,repertoire_id TEXT);
+            CREATE VIEW integrity_training_blocks AS SELECT * FROM repertoire_integrity_card_blocks;
             CREATE TABLE repertoire_lines(repertoire_id TEXT,trained_color TEXT,created_at TEXT);
             CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,start_fen TEXT,
                                moves_json TEXT,trained_color TEXT,archived INTEGER,
@@ -5106,6 +5109,7 @@ def test_postgres_due_queue_slices_admit_only_eligible_cards_in_order(monkeypatc
             CREATE TABLE repertoires(id TEXT PRIMARY KEY);
             CREATE TABLE repertoire_cards(card_id TEXT,repertoire_id TEXT);
             CREATE TABLE repertoire_integrity_card_blocks(card_id TEXT,repertoire_id TEXT);
+            CREATE VIEW integrity_training_blocks AS SELECT * FROM repertoire_integrity_card_blocks;
             CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT);
             CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
             CREATE TABLE study_sibling_burials(exercise_id TEXT,study_day TEXT);

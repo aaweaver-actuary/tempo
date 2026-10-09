@@ -379,6 +379,11 @@ def refresh_graph_integrity_in_transaction(
             "WHERE repertoire_id=%s AND card_id=%s", (repertoire_id, card_id),
         )
         database.execute_native(
+            "DELETE FROM integrity_block_generations block USING integrity_publications published "
+            "WHERE block.run_id=published.run_id AND published.repertoire_id=%s AND block.card_id=%s",
+            (repertoire_id,card_id),
+        )
+        database.execute_native(
             "INSERT INTO repertoire_integrity_card_blocks("
             "repertoire_id,card_id,issue_id,scan_generation,published_at) "
             "SELECT DISTINCT %s,%s,issue.id,%s,%s FROM opening_graph_steps step "
@@ -387,13 +392,24 @@ def refresh_graph_integrity_in_transaction(
             "JOIN repertoire_integrity_issues issue "
             "ON issue.repertoire_id=step.repertoire_id AND issue.fen_key=position.fen_key "
             "WHERE step.repertoire_id=%s AND step.generation=%s AND step.card_id=%s "
+            "AND NOT EXISTS(SELECT 1 FROM integrity_publications published WHERE published.repertoire_id=step.repertoire_id) "
             "ON CONFLICT(repertoire_id,card_id,issue_id) DO NOTHING",
             (repertoire_id, card_id, f"graph:{generation}", now,
              repertoire_id, generation, card_id),
         )
         database.execute_native(
+            "INSERT INTO integrity_block_generations(run_id,repertoire_id,card_id,issue_id,published_at) "
+            "SELECT DISTINCT published.run_id,%s,%s,issue.id,%s FROM opening_graph_steps step "
+            "CROSS JOIN LATERAL jsonb_array_elements_text(step.decision_fen_keys_json::jsonb) position(fen_key) "
+            "JOIN integrity_publications published ON published.repertoire_id=step.repertoire_id "
+            "JOIN integrity_issue_generations issue ON issue.run_id=published.run_id "
+            "AND issue.fen_key=position.fen_key WHERE step.repertoire_id=%s AND step.generation=%s AND step.card_id=%s "
+            "ON CONFLICT(run_id,card_id,issue_id) DO NOTHING",
+            (repertoire_id,card_id,now,repertoire_id,generation,card_id),
+        )
+        database.execute_native(
             "UPDATE cards SET pending_validation=CASE WHEN EXISTS("
-            "SELECT 1 FROM repertoire_integrity_card_blocks block "
+            "SELECT 1 FROM current_repertoire_integrity_card_blocks block "
             "WHERE block.card_id=cards.id) THEN 1 ELSE 0 END WHERE id=%s",
             (card_id,),
         )
@@ -504,8 +520,11 @@ def remove_obsolete_graph_memberships(database, repertoire_id, generation, card_
         "AND canonical_route_source=0", (repertoire_id, eligible_card_ids),
     )
     database.execute_native(
-        "DELETE FROM repertoire_integrity_card_blocks "
-        "WHERE repertoire_id=%s AND card_id=ANY(%s::text[])", (repertoire_id, eligible_card_ids),
+        "WITH removed_legacy AS (DELETE FROM repertoire_integrity_card_blocks "
+        "WHERE repertoire_id=%s AND card_id=ANY(%s::text[]) RETURNING card_id) "
+        "DELETE FROM integrity_block_generations block USING integrity_publications published "
+        "WHERE block.run_id=published.run_id AND published.repertoire_id=%s AND block.card_id=ANY(%s::text[])",
+        (repertoire_id,eligible_card_ids,repertoire_id,eligible_card_ids),
     )
     database.execute_native(
         "UPDATE cards SET archived=1 WHERE id=ANY(%s::text[]) AND canonical_route_source=0 "

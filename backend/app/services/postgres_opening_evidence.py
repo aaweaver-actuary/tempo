@@ -73,7 +73,7 @@ def queue_manifests(cards: list[dict]) -> None:
             "AND EXISTS(SELECT 1 FROM repertoires eligible WHERE eligible.id=context.repertoire_id "
             "AND (eligible.id=card.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards link "
             "WHERE link.card_id=card.id AND link.repertoire_id=eligible.id))) "
-            "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+            "AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block "
             "WHERE block.card_id=card.id AND block.repertoire_id=context.repertoire_id)",
             ([card["queue_entry_id"] for card in candidates],),
         ).fetchall()

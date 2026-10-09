@@ -868,7 +868,7 @@ def publish_opening_graph_rebuild(
                SELECT ?,step.card_id,issue.id,?,?
                FROM opening_graph_steps step
                JOIN json_each(step.decision_fen_keys_json) decision_position
-               JOIN repertoire_integrity_issues issue
+               JOIN current_repertoire_integrity_issues issue
                  ON issue.repertoire_id=step.repertoire_id
                 AND issue.fen_key=decision_position.value
                WHERE step.repertoire_id=? AND step.generation=?""",
@@ -876,7 +876,7 @@ def publish_opening_graph_rebuild(
         )
         database.execute(
             """UPDATE cards SET pending_validation=CASE WHEN EXISTS(
-                   SELECT 1 FROM repertoire_integrity_card_blocks block
+                   SELECT 1 FROM current_repertoire_integrity_card_blocks block
                    WHERE block.card_id=cards.id
                ) THEN 1 ELSE 0 END
                WHERE id IN (

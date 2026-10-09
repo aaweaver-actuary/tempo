@@ -77,7 +77,7 @@ def prepare_presentation(task: dict) -> tuple[str, tuple[dict, ...]] | None:
             "AND EXISTS(SELECT 1 FROM opening_graph_steps step WHERE step.repertoire_id=%s "
             "AND step.generation=%s AND step.card_id=card.id "
             "AND step.starting_fen=card.start_fen AND step.moves_json=card.moves_json) "
-            "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+            "AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block "
             "WHERE block.repertoire_id=%s AND block.card_id=card.id) ORDER BY card.id LIMIT 1",
             (payload.get('after_card_id', ''), payload['repertoire_id'], payload['graph_generation'], payload['repertoire_id']),
         ).fetchone()

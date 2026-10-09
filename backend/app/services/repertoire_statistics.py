@@ -100,7 +100,7 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
                WHERE step.repertoire_id=? AND card.content_type='opening' AND card.archived=0""", (repertoire_id,),
         )]
         card_ids = {card["id"] for card in cards}
-        blocked_ids = {row[0] for row in database.execute("SELECT card_id FROM repertoire_integrity_card_blocks WHERE repertoire_id=?", (repertoire_id,))}
+        blocked_ids = {row[0] for row in database.execute("SELECT card_id FROM current_repertoire_integrity_card_blocks WHERE repertoire_id=?", (repertoire_id,))}
         review_rows = [dict(row) for row in database.execute(
             """SELECT review.id,review.card_id,review.rating,review.reviewed_at,review.source_kind
                FROM reviews review JOIN cards card ON card.id=review.card_id

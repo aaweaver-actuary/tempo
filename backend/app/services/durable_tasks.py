@@ -537,6 +537,9 @@ def retry_task(task_id: str) -> dict | None:
         ).fetchone()
         if not row:
             return None
+        if postgres_store.configured():
+            from ..activity_commands import retry_failed_task
+            return retry_failed_task(database, {'task_id':task_id})
         now = _iso()
         manual_phase = "" if postgres_store.configured() else ",phase='queued'"
         database.execute(

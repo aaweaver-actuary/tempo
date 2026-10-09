@@ -420,6 +420,9 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_integrity_card_blocks_card ON repertoire_integrity_card_blocks(card_id,repertoire_id)",
+        "CREATE VIEW IF NOT EXISTS current_repertoire_integrity_issues AS SELECT * FROM repertoire_integrity_issues",
+        "CREATE VIEW IF NOT EXISTS current_repertoire_integrity_card_blocks AS SELECT * FROM repertoire_integrity_card_blocks",
+        "CREATE VIEW IF NOT EXISTS integrity_training_blocks AS SELECT repertoire_id,card_id FROM repertoire_integrity_card_blocks",
         """
         CREATE TABLE IF NOT EXISTS repertoire_integrity_jobs (
             repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,

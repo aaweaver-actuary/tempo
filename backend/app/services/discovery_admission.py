@@ -748,7 +748,7 @@ def execute_admission_intent_slice(task: dict) -> bool:
                 "SELECT id,archived,pending_validation FROM cards WHERE id=?", (card_id_value,),
             ).fetchone()
             blocked = database.execute(
-                """SELECT 1 FROM repertoire_integrity_card_blocks
+                """SELECT 1 FROM integrity_training_blocks
                    WHERE repertoire_id=? AND card_id=?""",
                 (current["repertoire_id"], card_id_value),
             ).fetchone()
