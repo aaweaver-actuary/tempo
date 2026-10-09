@@ -302,6 +302,8 @@ export async function fetchAndInitializeQueue(
           });
       }
     }
+    if (!pendingReviewError && pendingReviews().some(review => review.automaticRecoverySuppressed))
+      pendingReviewError = "Previously saved reviews need explicit attention before retrying.";
     updateReviewConflictNotice();
     if (pendingFailureEntries.size)
       void flushTrainingFailures().then(() => {

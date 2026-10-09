@@ -2857,3 +2857,42 @@ Stalemate Swindles (October 5, 2026):
 
 - `PostgreSQL schema fixtures share the queue workers calendar across UTC midnight` — `tests/unit/postgres-test-runner-regressions.test.ts`; prevents fixture queue refreshes from publishing the next UTC day while the product’s local queue is still yesterday. Proven by the real `daily study opens while background analysis remains queued` browser case.
 - `Phone pending review keeps one inline status until its original receipt confirms` — recovery must advance the exact displayed completed attempt after receipt confirmation, while retaining a successor that was already advanced from cache. The real browser test failed with London retained after receipt completion before this repair.
+
+
+## PR #105 terminal review recovery — October 8, 2026
+
+Terminal foreground failures were retained without a durable recovery policy, so a missing
+receipt caused idle recovery to resubmit the rejected result, including after reload.
+
+- `phone definitive foreground failure suppresses idle replay across reload=%s` — both
+  active-session and remounted-hook variants failed first: rejected HTTP 422 was followed by
+  a receipt read and unsolicited POST (three requests instead of one).
+- `phone blocked review suppression survives reload and permits explicit intervention` —
+  failed first on renewed automatic receipt requests after remount; now retains the result
+  through Jobs retry and only the explicit saved-review check resolves it.
+- `phone terminal A does not starve independent B or allow a later same-card result` —
+  failed first on repeated recovery of A; independent B now confirms while A and its successor
+  remain retained in their original order.
+- `phone explicitly retryable 409 retains bounded automatic recovery and immutable identity`
+  — failed first because replay classified retryable 409 as terminal; original key/body now
+  replay after bounded backoff. `phone transient recovery caps backoff at thirty seconds
+  without changing the saved identity` verifies the cap and eventual receipt confirmation.
+- `terminal review survives passive flushes and explicit retry preserves its complete envelope`
+  — failed first because no suppression metadata was persisted. Ordinary flushes and idle
+  receipt-first flushes now leave the retained evidence unchanged; explicit retry reuses the
+  original body/key, outcome, timestamp and evidence, removing the record only on confirmation.
+- `review replay HTTP %s retryable=%s classifies as %s` — retryable 409 failed first;
+  nonretryable conflict/validation and ordinary transient statuses retain their classifications.
+  `retryable failed operation receipt remains transient and retains the original review`
+  also covers the structured failed-receipt path.
+- `explicit terminal retry becoming transient releases only its attempt for automatic recovery`
+  and `explicit retry cannot bypass an earlier suppressed result for the same card` cover
+  scoped override and same-card ordering.
+- `Phone terminal review stays retained through idle recovery until explicit retry reload=false`
+  and `reload=true` — real Chromium phone UI proves Retry save in-session and Check saved
+  reviews after reload, no unsolicited submissions through advanced idle timers, exact original
+  payload/key on retry and confirmed outbox removal.
+
+Unit cases live in `tests/unit/pending-review-recovery-regressions.test.tsx` and
+`tests/unit/review-outbox-regressions.test.ts`; browser cases live in
+`tests/browser/phone-opening-study.spec.ts`. All are in the regular suite.

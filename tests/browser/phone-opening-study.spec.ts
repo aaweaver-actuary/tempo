@@ -148,3 +148,41 @@ test("Phone actionable save warning keeps its severity and dismiss control reada
   expect(await severity.evaluate(element => element.clientHeight)).toBeLessThan(30);
   await noPageOverflow(page);
 });
+
+
+for (const reload of [false, true]) {
+test(`Phone terminal review stays retained through idle recovery until explicit retry reload=${reload}`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page, true, [openingCard("terminal-london", "London System", "d2d4", 61)]);
+  await page.clock.install();
+  const submissions: { body: unknown; key: string }[] = [];
+  let retryAllowed = false;
+  await page.route("**/api/cards/terminal-london/review", route => {
+    submissions.push({ body: route.request().postDataJSON(), key: route.request().headers()["idempotency-key"] });
+    return route.fulfill(retryAllowed ? { json: { persisted: true } }
+      : { status: 422, json: { detail: "Invalid completed review", retryable: false } });
+  });
+  await page.route("**/api/operations/**", route => route.fulfill({ status: 404, json: {} }));
+  await move(page, "d2", "d4");
+  await page.clock.runFor(1500);
+  await expect(page.getByRole("button", { name: "Retry save", exact: true })).toBeVisible();
+  const readRetained = () => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
+  await expect.poll(async () => (await readRetained())[0]?.automaticRecoverySuppressed).toBe("failed");
+  const retained = await readRetained();
+  await page.clock.fastForward(60000);
+  expect(submissions).toHaveLength(1);
+  expect(await readRetained()).toEqual(retained);
+  if (reload) {
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Check saved reviews", exact: true })).toBeVisible();
+  }
+  await page.clock.fastForward(60000);
+  expect(submissions).toHaveLength(1);
+  expect(await readRetained()).toEqual(retained);
+  retryAllowed = true;
+  await page.getByRole("button", { name: reload ? "Check saved reviews" : "Retry save", exact: true }).click();
+  await expect.poll(readRetained).toEqual([]);
+  expect(submissions).toHaveLength(2);
+  expect(submissions[1]).toEqual(submissions[0]);
+});
+}

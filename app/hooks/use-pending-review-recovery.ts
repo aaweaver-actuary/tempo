@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { flushPendingReviews, pendingReviews, ReviewReplayError, type ReviewFlushResult } from "../lib/review-outbox";
+import { flushPendingReviews, recoverableReviews, ReviewReplayError, type ReviewFlushResult } from "../lib/review-outbox";
 import { useCommittedCallback } from "./use-committed-callback";
 import { PendingOperationError } from "../lib/operation-status";
 import { subscribeOperationStatusChange } from "../lib/operation-status-events";
@@ -25,7 +25,7 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
       if (disposed || running.current || pointerHeld.current || !ready || blocked || navigator.onLine === false || document.visibilityState === "hidden") return;
       for (const result of deferredConfirmations.current.splice(0)) confirmed(result);
       let review;
-      try { review = pendingReviews()[0]; }
+      try { review = recoverableReviews()[0]; }
       catch (error) { reportDebugError(error, { source: "training-review-storage", operation: "read saved reviews" }); return; }
       if (!review) return;
       const identity = review.attemptId ?? String(review.queueEntryId);

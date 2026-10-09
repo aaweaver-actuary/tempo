@@ -338,7 +338,7 @@ export default function Home() {
     reviewPersistenceState === "saveFailed");
   usePendingReviewRecovery(usesLocalApi() && !offlineQueue, queueReadiness === "ready",
     pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
-    reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue", result => {
+    reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue" || reviewPersistenceState === "saveFailed", result => {
       const confirmsDisplayedAttempt = Boolean(reviewPersistenceIdentity?.attemptId &&
         result.persistedAttemptIds.includes(reviewPersistenceIdentity.attemptId) &&
         useTrainingStore.getState().attempt.attemptId === reviewPersistenceIdentity.attemptId);
@@ -1038,13 +1038,15 @@ export default function Home() {
       return;
     }
     reviewPendingEntries.current.add(entryKey);
+    const retryReview = pendingBeforeReview.find(review => review.attemptId === reviewPersistenceIdentity?.attemptId)
+      ?? pendingBeforeReview[0];
     const transitionGeneration = ++reviewTransitionGeneration.current;
     const { recordedAtCompletion = false, retryPending = false } = options;
     clearTimeout(completionTimer.current);
     const retryNeedsAdvance =
       retryPending &&
-      pendingBeforeReview[0]?.queueEntryId === card.queueEntryId &&
-      pendingBeforeReview[0]?.backendId === String(card.backendId ?? card.id);
+      retryReview?.queueEntryId === card.queueEntryId &&
+      retryReview?.backendId === String(card.backendId ?? card.id);
     setReviewPersistenceState("saving");
     setReviewSaveError("");
     if (!retryPending) setAttemptPhase("feedbackPause");
@@ -1106,11 +1108,11 @@ export default function Home() {
           setReviewed((count) => count + 1);
         }
         if (retryPending) {
-          submittedAttemptId = pendingBeforeReview[0]?.attemptId;
-          setReviewPersistenceIdentity(pendingBeforeReview[0]);
+          submittedAttemptId = retryReview?.attemptId;
+          setReviewPersistenceIdentity(retryReview);
         }
         const finishReviewPersistence = measureTempoDragPhase("review-persistence");
-        try { await flushPendingReviews(); finishReviewPersistence(); }
+        try { await flushPendingReviews(Infinity, retryPending, retryPending ? submittedAttemptId : undefined); finishReviewPersistence(); }
         catch (error) { finishReviewPersistence(true); throw error; }
         const resultConflicted = conflictedReviews().some((review) => submittedAttemptId
           ? review.attemptId === submittedAttemptId : review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
@@ -1626,7 +1628,12 @@ export default function Home() {
             {pendingReviewError && !offlineQueue && (
               <div className="ui-notice" role="status">
                 <span>A previous result needs confirmation or attention. Open Notifications for details.</span>
-                <Button onClick={() => void refreshDatabaseQueue().catch(() => undefined)}>
+                <Button onClick={() => void (async () => {
+                  const retainedReview = pendingReviews()[0];
+                  if (retainedReview) await flushPendingReviews(Infinity, true,
+                    retainedReview.attemptId ?? `legacy-online:${retainedReview.queueEntryId}`);
+                  await refreshDatabaseQueue();
+                })().catch(() => undefined)}>
                   Check saved reviews
                 </Button>
               </div>
