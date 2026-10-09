@@ -3043,6 +3043,67 @@ stopped; it does not clear exclusions. PostgreSQL durability scripts manipulate
 scoped exclusions in their isolated scenario boundaries; their deliberate
 production coordination/fence assertions remain unchanged. No general SQL retry,
 production guard disablement, worker pause or migration/API change was introduced.
+## Issue 135 — daily-queue deadline episode recovery
+
+- `test_issue135_new_queue_generation_does_not_inherit_deadline_cooldown`:
+  seven generations with isolated deadlines retain one-second first retries,
+  including replacement of retrying and successfully completed generations.
+- `test_issue135_queue_progress_resets_deadline_episode`: accepted intermediate
+  progress and both completion paths clear deadline counters/checkpoints and errors.
+- `test_issue135_queue_retry_error_is_visible_and_generation_fenced`: current
+  deadline errors reach the still-refreshing projection; stale deadline, progress,
+  completion and failure deliveries cannot change replacement work.
+- `test_issue135_replacement_generation_wins_failure_publication_race`: a
+  deterministic replacement commits between a failure read and its write;
+  neither deadline nor ordinary failure can publish status over that generation.
+- `test_issue135_unchanged_checkpoint_backoff_survives_restart_and_stale_replay`:
+  consecutive failures retain 1/2/4/8/16/32/60-second backoff, reopened connections,
+  lease reclamation and replay preserve the episode without consuming failure attempts.
+- `test_issue135_terminal_queue_failure_and_explicit_retry_publish_recoverable_status`:
+  failure and both compatibility/PostgreSQL command retries publish matching status
+  and clear episodes on explicit retry while preserving payloads.
+- `test_issue135_queue_failure_and_projection_error_roll_back_together` and
+  `test_issue135_ordinary_queue_retry_reports_error_without_false_readiness`:
+  atomic rollback, visible ordinary retry and honest readiness.
+- `test_issue135_pre_upgrade_deadline_checkpoint_resumes_without_losing_backoff`
+  and `test_issue135_periodic_ensure_preserves_current_queue_retry_error`:
+  in-place legacy-checkpoint conversion preserves active cooldowns, and the
+  periodic ensure command cannot erase a current retry's diagnostic error.
+
+These regular backend cases are in `backend/tests/test_queue_refresh_deadline_recovery.py`.
+Seven of the initial eight cases failed before the production repair (18.63 s);
+the unchanged-checkpoint preservation case passed. The initial repaired eight
+passed in 9.19 s; subsequent expanded coverage and boundary evidence are recorded
+in `docs/issue-135-validation.md`.
+
+Regular PostgreSQL durability extends `check_postgres_daily_study_dispatch.proof`
+with `test_issue135_postgres_new_generations_do_not_inherit_deadline_cooldown`,
+`test_issue135_postgres_deadline_and_projection_roll_back_together`,
+`test_issue135_postgres_deadline_restart_progress_and_publication_replay`, and
+`test_issue135_postgres_terminal_retry_and_replacement_fencing`, and
+`test_issue135_postgres_compact_enqueue_resets_deadline_episode`. These use real
+transactions, pool recreation, the queue publication handler and foreground retry
+command in the existing isolated workload stage.
+
+`tests/unit/queue-readiness-diagnostics-regressions.test.ts` protects bounded
+read-only evidence, exact disposable ownership and unavailable diagnostics.
+The existing real FEN-only Studies workflow retains its 30-second readiness
+assertion and attaches task/checkpoint/lease/cooldown and #37 diagnostics on failure.
+No browser timeout, background transaction budget or assertion was weakened.
+
+The required durability gate exposed a separate admission-proof cleanup race:
+`/api/health` from the deployed API can briefly own a legitimate shared Redis
+foreground lease. The two opening-evidence HTTP proofs now check every lease
+created by their own HTTP/worker threads, including each found/missing/error
+read, without asserting that unrelated processes own no leases.
+`backend/tests/test_admission_proof_ownership.py` registers:
+- `test_admission_proof_cleanup_ignores_independent_foreground_probe`;
+- `test_admission_proof_cleanup_rejects_owned_lease_leaks` (foreground/background);
+- `test_admission_proof_cleanup_preserves_original_assertion`.
+Real Redis denial, read-only transaction settings, and local active-section
+assertions remain required; no production admission behavior changed.
+
+
 ## Training-to-Builder route context (2026-10-09)
 
 Opening a review position previously created a FEN-only Builder session at ply zero,
@@ -3087,46 +3148,39 @@ Immediate real-game study obligations (October 9, 2026):
 
 
 
-## Issue #136: coordinated disposable PostgreSQL fixture reset
-
-The product fixture previously issued one uncoordinated `DELETE FROM deleted_cards`
-while real workers held migration 039's shared structural/queue reservation. Its
-expected `55P03` yield aborted the provider case before the test body.
-
-- `Issue136 fixture reset yields to a held writer and succeeds after release`
-  (`tests/unit/product-fixture-reset-regressions.test.ts` and
-  `tests/browser/product-fixture-reset.spec.ts`) proves bounded exact-error retries;
-  the real PostgreSQL case first requires the original one-shot deletion to fail,
-  observes the new helper's real yield, then explicitly releases the writer and
-  verifies committed deletion, repeated reset and the enabled production trigger.
-- `Issue136 fixture reset stops at its contention deadline and reports holders`
-  and `Issue136 fixture reset retains contention diagnostics when holder inspection fails`
-  protect the finite retry/diagnostic budgets and original cause. The browser case
-  `Issue136 fixture reset stops at its contention deadline and retains exclusions`
-  keeps a real writer held through failure and verifies no exclusions were lost.
-- `Issue136 fixture reset waits out a deadline too short for another observed command`
-  avoids starting a final attempt with less than the observed Docker command cost.
-- `Issue136 fixture reset rejects unexpected database errors without retry: %j`
-  protects other `55P03` messages, `P0080`, missing relations, transport errors,
-  killed/signaled commands and multiple errors. The browser case
-  `Issue136 fixture reset rejects unexpected real database errors without retry`
-  requires one real `42P01` attempt.
-- `Issue136 fixture reset refuses unmarked or mismatched targets: %j`,
-  `Issue136 fixture reset refuses another project's published API before SQL`,
-  `Issue136 fixture reset propagates ownership inspection failure without SQL`,
-  and `Issue136 fixture reset succeeds immediately and repeated resets remain idempotent`
-  protect disposable-only targeting and ordinary/reset replay behavior.
-- `Issue136 fixture reset refuses invalid container ownership without SQL: %s`
-  requires matching project/service labels, exact container IDs and one loopback
-  API binding before executing against the verified PostgreSQL container.
-
-Cleanup audit: this is the only direct `deleted_cards` reset in browser fixtures.
-The SQLite branch retains its historical behavior. The daily-study contention
-fixture cleans only its uniquely identified rows with its owned background worker
-stopped; it does not clear exclusions. PostgreSQL durability scripts manipulate
-scoped exclusions in their isolated scenario boundaries; their deliberate
-production coordination/fence assertions remain unchanged. No general SQL retry,
-production guard disablement, worker pause or migration/API change was introduced.
 
 
 - `test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption` forces a real Redis foreground lease while the reader-only deployed API dispatches. The original receipt must record its precise preparation yield, then reach staging after eligible same-key/body redelivery with the proof's background scheduler stopped, within the original ten-second bound. Final publication replay and changed-identity rejection remain mandatory. `test_issue80_http_proof_redelivers_only_eligible_original_foreground_yield` covers one redelivery per attempt, future eligibility, unexpected errors and exhausted deadlines; no production retries or budgets change. CI reproduced the missing test-driver wake before this repair.
+## Issue #135: post-commit daily-queue capacity wake
+
+Fresh complete head/merge CI exposed a second cause after the retry repair:
+eligible generation 104 remained queued for over 30 seconds with no lease,
+error or deadline episode, while the worker was idle and periodic scheduler
+deliveries had stopped. Foreground mutations committed work without a wake.
+
+- `Issue135 foreground queue commit wakes an idle worker without periodic polling`
+  (`tests/browser/studies.spec.ts`) stops only the owning disposable scheduler,
+  drains earlier deliveries without deleting broker/database state, verifies the
+  real worker is idle, commits settings and requires ready/error-free publication
+  within the unchanged 30 seconds. Receipt replay retains readiness. It failed
+  before the fix and passed after it; the scheduler/settings are restored.
+- `test_issue135_queue_wake_occurs_only_after_closed_committed_command`,
+  `test_issue135_queue_wake_does_not_escape_rolled_back_command` (handled/raised),
+  `test_issue135_queue_wake_coalesces_replacements_without_claiming`,
+  `test_issue135_queue_ensure_receipt_replay_wakes_without_replacing_work`,
+  `test_issue135_queue_wake_requests_do_not_cross_concurrent_commands`, and
+  `test_issue135_queue_wake_publish_failure_preserves_committed_result`
+  (`backend/tests/test_queue_refresh_wakeup.py`) protect closed-connection
+  publication, rollback isolation, request scoping, coalescing, receipt recovery
+  and bounded advisory broker failure. Seven cases run in the regular suite.
+- `test_issue135_postgres_command_queue_wake_follows_commit_and_never_rollback`
+  (`scripts/check_postgres_daily_study_dispatch.py`) uses real command receipts,
+  PostgreSQL and Redis: an independent writer locks the committed queued task
+  before publication, replay creates no generation/wake, and a rolled-back
+  handler leaves no wake or task change. Existing restart/contention/replay
+  proofs still exercise the real handler and execution-time claiming.
+
+The wake invokes the existing bounded capacity poll after commit/connection
+closure; it never claims tasks or bypasses priority/fencing. Durable recovery
+and periodic polling remain enabled. The underlying periodic publisher stall
+is not yet proven; this fix removes foreground dependence on its next tick.
