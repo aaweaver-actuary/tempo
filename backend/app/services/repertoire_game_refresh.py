@@ -6,9 +6,10 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 
-from ..database import connection
+from ..database import background_read_connection, connection
 from .. import postgres_store
 from .activity_gate import activity_gate
+from .game_position_sources import source_fingerprint, current_index_receipt, can_reuse_index
 from .durable_tasks import (
     enqueue_compact_postgres_task_in_transaction,
     enqueue_task_in_transaction,
@@ -49,8 +50,27 @@ def refresh_game_publications_after_mutation(handler):
 def execute_repertoire_game_refresh_slice(task: dict) -> bool:
     """Queue one derivation, then persist a cursor for the following slice."""
     activity_gate.wait_for_foreground()
+    copied_source = None
+    copied_fingerprint = None
+    if postgres_store.configured():
+        with background_read_connection(authoritative=True) as database:
+            copied_source = database.execute(
+                'SELECT id,start_fen,moves_json FROM imported_games WHERE id>? ORDER BY id LIMIT 1',
+                (task['payload'].get('after_game_id', ''),),
+            ).fetchone()
+        if copied_source is None:
+            return False
+        copied_fingerprint = source_fingerprint(copied_source['start_fen'], copied_source['moves_json'])
     with connection(background=True) as database:
         if postgres_store.configured():
+            # Source writers lock game then job then task. Recheck the copied
+            # source under a shared lock before accepting a receipt.
+            current_source = database.execute('SELECT id,start_fen,moves_json FROM imported_games WHERE id=? FOR SHARE',
+                                              (copied_source['id'],)).fetchone()
+            if current_source is None:
+                return False
+            database.execute('SELECT game_id FROM game_derivation_jobs WHERE game_id=? FOR UPDATE',
+                             (copied_source['id'],)).fetchone()
             if not lock_current_slice(database, task):
                 return False
         else:
@@ -60,7 +80,7 @@ def execute_repertoire_game_refresh_slice(task: dict) -> bool:
             ).fetchone()
             if not current:
                 return False
-        game = database.execute(
+        game = current_source if postgres_store.configured() else database.execute(
             "SELECT id FROM imported_games WHERE id>? ORDER BY id LIMIT 1",
             (task["payload"].get("after_game_id", ""),),
         ).fetchone()
@@ -75,16 +95,28 @@ def execute_repertoire_game_refresh_slice(task: dict) -> bool:
             (game["id"], now),
         )
         if postgres_store.configured():
+            receipt = current_index_receipt(database, game['id'])
+            reuse_positions = (current_source['start_fen'] == copied_source['start_fen']
+                               and current_source['moves_json'] == copied_source['moves_json']
+                               and can_reuse_index(receipt, copied_fingerprint))
             derivation_job = database.execute(
                 "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
                 (game["id"],),
             ).fetchone()
-            enqueue_compact_postgres_task_in_transaction(
-                database, "game_derivation_positions", game["id"],
-                {"game_id": game["id"],
-                 "derivation_version": derivation_job["derivation_version"],
-                 "cursor": 0}, priority=125,
-            )
+            if reuse_positions:
+                database.execute("UPDATE game_derivation_jobs SET completed_phases=1,phase='comparing_repertoire' WHERE game_id=?",
+                                 (game['id'],))
+                enqueue_compact_postgres_task_in_transaction(
+                    database, 'game_derivation_compare', game['id'],
+                    {'game_id': game['id'], 'derivation_version': derivation_job['derivation_version'],
+                     'phase': 'matches', 'cursor': 0}, priority=127)
+            else:
+                enqueue_compact_postgres_task_in_transaction(
+                    database, "game_derivation_positions", game["id"],
+                    {"game_id": game["id"],
+                     "derivation_version": derivation_job["derivation_version"],
+                     "cursor": 0}, priority=125,
+                )
             enqueue_compact_postgres_task_in_transaction(
                 database, "repertoire_game_refresh", "all",
                 {"after_game_id": game["id"]}, priority=90,

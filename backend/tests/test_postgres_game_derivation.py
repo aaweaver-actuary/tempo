@@ -32,7 +32,7 @@ def test_postgres_repertoire_refresh_admits_position_index_with_job_version(monk
         def execute(self, statement, _parameters=()):
             statements.append(statement)
             if "FROM imported_games" in statement:
-                return Cursor({"id": "game-one"})
+                return Cursor({"id": "game-one", 'start_fen': chess.STARTING_FEN, 'moves_json': '["e2e4"]'})
             if "SELECT derivation_version FROM game_derivation_jobs" in statement:
                 return Cursor({"derivation_version": 7})
             return Cursor()
@@ -42,9 +42,15 @@ def test_postgres_repertoire_refresh_admits_position_index_with_job_version(monk
         assert background
         yield Database()
 
+    @contextmanager
+    def read_database(**options):
+        assert options == {'authoritative': True}
+        yield Database()
+
     monkeypatch.setattr(repertoire_game_refresh.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(repertoire_game_refresh.activity_gate, "wait_for_foreground", lambda: None)
     monkeypatch.setattr(repertoire_game_refresh, "connection", write_database)
+    monkeypatch.setattr(repertoire_game_refresh, 'background_read_connection', read_database)
     monkeypatch.setattr(repertoire_game_refresh, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
         repertoire_game_refresh, "enqueue_compact_postgres_task_in_transaction",
@@ -95,7 +101,8 @@ def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(mo
             return Cursor()
 
     @contextmanager
-    def read_database():
+    def read_database(**options):
+        assert options == {'authoritative': True}
         assert not state["in_write"]
         yield Database()
 
@@ -273,7 +280,7 @@ def test_postgres_game_position_index_rejects_incomplete_stage_before_visibility
             return Cursor()
 
     @contextmanager
-    def open_database(*, background=True):
+    def open_database(*, background=True, authoritative=False):
         yield Database()
 
     monkeypatch.setattr(postgres_game_derivation, "background_read_connection", open_database)

@@ -1186,6 +1186,11 @@ def initialize() -> None:
             input_version TEXT NOT NULL,pending_since TEXT,requested_at TEXT NOT NULL,
             PRIMARY KEY(kind,repertoire_id)
         )""",
+        """CREATE TABLE IF NOT EXISTS game_position_index_sources(
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            derivation_version INTEGER NOT NULL,source_fingerprint TEXT NOT NULL,
+            algorithm_version INTEGER NOT NULL,verified_from_start INTEGER NOT NULL CHECK(verified_from_start IN (0,1)),
+            position_count INTEGER,published_at TEXT,PRIMARY KEY(game_id,derivation_version))""",
         "CREATE TABLE IF NOT EXISTS priority_source_epoch(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)",
         "INSERT OR IGNORE INTO priority_source_epoch(id,version) VALUES(1,0)",
         """CREATE TABLE IF NOT EXISTS priority_repertoire_source_epochs(
