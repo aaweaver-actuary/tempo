@@ -645,7 +645,7 @@ async function verifyStudyBurialRetainsQuota() {
   const settingsBeforeFixture = await get("settings");
   // stdin keeps this test fixture outside the product image. It runs only
   // against the unique disposable compose project created by this runner.
-  const regression = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-"], {
+  const regression = spawnSync("docker", [...compose, "exec", "-T", "-e", "TEMPO_TEST_INSTANCE=disposable", "foreground-worker", "python", "-"], {
     input: readFileSync("tests/fixtures/postgres-study-burial-quota.py", "utf8"), encoding: "utf8", env: environment,
   });
   assert.equal(regression.status, 0, regression.stderr);

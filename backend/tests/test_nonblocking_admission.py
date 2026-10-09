@@ -84,6 +84,37 @@ def test_short_control_receipt_is_admitted_during_existing_background_reservatio
                 with gate.background_database_section():
                     pytest.fail('discretionary section must yield')
     assert gate.active_background_sections == 0
+
+
+@pytest.mark.parametrize('request_state,stored_lease_id,expected_allowed', [
+    ('leased', 'current', True), ('leased', 'obsolete', False), ('complete', 'current', False),
+])
+def test_defensive_control_uses_primary_api_reader_without_writer_credentials(
+    monkeypatch, request_state, stored_lease_id, expected_allowed,
+):
+    from types import SimpleNamespace
+    from app import main, postgres_store
+    monkeypatch.delenv('TEMPO_DATABASE_WRITE_URL', raising=False)
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    queries = []
+    @contextmanager
+    def reader(**options):
+        assert options == {'read_only': True, 'background': True}, 'API control probe requested writer credentials'
+        def execute(statement, parameters):
+            queries.append((statement, parameters))
+            return SimpleNamespace(fetchone=lambda: {
+                'state': request_state, 'lease_id': stored_lease_id, 'search_allowed': 1,
+            })
+        yield SimpleNamespace(execute=execute)
+    monkeypatch.setattr(postgres_store, 'connection', reader)
+    assert main.defensive_engine_control('request', 'current') == {
+        'foreground_active': False, 'search_allowed': expected_allowed,
+    }
+    assert len(queries) == 1 and queries[0][1] == ('request',)
+
+
 @pytest.mark.parametrize('receipt_exists', [True, False])
 def test_background_receipt_read_is_prompt_during_foreground_without_false_success(monkeypatch, receipt_exists):
     from contextlib import contextmanager
