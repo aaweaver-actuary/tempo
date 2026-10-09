@@ -6,6 +6,7 @@ from .background_metrics import increment
 def record_engine_outcome(database, kind, identity, payload, *, completed=False):
     diagnostics = payload.get("diagnostics")
     counts = {}
+    diagnostic=None
     if completed:
         counts.update(engine_completed_positions=1, useful_completions=1)
     if diagnostics is not None:
@@ -33,5 +34,7 @@ def record_engine_outcome(database, kind, identity, payload, *, completed=False)
         counts["engine_failures"] = 1
     if diagnostics is None:
         counts["engine_unknown_timing_attempts"] = 1
+    from .activity_health import record_engine_execution_in_transaction
+    record_engine_execution_in_transaction(database,kind,identity,completed=completed,diagnostics=diagnostic)
     if counts:
         increment(database, kind, identity, **counts)

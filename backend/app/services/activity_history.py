@@ -84,13 +84,24 @@ def native_stages(database):
     ) SELECT stages.*,COALESCE(a.paused,0) manual_paused,COALESCE(a.promoted,0) promoted,
         CASE WHEN a.generation_key=stages.generation_key THEN a.completed_units END completed,
         CASE WHEN a.generation_key=stages.generation_key THEN a.total_units END total,
-        CASE WHEN a.generation_key=stages.generation_key THEN a.phase END reported_phase
-      FROM stages LEFT JOIN background_activity a ON a.source=stages.source AND a.work_id=stages.id"""
+        CASE WHEN a.generation_key=stages.generation_key THEN a.phase END reported_phase,
+        progress.last_progress_at,progress.progress_generation,
+        CASE WHEN incident.id IS NOT NULL THEN 'needs_attention'
+             WHEN pipeline.available=1 AND pipeline.bootstrap_ready=1 AND (pipeline.checked_at>=to_char((clock_timestamp()-interval '120 seconds') AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US')||'+00:00' AND pipeline.checked_at<=to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US')||'+00:00')
+               THEN CASE WHEN stages.state IN ('queued','retrying') THEN 'waiting'
+                         WHEN progress.last_progress_at IS NOT NULL AND progress.progress_generation=progress.generation_key THEN 'progressing' ELSE 'unknown' END
+             ELSE 'unknown' END health,
+        CASE WHEN (pipeline.checked_at>=to_char((clock_timestamp()-interval '120 seconds') AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US')||'+00:00' AND pipeline.checked_at<=to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US')||'+00:00') THEN pipeline.waiting_reason END monitoring_waiting_reason
+      FROM stages LEFT JOIN background_activity a ON a.source=stages.source AND a.work_id=stages.id
+      LEFT JOIN activity_work_progress progress ON progress.source=stages.source AND progress.work_id=stages.id
+      LEFT JOIN activity_pipeline_health pipeline ON pipeline.kind=progress.kind
+      LEFT JOIN activity_notification_incidents incident ON incident.source=stages.source AND incident.work_id=stages.id AND incident.resolved_at IS NULL"""
     rows=database.execute_native(statement).fetchall()
     return [dict(row) for row in rows]
 
 
-def project_stages(stages, preferences, *, offset=0, limit=50, group='all'):
+def project_stages(stages, preferences, *, offset=0, limit=50, group='all',work_source=None,work_id=None):
+    if bool(work_source)!=bool(work_id): raise HTTPException(422,'Work source and identity are required together')
     now=datetime.now(timezone.utc)
     grouped=defaultdict(list)
     for stage in stages:
@@ -112,13 +123,13 @@ def project_stages(stages, preferences, *, offset=0, limit=50, group='all'):
         grouped[logical_id].append(stage)
     items=[]
     for logical_id,members in grouped.items():
-        failed=[stage for stage in members if stage['state']=='failed']
+        failed=[stage for stage in members if stage['state']=='failed' or stage.get('health')=='needs_attention']
         active=[stage for stage in members if not stage['paused'] and stage['state'] in {'running','finalizing','pausing'}]
         pending=[stage for stage in members if not stage['paused'] and stage['state'] in {'queued','retrying'}]
         all_complete=all(stage['state']=='complete' for stage in members)
         completed_at=max((stage['completed_at'] for stage in members if stage['completed_at']),default=None) if all_complete else None
         archived=bool(all_complete and not any(stage['paused'] or stage['error'] for stage in members) and completed_at and preferences['cleared_through'] and activity_timestamp(completed_at)<=activity_timestamp(preferences['cleared_through']))
-        classification=('history' if members[0]['historical'] or archived else 'needs_attention' if failed else 'disabled' if all(stage['paused_by_settings'] for stage in members) and not all_complete else 'progressing' if active else 'waiting' if pending else 'paused' if any(stage['paused'] for stage in members) else 'finished' if all_complete else 'history')
+        classification=('history' if members[0]['historical'] or archived else 'needs_attention' if failed else 'disabled' if all(stage['paused_by_settings'] for stage in members) and not all_complete else 'waiting' if active and all(stage.get('health')=='unknown' for stage in active) else 'progressing' if active else 'waiting' if pending else 'paused' if any(stage['paused'] for stage in members) else 'finished' if all_complete else 'history')
         leader=(failed or active or pending or members)[0]
         item={key:leader.get(key) for key in ('source','id','title','phase','generation_key','completed','total','error')}
         item.update(logical_id=logical_id,classification=classification,
@@ -126,8 +137,8 @@ def project_stages(stages, preferences, *, offset=0, limit=50, group='all'):
                     updated_at=max(stage['updated_at'] for stage in members),completed_at=completed_at,
                     paused=classification in {'disabled','paused'},paused_by_settings=classification=='disabled',
                     promoted=any(stage['promoted'] for stage in members),archived=archived,
-                    last_progress_at=None,health='unknown',waiting_reason='settings_disabled' if classification=='disabled' else 'manual_pause' if classification=='paused' else 'retry_delay' if leader.get('next_attempt_at') and activity_timestamp(leader['next_attempt_at'])>now else 'eligible_queue' if pending else None,
-                    stages=[{key:stage.get(key) for key in ('source','id','title','state','phase','completed','total','updated_at','error','paused','paused_by_settings','promoted')} for stage in members] if len(members)>1 else [],stage_count=len(members))
+                    last_progress_at=max((stage.get('last_progress_at') for stage in members if stage.get('last_progress_at')),default=None),health=leader.get('health','unknown'),waiting_reason='settings_disabled' if classification=='disabled' else 'manual_pause' if classification=='paused' else 'retry_delay' if leader.get('next_attempt_at') and activity_timestamp(leader['next_attempt_at'])>now else leader.get('monitoring_waiting_reason') or ('eligible_queue' if pending else 'monitoring_unknown' if active and leader.get('health')=='unknown' else None),
+                    stages=[{key:stage.get(key) for key in ('source','id','title','state','phase','completed','total','updated_at','error','paused','paused_by_settings','promoted','health','last_progress_at','waiting_reason')} for stage in members] if len(members)>1 else [],stage_count=len(members),matches_requested_work=any(stage['source']==work_source and stage['id']==work_id for stage in members))
         if logical_id.startswith('game:'):
             parent=next((stage for stage in members if stage['source'] in {'derivation','game_analysis'}),leader)
             item['title']=parent['title']+' · '+logical_id[-8:]
@@ -137,13 +148,14 @@ def project_stages(stages, preferences, *, offset=0, limit=50, group='all'):
     counts.update(running=sum(item['classification']=='progressing' for item in items),queued=counts['waiting'],paused=counts['paused']+counts['disabled'],failed=counts['needs_attention'])
     cutoff=max((item['completed_at'] for item in items if item['classification']=='finished'),default=None)
     items.sort(key=lambda item:(GROUPS.index(item['classification']),not item['promoted'],item['updated_at'],item['logical_id']))
-    selected=[item for item in items if group=='all' or item['classification']==group]
+    selected=[item for item in items if (group=='all' or item['classification']==group) and (not work_id or item.pop('matches_requested_work',False))]
+    for item in items: item.pop('matches_requested_work',None)
     return {'items':selected[offset:offset+limit],'counts':counts,'total':len(selected),'next_offset':offset+limit if offset+limit<len(selected) else None,
             'clearable_finished':counts['finished'],'completion_cutoff':cutoff,'completion_snapshot':snapshot_signature(cutoff,preferences['signing_key']) if cutoff else None,
             'cleared_through':preferences['cleared_through'],'generated_at':now.isoformat(),'available':True}
 
 
-def native_activity(*, offset=0, limit=50, group='all'):
+def native_activity(*, offset=0, limit=50, group='all',work_source=None,work_id=None):
     if group!='all' and group not in GROUPS: raise HTTPException(422,'Unknown activity group')
     with read_connection() as database:
         analysis_enabled(database)
@@ -151,4 +163,4 @@ def native_activity(*, offset=0, limit=50, group='all'):
         if preference_row is None: raise HTTPException(503,'Activity history preferences are unavailable. Restore the database and retry.')
         preferences=dict(preference_row)
         stages=native_stages(database)
-    return project_stages(stages,preferences,offset=max(0,offset),limit=max(1,min(limit,100)),group=group)
+    return project_stages(stages,preferences,offset=max(0,offset),limit=max(1,min(limit,100)),group=group,work_source=work_source,work_id=work_id)

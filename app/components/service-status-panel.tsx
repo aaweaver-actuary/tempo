@@ -44,9 +44,9 @@ function ProgressBar({ item }: { item: ActivityItem }) {
   const percentage = hasTotal ? Math.min(100, Math.round((item.completed! / item.total!) * 100)) : null;
   return <div className="activity-progress-wrap">
     {hasTotal ? <progress max={item.total!} value={item.completed!} aria-label={`${item.title} progress`} />
-      : <div className={`activity-indeterminate ${["queued", "paused", "complete", "failed"].includes(item.state) ? "is-waiting" : ""}`}
+      : <div className={`activity-indeterminate ${(["queued", "paused", "complete", "failed"].includes(item.state) || item.health === "unknown" || item.waiting_reason === "foreground") ? "is-waiting" : ""}`}
           role="progressbar" aria-label={`${item.title} progress`} aria-valuetext={item.state === "queued" ? "Queued" : item.state === "paused" ? "Paused" : item.phase} />}
-    <span>{percentage === null ? item.state === "queued" ? "Waiting" : item.state === "paused" ? "Paused" : item.state === "complete" ? "Finished" : item.state === "failed" ? "Failed" : "In progress" : `${percentage}% · ${item.completed}/${item.total}`}</span>
+    <span>{percentage === null ? item.state === "queued" ? "Waiting" : item.state === "paused" ? "Paused" : item.state === "complete" ? "Finished" : item.state === "failed" ? "Failed" : item.health === "unknown" ? "Progress unknown" : item.waiting_reason === "foreground" ? "Waiting for study" : "In progress" : `${percentage}% · ${item.completed}/${item.total}`}</span>
   </div>;
 }
 
@@ -112,10 +112,20 @@ export function ServiceStatusPanel() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [groupFilter, setGroupFilter] = useState("all");
+  const [targetWork, setTargetWork] = useState<{ source: string; id: string } | null>(null);
+  useEffect(() => {
+    const showWork = (event: Event) => {
+      const detail = (event as CustomEvent<{ source?: unknown; id?: unknown }>).detail;
+      if (typeof detail?.source !== "string" || typeof detail.id !== "string") return;
+      setTargetWork({ source: detail.source, id: detail.id }); setGroupFilter("all"); setOffset(0); setOpen(true);
+    };
+    window.addEventListener("tempo:open-activity", showWork);
+    return () => window.removeEventListener("tempo:open-activity", showWork);
+  }, []);
   const [clearing, setClearing] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const refreshActivity = useRef<() => Promise<ActivityResponse | null>>(async () => null);
-  const updatePollingDemand = useRef<(open: boolean, offset: number, group: string) => void>(() => undefined);
+  const updatePollingDemand = useRef<(open: boolean, offset: number, group: string, target: { source: string; id: string } | null) => void>(() => undefined);
   const refresh = () => refreshActivity.current();
   const browserItems = useSyncExternalStore(subscribeBrowserActivity, browserActivitySnapshot, () => emptyBrowserActivity);
   useEffect(() => {
@@ -143,6 +153,7 @@ export function ServiceStatusPanel() {
     let panelOpen = false;
     let currentOffset = 0;
     let currentGroup = "all";
+    let currentTarget: { source: string; id: string } | null = null;
     let offsetGeneration = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight: Promise<ActivityResponse | null> | null = null;
@@ -198,7 +209,7 @@ export function ServiceStatusPanel() {
           refreshPending = false;
           const requestGeneration = offsetGeneration;
           try {
-            const response = await backgroundFetch(`${API_URL}/api/system/activity?offset=${currentOffset}&limit=50${currentGroup === "all" ? "" : `&group=${currentGroup}`}`);
+            const response = await backgroundFetch(`${API_URL}/api/system/activity?offset=${currentOffset}&limit=50${currentGroup === "all" ? "" : `&group=${currentGroup}`}${currentTarget ? `&work_source=${encodeURIComponent(currentTarget.source)}&work_id=${encodeURIComponent(currentTarget.id)}` : ""}`);
             if (response.status === 503) {
               const retrySeconds = Number(response.headers.get("Retry-After"));
               const body = await response.clone().json().catch(() => null) as { detail?: string } | null;
@@ -257,10 +268,10 @@ export function ServiceStatusPanel() {
       } else refreshPending = false;
     };
     refreshActivity.current = async () => { failureCount = 0; return poll(); };
-    updatePollingDemand.current = (nextOpen, nextOffset, nextGroup) => {
+    updatePollingDemand.current = (nextOpen, nextOffset, nextGroup, nextTarget) => {
       const opened = nextOpen && !panelOpen;
-      const offsetChanged = nextOffset !== currentOffset || nextGroup !== currentGroup;
-      currentGroup = nextGroup;
+      const offsetChanged = nextOffset !== currentOffset || nextGroup !== currentGroup || nextTarget !== currentTarget;
+      currentGroup = nextGroup; currentTarget = nextTarget;
       panelOpen = nextOpen;
       currentOffset = nextOffset;
       if (offsetChanged) { offsetGeneration += 1; latest = null; }
@@ -286,7 +297,7 @@ export function ServiceStatusPanel() {
       document.removeEventListener("visibilitychange", recover);
     };
   }, [publishError, publishForegroundWaiting]);
-  useEffect(() => { updatePollingDemand.current(open, offset, groupFilter); }, [open, offset, groupFilter]);
+  useEffect(() => { updatePollingDemand.current(open, offset, groupFilter, targetWork); }, [open, offset, groupFilter, targetWork]);
 
   const control = async (item: ActivityItem, action: string) => {
     const key = `${item.source}:${item.id}`;
@@ -331,6 +342,9 @@ export function ServiceStatusPanel() {
       <div className="tempo-activity-item-heading"><strong>{item.title}</strong><span>{item.classification ? classificationLabels[item.classification] : item.state.replaceAll("_", " ")}</span></div>
       <p>{item.phase.replaceAll("_", " ")}{item.error ? ` · ${item.error}` : ""}</p>
       <ProgressBar item={item} />
+      {item.waiting_reason === "foreground" && <p>Waiting for your study activity to finish.</p>}
+      {item.health === "unknown" && !["complete", "failed", "paused"].includes(item.state) && <p>Progress monitoring is unknown.</p>}
+      {item.last_progress_at && <p>Last progress <time dateTime={item.last_progress_at}>{item.last_progress_at.replace("T", " ").slice(0, 16)} UTC</time></p>}
       {item.waiting_reason === "retry_delay" && <p>Waiting for the retry delay to end.</p>}
       <time dateTime={item.updated_at}>Updated {item.updated_at.replace("T", " ").slice(0, 16)} UTC</time>
       {controlEligible && item.paused_by_settings && <p>Paused in Settings. Enable Defensive analysis in Settings to allow this work.</p>}
@@ -378,7 +392,8 @@ export function ServiceStatusPanel() {
       {!error && !foregroundWaiting && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
       {!error && status !== null && visibleItems.length === 0 && <p>No background activity yet.</p>}
       {status?.clearable_finished !== undefined && <div className="tempo-activity-filters">
-        <label>Show <select aria-label="Activity group" value={groupFilter} onChange={event => { setOffset(0); setGroupFilter(event.target.value); }}>
+        {targetWork && <Button type="button" onClick={() => setTargetWork(null)}>Show all analysis</Button>}
+        <label>Show <select aria-label="Activity group" value={groupFilter} onChange={event => { setTargetWork(null); setOffset(0); setGroupFilter(event.target.value); }}>
           <option value="all">All work</option>
           {Object.entries(classificationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select></label>

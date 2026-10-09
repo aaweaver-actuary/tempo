@@ -281,3 +281,43 @@ test("clear finished archives across browser devices while retaining failures, p
     await noPageOverflow(page); await noPageOverflow(other);
   } finally { await secondDevice.close(); fixture("cleanup"); }
 });
+
+test("durable analysis incidents survive reload, link to affected work and notify verified recovery once", async ({ page, browser }) => {
+  const { execFileSync } = await import("node:child_process");
+  const { randomUUID } = await import("node:crypto");
+  const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
+  if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("The isolated PostgreSQL browser runner is required");
+  const identity = `activity-health-proof-${randomUUID()}`;
+  const fixture = (action: string) => execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml", "run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_activity_health.py", action, identity], { encoding: "utf8", timeout: 30_000 });
+  fixture("seed");
+  const otherDevice = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  try {
+    await prepareUI(page); await navigate(page, "Builder");
+    await expect(page.locator(".notification-toast").filter({ hasText: "five consecutive identical transaction timeouts" })).toHaveCount(1);
+    await page.getByRole("button", { name: "Notifications", exact: true }).click();
+    const incident = page.locator(".notification-item").filter({ hasText: "five consecutive identical transaction timeouts" });
+    await expect(incident).toHaveCount(1);
+    await incident.getByRole("button", { name: "View analysis" }).click();
+    const panel = page.locator("#tempo-activity-content");
+    await expect(panel.getByRole("button", { name: "Show all analysis" })).toBeVisible();
+    await expect(panel.locator(".tempo-activity-item")).toHaveCount(1);
+    await expect(panel).toContainText("Needs attention");
+    await page.reload(); await navigate(page, "Builder");
+    await expect(page.locator(".notification-toast").filter({ hasText: "five consecutive identical transaction timeouts" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Notifications", exact: true }).click();
+    await expect(incident).toHaveCount(1);
+    const second = await otherDevice.newPage();
+    await prepareUI(second); await navigate(second, "Builder");
+    await second.getByRole("button", { name: "Notifications", exact: true }).click();
+    await expect(second.locator(".notification-item").filter({ hasText: "five consecutive identical transaction timeouts" })).toHaveCount(1);
+    fixture("recover");
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".notification-toast").filter({ hasText: "making progress again" })).toHaveCount(1);
+    await page.locator(".notification-tray").getByRole("button", { name: "All", exact: true }).click();
+    await expect(page.locator(".notification-item").filter({ hasText: "making progress again" })).toHaveCount(1);
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".notification-toast").filter({ hasText: "making progress again" })).toHaveCount(1);
+    await page.reload();
+    await expect(page.locator(".notification-toast").filter({ hasText: "making progress again" })).toHaveCount(0);
+  } finally { await otherDevice.close(); fixture("cleanup"); }
+});

@@ -173,9 +173,12 @@ class BackgroundDiagnostics(BaseModel):
     window_end: DiagnosticTimestamp
     bucket_seconds: Literal[300] = 300
     retention_seconds: Literal[86400] = 86400
+    queue_evidence: Literal['current_eligibility','stored_states_and_controls'] = 'current_eligibility'
+    summary_as_of: DiagnosticTimestamp | None = None
+    summary_max_age_seconds: float | None = Field(default=None,ge=0)
     query_duration_seconds: float = Field(ge=0)
     available: bool
-    unavailable_reason: Literal["query_deadline", "storage_unavailable"] | None = None
+    unavailable_reason: Literal["query_deadline", "storage_unavailable", "cache_not_ready", "cache_stale"] | None = None
     queues: list[QueueDiagnostic] = Field(default_factory=list, max_length=27)
-    counters: list[KindCounts] = Field(default_factory=list, max_length=33)
+    counters: list[KindCounts] = Field(default_factory=list, max_length=len(KINDS))
     runtime: "RuntimeSnapshot"

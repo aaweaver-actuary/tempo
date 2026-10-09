@@ -10,6 +10,9 @@ import {
 } from "../lib/notifications";
 import { buildDebugBundle, copyDebugBundle, debugErrors } from "../lib/debug-reporting";
 
+import { usesLocalApi } from "../utils/local";
+import { startActivityNotificationPolling } from "../lib/activity-notifications";
+
 import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 
 type Threshold = "info" | "warning" | "error";
@@ -34,6 +37,8 @@ function NotificationDetails({ record }: { record: NotificationRecord }) {
 
 export function NotificationCenter() {
   const records = useNotifications();
+  const [monitoringAvailable, setMonitoringAvailable] = useState<boolean | null>(null);
+  useEffect(() => usesLocalApi() ? startActivityNotificationPolling(setMonitoringAvailable) : undefined, []);
   const [open, setOpen] = useState(false);
   const popupRef = useRef<HTMLElement>(null);
   usePopupKeyboard(popupRef, () => setOpen(false), open);
@@ -73,6 +78,7 @@ export function NotificationCenter() {
           onClick={clearAllNotifications}>Clear all</Button>
         <Button type="button" onClick={() => setOpen(false)}>Close</Button>
       </div></header>
+      {monitoringAvailable === false && <p role="status">Analysis monitoring is unavailable. Its health is unknown; retry when the service is available.</p>}
       <p className="notification-retention">Newest first · latest {NOTIFICATION_HISTORY_LIMIT} kept on this device</p>
       <div className="notification-filters" aria-label="Filter notifications">
         {(["attention", "all", "error", "warning", "success", "info"] as const).map((severity) =>
@@ -100,6 +106,9 @@ export function NotificationCenter() {
             <time dateTime={record.updatedAt}>{new Date(record.updatedAt).toLocaleString()}</time></div>
           {occurrenceCount > 1 && <p className="notification-retention">Repeated {occurrenceCount} times</p>}
           <strong>{record.source}</strong><p>{record.message}</p><NotificationDetails record={record} />
+          {typeof record.details?.activityWorkId === "string" && <Button type="button" onClick={() => {
+            setOpen(false); window.dispatchEvent(new CustomEvent("tempo:open-activity", { detail: { source: record.details?.activitySource, id: record.details?.activityWorkId } }));
+          }}>View analysis</Button>}
           <div className="notification-clear-actions">
             {record.clearedAt ? <span>Cleared</span> : <>
               {notificationNeedsAttention(record) && <span className="notification-new-label">New</span>}

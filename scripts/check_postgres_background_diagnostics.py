@@ -21,7 +21,7 @@ from app import database, postgres_store
 from app.services import durable_tasks, background_diagnostics, background_runtime
 from app.services.background_metrics import increment
 
-ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'
+ADMIN_DSN = os.environ.get("TEMPO_DIAGNOSTICS_ADMIN_DSN", "postgresql://postgres@postgres:5432/postgres")
 
 
 def check_admitted_primary_preflight(claimed):
@@ -104,11 +104,23 @@ def check_runtime_publication_boundaries(claimed):
     assert not violations and samples[-1]['stage'] == 'idle'
 
 
+def settle_cached_diagnostics():
+    from app.services.activity_health import monitor_one_pipeline
+    # Only the fixture's 35 bounded monitor turns publish its cache. No analysis,
+    # fake summary or unbounded read is substituted for the production producer.
+    with postgres_store.connection() as connection:
+        connection.execute('UPDATE activity_pipeline_health SET checked_at=NULL')
+    for _ in range(250):
+        if not monitor_one_pipeline(evidence={'available':False,'foreground':False}):
+            return
+    raise AssertionError('Bounded fixture diagnostics bootstrap failed to complete')
+
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Background diagnostics proof requires the disposable test runner')
     database_name='tempo_diagnostics_'+uuid.uuid4().hex
-    dsn=f'postgresql://postgres@postgres:5432/{database_name}'
+    dsn=psycopg.conninfo.make_conninfo(ADMIN_DSN,dbname=database_name)
     with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
         administrator.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
     try:
@@ -124,6 +136,9 @@ def main():
         check_runtime_publication_boundaries(claimed)
         with postgres_store.connection() as connection:
             durable_tasks.advance_task_slice_in_transaction(connection,claimed,next_phase='synthetic',next_payload={})
+        initial=background_diagnostics.snapshot()
+        assert not initial.available and initial.unavailable_reason=='cache_not_ready'
+        settle_cached_diagnostics()
         assert background_diagnostics.snapshot().available
         claimed=durable_tasks.claim_task('daily_queue')
         assert durable_tasks.complete_task(claimed['id'],claimed['generation'],claimed['lease_token'],kind=claimed['kind'])
@@ -141,6 +156,7 @@ def main():
         with postgres_store.connection() as connection:
             connection.execute('UPDATE background_tasks SET lease_expires_at=? WHERE id=?',('2000-01-01T00:00:00+00:00',row['id']))
         durable_tasks.claim_task('daily_queue')
+        settle_cached_diagnostics()
         snapshot=background_diagnostics.snapshot()
         assert snapshot.available
         counters=next(item.counts for item in snapshot.counters if item.kind=='daily_queue')
@@ -154,7 +170,8 @@ def main():
                 raise RuntimeError('synthetic rollback')
         except RuntimeError:
             pass
-        assert not any(item.kind=='engine_game' for item in background_diagnostics.snapshot().counters)
+        settle_cached_diagnostics()
+        assert next(item.counts for item in background_diagnostics.snapshot().counters if item.kind=='engine_game').engine_completed_positions==0
         # Concurrent additive UPSERTs, including deliberate same-shard contention, lose no counters.
         def worker(index):
             for _ in range(20):
@@ -162,6 +179,7 @@ def main():
                     increment(connection,'engine_game','same-shard',engine_preemptions=1)
         with ThreadPoolExecutor(max_workers=4) as workers:
             list(workers.map(worker,range(4)))
+        settle_cached_diagnostics()
         assert next(item.counts for item in background_diagnostics.snapshot().counters if item.kind=='engine_game').engine_preemptions==80
         def times():
             samples=[]

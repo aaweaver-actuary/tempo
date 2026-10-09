@@ -9,6 +9,7 @@ from psycopg.errors import LockNotAvailable, TransactionTimeout
 
 from app import tasks
 from app.services import durable_tasks
+from app.services.background_runtime import RuntimeMeasurement
 from app.services.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_SCHEMA
 
 
@@ -39,7 +40,7 @@ def timeout_database(monkeypatch):
     monkeypatch.setattr(durable_tasks.random, "random", lambda: 0.0)
     monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
     monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext())
-    monkeypatch.setattr(tasks, "measure_handler", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks, "measure_handler", lambda *args, **options: nullcontext(RuntimeMeasurement(args[0])))
     monkeypatch.setattr(tasks, "fail_task", durable_tasks.fail_task)
     monkeypatch.setattr(tasks, "defer_task_for_contention", durable_tasks.defer_task_for_contention)
     yield database

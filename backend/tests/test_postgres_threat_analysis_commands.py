@@ -76,6 +76,9 @@ def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically
     enqueued = []
 
     class Database:
+        def execute(self, statement, parameters=()):
+            return self.execute_native(statement, parameters)
+
         def execute_native(self, statement, parameters=()):
             if statement.startswith("SELECT state,lease_id,request_json"):
                 return Cursor({"state": state["status"], "lease_id": state["lease_id"],
@@ -99,8 +102,9 @@ def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically
     assert threat_analysis_commands.submit_threat_report(Database(), payload) == {
         "status": "complete", "candidate_count": 2,
     }
+    assert sum('UPDATE activity_work_progress' in statement for statement, _ in writes) == 1
     assert validations == [True]
-    assert len(writes) == 2
+    assert len(writes) == 3
     assert sum("INSERT INTO background_metric_buckets" in statement for statement, _ in writes) == 1
     assert [item[1] for item in enqueued] == ["candidate-one", "candidate-two"]
 
@@ -108,13 +112,16 @@ def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically
     with pytest.raises(HTTPException) as error:
         threat_analysis_commands.submit_threat_report(Database(), payload)
     assert error.value.status_code == 409
-    assert len(writes) == 2
+    assert len(writes) == 3
     assert sum("INSERT INTO background_metric_buckets" in statement for statement, _ in writes) == 1
     assert len(enqueued) == 2
 
 
 def test_postgres_threat_failure_release_retry_preserve_http_contract():
     class Database:
+        def execute(self, statement, parameters=()):
+            return self.execute_native(statement, parameters)
+
         def __init__(self, result):
             self.result = result
 

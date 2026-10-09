@@ -1307,5 +1307,12 @@
     "handler": "clear_finished_activity",
     "treatment": "foreground_command",
     "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/system/activity/notifications",
+    "handler": "activity_notifications",
+    "treatment": "reader",
+    "state": "staged"
   }
 ]

@@ -644,7 +644,8 @@ def test_background_admission_timing_excludes_diagnostic_publication(monkeypatch
         assert measurement.sample().admission_wait_seconds==3
 
 
-def test_background_postgres_snapshot_disables_jit_before_budgeted_classification(diagnostic_database, monkeypatch):
+@pytest.mark.parametrize("future_summary", [False, True])
+def test_background_postgres_snapshot_disables_jit_and_reads_only_bounded_cache(diagnostic_database, monkeypatch, future_summary):
     """Canonical freshness predicates must not spend the snapshot budget compiling SQL."""
     from contextlib import contextmanager
     from app import postgres_store
@@ -671,10 +672,43 @@ def test_background_postgres_snapshot_disables_jit_before_budgeted_classificatio
         finally:
             connection.close()
 
+    now=(datetime.now(timezone.utc)+timedelta(seconds=60 if future_summary else 0)).isoformat()
+    from app.services.background_metric_kinds import KINDS
+    with sqlite3.connect(diagnostic_database) as connection:
+        for kind in KINDS:
+            connection.execute('UPDATE activity_pipeline_health SET bootstrap_ready=1,diagnostics_json=?,diagnostics_at=? WHERE kind=?',(json.dumps({'kind':kind,'counts':{},'useful_completion_unit':None}),now,kind))
     monkeypatch.setattr(postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(postgres_store, 'diagnostic_read_connection', native_connection)
     monkeypatch.setattr(postgres_store, 'postgres_sql', lambda statement: statement)
     result = background_diagnostics.snapshot()
-    assert result.available, result
+    assert result.available is (not future_summary), result
+    if future_summary:assert result.unavailable_reason=='cache_stale'
     assert statements[0] == ("SELECT set_config('jit', 'off', true)", ())
-    assert any('FROM threat_analysis_requests' in statement for statement, _ in statements)
+    assert not any('FROM threat_analysis_requests' in statement or 'FROM background_tasks' in statement for statement, _ in statements)
+    if not future_summary:assert any('FROM activity_pipeline_counts' in statement for statement, _ in statements)
+    assert result.summary_as_of==now
+
+
+def test_engine_capacity_is_independent_of_analysis_workers_and_never_writes_under_database_reservation(monkeypatch):
+    values={};idle_keys=[]
+    class Server:
+        def set(self,key,value,ex):
+            assert ex==15
+            values[key]=value
+        def mget(self,keys):return [values.get(key) for key in keys]
+        def pipeline(self,transaction):return self
+        def setbit(self,key,offset,value):idle_keys.append(key);return self
+        def expire(self,key,seconds):assert seconds==180;return self
+        def execute(self):return []
+    monkeypatch.setattr(background_runtime.redis_admission_gate,'configured',lambda:True)
+    monkeypatch.setattr(background_runtime,'_diagnostic_client',lambda:Server())
+    with background_runtime.reserved_database_telemetry():
+        background_runtime.record_engine_capacity('idle')
+    assert not values and not idle_keys
+    background_runtime.record_engine_capacity('idle')
+    observed=background_runtime.snapshot()
+    assert observed.available and observed.workers==[] and observed.engine_available
+    assert observed.engine_stage=='idle' and observed.engine_observed_at
+    assert idle_keys and all(key.startswith('tempo:diagnostics:idle:engine:') for key in idle_keys)
+    values['tempo:diagnostics:engine-capacity']=json.dumps({'observed_at':'2000-01-01T00:00:00+00:00','stage':'idle'})
+    assert not background_runtime.snapshot().engine_available
