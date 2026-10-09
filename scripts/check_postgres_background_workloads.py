@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import uuid
 
 import psycopg
 from psycopg.errors import TransactionTimeout
@@ -236,6 +237,17 @@ def cleanup() -> None:
         database.execute("DELETE FROM imported_games WHERE id=%s", (GAME_ID,))
 
 
+def test_postgres_incident_measurements_retain_parent_admission_and_actual_budgets():
+    from check_postgres_graph_retention import owned_admission_scope
+
+    # These populated SQL fixtures have no interactive caller. Keep parent API
+    # health/study admission out of their timing while retaining a real gate,
+    # parent lease preservation, and the original database budgets/assertions.
+    with owned_admission_scope('incident-query-' + uuid.uuid4().hex):
+        measure()
+    print('PASS test_postgres_incident_measurements_retain_parent_admission_and_actual_budgets')
+
+
 def main() -> None:
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("This check requires the disposable PostgreSQL test instance")
@@ -245,7 +257,7 @@ def main() -> None:
     try:
         with psycopg.connect(DATABASE_URL) as database:
             seed(database)
-        measure()
+        test_postgres_incident_measurements_retain_parent_admission_and_actual_budgets()
     finally:
         postgres_store.close_pools()
         cleanup()

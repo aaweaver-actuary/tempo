@@ -192,3 +192,15 @@ including schema setup; the measured indexed HTTP read was 7.671 ms. Original
 read budgets, projection, history, and scheduling assertions remain intact.
 Evidence: root `test-results/analysis-activity-2026-10-09/admission-prefix-idle-driver-proof.log`.
 Complete new-head CI remains pending.
+
+Index candidate e73952d CI reached the populated SQL workload proof, where a
+parent health lease denied its recurring-evidence read. This measurement-only
+proof now owns separate real admission keys, using the existing tested helper
+that preserves a parent foreground token and removes only its own keys. It
+retains all original PostgreSQL timings, transaction limits, rollback/lease,
+evidence and retention assertions. The fresh native proof passes in 0.82 seconds
+including schema40 setup: committed threat claim 8 ms, recurring read 22 ms,
+864-key evidence across seven reads 37 ms, and 48-row bounded retention 17 ms.
+These are local observations, not broad speedup claims. Evidence is retained in
+root `test-results/analysis-activity-2026-10-09/admission-incident-isolation-proof.log`.
+Complete candidate CI remains pending.
