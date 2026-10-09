@@ -5308,7 +5308,7 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     class Database:
         def execute(self, statement, parameters):
             if "FROM imported_games" in statement:
-                return Cursor({"id": "game-1"})
+                return Cursor({"id": "game-1", 'start_fen': chess.STARTING_FEN, 'moves_json': '["e2e4"]'})
             if "INSERT INTO game_derivation_jobs" in statement:
                 queued_games.append(parameters[0])
             if "SELECT derivation_version FROM game_derivation_jobs" in statement:
@@ -5331,6 +5331,12 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     monkeypatch.setattr(repertoire_game_refresh.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(repertoire_game_refresh.activity_gate, "wait_for_foreground", foreground_finished.wait)
     monkeypatch.setattr(repertoire_game_refresh, "connection", test_connection)
+    @contextmanager
+    def bounded_source_read(**options):
+        assert options == {'authoritative': True}
+        connection_opened.set()
+        yield Database()
+    monkeypatch.setattr(repertoire_game_refresh, 'background_read_connection', bounded_source_read)
     monkeypatch.setattr(
         repertoire_game_refresh, "lock_current_slice",
         lambda _database, task: task["lease_token"] == current_lease["token"],
