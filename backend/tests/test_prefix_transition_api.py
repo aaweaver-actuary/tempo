@@ -231,6 +231,83 @@ def test_issue79_rehearsal_never_replays_a_started_calculation_after_foreground_
     assert response is busy
     assert len(requests) == 1
 
+def test_issue79_rehearsal_retries_foreground_preemption_with_a_new_review_identity(monkeypatch):
+    """Every restarted capture must observe a new review, rather than an idempotent replay."""
+    import importlib.util
+    from contextlib import contextmanager
+    from pathlib import Path
+    from types import SimpleNamespace
+    import fastapi.testclient
+    from app import prefix_evaluation_api
+
+    script_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_segmentation.py'
+    specification = importlib.util.spec_from_file_location('issue79_review_identity_rehearsal', script_path)
+    rehearsal = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(rehearsal)
+    source = {'snapshot_id': 'structural-source'}
+    review_identities = []
+    saved_reviews = set()
+    experiment_snapshots = []
+
+    def response(status, body):
+        return SimpleNamespace(status_code=status, headers={'Retry-After': '1'},
+                               text=json.dumps(body), json=lambda: body)
+
+    ready = response(200, {'status': 'ready', 'plan_id': 'current-plan'})
+    @contextmanager
+    def connection(**_options):
+        yield SimpleNamespace(execute_native=lambda *_args: SimpleNamespace(
+            fetchone=lambda: (123, 'on', 'repeatable read', '50ms')))
+
+    @contextmanager
+    def observer(*_args, **_options):
+        yield SimpleNamespace(execute=lambda *_args: SimpleNamespace(
+            fetchall=lambda: [{'state': 'idle', 'xact_start': None}]))
+
+    def review(_database, _card_id, _outcome, **options):
+        # Model the production source_kind/source_ref receipt contract: replay is a no-op.
+        review_identities.append(options['source_ref'])
+        idempotent = options['source_ref'] in saved_reviews
+        saved_reviews.add(options['source_ref'])
+        return {'idempotent': idempotent}
+
+    def calculation(*_args):
+        yield None
+
+    def post(_client, _path, _payload, *, calculation_started=None):
+        if calculation_started is None:
+            return ready
+        captured_reviews = frozenset(saved_reviews)
+        experiment_snapshots.append(captured_reviews)
+        with rehearsal.postgres_store.connection(read_only=True, background=True, repeatable_read=True):
+            pass
+        # Execute the real rehearsal's deferred calculation on its worker thread.
+        list(api.iter_transition_plan())
+        if len(experiment_snapshots) == 1:
+            return response(503, {'detail': {'code': 'evaluation_busy',
+                'message': 'Study work is active. Retry the diagnostic when study is idle.'}})
+        if frozenset(saved_reviews) != captured_reviews:
+            return response(409, {'detail': {'code': 'stale_plan'}})
+        return ready
+
+    monkeypatch.setattr(fastapi.testclient, 'TestClient', lambda _app: object())
+    monkeypatch.setattr(rehearsal, 'idle_prefix_response', lambda *_args: response(200, source))
+    monkeypatch.setattr(rehearsal, 'post_transition_when_foreground_idle', post)
+    monkeypatch.setattr(rehearsal, 'test_issue79_pending_command_bindings_are_accounted_before_delivery', lambda *_args: None)
+    monkeypatch.setattr(rehearsal.postgres_store, 'connection', connection)
+    monkeypatch.setattr(rehearsal.psycopg, 'connect', observer)
+    monkeypatch.setattr(rehearsal, 'apply_scheduling_review', review)
+    monkeypatch.setattr(api, 'iter_transition_plan', calculation)
+    monkeypatch.setattr(prefix_evaluation_api, 'load_snapshot', lambda *_args: source)
+    monkeypatch.setattr(prefix_evaluation_api, 'snapshot_identity', lambda snapshot: snapshot['snapshot_id'])
+    monkeypatch.setenv('TEMPO_DATABASE_READ_URL', 'test-reader')
+    rehearsal.test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(
+        'repertoire', [{'id': 'line'}], ['card'], lambda: frozenset(saved_reviews))
+    assert len(experiment_snapshots) == 2
+    assert len(review_identities) == len(set(review_identities)) == 2
+    assert experiment_snapshots == [frozenset(), frozenset([review_identities[0]])]
+
+
 def test_pr102_snapshot_size_checks_use_one_statement_with_unchanged_native_rows(monkeypatch):
     from types import SimpleNamespace
     captured_fixture = prepared_snapshot()

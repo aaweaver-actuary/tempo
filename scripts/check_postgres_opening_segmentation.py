@@ -329,9 +329,12 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
                 started = time.perf_counter()
                 with original_connection(read_only=False) as database:
                     database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
-                    apply_scheduling_review(database, card_ids[0], 'correct', guided=False, source_kind='study',
-                        source_ref=f'prefix-transition:{repertoire_id}', light_first_interval_days=7,
+                    # A restarted experiment needs a new review; replaying the
+                    # prior identity correctly leaves its captured state unchanged.
+                    review_result = apply_scheduling_review(database, card_ids[0], 'correct', guided=False, source_kind='study',
+                        source_ref=f'prefix-transition:{repertoire_id}:{foreground_preemptions}', light_first_interval_days=7,
                         reviewed_at=datetime.now(timezone.utc), review_day=date.today())
+                    assert not review_result['idempotent'], 'Each stale-plan experiment must commit a new review'
                 review_ms = (time.perf_counter() - started) * 1000
                 after_review = product_snapshot()
                 released.set()
