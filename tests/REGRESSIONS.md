@@ -81,6 +81,11 @@ Admission rehearsal ownership (October 9, 2026):
 - `scripts/check_postgres_operation_recovery.py::proof_operation_recovery` retains real finite retry, stale lease, restart, receipt conflict/race and one-effect proofs in a fresh helper database, where the deployed recovery worker cannot steal its synthetic commands. It exercises the real background-job context.
 - `scripts/check_postgres_canonical_freshness.py::proof_canonical_freshness` retains CF-1–15/OF-1–2 source, graph, scope, partial-provider and publication regressions with owned admission keys. Parent foreground tokens are retained and cannot preempt a database with no parent callers; actual foreground and PostgreSQL locking inside the proof remain exercised.
 
+Engine work starvation (October 9, 2026; #39/#42):
+
+- `backend/tests/test_engine_fairness.py`: `test_engine_reserves_ordinary_game_after_three_automated_selections` failed before repair; `test_engine_turn_survives_restart_and_skips_ineligible_or_paused_games`; `test_engine_interactive_attempt_does_not_consume_reserved_ordinary_turn`; `test_engine_claim_rollback_preserves_both_request_and_scheduling_turn`.
+- `scripts/check_postgres_engine_fairness.py`: `test_postgres_engine_fairness_survives_receipt_replay_restart_foreground_and_rollback` runs in regular PostgreSQL durability. Actual automated and game claims share persisted state, idempotent receipts cannot spend another turn, pool restart preserves the 3:1 boundary, interactive demand retains priority, a locked turn yields promptly, and a crash rolls back both lease and turn. Existing disabled-defense/search-preemption and engine journal recovery tests remain required.
+
 Background wake backlog (October 9, 2026; #39):
 
 - `backend/tests/test_background_wakes.py`: `test_periodic_and_continuation_wakes_share_one_pending_delivery` failed before the fix (1,000 messages instead of one); `test_wake_delivery_releases_one_slot_and_rejects_obsolete_replay`; `test_wake_classes_are_independent_and_payload_commands_never_coalesce`; `test_failed_wake_publication_releases_only_its_reservation`; `test_wake_redis_outage_retains_durable_intent_without_publishing`; `test_wake_consumer_retries_unavailable_ownership_without_running`; `test_fast_wake_execution_preserves_newer_pending_ownership`.

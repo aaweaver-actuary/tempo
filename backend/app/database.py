@@ -1175,6 +1175,11 @@ def initialize() -> None:
             control_streak INTEGER NOT NULL DEFAULT 0 CHECK(control_streak>=0 AND control_streak<=2)
         )""",
         "INSERT OR IGNORE INTO background_scheduling_turns(lane) VALUES('durable')",
+        """CREATE TABLE IF NOT EXISTS engine_scheduling_state (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            automated_streak INTEGER NOT NULL DEFAULT 0 CHECK(automated_streak BETWEEN 0 AND 3)
+        )""",
+        "INSERT OR IGNORE INTO engine_scheduling_state(id) VALUES(1)",
         """
         CREATE TABLE IF NOT EXISTS background_task_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

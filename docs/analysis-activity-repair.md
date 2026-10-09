@@ -27,6 +27,13 @@ errors, historical coverage failures, and misleading activity status.
    delivery, restart and useful checkpoint replay with unit dispatch tests and a
    real Redis broker proof in regular PostgreSQL durability. CI owns the final
    complete candidate gate; no rendered product behavior changes in this slice.
+   Engine fairness scope: persisted automated-selection streak within the same
+   transaction as engine claims. After three automated recommendation/defensive
+   selections, reserve an eligible ordinary game; preserve interactive attempt
+   preference, disabled/manual pauses, no-work fallthrough and receipt replay.
+   Prove the actual SQLite claim path first, then PostgreSQL claims, rollback,
+   row contention, restart, idempotent receipts and existing worker-cycle callers.
+   CI owns complete current-head validation; no engine search algorithm changes.
 3. Integrity/segmentation: large generation publication, conservative eligibility,
    restart/replay and authoritative trained-color provenance.
 4. Coverage: safe session status, unchanged-credential recovery, partial-source
@@ -48,8 +55,6 @@ Local PostgreSQL proof: container `tempo-analysis-unlock-proof`, owned by this
 checkout; teardown: `docker rm -v tempo-analysis-unlock-proof` after stopping it.
 No persistent host volume or live study data is used.
 
-### Scheduling candidate evidence
-
 ### Wake coalescing candidate evidence
 
 Base scheduling head 2bd79d5, branch codex/analysis-wake-coalescing. The named
@@ -68,6 +73,25 @@ consumption preserves the next owner. Publication failure cannot lose durable
 intent; queued ownership and broker messages are preserved together. No product
 rendering changes. Complete PostgreSQL durability/current-head CI remains
 pending; focused Redis evidence is not a full gate pass.
+
+### Engine fairness candidate evidence
+
+Base wake head 7bad835, branch codex/analysis-engine-fairness. The actual SQLite
+claim regression failed on the preceding source (0.70 seconds). After repair,
+the engine fairness/threat claims/game jobs/defensive pause/diagnostics/cutover
+files pass 287 cases in 8.54 seconds. `make unit-file
+FILE=tests/unit/defensive-analysis-pause-regressions.test.ts` passes 18 worker
+cycle/search/journal cases in 505 ms. Native PostgreSQL 18.6 / Redis 7 proof
+(`scripts/check_postgres_engine_fairness.py`, disposable parent URL passed through
+TEMPO_ENGINE_FAIRNESS_PROOF_URL) passes receipts, pool restart, foreground and
+turn-row contention, interactive demand, ordinary selection and crash rollback;
+maximum reconnect-inclusive automated claim 13.24 ms, within the existing
+250 ms budget. The proof owns a fresh helper database, removed on completion,
+and reuses only this task's isolated PostgreSQL/Redis containers. No study or
+other task resources changed. Named cases are registered; regular PostgreSQL
+durability and complete current-head CI remain pending.
+
+### Scheduling candidate evidence
 
 Mixed-kind scheduling replaces numerical-priority dominance with persisted
 interleaved turns (graph/game/graph/game/priority/coverage/sync). One promotion

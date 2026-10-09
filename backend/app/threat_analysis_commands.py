@@ -19,6 +19,7 @@ from .services.threat_pipeline import (
 )
 
 from .services.defensive_analysis import search_admission_sql, recommendation_request_ids_sql
+from .services.engine_scheduling import admit_automated_selection
 
 
 def _now() -> str:
@@ -93,6 +94,9 @@ def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]
             " LIMIT 1 FOR UPDATE OF request SKIP LOCKED",
         ).fetchone()
         if row is not None:
+            if not priority_filter.startswith("AND request.id IN (SELECT request_id"):
+                if not admit_automated_selection(database, now):
+                    return {"job": None}
             break
     if row is None:
         return {"job": None}

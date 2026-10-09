@@ -606,6 +606,13 @@ def claim_analysis_request() -> dict | None:
         ).fetchone()
         if not row:
             return None
+        from .engine_scheduling import admit_automated_selection
+        interactive = database.execute(
+            "SELECT 1 FROM threat_candidate_requests WHERE request_id=? AND role='attempt' LIMIT 1",
+            (row['id'],),
+        ).fetchone()
+        if not interactive and not admit_automated_selection(database, now):
+            return None
         lease_id = str(uuid.uuid4())
         database.execute(
             """UPDATE threat_analysis_requests SET state='leased',lease_id=?,

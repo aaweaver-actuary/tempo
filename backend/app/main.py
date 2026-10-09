@@ -4982,6 +4982,8 @@ def _claim_game_analysis():
         ).rowcount
         if not updated:
             return {"job": None}
+        from .services.engine_scheduling import record_ordinary_selection
+        record_ordinary_selection(db)
         db.execute(
             "UPDATE imported_games SET analysis_state='analyzing' WHERE id=?",
             (job["game_id"],),
