@@ -4947,6 +4947,12 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
     from app.main import reconcile_unseen_queue
     from app.services import postgres_queue_refresh
 
+    # This small parity fixture models ordinary quota reconciliation. Actual
+    # current miss evidence is proved by feedback and PostgreSQL durability tests.
+    from app import main
+    monkeypatch.setattr(main, "has_outstanding_real_game_miss", lambda *_args: False)
+    monkeypatch.setattr(postgres_queue_refresh, "has_outstanding_real_game_miss", lambda *_args: False)
+
     schema = """
         CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,content_type TEXT,
                            state TEXT,introduced_at TEXT);

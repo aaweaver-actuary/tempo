@@ -284,20 +284,12 @@ def _personal_evidence_from_rows(
 
 def _real_game_miss_evidence(database: sqlite3.Connection, repertoire_id: str) -> dict[str, dict]:
     """Select one unstudied, non-excluded miss per card for a fixed bonus."""
+    from .real_game_feedback import outstanding_miss_query, _utc_instant
     rows = database.execute(
-        """SELECT event.id,event.card_id,event.game_id,event.played_at
-           FROM current_repertoire_decision_events event
-           JOIN imported_games game ON game.id=event.game_id
-           WHERE event.repertoire_id=? AND event.outcome='miss'
-             AND event.card_id IS NOT NULL AND game.adaptive_excluded=0
-             AND NOT EXISTS(
-                 SELECT 1 FROM reviews review
-                 WHERE review.card_id=event.card_id AND review.source_kind='study'
-                   AND julianday(review.reviewed_at)>julianday(event.played_at)
-             )
-           ORDER BY event.played_at DESC,event.id DESC""",
-        (repertoire_id,),
-    )
+        outstanding_miss_query(database, columns="event.id,event.card_id,event.game_id,event.played_at",
+                   additional_where="AND event.repertoire_id=?"), (repertoire_id,),
+    ).fetchall()
+    rows = sorted(rows, key=lambda row: (_utc_instant(row["played_at"]), row["id"]), reverse=True)
     misses: dict[str, dict] = {}
     for row in rows:
         misses.setdefault(row["card_id"], {

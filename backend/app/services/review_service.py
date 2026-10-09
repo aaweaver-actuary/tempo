@@ -173,6 +173,9 @@ def apply_scheduling_review(
             json.dumps(schedule.recent_attempts), card_id,
         ),
     )
+    if source_kind == "study":
+        from .real_game_feedback import clear_satisfied_miss_priority
+        clear_satisfied_miss_priority(database, card_id)
     if state == "mature":
         database.execute(
             "UPDATE cards SET state='new',due_date=? WHERE unlock_after_card_id=? AND state='locked'",
@@ -199,8 +202,9 @@ def ensure_card_queued_after(
     after_cards: int = 4,
     attempt_state: str = "gameplay",
     priority_reason: str | None = None,
+    *, queue_date: str | None = None,
 ) -> None:
-    day = date.today().isoformat()
+    day = queue_date or date.today().isoformat()
     entry = database.execute(
         "SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",
         (day, card_id),
@@ -229,7 +233,9 @@ def ensure_card_queued_after(
     database.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
-               admission_kind='review'
+               admission_kind=CASE WHEN EXISTS(SELECT 1 FROM reviews review
+                   WHERE review.card_id=daily_queue.card_id AND review.source_kind='study'
+                     AND review.invalidated_at IS NULL) THEN 'review' ELSE 'new' END
            WHERE id=?""",
         (entry["id"],),
     )

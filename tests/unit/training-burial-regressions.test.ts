@@ -216,3 +216,24 @@ it.each(["complete", "failed", "queued", "pending", "executing", "retrying", "bl
     expect(retried).toBe(true);
     expect(localStorage.getItem("tempo-bury-operation-42")).toBe(outcome === "failed" ? null : operationId);
   });
+
+it("retained active burial retries preserve the original card and revision identity", async () => {
+  const fetcher = vi.fn().mockRejectedValueOnce(new Error("Lost response"))
+    .mockImplementation(async () => Response.json({ buried: true, queue_entry_id: 42 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(buryTrainingEntry(42, false, { card_id: "displayed", expected_revision: 7 })).rejects.toThrow("Lost response");
+  await buryTrainingEntry(42, false, { card_id: "replacement", expected_revision: 8 });
+  for (const [, options] of fetcher.mock.calls)
+    expect(JSON.parse(options.body)).toEqual({ card_id: "displayed", expected_revision: 7 });
+  finishTrainingBurial(42);
+  expect(localStorage.getItem("tempo-bury-identity-42")).toBeNull();
+});
+
+it("legacy identity-free burial replay keeps its original request after an upgrade", async () => {
+  localStorage.setItem("tempo-bury-operation-42", "original-legacy-operation");
+  const fetcher = vi.fn(async (_input: unknown, _options: { body?: string; headers: Record<string, string> }) => { void _input; void _options; return Response.json({ buried: true, queue_entry_id: 42 }); });
+  vi.stubGlobal("fetch", fetcher);
+  await buryTrainingEntry(42, false, { card_id: "now-displayed", expected_revision: 2 });
+  expect(fetcher.mock.calls[0][1].body).toBeUndefined();
+  expect(fetcher.mock.calls[0][1].headers["Idempotency-Key"]).toBe("original-legacy-operation");
+});

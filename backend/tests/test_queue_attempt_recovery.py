@@ -14,6 +14,10 @@ from app.review_conflicts import ReviewConflict
 class NativeSqlite:
     def __init__(self, connection):
         self.connection = connection
+        self.database = connection
+
+    def execute(self, statement, parameters=()):
+        return self.connection.execute(statement, parameters)
 
     def execute_native(self, statement, parameters=()):
         return self.connection.execute(

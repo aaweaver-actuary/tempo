@@ -31,22 +31,37 @@ def warm_queue_refresh_sql() -> None:
     postgres_sql(_QUEUE_REFRESH_PROJECTION_SQL)
 
 
-_ACTIVE_QUEUE_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
-    WHERE q.queue_date=? AND q.status='queued'
-      AND (c.content_type!='defense' OR
-           (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-    ORDER BY q.position,q.id"""
+def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
+    """A retained, identified attempt remains operable after queue promotion."""
+    identified = card_id is not None and expected_revision is not None
+    lock_clause = " FOR UPDATE OF q,c" if isinstance(database, PostgresConnection) else ""
+    available = database.execute(
+        f"""SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
+            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+              AND c.pending_validation=0 AND c.superseded_by IS NULL
+              AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
+              AND (c.content_type!='opening' OR EXISTS(
+                  SELECT 1 FROM repertoires repertoire
+                  WHERE (repertoire.id=c.repertoire_id OR EXISTS(
+                      SELECT 1 FROM repertoire_cards link
+                      WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
+                    AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks blocked
+                        WHERE blocked.card_id=c.id AND blocked.repertoire_id=repertoire.id)))
+              AND (c.content_type!='defense' OR
+                   (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+              {"AND q.id=?" if identified else ""}
+            ORDER BY q.position,q.id LIMIT 1{lock_clause}""",
+        (date.today().isoformat(), entry_id) if identified else (date.today().isoformat(),),
+    ).fetchone()
+    if not available or available["id"] != entry_id:
+        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+    from .queue_attempt_origins import validate_failure_marker
+    validate_failure_marker(database, entry_id, card_id, expected_revision)
 
 
 def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
     entry_id = int(payload["entry_id"])
-    active_entry = database.execute(
-        f"{_ACTIVE_QUEUE_SQL} LIMIT 1 FOR UPDATE OF q,c", (date.today().isoformat(),),
-    ).fetchone()
-    if active_entry is None or active_entry["id"] != entry_id:
-        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
-    from .queue_attempt_origins import validate_failure_marker
-    validate_failure_marker(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
+    validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
     changed = database.execute(
         "UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",
         (entry_id,),
@@ -60,11 +75,7 @@ def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> d
     entry_id = int(payload["entry_id"])
     queue_date = date.today().isoformat()
     lock_queue_date_for_position(database, queue_date)
-    active_entry = database.execute(
-        f"{_ACTIVE_QUEUE_SQL} LIMIT 1 FOR UPDATE OF q", (queue_date,),
-    ).fetchone()
-    if active_entry is None or active_entry["id"] != entry_id:
-        raise HTTPException(409, "This queue entry is no longer active")
+    validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is
     # admitted normally, without changing the card's scheduling or reviews.
     database.execute(
