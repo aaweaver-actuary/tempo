@@ -272,6 +272,10 @@ def publish_graph_generation(database, repertoire_id, generation):
         (repertoire_id, generation, datetime.now(timezone.utc).isoformat()),
     )
 
+    if postgres_store.configured():
+        from .postgres_position_inventory import request_inventory_in_transaction
+        request_inventory_in_transaction(database, repertoire_id)
+
 
 def publish_graph_in_transaction(
     database: postgres_store.PostgresConnection, task: dict[str, Any],

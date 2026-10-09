@@ -64,11 +64,13 @@ def save_prefix(database, payload: dict) -> dict:
     if not postgres_store.configured():
         database.execute("UPDATE repertoire_coverage_runs SET status='failed',last_error='Opening scope changed; refresh coverage' WHERE repertoire_id=? AND status IN ('queued','running')", (repertoire_id,))
     if postgres_store.configured():
+        from .services.postgres_position_inventory import request_inventory_in_transaction
         from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
         from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
         database.execute("INSERT INTO priority_repertoire_source_epochs(repertoire_id,version) VALUES(?,1) "
                          "ON CONFLICT(repertoire_id) DO UPDATE SET version=priority_repertoire_source_epochs.version+1", (repertoire_id,))
         request_coverage_seed_in_transaction(database, repertoire_id, automatic=True, supersede_active=True)
+        request_inventory_in_transaction(database, repertoire_id)
         database.execute("DELETE FROM repertoire_priority_publications WHERE repertoire_id=?", (repertoire_id,))
         database.execute("DELETE FROM repertoire_card_introduction_priorities WHERE repertoire_id=?", (repertoire_id,))
         enqueue_priority_refresh_in_transaction(database, repertoire_id)

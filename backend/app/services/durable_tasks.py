@@ -402,6 +402,11 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 "WHERE id=? AND status IN ('building','queued','running')",
                 (sanitized_error, _iso(now), coverage_payload["run_id"]),
             )
+        if terminal and row["kind"] == "position_inventory":
+            inventory_payload = json.loads(row["payload_json"])
+            database.execute("UPDATE inventory_generations SET state='failed',last_error=? "
+                             "WHERE id=? AND state='building'",
+                             (sanitized_error, inventory_payload["inventory_id"]))
         if terminal and row["kind"] == "game_analysis_publish":
             publication_payload = json.loads(row["payload_json"])
             game_id = publication_payload["game_id"]

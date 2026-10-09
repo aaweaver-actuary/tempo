@@ -370,7 +370,8 @@ def test_queue_origin_migration_follows_current_main_without_renumbering_publish
     assert (root/'migrations/031_defensive_analysis_pause.sql').is_file()
     queue_migration = root/'migrations/032_queue_attempt_origins.sql'
     assert 'INSERT INTO tempo_schema_migrations(version) VALUES (32);' in queue_migration.read_text()
-    assert POSTGRES_SCHEMA_VERSION == 39
+    assert POSTGRES_SCHEMA_VERSION == 40
     assert (root/'migrations/037_card_deletion.sql').is_file()
     assert (root/'migrations/038_prefix_transition_application.sql').is_file()
     assert (root/'migrations/039_prefix_transition_lock_budget.sql').is_file()
+    assert (root/'migrations/040_position_inventory.sql').is_file()

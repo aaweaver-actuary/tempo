@@ -2835,3 +2835,25 @@ Stalemate Swindles (October 5, 2026):
 ## PR #91 PostgreSQL reviewed-history preservation — October 8, 2026
 
 - `test_postgres_stalemate_import_reimport_preserves_existing_review_history` runs in the regular disposable PostgreSQL study-durability stage after the self-contained checked-in corpus proof. It explicitly enrolls and reviews a separate synthetic Study through production foreground commands, requires nonempty review/Study-attempt/receipt/scheduling snapshots, and verifies every existing reviewed card and history row is unchanged after real-corpus import, reversed-row reimport, and changed-content rejection. The 300 corpus exercises remain draft and unenrolled; only the independent disposable fixture is enrolled.
+
+## Issue #108 — shared legal position inventory
+
+- `test_issue108_uncovered_legal_replies_and_terminal_opponent_positions`: all legal replies, including missing replies and terminal opponent positions, remain represented.
+- `test_issue108_custom_fen_castling_en_passant_and_illegal_moves`: custom FENs, castling/legal en-passant identity and invalid authored moves.
+- `test_issue108_segment_checkpoint_preserves_absolute_ply_without_prefix_replay`: bounded segments equal complete traversal without repeating the prefix.
+- `test_issue108_source_cohort_keys_share_positions_and_preserve_supported_contexts`: shared source/model/cohort keys distinguish actual contexts and reject incomplete provenance.
+- `test_issue108_foreground_contention_restart_and_idempotent_replay`: foreground admission, closed connections during computation, committed checkpoints and duplicate-delivery rejection.
+- `test_issue108_same_input_request_keeps_lease_and_cursor`: unchanged requests do not reset useful work.
+- `test_issue108_invalid_pages_and_unknown_evidence_do_not_fabricate_success`: bounded read contracts and absent source evidence.
+- `test_issue108_handlers_are_registered_in_regular_worker_dispatch`: normal worker ownership of build and upgrade reconciliation.
+
+Python cases are in `backend/tests/test_position_inventory.py` and
+`backend/tests/test_postgres_position_inventory.py`. The regular PostgreSQL
+`background_workloads` stage runs `scripts/check_postgres_position_inventory.py`:
+`verify_issue108_upgrade_restart_replay_and_coverage` and
+`verify_issue108_transpositions_duplicates_long_routes`, and
+`verify_issue108_scope_delta_and_card_authority` cover real PostgreSQL
+upgrade, foreground contention, rollback, persisted restart/replay, source-change
+fences, removal reconciliation, exact legal counts, per-repertoire coverage,
+shared cache retention on deletion, duplicate/transposed routes, supported
+transposition labels, pagination, bounded long-line work and zero unchanged replay.
