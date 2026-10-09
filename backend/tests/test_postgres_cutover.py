@@ -6616,3 +6616,16 @@ def test_branching_pgn_source_grows_linearly_while_expanded_moves_grow_quadratic
     assert small["total_expanded_moves"] == 16 * 19 // 2
     assert large["total_expanded_moves"] > 3.5 * small["total_expanded_moves"]
     assert large["prepared_payload_bytes"] > small["prepared_payload_bytes"]
+
+
+def test_postgres_activity_clear_dispatches_original_signed_snapshot_with_receipt(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import command_dispatch, main
+    monkeypatch.setattr(main.postgres_store,'configured',lambda:True)
+    monkeypatch.setattr(main.activity_gate,'foreground',lambda:nullcontext())
+    dispatched=[]
+    monkeypatch.setattr(command_dispatch,'dispatch_command',lambda name,payload,**options: dispatched.append((name,payload,options)) or {'ok':True,'cleared_through':payload['completion_cutoff']})
+    payload={'completion_cutoff':'2026-10-01T00:00:00+00:00','completion_snapshot':'signed'}
+    response=TestClient(main.app).post('/api/system/activity/clear-finished',json=payload,headers={'Idempotency-Key':'clear-shared'})
+    assert response.status_code==200
+    assert dispatched==[('activity.clear_finished',payload,{'idempotency_key':'clear-shared'})]

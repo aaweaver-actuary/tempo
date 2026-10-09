@@ -710,6 +710,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   .notification-trigger-label { display: none; }
   .notification-viewport { bottom: calc(84px + env(safe-area-inset-bottom)); }
   .notification-tray { position: fixed; top: calc(var(--nav-height) + 8px); right: 8px; left: 8px; width: auto; max-height: calc(100dvh - var(--nav-height) - 100px); }
+  .tempo-activity-content { position: fixed; top: calc(var(--nav-height) + 8px); right: 8px; left: 8px; width: auto; max-height: calc(100dvh - var(--nav-height) - 100px); }
   .tempo-discoveries-label-desktop { display: none; }
   .tempo-discoveries-label-mobile { display: inline; }
   .tempo-discovery-backdrop { padding: 0; }
@@ -1231,3 +1232,8 @@ button {
   .repair-explanation summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
   .repair-explanation p { margin: 0; }
 }
+
+.tempo-activity-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-block: .8rem; }
+.tempo-activity-filters select { max-width: 100%; padding: .5rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--surface); color: inherit; font: inherit; }
+.tempo-activity-group > summary, .tempo-activity-item summary { cursor: pointer; padding-block: .6rem; font-weight: 650; }
+.tempo-activity-item .tempo-activity-item { margin-left: .5rem; }

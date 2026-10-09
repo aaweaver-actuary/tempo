@@ -1300,5 +1300,12 @@
     "handler": "coverage_explorer_session_status",
     "treatment": "reader",
     "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/system/activity/clear-finished",
+    "handler": "clear_finished_activity",
+    "treatment": "foreground_command",
+    "state": "staged"
   }
 ]

@@ -1211,6 +1211,8 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_background_task_events_task ON background_task_events(task_id,id DESC)",
+        """CREATE TABLE IF NOT EXISTS activity_history_preferences (
+            id INTEGER PRIMARY KEY CHECK(id=1),cleared_through TEXT,signing_key TEXT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS background_activity (
             source TEXT NOT NULL,
             work_id TEXT NOT NULL,
@@ -1321,6 +1323,8 @@ def initialize() -> None:
         database.execute("BEGIN IMMEDIATE")
         for statement in statements:
             database.execute(statement)
+        import secrets
+        database.execute('INSERT OR IGNORE INTO activity_history_preferences(id,signing_key) VALUES(1,?)',(secrets.token_hex(32),))
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
             "background_tasks": {
