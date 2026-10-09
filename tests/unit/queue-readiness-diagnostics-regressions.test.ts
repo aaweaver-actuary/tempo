@@ -9,9 +9,12 @@ it("queue failure diagnostics retain the original assertion and redact runner se
   await expect(verifyQueueReadinessWithDiagnostics(() => Promise.reject(failure), attach, {
     composeProject: "tempo-pg-regressions-123-a1b2", secretValues: ["sample-secret"], readDockerOutput,
   })).rejects.toBe(failure);
-  expect(readDockerOutput).toHaveBeenCalledTimes(2);
+  expect(readDockerOutput).toHaveBeenCalledTimes(4);
   expect(readDockerOutput.mock.calls.every(([args]) => args.slice(0, 3).join(" ") === "compose -p tempo-pg-regressions-123-a1b2")).toBe(true);
-  expect(attach).toHaveBeenCalledTimes(2);
+  expect(attach).toHaveBeenCalledTimes(4);
+  expect(readDockerOutput.mock.calls[2][0]).toContain("ps");
+  expect(readDockerOutput.mock.calls[3][0]).toContain("background-scheduler");
+  expect(readDockerOutput.mock.calls[3][0].at(-1)).toContain("/proc/1/wchan");
   for (const [, attachment] of attach.mock.calls) {
     expect(attachment.body.toString()).toContain("[redacted]");
     expect(attachment.body.toString()).not.toMatch(/sample-secret|private-token/);

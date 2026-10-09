@@ -27,6 +27,9 @@ export async function verifyQueueReadinessWithDiagnostics(
         ["queue-state-at-readiness-failure", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-At", "-c",
           "SELECT json_build_object('projection',(SELECT json_agg(q) FROM queue_projections q),'tasks',(SELECT json_agg(t) FROM (SELECT id,kind,generation,phase,state,attempt_count,next_attempt_at,lease_expires_at,last_error,payload_json,updated_at FROM background_tasks WHERE kind='daily_queue') t))"]],
         ["worker-history-at-readiness-failure", [...compose, "logs", "--no-color", "--timestamps", "background-worker", "background-scheduler"]],
+        ["background-services-at-readiness-failure", [...compose, "ps", "--all", "--format", "json", "background-worker", "background-scheduler", "redis"]],
+        ["scheduler-process-at-readiness-failure", [...compose, "exec", "-T", "background-scheduler", "python", "-c",
+          "from pathlib import Path; print(Path('/proc/1/status').read_text()); print('wait_channel:', Path('/proc/1/wchan').read_text())"]],
       ];
       for (const [name, dockerArguments] of reads) {
         let diagnostic: string;
