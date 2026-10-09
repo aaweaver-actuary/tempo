@@ -45,6 +45,13 @@ MacOS ARM64, Python 3.14.8; disposable native PostgreSQL 18.6 and Redis 7.
   do not substitute for the later correct four-file 51-case run. An earlier
   bootstrap fixture lacked a required next_attempt_at; corrected fixture retains
   32-row page and inter-pipeline turn assertions.
+- `make docker-durability` on f0c0483 stopped at the existing diagnostics proof:
+  it expected a cache before its producer ran. The repaired proof first requires
+  explicit `cache_not_ready`, then runs bounded production monitor turns. Its
+  isolated native PostgreSQL rerun passed; reads remained below 6ms with 100,000
+  history events, concurrent counters and rollback assertions. This is focused
+  evidence; a new complete durability run is still required. The failed runner's
+  owned project tempo-pg-regressions-92386-b833ef9d was removed in 9.23s.
 
 Analysis worker stages distinguish control capacity. Engine availability and
 idle samples come from actual accepted claims/control probes, independently of
