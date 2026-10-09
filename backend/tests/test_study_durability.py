@@ -77,6 +77,9 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     clock = install_clock(monkeypatch)
     with TestClient(app) as client:
+        settings = client.get('/api/settings').json()
+        settings['new_cards_per_day'] = 1
+        assert client.put('/api/settings', json=settings).status_code == 200
         imported = client.post("/api/imports/pgn", files={"file": ("durability.pgn", PGN)}, data={"initial_depth": 2})
         wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
@@ -89,7 +92,9 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
         assert reinforcement["queue_entry_id"] != first["queue_entry_id"]
         result = solve(client, reinforcement)
         assert result["next_due"] == "2026-09-17" and result["interval_days"] == 1
-        assert client.get("/api/queue/today").json()["count"] == 0
+        assert wait_for_daily_queue(client, 0)['count'] == 0
+        with database.connection() as db:
+            assert db.execute("SELECT refresh_pending FROM queue_projections WHERE queue_date='2026-09-16'").fetchone()[0] == 0
         before = client.get("/api/migration/snapshot").json()
     with TestClient(app) as client:  # Re-open SQLite and run startup, not an in-memory store.
         assert client.get("/api/migration/snapshot").json()["checksum"] == before["checksum"]
