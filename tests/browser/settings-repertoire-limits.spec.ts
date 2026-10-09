@@ -20,7 +20,7 @@ test("repertoire limits update today's queue, persist after reload, and reset to
     } });
     expect(imported.ok()).toBe(true);
     repertoireId = (await imported.json()).repertoire_id;
-    await expect.poll(async () => (await (await request.get(`${api}/repertoires/${repertoireId}/integrity`)).json()).status, { timeout: 20_000 }).toBe("clean");
+    await expect.poll(async () => (await (await request.get(`${api}/repertoires/${repertoireId}/integrity`, { headers: { "X-Tempo-Work-Class": "background" } })).json()).status, { timeout: 20_000 }).toBe("clean");
     const repertoire = (await (await request.get(`${api}/repertoires`)).json()).repertoires.find((item: { id: string }) => item.id === repertoireId);
     const queueCount = async () => (await (await request.get(`${api}/queue/today`)).json()).cards.filter((card: { repertoire_id: string }) => card.repertoire_id === repertoireId).length;
     await expect.poll(queueCount, { timeout: 20_000 }).toBe(2);

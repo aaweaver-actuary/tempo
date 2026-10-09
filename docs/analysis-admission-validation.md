@@ -286,3 +286,7 @@ Actual schema40/PostgreSQL18.6/Redis7 admission and sparse-dispatch proofs pass:
 15,000 locked cards, 21 eligible, three slices, maximum transaction 16 ms.
 Evidence: admission-owned-native.log under the dated root test-results directory.
 Typecheck passes. Complete current-candidate durability/browser CI is pending.
+
+### Current-head CI follow-up
+
+CI found that the burial fixture imported a host-only helper missing from the production worker image. The fixture now contains its narrow admission namespace/marker guard and imports production modules only. Its native PostgreSQL proof passed in 0.70s on a new owned schema-40 database; the parent admission lease was retained. The three failed browser cases were inspected from traces. Analysis receipt/limit waits now use passive polling and avoid active Train preemption; all three focused real browser cases passed (55.0s, project `tempo-pg-regressions-84613-9e93a397`, runner cleanup completed). The narrow board case passed without a board behavior change; its complete CI family remains required. Evidence is preserved under the root `test-results/analysis-activity-2026-10-09/`.
