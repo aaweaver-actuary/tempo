@@ -68,3 +68,17 @@ includes the subsequent retained-command lock-order correction, contended study,
 and rollback-only existing-game migration rehearsal. Its image labels record
 that starting revision; this mixed development run will not be presented as
 clean-HEAD evidence. Required CI owns clean final-candidate validation.
+
+
+CI follow-up and local boundary evidence (starting head `f6d024c`, dirty repairs):
+
+- `make ui-file FILE=real-game-feedback.spec.ts`: **5 passed**, 67.57 s wall (6.1 s browser execution), task project `tempo-pg-regressions-35463-d718e771`; teardown succeeded.
+- The second local `make docker-durability` failed after 674.04 s in the existing PR102 activation diagnostic with `503 evaluation_busy` / a transaction timeout. The new obligation proof and queue recovery passed before that failure; no deadline was relaxed. Teardown succeeded. CI run `37935893136` subsequently passed its entire PostgreSQL job on clean head `f6d024c`; neither result is final repaired-candidate evidence.
+- That CI run exposed two preservation bugs: sorted repertoire groups changed shared-card ownership, and promotion overwrote explicit admission provenance. Both are restored. Other caller fixtures are updated for immediate priority, the added refresh phase, and authoritative advancement.
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest -q -o cache_dir=.pytest_cache --rootdir=. backend/tests/test_game_adaptation.py backend/tests/test_repertoire_opportunities.py backend/tests/test_repertoire_settings.py backend/tests/test_postgres_cutover.py backend/tests/test_real_game_feedback.py`: **328 passed**, 28.31 s wall.
+- `make unit-file FILE=tests/unit/review-attempt-confirmation-regressions.test.tsx`: **16 passed**, 4.55 s wall.
+- `make ui-file FILE=training-prefetch.spec.ts`: **6 passed**, 50.55 s wall (9.1 s browser execution), task project `tempo-pg-regressions-38578-6cea108b`; teardown succeeded.
+- `npm run typecheck`: pass, 13.59 s wall; `npm run lint`: no errors, 10 existing warnings, 21.29 s wall.
+- The lifecycle rejection fixture now replays existing migration 40’s non-idempotent column DDL rather than assuming the latest migration cannot be safely replayed. Its real lifecycle proof remains mandatory in the next CI run.
+
+Final repaired-head required checks and merge-candidate validation remain owned by CI. Local evidence and task resource ownership are preserved outside this clone under the root checkout’s `test-results/2026-10-09/real-game-obligations-pr142/`.

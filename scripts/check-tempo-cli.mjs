@@ -272,11 +272,12 @@ await executeLifecycle({ recreate: false }, runtime);
     assert.deepEqual(await readHistory(), expected, "restart preserves original study history");
 
     // A genuinely rejected PostgreSQL migration, after a verified backup, must
-    // leave all application consumers stopped. Keep the final column while
-    // deleting its ledger row in this disposable fixture to force duplicate DDL.
+    // leave all application consumers stopped. Migration 40 adds a column without
+    // IF NOT EXISTS; the latest migration may be safely replayable view DDL.
+    // Remove the ledger suffix while retaining that column to force duplicate DDL.
     await repeat.stopApplications();
     await repeat.compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
-      `DELETE FROM tempo_schema_migrations WHERE version=${record.schema}`]);
+      `DELETE FROM tempo_schema_migrations WHERE version>=40`]);
     const rejected = createRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
     await rejected.inspectTarget();
     await assert.rejects(executeLifecycle({ recreate: true }, rejected), /already exists/);

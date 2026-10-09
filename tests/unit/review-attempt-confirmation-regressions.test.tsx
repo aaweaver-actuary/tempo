@@ -118,9 +118,11 @@ it("PR105 earlier idle conflict preserves an unrelated active board logical atte
   queue = [queueCard("card-a", 12), queueCard("card-b", 13)];
   pendingThenConflict(); await readyHome();
   await act(async () => { await trainingProps.rateCard("correct"); });
-  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
-  // The pending status blocks board input until the earlier outcome is known.
-  // Model already-started foreground progress without issuing another result.
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
+  // Pending connected completion cannot start cached B. Model a separately
+  // opened active B, whose progress the older idle recovery must preserve.
+  act(() => useTrainingStore.getState().hydrateLocalQueue(
+    [mapQueueCardToPracticeCard(queue[1])], true, 1));
   act(() => {
     const position = new Chess(); position.move("e4"); position.move("e5");
     useTrainingStore.getState().setCurrentFenString(asFenString(position.fen()));
@@ -369,6 +371,13 @@ it("PR105 non-replay save failure retains raw diagnostics in one attempt-owned i
 
 it("PR105 non-replay replacement save failure keeps diagnostics off the prior saved attempt", async () => {
   queue = [queueCard("card-a", 11), queueCard("card-b", 12)];
+  reviewResponse = async (url, options) => {
+    if (url.endsWith("/review") && options?.body) {
+      const completed = JSON.parse(String(options.body)) as { queue_entry_id: number };
+      queue = queue.filter(card => card.queue_entry_id !== completed.queue_entry_id);
+    }
+    return Response.json({ persisted: true });
+  };
   await readyHome(); vi.useRealTimers();
   const earlierAttemptId = useTrainingStore.getState().attempt.attemptId;
   await act(async () => { await trainingProps.rateCard("correct"); });

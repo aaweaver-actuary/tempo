@@ -233,7 +233,8 @@ def ensure_card_queued_after(
     database.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
-               admission_kind=CASE WHEN EXISTS(SELECT 1 FROM reviews review
+               admission_kind=CASE WHEN admission_kind='explicit' THEN 'explicit'
+                   WHEN EXISTS(SELECT 1 FROM reviews review
                    WHERE review.card_id=daily_queue.card_id AND review.source_kind='study'
                      AND review.invalidated_at IS NULL) THEN 'review' ELSE 'new' END
            WHERE id=?""",

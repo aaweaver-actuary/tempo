@@ -1170,7 +1170,7 @@ def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
         by_repertoire.setdefault(row["repertoire_id"], []).append(row)
     globally_selected_ids: set[str] = set()
     planned: list[tuple[str, dict]] = []
-    for repertoire_id, rows in sorted(by_repertoire.items()):
+    for repertoire_id, rows in by_repertoire.items():
         daily_limit = limit.get(repertoire_id, 0) if isinstance(limit, dict) else limit
         remaining = max(0, daily_limit - introduced_by_repertoire.get(repertoire_id, 0))
         selected_ids: set[str] = set()

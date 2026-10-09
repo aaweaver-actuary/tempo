@@ -49,15 +49,17 @@ test("connected next training card waits for review confirmation and fresh queue
 
 test("review saves stay quiet without moving the board or card", async ({ page }) => {
   await prepareVisualUI(page);
+  let confirmed = false;
   await page.route("**/api/queue/window?**", route => route.fulfill({ json: {
     local_date: "2026-09-18", count: 2, cards: [
       { id: "save-toast-first", queue_entry_id: 301, start_fen: startFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "First card", repertoire_source: "PGN", attempt_state: "clean" },
       { id: "save-toast-second", queue_entry_id: 302, start_fen: startFen, moves: ["d2d4"], content_type: "opening", repertoire_name: "Second card", repertoire_source: "PGN", attempt_state: "clean" },
-    ],
+    ].filter(card => !confirmed || card.queue_entry_id !== 301),
   } }));
   let releaseReview: (() => void) | undefined;
   await page.route("**/api/cards/save-toast-first/review", async route => {
     await new Promise<void>(resolve => { releaseReview = resolve; });
+    confirmed = true;
     await route.fulfill({ json: { persisted: true } });
   });
   await page.goto("/");
