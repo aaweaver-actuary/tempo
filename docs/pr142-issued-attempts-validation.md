@@ -51,3 +51,30 @@ Node prerequisites installed once with `npm ci` (unchanged lockfile). No runtime
 or dependency upgrades are part of this correction. Production response/request
 shapes are unchanged. PostgreSQL durability, two affected real browser files and
 complete CI remain pending until their actual recorded results below.
+
+Candidate `795118c` follow-up:
+
+- Complete local `make docker-durability`: failed after 153.34 s command wall
+  before the new assertions because its proof omitted disposable DSN setup.
+  Runner-owned resources were torn down (28.72 s cleanup); diagnostics retained.
+- Temporary focused queue-proof harness: new authorization/retry and actual
+  real-game promotion proofs passed; an existing color fixture then failed because
+  queue reads now need its foreground worker and schema lacked the Redis endpoint.
+  This failed focused run lasted 135.74 s, with 7.75 s teardown.
+- With explicit runner-owned Redis configuration, the same focused queue-proof
+  harness passed all six named proofs in 58.32 s wall (including 7.37 s teardown).
+  This is focused PostgreSQL evidence, not a complete durability pass. It used
+  `795118c` plus the recorded proof/runner fixture changes.
+- `node --test tests/runner/postgres-test-speedups.test.mjs`: 48 passed.
+- CI run 37951029333 backend: 1,627 passed / 4 failed, 279.16 s pytest. Three
+  additional controlled-day fixtures needed the command clock aligned with their
+  existing API clock. The fourth asserted the superseded all-GET read contract;
+  it now asserts the narrow queue exception and retains unrelated GET protection.
+  PostgreSQL CI also encountered the original omitted proof DSN setup.
+
+Fresh focused checks and complete candidate CI follow these fixture corrections;
+no production scheduling, clock, transaction deadline or test timeout was changed.
+All failed-run diagnostics are retained outside the clone at root
+`test-results/2026-10-09/pr142-issued-attempts/`.
+
+- Focused CI fixture repair: `PYTHONPATH=backend backend/.venv/bin/python -m pytest -q -o cache_dir=.pytest_cache --rootdir=. backend/tests/test_prefix_evaluation_api.py backend/tests/test_study_durability.py`: 26 passed, 5.36 s pytest / 6.30 s command wall. No source behavior changed after the previously passing new issuance suite.

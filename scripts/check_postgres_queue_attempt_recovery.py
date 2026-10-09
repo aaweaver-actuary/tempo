@@ -553,6 +553,9 @@ def test_retained_command_retry_preserves_immutable_identity():
     """PR142: real API issuance, lock ordering, restart and canonical receipts."""
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Queue issuance proof requires disposable PostgreSQL")
+    os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
+    os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
+    postgres_store.close_pools()
     from urllib.request import urlopen
     from app.queue_position_lock import lock_queue_date_for_position
     from app.services.review_service import preserve_daily_queue_order
