@@ -147,3 +147,20 @@ earlier stages passed. Cleanup succeeded. It is not a complete pass. The fixed
 focused proof and new current-head CI provide subsequent evidence; the full
 required CI candidate validation remains pending. Logs/resources are retained
 in root `test-results/analysis-activity-2026-10-09`.
+
+Current-head e49f65c PostgreSQL CI exposed another old immediate-execution
+assumption: a parent health lease deferred the checkpoint seed and the proof
+indexed a null result. The proof driver now retries only retained admission
+waiting (retrying, no error, zero attempts) within ten seconds. Database retry
+and stale-result outcomes remain visible to their existing assertions. A new
+regular native proof holds real Redis foreground admission, checks the exact
+saved source and zero refused attempts, releases foreground, and accepts the
+same operation once. The worker itself still returns immediately.
+
+The repaired dirty candidate based on e49f65c passed the new admission-driver
+proof plus both 256-event/20-decision concurrency and stale-publication proofs
+in a fresh marked PostgreSQL 18.6 database with owned Redis keys (2.30 seconds,
+including schema setup). Foreground reviews completed before reduction was
+released; measured review times were 31.24/141.82 ms, and accepted background
+transactions remained below the unchanged 250 ms limit. This focused pass is
+not complete candidate CI; the new current-head check is pending.

@@ -194,6 +194,25 @@ def _checkpoint_operation_receipt(operation_id):
         return dict(database.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone())
 
 
+def admitted_checkpoint_delivery(operation_id, command_name, payload):
+    """Wait in the proof driver only for explicit admission deferrals.
+
+    A refused command retains its source receipt and spends no attempt. SQL
+    retries and stale-publication failures must remain visible to the caller.
+    """
+    from app import tasks
+    admission_deadline = time.monotonic() + 10
+    while True:
+        result = tasks.execute_background_command.run(operation_id, command_name, payload)
+        if result is not None:
+            return result
+        receipt = _checkpoint_operation_receipt(operation_id)
+        if receipt['state'] != 'retrying' or receipt['last_error_json'] is not None or receipt['attempt_count'] != 0:
+            return None
+        assert time.monotonic() < admission_deadline, 'Checkpoint never obtained foreground-idle admission within 10 seconds'
+        time.sleep(0.01)
+
+
 def _recover_checkpoint_operation(operation_id):
     from app import command_gateway, tasks
     with postgres_store.connection() as database:
@@ -202,6 +221,31 @@ def _recover_checkpoint_operation(operation_id):
     recovered = command_gateway.claim_recoverable_operation()
     assert recovered and recovered['operation_id'] == operation_id and recovered['background'] is True
     return tasks.execute_background_command.run(operation_id, recovered['command_name'], recovered['payload'])
+
+
+def test_postgres_checkpoint_driver_retries_only_foreground_deferral():
+    from app.services import redis_admission_gate
+    fixture = _create_color_fixture('white')
+    manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+    payload = {'checkpoint': _color_checkpoint(fixture, manifest).model_dump(mode='json')}
+    operation_id = fixture['card_id'] + '-admission-driver'
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        with redis_admission_gate.foreground_lease():
+            future = workers.submit(admitted_checkpoint_delivery, operation_id, 'opening_evidence.checkpoint', payload)
+            deadline = time.monotonic() + 5
+            while True:
+                with postgres_store.connection(read_only=True) as database:
+                    receipt = database.execute_native('SELECT state,attempt_count,payload_json FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()
+                if receipt and receipt['state'] == 'retrying':
+                    assert receipt['attempt_count'] == 0 and json.loads(receipt['payload_json']) == payload
+                    assert not future.done()
+                    break
+                assert time.monotonic() < deadline, 'Checkpoint did not retain refused admission'
+                time.sleep(0.01)
+        assert future.result(timeout=10)['persisted']
+    assert _checkpoint_operation_receipt(operation_id)['attempt_count'] == 1
+    _retain_color_provenance(fixture)
+    print('PASS test_postgres_checkpoint_driver_retries_only_foreground_deferral (retained source, zero denied attempts, real Redis release)')
 
 
 def _assert_large_checkpoint(database, payload, *, state='active'):
@@ -230,7 +274,7 @@ def _paused_checkpoint_review(*, complete_same_attempt):
     # Persist one initial event so the test probes a real attempt row, not an absent key.
     initial = copy.deepcopy(payload)
     initial['checkpoint']['events'] = initial['checkpoint']['events'][:1]
-    assert tasks.execute_background_command.run(operation_id+'-initial', 'opening_evidence.checkpoint', initial)['persisted']
+    assert admitted_checkpoint_delivery(operation_id+'-initial', 'opening_evidence.checkpoint', initial)['persisted']
     entered, release = Event(), Event()
     source_pids, publication_ms, transaction_ms = [], [], []
     original_read = database_module.background_read_connection
@@ -280,7 +324,7 @@ def _paused_checkpoint_review(*, complete_same_attempt):
             patch.object(command_gateway, '_writer_connection', measured_writer), \
             patch.dict(command_gateway._handlers, {'opening_evidence.checkpoint':measured_publication}), \
             ThreadPoolExecutor(max_workers=2) as workers:
-        checkpoint_future = workers.submit(tasks.execute_background_command.run, operation_id, 'opening_evidence.checkpoint', payload)
+        checkpoint_future = workers.submit(admitted_checkpoint_delivery, operation_id, 'opening_evidence.checkpoint', payload)
         try:
             assert entered.wait(10), 'Standalone checkpoint did not reach outside-transaction reduction'
             assert source_pids and activity_gate.active_background_sections == 0
@@ -327,7 +371,7 @@ def _paused_checkpoint_review(*, complete_same_attempt):
         digest = shadow_digest(database, fixture['repertoire_id'])
     # Same receipt and a distinct delivery key both preserve events, counters and days.
     assert command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True) == checkpoint_result
-    assert tasks.execute_background_command.run(operation_id+'-replay', 'opening_evidence.checkpoint', payload) == checkpoint_result
+    assert admitted_checkpoint_delivery(operation_id+'-replay', 'opening_evidence.checkpoint', payload) == checkpoint_result
     with postgres_store.connection(read_only=True) as database:
         assert shadow_digest(database, fixture['repertoire_id']) == digest and _fixture_scheduling(database, fixture) == scheduling
     receipt = _checkpoint_operation_receipt(operation_id)
@@ -362,7 +406,7 @@ def _crash_worker_after_checkpoint_preparation():
         print('Prepared 256 events / 20 decisions; exiting before publication', flush=True)
         os._exit(73)
     command_gateway._preparers['opening_evidence.checkpoint'] = crash_after_prepare
-    tasks.execute_background_command.run(supplied['operation_id'], 'opening_evidence.checkpoint', supplied['payload'])
+    admitted_checkpoint_delivery(supplied['operation_id'], 'opening_evidence.checkpoint', supplied['payload'])
     raise AssertionError('Crash worker unexpectedly reached publication')
 
 
@@ -524,7 +568,7 @@ def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostic
     from app.services.activity_gate import activity_gate
     fixture, payload = _large_checkpoint_fixture()
     checkpoint = OpeningEvidenceCheckpoint.model_validate(payload['checkpoint']).model_dump(mode='json')
-    assert tasks.execute_background_command.run(fixture['card_id'] + '-get-seed', 'opening_evidence.checkpoint', payload)['persisted']
+    assert admitted_checkpoint_delivery(fixture['card_id'] + '-get-seed', 'opening_evidence.checkpoint', payload)['persisted']
     # The maximum valid journal must round-trip; PostgreSQL also rejects an
     # out-of-bounds sequence without changing the persisted evidence.
     with postgres_store.connection() as connection:
@@ -1090,6 +1134,7 @@ if __name__=='__main__':
         test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission()
         test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
         test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics()
+        test_postgres_checkpoint_driver_retries_only_foreground_deferral()
         test_postgres_opening_checkpoint_reduction_yields_to_foreground_review()
         test_postgres_opening_checkpoint_stale_preparation_preserves_foreground_completion()
         test_postgres_opening_checkpoint_restart_recomputes_original_receipt()
