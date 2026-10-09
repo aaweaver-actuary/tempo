@@ -385,3 +385,47 @@ and lock limits (250 ms / 25 ms defaults), and the gateway retains digest checks
 receipt advisory/row locks, operation attempt-token fencing, savepoint rollback
 for definitive errors, and full transaction rollback for admission/database
 errors. No limit, retry count, or wait is increased.
+
+## Verification candidate after direct-main rebase
+
+Focused execution on clean `788a20bd9c06d0f037ab884f11e10023988c0379`, based on
+main `2cf1b325c83cb654c4e860683ee5aa4c4a71228d`; macOS ARM64 / Python 3.14.8:
+
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_nonblocking_admission.py backend/tests/test_game_analysis_jobs.py backend/tests/test_postgres_background_timeouts.py backend/tests/test_daily_study_dispatch.py -q --rootdir=.`: **57 passed, 5.50 s**.
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_postgres_threat_analysis_commands.py backend/tests/test_postgres_cutover.py backend/tests/test_prefix_transition_apply.py -q --rootdir=.`: **222 passed, 5.11 s**.
+- Native entry point: `TEMPO_TEST_INSTANCE=disposable TEMPO_REDIS_URL=redis://127.0.0.1:61049/0 PYTHONPATH=backend:scripts backend/.venv/bin/python` with stdin invoking `proof_background_admission('postgresql://postgres@127.0.0.1:61047/tempo')`: both named proofs passed, **1.471 s total**, schema 41 / PostgreSQL 18.6 / Redis 7; denied worker 0.884 ms and two useful resumed slices. This is focused native evidence, not a full durability pass.
+- `npm run test:unit -- tests/unit/prefix-diagnostics-regressions.test.tsx tests/unit/background-read-admission-regressions.test.ts tests/unit/pgn-import-dialog-regressions.test.tsx`: **20 passed, 2.83 s**.
+- `npm run typecheck`: passed. `npm run lint`: passed, ten existing warnings. Durations were not separately measured.
+- `git diff --check` and `git diff --check origin/main...HEAD`: passed.
+
+The initial two-case denial regression failed on the original allowlist in
+5.34 s, then passed after removing the two exemptions. Rebase preserved main's
+Redis/socket and opening-progression proof registration, both prefix diagnostic
+regressions, and regression documentation. Its existing deployed prefix driver
+now identifies retry delivery by eligibility timestamp because admission denials
+keep failure attempts at zero; its existing four-case regular regression covers
+eligible/not-due/unexpected-error/expired behavior. No wait or deadline increased.
+
+Evidence is preserved outside the clone under root
+`test-results/pr120-control-verification-2026-10-09/`, including native logs,
+focused test logs, range-diff, issue inventory, Docker logs and exact resource
+provenance. The subsequent documentation-only commit does not change these
+executed sources; required fresh CI must validate the final head and merge result.
+No local browser/full suite was run: required selected broad validation belongs
+to current-base CI. This is not a release-readiness claim.
+
+Task-owned standalone fixtures (no Compose project), checkout
+`/Users/andy/tempo/.dev-copies/pr120-control-verification`:
+`tempo-pr120-control-postgres` (`4daaeab33033363879d3d479d4ab40edd186a5492d835456b64b93c405a0778d`,
+created 2026-10-09 16:10:11 UTC, shared image `postgres:18`), and
+`tempo-pr120-control-redis` (`b95675e30ef3e7dc4992306523ba86a24373f0a60e0b6f3c065fc3604a09699c`,
+created 16:10:12 UTC, shared image `redis:7`). Meaningful activity: the two native
+runs before/after rebase. All helper databases were dropped and diagnostics
+captured before teardown. Exact teardown:
+`docker rm -v -f tempo-pr120-control-postgres tempo-pr120-control-redis`.
+Both containers and their exact anonymous volumes
+`d75f3dfcb71a7b754afeb0356135979f2ba40ee20cda57eb9c0076609da5d52d` /
+`78b404dfa8225cdb84339931785ee27192a7a53f92a9a5c53236bbb3d59ec65f`
+are verified absent. Shared base images/caches, live study resources, and other
+chats' retained proof fixtures are untouched. The current checkout is retained
+for PR review; its cleanup condition is merge plus the normal preservation audit.
