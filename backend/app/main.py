@@ -5538,7 +5538,8 @@ def defensive_engine_control(request_id: str, lease_id: str):
     # Foreground demand must stop the engine without waiting for background DB admission.
     if activity_gate.foreground_waiting:
         return {"foreground_active": True, "search_allowed": False}
-    with background_read_connection(authoritative=True) as database:
+    # The API reader connects to the authoritative primary without writer credentials.
+    with background_read_connection() as database:
         row = database.execute(
             f"""SELECT state,lease_id,
                     ({search_admission_sql('request.id')} AND
