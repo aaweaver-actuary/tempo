@@ -339,21 +339,21 @@
     "method": "GET",
     "path": "/api/queue/today",
     "handler": "queue_today",
-    "treatment": "reader",
+    "treatment": "queue_issuance",
     "state": "staged"
   },
   {
     "method": "GET",
     "path": "/api/queue/prepared",
     "handler": "prepared_queue",
-    "treatment": "reader",
+    "treatment": "queue_issuance",
     "state": "staged"
   },
   {
     "method": "GET",
     "path": "/api/queue/window",
     "handler": "queue_window",
-    "treatment": "reader",
+    "treatment": "queue_issuance",
     "state": "staged"
   },
   {

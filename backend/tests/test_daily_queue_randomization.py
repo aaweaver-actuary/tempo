@@ -190,6 +190,8 @@ def test_bury_excludes_card_until_next_day_without_review_or_schedule_change(tmp
                 return tomorrow
 
         monkeypatch.setattr(main, "date", Tomorrow)
+        from app import queue_commands
+        monkeypatch.setattr(queue_commands, "date", Tomorrow)
         submit_foreground_write(lambda db: materialize_daily_queue(db, tomorrow.isoformat()), label="test-next-day-buried")
         assert buried["id"] in {card["id"] for card in client.get("/api/queue/today").json()["cards"]}
 
