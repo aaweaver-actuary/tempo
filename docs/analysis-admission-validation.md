@@ -274,3 +274,15 @@ cases pass in 0.75s; runner 48 cases in 1.07s; typecheck/lint pass with ten exis
 warnings. These results cover the dirty follow-up to 5efe6c9; new current-head CI
 is required. Native runner passive-read change additionally needs current
 PostgreSQL durability evidence on the scheduling candidate.
+
+The b253 candidate exposed unrelated parent health leases in direct native
+admission and burial-quota rehearsals. Admission/dispatch proofs now own helper
+databases and Redis admission keys, preserving parent leases and all original
+contention, restart, receipt, replay and budget assertions. The quota fixture
+keeps its API-visible rows in the marked disposable database and isolates only
+its direct native admission signals. PD-82's passive readiness requests now
+identify themselves as background; exact queue equality is unchanged.
+Actual schema40/PostgreSQL18.6/Redis7 admission and sparse-dispatch proofs pass:
+15,000 locked cards, 21 eligible, three slices, maximum transaction 16 ms.
+Evidence: admission-owned-native.log under the dated root test-results directory.
+Typecheck passes. Complete current-candidate durability/browser CI is pending.
