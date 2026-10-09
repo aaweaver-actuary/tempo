@@ -86,6 +86,18 @@ database; teardown `docker stop tempo-analysis-receipt-proof` then
 is required for this repaired head.
 # Current CI follow-up
 
+Scheduling head 7eb75b3 passed preceding durability stages and graph/receipt
+proofs, then its shared-stack segmentation rehearsal encountered a real parent
+foreground lease at claim time. Its claims and slices now retry only the
+explicit admission-denied outcome with the same lease and bounded deadline;
+database/execution failures remain immediate failures. Background workloads
+failed in 74.76 seconds and cleanup passed in 8.91 seconds; this is not a
+complete pass. The backend routing test independently reproduced the startup
+coordinator holding a section. Its routing-only fixture now awaits the real
+coordinator stop through the TestClient portal; the named admitted case passes
+in 0.53 seconds without bypassing admission. Concurrent foreground behavior
+remains covered by the real admission proofs and regular named tests.
+
 On the rebased d9625a7 candidate, two named receipt-read baseline cases failed:
 foreground activity prevented both retrying and unknown receipt lookup. Those
 bounded, read-only lookups now use short control capacity. They retain their

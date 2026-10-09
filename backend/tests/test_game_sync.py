@@ -427,6 +427,10 @@ def test_background_game_sync_routes_use_background_database_sections(
     monkeypatch.setattr(main_module.coordinator, "wake", lambda: None)
     background_headers = {"X-Tempo-Work-Class": "background"}
     with TestClient(app) as client:
+        # This routing contract does not run concurrent coordinator work. Its
+        # real admission/deferral contract is covered separately; stop the
+        # startup coordinator before asserting an admitted response.
+        client.portal.call(main_module.coordinator.stop)
         assert client.get("/api/settings", headers=background_headers).status_code == 200
         assert (
             client.get("/api/games/sync/status", headers=background_headers).status_code
