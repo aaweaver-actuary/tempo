@@ -87,3 +87,11 @@ it("test environment strips dangerous product database and broker settings befor
     "TEMPO_DB_PATH", "PGHOST", "TEMPO_TEST_DOCKER_URL"])
     expect(environment).not.toHaveProperty(unsafeKey);
 });
+
+it("PostgreSQL schema fixtures share the queue workers calendar across UTC midnight", () => {
+  const compose = readFileSync("docker-compose.postgres.test.yml", "utf8");
+  for (const serviceName of ["schema", "api", "foreground-worker", "background-worker"]) {
+    const service = compose.split(`  ${serviceName}:\n`)[1]?.split(/\n  [a-z][a-z-]*:/)[0];
+    expect(service, `${serviceName} must use the same queue day when UTC midnight has passed`).toContain("TZ: America/New_York");
+  }
+});

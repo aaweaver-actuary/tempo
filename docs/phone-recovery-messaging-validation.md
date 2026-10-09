@@ -60,5 +60,47 @@ Exact final focused commands (bundled Node 24.19 first in PATH):
 
 These runs tested the dirty development candidate based on 40ab450. Fresh required
 CI will certify its committed head and merge candidate; earlier CI successes do
-not certify the follow-up. Local browser/visual/durability remain unavailable for
-the Docker preflight reason above. CI owns these required scopes.
+not certify the follow-up. The initial browser limitation was subsequently resolved; the focused browser
+results below replace that limitation. CI still owns the full browser matrix,
+pinned visuals and durability scopes for the final committed candidate.
+
+
+Browser follow-up on dirty ac51e688: CI run 37861688024 passed frontend (1,314
+cases), backend (1,578), build, pinned visual and PostgreSQL durability, but failed
+5 of 252 browser cases. Inspection found a real foreground refresh defect: the
+confirmed displayed review remained on screen when no cached successor was
+available. Recovery now advances only the exact displayed attempt; an already
+advanced cached successor is retained. Two old browser expectations now inspect
+the concise confirmation/attention copy and quiet discovery history (All filter).
+
+The real PostgreSQL contention fixture exposed a separate test calendar defect
+at UTC midnight: schema/fixture Python used October 9 while API/workers used
+October 8 in America/New_York. SQL inspection of the disposable database showed
+ready October 9 and perpetually refreshing October 8 projections. The schema
+fixture now shares the workers' calendar. Named runner regression failed before
+this fix and all 7 runner cases passed afterward (0.538s):
+`npm run test:unit -- tests/unit/postgres-test-runner-regressions.test.ts`.
+
+Elevated focused browser command (bundled Node24.19):
+`make view VIEW="Phone pending review keeps|pending phone review remains|legacy discovery timeout reopens|FEN-only study square|daily study opens while"`.
+- Project tempo-pg-regressions-20975-0dbd0385: 3 passed, discovery-history and
+  calendar cases failed. Cleanup 9.51s, exit0.
+- Project tempo-pg-regressions-21792-13f33aab: 4 passed / 1 failed, browser47.71s;
+  calendar/contention, real study enrollment, pending review advancement and
+  retained review reconciliation passed. Remaining discovery assertion inspected
+  the Needs attention filter, which correctly excludes quiet info. Cleanup20.97s,
+  exit0; all task containers, volumes and 8 test-specific images removed.
+
+Runner ownership records contain exact container/image identifiers, creation and
+activity times, checkout/revision provenance at
+`test-results/tempo-cli/<project>/ownership.json`; scenario timings are under
+`test-results/performance/postgres-scenarios-browser-<project>.json`. These runs
+used dirty follow-up source based on ac51e688, not clean HEAD. Teardown is the
+owning runner's project-scoped Compose down with volumes/images; shared/live
+resources are retained. Typecheck and lint passed on this follow-up (10 existing
+lint warnings, no errors); static checks untimed. No full local gate claim.
+
+- Final focused discovery rerun: `make view VIEW="legacy discovery timeout reopens"`,
+  project tempo-pg-regressions-23242-942b696a: 1 passed, browser5.40s, cleanup9.67s
+  exit0. It checks quiet info in All history, no popup/failure notice, retries the
+  immutable choice and observes authoritative confirmation.

@@ -2854,3 +2854,6 @@ Stalemate Swindles (October 5, 2026):
 - Existing opening recovery-policy regressions now verify concise Jobs/storage actions and raw operation errors in Details; the review-conflict attribution regression verifies the attempt key while preserving original evidence and no false success.
 
 - `phone save failure preserves the outbox storage warning and raw details` — `tests/unit/phone-recovery-messaging-regressions.test.tsx`; the training renderer retains the incident owner’s warning classification and diagnostics.
+
+- `PostgreSQL schema fixtures share the queue workers calendar across UTC midnight` — `tests/unit/postgres-test-runner-regressions.test.ts`; prevents fixture queue refreshes from publishing the next UTC day while the product’s local queue is still yesterday. Proven by the real `daily study opens while background analysis remains queued` browser case.
+- `Phone pending review keeps one inline status until its original receipt confirms` — recovery must advance the exact displayed completed attempt after receipt confirmation, while retaining a successor that was already advanced from cache. The real browser test failed with London retained after receipt completion before this repair.
