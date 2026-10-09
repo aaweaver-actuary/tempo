@@ -78,3 +78,34 @@ All failed-run diagnostics are retained outside the clone at root
 `test-results/2026-10-09/pr142-issued-attempts/`.
 
 - Focused CI fixture repair: `PYTHONPATH=backend backend/.venv/bin/python -m pytest -q -o cache_dir=.pytest_cache --rootdir=. backend/tests/test_prefix_evaluation_api.py backend/tests/test_study_durability.py`: 26 passed, 5.36 s pytest / 6.30 s command wall. No source behavior changed after the previously passing new issuance suite.
+
+Candidate `800036a` evidence (macOS ARM64, Python 3.14.8 / Node 26.10.0):
+
+- New suite: `make python-file FILE=backend/tests/test_queue_attempt_issuance.py`:
+  23 passed, 4.62 s pytest.
+- `npm run lint`: passed, 28.19 s wall; ten pre-existing warnings, no errors.
+- Elevated `make docker-durability`: failed, 255.04 s wall. All six queue-attempt
+  proofs passed, including real reader-only API issuance and actual miss promotion.
+  The later unchanged prefix-evaluation proof encountered a 250 ms PostgreSQL
+  transaction timeout; its HTTP error body then failed JSON decoding. API logs
+  identify `prefix_evaluation_api.load_snapshot` / `TransactionTimeout`, not queue
+  issuance. This is not a complete durability pass. Cleanup passed in 20.03 s.
+- Elevated `make ui-file FILE=real-game-feedback.spec.ts`: 5 passed, 11.5 s
+  Playwright / 94.32 s command wall including build/startup/17.40 s cleanup.
+- Elevated `make ui-file FILE=training-prefetch.spec.ts`: 6 passed, 16.1 s
+  Playwright / 66.41 s command wall including build/startup/12.48 s cleanup.
+
+Main subsequently advanced to `2cf1b32` after PR #134 merged. The branch was
+rebased without conflicts; no open-PR changes were imported. The PR diff retains
+only this correction. Fresh affected-file and PostgreSQL checks follow the
+rebase, and complete CI must validate its new candidate rather than reuse
+`800036a` results. The PR body records final CI links and verified head.
+
+Related-scope review: #4 remains an umbrella opportunity feature; #135 / PR #140
+own queue starvation; #137 / PR #138 own notification layout readiness. None is
+closed or absorbed by this correction. PR #134 is now part of the base.
+
+Rebased candidate `d1e64e6` (only this evidence file edited afterward):
+`PYTHONPATH=backend backend/.venv/bin/python -m pytest -q -o cache_dir=.pytest_cache --rootdir=. backend/tests/test_queue_attempt_issuance.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_real_game_feedback.py backend/tests/test_daily_queue_randomization.py backend/tests/test_phone_offline_training.py backend/tests/test_guided_review.py backend/tests/test_durable_work_queue.py backend/tests/test_postgres_route_contract.py backend/tests/test_postgres_upgrade_regressions.py backend/tests/test_regressions.py backend/tests/test_prefix_evaluation_api.py backend/tests/test_study_durability.py`:
+223 passed, 85.20 s pytest / 86.18 s command wall. Fresh CI and Docker results are
+reported in the PR rather than attributing old results to this rebased revision.
