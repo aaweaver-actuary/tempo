@@ -171,3 +171,36 @@ Initial pushed head b185486 triggered CI run 37912162058, which was superseded b
 this demonstrated fixture repair. Its partial results are not current-candidate
 validation. The new committed head must receive all mandatory checks and quality
 for its current-base merge candidate before handoff.
+
+
+## Shared browser receipt fixture correction
+
+The final browser caller audit found prepareVisualUI returning {} for mocked
+review operation lookups. Those mock reviews never reach the real receipt store,
+so an absent receipt must be represented as missing, not as a malformed pending
+receipt. The shared fixture now returns 404 only for review-attempt/review-reconcile
+receipt keys; specific test-installed receipt handlers retain priority.
+
+```sh
+make view VIEW='poisoned online A becomes inspectable|reload drains an earlier review before marking'
+make view VIEW='poisoned online A becomes inspectable|reloaded prefetched guided card waits for the earlier review'
+npx eslint tests/browser/visual-fixtures.ts
+```
+
+The baseline selection matched one poisoned-review case; the second pattern did
+not match a title. That executed case failed with B/C never saving (37.63s runner
+wall), reproducing the malformed mock-receipt mechanism. With the fixture fixed,
+the corrected selection ran and passed both poisoned-review and prefetched-guided
+workflow cases (3.1s Playwright / 30.91s runner wall). Existing assertions remain
+unchanged. Fixture lint and diff checks passed. Production source is unchanged.
+
+Additional disposable projects: tempo-pg-regressions-38420-668bf93f (baseline) and
+tempo-pg-regressions-38902-ac1022e7 (fixed). Owning-runner cleanup succeeded for both;
+identifiers/timestamps/teardown are in their ownership.json records.
+
+CI run 37912763420 on 5aa2d95 reported visual failure before running any tests:
+Docker capability preflight failed with spawnSync docker ETIMEDOUT, followed by a
+missing visual report. The artifact is preserved under the dated root evidence
+ci-37912763420/visual. No snapshots, timeouts or CI configuration are changed.
+The fixture correction receives a fresh full candidate plan; prior partial or
+failed CI results are not reused as final evidence.
