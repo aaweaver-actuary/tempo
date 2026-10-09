@@ -179,3 +179,16 @@ foreground command transaction measurements are retained in the log and are
 not background latency claims. Root evidence:
 `test-results/analysis-activity-2026-10-09/admission-transition-driver-proof.log`.
 The helper database/keys were removed. Complete new-head CI remains pending.
+
+Head 56d6e18 PostgreSQL CI reached prefix diagnostics, where a parent health
+lease returned the newly expected foreground-wait response to a formerly
+unconditional idle read. The native proof now uses a bounded driver for normal
+reads that recognizes only the exact 503 foreground-wait detail. Deliberately
+contended reads still assert immediate denial directly. A new regular native
+case retains the original missing-source 404 after real admission release and
+returns unrelated provider errors immediately. The complete existing scoped
+diagnostics proof passed in a fresh marked helper database in 0.79 seconds,
+including schema setup; the measured indexed HTTP read was 7.671 ms. Original
+read budgets, projection, history, and scheduling assertions remain intact.
+Evidence: root `test-results/analysis-activity-2026-10-09/admission-prefix-idle-driver-proof.log`.
+Complete new-head CI remains pending.

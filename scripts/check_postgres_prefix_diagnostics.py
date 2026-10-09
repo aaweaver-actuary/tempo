@@ -5,7 +5,7 @@ from threading import Event
 from unittest.mock import patch
 import json
 import os
-from time import monotonic
+from time import monotonic, sleep
 import uuid
 
 from fastapi.testclient import TestClient
@@ -18,7 +18,42 @@ from app.services.activity_gate import activity_gate
 from app.services.prefix_diagnostics import project_prefix_diagnostics
 
 
+def idle_prefix_read(client, url):
+    """Only a known foreground wait can defer an otherwise idle proof read."""
+    deadline = monotonic() + 10
+    while True:
+        response = client.get(url)
+        if response.status_code != 503 or response.json().get('detail') != 'Waiting for foreground activity':
+            return response
+        assert monotonic() < deadline, 'Prefix read did not obtain foreground-idle admission within 10 seconds'
+        while redis_admission_gate.foreground_present() and monotonic() < deadline:
+            sleep(0.01)
+
+
+def test_postgres_prefix_read_driver_retains_missing_sources_and_real_admission():
+    denied = Event()
+    server = redis_admission_gate.client()
+    original_eval = server.eval
+    def observe_eval(script, *arguments):
+        result = original_eval(script, *arguments)
+        if script == redis_admission_gate._CLAIM_BACKGROUND and result == 0:
+            denied.set()
+        return result
+    client = TestClient(main.app)
+    with ThreadPoolExecutor(max_workers=1) as executor, patch.object(server, 'eval', observe_eval):
+        with redis_admission_gate.foreground_lease():
+            result = executor.submit(idle_prefix_read, client, '/api/repertoires/absent-'+uuid.uuid4().hex+'/prefix-diagnostics')
+            assert denied.wait(5) and not result.done()
+        response = result.result(timeout=10)
+        assert response.status_code == 404, response.text
+    from types import SimpleNamespace
+    unavailable = SimpleNamespace(status_code=503, json=lambda: {'detail':'provider unavailable'})
+    assert idle_prefix_read(SimpleNamespace(get=lambda _url: unavailable), '/unavailable') is unavailable
+    print('PASS test_postgres_prefix_read_driver_retains_missing_sources_and_real_admission (real Redis denial, original 404/provider errors)')
+
+
 def test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission():
+    test_postgres_prefix_read_driver_retains_missing_sources_and_real_admission()
     repertoire_id = 'prefix-diagnostics-' + uuid.uuid4().hex
     try:
         _assert_prefix_diagnostics(repertoire_id)
@@ -66,11 +101,11 @@ def _assert_prefix_diagnostics(repertoire_id):
     manifest = decision_manifest(snapshot, repertoire_id)
     client = TestClient(main.app)
     base_url = f'/api/repertoires/{repertoire_id}/prefix-diagnostics'
-    list_response = client.get(base_url)
+    list_response = idle_prefix_read(client, base_url)
     assert list_response.status_code == 200, list_response.text
     assert list_response.json()['prefixes'][0]['manifest'] == manifest
     detail_url = base_url + '/' + card_id + '?manifest_id=' + manifest['manifest_id'] + '&graph_generation=1'
-    unknown = client.get(detail_url)
+    unknown = idle_prefix_read(client, detail_url)
     assert unknown.status_code == 200, unknown.text
     assert all(decision['coverage'] == 'unknown' for decision in unknown.json()['decisions'])
     expected_attempts, expected_observations = [], []
@@ -135,7 +170,7 @@ def _assert_prefix_diagnostics(repertoire_id):
         return original_sql(database, sql, parameters)
     started = monotonic()
     with patch.object(postgres_store.PostgresConnection, 'execute_native', observe_sql):
-        response = client.get(detail_url)
+        response = idle_prefix_read(client, detail_url)
     elapsed_ms = (monotonic()-started)*1000
     assert response.status_code == 200, response.text
     assert response.json() == expected
@@ -173,7 +208,7 @@ def _assert_prefix_diagnostics(repertoire_id):
             foreground = client.get('/api/settings')
             assert foreground.status_code == 200, foreground.text
             assert 'initial_depth' in foreground.json()
-        retried = client.get(detail_url)
+        retried = idle_prefix_read(client, detail_url)
         assert retried.status_code == 200 and retried.json() == expected, retried.text
     assert activity_gate.active_background_sections == 0 and server.zcard(redis_admission_gate._BACKGROUND_KEY) == 0
     with postgres_store.connection(read_only=True) as database:
@@ -181,9 +216,9 @@ def _assert_prefix_diagnostics(repertoire_id):
     # A new revision with identical decision identities starts unknown; old evidence survives.
     with postgres_store.connection() as database:
         database.execute('UPDATE cards SET revision=revision+1 WHERE id=?',(card_id,))
-    assert client.get(detail_url).status_code == 409
-    new_manifest = client.get(base_url).json()['prefixes'][0]['manifest']
-    new_detail = client.get(base_url+'/'+card_id+'?manifest_id='+new_manifest['manifest_id']+'&graph_generation=1')
+    assert idle_prefix_read(client, detail_url).status_code == 409
+    new_manifest = idle_prefix_read(client, base_url).json()['prefixes'][0]['manifest']
+    new_detail = idle_prefix_read(client, base_url+'/'+card_id+'?manifest_id='+new_manifest['manifest_id']+'&graph_generation=1')
     assert new_detail.status_code == 200 and all(decision['coverage']=='unknown' for decision in new_detail.json()['decisions'])
     assert new_manifest['decisions'][0]['decision_id'] == manifest['decisions'][0]['decision_id']
     print(f'PASS test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission (102 scoped attempts, 100 selected, indexed lookup, real Redis contention, unchanged scheduling/shadow digest; HTTP read {elapsed_ms:.3f}ms)')
