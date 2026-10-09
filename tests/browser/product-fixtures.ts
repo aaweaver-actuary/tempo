@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { test as base, expect } from "./observability";
 import { Chess } from "chess.js";
 import { execFileSync } from "node:child_process";
+import { resetPostgresDeletedCards } from "./product-fixture-reset";
 
 const api = process.env.TEMPO_BROWSER_API_URL ?? (process.env.TEMPO_DOCKER_URL
   ? `${process.env.TEMPO_DOCKER_URL}/api` : "http://127.0.0.1:8001/api");
@@ -162,7 +163,8 @@ const test = base.extend<{ disposableProduct: void }>({
   disposableProduct: [
     async ({ request }, use) => {
       const health = await request.get(`${api}/health`);
-      assertDisposableTarget(health.ok() ? await health.json() : null);
+      const disposableHealth: unknown = health.ok() ? await health.json() : null;
+      assertDisposableTarget(disposableHealth);
       // A layout test can activate a pack before this fixture runs. Stop its
       // admission before archiving cards, or the active-card quota replaces them.
       const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
@@ -198,9 +200,7 @@ const test = base.extend<{ disposableProduct: void }>({
       if (!project || !/^tempo-(?:pg-)?regressions-\d+-[a-f0-9]+$/.test(project))
         throw new Error("Product fixture reset requires its owning disposable runner");
       if (project.startsWith("tempo-pg-")) {
-        execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml",
-          "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-v", "ON_ERROR_STOP=1", "-c", "DELETE FROM deleted_cards"],
-        { encoding: "utf8", timeout: 30_000 });
+        await resetPostgresDeletedCards({ health: disposableHealth, apiUrl: api, project });
       } else {
         execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.test.yml", "exec", "-T", "api", "python", "-c",
           "import sqlite3; db=sqlite3.connect('/data/tempo.db'); db.execute('DELETE FROM deleted_cards'); db.commit(); db.close()"],
