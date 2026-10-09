@@ -27,7 +27,7 @@ LANGUAGE plpgsql IMMUTABLE STRICT SET timezone='UTC' AS $$
 BEGIN
     IF value !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' THEN RETURN NULL; END IF;
     RETURN value::timestamptz;
-EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN RETURN NULL;
+EXCEPTION WHEN data_exception THEN RETURN NULL;
 END $$;
 CREATE INDEX idx_next_opponent_account_time ON imported_games
 (lower(trim(username)), next_opponent_game_time(played_at) DESC, id DESC)
