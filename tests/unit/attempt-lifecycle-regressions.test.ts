@@ -75,10 +75,12 @@ describe("review attempt reliability", () => {
     enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42,
       outcome: "correct", guided: false });
     enqueueTrainingFailure(43, "next-card", 1);
+    const originalReceiptPath = `/api/operations/${encodeURIComponent(`review-attempt:${pendingReviews()[0].attemptId}`)}`;
     const requestedPaths: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname;
       requestedPaths.push(path);
+      if (path.startsWith("/api/operations/")) return new Response(null, { status: 404 });
       if (path.endsWith("/review")) return Response.json({ persisted: true });
       if (path.endsWith("/fail")) return Response.json({ attempt_failed: true });
       return Response.json({ cards: [{
@@ -88,8 +90,8 @@ describe("review attempt reliability", () => {
       }], count: 1 });
     }));
     await fetchAndInitializeQueue();
-    expect(requestedPaths.slice(0, 3)).toEqual([
-      "/api/cards/persisted-card/review", "/api/queue/entries/43/fail", "/api/queue/window",
+    expect(requestedPaths.slice(0, 4)).toEqual([
+      originalReceiptPath, "/api/cards/persisted-card/review", "/api/queue/entries/43/fail", "/api/queue/window",
     ]);
     expect(pendingReviews()).toEqual([]);
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(43);
@@ -111,10 +113,12 @@ describe("review attempt reliability", () => {
   });
   it("stale guided failure replay completes before today's training queue opens", async () => {
     enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
+    const originalReceiptPath = `/api/operations/${encodeURIComponent(`review-attempt:${pendingReviews()[0].attemptId}`)}`;
     const requestedPaths: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       requestedPaths.push(url);
+      if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
       if (url.endsWith("/fail"))
         return Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 });
       if (url.endsWith("/review")) return Response.json({ persisted: true });
@@ -127,7 +131,7 @@ describe("review attempt reliability", () => {
     await fetchAndInitializeQueue();
 
     expect(requestedPaths.map((url) => new URL(url).pathname)).toEqual([
-      "/api/queue/entries/42/fail", "/api/cards/persisted-card/review", "/api/queue/window",
+      originalReceiptPath, "/api/queue/entries/42/fail", "/api/cards/persisted-card/review", "/api/queue/window",
     ]);
     expect(pendingReviews()).toEqual([]);
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(43);
@@ -140,6 +144,7 @@ describe("review attempt reliability", () => {
     enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
       if (url.endsWith("/fail"))
         return Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 });
       if (url.endsWith("/review"))

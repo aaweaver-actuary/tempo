@@ -595,6 +595,16 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .notification-debug-actions textarea { width: 100%; min-height: 8rem; }
 .notification-viewport { position: fixed; z-index: 120; right: var(--gutter); bottom: calc(16px + env(safe-area-inset-bottom)); display: grid; gap: 0.5rem; width: min(360px, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
 .notification-toast { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.7rem; border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 30px #2223; overflow-wrap: anywhere; pointer-events: auto; animation: notification-enter 150ms ease-out; }
+.notification-toast .notification-severity { flex: 0 0 auto; white-space: nowrap; }
+.notification-toast > span:nth-child(2) { min-width: 0; }
+.notification-toast button { flex: 0 0 auto; }
+@media (max-width: 767px) {
+  .notification-viewport { bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .notification-toast { display: grid; grid-template-columns: minmax(0, 1fr) auto; max-height: 160px; overflow-y: auto; }
+  .notification-toast .notification-severity { grid-column: 1; }
+  .notification-toast > span:nth-child(2) { grid-column: 1; }
+  .notification-toast button { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+}
 .notification-toast.notification-warning { border-left-color: #ac752c; }
 .notification-toast.notification-error { border-left-color: #b87960; }
 .notification-toast button { margin-left: auto; padding: 0 0.3rem; border: 0; background: transparent; cursor: pointer; }

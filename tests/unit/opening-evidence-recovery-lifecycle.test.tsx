@@ -97,7 +97,7 @@ it("AS-15 repeated transient recovery failures each wait before a distinct idle 
   }
   const { notifications } = await import("../../app/lib/notifications");
   expect(notifications().filter(record => record.key === "opening-evidence-recovery")).toMatchObject([
-    { severity: "warning", occurrenceCount: 2, message: expect.stringContaining("Opening evidence recovery is pending. Normal training continues.") },
+    { severity: "info", occurrenceCount: 2, message: "Opening details are waiting to sync. You can keep training." },
   ]);
   await state.idle(); expect(state.delivered).toHaveLength(1);
   expect(state.recovery).toHaveBeenCalledTimes(3); expect(state.callbacks.size).toBe(0);

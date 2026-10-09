@@ -1,3 +1,5 @@
+import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
+import { PendingOperationError, readOperationResponse } from "../lib/operation-status";
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
 import { backgroundFetch } from "../lib/background-fetch";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
@@ -89,10 +91,13 @@ import { loadEligibleOfflineQueue, fetchAndInitializeQueue, invalidateTrainingQu
 import {
   enqueuePendingReview,
   flushPendingReviews,
+  logicalAttemptId,
   pendingReviews,
+  recoverableReviews,
   conflictedReviews,
   ReviewReplayError,
   type PendingReview,
+  type ReviewFlushResult,
 } from "../lib/review-outbox";
 import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
@@ -114,6 +119,7 @@ import {
   DiscoveriesTray,
   type DiscoveryItem,
 } from "../components/discoveries-tray";
+import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
 export default function Home() {
@@ -186,6 +192,7 @@ export default function Home() {
   const [reviewPersistenceState, setReviewPersistenceState] = useState<
     | "idle"
     | "saving"
+    | "pendingConfirmation"
     | "saveFailed"
     | "saved"
     | "conflicted"
@@ -193,6 +200,7 @@ export default function Home() {
     | "queueFailed"
   >("idle");
   const [reviewPersistenceIdentity, setReviewPersistenceIdentity] = useState<Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId">>();
+  const reviewSaveDiagnosticIdentity = useRef<Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId"> | undefined>(undefined);
   useEffect(() => {
     const showUpdate = () => publishNotification({
       severity: "warning", source: "phone update", key: "phone-update-ready",
@@ -287,12 +295,14 @@ export default function Home() {
     publishNotification({ severity, source: "training", message });
   }
   useEffect(() => {
-    if (pendingReviewError) publishNotification({ severity: "error", source: "training review",
-      key: "pending-review-error", message: `Could not save a previous training review. ${pendingReviewError}` });
-    else {
-      const previous = notifications().find((record) => record.key === "pending-review-error" && !record.resolvedAt);
-      if (previous) resolveNotification(previous.id, { severity: "success", message: "Previous training review saved." });
-    }
+    if (!pendingReviewError) return;
+    // Exact attempt notices are owned by the outbox. Only failures outside it need a separate notice.
+    try {
+      if (pendingReviews().length || conflictedReviews().length) return;
+    } catch { /* Surface unreadable storage below. */ }
+    publishNotification({ severity: "warning", source: "training review", key: "pending-review-storage",
+      message: "Saved reviews could not be read. Keep this browser's data and open Notifications for details.",
+      details: { error: pendingReviewError } });
   }, [pendingReviewError]);
   useEffect(() => {
     if (serviceError) publishNotification({ severity: "error", source: "training service",
@@ -332,6 +342,20 @@ export default function Home() {
     pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
     reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue" ||
     reviewPersistenceState === "saveFailed");
+  const confirmRecoveredReviews = useCommittedCallback((result: ReviewFlushResult) => {
+    const statusAttemptId = reviewPersistenceIdentity && logicalAttemptId(reviewPersistenceIdentity);
+    const statusPersisted = Boolean(statusAttemptId && result.persistedAttemptIds.includes(statusAttemptId));
+    const statusConflicted = Boolean(statusAttemptId && result.conflictedAttemptIds.includes(statusAttemptId));
+    if (!pendingReviews().length) setPendingReviewError("");
+    if (!statusPersisted && !statusConflicted) return;
+    setReviewPersistenceState(statusConflicted ? "conflicted" : "saved");
+    setReviewSaveError("");
+    if (useTrainingStore.getState().attempt.attemptId === statusAttemptId)
+      return refreshDatabaseQueue(true, false).catch(() => undefined);
+  });
+  usePendingReviewRecovery(usesLocalApi() && !offlineQueue, queueReadiness === "ready",
+    pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
+    reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue", confirmRecoveredReviews);
   const repertoireLine = card.moves;
 
   useEffect(() => {
@@ -398,9 +422,9 @@ export default function Home() {
   }, [openRepairDialog]);
 
   const refreshDatabaseQueue = useCallback(
-    async (advance = false) => {
+    async (advance = false, replaySavedReviews = true) => {
       invalidateWorkspaceData();
-      await fetchAndInitializeQueue(advance);
+      await fetchAndInitializeQueue(advance, { replaySavedReviews });
       await checkPendingIntegrity();
     },
     [checkPendingIntegrity],
@@ -477,7 +501,7 @@ export default function Home() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     if (usesLocalApi() && currentView === "train") {
-      queueMicrotask(() => void refreshDatabaseQueue().catch(() => undefined));
+      queueMicrotask(() => void refreshDatabaseQueue(false, false).catch(() => undefined));
     }
   }, [currentView, refreshDatabaseQueue]);
 
@@ -488,14 +512,14 @@ export default function Home() {
       if (document.visibilityState !== "visible") return;
       if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
       visibleRefreshCount = 0;
-      void fetchAndInitializeQueue(false, { preparePhoneQueue: true }).catch(() => undefined);
+      void fetchAndInitializeQueue(false, { preparePhoneQueue: true, replaySavedReviews: false }).catch(() => undefined);
     };
     const refreshTimer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
       visibleRefreshCount += 1;
       void fetchAndInitializeQueue(false, {
-        preparePhoneQueue: visibleRefreshCount % 2 === 0,
+        preparePhoneQueue: visibleRefreshCount % 2 === 0, replaySavedReviews: false,
       }).catch(() => undefined);
     }, 30_000);
     window.addEventListener("online", refreshWhenVisible);
@@ -1022,13 +1046,14 @@ export default function Home() {
       return;
     }
     reviewPendingEntries.current.add(entryKey);
+    const retryReview = reviewPersistenceIdentity
+      ? pendingBeforeReview.find(review => logicalAttemptId(review) === logicalAttemptId(reviewPersistenceIdentity))
+      : pendingBeforeReview[0];
+    const retryAttemptId = retryReview ? logicalAttemptId(retryReview)
+      : reviewPersistenceIdentity && logicalAttemptId(reviewPersistenceIdentity);
     const transitionGeneration = ++reviewTransitionGeneration.current;
     const { recordedAtCompletion = false, retryPending = false } = options;
     clearTimeout(completionTimer.current);
-    const retryNeedsAdvance =
-      retryPending &&
-      pendingBeforeReview[0]?.queueEntryId === card.queueEntryId &&
-      pendingBeforeReview[0]?.backendId === String(card.backendId ?? card.id);
     setReviewPersistenceState("saving");
     setReviewSaveError("");
     if (!retryPending) setAttemptPhase("feedbackPause");
@@ -1059,6 +1084,28 @@ export default function Home() {
     if (databaseQueue && card.backendId) {
       let advancedFromCache = false;
       let submittedAttemptId: string | undefined;
+      // Retention/capture can fail before an outbox envelope exists. Keep diagnostics
+      // owned by the original attempt even if a later projection replaces the card.
+      const saveIdentity = (retryPending && (retryReview ?? reviewPersistenceIdentity ?? reviewSaveDiagnosticIdentity.current)) || {
+        backendId: card.backendId, queueEntryId: card.queueEntryId ?? 0,
+        attemptId: useTrainingStore.getState().attempt.attemptId,
+      };
+      const showSubmittedReviewUnconfirmed = () => {
+        if (transitionGeneration !== reviewTransitionGeneration.current) return;
+        const retainedReviews = pendingReviews();
+        const submittedIndex = retainedReviews.findIndex(review => logicalAttemptId(review) === submittedAttemptId);
+        const submittedReview = retainedReviews[submittedIndex];
+        const earlierRequiresAttention = submittedReview && retainedReviews.slice(0, submittedIndex).some(review =>
+          review.backendId === submittedReview.backendId && review.automaticRecoverySuppressed);
+        const message = earlierRequiresAttention
+          ? "An earlier result for this card needs attention. Use Check saved reviews to resolve it first."
+          : submittedReview?.automaticRecoverySuppressed
+            ? "This result needs explicit attention. Keep this browser's data and open Notifications before retrying."
+            : "Waiting for the computer to confirm this result.";
+        setReviewPersistenceState(earlierRequiresAttention || submittedReview?.automaticRecoverySuppressed ? "saveFailed" : "pendingConfirmation");
+        setReviewSaveError(message);
+        if (earlierRequiresAttention) setPendingReviewError(message);
+      };
       try {
         if (!retryPending) {
           if (!card.queueEntryId)
@@ -1081,41 +1128,73 @@ export default function Home() {
             });
           }
           const submittedReview = pendingReviews().find((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
-          submittedAttemptId = submittedReview?.attemptId;
-          setReviewPersistenceIdentity(submittedReview);
+          submittedAttemptId = submittedReview ? logicalAttemptId(submittedReview)
+            : recordedAtCompletion ? useTrainingStore.getState().attempt.attemptId : undefined;
+          reviewSaveDiagnosticIdentity.current = undefined;
+          setReviewPersistenceIdentity(submittedAttemptId ? { backendId: card.backendId,
+            queueEntryId: card.queueEntryId, attemptId: submittedAttemptId } : undefined);
           const finishNextCard = measureTempoDragPhase("next-card-readiness");
-          advancedFromCache = useTrainingStore.getState().advanceCachedQueue();
+          // Retention permits responsive advancement only when this attempt is eligible.
+          advancedFromCache = recoverableReviews().some(review => logicalAttemptId(review) === submittedAttemptId) &&
+            useTrainingStore.getState().advanceCachedQueue();
           if (advancedFromCache) requestAnimationFrame(() => finishNextCard());
           else finishNextCard(true);
           setReviewed((count) => count + 1);
         }
         if (retryPending) {
-          submittedAttemptId = pendingBeforeReview[0]?.attemptId;
-          setReviewPersistenceIdentity(pendingBeforeReview[0]);
+          submittedAttemptId = retryAttemptId;
+          reviewSaveDiagnosticIdentity.current = undefined;
+          setReviewPersistenceIdentity(retryReview ? { ...retryReview, attemptId: submittedAttemptId } : reviewPersistenceIdentity);
         }
+        if (!submittedAttemptId) throw new Error("The completed review identity is unavailable. Keep this browser's data and check saved reviews.");
         const finishReviewPersistence = measureTempoDragPhase("review-persistence");
-        try { await flushPendingReviews(); finishReviewPersistence(); }
-        catch (error) { finishReviewPersistence(true); throw error; }
-        const resultConflicted = conflictedReviews().some((review) => submittedAttemptId
-          ? review.attemptId === submittedAttemptId : review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
+        let flushResult: ReviewFlushResult;
+        try {
+          if ((recordedAtCompletion || retryPending) && !pendingReviews().some(review => logicalAttemptId(review) === submittedAttemptId) &&
+              !conflictedReviews().some(review => logicalAttemptId(review) === submittedAttemptId)) {
+            // A queue reconciliation may have flushed this completion during feedback.
+            // Absence from storage is not proof; check its original authoritative receipt.
+            const receipt = await readOperationResponse(`review-attempt:${submittedAttemptId}`);
+            const receiptPayload = await receipt.json() as { persisted?: boolean };
+            flushResult = { persistedAttemptIds: receiptPayload.persisted === true ? [submittedAttemptId] : [], conflictedAttemptIds: [] };
+          } else flushResult = await flushPendingReviews(Infinity, retryPending, retryPending ? submittedAttemptId : undefined);
+          finishReviewPersistence();
+        }
+        catch (error) {
+          if (error instanceof ReviewReplayError && error.flushResult &&
+              [...error.flushResult.persistedAttemptIds, ...error.flushResult.conflictedAttemptIds].includes(submittedAttemptId)) {
+            flushResult = error.flushResult;
+            finishReviewPersistence();
+            setPendingReviewError(error.message);
+          } else { finishReviewPersistence(true); throw error; }
+        }
+        const resultPersisted = flushResult.persistedAttemptIds.includes(submittedAttemptId);
+        const resultConflicted = flushResult.conflictedAttemptIds.includes(submittedAttemptId) ||
+          conflictedReviews().some(review => logicalAttemptId(review) === submittedAttemptId);
+        if (!resultPersisted && !resultConflicted) {
+          showSubmittedReviewUnconfirmed();
+          reviewPendingEntries.current.delete(entryKey);
+          return;
+        }
         if (transitionGeneration === reviewTransitionGeneration.current)
           setReviewPersistenceState(resultConflicted ? "conflicted" : "saved");
         setQueueNotice("");
         reviewPendingEntries.current.delete(entryKey);
+        const advanceDisplayedAttempt = !advancedFromCache && useTrainingStore.getState().attempt.attemptId === submittedAttemptId;
         if (
           transitionGeneration === reviewTransitionGeneration.current &&
-          !advancedFromCache &&
-          (!retryPending || retryNeedsAdvance)
+          advanceDisplayedAttempt
         )
           setReviewPersistenceState(resultConflicted ? "conflicted" : "refreshingQueue");
         const finishQueueReadiness = measureTempoDragPhase("next-card-readiness");
         void refreshDatabaseQueue(
-          !advancedFromCache && (!retryPending || retryNeedsAdvance),
+          advanceDisplayedAttempt,
+          false,
         )
           .then(() => {
             requestAnimationFrame(() => finishQueueReadiness());
             if (transitionGeneration === reviewTransitionGeneration.current)
-              setReviewPersistenceState("idle");
+              setReviewPersistenceState(resultConflicted ? "conflicted" : "idle");
             setSafeBreakCounter((count) => count + 1);
           })
           .catch(() => {
@@ -1128,19 +1207,36 @@ export default function Home() {
       } catch (error) {
         reviewPendingEntries.current.delete(entryKey);
         if (error instanceof ReviewReplayError) {
-          setReviewPersistenceIdentity(error);
           reportDebugError(error, { kind: "api", source: "training-review-replay", operation: "save pending review",
             endpoint: error.endpoint, status: error.status, retryable: error.retryable,
             cardId: error.backendId, queueEntryId: error.queueEntryId, attemptId: error.attemptId, code: error.code,
-            classification: error.classification });
+            classification: error.classification, notify: false });
+        } else {
+          // Diagnostic ownership must never make an unretained result eligible for receipt checks.
+          const diagnosticIdentity = submittedAttemptId ? { ...saveIdentity, attemptId: submittedAttemptId } : saveIdentity;
+          if (transitionGeneration === reviewTransitionGeneration.current)
+            reviewSaveDiagnosticIdentity.current = diagnosticIdentity;
+          reportReviewSaveFailure(error, diagnosticIdentity);
         }
-        setReviewPersistenceState("saveFailed");
+        if (transitionGeneration !== reviewTransitionGeneration.current) return;
+        if (error instanceof ReviewReplayError && error.attemptId !== submittedAttemptId) {
+          // The outbox reports that other attempt separately; it cannot settle this result.
+          showSubmittedReviewUnconfirmed();
+          return;
+        }
+        if (submittedAttemptId && pendingReviews().some(review => logicalAttemptId(review) === submittedAttemptId) &&
+            !recoverableReviews(submittedAttemptId).some(review => logicalAttemptId(review) === submittedAttemptId)) {
+          showSubmittedReviewUnconfirmed();
+          return;
+        }
+        const awaitingConfirmation = (error instanceof ReviewReplayError && !error.blocked && ["pending", "transient"].includes(error.classification)) ||
+          (error instanceof PendingOperationError && !error.blocked);
+        setReviewPersistenceState(awaitingConfirmation ? "pendingConfirmation" : "saveFailed");
         setReviewSaveError(
-          error instanceof Error && error.message
-            ? `${error instanceof ReviewReplayError && error.queueEntryId !== card.queueEntryId
-              ? "An earlier completed result could not be saved. Your result remains queued."
-              : "The local database could not save this result."} ${error.message}`
-            : "The local database could not save this result. Please retry.",
+          awaitingConfirmation ? "Waiting for the computer to confirm this result." :
+          error instanceof ReviewReplayError && error.classification === "storage" ? "This browser could not update the saved result. Keep its data and open Notifications for details." :
+          error instanceof ReviewReplayError && error.blocked ? "Saving is blocked. Resolve and retry the operation in Jobs." :
+          "This result could not be confirmed. Keep this browser's data and open Notifications for details before retrying.",
         );
         setQueueNotice("");
         if (!advancedFromCache && !retryPending)
@@ -1608,10 +1704,15 @@ export default function Home() {
               </div>
             )}
             {pendingReviewError && !offlineQueue && (
-              <div className="ui-notice error" role="alert">
-                <span>Could not save a previous training review. Its card is paused until the save is resolved. {pendingReviewError}</span>
-                <Button onClick={() => void refreshDatabaseQueue().catch(() => undefined)}>
-                  Retry saving review
+              <div className="ui-notice" role="status">
+                <span>A previous result needs confirmation or attention. Open Notifications for details.</span>
+                <Button onClick={() => void (async () => {
+                  const retainedReview = pendingReviews()[0];
+                  if (retainedReview) await confirmRecoveredReviews(await flushPendingReviews(Infinity, true,
+                    logicalAttemptId(retainedReview)));
+                  if (!reviewPersistenceIdentity) await refreshDatabaseQueue(false, false);
+                })().catch(() => undefined)}>
+                  Check saved reviews
                 </Button>
               </div>
             )}
@@ -1655,7 +1756,7 @@ export default function Home() {
               }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
-              reviewPersistenceIdentity={reviewPersistenceIdentity}
+              reviewPersistenceIdentity={reviewSaveDiagnosticIdentity.current ?? reviewPersistenceIdentity}
               retryReviewSave={() =>
                 void rateCard("correct", { retryPending: true })
               }

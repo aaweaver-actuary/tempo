@@ -93,7 +93,7 @@ export async function crossTabOpeningCompletion(owner: Page, context: BrowserCon
   }), checkpoint);
   await idle(owner);
   await owner.getByRole("button", { name: "Notifications", exact: true }).click();
-  const warning = owner.locator(".notification-tray").getByText(/Opening evidence recovery is pending/);
+  const warning = owner.locator(".notification-tray").getByText(/Opening details could not sync/);
   await expect(warning).toBeVisible(); await expect.poll(() => idleCount(owner)).toBe(0);
   const completing = await context.newPage(); await setup(completing, true);
   await idle(completing);

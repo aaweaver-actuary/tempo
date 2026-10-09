@@ -104,7 +104,7 @@ test("unresolved guided review keeps its card paused while other training opens"
 
   await expect(page.getByRole("heading", { name: "Available review" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pending review" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Retry saving review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check saved reviews" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Correct" })).toBeEnabled();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toHaveLength(1);
 });
@@ -126,11 +126,14 @@ test("legacy discovery timeout reopens as an unconfirmed save and retries the sa
     error: "Discovery save timed out after 15 seconds. Retry save.",
   }])));
   await page.reload();
-  await expect(page.getByText(/Discovery save unconfirmed; Tempo will retry/)).toBeVisible();
+  await page.getByRole("button", { name: "Notifications", exact: true }).click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.getByText(/This discovery is waiting for confirmation. Tempo will retry./)).toBeVisible();
+  await expect(page.locator(".notification-toast")).toHaveCount(0);
   await expect(page.getByText(/Discovery save failed:/)).toHaveCount(0);
   await expect.poll(() => acceptedMove).toBe("g1f3");
   finishAccept?.();
-  await expect(page.getByText(/Discovery save unconfirmed; Tempo will retry/)).toHaveCount(0);
+  await expect(page.getByText("Discovery save confirmed.")).toBeVisible();
 });
 
 test("legacy long discovery save key recovers and queues the saved choice", async ({ page }) => {

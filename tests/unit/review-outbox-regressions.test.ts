@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { conflictedReviews, enqueuePendingReview, flushPendingReviews, pendingReviews, retryReviewConflict } from "../../app/lib/review-outbox";
+import { conflictedReviews, enqueuePendingReview, flushPendingReviews, pendingReviews, retryReviewConflict, ReviewReplayError } from "../../app/lib/review-outbox";
 import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import manifest from "../fixtures/opening-evidence-manifest.json";
 import { openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
@@ -678,4 +678,85 @@ describe("optimistic training review outbox", () => {
     expect(pendingReviews()).toEqual([]);
   });
 
+});
+
+
+it("terminal review survives passive flushes and explicit retry preserves its complete envelope", async () => {
+  const original = enqueueOpeningEvidenceReview("terminal-evidence-attempt");
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Invalid review" }, { status: 422 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushPendingReviews()).rejects.toMatchObject({ classification: "failed" });
+  expect(pendingReviews()[0]).toMatchObject({ ...original, automaticRecoverySuppressed: "failed" });
+  const retained = localStorage.getItem("tempo-pending-training-reviews-v1");
+  await flushPendingReviews(); await flushPendingReviews(1, true);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(retained);
+  fetcher.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(Response.json({ persisted: true }));
+  await flushPendingReviews(Infinity, true, original.attemptId);
+  expect(fetcher.mock.calls[2][1].body).toBe(fetcher.mock.calls[0][1].body);
+  expect(fetcher.mock.calls[2][1].headers).toEqual(fetcher.mock.calls[0][1].headers);
+  expect(pendingReviews()).toEqual([]);
+});
+
+it.each([
+  [409, false, "conflict"], [409, true, "transient"], [422, false, "failed"],
+  [503, true, "transient"], [408, true, "transient"], [429, true, "transient"],
+] as const)("review replay HTTP %s retryable=%s classifies as %s", (status, retryable, classification) => {
+  expect(new ReviewReplayError("Save rejected", "/review", { backendId: "card", queueEntryId: 1,
+    attemptId: "immutable", outcome: "again", guided: false }, status, undefined, retryable).classification).toBe(classification);
+});
+
+
+it("explicit terminal retry becoming transient releases only its attempt for automatic recovery", async () => {
+  const first = { backendId: "card-a", queueEntryId: 1, attemptId: "first", outcome: "again" as const,
+    guided: false, completedAt: "2026-10-08T12:00:00Z" };
+  const second = { ...first, backendId: "card-b", queueEntryId: 2, attemptId: "second" };
+  localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
+    { ...first, automaticRecoverySuppressed: "failed" }, { ...second, automaticRecoverySuppressed: "failed" },
+  ]));
+  const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockResolvedValueOnce(Response.json({ detail: "Busy" }, { status: 503 }))
+    .mockResolvedValueOnce(Response.json({ state: "complete", response: { persisted: true } }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushPendingReviews(Infinity, true, first.attemptId)).rejects.toMatchObject({ classification: "transient" });
+  expect(pendingReviews()).toEqual([first, { ...second, automaticRecoverySuppressed: "failed" }]);
+  await flushPendingReviews(1, true);
+  expect(pendingReviews()).toEqual([{ ...second, automaticRecoverySuppressed: "failed" }]);
+});
+
+it("explicit retry cannot bypass an earlier suppressed result for the same card", async () => {
+  const original = { backendId: "card", queueEntryId: 1, attemptId: "earlier", outcome: "again", guided: false,
+    automaticRecoverySuppressed: "failed" };
+  const later = { ...original, queueEntryId: 2, attemptId: "later" };
+  const retained = JSON.stringify([original, later]);
+  localStorage.setItem("tempo-pending-training-reviews-v1", retained);
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await expect(flushPendingReviews(Infinity, true, "later")).rejects.toThrow("earlier result");
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(retained);
+});
+
+it("retryable failed operation receipt remains transient and retains the original review", async () => {
+  enqueuePendingReview({ backendId: "card", queueEntryId: 1, attemptId: "retryable-receipt", outcome: "again", guided: false });
+  const original = pendingReviews()[0];
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "failed", error: {
+    status_code: 409, retryable: true, message: "Worker will recover" } })));
+  await expect(flushPendingReviews(1, true)).rejects.toMatchObject({ classification: "transient", retryable: true });
+  expect(pendingReviews()).toEqual([original]);
+});
+
+
+it("PR105 guided recovery consumes a complete review receipt despite an unavailable advisory marker", async () => {
+  const review = { backendId: "guided-persisted", queueEntryId: 811, attemptId: "guided-original",
+    completedAt: "2026-10-08T12:00:00Z", outcome: "correct" as const, guided: true, expectedRevision: 3 };
+  enqueuePendingReview(review);
+  const fetcher = vi.fn<typeof fetch>(async (input, options) => options?.method === "POST"
+    ? Response.json({ detail: "Command broker unavailable" }, { status: 503 })
+    : Response.json({ state: "complete", response: { persisted: true, review_id: 88 } }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushPendingReviews(1, true)).resolves.toEqual({ persistedAttemptIds: [review.attemptId], conflictedAttemptIds: [] });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(fetcher.mock.calls[0][0]).toContain("/api/operations/review-attempt%3Aguided-original");
+  expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toEqual([]);
+  expect(pendingReviews()).toEqual([]);
 });

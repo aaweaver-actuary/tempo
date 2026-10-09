@@ -2836,6 +2836,122 @@ Stalemate Swindles (October 5, 2026):
 
 - `test_postgres_stalemate_import_reimport_preserves_existing_review_history` runs in the regular disposable PostgreSQL study-durability stage after the self-contained checked-in corpus proof. It explicitly enrolls and reviews a separate synthetic Study through production foreground commands, requires nonempty review/Study-attempt/receipt/scheduling snapshots, and verifies every existing reviewed card and history row is unchanged after real-corpus import, reversed-row reimport, and changed-content rejection. The 300 corpus exercises remain draft and unenrolled; only the independent disposable fixture is enrolled.
 
+## Phone recovery and messaging — October 8, 2026
+
+- `phone accepted discovery reload confirms the original intent without readmission` and `phone stale discovery failure with retained intent repairs by confirming that intent` preserve accepted identities after reload and recover the reported stale discovery state without inventing success.
+- `phone discovery projection does not count one stored failure as repeated incidents` prevents UI projections from inflating the reported occurrence count.
+- `phone pending review uses inline confirmation status and no error popup` separates pending confirmation from failure and resolves the same notice on confirmation.
+- `phone review recovery confirms the original receipt after reload without another POST`, `phone pending receipt retries with bounded backoff and yields to foreground work`, `phone receipt recovery yields after one result and preserves another pending review`, and `phone blocked review receipt preserves the attempt and stops automatic retries` cover bounded, serialized retained-review recovery without false confirmation.
+- `Phone pending review keeps one inline status until its original receipt confirms` exercises real phone board input, compact status, receipt confirmation, no duplicate submission, and viewport overflow in the browser suite.
+- `phone review receipt confirmation waits for held pointer release before refreshing training` protects foreground board input when an already running confirmation finishes during a held pointer.
+- `phone review diagnostics retain raw errors without publishing a second incident` keeps detailed diagnostic evidence while the save-status owner publishes the single user-facing notice.
+- `Phone actionable save warning keeps its severity and dismiss control readable` covers the screenshot's narrow-phone severity wrapping and dismissal with one actionable blocked-save notice.
+- `phone recovery replays a missing receipt with the original immutable review identity` covers lost admission responses while preserving the original POST key and completed review payload.
+- `phone passive queue refresh leaves review delivery to bounded receipt recovery` prevents periodic queue reads and receipt-completion refreshes from bypassing the retry scheduler or draining multiple results in one idle slice.
+- `phone receipt confirmed during a foreground pause refreshes once after resume` reproduces and protects an in-flight confirmation crossing a readiness effect boundary; the original candidate dropped the completion callback and left the inline status pending.
+- `phone readiness toggles retain one in-flight recovery and one confirmation callback` prevents a readiness rerender from attaching duplicate refresh callbacks to the shared receipt request.
+- `phone review storage failure suspends recovery and retains the confirmed result for repair` distinguishes browser persistence failure from a pending computer receipt, retaining the outbox and raw storage detail without automatic retry or false UI success.
+- Existing opening recovery-policy regressions now verify concise Jobs/storage actions and raw operation errors in Details; the review-conflict attribution regression verifies the attempt key while preserving original evidence and no false success.
+
+- `phone save failure preserves the outbox storage warning and raw details` — `tests/unit/phone-recovery-messaging-regressions.test.tsx`; the training renderer retains the incident owner’s warning classification and diagnostics.
+
+- `PostgreSQL schema fixtures share the queue workers calendar across UTC midnight` — `tests/unit/postgres-test-runner-regressions.test.ts`; prevents fixture queue refreshes from publishing the next UTC day while the product’s local queue is still yesterday. Proven by the real `daily study opens while background analysis remains queued` browser case.
+- `Phone pending review keeps one inline status until its original receipt confirms` — recovery must advance the exact displayed completed attempt after receipt confirmation, while retaining a successor that was already advanced from cache. The real browser test failed with London retained after receipt completion before this repair.
+
+
+## PR #105 terminal review recovery — October 8, 2026
+
+Terminal foreground failures were retained without a durable recovery policy, so a missing
+receipt caused idle recovery to resubmit the rejected result, including after reload.
+
+- `phone definitive foreground failure suppresses idle replay across reload=%s` — both
+  active-session and remounted-hook variants failed first: rejected HTTP 422 was followed by
+  a receipt read and unsolicited POST (three requests instead of one).
+- `phone blocked review suppression survives reload and permits explicit intervention` —
+  failed first on renewed automatic receipt requests after remount; now retains the result
+  through Jobs retry and only the explicit saved-review check resolves it.
+- `phone terminal A does not starve independent B or allow a later same-card result` —
+  failed first on repeated recovery of A; independent B now confirms while A and its successor
+  remain retained in their original order.
+- `phone explicitly retryable 409 retains bounded automatic recovery and immutable identity`
+  — failed first because replay classified retryable 409 as terminal; original key/body now
+  replay after bounded backoff. `phone transient recovery caps backoff at thirty seconds
+  without changing the saved identity` verifies the cap and eventual receipt confirmation.
+- `terminal review survives passive flushes and explicit retry preserves its complete envelope`
+  — failed first because no suppression metadata was persisted. Ordinary flushes and idle
+  receipt-first flushes now leave the retained evidence unchanged; explicit retry reuses the
+  original body/key, outcome, timestamp and evidence, removing the record only on confirmation.
+- `review replay HTTP %s retryable=%s classifies as %s` — retryable 409 failed first;
+  nonretryable conflict/validation and ordinary transient statuses retain their classifications.
+  `retryable failed operation receipt remains transient and retains the original review`
+  also covers the structured failed-receipt path.
+- `explicit terminal retry becoming transient releases only its attempt for automatic recovery`
+  and `explicit retry cannot bypass an earlier suppressed result for the same card` cover
+  scoped override and same-card ordering.
+- `Phone terminal review stays retained through idle recovery until explicit retry reload=false`
+  and `reload=true` — real Chromium phone UI proves Retry save in-session and Check saved
+  reviews after reload, no unsolicited submissions through advanced idle timers, exact original
+  payload/key on retry and confirmed outbox removal.
+
+Unit cases live in `tests/unit/pending-review-recovery-regressions.test.tsx` and
+`tests/unit/review-outbox-regressions.test.ts`; browser cases live in
+`tests/browser/phone-opening-study.spec.ts`. All are in the regular suite.
+
+CI caller-fixture follow-up: the existing `failed earlier save blocks grading after a
+completed tactic until ordered retry succeeds`, `failed tactic review save keeps the next
+card visible but blocks grading until retry`, and `failed review save retains the completed
+card for retry; successful review is not reported as failed when queue refresh fails` now
+return the real missing-receipt HTTP 404 for explicit receipt-first retries. Previously
+their generic HTTP 200 payload had no operation state and correctly left saves pending.
+All ordering, payload-retention, grading-block and queue-error assertions are unchanged.
+
+`phone terminal explicit retry cannot suspend an independent idle review sharing its
+in-flight flush` reproduces a recovery observer for B sharing A's explicit in-flight
+retry. A terminal response must suspend A, not B; confirmed results likewise clear
+only their own backoff entries. It failed before the identity-attribution correction,
+then passed with independent B confirmed and original A retained unchanged.
+
+`phone explicit retry after an idle terminal failure resumes automatic recovery when it
+becomes transient` failed first with the durable marker cleared but an obsolete in-memory
+infinite deadline still blocking confirmation. Terminal and blocked replay errors already
+have durable outbox suppression; the hook no longer keeps a second terminal block that
+could survive an explicit retry. Storage-error suspension and capped transient backoff
+remain covered by the existing named cases.
+
+
+## PR #105 attempt-specific review confirmation
+
+`tests/unit/review-attempt-confirmation-regressions.test.tsx` uses Home and the
+actual outbox/idle hook to cover these named regular-suite cases:
+
+- PR105 displayed idle conflict releases pending confirmation and retains the original completed result
+- PR105 earlier idle conflict preserves an unrelated active board logical attempt and progress
+- PR105 successful flush cannot credit or advance a suppressed same-card successor independent=%s (empty and unrelated-result flushes; Check saved reviews resolves the original dependency)
+- PR105 independent submitted review alone is credited while a suppressed result remains intact
+- PR105 Home saveFailed allows independent idle receipts without retrying the terminal result
+- PR105 independent idle confirmation waits for a held pointer before changing Home
+- PR105 foreground saving defers independent idle recovery until the save settles
+- PR105 missing submitted identity cannot become successful confirmation
+- PR105 a later independent flush failure cannot erase the submitted persisted outcome
+- PR105 explicit legacy retry credits the normalized attempt without a new identity
+
+`tests/browser/phone-opening-study.spec.ts` adds real-board proof:
+
+- Phone idle review conflict releases Check save and permits the next real board move
+- Phone skipped same-card result stays paused with actionable earlier-result status
+
+Existing study regressions retain successful-review/queue-refresh failure proof;
+existing pending-review recovery tests retain receipt-first, held-pointer, restart,
+terminal suppression, scoped explicit retry and bounded-backoff coverage.
+
+Additional receipt and shared-flush boundaries:
+
+- PR105 completion removed during feedback requires its own persisted receipt state=%s (`queued` and completed-but-unconfirmed receipts; Check save reads the same receipt without another POST).
+- phone shared flush delivers authoritative settled attempts when a later independent receipt fails (`tests/unit/pending-review-recovery-regressions.test.tsx`).
+- completed tactic survives queue reconciliation before its feedback timer grades it (`tests/unit/study-regressions.test.tsx`): existing assertions unchanged; its fixture now returns the authoritative completed receipt for the saved attempt.
+
+- PR105 late foreground persistence cannot advance an unrelated replacement attempt (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): the active logical attempt is rechecked after the flush settles.
+
 ## Analysis queue transaction deadlines — October 8, 2026
 
 - `daily study opens on the workspace date while background analysis remains queued` uses the real API's study date for the helper fixture. CI reproduced UTC October 9 versus API/New York October 8: the helper requested the next day's queue and the browser's current publication never contained its card. The existing live worker, large queued backlog, foreground board/input and study checks remain required, with unchanged deadlines.
@@ -2848,3 +2964,40 @@ Stalemate Swindles (October 5, 2026):
 - CI follow-up: `test_postgres_queue_contention_yields_without_spending_retry_or_replaying_stale_lease` now exercises lock/serialization contention separately. Its old fixture classified a transaction deadline as ordinary contention, contrary to the repaired contract. Deadline errors retain the new checkpoint/cooldown/stale-generation regressions above; this does not remove deadline coverage or change a budget.
 
 - Migration rehearsal follow-up: `test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity` replays immutable migration 039 and its receipt in one transaction after recreating its historical guard. Later migration objects/receipts remain intact. The normal driver then validates/replays the complete history twice and asserts its exact version list plus retained application/card/review snapshots. The old rehearsal exposed a registry gap after schema 040 was introduced; no published migration or strict history validation is changed.
+
+
+## PR #105 remaining recovery review findings (October 9, 2026)
+
+- `PR105 guided recovery consumes a complete review receipt despite an unavailable advisory marker`
+  (`tests/unit/review-outbox-regressions.test.ts`): confirms the original guided review
+  and drains its envelope without an advisory marker or duplicate review POST.
+
+- `PR105 transient review backoff permits independent receipt confirmation without bypassing same-card successors`
+  (`tests/unit/pending-review-recovery-regressions.test.tsx`): repeatedly failing A
+  keeps its immutable envelope while B confirms during A's backoff; A's successor
+  is neither checked nor posted.
+
+- `PR105 non-replay save failure retains raw diagnostics in one attempt-owned incident`
+  (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): a native storage
+  exception leaves concise inline guidance, original exception details and a debug
+  reference on one attempt-owned notice, with no render-created incidents or POST.
+  Explicit retry of this unretained result performs no receipt lookup and keeps
+  the same save-failure state and incident.
+
+- `PR105 non-replay replacement save failure keeps diagnostics off the prior saved attempt`
+  (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): a replacement
+  card's storage failure owns its diagnostic notice without reopening the prior
+  saved attempt's notice.
+
+- `PR105 initial queue recovery confirms retained reviews before replay receipt=%s`
+  (`tests/unit/desktop-queue-regressions.test.ts`): completed receipts drain without
+  POST; missing receipts replay only the original key and completion time.
+- `Phone reload consumes a retained completed review receipt without another review POST`
+  (`tests/browser/phone-opening-study.spec.ts`): real reload consumes browser-retained
+  review storage by its original receipt, with zero new review POSTs.
+
+- Existing `reload drains an earlier review before marking the next guided card`,
+  `stale guided failure replay completes before today's training queue opens`, and
+  `reload retains an unprovable result as a conflict and opens independent cards`
+  (`tests/unit/attempt-lifecycle-regressions.test.ts`) retain their original outcome
+  assertions and now require receipt-first initialization before replay.

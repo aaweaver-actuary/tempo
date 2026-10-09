@@ -1,0 +1,273 @@
+# PR105 remaining review findings validation
+
+Selected scope: receipt-before-advisory delivery, per-attempt transient backoff with
+same-card FIFO, raw non-replay save diagnostics, and receipt-first live initialization.
+Risks: redundant mutation, independent starvation, unsafe successor replay, duplicate
+incidents, swallowed storage failures, and active-board disruption.
+
+Smallest proof: named outbox/hook/Home/queue unit regressions, then affected caller
+files and phone reload plus existing held-piece browser coverage. Typecheck, lint
+and diff checks cover TypeScript interfaces. CI owns comprehensive validation for
+the final head/current-base candidate. No local full gate or backend/schema changes.
+
+Base reviewed head: c0e87b1566827a4c3f0bd0b24ba07aba9460e84a.
+Fresh remote main: d5394b1fa29a00c104efb946fbbc46f2975c4079.
+Checkout: /Users/andy/tempo/.dev-copies/pr105-terminal-recovery. Prior ownership
+was released in its validation record; reverified clean, with no other process
+or Docker references before reuse. New branch codex/pr105-review-findings was
+created from fetched main and fast-forwarded to the original PR head. Existing
+Node dependencies reused; selected unit files do not invoke Python.
+
+
+## Corrections and named coverage
+
+1. Guided markers now run inside the evidence-aware review's request callback,
+   after its receipt-first lookup decides a replay is needed. Complete receipts
+   consume normally without either POST. Missing receipts retain marker-before-review
+   order and marker error handling; evidence fallback shares the one marker delivery.
+2. Idle selection excludes backed-off logical attempts and their same-card successors.
+   The same ephemeral exclusions reach the shared bounded flush. Independent work can
+   confirm now; with none available, the earliest finite same-card-safe retry is used.
+   Durable suppression and the original backoff intervals/cap remain intact.
+3. Home captures original save identity before capture/retention can fail. Non-replay
+   exceptions are recorded without a second debug incident; raw sanitized details
+   and debug reference update one attempt notice. Native DOMException fields survive
+   runtimes where DOMException is not an Error. Reporting is guarded and optional.
+4. Live initialization calls the existing flush with receipt-first enabled. Passive
+   refresh remains opted out. Missing receipts preserve original replay identity.
+
+Named regular-suite regressions, all registered in tests/REGRESSIONS.md:
+
+- PR105 guided recovery consumes a complete review receipt despite an unavailable advisory marker
+- PR105 transient review backoff permits independent receipt confirmation without bypassing same-card successors
+- PR105 non-replay save failure retains raw diagnostics in one attempt-owned incident
+- PR105 initial queue recovery confirms retained reviews before replay receipt=%s (complete/missing)
+- Phone reload consumes a retained completed review receipt without another review POST
+
+## Failing baseline and iteration
+
+On c0e87b1 production with only new tests, the PR105-filtered four-file command
+below produced four genuine recovery failures and one initially ambiguous alert
+selector (14 existing preservation passes; 2.44s Vitest). After restricting the new
+Home selector and diagnostic assertion to the save's own status/source, its case
+failed specifically because the original save exception was never recorded
+(1.30s Vitest). No existing assertion was weakened.
+
+```sh
+npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/pending-review-recovery-regressions.test.tsx tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/desktop-queue-regressions.test.ts -t PR105
+npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx -t 'PR105 non-replay save failure'
+make view VIEW='Phone reload consumes a retained completed review receipt without another review POST'
+```
+
+Browser baseline reproduced traffic [POST, receipt] rather than [receipt]. One
+case failed (2.8s case / 4.30s measured browser stage). This was a disposable runner,
+not live study. Its retained screenshot/trace and timings identify the unfixed source.
+
+The first scheduler iteration accidentally added an extra idle interval when all
+reviews were backed off. Existing exact-interval tests caught it (4 failures among
+78 cases, 0.90s Vitest). The correction reserves the retry deadline directly;
+those assertions remain unchanged. The first native storage diagnostic exposed
+DOMException's non-Error runtime inheritance; a one-line error-details correction
+preserves its native name/message. The resulting primary files passed 117/118 then
+all 140 primary/boundary cases, including the repaired diagnostic.
+
+## Settled focused evidence
+
+Environment: macOS arm64, Node 26.10.0, npm 11.19.1. The following executions used
+production source committed unchanged in 9d1bea5e9b7bb16e065229799995cc4754ba1ecf.
+The primary unit run preceded those commits but used their identical production
+source. Browser runs used 9d1bea5 plus fixture-only changes later committed as
+150fb9c15ba2aa139d1ed908b7e4a26095104136. These are source-provenance claims,
+not a clean-HEAD local full-gate claim.
+
+```sh
+npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/pending-review-recovery-regressions.test.tsx tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/desktop-queue-regressions.test.ts tests/unit/phone-recovery-messaging-regressions.test.tsx tests/unit/guided-review-pending-regressions.test.ts tests/unit/opening-evidence-review-deadlines.test.ts tests/unit/operation-status-integration-regressions.test.ts
+```
+
+140/140 passed in 5.08s Vitest (runner wall not separately measured).
+
+```sh
+npm run test:unit -- tests/unit/study-regressions.test.tsx tests/unit/phone-opening-study-regressions.test.tsx tests/unit/review-conflict-ui-regressions.test.tsx tests/unit/opening-evidence-home-lifecycle.test.tsx tests/unit/debug-reporting-regressions.test.tsx tests/unit/notification-regressions.test.tsx
+```
+
+Five files passed all 54 cases. Study had 74 passes and two fixture failures;
+combined run was 29.47s Vitest / 30.07s wall. The two tactic fixtures previously
+claimed complete receipts before a POST, or returned a generic non-receipt payload.
+They now return missing until persistence and complete afterward. Their original
+board/attempt/review-count assertions remain unchanged.
+
+```sh
+npm run test:unit -- tests/unit/study-regressions.test.tsx -t 'completed tactic survives queue reconciliation|reload during completed tactic feedback'
+npm run test:unit -- tests/unit/study-regressions.test.tsx
+```
+
+The two focused cases passed (5.72s Vitest), then the entire study file passed
+76/76 (33.41s Vitest). Aggregate final relevant-file coverage: **270 cases in
+14 files**; earlier failed runs are not included as passing evidence.
+
+```sh
+make ui-file FILE=phone-opening-study.spec.ts
+make view VIEW='repair confirmation during a held training piece'
+npm run typecheck
+npm run lint
+git diff --check
+```
+
+- Phone browser file: 13/13 passed, 19.7s Playwright / 89.55s runner wall.
+- Held-piece case: passed, 42.78s runner wall; no retry.
+- Typecheck passed, 17.08s wall.
+- Lint passed, 26.65s wall; ten existing warnings, no errors.
+- Diff check passed, 0.05s wall.
+
+## Resource ownership and delivery boundary
+
+All three disposable projects completed owning-runner teardown. Explicit rechecks
+found no task-owned containers, images, volumes or networks. Shared caches and live
+study resources were retained. Project identifiers:
+
+- tempo-pg-regressions-32067-4d03b5c1 (failing reload baseline)
+- tempo-pg-regressions-35347-3482a3bd (settled phone spec)
+- tempo-pg-regressions-35984-b56dabab (held-piece preservation)
+
+Exact identifiers, creation/start/activity timestamps and teardown commands are
+in test-results/tempo-cli/<project>/ownership.json. Scenario timings are in
+test-results/performance/postgres-scenarios-browser-<project>.json. Logs and cleanup
+verification are in test-results/pr105-review-findings/. Final evidence is preserved
+outside the clone under root test-results/2026-10-09/pr105-review-findings/.
+
+No local full, backend, durability or visual sweep was run: this change introduces
+no backend/database/rendering contract; CI owns its mandatory current-candidate plan.
+The prior c0e87b1 green run is historical evidence only. Current-head/current-base
+CI must pass before marking PR ready. Related #29, #39 and #81 remain open for their
+separate requirements. All four reported findings are fixed; no merge/deployment.
+
+
+## Final caller audit and fresh candidate
+
+A retained-review caller audit found three initialization fixtures in
+attempt-lifecycle-regressions.test.ts still assuming POST-first recovery. The
+focused command reproduced all three mismatches (1.16s Vitest): generic queue
+payloads were returned for the new receipt read, so replay correctly stayed pending.
+These fixtures now return missing receipts, and the two exact request-order
+assertions additionally require the original receipt before their existing review,
+guided-marker and queue sequence. No assertion was weakened.
+
+```sh
+npm run test:unit -- tests/unit/attempt-lifecycle-regressions.test.ts -t 'reload drains an earlier review|stale guided failure replay|reload retains an unprovable'
+npm run test:unit -- tests/unit/attempt-lifecycle-regressions.test.ts
+npm run test:unit -- tests/unit/training-failure-outbox-regressions.test.ts
+npx eslint tests/unit/attempt-lifecycle-regressions.test.ts
+npm run typecheck
+```
+
+Corrected focused cases: 3/3 passed, 0.864s Vitest. Entire lifecycle file: 24/24
+passed, 0.876s Vitest. Failure-outbox callers: 12/12 passed, 0.572s Vitest.
+Changed-fixture lint passed, 2.01s wall; final typecheck passed, 5.92s wall.
+Final aggregate relevant-file coverage is **306 cases across 16 files**, with
+production source unchanged from the earlier browser/static runs. The earlier
+whole lint result covers unchanged inputs; the final fixture also has focused lint.
+
+Initial pushed head b185486 triggered CI run 37912162058, which was superseded by
+this demonstrated fixture repair. Its partial results are not current-candidate
+validation. The new committed head must receive all mandatory checks and quality
+for its current-base merge candidate before handoff.
+
+
+## Shared browser receipt fixture correction
+
+The final browser caller audit found prepareVisualUI returning {} for mocked
+review operation lookups. Those mock reviews never reach the real receipt store,
+so an absent receipt must be represented as missing, not as a malformed pending
+receipt. The shared fixture now returns 404 only for review-attempt/review-reconcile
+receipt keys; specific test-installed receipt handlers retain priority.
+
+```sh
+make view VIEW='poisoned online A becomes inspectable|reload drains an earlier review before marking'
+make view VIEW='poisoned online A becomes inspectable|reloaded prefetched guided card waits for the earlier review'
+npx eslint tests/browser/visual-fixtures.ts
+```
+
+The baseline selection matched one poisoned-review case; the second pattern did
+not match a title. That executed case failed with B/C never saving (37.63s runner
+wall), reproducing the malformed mock-receipt mechanism. With the fixture fixed,
+the corrected selection ran and passed both poisoned-review and prefetched-guided
+workflow cases (3.1s Playwright / 30.91s runner wall). Existing assertions remain
+unchanged. Fixture lint and diff checks passed. Production source is unchanged.
+
+Additional disposable projects: tempo-pg-regressions-38420-668bf93f (baseline) and
+tempo-pg-regressions-38902-ac1022e7 (fixed). Owning-runner cleanup succeeded for both;
+identifiers/timestamps/teardown are in their ownership.json records.
+
+CI run 37912763420 on 5aa2d95 reported visual failure before running any tests:
+Docker capability preflight failed with spawnSync docker ETIMEDOUT, followed by a
+missing visual report. The artifact is preserved under the dated root evidence
+ci-37912763420/visual. No snapshots, timeouts or CI configuration are changed.
+The fixture correction receives a fresh full candidate plan; prior partial or
+failed CI results are not reused as final evidence.
+
+
+## Diagnostic ownership preservation follow-up
+
+Extended the native local-retention regression to click Retry save. It reproduced
+an unintended diagnostic-only change: early persistence identity made an unretained
+result eligible for receipt lookup and changed saveFailed to pendingConfirmation
+(1.75s Vitest). The fix keeps diagnostic ownership in a UI-only ref, while receipt
+checks and replay continue to use the existing retained-review persistence identity.
+Only a current transition may update that UI ref; late errors still report their
+original attempt diagnostics. No new persistence store or retry path is introduced.
+
+Added and registered `PR105 non-replay replacement save failure keeps diagnostics
+off the prior saved attempt`. It proves a storage failure on replacement B owns
+one error incident without reopening saved A's notice. The original diagnostic
+regression now also requires zero receipt reads and one unchanged incident after
+explicit retry of an unretained result. Both cases pass.
+
+The previous candidate ae437347fedfbd8591c81263fd5c82c1af203cb0 received complete
+successful CI in run 37913488790. This result is historical only: the diagnostic
+ownership follow-up requires fresh current-head/current-base comprehensive CI.
+
+
+Final changed-source check (dirty ae43734 plus only the diagnostic ownership/ref,
+its two regression assertions and registry/documentation changes):
+
+```sh
+npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/phone-recovery-messaging-regressions.test.tsx tests/unit/phone-opening-study-regressions.test.tsx tests/unit/opening-evidence-home-lifecycle.test.tsx tests/unit/study-regressions.test.tsx tests/unit/review-conflict-ui-regressions.test.tsx
+npm run typecheck
+npm run lint
+git diff --check
+```
+
+All 114 cases in six directly affected Home/caller files passed, 32.71s Vitest /
+33.41s wall. Typecheck passed in 57.77s wall; whole lint passed in 61.72s wall with
+ten pre-existing warnings and zero errors; diff check passed in 0.06s. The aggregate
+is now 307 distinct relevant cases across 16 files, combining unchanged earlier
+files with these freshly rerun affected callers. These are focused development
+passes, not a local full-suite result or a performance comparison. Logs/timings:
+test-results/pr105-review-findings/settled-owner-check-{0..3}.log and JSON record.
+
+
+Final phone run on those identical production hashes:
+`make ui-file FILE=phone-opening-study.spec.ts` — all 13 passed, 22.4s Playwright /
+149.28s runner wall (browser stage 25.54s, startup 55s, cleanup 9.81s). This includes
+the new zero-POST reload case plus existing terminal/suppression, conflict and
+phone preservation cases. Project tempo-pg-regressions-48912-55170ed6 was fully
+removed by its owning runner. Earlier intermediate follow-up project
+ tempo-pg-regressions-42609-924be076 also completed all 13 cases and owning cleanup;
+only this settled run is final changed-source phone evidence.
+
+
+Final foreground preservation run on the same production hashes:
+`make view VIEW='repair confirmation during a held training piece'` — 1 passed,
+3.9s Playwright / 59.70s runner wall (browser stage 5.66s, startup 22.5s, cleanup
+12.37s). Project tempo-pg-regressions-50663-7faf4b85 was fully removed. Explicit
+Docker checks confirmed no remaining containers, images, volumes or networks for
+this project and the two diagnostic-follow-up phone projects. Prior five projects
+were already verified removed. Only shared safe caches and the unmerged review
+checkout remain. Ownership/teardown/timestamps and checksum-verified logs are
+preserved outside the clone under root test-results/2026-10-09/pr105-review-findings.
+
+All four findings are corrected. Fresh main remains d5394b1; related issues
+#29/#39/#81 and open PR #120 were rechecked and retain their separate requirements.
+No issue closure or status change is justified by this scoped recovery repair.
+Final committed source must receive fresh complete selected CI; results will be
+recorded in the PR and dated root evidence without another source-only commit.

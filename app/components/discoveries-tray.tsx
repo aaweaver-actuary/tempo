@@ -24,6 +24,7 @@ import {
   flushPendingDiscoveryAdmissions,
   pendingDiscoveryAdmissions,
   recoverUnacknowledgedDiscoveryAdmissions,
+  reportDiscoveryAdmissionErrors,
   retryPendingDiscoveryAdmission,
   type PendingDiscoveryAdmission,
 } from "../lib/discovery-admission-outbox";
@@ -35,7 +36,7 @@ import { reportDebugError } from "../lib/debug-reporting";
 import { applyOpportunityCommand } from "../lib/opportunity-command";
 import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
 import { usesLocalApi } from "../utils/local";
-import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
+import { notifications, resolveNotification } from "../lib/notifications";
 
 export type DiscoveryItem = z.infer<typeof discoveriesFeedSchema>["discoveries"][number];
 type Recommendation = z.infer<typeof discoveryRecommendationSchema>;
@@ -926,15 +927,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const activeAdmission = active
     ? pendingAdmissions.find((admission) => admission.opportunityId === active.id)
     : undefined;
-  useEffect(() => {
-    for (const admission of pendingAdmissions) if (admission.error) publishNotification({
-      severity: admission.state === "failed" ? "error" : "warning",
-      source: "discovery save", key: `discovery-save:${admission.opportunityId}`,
-      message: admission.state === "failed"
-        ? `Discovery save failed: ${admission.error}`
-        : `Discovery save unconfirmed; Tempo will retry. ${admission.error}`,
-    });
-  }, [pendingAdmissions]);
+  useEffect(() => { reportDiscoveryAdmissionErrors(pendingAdmissions); }, [pendingAdmissions]);
   const boardHistory = useMemo(
     () =>
       active

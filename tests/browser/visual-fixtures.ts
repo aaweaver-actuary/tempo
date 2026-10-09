@@ -36,6 +36,11 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
   });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    // Mock review POSTs have no server receipt unless the test installs one.
+    if (/^\/api\/operations\/review-(?:attempt|reconcile):/.test(decodeURIComponent(path))) {
+      await route.fulfill({ status: 404, json: {} });
+      return;
+    }
     if (trainingCards && route.request().method() === "POST" && /^\/api\/cards\/[^/]+\/review$/.test(path)) {
       const reviewedCardId = path.split("/")[3];
       activeTrainingCards = activeTrainingCards.filter((card) => card.id !== reviewedCardId);

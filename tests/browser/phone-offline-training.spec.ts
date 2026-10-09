@@ -244,7 +244,7 @@ test("pending phone review remains saved while live training opens and a conflic
   await page.unroute("**/api/**");
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText("Offline queue", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("main").getByText(/Could not save a previous training review/)).toBeVisible();
+  await expect(page.getByRole("main").getByText(/A previous result needs confirmation or attention/)).toBeVisible();
   await expect(page.locator(".session-count strong")).toHaveText("3");
 
   await page.unroute("**/api/cards/phone-first/review");

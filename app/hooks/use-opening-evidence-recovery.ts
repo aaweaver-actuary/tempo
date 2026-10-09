@@ -53,10 +53,11 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
         const policy = openingEvidenceRecoveryPolicy(error);
         try {
           publishNotification({
-            severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
-            message: `Opening evidence recovery is pending. Normal training continues. ${String(error)} ${
-              policy === "suspend" ? "Recovery is paused. Restore browser storage/access or repair the saved data, then reload Tempo to resume."
-                : policy === "blocked" ? "Resolve and explicitly retry this operation; recovery resumes after its status changes." : "Recovery will retry after a bounded delay."}`,
+            severity: policy === "retry" ? "info" : "warning", source: "opening evidence", key: "opening-evidence-recovery",
+            details: { error: String(error), recoveryPolicy: policy },
+            message: policy === "retry" ? "Opening details are waiting to sync. You can keep training."
+              : policy === "blocked" ? "Opening details could not sync. Resolve and retry the blocked operation in Jobs. You can keep training."
+              : "Opening details could not be read or stored. Keep this browser's data, restore storage access, then reopen Tempo.",
           });
         } catch { /* Diagnostics cannot change retry or suspension policy. */ }
         return policy;

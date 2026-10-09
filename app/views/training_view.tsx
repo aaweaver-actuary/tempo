@@ -1,3 +1,4 @@
+import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { Button } from "../components/buttons/BaseButton";
 import { BoardHeading, BoardTools } from "../components/board/board-workspace";
@@ -23,7 +24,7 @@ import type { AssistanceKind } from "../domain/opening-evidence";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePhoneViewport } from "../hooks/use-phone-viewport";
 import { ActionMenu } from "../components/ui";
-import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
+import { notifications, publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
 import { getFeedbackCopy } from "./getFeedbackCopy";
@@ -52,6 +53,7 @@ interface TrainingViewProps {
   reviewPersistenceState?:
     | "idle"
     | "saving"
+    | "pendingConfirmation"
     | "saveFailed"
     | "saved"
     | "conflicted"
@@ -130,14 +132,14 @@ function StandardTrainingView({
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
   const attemptGeneration = useTrainingStore((state) => state.attempt.generation);
-  const reviewBlocked = reviewPersistenceState === "saveFailed";
+  const reviewBlocked = ["saveFailed", "pendingConfirmation"].includes(reviewPersistenceState);
 
   useEffect(() => {
     const source = "training review";
-    const saveKey = `review-save:${reviewPersistenceIdentity?.queueEntryId ?? card.queueEntryId ?? card.id}`;
+    const saveKey = reviewPersistenceIdentity ? reviewSaveNoticeKey(reviewPersistenceIdentity) : `review-save:${card.queueEntryId ?? card.id}`;
     const details = reviewPersistenceIdentity ? { cardId: reviewPersistenceIdentity.backendId,
       queueEntryId: reviewPersistenceIdentity.queueEntryId, attemptId: reviewPersistenceIdentity.attemptId ?? "unknown" } : undefined;
-    if (reviewNotificationId.current && reviewNotificationKey.current !== saveKey && ["saving", "saveFailed", "conflicted"].includes(reviewPersistenceState)) {
+    if (reviewNotificationId.current && reviewNotificationKey.current !== saveKey && ["saving", "pendingConfirmation", "saveFailed", "conflicted"].includes(reviewPersistenceState)) {
       updateNotification(reviewNotificationId.current, { severity: "info", active: false, message: "Result remains saved locally pending confirmation." });
       reviewNotificationId.current = undefined;
     }
@@ -145,8 +147,14 @@ function StandardTrainingView({
     if (reviewPersistenceState === "saving") {
       reviewNotificationId.current = publishNotification({ severity: "info", source,
         key: saveKey, details, message: "Saving result…", active: true });
+    } else if (reviewPersistenceState === "pendingConfirmation") {
+      const existing = notifications().find(record => record.key === saveKey && !record.resolvedAt);
+      if (existing) updateNotification(existing.id, { severity: "info", active: false, message: pendingReviewMessage });
+      else publishNotification({ severity: "info", source, key: saveKey, details, message: pendingReviewMessage });
+      reviewNotificationId.current = existing?.id ?? notifications().find(record => record.key === saveKey)?.id;
     } else if (reviewPersistenceState === "saveFailed") {
-      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "error", active: false, message: reviewSaveError });
+      const existing = notifications().find(record => record.key === saveKey && !record.resolvedAt);
+      if (existing) updateNotification(existing.id, { severity: existing.severity === "warning" ? "warning" : "error", active: false, message: reviewSaveError });
       else publishNotification({ severity: "error", source, key: saveKey, details, message: reviewSaveError });
       reviewNotificationId.current = undefined;
     } else if (reviewPersistenceState === "conflicted") {
@@ -163,7 +171,7 @@ function StandardTrainingView({
       if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "warning", active: false, message: "Result saved; the next card could not be loaded." });
       else publishNotification({ severity: "warning", source, key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved; the next card could not be loaded." });
       reviewNotificationId.current = undefined;
-    } else if (reviewNotificationId.current) {
+    } else if (reviewNotificationId.current && notifications().find(record => record.id === reviewNotificationId.current)?.key?.startsWith("review-queue:")) {
       resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved. Next card loaded." });
       reviewNotificationId.current = undefined;
     }
@@ -372,9 +380,9 @@ function StandardTrainingView({
           <RetryButton onRetry={() => void refreshDatabaseQueue(serviceError.includes("no longer in today's queue"))} />
         </div>
       )}
-      {reviewPersistenceState === "saveFailed" && (
-        <div role="alert">
-          {reviewSaveError}{" "}
+      {["saveFailed", "pendingConfirmation"].includes(reviewPersistenceState) && (
+        <div className="review-save-status" role={reviewPersistenceState === "pendingConfirmation" ? "status" : "alert"}>
+          {reviewPersistenceState === "pendingConfirmation" ? pendingReviewMessage : reviewSaveError}{" "}
           <Button
             onClick={() =>
               retryReviewSave
@@ -382,7 +390,7 @@ function StandardTrainingView({
                 : void rateCard(attemptFailed ? "again" : "correct")
             }
           >
-            Retry save
+            {reviewPersistenceState === "pendingConfirmation" ? "Check save" : "Retry save"}
           </Button>
         </div>
       )}

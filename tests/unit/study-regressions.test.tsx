@@ -235,6 +235,7 @@ describe("reported study regressions", () => {
     const savedEntries: number[] = [];
     vi.stubGlobal("fetch", vi.fn((input, options) => {
       const url = String(input);
+      if (url.includes("/api/operations/")) return Promise.resolve(new Response(null, { status: 404 }));
       if (url.includes("/api/queue/window"))
         return Promise.resolve(Response.json({ cards: [first, tactic, third], count: 3 }));
       if (url.endsWith("/review")) {
@@ -258,10 +259,10 @@ describe("reported study regressions", () => {
     vi.useRealTimers();
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(913);
     finishFirstReview?.(Response.json({ detail: "Database busy" }, { status: 503 }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
     expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
     expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([911, 912]);
-    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
     expect(savedEntries).toEqual([911, 911, 912]);
   });
@@ -281,6 +282,8 @@ describe("reported study regressions", () => {
     vi.stubGlobal("fetch", vi.fn(async (input, options) => {
       const url = String(input);
       if (url.includes("/api/queue/window")) return Response.json({ cards: queue, count: queue.length });
+      if (url.includes("/api/operations/review-attempt%3A")) return reviews.length
+        ? Response.json({ state: "complete", response: { persisted: true } }) : new Response(null, { status: 404 });
       if (url.endsWith("/review")) {
         reviews.push(JSON.parse(options.body));
         queue = [next];
@@ -317,6 +320,8 @@ describe("reported study regressions", () => {
     vi.stubGlobal("fetch", vi.fn(async (input) => {
       const url = String(input);
       if (url.includes("/api/queue/window")) return Response.json({ cards: queue, count: queue.length });
+      if (url.includes("/api/operations/review-attempt%3A")) return reviewCount
+        ? Response.json({ state: "complete", response: { persisted: true } }) : new Response(null, { status: 404 });
       if (url.endsWith("/review")) {
         reviewCount += 1;
         queue = [];
@@ -356,6 +361,7 @@ describe("reported study regressions", () => {
     let reviews = 0;
     vi.stubGlobal("fetch", vi.fn(async (input) => {
       const url = String(input);
+      if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
       if (url.includes("/api/queue/window")) return Response.json({ cards: [tactic, next], count: 2 });
       if (url.endsWith("/review")) {
         reviews += 1;
@@ -373,11 +379,11 @@ describe("reported study regressions", () => {
     fireEvent.click(screen.getByText("f7f8"));
     await pause(751);
     vi.useRealTimers();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(832);
     expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
     expect(pendingReviews()).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
     expect(reviews).toBe(2);
   });
@@ -454,6 +460,7 @@ describe("reported study regressions", () => {
       "fetch",
       vi.fn(async (input) => {
         const url = String(input);
+        if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
         if (url.includes("/api/queue/window")) {
           if (reviewSaved)
             return Response.json(
@@ -495,14 +502,14 @@ describe("reported study regressions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
     await waitFor(
-      () => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy(),
+      () => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy(),
       { timeout: 2_000 },
     );
     expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(
       queueCard.start_fen,
     );
-    expect(screen.getByText(/The local database could not save this result/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    expect(screen.getByText(/Waiting for the computer to confirm this result/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Retry loading the queue" }),
