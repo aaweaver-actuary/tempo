@@ -22,7 +22,9 @@ context atomically in the saved session. Cursor, keyboard reset anchor and draft
 anchor gain the prefix length. Stale/unmounted lookups cannot publish. Pending
 sessions survive reload and restart the read-only lookup. Failure or no exact
 route retains the card board/history and an actionable retry, with branch writes
-and board edits blocked until route identity is established.
+and board edits blocked until route identity is established. Selecting another
+repertoire during recovery does not reset the card history or its draft anchor;
+returning to the card's repertoire can resume the lookup.
 
 Branch submission uses moves through the current cursor and the restored root.
 Future saved moves do not count as played draft moves; saving at or before the
@@ -47,6 +49,8 @@ patch, not clean main. CI owns required final current-candidate verification.
 - `npm run test:unit -- tests/unit/validated-data-regressions.test.ts tests/unit/study-position-index-regressions.test.tsx`: 18 passed / 2 files, 1.13 s Vitest / 1.60 s wall on clean `bcebdbf4`.
 - `make ui-file FILE=workspace-flows.spec.ts` (elevated): 8 passed, 49.1 s browser / 94.33 s total wall on clean `b4fd4eab`. This includes real piece geometry, navigation, explicit Bg4 branch persistence/reload and original-line preservation, plus the partial-card chooser at 390/1470 px. Both new chooser screenshots were inspected. Project `tempo-pg-regressions-55041-c55b8187` cleaned up successfully in 8.47 s; exact container/image identifiers, creation/start times and teardown are retained in `test-results/tempo-cli/tempo-pg-regressions-55041-c55b8187/ownership.json`.
 - Additional handoff assertions: `npm run test:unit -- tests/unit/training-builder-handoff-regressions.test.tsx`: 4 passed, 3.13 s Vitest / 3.65 s wall on `b4fd4eab` plus only the new unit assertions. Games now proves the historical filter; comparison proves its complete source history and unchanged attempt.
+- Selector baseline: `npm run test:unit -- tests/unit/training-builder-context-regressions.test.tsx -t 'switching repertoires during unresolved training recovery'`: 1 failed / 8 deselected, 2.81 s Vitest on `5593fcdb` plus the regression. The unresolved card reset to the standard starting position.
+- Final selector guard plus regression, on `5593fcdb` with the source/test patch: the same nine-file focused unit command above passed **42 tests / 9 files**, 11.05 s Vitest / 11.75 s wall. `npm run typecheck` passed in 18.38 s; `npm run lint` passed with zero errors / the same 10 existing warnings in 25.67 s. Browser source is unchanged; its workflow will run again against the guarded app.
 
 PostgreSQL durability and pinned rendering evidence are pending. Existing
 other-task disposable Docker runs are inspected before scheduling validation;

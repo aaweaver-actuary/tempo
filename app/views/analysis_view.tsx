@@ -1284,7 +1284,7 @@ export default function BuilderView({
                     canonicalFenKey(startingFen) &&
                   playedUci.every((move, index) => line.moves[index] === move),
               );
-              if (!compatible) {
+              if (!compatible && !trainingRouteToResolve) {
                 setStartingFen(candidateLines[0]?.startingFen ?? STANDARD_FEN);
                 setHistory([]);
                 setCursor(0);

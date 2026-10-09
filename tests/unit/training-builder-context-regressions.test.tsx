@@ -106,6 +106,28 @@ it("unmatched training continuation remains available for analysis while origina
   expect(screen.getByRole("button", { name: "Delete line from here" }).hasAttribute("disabled")).toBe(true);
 });
 
+it("switching repertoires during unresolved training recovery preserves the card board route and draft anchor", async () => {
+  pendingCard();
+  const otherRepertoireLine = { ...authored, id: "other-line", repertoire_id: "other-repertoire", repertoire_name: "Other repertoire" };
+  const fetcher = mockLines([{ ...authored, moves: route.slice(0, 8).map(move => move.uci) }, otherRepertoireLine]);
+  render(<BuilderView {...props} />);
+  await screen.findByText(/No original repertoire route matches/);
+  fireEvent.change(screen.getByLabelText("Active repertoire"), { target: { value: "other-repertoire" } });
+  await screen.findByText(/Select the training card's repertoire/);
+  expect(useBoardShellStore.getState().board.fen).toBe(positions[8]);
+  expect(storedSession()).toMatchObject({ startingFen: positions[8], cursor: 0, branchStart: 0 });
+  expect(storedSession().history).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "Save branch" }).hasAttribute("disabled")).toBe(true);
+  fireEvent.change(screen.getByLabelText("Active repertoire"), { target: { value: "najdorf" } });
+  await screen.findByText(/No original repertoire route matches/);
+  fetcher.mockImplementation(async input => Response.json(String(input).includes("/repertoire/lines") ? { lines: [authored, otherRepertoireLine] } : { annotations: [] }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry route lookup" }));
+  await waitFor(() => expect(storedSession().trainingRouteToResolve).toBeUndefined());
+  expect(storedSession()).toMatchObject({ startingFen: positions[0], cursor: 8, branchStart: 8 });
+  expect(storedSession().history).toHaveLength(10);
+  expect(useBoardShellStore.getState().board.fen).toBe(positions[8]);
+});
+
 it("late training route resolution cannot overwrite a replacement Builder session", async () => {
   pendingCard();
   const realRun = study.runStudyTask;
