@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import base64
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 import json
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..database import read_connection
-from .scheduler import schedule_review, unlock_ready
+from .opening_progression import PRACTICED_OPENING_PARENT_SQL
 
 
 WINDOWS = {"30d": 30, "90d": 90, "all": None}
-FORECAST_PARENT_BATCH_SIZE = 900
 
 
 def _cutoff(window: str, configured_timezone: str) -> int | None:
@@ -37,49 +36,6 @@ def _study_day(timestamp: str, configured_timezone: str) -> str:
         except ZoneInfoNotFoundError:
             pass
     return moment.astimezone().date().isoformat()
-
-
-def _forecast_parent(parent: dict, reviews: list[dict], seed: dict | None) -> str | None:
-    if parent["state"] == "mature":
-        return date.today().isoformat()
-    if parent["state"] != "learning" or not parent["introduced_at"]:
-        return None
-    successful_days = {row["reviewed_at"][:10] for row in reviews if row["rating"] == "correct"}
-    successful_day_count = len(successful_days) + int(seed["baseline_successful_days"] if seed else 0)
-    recent_outcomes = [row["rating"] for row in reversed(reviews[-2:])]
-    if seed:
-        recent_outcomes.extend(["correct"] * min(int(seed["baseline_recent_clean"]), 2 - len(recent_outcomes)))
-    state = dict(parent)
-    review_day = max(date.today(), date.fromisoformat(state["due_date"][:10]))
-    for _ in range(30):
-        schedule = schedule_review(
-            "correct", interval_days=state["interval_days"],
-            fsrs_card_json=state["fsrs_card_json"],
-            first_correct_at=state["first_correct_at"],
-            reinforcement_pending=bool(state["reinforcement_pending"]),
-            scheduling_mode=state["scheduling_mode"],
-            hard_correct_streak=state["hard_correct_streak"],
-            recent_attempts=json.loads(state["recent_attempts_json"] or "[]"),
-            reviewed_at=datetime.combine(review_day, time(12), timezone.utc),
-            review_day=review_day,
-        )
-        if review_day.isoformat() not in successful_days:
-            successful_days.add(review_day.isoformat())
-            successful_day_count += 1
-        recent_outcomes = ["correct", *recent_outcomes][:2]
-        if unlock_ready(schedule.stability, successful_day_count, recent_outcomes):
-            return review_day.isoformat()
-        state.update({
-            "interval_days": schedule.interval_days,
-            "fsrs_card_json": schedule.fsrs_card_json,
-            "first_correct_at": schedule.first_correct_at,
-            "reinforcement_pending": schedule.reinforcement_pending,
-            "scheduling_mode": schedule.scheduling_mode,
-            "hard_correct_streak": schedule.hard_correct_streak,
-            "recent_attempts_json": json.dumps(schedule.recent_attempts),
-        })
-        review_day = max(review_day, schedule.due_date)
-    return None
 
 
 def repertoire_statistics(repertoire_id: str, window: str) -> dict:
@@ -131,39 +87,18 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
                WHERE step.repertoire_id=?""", (repertoire_id,),
         ).fetchone()[0]
         frontier = [dict(row) for row in database.execute(
-            """SELECT DISTINCT child.card_id,child.parent_card_id,line.name line_name,
-                      parent.state,parent.due_date,parent.interval_days,parent.fsrs_card_json,
-                      parent.first_correct_at,parent.reinforcement_pending,parent.scheduling_mode,
-                      parent.hard_correct_streak,parent.recent_attempts_json,parent.introduced_at,
-                      parent.pending_validation
+            f"""SELECT DISTINCT child.card_id,child.parent_card_id,line.name line_name,
+                      parent.state,parent.due_date,parent.pending_validation,
+                      parent.archived parent_archived,candidate.pending_validation child_pending_validation,
+                      CASE WHEN {PRACTICED_OPENING_PARENT_SQL} THEN 1 ELSE 0 END parent_practiced
                FROM opening_graph_steps child
                JOIN opening_graph_publications published ON published.repertoire_id=child.repertoire_id AND published.generation=child.generation
-               JOIN cards candidate ON candidate.id=child.card_id AND candidate.state='locked' AND candidate.archived=0
+               JOIN cards candidate ON candidate.id=child.card_id AND candidate.state IN ('locked','new')
+                   AND candidate.introduced_at IS NULL AND candidate.archived=0
                JOIN cards parent ON parent.id=child.parent_card_id
                JOIN repertoire_lines line ON line.id=child.line_id
                WHERE child.repertoire_id=? AND parent.state!='locked'""", (repertoire_id,),
         )]
-        parent_ids = sorted({row["parent_card_id"] for row in frontier})
-        parent_reviews: dict[str, list[dict]] = {parent_id: [] for parent_id in parent_ids}
-        seeds: dict[str, dict | None] = {parent_id: None for parent_id in parent_ids}
-        for batch_start in range(0, len(parent_ids), FORECAST_PARENT_BATCH_SIZE):
-            batch_ids = parent_ids[batch_start:batch_start + FORECAST_PARENT_BATCH_SIZE]
-            placeholders = ",".join("?" for _ in batch_ids)
-            for review in database.execute(
-                f"SELECT card_id,rating,reviewed_at FROM reviews WHERE card_id IN ({placeholders}) AND invalidated_at IS NULL ORDER BY card_id,reviewed_at,id",
-                batch_ids,
-            ):
-                parent_reviews[review["card_id"]].append({
-                    "rating": review["rating"], "reviewed_at": review["reviewed_at"],
-                })
-            for seed in database.execute(
-                f"SELECT card_id,baseline_successful_days,baseline_recent_clean FROM opening_card_schedule_seeds WHERE card_id IN ({placeholders})",
-                batch_ids,
-            ):
-                seeds[seed["card_id"]] = {
-                    "baseline_successful_days": seed["baseline_successful_days"],
-                    "baseline_recent_clean": seed["baseline_recent_clean"],
-                }
 
     valid_study_reviews = [row for row in review_rows if row["source_kind"] == "study" and row["card_id"] in card_ids]
     studied_ids = {row["card_id"] for row in valid_study_reviews}
@@ -184,25 +119,24 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
     paused_ids = blocked_ids | {card["id"] for card in cards if card["pending_validation"]}
     due_today = date.today().isoformat()
     seven_days = date.fromordinal(date.today().toordinal() + 7).isoformat()
-    forecasts = []
+    upcoming_cards = []
     for candidate in frontier:
         parent_id = candidate["parent_card_id"]
-        blocked = candidate["card_id"] in paused_ids or parent_id in paused_ids or candidate["pending_validation"]
-        projected = None if blocked else _forecast_parent(candidate, parent_reviews[parent_id], seeds[parent_id])
-        forecasts.append({
+        blocked = (candidate["card_id"] in paused_ids or parent_id in paused_ids
+                   or candidate["pending_validation"] or candidate["child_pending_validation"])
+        status = ("paused" if blocked else "unavailable" if candidate["parent_archived"]
+                  else "ready" if candidate["parent_practiced"] else "waiting_practice")
+        upcoming_cards.append({
             "card_id": candidate["card_id"], "parent_card_id": parent_id,
             "line_name": candidate["line_name"], "parent_due_date": candidate["due_date"],
-            "earliest_unlock_date": projected,
-            "status": "paused" if blocked else "forecast" if projected else "waiting_introduction" if candidate["state"] == "new" else "unavailable",
+            "earliest_unlock_date": due_today if status == "ready" else None,
+            "status": status,
         })
-    unique_forecasts: dict[str, dict] = {}
-    for forecast in forecasts:
-        current = unique_forecasts.get(forecast["card_id"])
-        if current is None or (forecast["earliest_unlock_date"] is not None and
-            (current["earliest_unlock_date"] is None or forecast["earliest_unlock_date"] < current["earliest_unlock_date"])):
-            unique_forecasts[forecast["card_id"]] = forecast
-    forecasts = sorted(unique_forecasts.values(), key=lambda row: (
-        row["earliest_unlock_date"] is None, row["earliest_unlock_date"] or "", row["card_id"]))
+    status_order = {"ready": 0, "waiting_practice": 1, "paused": 2, "unavailable": 3}
+    upcoming_cards.sort(key=lambda item: (status_order[item["status"]], item["card_id"], item["parent_card_id"]))
+    unique_upcoming_cards = {}
+    for item in upcoming_cards:
+        unique_upcoming_cards.setdefault(item["card_id"], item)
     return {
         "repertoire_id": repertoire_id, "window": window, "graph_updated_at": publication["published_at"] if publication else None,
         "graph_state": "failed" if task and task["state"] == "failed" else "refreshing" if not publication or task and task["state"] in {"queued", "leased", "retrying"} else "ready",
@@ -219,7 +153,7 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
                   "adherence": game_correct / len(current_decisions) if current_decisions else None,
                   "wins": wins, "draws": draws, "losses": len(current_games) - wins - draws,
                   "positions_seen": len({row["fen_key"] for row in current_decisions}), "positions_total": position_total},
-        "unlocks": forecasts[:3],
+        "unlocks": list(unique_upcoming_cards.values())[:3],
     }
 
 

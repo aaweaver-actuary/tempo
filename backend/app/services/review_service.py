@@ -7,6 +7,7 @@ import hashlib
 import json
 import sqlite3
 
+from .opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
 
 
@@ -173,11 +174,7 @@ def apply_scheduling_review(
             json.dumps(schedule.recent_attempts), card_id,
         ),
     )
-    if state == "mature":
-        database.execute(
-            "UPDATE cards SET state='new',due_date=? WHERE unlock_after_card_id=? AND state='locked'",
-            (review_day.isoformat(), card_id),
-        )
+    unlock_legacy_children_after_review(database, card_id, review_day.isoformat(), state)
     return {
         "card_id": card_id,
         "next_due": schedule.due_date.isoformat(),

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import json
 
+from .opening_progression import unlock_legacy_children_after_review
 from .scheduler import schedule_review, unlock_ready
 
 
@@ -156,14 +157,15 @@ def reconcile_completed_review(database, card_id: str, queue_entry_id: int, *,
                     (previous_interval, next_interval, event_review_id),
                 )
             _write_card_state(database, card_id, state)
-            if state["state"] == "mature":
-                database.execute(
-                    "UPDATE cards SET state='new',due_date=? WHERE unlock_after_card_id=? AND state='locked'",
-                    (_review_day(events[-1][3], timezone_name).isoformat(), card_id),
-                )
         else:
             conservative_due = min(date.fromisoformat(current["due_date"]), date.today() + timedelta(days=1))
             database.execute("UPDATE cards SET due_date=? WHERE id=?", (conservative_due.isoformat(), card_id))
+
+    if review_id is not None:
+        legacy_day = (_review_day(events[-1][3], timezone_name).isoformat()
+                      if status == "chronological" else date.today().isoformat())
+        unlock_legacy_children_after_review(database, card_id, legacy_day,
+                                           state["state"] if status == "chronological" else "learning")
 
     result = {
         "persisted": True, "review_id": review_id, "queue_entry_id": queue_entry_id,

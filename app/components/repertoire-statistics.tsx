@@ -53,6 +53,8 @@ const statisticsSchema = z.object({
       earliest_unlock_date: z.string().nullable(),
       status: z.enum([
         "forecast",
+        "ready",
+        "waiting_practice",
         "paused",
         "waiting_introduction",
         "unavailable",
@@ -307,8 +309,8 @@ export function RepertoireStatistics({
           <Surface as="section">
             <h2>Next unlocks</h2>
             <p>
-              Earliest dates assume every future due review is completed
-              correctly. They are estimates.
+              One completed parent practice unlocks the next move. Ready cards
+              are introduced within your daily new-card limit.
             </p>
             {statistics.unlocks.length === 0 ? (
               <p>No locked cards at the current frontier.</p>
@@ -317,12 +319,15 @@ export function RepertoireStatistics({
                 {statistics.unlocks.map((unlock) => (
                   <li key={`${unlock.card_id}:${unlock.parent_card_id}`}>
                     <strong>{unlock.line_name}</strong> ·{" "}
-                    {unlock.earliest_unlock_date ??
-                      (unlock.status === "paused"
-                        ? "Paused for repair or validation"
-                        : unlock.status === "waiting_introduction"
-                          ? "Waiting for parent introduction"
-                          : "Date unavailable")}
+                    {unlock.status === "ready"
+                      ? "Ready for introduction"
+                      : unlock.status === "waiting_practice"
+                        ? "Waiting for parent practice"
+                        : unlock.status === "paused"
+                          ? "Paused for repair or validation"
+                          : unlock.status === "waiting_introduction"
+                            ? "Waiting for parent introduction"
+                            : unlock.earliest_unlock_date ?? "Date unavailable"}
                     <small>
                       {" "}
                       Parent card {unlock.parent_card_id.slice(0, 8)} · next due{" "}

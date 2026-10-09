@@ -70,6 +70,8 @@ def cleanup(identifier):
 def proof():
     from check_postgres_queue_unlock_scale import proof_graph_scale
     proof_graph_scale(DSN)
+    from check_postgres_opening_progression import test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound
+    test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound(DSN)
     identifier = 'daily-study-proof-'+str(uuid.uuid4())
     try:
         seed(identifier, request_refresh=False)

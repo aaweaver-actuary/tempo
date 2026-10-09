@@ -374,3 +374,54 @@ def test_queue_origin_migration_follows_current_main_without_renumbering_publish
     assert (root/'migrations/037_card_deletion.sql').is_file()
     assert (root/'migrations/038_prefix_transition_application.sql').is_file()
     assert (root/'migrations/039_prefix_transition_lock_budget.sql').is_file()
+
+
+@pytest.mark.parametrize('recovery', ['ordinary', 'deleted_projection', 'competing'])
+@pytest.mark.parametrize('outcome,guided', [('correct', False), ('again', False), ('correct', True)])
+def test_completed_opening_practice_durably_refreshes_progression_and_replay_is_quiet(admitted_attempt, recovery, outcome, guided):
+    queue_entry_id, request = admitted_attempt
+    if recovery == 'competing':
+        main._apply_review('recovery-card', request)
+        request = request.model_copy(update={'attempt_id': 'competing-practice',
+            'recorded_at': (datetime.fromisoformat(request.recorded_at) + timedelta(seconds=1)).isoformat()})
+    elif recovery == 'deleted_projection':
+        with database.connection() as connection:
+            connection.execute('DELETE FROM daily_queue WHERE id=?', (queue_entry_id,))
+    request = request.model_copy(update={'outcome': outcome, 'guided': guided})
+    result = main._apply_review('recovery-card', request)
+    assert result['persisted'] and result['review_id'] is not None
+    with database.connection() as connection:
+        task = connection.execute("SELECT generation,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
+        assert task is not None
+        assert json.loads(task['payload_json'])['preserve_through_entry_id'] >= queue_entry_id
+        assert connection.execute('SELECT refresh_pending FROM queue_projections WHERE queue_date=?', (date.today().isoformat(),)).fetchone()[0] == 1
+        saved_generation = task['generation']
+        saved_review_count = connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0]
+    assert main._apply_review('recovery-card', request) == result
+    with database.connection() as connection:
+        assert connection.execute("SELECT generation FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()[0] == saved_generation
+        assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == saved_review_count
+
+
+def test_first_practice_unlocks_legacy_opening_link_without_bypassing_current_graph(admitted_attempt):
+    _, request = admitted_attempt
+    with database.connection() as connection:
+        for card_id in ['legacy-child', 'published-child', 'unpracticed-parent']:
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,unlock_after_card_id) SELECT ?,repertoire_id,'response',start_fen,moves_json,'locked',due_date,id FROM cards WHERE id='recovery-card'", (card_id,))
+        connection.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) SELECT 'recovery-line',repertoire_id,'Route','white',start_fen,moves_json,due_date FROM cards WHERE id='recovery-card'")
+        connection.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,published_at) VALUES('recovery',1,?)", (date.today().isoformat(),))
+        connection.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color) SELECT 'recovery',1,'recovery-line',1,id,'unpracticed-parent',start_fen,start_fen,moves_json,'white' FROM cards WHERE id='published-child'")
+    result = main._apply_review('recovery-card', request)
+    assert result['state'] == 'learning'
+    with database.connection() as connection:
+        assert connection.execute("SELECT state FROM cards WHERE id='legacy-child'").fetchone()[0] == 'new'
+        assert connection.execute("SELECT state FROM cards WHERE id='published-child'").fetchone()[0] == 'locked'
+
+
+def test_rejected_opening_save_does_not_refresh_progression_or_create_exposure(admitted_attempt):
+    _, request = admitted_attempt
+    result = main._reconcile_review('recovery-card', request.model_copy(update={'expected_revision': 99}))
+    assert not result['persisted']
+    with database.connection() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='daily_queue'").fetchone()[0] == 0

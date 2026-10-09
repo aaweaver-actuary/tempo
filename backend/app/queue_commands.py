@@ -109,11 +109,14 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
 
 
 def request_queue_refresh_in_transaction(database: PostgresConnection,
-                                         queue_date: str) -> dict[str, Any]:
+                                         queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
     """Checkpoint a foreground mutation and its follow-up queue refresh together."""
 
+    payload = {"queue_date": queue_date}
+    if preserve_through_entry_id is not None:
+        payload["preserve_through_entry_id"] = preserve_through_entry_id
     task = enqueue_task_in_transaction(
-        database, "daily_queue", "current", {"queue_date": queue_date}, priority=10,
+        database, "daily_queue", "current", payload, priority=10,
     )
     database.execute(
         _QUEUE_REFRESH_PROJECTION_SQL,

@@ -533,13 +533,13 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
     return True
 
 
-def _prepare_queue_randomization(queue_date: str) -> dict[str, Any]:
+def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
     """Plan a stable queue order without retaining a database transaction."""
 
     from .. import main
 
     queue_rows = _bounded_read(
-        """SELECT q.id,q.card_id,c.content_type,q.admission_kind,q.gameplay_priority_reason
+        """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,q.gameplay_priority_reason
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.id""",
         (queue_date,), native=True,
@@ -566,7 +566,9 @@ def _prepare_queue_randomization(queue_date: str) -> dict[str, Any]:
     membership_hash = main._queue_membership_hash(rows)
     if saved and saved["membership_hash"] == membership_hash:
         return {"membership_hash": membership_hash, "entries": None}
-    seed, membership_hash, ordered = main._plan_daily_queue_order(rows, queue_date, saved)
+    seed, membership_hash, ordered = main._plan_daily_queue_order(
+        rows, queue_date, saved, preserve_through_entry_id=preserve_through_entry_id,
+    )
     return {
         "seed": seed,
         "membership_hash": membership_hash,
@@ -770,7 +772,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     randomization_plan = None
     if phase == "randomize_queue":
         activity_gate.wait_for_foreground()
-        randomization_plan = _prepare_queue_randomization(queue_date)
+        randomization_plan = _prepare_queue_randomization(queue_date,
+            preserve_through_entry_id=payload.get("preserve_through_entry_id"))
     quarantine_batch = None
     if phase == "quarantine":
         activity_gate.wait_for_foreground()
@@ -906,6 +909,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                           if phase_index + 1 < len(_ELIGIBILITY_PHASES)
                           else "tactical_introductions")
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        if "preserve_through_entry_id" in payload:
+            next_payload["preserve_through_entry_id"] = payload["preserve_through_entry_id"]
         return advance_task_slice_in_transaction(
             database, task, next_phase=next_phase, next_payload=next_payload,
         )
