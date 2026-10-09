@@ -740,7 +740,9 @@ def enqueue_opportunity_refresh_in_transaction(database, repertoire_id: str, *, 
 def enqueue_opportunity_refresh(repertoire_id: str, *, background: bool = False) -> None:
     from ..database import connection
     with connection(background=background) as database:
-        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
+        enqueue_opportunity_refresh_in_transaction(
+            database, repertoire_id, quiet_seconds=5 if background else 0,
+        )
 
 
 def _advance_slice(database: sqlite3.Connection, task: dict, phase: str, cursor: str) -> None:

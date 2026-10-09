@@ -1,11 +1,15 @@
 """Unchanged refresh intent preserves useful calculation generations."""
 from datetime import datetime, timedelta, timezone
+import json
 
 import pytest
 
 from app import database
+from app.services.database_executor import database_writer
 from app.services.introduction_priorities import enqueue_priority_refresh_in_transaction
-from app.services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+from app.services.repertoire_opportunities import (
+    enqueue_opportunity_refresh, enqueue_opportunity_refresh_in_transaction,
+)
 from app.services import durable_tasks, introduction_priorities, refresh_requests
 
 
@@ -16,6 +20,98 @@ def refresh_store(tmp_path, monkeypatch):
     with database.connection() as connection:
         connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('scope','Scope','fixture',?)",
                            (datetime.now(timezone.utc).isoformat(),))
+
+
+@pytest.fixture
+def refresh_clock(monkeypatch):
+    current_refresh_time = [datetime(2026, 10, 9, tzinfo=timezone.utc)]
+    monkeypatch.setattr(refresh_requests, '_now', lambda: current_refresh_time[0])
+    monkeypatch.setattr(durable_tasks, '_now', lambda: current_refresh_time[0])
+    return current_refresh_time
+
+
+@pytest.fixture
+def refresh_task_writer(refresh_store):
+    database_writer.start()
+    try:
+        yield
+    finally:
+        database_writer.stop()
+
+
+@pytest.mark.parametrize('background_request_first', [False, True], ids=['fresh-inputs', 'changed-inputs'])
+def test_foreground_opportunity_refresh_is_immediately_eligible(refresh_task_writer, refresh_clock, background_request_first):
+    started_at = refresh_clock[0]
+    if background_request_first:
+        enqueue_opportunity_refresh('scope', background=True)
+        refresh_clock[0] += timedelta(seconds=4)
+        with database.connection() as connection:
+            connection.execute("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='scope'")
+
+    enqueue_opportunity_refresh('scope', background=False)
+    with database.read_connection() as connection:
+        scheduled_task = connection.execute("SELECT generation,next_attempt_at FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()
+        refresh_intent = connection.execute("SELECT pending_since,requested_at FROM analysis_refresh_requests WHERE kind='repertoire_opportunity'").fetchone()
+        assert scheduled_task['generation'] == (2 if background_request_first else 1)
+        assert datetime.fromisoformat(scheduled_task['next_attempt_at']) == refresh_clock[0]
+        assert datetime.fromisoformat(refresh_intent['pending_since']) == started_at
+        assert datetime.fromisoformat(refresh_intent['requested_at']) == refresh_clock[0]
+
+    claimed_task = durable_tasks.claim_task('repertoire_opportunity')
+    assert claimed_task is not None
+    assert claimed_task['generation'] == scheduled_task['generation']
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT pending_since FROM analysis_refresh_requests WHERE kind='repertoire_opportunity'").fetchone()[0] is None
+
+
+def test_background_opportunity_refresh_keeps_five_second_quiet_window(refresh_task_writer, refresh_clock):
+    started_at = refresh_clock[0]
+    for elapsed_seconds in (0, 4, 8, 56, 59, 60):
+        refresh_clock[0] = started_at + timedelta(seconds=elapsed_seconds)
+        if elapsed_seconds:
+            with database.connection() as connection:
+                connection.execute("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='scope'")
+        enqueue_opportunity_refresh('scope', background=True)
+        with database.read_connection() as connection:
+            scheduled_at = connection.execute("SELECT next_attempt_at FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0]
+            assert datetime.fromisoformat(scheduled_at) == min(refresh_clock[0] + timedelta(seconds=5), started_at + timedelta(seconds=60))
+            assert connection.execute("SELECT pending_since FROM analysis_refresh_requests WHERE kind='repertoire_opportunity'").fetchone()[0] == started_at.isoformat()
+        if elapsed_seconds == 8:
+            database.initialize()
+            enqueue_opportunity_refresh('scope', background=True)
+            with database.read_connection() as connection:
+                assert connection.execute("SELECT next_attempt_at FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0] == scheduled_at
+
+    assert durable_tasks.claim_task('repertoire_opportunity')['generation'] == 6
+    with database.connection() as connection:
+        assert connection.execute("SELECT pending_since FROM analysis_refresh_requests WHERE kind='repertoire_opportunity'").fetchone()[0] is None
+        connection.execute("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='scope'")
+    refresh_clock[0] += timedelta(seconds=1)
+    enqueue_opportunity_refresh('scope', background=True)
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT next_attempt_at FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0] == (refresh_clock[0] + timedelta(seconds=5)).isoformat()
+        assert connection.execute("SELECT pending_since FROM analysis_refresh_requests WHERE kind='repertoire_opportunity'").fetchone()[0] == refresh_clock[0].isoformat()
+
+
+@pytest.mark.parametrize('task_state', ['queued', 'leased', 'failed'])
+def test_unchanged_public_opportunity_refresh_preserves_generation_cursor_and_failure(refresh_store, refresh_clock, task_state):
+    enqueue_opportunity_refresh('scope', background=True)
+    with database.connection() as connection:
+        saved_payload = json.dumps({'repertoire_id': 'scope', 'phase': 'nodes', 'cursor': 'saved'})
+        connection.execute("UPDATE background_tasks SET state=?,phase='nodes',payload_json=?,attempt_count=3,last_error='retained diagnostic',lease_token=?,lease_expires_at=? WHERE kind='repertoire_opportunity'",
+                           (task_state, saved_payload, 'saved-lease' if task_state == 'leased' else None,
+                            (refresh_clock[0] + timedelta(seconds=60)).isoformat() if task_state == 'leased' else None))
+        saved_task = dict(connection.execute("SELECT * FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone())
+        saved_intent = dict(connection.execute("SELECT * FROM analysis_refresh_requests WHERE kind='repertoire_opportunity'").fetchone())
+        saved_events = [tuple(row) for row in connection.execute('SELECT * FROM background_task_events ORDER BY id')]
+
+    for background in (False, True, False, True):
+        refresh_clock[0] += timedelta(seconds=4)
+        enqueue_opportunity_refresh('scope', background=background)
+        with database.read_connection() as connection:
+            assert dict(connection.execute("SELECT * FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()) == saved_task
+            assert dict(connection.execute("SELECT * FROM analysis_refresh_requests WHERE kind='repertoire_opportunity'").fetchone()) == saved_intent
+            assert [tuple(row) for row in connection.execute('SELECT * FROM background_task_events ORDER BY id')] == saved_events
 
 
 def test_unchanged_priority_requests_preserve_current_generation_and_failure(refresh_store):

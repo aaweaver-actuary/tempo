@@ -5407,12 +5407,12 @@ def test_postgres_opportunity_refresh_dispatches_idempotent_command(monkeypatch)
 
     monkeypatch.setattr(
         opportunity_commands, "enqueue_opportunity_refresh_in_transaction",
-        lambda _database, key: queued.append(key),
+        lambda _database, key, *, quiet_seconds=5: queued.append((key, quiet_seconds)),
     )
     assert opportunity_commands.refresh_opportunities(
         ExistingRepertoire(), {"repertoire_id": "rep"},
     ) == {"queued": True}
-    assert queued == ['rep']
+    assert queued == [('rep', 0)]
 
 
 def test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay(monkeypatch, unscoped_canonical_prefix):

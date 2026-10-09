@@ -119,7 +119,7 @@ def refresh_opportunities(database: PostgresConnection, payload: dict[str, Any])
     ).fetchone()
     if exists is None:
         raise HTTPException(404, "Repertoire not found")
-    enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
+    enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
     return {"queued": True}
 
 
