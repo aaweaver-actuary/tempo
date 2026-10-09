@@ -116,6 +116,9 @@ def test_legacy_incomplete_black_prefix_is_quarantined_from_queue(tmp_path, monk
 def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["new_cards_per_day"] = 1
+        assert client.put("/api/settings", json=settings).status_code == 200
         first = client.post("/api/imports/pgn", files={"file": ("italian.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "6"})
         assert first.status_code == 200
         repertoire_id = first.json()["repertoire_id"]
@@ -138,7 +141,7 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         second = reinforcement["cards"][0]
         second_review = client.post(f"/api/cards/{second['id']}/review", json={"outcome": "correct", "queue_entry_id": second["queue_entry_id"]})
         assert second_review.json()["requeue_today"] is False
-        assert client.get("/api/queue/today").json()["count"] == 0
+        assert wait_for_daily_queue(client, 0)["count"] == 0
 
         repeated = client.post("/api/imports/pgn", files={"file": ("italian.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "6"})
         assert repeated.json()["repertoire_id"] == repertoire_id

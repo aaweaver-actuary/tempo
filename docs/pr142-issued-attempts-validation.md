@@ -138,3 +138,16 @@ Elevated `make ui-file FILE=paste-analysis.spec.ts`: 2 passed, 6.9 s Playwright 
 124.98 s wall including 9.54 s cleanup (dirty `79f5354` plus both repairs).
 `npm run lint`: passed, 70.80 s wall, existing warnings only; `npm run typecheck`:
 passed, 54.78 s wall. Fresh complete CI is required for the repair commits.
+
+CI run 37957808199 (`9952a39`, merge candidate `cf59e98`) reported one backend
+failure / 1,658 passed in 283.06 s pytest. The existing import/reload fixture
+expected an empty queue after reinforcement, but PR #134's merged descendant
+admission can supply another card under the default two-card quota. The exact
+case reproduced locally on clean `9952a39`: `make python-file
+FILE=backend/tests/test_workflows.py::test_import_becomes_main_and_survives_reload`
+(1 failed, 2.51 s pytest / 3.55 s wall). The fixture now explicitly allows one
+new card and waits for queue publication, matching the existing study durability
+fixture's scope. `make python-file FILE=backend/tests/test_workflows.py`: 14
+passed, 16.43 s pytest / 17.67 s wall, on `9952a39` plus that fixture repair.
+Product progression, scheduling, and all original import/reload assertions are
+unchanged. Fresh candidate CI is required after this test-only follow-up.
