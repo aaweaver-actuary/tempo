@@ -1,3 +1,5 @@
+import type { ActivityIncidentChange } from "../domain/schemas/activity-notifications";
+
 export type NotificationSeverity = "info" | "success" | "warning" | "error";
 
 export type NotificationRecord = {
@@ -166,7 +168,8 @@ export function groupNotifications(records: readonly NotificationRecord[]): Noti
 }
 
 function finishNotificationChange(previousHistory: readonly NotificationRecord[], repeatedRecordId?: string) {
-  const attentionGroups = groupNotifications(history).filter((group) => notificationNeedsAttention(group.record));
+  const allGroups = groupNotifications(history);
+  const attentionGroups = allGroups.filter((group) => notificationNeedsAttention(group.record));
   const previousGroupKeys = new Set(previousHistory.filter(notificationNeedsAttention).map(notificationGroupKey));
   const previousObservation = previousHistory.find((record) => record.id === repeatedRecordId);
   const updatedObservation = history.find((record) => record.id === repeatedRecordId);
@@ -175,7 +178,7 @@ function finishNotificationChange(previousHistory: readonly NotificationRecord[]
     // A keyed repeat can refresh diagnostic details without restarting its popup.
     const groupKey = previousObservation && toast.groupKey === notificationGroupKey(previousObservation)
       ? updatedGroupKey : toast.groupKey;
-    return groupKey && attentionGroups.some((group) => group.key === groupKey)
+    return groupKey && allGroups.some((group) => group.key === groupKey && !group.record.clearedAt)
       ? [{ ...toast, groupKey }] : [];
   }).filter((toast, index, toasts) => toasts.findIndex((candidate) => candidate.groupKey === toast.groupKey) === index);
   const newToasts = attentionGroups.filter((group) => !previousGroupKeys.has(group.key) &&
@@ -320,4 +323,35 @@ export function clearNotificationHistory() {
   visibleToasts = [];
   persist();
   notifySubscribers();
+}
+
+/** Import one durable episode without increasing occurrences on polling/reload. */
+export function importActivityIncident(workspaceId: string, incident: ActivityIncidentChange): void {
+  hydrateNotifications();
+  const id = `activity-incident:${workspaceId}:${incident.id}`;
+  const previous = history.find(record => record.id === id);
+  const recovered = incident.resolved_at !== null;
+  // The server joins every change to its current episode. Historical resolved
+  // episodes never create a stale warning or a recovery popup on a new device.
+  if (previous && (previous.resolvedAt || Boolean(previous.resolvedAt) === recovered)) return;
+  const pipeline = incident.kind.replaceAll("_", " ");
+  const explanation = incident.reason === "running_stalled" ? "has not advanced after five minutes of admitted execution"
+    : incident.reason === "queue_stalled" ? "has waited fifteen minutes while capacity was available"
+      : "has reached five consecutive identical transaction timeouts";
+  const record: NotificationRecord = {
+    id, key: id, occurredAt: incident.opened_at,
+    updatedAt: incident.resolved_at ?? incident.opened_at, occurrenceCount: 1,
+    resolvedAt: incident.resolved_at, clearedAt: null, active: !recovered,
+    severity: recovered ? "success" : "warning", source: "Analysis progress",
+    message: recovered ? `${pipeline} is making progress again.` : `${pipeline} ${explanation}. Open its activity details to review the next action.`,
+    details: safeDetails({ pipeline, "Last progress": incident.last_progress_at ?? "No accepted progress recorded",
+      activitySource: incident.source, activityWorkId: incident.work_id, "Incident opened": incident.opened_at }),
+  };
+  const previousHistory = history;
+  history = [record, ...history.filter(item => item.id !== id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, NOTIFICATION_HISTORY_LIMIT);
+  finishNotificationChange(previousHistory);
+  if (recovered && previous && !previous.resolvedAt) {
+    visibleToasts = [{ id: `notification-toast-${nextToastId++}`, groupKey: notificationGroupKey(record) }, ...visibleToasts].slice(0, 3);
+    notifySubscribers();
+  }
 }

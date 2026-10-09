@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 
 import logging
+import sqlite3
 import time
 import uuid
 from datetime import date
@@ -229,8 +230,12 @@ def execute_background_command(
             with (activity_gate.background_control() if command_name in _CONTROL_BACKGROUND_COMMANDS
                   else nullcontext()):
                 activity_gate.check_background_admission()
-                return execute_command(operation_id, command_name, saved_payload,
+                result=execute_command(operation_id, command_name, saved_payload,
                                        background=True, attempt_token=attempt_token)
+                if command_name in {"threat.analysis.claim","games.analysis.position.claim"}:
+                    from .services.background_runtime import record_engine_capacity
+                    record_engine_capacity("execution" if result.get("job") else "idle")
+                return result
         except BackgroundAdmissionDeferred:
             defer_operation_for_foreground(operation_id, attempt_token)
             return None
@@ -273,7 +278,12 @@ def recover_operations() -> bool:
 @celery_app.task(name="app.tasks.poll_background_tasks", bind=True, base=CoalescedWakeTask)
 def poll_background_tasks(self) -> bool:
     """Claim and run one slice at worker capacity, then yield to the broker."""
+    with measure_handler('other', (self.request.headers or {}).get('submitted_at')) as measurement:
+        measurement.stage='dispatch'
+        return _poll_background_tasks_once(self)
 
+
+def _poll_background_tasks_once(self):
     try:
         activity_gate.check_background_admission()
         with activity_gate.background_job('dispatch', 'one-run', yielding=True):
@@ -282,6 +292,12 @@ def poll_background_tasks(self) -> bool:
         _LOGGER.info('background admission deferred: %s', error)
         return False
     if claimed_task is None:
+        try:
+            activity_gate.check_background_admission()
+            from .services.background_runtime import record_idle_capacity
+            record_idle_capacity()
+        except BackgroundAdmissionDeferred:
+            pass
         return False
     return _execute_claimed_background_slice(
         claimed_task, (self.request.headers or {}).get("submitted_at"),
@@ -346,8 +362,10 @@ def _execute_claimed_background_slice(
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
         raise ValueError(f"Unported background handler: {claimed_task['kind']}")
-    with measure_handler(claimed_task["kind"], submitted_at), \
+    with measure_handler(claimed_task["kind"], submitted_at) as measurement, \
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"], yielding=True):
+        from .services import activity_health
+        execution_id=None
         try:
             activity_gate.check_background_admission()
             if defer_paused_defensive_task(claimed_task):
@@ -355,6 +373,7 @@ def _execute_claimed_background_slice(
             if not current_delivery(claimed_task):
                 record_stale_delivery(claimed_task)
                 return False
+            execution_id=activity_health.best_effort(activity_health.begin_execution,claimed_task)
             more_work = handler(claimed_task)
             if claimed_task["kind"] not in {
                 "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
@@ -384,6 +403,7 @@ def _execute_claimed_background_slice(
             defer_task_for_foreground(claimed_task)
             return False
         except TransactionTimeout as error:
+            activity_health.best_effort(activity_health.record_execution_error,claimed_task,'transaction_timeout',execution_id=execution_id or str(uuid.uuid4()))
             if claimed_task['kind'] == 'daily_queue':
                 more_work = defer_task_for_transaction_timeout(claimed_task, error)
             elif claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention", prefix_transition_application.TASK_KIND}:
@@ -405,16 +425,20 @@ def _execute_claimed_background_slice(
                 )
                 more_work = True
         except (DeadlockDetected, LockNotAvailable, SerializationFailure):
+            activity_health.best_effort(activity_health.record_execution_error,claimed_task,'ordinary_error',execution_id=execution_id or str(uuid.uuid4()))
             defer_task_for_contention(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
                 kind=claimed_task["kind"],
             )
             more_work = True
         except Exception as error:
+            activity_health.best_effort(activity_health.record_execution_error,claimed_task,'ordinary_error',execution_id=execution_id or str(uuid.uuid4()))
             fail_task(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error
             )
             raise
+        finally:
+            activity_health.best_effort(activity_health.finish_execution,claimed_task,execution_id,admission_wait_seconds=measurement.sample().admission_wait_seconds)
     if more_work:
         try:
             celery_app.send_task("app.tasks.poll_background_tasks", queue="background")
@@ -423,3 +447,18 @@ def _execute_claimed_background_slice(
     return more_work
 
 from . import opening_segmentation_api  # noqa: F401 - registers advisory commands
+
+
+@celery_app.task(name='app.tasks.monitor_activity_health',base=CoalescedWakeTask)
+def monitor_activity_health():
+    from .services.activity_health import monitor_one_pipeline
+    try:
+        with measure_handler('other', worker_role='control'):
+            monitored=monitor_one_pipeline()
+    except (TimeoutError,sqlite3.OperationalError,psycopg.Error):
+        _LOGGER.warning('Activity monitor unavailable; evidence remains unknown',exc_info=True)
+        return False
+    if monitored:
+        try:celery_app.send_task('app.tasks.monitor_activity_health',queue='foreground')
+        except BrokerUnavailable:_LOGGER.warning('Activity monitor wake unavailable; minute beat will recover')
+    return monitored

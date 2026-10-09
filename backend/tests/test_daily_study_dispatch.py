@@ -9,6 +9,7 @@ from kombu.exceptions import OperationalError as BrokerUnavailable
 
 from app import database, tasks
 from app.services import durable_tasks
+from app.services.background_runtime import RuntimeMeasurement
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def dispatch_store(tmp_path, monkeypatch):
         with database.connection(background=True) as connection:
             return operation(connection)
     monkeypatch.setattr(durable_tasks, "submit_background_write", write)
-    monkeypatch.setattr(tasks, "measure_handler", lambda *args: nullcontext())
+    monkeypatch.setattr(tasks, "measure_handler", lambda *args, **options: nullcontext(RuntimeMeasurement(args[0])))
     wakes = []
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda *args, **kwargs: wakes.append((args, kwargs)))
     return observed_clock, wakes

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const backgroundKindSchema = z.enum(["coverage_explorer", "coverage_seed", "daily_queue", "daily_statistics", "defensive_admission", "defensive_rubric_audit", "defensive_threat_backfill", "defensive_threat_report_audit", "defensive_threat_scan", "defensive_threat_validate", "discovery_admission", "discovery_recommendation", "engine_defense", "engine_game", "game_analysis_followup", "game_analysis_publish", "game_derivation_compare", "game_derivation_events", "game_derivation_features", "game_derivation_findings", "game_derivation_misses", "game_derivation_positions", "game_derivation_priorities", "game_sync_record", "game_sync_window", "integrity_scan", "opening_graph_rebuild", "opening_segmentation", "other", "priority_retention", "repertoire_game_refresh", "repertoire_opportunity", "repertoire_priority"]);
+export const backgroundKindSchema = z.enum(["canonical_prefix_preview", "prefix_transition_application", "coverage_explorer", "coverage_seed", "daily_queue", "daily_statistics", "defensive_admission", "defensive_rubric_audit", "defensive_threat_backfill", "defensive_threat_report_audit", "defensive_threat_scan", "defensive_threat_validate", "discovery_admission", "discovery_recommendation", "engine_defense", "engine_game", "game_analysis_followup", "game_analysis_publish", "game_derivation_compare", "game_derivation_events", "game_derivation_features", "game_derivation_findings", "game_derivation_misses", "game_derivation_positions", "game_derivation_priorities", "game_sync_record", "game_sync_window", "integrity_scan", "opening_graph_rebuild", "opening_segmentation", "other", "priority_retention", "repertoire_game_refresh", "repertoire_opportunity", "repertoire_priority"]);
 const nonnegative = z.number().finite().nonnegative();
 const timestamp = z.iso.datetime({ offset: true });
 export const engineAttemptDiagnosticsSchema = z.object({
@@ -39,6 +39,7 @@ const counts = z.object({
   engine_abandoned_max_seconds: nonnegative.default(0),
 }).strict();
 const worker = z.object({
+  worker_role: z.enum(["analysis", "control", "unknown"]).default("unknown"),
   kind: backgroundKindSchema, stage: z.enum(["idle", "dispatch", "foreground_admission", "database", "execution", "unknown"]),
   observed_at: timestamp, process_started_at: timestamp, admission_wait_seconds: nonnegative,
   handler_elapsed_seconds: nonnegative, execution_seconds: nonnegative,
@@ -48,8 +49,10 @@ export const backgroundDiagnosticsSchema = z.object({
   collection_started_at: timestamp.nullable().default(null),
   schema_version: z.literal(1).default(1), generated_at: timestamp, window_start: timestamp, window_end: timestamp,
   bucket_seconds: z.literal(300).default(300), retention_seconds: z.literal(86400).default(86400),
+  queue_evidence: z.enum(["current_eligibility", "stored_states_and_controls"]).default("current_eligibility"),
+  summary_as_of: timestamp.nullable().default(null), summary_max_age_seconds: nonnegative.nullable().default(null),
   query_duration_seconds: nonnegative, available: z.boolean(),
-  unavailable_reason: z.enum(["query_deadline", "storage_unavailable"]).nullable().default(null),
+  unavailable_reason: z.enum(["query_deadline", "storage_unavailable", "cache_not_ready", "cache_stale"]).nullable().default(null),
   queues: z.array(z.object({
     queue: z.enum(["durable", "engine_game", "engine_defense"]),
     underlying_state: z.enum(["queued", "retrying", "delayed", "paused", "leased", "failed", "complete", "blocked", "superseded", "publishing"]).nullable().default(null),
@@ -60,9 +63,11 @@ export const backgroundDiagnosticsSchema = z.object({
   }).strict()).max(27).default([]),
   counters: z.array(z.object({ kind: backgroundKindSchema, counts,
     useful_completion_unit: z.enum(["accepted_position", "published_priority_generation", "published_game_analysis"]).nullable().default(null),
-  }).strict()).max(33).default([]),
+  }).strict()).max(35).default([]),
   runtime: z.object({ available: z.boolean().default(false), retention_seconds: z.literal(15).default(15),
     coverage: z.literal("fixed_slots_latest_samples").default("fixed_slots_latest_samples"),
+    engine_available: z.boolean().default(false), engine_observed_at: timestamp.nullable().default(null),
+    engine_stage: z.enum(["idle", "execution", "foreground_admission"]).nullable().default(null),
     workers: z.array(worker).max(16).default([]),
   }).strict(),
 }).strict();

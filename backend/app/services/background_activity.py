@@ -181,12 +181,12 @@ def _base_item(source: str, work_id: str, title: str, state: str, updated_at: st
     }
 
 
-def list_activity(*, offset: int = 0, limit: int = 50, group: str = 'all') -> dict:
+def list_activity(*, offset: int = 0, limit: int = 50, group: str = 'all',work_source=None,work_id=None) -> dict:
     from .activity_history import native_activity, project_stages, GROUPS
     if group!='all' and group not in GROUPS:
         raise HTTPException(422,'Unknown activity group')
     if postgres_store.configured():
-        return native_activity(offset=offset,limit=limit,group=group)
+        return native_activity(offset=offset,limit=limit,group=group,work_source=work_source,work_id=work_id)
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
     items: list[dict] = []
@@ -275,7 +275,19 @@ def list_activity(*, offset: int = 0, limit: int = 50, group: str = 'all') -> di
                                     row["last_error"]))
         controls = {(row["source"], row["work_id"]): row for row in database.execute("SELECT * FROM background_activity")}
         preferences=dict(database.execute("SELECT cleared_through,signing_key FROM activity_history_preferences WHERE id=1").fetchone())
+        health_rows={}
+        for page_start in range(0,len(items),100):
+            identities=[(item['source'],item['id']) for item in items[page_start:page_start+100]]
+            placeholders=','.join('(?,?)' for _ in identities)
+            rows=database.execute("SELECT progress.*,pipeline.available,pipeline.bootstrap_ready,pipeline.checked_at,pipeline.waiting_reason,incident.id incident_id FROM activity_work_progress progress LEFT JOIN activity_pipeline_health pipeline ON pipeline.kind=progress.kind LEFT JOIN activity_notification_incidents incident ON incident.source=progress.source AND incident.work_id=progress.work_id AND incident.resolved_at IS NULL WHERE (progress.source,progress.work_id) IN ("+placeholders+")",tuple(value for identity in identities for value in identity)).fetchall()
+            health_rows.update({(row['source'],row['work_id']):dict(row) for row in rows})
     for item in items:
+        from .activity_history import activity_timestamp
+        evidence=health_rows.get((item['source'],item['id']))
+        fresh=bool(evidence and evidence['available'] and evidence['bootstrap_ready'] and evidence['checked_at'] and 0<=(datetime.now(timezone.utc)-activity_timestamp(evidence['checked_at'])).total_seconds()<=120)
+        item['last_progress_at']=evidence['last_progress_at'] if evidence else None
+        item['health']='needs_attention' if evidence and evidence['incident_id'] else 'waiting' if fresh and item['state'] in {'queued','retrying'} else 'progressing' if fresh and evidence['last_progress_at'] and evidence['progress_generation']==evidence['generation_key'] else 'unknown'
+        item['monitoring_waiting_reason']=evidence['waiting_reason'] if fresh else None
         control = controls.get((item["source"], item["id"]))
         if control:
             item["paused"] = item["paused"] or bool(control["paused"])
@@ -292,4 +304,4 @@ def list_activity(*, offset: int = 0, limit: int = 50, group: str = 'all') -> di
             item["phase"] = "Paused"
         if item["state"] == "complete" and item["total"] is not None:
             item["completed"] = item["total"]
-    return project_stages(items,preferences,offset=offset,limit=limit,group=group)
+    return project_stages(items,preferences,offset=offset,limit=limit,group=group,work_source=work_source,work_id=work_id)

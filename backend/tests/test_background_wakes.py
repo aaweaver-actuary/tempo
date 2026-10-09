@@ -63,13 +63,15 @@ def test_wake_classes_are_independent_and_payload_commands_never_coalesce(wake_b
     for task_name in background_wakes.WAKE_TASK_NAMES:
         for _ in range(10):
             celery_app.send_task(task_name)
-    assert len(published) == 4
+    wake_count = len(background_wakes.WAKE_TASK_NAMES)
+    assert 'app.tasks.monitor_activity_health' in background_wakes.WAKE_TASK_NAMES
+    assert len(published) == wake_count
     for _ in range(10):
         celery_app.send_task('app.tasks.execute_background_command', args=['receipt', 'command', {}])
         celery_app.send_task('app.tasks.poll_background_tasks', args=['legacy-payload'])
-    assert len(published) == 24
+    assert len(published) == wake_count + 20
     assert all(background_wakes.WAKE_HEADER not in options.get('headers', {})
-               for _name, _args, _kwargs, options in published[4:])
+               for _name, _args, _kwargs, options in published[wake_count:])
 
 
 def test_failed_wake_publication_releases_only_its_reservation(wake_broker, monkeypatch):

@@ -10,6 +10,7 @@ import redis
 WAKE_TASK_NAMES = frozenset({
     'app.tasks.poll_background_tasks', 'app.tasks.recover_operations',
     'app.tasks.recover_active_coverage', 'app.tasks.ensure_daily_queue',
+    'app.tasks.monitor_activity_health',
 })
 WAKE_HEADER = 'tempo-wake-token'
 _KEY_PREFIX = 'tempo:wake:'

@@ -1,6 +1,7 @@
 """Read-only indexed queue aggregates, independent of raw event history."""
 from datetime import datetime, timedelta, timezone
 import sqlite3
+import json
 import time
 
 import psycopg
@@ -11,7 +12,7 @@ from ..database import read_connection
 from .background_metrics import BackgroundDiagnostics, COUNT_NAMES, DURATION_NAMES, KINDS
 from . import background_runtime
 from ..threat_analysis_commands import _ELIGIBLE_THREAT_REQUEST
-from .defensive_analysis import task_admission_sql, search_admission_sql
+from .defensive_analysis import DEFENSIVE_TASK_KINDS, task_admission_sql, search_admission_sql
 
 QUERY_BUDGET_SECONDS = 0.1
 
@@ -49,6 +50,8 @@ def snapshot() -> BackgroundDiagnostics:
     window_start = bucket_start-timedelta(seconds=287*300)
     result = dict(generated_at=now.isoformat(), window_start=window_start.isoformat(),
                   window_end=now.isoformat(), available=True, query_duration_seconds=0)
+    if postgres_store.configured():
+        return _native_cached_snapshot(started,now,result)
     try:
         connection_context = (postgres_store.diagnostic_read_connection(QUERY_BUDGET_SECONDS)
                               if postgres_store.configured() else read_connection())
@@ -126,4 +129,38 @@ def snapshot() -> BackgroundDiagnostics:
         result.update(available=False,unavailable_reason='query_deadline' if time.monotonic()-started>=QUERY_BUDGET_SECONDS else 'storage_unavailable')
     result['query_duration_seconds'] = max(0.0,time.monotonic()-started)
     result['runtime'] = background_runtime.snapshot().model_dump()
+    return BackgroundDiagnostics.model_validate(result)
+
+
+
+def _native_cached_snapshot(started,now,result):
+    try:
+        with postgres_store.diagnostic_read_connection(QUERY_BUDGET_SECONDS) as database:
+            database.execute_native("SELECT set_config('jit', 'off', true)")
+            def query(statement,parameters=()):
+                remaining=QUERY_BUDGET_SECONDS-(time.monotonic()-started)
+                if remaining<=0:raise TimeoutError()
+                database.execute_native("SELECT set_config('statement_timeout', %s, true)",(f'{max(1,int(remaining*1000))}ms',))
+                return database.execute_native(postgres_store.postgres_sql(statement),parameters).fetchall()
+            metadata=query('SELECT collection_started_at FROM background_diagnostic_metadata WHERE id=1')
+            result['collection_started_at']=metadata[0][0] if metadata else None
+            cached_rows=query('SELECT kind,bootstrap_ready,diagnostics_json,diagnostics_at FROM activity_pipeline_health ORDER BY kind')
+            complete=len(cached_rows)==len(KINDS) and all(row['bootstrap_ready'] and row['diagnostics_json'] and row['diagnostics_at'] for row in cached_rows)
+            summary_as_of=min((row['diagnostics_at'] for row in cached_rows if row['diagnostics_at']),default=None)
+            age=_age(summary_as_of,now)
+            result.update(summary_as_of=summary_as_of,summary_max_age_seconds=age,queue_evidence='stored_states_and_controls')
+            if not complete or age is None or age>120 or any(datetime.fromisoformat(row['diagnostics_at'])>now for row in cached_rows if row['diagnostics_at']):
+                result.update(available=False,unavailable_reason='cache_not_ready' if not complete else 'cache_stale')
+            else:
+                states=query("""SELECT source,
+                  CASE WHEN source='durable' AND kind IN ("""+','.join("'"+kind+"'" for kind in DEFENSIVE_TASK_KINDS)+""") AND state IN ('queued','retrying','leased') AND (SELECT defensive_analysis_enabled FROM settings WHERE id=1)=0 THEN 'paused' WHEN state LIKE 'manual:%%' THEN 'paused' ELSE state END diagnostic_state,
+                  replace(state,'manual:','') underlying_state,SUM(count) count FROM activity_pipeline_counts WHERE source IN ('durable','game_analysis','threat_analysis') GROUP BY source,diagnostic_state,underlying_state HAVING SUM(count)>0""")
+                result.update(queues=[dict(queue={'durable':'durable','game_analysis':'engine_game','threat_analysis':'engine_defense'}[row['source']],state=row['diagnostic_state'],underlying_state=row['underlying_state'],count=int(row['count'])) for row in states],counters=[json.loads(row['diagnostics_json']) for row in cached_rows])
+            result['query_duration_seconds']=max(0.0,time.monotonic()-started)
+    except (TimeoutError,PoolTimeout,psycopg.errors.QueryCanceled):
+        result.update(available=False,unavailable_reason='query_deadline',queues=[],counters=[])
+    except (sqlite3.OperationalError,psycopg.Error,ValueError):
+        result.update(available=False,unavailable_reason='storage_unavailable',queues=[],counters=[])
+    result['query_duration_seconds']=max(0.0,time.monotonic()-started)
+    result['runtime']=background_runtime.snapshot().model_dump()
     return BackgroundDiagnostics.model_validate(result)

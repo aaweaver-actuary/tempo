@@ -823,10 +823,20 @@ def health():
     }
 
 
+@app.get('/api/system/activity/notifications')
+def activity_notifications(after: int=0,limit: int=50):
+    from .services.activity_health import notification_changes
+    return notification_changes(after=after,limit=limit)
+
+
 @app.get("/api/system/foreground-active")
-def foreground_active():
+def foreground_active(engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker")):
     """Allow the isolated engine worker to yield without acquiring SQLite."""
-    return {"active": activity_gate.foreground_waiting}
+    active=activity_gate.foreground_waiting
+    if engine_worker=="docker":
+        from .services.background_runtime import record_engine_capacity
+        record_engine_capacity("foreground_admission" if active else "execution")
+    return {"active": active}
 
 
 @app.get("/api/system/foreground-requests-active")
@@ -881,8 +891,8 @@ def system_background_diagnostics() -> BackgroundDiagnostics:
 
 
 @app.get("/api/system/activity")
-def system_activity(offset: int = 0, limit: int = 50, group: str = "all"):
-    activity = list_activity(offset=offset, limit=limit,group=group)
+def system_activity(offset: int = 0, limit: int = 50, group: str = "all",work_source: str | None=None,work_id: str | None=None):
+    activity = list_activity(offset=offset, limit=limit,group=group,work_source=work_source,work_id=work_id)
     if not postgres_store.configured():
         activity["writer"] = {"healthy": database_writer.healthy,
                               **database_writer.queued_counts}
@@ -5041,6 +5051,8 @@ def claim_game_analysis_position(
         from .command_dispatch import dispatch_command
         plan = prepare_position_claim()
         if plan is None:
+            from .services.background_runtime import record_engine_capacity
+            record_engine_capacity("idle")
             return {"job": None}
         return dispatch_command(
             "games.analysis.position.claim", plan,
@@ -5559,11 +5571,14 @@ def save_game_analysis(
 
 
 @app.get("/api/defensive-threats/analysis/{request_id}/control")
-def defensive_engine_control(request_id: str, lease_id: str):
+def defensive_engine_control(request_id: str, lease_id: str, engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker")):
     """One authoritative, read-only request probe; never traverse the engine backlog."""
     from .services.defensive_analysis import search_admission_sql
     from .services.background_activity import claimable
 
+    if engine_worker=="docker":
+        from .services.background_runtime import record_engine_capacity
+        record_engine_capacity("foreground_admission" if activity_gate.foreground_waiting else "execution")
     # Foreground demand must stop the engine without waiting for background DB admission.
     if activity_gate.foreground_waiting:
         return {"foreground_active": True, "search_allowed": False}

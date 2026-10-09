@@ -26,8 +26,10 @@ celery_app.conf.update(
         "app.tasks.poll_background_tasks": {"queue": "background"},
         "app.tasks.recover_operations": {"queue": "background"},
         "app.tasks.recover_active_coverage": {"queue": "background"},
+        "app.tasks.monitor_activity_health": {"queue": "foreground"},
     },
     beat_schedule={
+        "monitor-activity-health": {"task": "app.tasks.monitor_activity_health", "schedule": 60.0},
         "poll-durable-background-tasks": {
             "task": "app.tasks.poll_background_tasks",
             "schedule": 1.0,

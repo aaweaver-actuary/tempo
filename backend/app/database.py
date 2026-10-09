@@ -1764,3 +1764,6 @@ def initialize() -> None:
         database.execute("""CREATE TRIGGER IF NOT EXISTS deleted_card_identity_update_guard
             BEFORE UPDATE OF id ON cards WHEN EXISTS(SELECT 1 FROM deleted_cards WHERE card_id=NEW.id)
             BEGIN SELECT RAISE(ABORT,'This card was permanently deleted and cannot be recreated'); END""")
+    from .services.activity_health_schema import install_sqlite
+    with connection() as database:
+        install_sqlite(database)
