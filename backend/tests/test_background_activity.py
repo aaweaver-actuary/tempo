@@ -44,11 +44,11 @@ def test_activity_projection_lists_every_background_source_and_pages_without_los
     client = TestClient(app)
     first = client.get("/api/system/activity?limit=3").json()
     all_items = client.get("/api/system/activity?limit=100").json()["items"]
-    assert {item["source"] for item in all_items} == {
+    assert {stage["source"] for item in all_items for stage in (item["stages"] or [item])} == {
         "durable", "sync", "derivation", "integrity", "coverage",
         "statistics", "priority", "game_analysis",
     }
-    assert first["total"] == 8
+    assert first["total"] == 7
     assert len(first["items"]) == 3
     assert first["next_offset"] == 3
     integrity = next(item for item in all_items if item["source"] == "integrity")

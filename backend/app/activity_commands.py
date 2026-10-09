@@ -128,3 +128,6 @@ def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> 
 
 register_command("activity.progress", report_analysis_progress)
 register_command("activity.task.retry", retry_failed_task)
+
+from .services.activity_history import clear_finished_in_transaction
+register_command('activity.clear_finished',clear_finished_in_transaction)

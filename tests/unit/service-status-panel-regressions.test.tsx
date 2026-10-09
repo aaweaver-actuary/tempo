@@ -158,3 +158,47 @@ it("study worker activity reports queued running and completion in order", async
   unsubscribe();
   expect(states).toEqual(["queued", "running", "complete"]);
 });
+
+it("logical activity separates collapsed disabled, paused and history groups and filters every page", async () => {
+  const request = vi.fn(async (input: RequestInfo | URL) => Response.json({
+    ...activityResponse, clearable_finished: 0, completion_cutoff: null, completion_snapshot: null,
+    items: [
+      { ...activityItem, id: "disabled", classification: "disabled", paused: true, paused_by_settings: true },
+      { ...activityItem, id: "paused", classification: "paused", paused: true },
+      { ...activityItem, id: "legacy", classification: "history", title: "September London integrity", state: "running" },
+    ],
+  }));
+  vi.stubGlobal("fetch", request);
+  render(<ServiceStatusPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+  const history = (await screen.findByText("History · 1")).closest("details")!;
+  expect(history.hasAttribute("open")).toBe(false);
+  expect(screen.getByRole("button", { name: "Clear finished" })).toHaveProperty("disabled", true);
+  fireEvent.change(screen.getByRole("combobox", { name: "Activity group" }), { target: { value: "history" } });
+  await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining("&group=history"), expect.anything()));
+});
+
+it("clear finished keeps results visible while its receipt is pending and refreshes only on confirmed success", async () => {
+  localStorage.clear();
+  let failedReceipt = false;
+  const request = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    if (String(input).includes("/api/operations/")) return Response.json({ state: failedReceipt ? "failed" : "pending", error: { message: "Clear could not be saved" } });
+    if (options?.method === "POST") return Response.json({ operation_id: "clear-panel" }, { status: 202 });
+    return Response.json({ ...activityResponse, clearable_finished: 1,
+      completion_cutoff: "2026-10-01T00:00:00+00:00", completion_snapshot: "signed",
+      items: [{ ...activityItem, classification: "finished", state: "complete" }],
+    });
+  });
+  vi.stubGlobal("fetch", request);
+  render(<ServiceStatusPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Clear finished" }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("pending"));
+  expect(screen.getByText("Finished · 1")).toBeTruthy();
+  failedReceipt = true;
+  fireEvent.click(screen.getByRole("button", { name: "Clear finished" }));
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Clear could not be saved"));
+  expect(screen.getByText("Finished · 1")).toBeTruthy();
+  expect(request.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+  localStorage.clear();
+});

@@ -1,11 +1,12 @@
 "use client";
 import { Button } from "./buttons/BaseButton";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 import { startExplorerSessionRecovery } from "../lib/explorer-session";
 import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
+import { clearFinishedActivity } from "../lib/activity-clear-command";
 import { requestActivityControl } from "../lib/activity-control-command";
 import { browserActivitySnapshot, subscribeBrowserActivity } from "../lib/browser-activity";
 import { setBackgroundDiagnostics, setLatestServiceStatus, type ActivityItem, type ActivityResponse } from "../lib/service-status";
@@ -23,11 +24,16 @@ function isActivityResponse(value: unknown): value is ActivityResponse {
       && typeof item.title === "string" && typeof item.state === "string" && typeof item.phase === "string"
       && typeof item.updated_at === "string" && typeof item.paused === "boolean"
       && (item.paused_by_settings === undefined || typeof item.paused_by_settings === "boolean")
+      && (item.classification === undefined || Object.hasOwn(classificationLabels, item.classification))
+      && (item.stages === undefined || (Array.isArray(item.stages) && isActivityResponse({ items: item.stages, counts: { running: 0, queued: 0, paused: 0, failed: 0 }, total: 0, next_offset: null })))
       && typeof item.promoted === "boolean" && (item.error === null || typeof item.error === "string")
       && (item.completed === null || typeof item.completed === "number")
       && (item.total === null || typeof item.total === "number"))
     && Boolean(counts) && typeof counts?.running === "number" && typeof counts.queued === "number"
     && typeof counts.paused === "number" && typeof counts.failed === "number"
+    && (candidate.clearable_finished === undefined || (typeof candidate.clearable_finished === "number" && candidate.clearable_finished >= 0))
+    && (candidate.completion_cutoff === undefined || candidate.completion_cutoff === null || typeof candidate.completion_cutoff === "string")
+    && (candidate.completion_snapshot === undefined || candidate.completion_snapshot === null || typeof candidate.completion_snapshot === "string")
     && typeof candidate.total === "number"
     && (candidate.next_offset === null || typeof candidate.next_offset === "number");
 }
@@ -43,7 +49,10 @@ function ProgressBar({ item }: { item: ActivityItem }) {
   </div>;
 }
 
-function activityGroup(state: string) {
+const classificationLabels = { progressing: "Progressing", needs_attention: "Needs attention", waiting: "Waiting", disabled: "Disabled in Settings", paused: "Manually paused", finished: "Finished", history: "History" };
+function activityGroup(item: ActivityItem) {
+  if (item.classification) return classificationLabels[item.classification];
+  const state = item.state;
   if (["running", "leased", "finalizing", "pausing"].includes(state)) return "Running";
   if (["queued", "retrying"].includes(state)) return "Queued";
   if (state === "paused") return "Paused";
@@ -58,7 +67,9 @@ function sameActivityItems(left: ActivityItem[], right: ActivityItem[]) {
       && item.state === other.state && item.phase === other.phase && item.completed === other.completed
       && item.total === other.total && item.updated_at === other.updated_at && item.error === other.error
       && item.paused === other.paused && Boolean(item.paused_by_settings) === Boolean(other.paused_by_settings)
-      && item.promoted === other.promoted;
+      && item.promoted === other.promoted && item.classification === other.classification
+      && item.health === other.health && item.last_progress_at === other.last_progress_at
+      && item.waiting_reason === other.waiting_reason && JSON.stringify(item.stages) === JSON.stringify(other.stages);
   });
 }
 
@@ -66,10 +77,13 @@ function sameActivityItems(left: ActivityItem[], right: ActivityItem[]) {
 function sameActivitySummary(left: ActivityResponse | null, right: ActivityResponse) {
   return left !== null && left.counts.running === right.counts.running && left.counts.queued === right.counts.queued
     && left.counts.paused === right.counts.paused && left.counts.failed === right.counts.failed
-    && left.writer?.healthy === right.writer?.healthy;
+    && left.writer?.healthy === right.writer?.healthy
+    && JSON.stringify(left.counts) === JSON.stringify(right.counts)
+    && left.completion_cutoff === right.completion_cutoff && left.completion_snapshot === right.completion_snapshot
+    && left.clearable_finished === right.clearable_finished;
 }
 
-const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently completed"];
+const groupOrder = ["Progressing", "Running", "Needs attention", "Waiting", "Queued", "Disabled in Settings", "Manually paused", "Paused", "Finished", "Recently completed", "History"];
 
 export function ServiceStatusPanel() {
   useEffect(() => usesLocalApi() ? startExplorerSessionRecovery() : undefined, []);
@@ -89,9 +103,11 @@ export function ServiceStatusPanel() {
   }, []);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [clearing, setClearing] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const refreshActivity = useRef<() => Promise<ActivityResponse | null>>(async () => null);
-  const updatePollingDemand = useRef<(open: boolean, offset: number) => void>(() => undefined);
+  const updatePollingDemand = useRef<(open: boolean, offset: number, group: string) => void>(() => undefined);
   const refresh = () => refreshActivity.current();
   const browserItems = useSyncExternalStore(subscribeBrowserActivity, browserActivitySnapshot, () => emptyBrowserActivity);
   useEffect(() => {
@@ -118,6 +134,7 @@ export function ServiceStatusPanel() {
     let stopped = false;
     let panelOpen = false;
     let currentOffset = 0;
+    let currentGroup = "all";
     let offsetGeneration = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let inFlight: Promise<ActivityResponse | null> | null = null;
@@ -171,7 +188,7 @@ export function ServiceStatusPanel() {
           refreshPending = false;
           const requestGeneration = offsetGeneration;
           try {
-            const response = await backgroundFetch(`${API_URL}/api/system/activity?offset=${currentOffset}&limit=50`);
+            const response = await backgroundFetch(`${API_URL}/api/system/activity?offset=${currentOffset}&limit=50${currentGroup === "all" ? "" : `&group=${currentGroup}`}`);
             if (!response.ok) throw new Error(`Activity status failed: HTTP ${response.status}`);
             const value: unknown = await response.json();
             if (!isActivityResponse(value)) throw new Error("Activity status has an unexpected format");
@@ -215,9 +232,10 @@ export function ServiceStatusPanel() {
       } else refreshPending = false;
     };
     refreshActivity.current = async () => { failureCount = 0; return poll(); };
-    updatePollingDemand.current = (nextOpen, nextOffset) => {
+    updatePollingDemand.current = (nextOpen, nextOffset, nextGroup) => {
       const opened = nextOpen && !panelOpen;
-      const offsetChanged = nextOffset !== currentOffset;
+      const offsetChanged = nextOffset !== currentOffset || nextGroup !== currentGroup;
+      currentGroup = nextGroup;
       panelOpen = nextOpen;
       currentOffset = nextOffset;
       if (offsetChanged) { offsetGeneration += 1; latest = null; }
@@ -243,7 +261,7 @@ export function ServiceStatusPanel() {
       document.removeEventListener("visibilitychange", recover);
     };
   }, [publishError]);
-  useEffect(() => { updatePollingDemand.current(open, offset); }, [open, offset]);
+  useEffect(() => { updatePollingDemand.current(open, offset, groupFilter); }, [open, offset, groupFilter]);
 
   const control = async (item: ActivityItem, action: string) => {
     const key = `${item.source}:${item.id}`;
@@ -271,6 +289,36 @@ export function ServiceStatusPanel() {
     } finally { setBusyKey(null); }
   };
 
+  const clearFinished = async () => {
+    if (!status?.completion_cutoff || !status.completion_snapshot || clearing) return;
+    setClearing(true);
+    try {
+      await clearFinishedActivity({ completion_cutoff: status.completion_cutoff, completion_snapshot: status.completion_snapshot });
+      await refresh();
+    } catch (cause) { publishError(cause instanceof Error ? cause.message : "Clear finished failed"); }
+    finally { setClearing(false); }
+  };
+  const renderActivity = (item: ActivityItem): React.ReactNode => {
+    const key = `${item.source}:${item.id}`;
+    const children = item.stages ?? [];
+    const controlEligible = !children.length && item.classification !== "history" && item.source !== "study" && item.state !== "complete" && item.state !== "failed";
+    return <article key={key} className="tempo-activity-item">
+      <div className="tempo-activity-item-heading"><strong>{item.title}</strong><span>{item.classification ? classificationLabels[item.classification] : item.state.replaceAll("_", " ")}</span></div>
+      <p>{item.phase.replaceAll("_", " ")}{item.error ? ` · ${item.error}` : ""}</p>
+      <ProgressBar item={item} />
+      {item.waiting_reason === "retry_delay" && <p>Waiting for the retry delay to end.</p>}
+      <time dateTime={item.updated_at}>Updated {item.updated_at.replace("T", " ").slice(0, 16)} UTC</time>
+      {controlEligible && item.paused_by_settings && <p>Paused in Settings. Enable Defensive analysis in Settings to allow this work.</p>}
+      {controlEligible && <div className="tempo-activity-actions">
+        {!item.paused_by_settings && <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.paused ? "resume" : "pause")}>{item.paused ? "Resume" : "Pause"}</Button>}
+        <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.promoted ? "normal" : "prioritize")}>{item.promoted ? "Normal priority" : "Prioritize"}</Button>
+      </div>}
+      {!children.length && item.classification !== "history" && item.state === "failed" && ["durable", "game_analysis", "threat_analysis"].includes(item.source) &&
+        <Button type="button" disabled={busyKey === key} onClick={() => void retry(item)}>Retry {item.title}</Button>}
+      {children.length > 0 && <details><summary>{children.length} stages</summary>{children.map(stage => renderActivity({ ...stage, classification: item.classification === "history" ? "history" : undefined }))}</details>}
+    </article>;
+  };
+
   const visibleItems = useMemo(() => {
     if (!open) return [];
     const localItems: ActivityItem[] = browserItems.map(item => ({
@@ -279,7 +327,7 @@ export function ServiceStatusPanel() {
       error: item.error ?? null, paused: false, paused_by_settings: false, promoted: false,
     }));
     return [...items, ...localItems].sort((left, right) =>
-      groupOrder.indexOf(activityGroup(left.state)) - groupOrder.indexOf(activityGroup(right.state))
+      groupOrder.indexOf(activityGroup(left)) - groupOrder.indexOf(activityGroup(right))
       || right.updated_at.localeCompare(left.updated_at));
   }, [open, items, browserItems]);
   const activeCount = (status?.counts.running ?? 0) + (status?.counts.queued ?? 0)
@@ -298,30 +346,27 @@ export function ServiceStatusPanel() {
       {!usesLocalApi() && <p>This practice demo has no local analysis service.</p>}
       {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}
       {status?.writer?.healthy === false && <p role="alert">The database writer is unavailable. Restart Tempo before making changes.</p>}
-      {status && <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>}
+      {status && (status.clearable_finished === undefined
+        ? <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>
+        : <p>{status.counts.running} progressing · {status.counts.queued} waiting · {status.counts.failed} need attention · {status.counts.disabled ?? 0} disabled in Settings · {status.counts.manual_paused ?? 0} manually paused</p>)}
       {!error && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
       {!error && status !== null && visibleItems.length === 0 && <p>No background activity yet.</p>}
+      {status?.clearable_finished !== undefined && <div className="tempo-activity-filters">
+        <label>Show <select aria-label="Activity group" value={groupFilter} onChange={event => { setOffset(0); setGroupFilter(event.target.value); }}>
+          <option value="all">All work</option>
+          {Object.entries(classificationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select></label>
+        <Button type="button" disabled={clearing || !status.clearable_finished || !status.completion_cutoff || !status.completion_snapshot}
+          onClick={() => void clearFinished()}>{clearing ? "Checking clear…" : "Clear finished"}</Button>
+      </div>}
       <div className="tempo-activity-list">
-        {visibleItems.map((item, index) => {
-          const key = `${item.source}:${item.id}`;
-          const controlEligible = item.source !== "study" && item.state !== "complete" && item.state !== "failed";
-          const group = activityGroup(item.state);
-          return <Fragment key={key}>
-            {(index === 0 || activityGroup(visibleItems[index - 1].state) !== group) && <h3>{group}</h3>}
-            <article className="tempo-activity-item">
-            <div className="tempo-activity-item-heading"><strong>{item.title}</strong><span>{item.state.replaceAll("_", " ")}</span></div>
-            <p>{item.phase.replaceAll("_", " ")}{item.error ? ` · ${item.error}` : ""}</p>
-            <ProgressBar item={item} />
-            <time dateTime={item.updated_at}>Updated {item.updated_at.replace("T", " ").slice(0, 16)} UTC</time>
-            {controlEligible && item.paused_by_settings && <p>Paused in Settings. Enable Defensive analysis in Settings to allow this work.</p>}
-            {controlEligible && <div className="tempo-activity-actions">
-              {!item.paused_by_settings && <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.paused ? "resume" : "pause")}>{item.paused ? "Resume" : "Pause"}</Button>}
-              <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.promoted ? "normal" : "prioritize")}>{item.promoted ? "Normal priority" : "Prioritize"}</Button>
-            </div>}
-            {item.state === "failed" && (item.source === "durable" || item.source === "game_analysis" || item.source === "threat_analysis") &&
-              <Button type="button" disabled={busyKey === key} onClick={() => void retry(item)}>Retry {item.title}</Button>}
-            </article>
-          </Fragment>;
+        {groupOrder.map(label => {
+          const members = visibleItems.filter(item => activityGroup(item) === label);
+          if (!members.length) return null;
+          const content = members.map(item => renderActivity(item));
+          return ["Disabled in Settings", "Manually paused", "Finished", "History"].includes(label)
+            ? <details key={label} className="tempo-activity-group"><summary>{label} · {members.length}</summary>{content}</details>
+            : <section key={label} aria-label={label}><h3>{label}</h3>{content}</section>;
         })}
       </div>
       <div className="tempo-activity-pages">

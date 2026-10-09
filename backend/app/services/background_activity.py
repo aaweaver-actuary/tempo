@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import logging
 import sqlite3
 from fastapi import HTTPException
@@ -181,16 +181,20 @@ def _base_item(source: str, work_id: str, title: str, state: str, updated_at: st
     }
 
 
-def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
+def list_activity(*, offset: int = 0, limit: int = 50, group: str = 'all') -> dict:
+    from .activity_history import native_activity, project_stages, GROUPS
+    if group!='all' and group not in GROUPS:
+        raise HTTPException(422,'Unknown activity group')
+    if postgres_store.configured():
+        return native_activity(offset=offset,limit=limit,group=group)
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     items: list[dict] = []
     with read_connection() as database:
         analysis_enabled(database)
         for row in database.execute(
             f"SELECT *,NOT {task_admission_sql('kind')} AS paused_by_settings "
-            "FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,),
+            "FROM background_tasks ", (),
         ):
             items.append(_base_item("durable", row["id"], row["kind"].replace("_", " ").title(), row["state"], row["updated_at"], str(row["generation"]), row["phase"], error=row["last_error"]))
             items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
@@ -200,7 +204,7 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                       {recommendation_sql('request.id')} AS is_recommendation,
                       NOT {search_admission_sql('request.id')} AS paused_by_settings
                 FROM threat_analysis_requests request
-                WHERE state!='complete' OR updated_at>=?""", (cutoff,),
+                """, (),
         ):
             state = ("running" if row["state"] == "leased" else
                      "retrying" if row["state"] == "queued" and row["attempts"] else row["state"])
@@ -210,16 +214,16 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                                     error=row["last_error"]))
             items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
             items[-1]['paused'] = items[-1]['paused_by_settings']
-        for row in database.execute("SELECT * FROM game_sync_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
+        for row in database.execute("SELECT * FROM game_sync_jobs", ()):
             items.append(_base_item("sync", row["id"], "Game sync", row["status"], row["updated_at"], row["id"], error=row["error"]))
         for row in database.execute("""SELECT j.*,g.provider,g.played_at FROM game_derivation_jobs j
                                       JOIN imported_games g ON g.id=j.game_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+                                      """, ()):
             title = f"{row['provider'].title()} game {row['played_at'][:10]} · {row['game_id'][-8:]} findings"
             items.append(_base_item("derivation", row["game_id"], title, row["status"], row["updated_at"], str(row["derivation_version"]), row["phase"], error=row["last_error"]))
         for row in database.execute("""SELECT j.*,r.name AS repertoire_name FROM repertoire_integrity_jobs j
                                       JOIN repertoires r ON r.id=j.repertoire_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+                                      """, ()):
             items.append(_base_item("integrity", row["repertoire_id"], f"{row['repertoire_name']} integrity", row["status"], row["updated_at"], row["run_id"], row["status"], row["source_offset"], row["total_sources"], row["last_error"]))
         coverage_counts = {row["run_id"]: row for row in database.execute(
                 """SELECT run_id,COUNT(*) AS total,
@@ -238,14 +242,12 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                 state = "complete"
             elif state == "complete":
                 state = "queued"
-            if state == "complete" and row["updated_at"] < cutoff:
-                continue
             items.append(_base_item("coverage", row["id"], f"{row['repertoire_name']} coverage", state, row["updated_at"], row["id"], "Checking positions", completed_nodes, total_nodes * 2, row["last_error"]))
-        for row in database.execute("SELECT * FROM daily_statistics_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
+        for row in database.execute("SELECT * FROM daily_statistics_jobs", ()):
             items.append(_base_item("statistics", row["local_day"], f"Daily insights {row['local_day']}", row["status"], row["updated_at"], row["local_day"], error=row["last_error"]))
         for row in database.execute("""SELECT j.*,r.name AS repertoire_name FROM repertoire_priority_jobs j
                                       JOIN repertoires r ON r.id=j.repertoire_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+                                      """, ()):
             items.append(_base_item("priority", row["repertoire_id"], f"{row['repertoire_name']} priorities", row["status"], row["updated_at"], str(row["generation"]), error=row["last_error"]))
         game_position_counts = {(item["game_id"], item["analysis_version"]): item
                                 for item in database.execute(
@@ -259,7 +261,7 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                                              json_array_length(g.moves_json)+1 AS position_total
                                       FROM game_analysis_jobs j
                                       JOIN imported_games g ON g.id=j.game_id
-                                      WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
+                                      """, ()):
             title = f"{row['provider'].title()} game {row['played_at'][:10]} · {row['game_id'][-8:]} analysis"
             progress = game_position_counts.get((row["game_id"], row["analysis_version"]))
             state = "running" if row["status"] == "leased" else (
@@ -272,6 +274,7 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                                     if row["position_total"] else None,
                                     row["last_error"]))
         controls = {(row["source"], row["work_id"]): row for row in database.execute("SELECT * FROM background_activity")}
+        preferences=dict(database.execute("SELECT cleared_through,signing_key FROM activity_history_preferences WHERE id=1").fetchone())
     for item in items:
         control = controls.get((item["source"], item["id"]))
         if control:
@@ -289,14 +292,4 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
             item["phase"] = "Paused"
         if item["state"] == "complete" and item["total"] is not None:
             item["completed"] = item["total"]
-    order = {"pausing": 0, "running": 1, "leased": 1, "finalizing": 1,
-             "queued": 2, "retrying": 2, "paused": 3, "failed": 4, "complete": 5}
-    items.sort(key=lambda item: (order.get(item["state"], 5), not item["promoted"], item["updated_at"], item["source"], item["id"]))
-    counts = {
-        "running": sum(item["state"] in {"running", "leased", "finalizing", "pausing"} for item in items),
-        "queued": sum(item["state"] in {"queued", "retrying"} for item in items),
-        "paused": sum(item["state"] == "paused" for item in items),
-        "failed": sum(item["state"] == "failed" for item in items),
-    }
-    return {"items": items[offset:offset + limit], "counts": counts,
-            "total": len(items), "next_offset": offset + limit if offset + limit < len(items) else None}
+    return project_stages(items,preferences,offset=offset,limit=limit,group=group)

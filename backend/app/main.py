@@ -546,6 +546,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                             and request.method == "POST")
         activity_control_command = (path_parts == ["api", "system", "activity", "control"]
                                     and request.method == "POST")
+        activity_clear_command = (path_parts == ["api", "system", "activity", "clear-finished"] and request.method == "POST")
         activity_progress_command = (path_parts == ["api", "system", "activity", "progress"]
                                      and request.method == "POST")
         task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
@@ -694,7 +695,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     repertoire_delete_command, opportunity_state_command,
                     opportunity_refresh_command, coverage_refresh_command,
                     coverage_maia_command, coverage_explorer_session,
-                    browser_activity, activity_control_command, activity_progress_command,
+                    browser_activity, activity_control_command, activity_clear_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command, tactic_capture_command,
                     statistics_refresh_command,
                     defensive_admin_command,
@@ -880,12 +881,24 @@ def system_background_diagnostics() -> BackgroundDiagnostics:
 
 
 @app.get("/api/system/activity")
-def system_activity(offset: int = 0, limit: int = 50):
-    activity = list_activity(offset=offset, limit=limit)
+def system_activity(offset: int = 0, limit: int = 50, group: str = "all"):
+    activity = list_activity(offset=offset, limit=limit,group=group)
     if not postgres_store.configured():
         activity["writer"] = {"healthy": database_writer.healthy,
                               **database_writer.queued_counts}
     return activity
+
+
+@app.post('/api/system/activity/clear-finished')
+def clear_finished_activity(request: dict, idempotency_key: str | None = Header(default=None, alias='Idempotency-Key')):
+    from .services.activity_history import clear_finished_in_transaction
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command('activity.clear_finished',request,idempotency_key=idempotency_key)
+    from .services.database_executor import submit_foreground_write
+    def clear(database):
+        return clear_finished_in_transaction(database,request)
+    return submit_foreground_write(clear,label='activity.clear_finished')
 
 
 @app.post("/api/system/activity/control")
