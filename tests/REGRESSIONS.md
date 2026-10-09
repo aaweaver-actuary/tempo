@@ -3001,3 +3001,21 @@ Additional receipt and shared-flush boundaries:
   `reload retains an unprovable result as a conflict and opens independent cards`
   (`tests/unit/attempt-lifecycle-regressions.test.ts`) retain their original outcome
   assertions and now require receipt-first initialization before replay.
+
+## Training-to-Builder route context (2026-10-09)
+
+Opening a review position previously created a FEN-only Builder session at ply zero,
+so existing responses inside an authored line appeared missing. Training now passes
+the displayed cursor and complete card history; partial cards resolve exact earlier
+routes in the study worker, with explicit choice for distinct transposed prefixes.
+Only the complete training-card continuation is loaded, without choosing later branches.
+
+- `training Builder handoff keeps the middle-line cursor and full saved continuation without changing the attempt`; `training Analysis handoff uses the displayed historical position and retains the full route`; `training Games here handoff filters the historical position without advancing the live attempt` (`training-builder-handoff-regressions.test.tsx`). The first two failed on main `d5394b1f`: empty history / cursor zero and the live rather than viewed position.
+- `partial training card restores the exact original prefix and keeps the full card continuation`; `training route restoration excludes similar positions wrong repertoires and incompatible continuations`; `ambiguous transposed training routes remain distinct but duplicate earlier routes collapse`; `custom-FEN training routes retain their authored starting position instead of assuming the standard opening`; `training route recovery handles repeated positions by comparing the continuation at each occurrence`; `invalid training cursors and off-route displayed positions report an actionable handoff error`; `training route context is optional in legacy Builder sessions and roundtrips unresolved sessions`; `training route recovery runs through the validated regular study-worker protocol` (`training-builder-route-regressions.test.ts`).
+- `Builder restores a partial training route once and persists its original root cursor and keyboard anchor across remount`; `Builder stepping back from the training launch saves Bg4 on the original route without replacing the saved Nc6 line`; `ambiguous partial training routes require an explicit choice and keep the displayed board fixed`; `failed route loading shows a retry action and never reports a false missing response or enables branch writes`; `unmatched training continuation remains available for analysis while original-route writes stay blocked`; `late training route resolution cannot overwrite a replacement Builder session`; `training route worker failure preserves the pending session and retries without inventing a route`; `unplayed saved continuation cannot submit a training Builder branch at its launch cursor` (`training-builder-context-regressions.test.tsx`).
+- `training Builder restores the viewed mid-line position and durably saves Bg4 on the original route` (`workspace-flows.spec.ts`) verifies real piece geometry, full history, saved responses, PostgreSQL-backed branch saving with the original root, original-line preservation, unchanged active training position/no review write, and reload.
+
+Existing Builder, shared-board training, study-worker failure/coalescing and index
+regressions remain in the regular suite. No backend route, migration or grading
+contract changes; real browser persistence and required CI durability cover the
+existing command boundary.

@@ -17,6 +17,7 @@ export function useBoardHistory(positionKey: string, positions: readonly string[
     if (positions.length) setBrowsing(nextCursor === liveCursor ? null : { key: positionKey, cursor: nextCursor });
   };
   return {
+    cursor,
     fen: viewingHistory ? positions[cursor] : liveFen,
     viewingHistory,
     keyboard: { ...historyKeyboardActions(cursor, lastCursor, navigate), reset: () => setBrowsing(null) },

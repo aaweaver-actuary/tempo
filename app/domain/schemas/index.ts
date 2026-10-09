@@ -240,6 +240,11 @@ export const builderSessionSchema = z
     dismissedTranspositions: z.array(z.string()).optional(),
     sourceGapId: z.string().optional(),
     selectedMoveUci: uciMoveSchema.optional(),
+    trainingRouteToResolve: z.strictObject({
+      repertoireId: repertoireIdSchema,
+      cardId: identifierSchema,
+      cardRevision: z.number().int().positive(),
+    }).optional(),
   })
   .refine(
     (value) =>
@@ -620,6 +625,13 @@ export const comparisonCardSchema = z.strictObject({
 });
 export const comparisonCardsSchema = z.strictObject({ cards: z.array(comparisonCardSchema) });
 export const studyTaskSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("resolveTrainingRoute"),
+    repertoireId: identifierSchema,
+    startingFen: fenStringSchema,
+    moves: z.array(uciMoveSchema),
+    lines: z.array(canonicalLineSchema),
+  }),
   z.strictObject({
     kind: z.literal("workspace"),
     url: z.string(),

@@ -6,6 +6,7 @@ import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
 import { acceptPrefixSplitCommand, rejectPrefixSplitCommand } from "../lib/prefix-split-command";
+import { trainingBuilderSession, type TrainingPositionContext } from "../lib/training-builder-route";
 import { deleteCardCommand, pendingCardDeletion } from "../lib/card-delete-command";
 import {
   readJsonResponse,
@@ -1524,22 +1525,18 @@ export default function Home() {
     persistExplicitAttemptFailure();
   }
 
-  function openReviewPosition(target: "analysis" | "builder" | "games" | "compare") {
+  function openReviewPosition(target: "analysis" | "builder" | "games" | "compare", displayed: TrainingPositionContext = { fen: currentFenString, cursor: step }) {
     if (target === "compare") {
       try {
-        const position = new Chess(card.startingFen);
-        const history = card.moves.map((san) => {
-          const move = position.move(san);
-          return { uci: `${move.from}${move.to}${move.promotion ?? ""}`, san: move.san, fen: position.fen() };
-        });
+        const session = trainingBuilderSession(card, displayed, false);
         const source: ComparisonBoard = {
           id: "source", label: card.title || "Training card", cardId: card.backendId ?? card.id,
           orientation: trainedColor(card), startingFen: card.startingFen,
-          history, cursor: Math.min(step, history.length),
+          history: session.history, cursor: session.cursor,
         };
         setComparisonOpenError("");
         setComparisonLaunch({
-          source, sourceKey: `${source.cardId}:${card.revision ?? 1}:${source.cursor}:${currentFenString}`,
+          source, sourceKey: `${source.cardId}:${card.revision ?? 1}:${source.cursor}:${displayed.fen}`,
           repertoireId: card.repertoireId, returnView: "train",
         });
         changeWorkspace("compare");
@@ -1549,25 +1546,19 @@ export default function Home() {
       return;
     }
     if (target === "games") {
-      setGamesFenFilter(canonicalFenKey(currentFenString));
+      setGamesFenFilter(canonicalFenKey(displayed.fen));
       setGamesRepertoireFilter("");
       changeWorkspace("games");
       return;
     }
-    const orientation = trainedColor(card);
-    const repertoireId = card.repertoireId;
-    const session: BuilderSession = {
-      version: 1,
-      activeRepertoireByColor: repertoireId
-        ? { [orientation]: repertoireId }
-        : {},
-      activeRepertoireId: repertoireId,
-      orientation,
-      startingFen: currentFenString,
-      history: [],
-      cursor: 0,
-      branchStart: target === "builder" ? 0 : null,
-    };
+    let session: BuilderSession;
+    try {
+      session = trainingBuilderSession(card, displayed, target === "builder");
+      setComparisonOpenError("");
+    } catch (error) {
+      setComparisonOpenError(`Cannot open this card's route. ${String(error)}`);
+      return;
+    }
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
     sessionStorage.setItem(
       "tempo-builder-tools",

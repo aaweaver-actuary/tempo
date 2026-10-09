@@ -38,6 +38,7 @@ import { useBackgroundStudy } from "../hooks/use-background-study";
 import { useStudyPositionIndex } from "../hooks/use-study-position-index";
 import { runStudyTask } from "../lib/background-study";
 import type { StudyTask } from "../lib/study-computation";
+import { prependTrainingRoute, type TrainingRouteCandidate } from "../lib/training-builder-route";
 import { requestInteractiveMaia } from "../lib/maia-broker";
 import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import {
@@ -92,6 +93,7 @@ import CloseButton from "../components/buttons/CloseButton";
 import type { ComparisonBoard } from "../lib/comparison";
 
 type AnalysisMetric = "stockfish" | "lichess" | "masters";
+type TrainingRouteLookup = { attempt: number; task: StudyTask };
 const emptyLines: CanonicalLine[] = [];
 const emptySimilar: Array<IndexedPosition & { distance: number }> = [];
 
@@ -277,6 +279,17 @@ export default function BuilderView({
   );
   const [maiaProgress, setMaiaProgress] = useState(0);
   const [backendLines, setBackendLines] = useState<AnalysisLine[]>([]);
+  const [backendLinesState, setBackendLinesState] = useState<"loading" | "ready" | "error">("loading");
+  const [backendLinesError, setBackendLinesError] = useState("");
+  const [trainingRouteToResolve, setTrainingRouteToResolve] = useState(initialSession?.trainingRouteToResolve);
+  const [completedTrainingRouteLookup, setCompletedTrainingRouteLookup] = useState<{
+    request: TrainingRouteLookup;
+    state: "choose" | "unavailable" | "error";
+    candidates: TrainingRouteCandidate[];
+    message?: string;
+  }>();
+  const [trainingRouteRetry, setTrainingRouteRetry] = useState(0);
+  const trainingRouteResolved = useRef(false);
   const [orientation, setOrientation] = useState<PieceColor>(() => {
     const stored =
       initialSession?.orientation ??
@@ -405,6 +418,20 @@ export default function BuilderView({
     () => availableLines.filter((line) => line.repertoireId === selectedRepertoireId),
     [availableLines, selectedRepertoireId],
   );
+  const trainingRouteLookup = useMemo<TrainingRouteLookup | null>(() => {
+    if (!trainingRouteToResolve || !initialSession || availableLines === emptyLines ||
+        (usesLocalApi() && backendLinesState !== "ready") || selectedRepertoireId !== trainingRouteToResolve.repertoireId) return null;
+    return { attempt: trainingRouteRetry, task: {
+      kind: "resolveTrainingRoute", repertoireId: trainingRouteToResolve.repertoireId,
+      startingFen: initialSession.startingFen, moves: initialSession.history.map(move => move.uci), lines: selectedLines,
+    } };
+  }, [trainingRouteToResolve, initialSession, availableLines, selectedLines, selectedRepertoireId, backendLinesState, trainingRouteRetry]);
+  const wrongTrainingRepertoire = Boolean(trainingRouteToResolve && availableLines !== emptyLines &&
+    (!usesLocalApi() || backendLinesState === "ready") && selectedRepertoireId !== trainingRouteToResolve.repertoireId);
+  const trainingRouteResolution = wrongTrainingRepertoire
+    ? { state: "unavailable", candidates: [], message: "Select the training card's repertoire to restore its original route." }
+    : completedTrainingRouteLookup?.request === trainingRouteLookup ? completedTrainingRouteLookup
+    : { state: "loading", candidates: [], message: undefined };
   const positionIndex = useStudyPositionIndex(selectedRepertoireId, selectedLines);
   const similarityTask = useMemo<StudyTask | null>(
     () => positionIndex ? {
@@ -418,6 +445,7 @@ export default function BuilderView({
   const similarPositions = useBackgroundStudy(similarityTask, emptySimilar);
   const transpositionKey = `${selectedRepertoireId}:${canonicalFenKey(fen)}`;
   const exactTransposition =
+    !trainingRouteToResolve &&
     cursor > 0 &&
     lineMatches.length === 0 &&
     !dismissedTranspositions.includes(transpositionKey)
@@ -429,14 +457,45 @@ export default function BuilderView({
 
   const refreshBackendLines = useCallback(async () => {
     if (!usesLocalApi()) return;
-    const value = await readWorkspaceData(`${API_URL}/api/repertoire/lines`);
-    setBackendLines(
-      await runStudyTask<AnalysisLine[]>({
-        kind: "transportLines",
-        payload: value,
-      }),
-    );
+    setBackendLinesState("loading");
+    try {
+      const value = await readWorkspaceData(`${API_URL}/api/repertoire/lines`);
+      setBackendLines(await runStudyTask<AnalysisLine[]>({ kind: "transportLines", payload: value }));
+      setBackendLinesState("ready");
+      setBackendLinesError("");
+    } catch (error) {
+      setBackendLinesState("error");
+      setBackendLinesError(error instanceof Error ? error.message : "Could not load repertoire lines.");
+      throw error;
+    }
   }, []);
+
+  const adoptTrainingRoute = useCallback((candidate: TrainingRouteCandidate) => {
+    if (trainingRouteResolved.current || !initialSession?.trainingRouteToResolve) return;
+    const restoredHistory = prependTrainingRoute(candidate, initialSession.history);
+    trainingRouteResolved.current = true;
+    setStartingFen(candidate.startingFen);
+    setHistory(restoredHistory);
+    setCursor(currentCursor => currentCursor + candidate.prefix.length);
+    setWorkingCursor(currentCursor => currentCursor + candidate.prefix.length);
+    setBranchStart(currentStart => currentStart === null ? null : currentStart + candidate.prefix.length);
+    setTrainingRouteToResolve(undefined);
+  }, [initialSession]);
+
+  useEffect(() => {
+    if (!trainingRouteLookup) return;
+    let active = true;
+    const controller = new AbortController();
+    void runStudyTask<TrainingRouteCandidate[]>(trainingRouteLookup.task, controller.signal).then(candidates => {
+      if (!active) return;
+      if (candidates.length === 1) adoptTrainingRoute(candidates[0]);
+      else setCompletedTrainingRouteLookup({ request: trainingRouteLookup, state: candidates.length ? "choose" : "unavailable", candidates,
+        message: candidates.length ? undefined : "No original repertoire route matches this card's position and continuation. Refresh the repertoire or repair the card, then retry." });
+    }).catch(error => {
+      if (active) setCompletedTrainingRouteLookup({ request: trainingRouteLookup, state: "error", candidates: [], message: error instanceof Error ? error.message : "Could not restore the original route." });
+    });
+    return () => { active = false; controller.abort(); };
+  }, [trainingRouteLookup, adoptTrainingRoute]);
 
   function rememberToggle(
     key: string,
@@ -449,16 +508,20 @@ export default function BuilderView({
 
   useEffect(() => {
     if (!usesLocalApi()) return;
+    let active = true;
     void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
       .then(async (value) => {
-        setBackendLines(
+        const lines =
           await runStudyTask<AnalysisLine[]>({
             kind: "transportLines",
             payload: value,
-          }),
-        );
+          });
+        if (active) { setBackendLines(lines); setBackendLinesState("ready"); }
       })
-      .catch(() => undefined);
+      .catch(error => {
+        if (active) { setBackendLinesState("error"); setBackendLinesError(error instanceof Error ? error.message : "Could not load repertoire lines."); }
+      });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -495,6 +558,7 @@ export default function BuilderView({
       dismissedTranspositions,
       sourceGapId: initialSession?.sourceGapId,
       selectedMoveUci: initialSession?.selectedMoveUci,
+      trainingRouteToResolve,
     };
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
   }, [
@@ -508,6 +572,7 @@ export default function BuilderView({
     selectedRepertoireSide,
     startingFen,
     initialSession?.sourceGapId,
+    trainingRouteToResolve,
     initialSession?.selectedMoveUci,
   ]);
 
@@ -854,6 +919,7 @@ export default function BuilderView({
 
   const playMove = useCallback(
     (from: Square, to: Square) => {
+      if (trainingRouteToResolve) return;
       const chess = new Chess(fen);
       try {
         const move = chess.move({ from, to, promotion: "q" });
@@ -863,7 +929,7 @@ export default function BuilderView({
         setMaiaMoves([]);
         setHoveredMove(null);
         const uci = asUciMove(`${move.from}${move.to}${move.promotion ?? ""}`);
-        if (!coveredReplies.has(asUciMove(uci)) && branchStart === null)
+        if ((!coveredReplies.has(asUciMove(uci)) && branchStart === null) || (branchStart !== null && cursor < branchStart))
           setBranchStart(cursor);
         setHistory((current) => [
           ...current.slice(0, cursor),
@@ -875,14 +941,15 @@ export default function BuilderView({
         /* Chessground only offers legal destinations. */
       }
     },
-    [fen, coveredReplies, branchStart, cursor],
+    [fen, coveredReplies, branchStart, cursor, trainingRouteToResolve],
   );
 
   function playUci(uci: string) {
     playMove(uci.slice(0, 2) as Square, uci.slice(2, 4) as Square);
   }
   async function saveBranch() {
-    if (branchStart === null || history.length <= branchStart) return;
+    if (trainingRouteToResolve) return;
+    if (branchStart === null || cursor <= branchStart) return;
     const moves = history.slice(0, cursor).map((move) => move.uci);
     if (usesLocalApi()) {
       if (!selectedRepertoire) {
@@ -944,6 +1011,7 @@ export default function BuilderView({
   }
 
   async function removeBranchFromCurrentPosition() {
+    if (trainingRouteToResolve) return;
     if (!usesLocalApi()) {
       setBranchNote("Branch removal requires the local service.");
       return;
@@ -1140,7 +1208,7 @@ export default function BuilderView({
     pieceSet,
     shapes,
     drawnShapes,
-    interactionMode: "legal",
+    interactionMode: trainingRouteToResolve ? "readonly" : "legal",
     orientation,
     positionRevision: cursor,
     onMove: playMove,
@@ -1151,6 +1219,7 @@ export default function BuilderView({
   } : null);
 
   function reset() {
+    if (trainingRouteToResolve) return;
     setHistory([]);
     setCursor(0);
     setWorkingCursor(0);
@@ -1259,6 +1328,33 @@ export default function BuilderView({
         </div>
       </div>
       {tools.tabs}
+      {trainingRouteToResolve && (
+        <section className="analysis-panel training-route-panel" aria-labelledby="training-route-heading">
+          <h2 id="training-route-heading">Restore training line</h2>
+          {backendLinesState === "error" || trainingRouteResolution.state === "error" || trainingRouteResolution.state === "unavailable" ? (
+            <>
+              <p role="alert">{backendLinesState === "error" ? backendLinesError : trainingRouteResolution.message} Saving and deleting branches stay disabled until the original route is restored.</p>
+              <Button onClick={() => {
+                invalidateWorkspaceData();
+                setTrainingRouteRetry(retry => retry + 1);
+                if (usesLocalApi()) void refreshBackendLines().catch(() => undefined);
+              }}>Retry route lookup</Button>
+            </>
+          ) : trainingRouteResolution.state === "choose" ? (
+            <>
+              <p>Several earlier move orders reach this card. Choose the route to use; the board will stay at your position.</p>
+              <div className="position-search-list">
+                {trainingRouteResolution.candidates.map((candidate, index) => (
+                  <Button key={index} onClick={() => adoptTrainingRoute(candidate)}>
+                    <strong>{candidate.prefix.map(move => move.san).join(" · ") || "Starts at this card's position"}</strong>
+                    <small>{candidate.title}</small>
+                  </Button>
+                ))}
+              </div>
+            </>
+          ) : <p role="status">Finding the original repertoire route…</p>}
+        </section>
+      )}
       <div
         className={`analysis-layout${useSharedBoard ? " analysis-layout-shared" : ""}`}
       >
@@ -1306,7 +1402,7 @@ export default function BuilderView({
               keyboard={keyboard}
               fen={fen}
               lastMove={lastMove}
-              locked={false}
+              locked={Boolean(trainingRouteToResolve)}
               showHint={false}
               theme={theme}
               pieceSet={pieceSet}
@@ -1354,7 +1450,7 @@ export default function BuilderView({
             >
               → <span>Forward</span>
             </Button>
-            <Button onClick={reset}>
+            <Button onClick={reset} disabled={Boolean(trainingRouteToResolve)}>
               ↻ <span>Reset</span>
             </Button>
             <a
@@ -1399,6 +1495,7 @@ export default function BuilderView({
             </span>
             {branchStart === null ? (
               <Button
+                disabled={Boolean(trainingRouteToResolve)}
                 onClick={() => {
                   setBranchStart(cursor);
                   setBranchNote("");
@@ -1408,10 +1505,11 @@ export default function BuilderView({
               </Button>
             ) : (
               <>
-                <Button className="save" onClick={saveBranch}>
+                <Button className="save" onClick={saveBranch} disabled={Boolean(trainingRouteToResolve) || cursor <= branchStart}>
                   Save branch
                 </Button>
                 <Button
+                  disabled={Boolean(trainingRouteToResolve)}
                   onClick={() => {
                     setHistory((h) => h.slice(0, branchStart));
                     setCursor(branchStart);
@@ -1426,7 +1524,7 @@ export default function BuilderView({
               <Button
                 className="danger"
                 onClick={() => void removeBranchFromCurrentPosition()}
-                disabled={!selectedRepertoire || cursor === 0}
+                disabled={Boolean(trainingRouteToResolve) || !selectedRepertoire || cursor === 0}
               >
                 Delete line from here
               </Button>
@@ -1542,7 +1640,7 @@ export default function BuilderView({
                 />
               ) : (
                 <p className="panel-message">
-                  No saved response at this position.
+                  {trainingRouteToResolve ? "Saved responses will appear after the original route is restored." : lineMatches.length ? "End of the saved line." : "No saved response at this position."}
                 </p>
               )}
             </section>

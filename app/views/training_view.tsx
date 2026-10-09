@@ -1,5 +1,6 @@
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
+import type { TrainingPositionContext } from "../lib/training-builder-route";
 import { Button } from "../components/buttons/BaseButton";
 import { BoardHeading, BoardTools } from "../components/board/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -70,7 +71,7 @@ interface TrainingViewProps {
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
-  onOpenPosition?: (target: "analysis" | "builder" | "games" | "compare") => void;
+  onOpenPosition?: (target: "analysis" | "builder" | "games" | "compare", position?: TrainingPositionContext) => void;
   useSharedBoard?: boolean;
   onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
@@ -352,13 +353,13 @@ function StandardTrainingView({
   const positionActions = (
     <div className="position-actions" aria-label="Open review position">
       {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
-        <Button onClick={() => onOpenPosition("compare")}>Compare positions</Button>
+        <Button onClick={() => onOpenPosition("compare", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Compare positions</Button>
       )}
-      <Button onClick={() => onOpenPosition("analysis")}>
+      <Button onClick={() => onOpenPosition("analysis", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>
         Analysis
       </Button>
-      <Button onClick={() => onOpenPosition("builder")}>Builder</Button>
-      <Button onClick={() => onOpenPosition("games")}>
+      <Button onClick={() => onOpenPosition("builder", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>Builder</Button>
+      <Button onClick={() => onOpenPosition("games", { fen: boardHistory.fen, cursor: boardHistory.cursor })}>
         Games here
       </Button>
     </div>
