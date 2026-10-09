@@ -14,6 +14,7 @@ import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
 import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
 import { atomicJson, redact } from "./tempo-deployment.mjs";
+import { withBrowserServiceLogs } from "./capture-browser-service-logs.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
 const stages = postgresTestStages(options);
@@ -1061,11 +1062,16 @@ const actions = {
   },
   browser: async () => {
       const browserArguments = buildPostgresPlaywrightArguments(options);
-      run("npx", browserArguments, { env: { ...environment,
+      const verifyBrowser = () => run("npx", browserArguments, { env: { ...environment,
         TEMPO_DOCKER_URL: origin,
         TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
+      if (process.env.TEMPO_CI_REPORT) {
+        await withBrowserServiceLogs(verifyBrowser, { compose, environment, project,
+          output: `test-results/ci/${options.mode}-${project}-live-services.log`,
+          secrets: [administratorPassword, readerPassword, writerPassword] });
+      } else verifyBrowser();
   },
   study_isolation: async () => {
     run("docker", [...compose, "down", "-v"]);
