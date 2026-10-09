@@ -69,7 +69,7 @@ print('PASS Explorer credential is available to a separate backend process')
                 assert database.execute_native('SELECT COUNT(*) FROM operation_receipts WHERE payload_json LIKE %s OR response_json LIKE %s',('%'+first+'%','%'+first+'%')).fetchone()[0]==0
             from app.services.redis_admission_gate import client as broker_client
             assert broker_client().get('tempo:coverage:explorer-session-token') is None
-            print('PASS test_postgres_explorer_ephemeral_session_process_restart_rejection_cas_and_missing_registration_recovery; schema46; 24-hour expiry; no PostgreSQL/broker credentials')
+            print('PASS test_postgres_explorer_ephemeral_session_process_restart_rejection_cas_and_missing_registration_recovery; 24-hour expiry; no PostgreSQL/broker credentials')
         finally:
             server.delete(sessions.TOKEN_KEY,sessions.REJECTED_KEY)
     print('Native proof duration:',round(time.monotonic()-started,2),'seconds')

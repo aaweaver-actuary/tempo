@@ -55,3 +55,8 @@ refresh-pending and service-panel unit files pass 19 cases in 1.22 s. These are
 focused passes, not the complete gate. Tested dirty branch based on
 7d17c56a972eaea58c30671cd2a437c8f8f7e7e0, Python 3.14.8, local PostgreSQL 18.6,
 Redis 7 and Node runtime from the installed checkout.
+
+Late rejection follow-up: a rejected newer connection also fences a delayed
+rejection of the older connection when no credential remains registered. The
+named fingerprint regression failed before this fix; nine storage/endpoint cases
+pass in 0.52 s. The actual Redis native proof asserts this CAS boundary too.
