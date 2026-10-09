@@ -76,6 +76,11 @@ PR #72 repair: displayed guidance and phone fallback (October 3, 2026):
 
 # Reported issues and regression coverage
 
+Admission rehearsal ownership (October 9, 2026):
+
+- `scripts/check_postgres_operation_recovery.py::proof_operation_recovery` retains real finite retry, stale lease, restart, receipt conflict/race and one-effect proofs in a fresh helper database, where the deployed recovery worker cannot steal its synthetic commands. It exercises the real background-job context.
+- `scripts/check_postgres_canonical_freshness.py::proof_canonical_freshness` retains CF-1–15/OF-1–2 source, graph, scope, partial-provider and publication regressions with owned admission keys. Parent foreground tokens are retained and cannot preempt a database with no parent callers; actual foreground and PostgreSQL locking inside the proof remain exercised.
+
 Stale queue attempts and poisoned training-review replay (October 3, 2026):
 
 - Original failures reproduced on remote main `2b677af`: `terminal stale A remains inspectable while independent B and C persist`, `replay rejection identifies old A rather than the current B`, and `refresh removing an active opening preserves its board and attempt for completion`; all three failed before implementation. Backend `test_limit_reconciliation_deleted_attempt_remains_saveable_and_idempotent` failed with HTTP 409 after the actual production limit-reconciliation deletion.

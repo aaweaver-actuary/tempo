@@ -86,6 +86,20 @@ database; teardown `docker stop tempo-analysis-receipt-proof` then
 is required for this repaired head.
 # Current CI follow-up
 
+Current-head CI on 06831ce passes backend contracts but revealed two native
+rehearsal ownership races: the deployed recovery worker can claim private
+test commands from the parent database; parent health requests can preempt
+canonical freshness slices. Both regular rehearsals now create fresh, marked
+helper databases and own separate admission keys using the existing disposal
+contract. Real parent foreground leases remain intact. Recovery now exercises
+the real background-job context rather than replacing it with a no-op. Focused
+native PostgreSQL/Redis runs pass complete finite retry/restart/receipt/rollback
+and CF-1–15/OF-1–2 source/canonical/provider freshness proofs. Invocation durations
+were not captured separately; full CI/runner stage durations remain authoritative.
+Only the helper databases and their unique admission keys were removed. Logs
+are retained under root test-results/analysis-activity-2026-10-09. New complete
+current-head CI is still required; the earlier failed stages are not passes.
+
 Scheduling head 7eb75b3 passed preceding durability stages and graph/receipt
 proofs, then its shared-stack segmentation rehearsal encountered a real parent
 foreground lease at claim time. Its claims and slices now retry only the
