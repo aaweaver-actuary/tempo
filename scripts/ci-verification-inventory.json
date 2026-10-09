@@ -139,7 +139,7 @@
     "studies": ["studies.spec.ts"],
     "games": ["paste-analysis.spec.ts", "comparison-workspace.spec.ts", "real-game-feedback.spec.ts", "games-board-context.spec.ts"],
     "defense": ["defense-preview.spec.ts", "settings-defense-toggle.spec.ts", "provider-integration.spec.ts"],
-    "workspace": ["accessibility.spec.ts", "layout.spec.ts", "workspace-flows.spec.ts", "cross-browser.spec.ts"],
+    "workspace": ["product-fixture-reset.spec.ts", "accessibility.spec.ts", "layout.spec.ts", "workspace-flows.spec.ts", "cross-browser.spec.ts"],
     "pinned": ["visual.spec.ts", "performance.spec.ts"]
   },
   "sources": [

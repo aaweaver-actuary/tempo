@@ -13,6 +13,8 @@ from ..database import background_read_connection, connection
 from .. import postgres_store
 from ..queue_position_lock import lock_queue_date_for_position
 from .cards import card_id
+from .real_game_feedback import (MISS_REASON, outstanding_miss_sql, has_outstanding_real_game_miss,
+                                 promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses)
 from .activity_gate import activity_gate
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
@@ -42,12 +44,13 @@ _PRIORITY_OPENING_PAGE_SQL = """WITH active_miss AS MATERIALIZED (
     SELECT * FROM cards WHERE id=ANY(%s::text[])
 )
 SELECT DISTINCT c.id,linked.id AS repertoire_id,c.moves_json,c.due_date,
-       CASE WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
+       CASE WHEN active_miss.card_id IS NOT NULL THEN %s
+         WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
          'Priority introduction · reached ' ||
          (opportunity.evidence_json::jsonb ->> 'encounter_count') ||
          ' times in games, missed ' ||
          (opportunity.evidence_json::jsonb ->> 'miss_count') || ' times'
-         WHEN active_miss.card_id IS NOT NULL THEN %s ELSE priority.reason END
+         ELSE priority.reason END
          AS gameplay_priority_reason,
        CASE WHEN active_miss.card_id IS NOT NULL THEN %s ELSE priority.priority_date END
          AS priority_date,
@@ -77,7 +80,7 @@ LEFT JOIN current_repertoire_card_introduction_priorities legacy ON legacy.card_
 WHERE c.content_type='opening'
   AND (c.due_date<=%s OR priority.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL
        OR opportunity.id IS NOT NULL)
-  AND (c.state='new' OR (c.state='locked' AND opportunity.id IS NOT NULL))
+  AND (c.state='new' OR (c.state='locked' AND (opportunity.id IS NOT NULL OR active_miss.card_id IS NOT NULL)))
   AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
   AND EXISTS(
       SELECT 1 FROM (
@@ -285,7 +288,7 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
     limit = _current_opening_limit(database, candidate["repertoire_id"])
     if limit is None:
         return False
-    if introduced_count < limit:
+    if introduced_count < limit or has_outstanding_real_game_miss(database, candidate["card_id"]):
         database.execute_native(
             "UPDATE cards SET introduced_at=%s,state='learning' WHERE id=%s",
             (queue_date, candidate["card_id"]),
@@ -440,7 +443,26 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
              AND COALESCE(q.admission_repertoire_id,c.repertoire_id)=%s""",
         (queue_date, queue_date, planned["repertoire_id"]),
     ).fetchone()[0]
-    if daily_limit is None or admitted_count >= daily_limit:
+    outstanding = has_outstanding_real_game_miss(database, card_id)
+    safe_route = database.execute_native(
+        "SELECT 1 FROM repertoires repertoire WHERE repertoire.id=%s "
+        "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+        "WHERE block.repertoire_id=repertoire.id AND block.card_id=%s)",
+        (planned["repertoire_id"], card_id),
+    ).fetchone()
+    if safe_route is None:
+        return
+    opportunity = database.execute(
+        "SELECT 1 FROM current_repertoire_opportunities WHERE repertoire_id=? AND card_id=? "
+        "AND kind='weak_known_decision' AND status='active' "
+        "AND json_extract(evidence_json,'$.analysis_based') IS NULL LIMIT 1",
+        (planned["repertoire_id"], card_id),
+    ).fetchone()
+    if card[0] == 'locked' and not (outstanding or opportunity):
+        return
+    if planned["reason"] == MISS_REASON and not outstanding:
+        return
+    if daily_limit is None or (admitted_count >= daily_limit and not outstanding):
         return
     position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
@@ -533,6 +555,19 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
     return True
 
 
+def _prepare_real_game_obligation(queue_date: str, after_card_id: str) -> str | None:
+    obligation = outstanding_miss_sql(postgres=True,
+        additional_where="AND card.state IN ('learning','mature')")
+    candidates = _bounded_read(
+        f"WITH obligations AS ({obligation}) SELECT card_id FROM ("
+        "SELECT card_id FROM obligations UNION SELECT card_id FROM daily_queue "
+        "WHERE queue_date=%s AND status='queued' AND gameplay_priority_reason=%s) candidate "
+        "WHERE card_id>%s ORDER BY card_id LIMIT 1",
+        (queue_date, MISS_REASON, after_card_id), native=True,
+    )
+    return str(candidates[0][0]) if candidates else None
+
+
 def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
     """Plan a stable queue order without retaining a database transaction."""
 
@@ -593,12 +628,14 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     if main._queue_membership_hash(current_membership) != plan["membership_hash"]:
         return False
     if plan["entries"] is None:
+        prioritize_queued_misses(database, queue_date)
         return True
     saved = database.execute_native(
         "SELECT membership_hash FROM daily_queue_days WHERE queue_date=%s FOR UPDATE",
         (queue_date,),
     ).fetchone()
     if saved and saved[0] == plan["membership_hash"]:
+        prioritize_queued_misses(database, queue_date)
         return True
     entries = plan["entries"]
     updated_count = database.execute_native(
@@ -621,6 +658,7 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
         (queue_date, plan["seed"], plan["membership_hash"],
          datetime.now(timezone.utc).isoformat()),
     )
+    prioritize_queued_misses(database, queue_date)
     return True
 
 
@@ -740,7 +778,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
                      "admit_due", "prioritized_openings", "prioritized_opening_item",
-                     "admit_study", "randomize_queue", "quarantine",
+                     "admit_study", "real_game_misses", "randomize_queue", "quarantine",
                      "publish_projection"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
@@ -769,6 +807,10 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "admit_study":
         activity_gate.wait_for_foreground()
         study_card_id = _prepare_study_admission(queue_date)
+    real_game_card_id = None
+    if phase == "real_game_misses":
+        activity_gate.wait_for_foreground()
+        real_game_card_id = _prepare_real_game_obligation(queue_date, str(payload.get("after_card_id") or ""))
     randomization_plan = None
     if phase == "randomize_queue":
         activity_gate.wait_for_foreground()
@@ -871,11 +913,20 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                             "opening_plan": opening_plan, "opening_index": opening_index}
         elif phase == "admit_study":
             if study_card_id is None:
-                next_phase = "randomize_queue"
+                next_phase = "real_game_misses"
             else:
                 _admit_one_study_card(database, queue_date, study_card_id)
                 next_phase = phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "real_game_misses":
+            if real_game_card_id is None:
+                next_phase = "randomize_queue"
+                next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+            else:
+                promote_real_game_card(database, real_game_card_id, queue_date)
+                clear_satisfied_miss_priority(database, real_game_card_id)
+                next_phase = phase
+                next_payload = {"queue_date": queue_date, "_queue_phase": phase, "after_card_id": real_game_card_id}
         elif phase == "randomize_queue":
             published = _publish_queue_randomization(
                 database, queue_date, randomization_plan,

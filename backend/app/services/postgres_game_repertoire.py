@@ -13,9 +13,8 @@ from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
 )
-from .canonical_prefix import game_in_scope
 from .repertoire_comparison import (
-    _compare_game_to_repertoire, _load_repertoire_index_snapshot,
+    _load_repertoire_index_snapshot, prepare_game_comparisons,
 )
 
 
@@ -31,17 +30,8 @@ def _prepared_comparison(game_id: str) -> tuple[dict | None, str, list[dict]]:
     signature, repertoires, graphs, colors, card_positions = (
         _load_repertoire_index_snapshot(background=True)
     )
-    matches = [
-        _compare_game_to_repertoire(
-            game, repertoire, graphs.get(repertoire["id"], ({}, set())), card_positions,
-        )
-        for repertoire in repertoires
-        if game["color"] in colors.get(repertoire["id"], set())
-        and game_in_scope(game["start_fen"], game["moves"], json.loads(repertoire.get("canonical_prefix_moves_json", "[]")))
-    ]
-    matches.sort(key=lambda match: (
-        -match["matched"], -match["deepest"], -match["is_main"], match["repertoire_id"],
-    ))
+    matches, evidence_owner = prepare_game_comparisons(game, repertoires, graphs, colors, card_positions)
+    game["decision_evidence_owner"] = evidence_owner
     return game, signature, matches
 
 
@@ -107,7 +97,8 @@ def _publish_comparison(database, task: dict, game: dict, version: int,
     game_id = game["id"]
     database.execute("UPDATE imported_games SET repertoire_scope_generation=? WHERE id=?", (game_scope_generation(database), game_id))
     primary = matches[0] if matches else None
-    expected_events = len(primary["decision_events"]) if primary else 0
+    evidence_owner = game.get("decision_evidence_owner", primary)
+    expected_events = len(evidence_owner["decision_events"]) if evidence_owner else 0
     saved_matches = database.execute(
         "SELECT COUNT(*) FROM game_repertoire_matches_staged "
         "WHERE game_id=? AND derivation_version=?", (game_id, version),
@@ -162,7 +153,8 @@ def execute_game_repertoire_comparison_slice(task: dict[str, Any]) -> bool:
     with background_read_connection() as database:
         scope_generation = game_scope_generation(database)
     game, signature, matches = _prepared_comparison(game_id)
-    primary_events = matches[0]["decision_events"] if matches else []
+    evidence_owner = game.get("decision_evidence_owner", matches[0] if matches else None) if game else None
+    primary_events = evidence_owner["decision_events"] if evidence_owner else []
     with connection(background=True) as database:
         current_scope_generation = game_scope_generation(database, lock=True)
         if not lock_current_slice(database, task):
@@ -205,7 +197,7 @@ def execute_game_repertoire_comparison_slice(task: dict[str, Any]) -> bool:
             )
         if phase == "events":
             if cursor < len(primary_events):
-                _stage_primary_event(database, game, version, matches[0], primary_events[cursor])
+                _stage_primary_event(database, game, version, evidence_owner, primary_events[cursor])
                 return advance_task_slice_in_transaction(
                     database, task, next_phase="events",
                     next_payload={**next_payload, "cursor": cursor + 1},

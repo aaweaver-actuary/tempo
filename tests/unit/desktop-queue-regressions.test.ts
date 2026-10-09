@@ -422,3 +422,26 @@ it.each(["complete", "missing"])("PR105 initial queue recovery confirms retained
   }
   expect(pendingReviews()).toEqual([]);
 });
+
+it("real-game promotion preserves the displayed attempt then starts the authoritative obligation", async () => {
+  useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
+  useTrainingStore.getState().setStep(1);
+  const before = useTrainingStore.getState();
+  const attemptId = before.attempt.attemptId;
+  const fen = before.currentFenString;
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 2, cards: [{
+    id: "game-obligation", queue_entry_id: 803, revision: 1, start_fen: startingFen,
+    moves: ["d2d4"], content_type: "opening", repertoire_name: "Missed card", repertoire_source: "PGN",
+    trained_color: "white", gameplay_priority_reason: "Priority review · missed in a recent game",
+  }, {
+    id: "desktop-active", queue_entry_id: 801, revision: 1, start_fen: startingFen,
+    moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening", repertoire_name: "Active", repertoire_source: "PGN",
+  }] })));
+  await fetchAndInitializeQueue(false);
+  expect(useTrainingStore.getState().attempt.attemptId).toBe(attemptId);
+  expect(useTrainingStore.getState().currentFenString).toBe(fen);
+  expect(useTrainingStore.getState().getCard().id).toBe(activeCard.id);
+  await fetchAndInitializeQueue(true);
+  expect(useTrainingStore.getState().getCard().backendId).toBe("game-obligation");
+  expect(useTrainingStore.getState().attempt.attemptId).not.toBe(attemptId);
+});

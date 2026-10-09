@@ -168,7 +168,7 @@ async function pause(ms = 751) {
 afterEach(() => vi.useRealTimers());
 
 describe("reported study regressions", () => {
-  it("completed tactic advances while the previous review save is still pending", async () => {
+  it("completed tactic follows confirmation of the preceding connected review", async () => {
     const first = {
       id: "first-overlap", queue_entry_id: 901, start_fen: new Chess().fen(),
       moves: ["e2e4"], content_type: "opening", repertoire_name: "First",
@@ -186,15 +186,17 @@ describe("reported study regressions", () => {
     };
     let finishFirstReview: ((response: Response) => void) | undefined;
     const savedEntries: number[] = [];
+    const confirmedEntries = new Set<number>();
     vi.stubGlobal("fetch", vi.fn((input, options) => {
       const url = String(input);
       if (url.includes("/api/queue/window"))
-        return Promise.resolve(Response.json({ cards: [first, tactic, third], count: 3 }));
+        return Promise.resolve(Response.json({ cards: [first, tactic, third].filter(card => !confirmedEntries.has(card.queue_entry_id)), count: 3 }));
       if (url.endsWith("/review")) {
         const queueEntryId = JSON.parse(options.body).queue_entry_id as number;
         savedEntries.push(queueEntryId);
         if (queueEntryId === 901)
-          return new Promise<Response>((resolve) => { finishFirstReview = resolve; });
+          return new Promise<Response>((resolve) => { finishFirstReview = response => { if (response.ok) confirmedEntries.add(queueEntryId); resolve(response); }; });
+        confirmedEntries.add(queueEntryId);
         return Promise.resolve(Response.json({ persisted: true }));
       }
       return Promise.resolve(Response.json({ providers: [], states: [], lines: [] }));
@@ -202,20 +204,22 @@ describe("reported study regressions", () => {
     render(<Home />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+    await waitFor(() => expect(finishFirstReview).toBeTypeOf("function"));
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(901);
+    finishFirstReview?.(Response.json({ persisted: true }));
     await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
     vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
-    expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([901, 902]);
+    expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([902]);
     await pause(751);
     vi.useRealTimers();
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(903);
-    finishFirstReview?.(Response.json({ persisted: true }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
     expect(savedEntries).toEqual([901, 902]);
   });
-  it("failed earlier save blocks grading after a completed tactic until ordered retry succeeds", async () => {
+  it("failed preceding connected save retains its attempt until ordered retry succeeds", async () => {
     const first = {
       id: "first-retry-overlap", queue_entry_id: 911, start_fen: new Chess().fen(),
       moves: ["e2e4"], content_type: "opening", repertoire_name: "First",
@@ -233,16 +237,18 @@ describe("reported study regressions", () => {
     };
     let finishFirstReview: ((response: Response) => void) | undefined;
     const savedEntries: number[] = [];
+    const confirmedEntries = new Set<number>();
     vi.stubGlobal("fetch", vi.fn((input, options) => {
       const url = String(input);
       if (url.includes("/api/operations/")) return Promise.resolve(new Response(null, { status: 404 }));
       if (url.includes("/api/queue/window"))
-        return Promise.resolve(Response.json({ cards: [first, tactic, third], count: 3 }));
+        return Promise.resolve(Response.json({ cards: [first, tactic, third].filter(card => !confirmedEntries.has(card.queue_entry_id)), count: 3 }));
       if (url.endsWith("/review")) {
         const queueEntryId = JSON.parse(options.body).queue_entry_id as number;
         savedEntries.push(queueEntryId);
         if (queueEntryId === 911 && savedEntries.length === 1)
-          return new Promise<Response>((resolve) => { finishFirstReview = resolve; });
+          return new Promise<Response>((resolve) => { finishFirstReview = response => { if (response.ok) confirmedEntries.add(queueEntryId); resolve(response); }; });
+        confirmedEntries.add(queueEntryId);
         return Promise.resolve(Response.json({ persisted: true }));
       }
       return Promise.resolve(Response.json({ providers: [], states: [], lines: [] }));
@@ -250,20 +256,21 @@ describe("reported study regressions", () => {
     render(<Home />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
-    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    await waitFor(() => expect(finishFirstReview).toBeTypeOf("function"));
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(911);
+    finishFirstReview?.(Response.json({ detail: "Database busy" }, { status: 503 }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
+    expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([911]);
+    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
+    await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(912));
     vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
     await pause(751);
     vi.useRealTimers();
-    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(913);
-    finishFirstReview?.(Response.json({ detail: "Database busy" }, { status: 503 }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
-    expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
-    expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([911, 912]);
-    fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(913);
     expect(savedEntries).toEqual([911, 911, 912]);
   });
   it("completed tactic survives queue reconciliation before its feedback timer grades it", async () => {
@@ -347,7 +354,7 @@ describe("reported study regressions", () => {
     expect(reviewCount).toBe(1);
   });
 
-  it("failed tactic review save keeps the next card visible but blocks grading until retry", async () => {
+  it("failed tactic review save retains the completed attempt until confirmation", async () => {
     const tactic = {
       id: "mate-save-failure", queue_entry_id: 831, start_fen: startingFen,
       moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic",
@@ -380,8 +387,7 @@ describe("reported study regressions", () => {
     await pause(751);
     vi.useRealTimers();
     await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
-    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(832);
-    expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(831);
     expect(pendingReviews()).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
@@ -420,17 +426,18 @@ describe("reported study regressions", () => {
     expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(finalFen);
     expect(pendingReviews()).toHaveLength(0);
   });
-  it("shows the prefetched next training card while the prior review request is still pending", async () => {
+  it("connected completion waits for authoritative real-game obligations before starting the next card", async () => {
     const queueCard = (entryId: number, title: string) => ({
       id: `card-${entryId}`, queue_entry_id: entryId, start_fen: new Chess().fen(),
       moves: ["e2e4"], content_type: "opening", repertoire_name: title,
       repertoire_source: "PGN", attempt_state: "clean",
     });
     let finishReview: ((response: Response) => void) | undefined;
+    let saved = false;
     vi.stubGlobal("fetch", vi.fn((input) => {
       const url = String(input);
       if (url.includes("/api/queue/window"))
-        return Promise.resolve(Response.json({ cards: [queueCard(901, "First prep"), queueCard(902, "Next prep")], count: 2 }));
+        return Promise.resolve(Response.json({ cards: saved ? [queueCard(903, "Missed decision"), queueCard(902, "Next prep")] : [queueCard(901, "First prep"), queueCard(902, "Next prep")], count: 2 }));
       if (url.endsWith("/review"))
         return new Promise<Response>((resolve) => { finishReview = resolve; });
       return Promise.resolve(Response.json(url.endsWith("/teaching") ? { states: [] } :
@@ -439,9 +446,11 @@ describe("reported study regressions", () => {
     render(<Home />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
-    await waitFor(() => expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(902));
-    expect(finishReview).toBeTypeOf("function");
+    await waitFor(() => expect(finishReview).toBeTypeOf("function"));
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(901);
+    saved = true;
     finishReview?.(Response.json({ persisted: true }));
+    await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(903));
   });
   it("failed review save retains the completed card for retry; successful review is not reported as failed when queue refresh fails", async () => {
     const queueCard = {

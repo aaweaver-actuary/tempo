@@ -18,8 +18,9 @@ async function clickBoardSquare(page: Page, square: string): Promise<void> {
   );
 }
 
-test("next training card paints before the previous review finishes saving", async ({ page }) => {
+test("connected next training card waits for review confirmation and fresh queue", async ({ page }) => {
   await prepareVisualUI(page);
+  let confirmed = false;
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
     local_date: "2026-09-18", count: 2, cards: [
       { id: "first-prefetch", queue_entry_id: 101, start_fen: startFen,
@@ -28,45 +29,37 @@ test("next training card paints before the previous review finishes saving", asy
       { id: "next-prefetch", queue_entry_id: 102, start_fen: startFen,
         moves: ["d2d4"], content_type: "opening", repertoire_name: "Next prep",
         repertoire_source: "PGN", attempt_state: "clean" },
-    ],
+    ].filter(card => !confirmed || card.queue_entry_id !== 101),
   } }));
   let releaseReview: (() => void) | undefined;
   await page.route("**/api/cards/first-prefetch/review", async (route) => {
     await new Promise<void>((resolve) => { releaseReview = resolve; });
+    confirmed = true;
     await route.fulfill({ json: { persisted: true } });
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Correct" })).toBeVisible();
-  const nextCardPaintMs = await page.evaluate(() => new Promise<number>((resolve) => {
-    const started = performance.now();
-    const observer = new MutationObserver(() => {
-      if (document.body.textContent?.includes("Next prep")) {
-        observer.disconnect();
-        resolve(performance.now() - started);
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    const correctButton = [...document.querySelectorAll("button")]
-      .find((button) => button.textContent?.trim() === "Correct");
-    correctButton?.click();
-  }));
-  expect(nextCardPaintMs).toBeLessThan(100);
-  await expect(page.getByText("Next prep")).toBeVisible();
-  expect(releaseReview).toBeDefined();
+  await page.getByRole("button", { name: "Correct" }).click();
+  await expect.poll(() => Boolean(releaseReview)).toBe(true);
+  await expect(page.getByText("First prep", { exact: true })).toBeVisible();
+  await expect(page.getByText("Next prep", { exact: true })).toHaveCount(0);
   releaseReview?.();
+  await expect(page.getByText("Next prep", { exact: true })).toBeVisible();
 });
 
 test("review saves stay quiet without moving the board or card", async ({ page }) => {
   await prepareVisualUI(page);
+  let confirmed = false;
   await page.route("**/api/queue/window?**", route => route.fulfill({ json: {
     local_date: "2026-09-18", count: 2, cards: [
       { id: "save-toast-first", queue_entry_id: 301, start_fen: startFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "First card", repertoire_source: "PGN", attempt_state: "clean" },
       { id: "save-toast-second", queue_entry_id: 302, start_fen: startFen, moves: ["d2d4"], content_type: "opening", repertoire_name: "Second card", repertoire_source: "PGN", attempt_state: "clean" },
-    ],
+    ].filter(card => !confirmed || card.queue_entry_id !== 301),
   } }));
   let releaseReview: (() => void) | undefined;
   await page.route("**/api/cards/save-toast-first/review", async route => {
     await new Promise<void>(resolve => { releaseReview = resolve; });
+    confirmed = true;
     await route.fulfill({ json: { persisted: true } });
   });
   await page.goto("/");
@@ -86,8 +79,9 @@ test("review saves stay quiet without moving the board or card", async ({ page }
   await expect(page.locator(".notification-list")).toContainText("Result saved.");
 });
 
-test("completed tactic advances while an earlier review save is still pending", async ({ page }) => {
+test("completed tactic follows the authoritative queue after the earlier save", async ({ page }) => {
   await prepareVisualUI(page);
+  const confirmedEntries = new Set<number>();
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
     local_date: "2026-09-18", count: 3, cards: [
       { id: "first-overlap-browser", queue_entry_id: 201, start_fen: startFen,
@@ -99,7 +93,7 @@ test("completed tactic advances while an earlier review save is still pending", 
       { id: "third-overlap-browser", queue_entry_id: 203, start_fen: startFen,
         moves: ["d2d4"], content_type: "opening", repertoire_name: "Third prep",
         repertoire_source: "PGN", attempt_state: "clean" },
-    ],
+    ].filter(card => !confirmedEntries.has(card.queue_entry_id)),
   } }));
   let releaseFirstReview: (() => void) | undefined;
   const savedEntries: number[] = [];
@@ -108,10 +102,14 @@ test("completed tactic advances while an earlier review save is still pending", 
     savedEntries.push(requestBody.queue_entry_id);
     if (requestBody.queue_entry_id === 201)
       await new Promise<void>((resolve) => { releaseFirstReview = resolve; });
+    confirmedEntries.add(requestBody.queue_entry_id);
     await route.fulfill({ json: { persisted: true } });
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Correct" }).click();
+  await expect.poll(() => Boolean(releaseFirstReview)).toBe(true);
+  await expect(page.getByText("First prep", { exact: true })).toBeVisible();
+  releaseFirstReview?.();
   await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", tacticFen);
   await clickBoardSquare(page, "a2");
   await clickBoardSquare(page, "e6");
@@ -119,8 +117,7 @@ test("completed tactic advances while an earlier review save is still pending", 
   await clickBoardSquare(page, "f7");
   await clickBoardSquare(page, "f8");
   await expect(page.getByText("Third prep")).toBeVisible();
-  expect(savedEntries).toEqual([201]);
-  releaseFirstReview?.();
+
   await expect.poll(() => savedEntries).toEqual([201, 202]);
 });
 

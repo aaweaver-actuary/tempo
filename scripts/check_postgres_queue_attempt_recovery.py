@@ -1,6 +1,6 @@
 """Real foreground/maintenance interleaving and poisoned-receipt recovery."""
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -386,7 +386,166 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
         postgres_store.close_pools()
 
 
+def test_postgres_real_game_obligation_admission_restart_publication_and_remediation():
+    """One published canonical miss overrides locks/caps and survives restart."""
+    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
+        raise RuntimeError("Real-game obligation proof requires disposable PostgreSQL")
+    from app.services import postgres_queue_refresh as refresh
+    from app.services.real_game_feedback import MISS_REASON, promote_real_game_card, has_outstanding_real_game_miss
+    from app.services.durable_tasks import claim_task, enqueue_task_in_transaction
+    os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
+    os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
+    postgres_store.close_pools()
+    identifier = f"real-game-obligation-{uuid.uuid4()}"
+    card_ids = [f"{identifier}-{suffix}" for suffix in ("a-locked", "b-studied", "z-active")]
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    now = datetime.now(timezone.utc)
+    operations = []
+    snapshot = None
+    positions = []
+    saved_days = []
+    try:
+        with postgres_store.connection() as database:
+            snapshot = snapshot_queue_environment(database, (today, tomorrow))
+            positions = [tuple(row) for row in database.execute("SELECT id,position FROM daily_queue WHERE queue_date IN (?,?)", (today,tomorrow))]
+            saved_days = [dict(row) for row in database.execute("SELECT * FROM daily_queue_days WHERE queue_date IN (?,?)", (today,tomorrow))]
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day,canonical_prefix_revision) VALUES(?,?,'synthetic',?,0,1)", (identifier,identifier,today))
+            for index, card_id in enumerate(card_ids):
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,unlock_after_card_id) VALUES(?,?,'prefix',?,'[\"e2e4\"]',?,?,?,?)",
+                    (card_id,identifier,"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                     'locked' if index == 0 else 'mature', (date.today()+timedelta(days=90)).isoformat(), None if index == 0 else today, None))
+                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier,card_id))
+                if index:
+                    database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(?,'correct',?,0,90,'study')", (card_id,(now-timedelta(days=2)).isoformat()))
+            database.execute("UPDATE cards SET unlock_after_card_id=? WHERE id=?", (card_ids[2],card_ids[0]))
+            active_entry = database.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,-1000000) RETURNING id", (today,card_ids[2])).fetchone()[0]
+            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES(?,'lichess','obligation',?,'rapid',1,'white','1-0',?,'[\"d2d4\"]')", (identifier,now.isoformat(),"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
+            database.execute("INSERT INTO game_derivation_jobs(game_id,derivation_version,published_repertoire_version,updated_at) VALUES(?,2,1,?)", (identifier,now.isoformat()))
+            for version in (1,2):
+                for index, card_id in enumerate(card_ids[:2]):
+                    database.execute("INSERT INTO repertoire_decision_events_staged(id,game_id,derivation_version,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at) VALUES(?,?,?,?,?,?,?,'e2e4','d2d4','miss',?,?)",
+                        (f'{identifier}-{index}',identifier,version,identifier,card_id,index*2,'known',now.isoformat(),now.isoformat()))
+            before_parent = dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[2],)).fetchone())
+            before_studied = dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[1],)).fetchone())
+            # No exact-history match exists. Only the atomically published events are visible.
+            assert database.execute("SELECT COUNT(*) FROM current_repertoire_decision_events WHERE game_id=?", (identifier,)).fetchone()[0] == 2
+        # Rehearse an upgrade with existing games, then roll back the isolated
+        # schema/task writes. Fresh installs do not need the one-time backfill.
+        migration = (Path(__file__).resolve().parents[1] / 'backend/migrations/041_real_game_study_obligations.sql').read_text()
+        with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"]) as upgrade:
+            upgrade.execute(migration.split('INSERT INTO tempo_schema_migrations')[0])
+            backfill = upgrade.execute("SELECT state,payload_json FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
+            assert backfill[0] == 'queued' and json.loads(backfill[1]) == {'after_game_id':''}
+            upgrade.rollback()
+        ordinary_order_plan = refresh._prepare_queue_randomization(today)
+        with postgres_store.connection() as database:
+            promote_real_game_card(database,card_ids[1],today)
+            # Membership is unchanged; a prepared ordinary mix must respect the
+            # newly published priority at commit rather than overwrite it.
+            assert refresh._publish_queue_randomization(database,today,ordinary_order_plan) is False
+        plan = refresh._prepare_prioritized_openings(today)
+        locked_plan = next(item for item in plan if item['card_id'] == card_ids[0])
+        with postgres_store.connection() as database:
+            refresh._admit_one_prioritized_opening(database,today,locked_plan)
+            entry = database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[0])).fetchone()[0]
+            assert refresh._reconcile_one_unseen_entry(database,today,{'id':entry,'card_id':card_ids[0],'repertoire_id':identifier},0)
+            promote_real_game_card(database,card_ids[0],today)
+            promote_real_game_card(database,card_ids[1],today)
+            assert dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[2],)).fetchone()) == before_parent
+            assert dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[1],)).fetchone()) == before_studied
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[1])).fetchone()[0] == 1
+        with postgres_store.connection() as database:
+            database.execute("UPDATE daily_queue SET gameplay_priority_reason=NULL WHERE queue_date=? AND card_id IN (?,?)", (today,card_ids[0],card_ids[1]))
+        stale_priority_plan = refresh._prepare_queue_randomization(today)
+        with postgres_store.connection() as database:
+            promote_real_game_card(database,card_ids[0],today)
+            promote_real_game_card(database,card_ids[1],today)
+            assert refresh._publish_queue_randomization(database,today,stale_priority_plan)
+            ordered = [row[0] for row in database.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
+            assert ordered[:2] == card_ids[:2]
+        operation = f'{identifier}-retained-marker'
+        operations.append(operation)
+        assert execute_command(operation,'queue.attempt_failed',{'entry_id':active_entry,'card_id':card_ids[2],'expected_revision':1})['attempt_failed']
+        with postgres_store.connection() as database:
+            enqueue_task_in_transaction(database,'daily_queue','current',{'queue_date':tomorrow,'_queue_phase':'real_game_misses'},priority=10)
+        abandoned = claim_task('daily_queue')
+        with postgres_store.connection() as database:
+            database.execute("UPDATE background_tasks SET lease_expires_at=? WHERE id=?", ((now-timedelta(seconds=1)).isoformat(),abandoned['id']))
+        postgres_store.close_pools()
+        restarted = claim_task('daily_queue')
+        assert restarted and restarted['lease_token'] != abandoned['lease_token']
+        assert not refresh.execute_postgres_queue_refresh_slice(abandoned)
+        phases = []
+        for slice_index in range(30):
+            task = restarted if slice_index == 0 else claim_task('daily_queue')
+            if not task:
+                break
+            phases.append(task['payload'].get('_queue_phase'))
+            refresh.execute_postgres_queue_refresh_slice(task)
+        else:
+            raise AssertionError('Bounded obligation refresh did not finish')
+        assert phases.count('real_game_misses') >= 3
+        with postgres_store.connection() as database:
+            queued = database.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (tomorrow,)).fetchall()
+            assert [row[0] for row in queued if row[0] in card_ids[:2]] == card_ids[:2]
+            studied_entry = database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[1])).fetchone()[0]
+        operation = f'{identifier}-remediate'
+        operations.append(operation)
+        payload = {'card_id':card_ids[1],'review':{'outcome':'correct','guided':False,'queue_entry_id':studied_entry,'expected_revision':1,'attempt_id':operation,'recorded_at':(now+timedelta(seconds=1)).isoformat()}}
+        # Hold the production publication lock, then let an actual foreground
+        # study contend. Independent retained-attempt reads still finish.
+        with ThreadPoolExecutor(max_workers=1) as review_executor:
+            with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"], row_factory=postgres_store.tempo_row_factory) as publication:
+                publication.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{card_ids[1]}",))
+                review_future = review_executor.submit(execute_command,operation,'cards.review',payload)
+                deadline = time.monotonic()+5
+                with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"],autocommit=True) as observer:
+                    while not observer.execute("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT pg_advisory_xact_lock(hashtextextended%')").fetchone()[0]:
+                        if review_future.done() or time.monotonic()>deadline:
+                            raise AssertionError('Foreground review did not reach publication lock')
+                assert promote_real_game_card(postgres_store.PostgresConnection(publication),card_ids[1],today)
+                with postgres_store.connection(read_only=True) as reader:
+                    assert reader.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone()[0] == 1
+                publication.commit()
+            assert review_future.result(timeout=5)['persisted']
+        assert execute_command(operation,'cards.review',payload)['persisted']
+        with postgres_store.connection() as database:
+            assert not has_outstanding_real_game_miss(database,card_ids[1])
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_ids[1],)).fetchone()[0] == 2
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND gameplay_priority_reason=?", (card_ids[1],MISS_REASON)).fetchone()[0] == 0
+            # A not-yet-published replacement must never create a new obligation.
+            database.execute("UPDATE repertoire_decision_events_staged SET played_at=? WHERE game_id=? AND derivation_version=2", ((now+timedelta(seconds=2)).isoformat(),identifier))
+            assert not has_outstanding_real_game_miss(database,card_ids[1])
+            database.execute("UPDATE game_derivation_jobs SET published_repertoire_version=2 WHERE game_id=?", (identifier,))
+            assert has_outstanding_real_game_miss(database,card_ids[1])
+            assert promote_real_game_card(database,card_ids[1],today)
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued'", (today,card_ids[1])).fetchone()[0] == 1
+        print('PASS test_postgres_real_game_obligation_admission_restart_publication_and_remediation',flush=True)
+    finally:
+        with postgres_store.connection() as database:
+            for operation in operations:
+                database.execute('DELETE FROM operation_receipts WHERE operation_id=?',(operation,))
+            database.execute('DELETE FROM imported_games WHERE id=?',(identifier,))
+            for card_id in card_ids:
+                database.execute('DELETE FROM review_attempt_receipts WHERE card_id=?',(card_id,))
+                database.execute('DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)',(card_id,))
+                database.execute('DELETE FROM reviews WHERE card_id=?',(card_id,))
+            database.execute('DELETE FROM repertoires WHERE id=?',(identifier,))
+            for card_id in card_ids:
+                database.execute('DELETE FROM queue_attempt_origins WHERE card_id=?',(card_id,))
+            for entry_id,position in positions:
+                database.execute('UPDATE daily_queue SET position=? WHERE id=?',(position,entry_id))
+            database.execute('DELETE FROM daily_queue_days WHERE queue_date IN (?,?)',(today,tomorrow))
+            for day in saved_days:
+                database.execute('INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,?,?,?)',tuple(day[column] for column in ('queue_date','seed','membership_hash','generated_at')))
+            if snapshot is not None:
+                restore_queue_environment(database,snapshot)
+        postgres_store.close_pools()
+
+
 if __name__ == "__main__":
+    test_postgres_real_game_obligation_admission_restart_publication_and_remediation()
     test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe()
     test_postgres_guided_marker_locks_displayed_revision_until_commit()
     test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery()

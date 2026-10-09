@@ -203,11 +203,11 @@ def test_issue4_strong_route_weak_target_promotes_without_reviews_or_parent_matu
         db.execute("UPDATE settings SET new_cards_per_day=1 WHERE id=1")
         seed_queue(db, date.today().isoformat())
         queued = db.execute("SELECT * FROM daily_queue WHERE card_id='target'").fetchone()
-        assert queued and "reached 5 times" in queued["gameplay_priority_reason"]
+        assert queued and queued["gameplay_priority_reason"] == "Priority review · missed in a recent game"
         assert db.execute("SELECT state FROM cards WHERE id='root'").fetchone()[0] == "new"
         assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
         assert db.execute("SELECT parent_card_id FROM opening_graph_steps WHERE card_id='target'").fetchone()[0] == "root"
-    assert "reached 5 times" in queue_today()["cards"][0]["gameplay_priority_reason"]
+    assert queue_today()["cards"][0]["gameplay_priority_reason"] == "Priority review · missed in a recent game"
 
 
 def test_issue4_one_game_and_successful_unstudied_decision_do_not_promote(tmp_path, monkeypatch):

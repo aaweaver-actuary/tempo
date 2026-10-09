@@ -145,6 +145,7 @@ class NativeSqlite:
     """Execute portable worker SQL to check behavior; not PostgreSQL durability proof."""
     def __init__(self, connection):
         self.connection = connection
+        self.database = connection
 
     def execute(self, statement, parameters=()):
         return self.connection.execute(statement.replace('FOR UPDATE', ''), parameters)
