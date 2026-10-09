@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Any
 
@@ -18,7 +18,7 @@ from .postgres_coverage_candidates import recalculate_coverage_node
 from .introduction_priorities import enqueue_priority_refresh_in_transaction
 from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 from .repertoire_coverage import (
-    ExplorerAuthenticationError, _cached_explorer_payload, _fetch_explorer,
+    ExplorerAuthenticationError, ExplorerRequestError, _cached_explorer_payload, _fetch_explorer,
     get_explorer_session_token,
 )
 
@@ -43,10 +43,10 @@ def _prepare_next_node(task: dict[str, Any]) -> dict[str, Any] | None:
             "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
             "LEFT JOIN background_activity control ON control.source='coverage' "
             "AND control.work_id=n.run_id "
-            "WHERE n.run_id=%s AND n.id>%s AND n.explorer_status='queued' "
+            "WHERE n.run_id=%s AND n.id>%s AND n.explorer_status='queued' AND (n.explorer_retry_at IS NULL OR n.explorer_retry_at<=%s) "
             "AND r.status IN ('queued','running','failed') AND COALESCE(control.paused,0)=0 "
             f"AND {latest_coverage_attempt_predicate(database, native=True)} ORDER BY n.id LIMIT 1",
-            (payload["run_id"], payload.get("after_node_id", "")),
+            (payload["run_id"], payload.get("after_node_id", ""), _now()),
         ).fetchone()
         return dict(row) if row and coverage_run_is_current(database, row, row["repertoire_id"]) else None
 
@@ -90,24 +90,46 @@ def _candidate_rows(node: dict[str, Any], explorer_payload: dict) -> tuple[list[
 
 
 def _fail_for_missing_token(task: dict[str, Any], node: dict[str, Any]) -> bool:
-    message = "Set an Explorer token in Tempo or TEMPO_LICHESS_EXPLORER_TOKEN and refresh coverage"
+    return _record_source_failure(task, node, 'registration_missing',
+        'Set an Explorer token in Tempo or TEMPO_LICHESS_EXPLORER_TOKEN and reconnect coverage')
+
+
+def _record_source_failure(task: dict[str, Any], node: dict[str, Any], code: str,
+                           message: str, retry_seconds: float | None = None) -> bool:
+    now = datetime.now(timezone.utc)
+    retry_at = (now + timedelta(seconds=retry_seconds)).isoformat() if retry_seconds is not None else None
     with connection(background=True) as database:
-        read_prefix(database, node["repertoire_id"], lock=True)
+        read_prefix(database, node['repertoire_id'], lock=True)
         if not lock_current_slice(database, task):
             return False
-        if not coverage_run_is_current(database, node, node["repertoire_id"]):
+        if not coverage_run_is_current(database, node, node['repertoire_id']):
+            return complete_task_slice_in_transaction(database, task)
+        current = database.execute_native(
+            f"SELECT r.id FROM repertoire_coverage_runs r LEFT JOIN background_activity control ON control.source='coverage' AND control.work_id=r.id WHERE COALESCE(control.paused,0)=0 AND r.id=%s AND {latest_coverage_attempt_predicate(database, native=True)}",
+            (node['run_id'],)).fetchone()
+        if current is None:
             return complete_task_slice_in_transaction(database, task)
         database.execute_native(
-            "UPDATE repertoire_coverage_nodes SET explorer_status='failed',last_error=%s,updated_at=%s "
+            "UPDATE repertoire_coverage_nodes SET explorer_status=%s,explorer_failure_code=%s,"
+            "explorer_retry_at=%s,explorer_error=%s,last_error=%s,updated_at=%s "
             "WHERE id=%s AND explorer_status='queued'",
-            (message, _now(), node["id"]),
-        )
+            ('queued' if retry_at else 'failed', code, retry_at, message, message, now.isoformat(), node['id']))
+        if retry_at:
+            database.execute_native(
+                "UPDATE repertoire_coverage_runs SET status='running',last_error=%s,updated_at=%s WHERE id=%s",
+                (message, now.isoformat(), node['run_id']))
+            # Delays are not accepted progress or failure attempts. The run and
+            # unchanged checkpoint remain durable until the provider's deadline.
+            database.execute_native(
+                "UPDATE background_tasks SET state='retrying',next_attempt_at=%s,"
+                "attempt_count=GREATEST(attempt_count-1,0),lease_token=NULL,lease_expires_at=NULL,"
+                "last_error=%s,updated_at=%s WHERE id=%s AND generation=%s AND lease_token=%s",
+                (retry_at, message, now.isoformat(), task['id'], task['generation'], task['lease_token']))
+            return True
         database.execute_native(
-            "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s "
-            "WHERE id=%s AND status IN ('queued','running')",
-            (message, _now(), node["run_id"]),
-        )
-        enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
+            "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s WHERE id=%s",
+            (message, now.isoformat(), node['run_id']))
+        enqueue_opportunity_refresh_in_transaction(database, node['repertoire_id'])
         return complete_task_slice_in_transaction(database, task)
 
 
@@ -121,7 +143,7 @@ def _publish_node(
     node = database.execute_native(
         "SELECT n.*,r.settings_json,r.status AS run_status,r.total_nodes "
         "FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id "
-        f"WHERE n.id=%s AND {latest_coverage_attempt_predicate(database, native=True)} FOR UPDATE OF n,r", (prepared["id"],),
+        f"WHERE n.id=%s AND COALESCE((SELECT paused FROM background_activity a WHERE a.source='coverage' AND a.work_id=n.run_id),0)=0 AND {latest_coverage_attempt_predicate(database, native=True)} FOR UPDATE OF n,r", (prepared["id"],),
     ).fetchone()
     if node is None or node["run_status"] not in {"queued", "running", "failed"} or not coverage_run_is_current(database, node, prepared["repertoire_id"]):
         return complete_task_slice_in_transaction(database, task)
@@ -151,13 +173,14 @@ def _publish_node(
         )
     recalculate_coverage_node(database, node["id"], json.loads(node["settings_json"]), total_games)
     database.execute_native(
-        "UPDATE repertoire_coverage_nodes SET explorer_status='complete',explorer_games=%s,"
+        "UPDATE repertoire_coverage_nodes SET explorer_status='complete',explorer_games=%s,explorer_failure_code=NULL,explorer_retry_at=NULL,explorer_error=NULL,"
         "last_error=NULL,updated_at=%s WHERE id=%s",
         (total_games, _now(), node["id"]),
     )
     progress = database.execute_native(
         "UPDATE repertoire_coverage_runs SET completed_nodes=completed_nodes+1,"
-        "status=CASE WHEN completed_nodes+1>=total_nodes THEN 'complete' ELSE 'running' END,"
+        "status=CASE WHEN EXISTS(SELECT 1 FROM repertoire_coverage_nodes n WHERE n.run_id=repertoire_coverage_runs.id AND (n.explorer_status='failed' OR n.maia_status='failed')) THEN 'failed' WHEN completed_nodes+1>=total_nodes THEN 'complete' ELSE 'running' END,"
+        "last_error=(SELECT COALESCE(n.explorer_error,n.last_error) FROM repertoire_coverage_nodes n WHERE n.run_id=repertoire_coverage_runs.id AND (n.explorer_failure_code IS NOT NULL OR n.maia_status='failed') ORDER BY n.id LIMIT 1),"
         "updated_at=%s WHERE id=%s RETURNING completed_nodes,status,total_nodes",
         (_now(), node["run_id"]),
     ).fetchone()
@@ -193,7 +216,12 @@ def execute_coverage_explorer_slice(task: dict[str, Any]) -> bool:
             return complete_task_slice_in_transaction(database, task)
     try:
         explorer_payload, cache_key, speeds, ratings = _cached_or_fetched_payload(prepared)
-    except ExplorerAuthenticationError:
-        return _fail_for_missing_token(task, prepared)
+    except ExplorerAuthenticationError as error:
+        if error.status is None:
+            return _fail_for_missing_token(task, prepared)
+        return _record_source_failure(task, prepared, 'credential_rejected',
+            'Explorer rejected the connected credential. Reconnect with Lichess before retrying coverage.')
+    except ExplorerRequestError as error:
+        return _record_source_failure(task, prepared, error.code, str(error), error.retry_seconds)
     with connection(background=True) as database:
         return _publish_node(database, task, prepared, explorer_payload, cache_key, speeds, ratings)

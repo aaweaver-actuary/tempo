@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
+from email.utils import parsedate_to_datetime
 import json
 import os
 import threading
@@ -39,7 +40,42 @@ class ExplorerAuthenticationError(RuntimeError):
 
 
 class ExplorerRequestError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: str = 'provider_unavailable', retry_seconds: float | None = 60):
+        self.code = code
+        self.retry_seconds = retry_seconds
+        super().__init__(message)
+
+
+def explorer_retry_delay(header: str | None, *, now: datetime | None = None) -> float:
+    """Honor provider Retry-After seconds or HTTP date; guidance fallback is 60s."""
+    if header:
+        try:
+            return max(1, float(int(header)))
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(header)
+                return max(1, (retry_at - (now or datetime.now(timezone.utc))).total_seconds())
+            except (ValueError, TypeError, OverflowError):
+                pass
+    return 60
+
+
+def explorer_move_counts(payload: dict) -> dict[str, int]:
+    if not isinstance(payload, dict) or not isinstance(payload.get('moves'), list):
+        raise ExplorerRequestError('Lichess Explorer returned an invalid coverage response', code='invalid_response', retry_seconds=None)
+    counts = {}
+    for move in payload['moves']:
+        try:
+            if not isinstance(move, dict) or not isinstance(move.get('uci'), str):
+                raise ValueError()
+            chess.Move.from_uci(move['uci'])
+            values = [move.get(name) for name in ('white', 'draws', 'black')]
+            if move['uci'] in counts or any(type(value) is not int or value < 0 for value in values):
+                raise ValueError()
+            counts[move['uci']] = sum(values)
+        except (ValueError, TypeError):
+            raise ExplorerRequestError('Lichess Explorer returned invalid move counts', code='invalid_response', retry_seconds=None) from None
+    return counts
 
 
 def set_explorer_session_token(token: str | None) -> None:
@@ -373,8 +409,10 @@ def claim_coverage_node() -> dict | None:
             with connection(background=True) as database:
                 database.execute(
                     f"""UPDATE repertoire_coverage_runs AS r SET status='failed',last_error=?,updated_at=?
-                       WHERE {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")} AND id IN (SELECT run_id FROM repertoire_coverage_nodes WHERE explorer_status='queued')
-                         AND COALESCE(last_error,'')!=?""",
+                       WHERE r.id=(SELECT r.id FROM repertoire_coverage_runs r
+                         WHERE {latest_coverage_attempt_predicate(database)} AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")}
+                         AND EXISTS(SELECT 1 FROM repertoire_coverage_nodes n WHERE n.run_id=r.id AND n.explorer_status='queued')
+                         AND COALESCE(r.last_error,'')!=? ORDER BY r.created_at,r.id LIMIT 1)""",
                     (reason, _now(), reason),
                 )
         return None
@@ -384,8 +422,8 @@ def claim_coverage_node() -> dict | None:
         node = database.execute(
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
-               WHERE n.explorer_status='queued' AND r.status IN ('queued','running','failed') AND {coverage_scope_predicate(database)} AND {latest_coverage_attempt_predicate(database)} AND {claimable('coverage', 'n.run_id')}
-               ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
+               WHERE n.explorer_status='queued' AND (n.explorer_retry_at IS NULL OR n.explorer_retry_at<=?) AND r.status IN ('queued','running','failed') AND {coverage_scope_predicate(database)} AND {latest_coverage_attempt_predicate(database)} AND {claimable('coverage', 'n.run_id')}
+               ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1""", (_now(),)
         ).fetchone()
         if not node:
             return None
@@ -436,38 +474,32 @@ def _fetch_explorer(fen: str, speeds: str, ratings: str, access_token: str) -> d
         },
     ) as client:
         for speed_name, raw_weight in speed_weights.items():
-            response = client.get(
-                "https://explorer.lichess.org/lichess",
+            try:
+                response = client.get(
+                    "https://explorer.lichess.org/lichess",
                 params={
                     "variant": "standard",
                     "fen": fen,
                     "speeds": speed_name,
                     "ratings": ratings,
-                },
-            )
+                    },
+                )
+            except httpx.RequestError:
+                raise ExplorerRequestError('Lichess Explorer is unavailable; retry later') from None
             if response.status_code in {401, 403}:
                 reject_explorer_session_token(access_token)
                 raise ExplorerAuthenticationError(response.status_code)
             if response.status_code == 429:
-                raise ExplorerRequestError("Lichess Explorer rate limited (HTTP 429)")
+                raise ExplorerRequestError('Lichess Explorer rate limited (HTTP 429)', code='rate_limited', retry_seconds=explorer_retry_delay(response.headers.get('Retry-After')))
             if not response.is_success:
                 raise ExplorerRequestError(
                     f"Lichess Explorer unavailable (HTTP {response.status_code})"
                 )
-            payload = response.json()
-            if not isinstance(payload, dict) or not isinstance(
-                payload.get("moves"), list
-            ):
-                raise ValueError(
-                    "Lichess Explorer returned an invalid coverage response"
-                )
-            move_counts = {
-                str(move.get("uci")): int(move.get("white", 0))
-                + int(move.get("draws", 0))
-                + int(move.get("black", 0))
-                for move in payload["moves"]
-                if move.get("uci")
-            }
+            try:
+                payload = response.json()
+            except ValueError:
+                raise ExplorerRequestError('Lichess Explorer returned invalid JSON', code='invalid_response', retry_seconds=None) from None
+            move_counts = explorer_move_counts(payload)
             sample_games = sum(move_counts.values())
             explorer_games += sample_games
             if not sample_games:
@@ -628,7 +660,7 @@ def execute_coverage_node(node: dict) -> None:
             _recalculate_node(database, node["id"], settings)
             database.execute(
                 """UPDATE repertoire_coverage_nodes
-                   SET explorer_status='complete',explorer_games=?,last_error=NULL,updated_at=?
+                   SET explorer_status='complete',explorer_games=?,explorer_failure_code=NULL,explorer_retry_at=NULL,explorer_error=NULL,last_error=NULL,updated_at=?
                    WHERE id=?""",
                 (total_games, _now(), node["id"]),
             )
@@ -673,8 +705,8 @@ def execute_coverage_node(node: dict) -> None:
             if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
                 return
             database.execute(
-                "UPDATE repertoire_coverage_nodes SET explorer_status='queued',last_error=?,updated_at=? WHERE id=?",
-                (str(error), _now(), node["id"]),
+                "UPDATE repertoire_coverage_nodes SET explorer_status='queued',explorer_failure_code=?,explorer_error=?,last_error=?,updated_at=? WHERE id=?",
+                ('credential_rejected' if error.status is not None else 'registration_missing', str(error), str(error), _now(), node["id"]),
             )
             database.execute(
                 "UPDATE repertoire_coverage_runs SET status='queued',last_error=?,updated_at=? WHERE id=?",
@@ -682,6 +714,17 @@ def execute_coverage_node(node: dict) -> None:
             )
             from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
             enqueue_opportunity_refresh_in_transaction(database, node["repertoire_id"])
+    except ExplorerRequestError as error:
+        retry_at = (datetime.now(timezone.utc) + timedelta(seconds=error.retry_seconds)).isoformat() if error.retry_seconds is not None else None
+        with connection(background=True) as database:
+            database.execute('BEGIN IMMEDIATE')
+            if not coverage_run_is_current(database, node, node['repertoire_id']) or node['run_id'] != latest_coverage_run_id(database, node['repertoire_id']):
+                return
+            database.execute(
+                "UPDATE repertoire_coverage_nodes SET explorer_status=?,explorer_failure_code=?,explorer_retry_at=?,explorer_error=?,last_error=?,updated_at=? WHERE id=?",
+                ('queued' if retry_at else 'failed', error.code, retry_at, str(error), str(error), _now(), node['id']))
+            database.execute("UPDATE repertoire_coverage_runs SET status=?,last_error=?,updated_at=? WHERE id=?",
+                ('running' if retry_at else 'failed', str(error), _now(), node['run_id']))
     except Exception as error:
         with connection(background=True) as database:
             database.execute("BEGIN IMMEDIATE")

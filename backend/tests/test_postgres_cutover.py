@@ -6385,6 +6385,7 @@ def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeyp
     class Database:
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
+            return SimpleNamespace(fetchone=lambda: {"id":"run"})
 
     monkeypatch.setattr(postgres_coverage_explorer, "connection",
                         lambda *, background: nullcontext(Database()))
@@ -6436,8 +6437,9 @@ def test_postgres_explorer_recovers_imported_active_run_once(monkeypatch):
     class Database:
         def execute_native(self, statement, parameters=()):
             statements.append(statement)
-            return SimpleNamespace(fetchone=lambda: available.pop(0))
+            return SimpleNamespace(fetchone=lambda: available.pop(0)) if statement.startswith("SELECT") else SimpleNamespace(rowcount=1)
 
+    monkeypatch.setattr(postgres_coverage_recovery, "get_explorer_session_token", lambda: None)
     monkeypatch.setattr(postgres_coverage_recovery.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(postgres_coverage_recovery, "connection",
                         lambda *, background: nullcontext(Database()))
