@@ -37,6 +37,8 @@ let activeFlush: Promise<ReviewFlushResult> | undefined;
 let activeFlushMaximumReviews = Infinity;
 
 export class ReviewReplayError extends Error {
+  // Earlier attempts may have settled before a later item failed in this flush.
+  flushResult?: ReviewFlushResult;
   readonly blocked: boolean;
   readonly backendId: string;
   readonly queueEntryId: number;
@@ -57,7 +59,7 @@ export class ReviewReplayError extends Error {
   }
 }
 
-function logicalAttemptId(review: PendingReview): string {
+export function logicalAttemptId(review: Pick<PendingReview, "attemptId" | "queueEntryId">): string {
   return review.attemptId ?? `legacy-online:${review.queueEntryId}`;
 }
 
@@ -336,6 +338,7 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
           outcome: review.outcome, completedAt: review.completedAt ?? "unknown" } });
     } catch (error) {
       if (error instanceof ReviewReplayError) {
+        error.flushResult = result;
         const saved = savedReviews().find(item => logicalAttemptId(item) === attemptId);
         const suppression = error.blocked ? "blocked" : ["failed", "conflict"].includes(error.classification) ? "failed" : undefined;
         if (saved && (suppression || (attemptId === explicitRetryAttemptId && saved.automaticRecoverySuppressed && ["pending", "transient"].includes(error.classification)))) {
@@ -345,6 +348,7 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
           catch (storageError) {
             const replayError = new ReviewReplayError(String(storageError), error.endpoint, saved,
               undefined, undefined, false, { cause: storageError });
+            replayError.flushResult = result;
             reportReviewSaveStatus(replayError);
             throw replayError;
           }
@@ -354,6 +358,7 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
       if ((error !== null && typeof error === "object" && evidenceStorageErrors.has(error))) throw error;
       const replayError = new ReviewReplayError(error instanceof Error ? error.message : String(error),
         `${API_URL}/api/cards/${review.backendId}/review`, review, undefined, undefined, true, { cause: error });
+      replayError.flushResult = result;
       reportReviewSaveStatus(replayError);
       throw replayError;
     }

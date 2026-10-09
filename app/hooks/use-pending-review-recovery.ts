@@ -42,6 +42,12 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
             // The receipt is authoritative even if foreground readiness changed during the read.
             deferredConfirmations.current.push(result);
           }).catch(error => {
+            if (error instanceof ReviewReplayError && error.flushResult &&
+                error.flushResult.persistedAttemptIds.length + error.flushResult.conflictedAttemptIds.length) {
+              for (const settledIdentity of [...error.flushResult.persistedAttemptIds, ...error.flushResult.conflictedAttemptIds])
+                deadlines.current.delete(settledIdentity);
+              deferredConfirmations.current.push(error.flushResult);
+            }
             // A manual flush may be shared with this idle observer. Attribute its
             // result to the attempted review, never the independent scheduled one.
             const failedIdentity = error instanceof ReviewReplayError ? error.attemptId : identity;

@@ -235,6 +235,25 @@ it("phone terminal explicit retry cannot suspend an independent idle review shar
   expect(fetcher.mock.calls.filter(([url]) => String(url).includes("review-attempt%3Aindependent"))).toHaveLength(1);
 });
 
+it("phone shared flush delivers authoritative settled attempts when a later independent receipt fails", async () => {
+  enqueuePendingReview({ ...review, automaticRecoverySuppressed: "failed" });
+  enqueuePendingReview({ ...review, backendId: "independent-card", queueEntryId: 102, attemptId: "independent-failed" });
+  let finishOriginal!: (response: Response) => void;
+  const fetcher = vi.fn<typeof fetch>(async url => String(url).includes("review-attempt%3Aoriginal-attempt")
+    ? new Promise<Response>(resolve => { finishOriginal = resolve; })
+    : Response.json({ state: "failed", error: { status_code: 422, retryable: false, detail: "Other result invalid" } }));
+  vi.stubGlobal("fetch", fetcher);
+  const explicitRetry = flushPendingReviews(Infinity, true, "original-attempt");
+  const rejected = expect(explicitRetry).rejects.toMatchObject({ attemptId: "independent-failed", status: 422 });
+  const confirmed = vi.fn(); render(<Harness confirmed={confirmed} />);
+  await advance(1000);
+  await act(async () => { finishOriginal(Response.json({ state: "complete", response: { persisted: true } })); await rejected; });
+  await advance(0);
+  expect(confirmed).toHaveBeenCalledWith({ persistedAttemptIds: ["original-attempt"], conflictedAttemptIds: [] });
+  expect(pendingReviews()).toMatchObject([{ attemptId: "independent-failed", automaticRecoverySuppressed: "failed" }]);
+  expect(fetcher.mock.calls.every(([, options]) => options?.method !== "POST")).toBe(true);
+});
+
 
 it("phone explicit retry after an idle terminal failure resumes automatic recovery when it becomes transient", async () => {
   enqueuePendingReview(review);

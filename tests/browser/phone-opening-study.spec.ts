@@ -186,3 +186,76 @@ test(`Phone terminal review stays retained through idle recovery until explicit 
   expect(submissions[1]).toEqual(submissions[0]);
 });
 }
+
+test("Phone idle review conflict releases Check save and permits the next real board move", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page, true, [openingCard("idle-conflict", "London System", "d2d4", 71)]);
+  await page.clock.install();
+  let conflictReady = false;
+  const submissions: { body: unknown; key: string }[] = [];
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: { cards: conflictReady
+    ? [openingCard("after-conflict", "Ruy Lopez", "e2e4", 72)]
+    : [openingCard("idle-conflict", "London System", "d2d4", 71)], count: 1 } }));
+  await page.route("**/api/cards/idle-conflict/review", route => {
+    const key = route.request().headers()["idempotency-key"];
+    submissions.push({ body: route.request().postDataJSON(), key });
+    return route.fulfill({ status: 202, json: { operation_id: key, state: "queued" } });
+  });
+  await page.route("**/api/operations/**", route => {
+    const operationId = decodeURIComponent(route.request().url().split("/api/operations/")[1]);
+    return route.fulfill({ json: operationId.startsWith("review-reconcile:")
+      ? { state: "complete", response: { persisted: false, conflict: {
+        code: "queue_attempt_unprovable", message: "Original result needs review", retryable: false } } }
+      : conflictReady ? { state: "failed", error: { status_code: 409, code: "queue_attempt_retired",
+        retryable: false, detail: "Original entry retired" } } : { state: "queued" } });
+  });
+  await move(page, "d2", "d4");
+  await page.clock.runFor(1500);
+  await expect(page.getByRole("button", { name: "Check save", exact: true })).toBeVisible();
+  const retained = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
+  conflictReady = true;
+  await page.clock.runFor(1500);
+  await expect(page.getByRole("button", { name: "Check save", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Review conflicts/ })).toBeVisible();
+  await expect(page.locator(".shared-board-heading")).toContainText("Ruy Lopez");
+  expect(submissions).toHaveLength(1);
+  const conflicted = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
+  expect(conflicted[0]).toMatchObject({ ...retained[0], state: "conflicted" });
+  let nextSubmissions = 0;
+  await page.route("**/api/cards/after-conflict/review", route => {
+    nextSubmissions++; return route.fulfill({ json: { persisted: true } });
+  });
+  await move(page, "e2", "e4");
+  await page.clock.runFor(1000);
+  await expect.poll(() => nextSubmissions).toBe(1);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]").length)).toBe(1);
+  await noPageOverflow(page);
+});
+
+test("Phone skipped same-card result stays paused with actionable earlier-result status", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page, true, [openingCard("skipped-card", "London System", "d2d4", 82),
+    openingCard("unrelated-next", "Ruy Lopez", "e2e4", 83)]);
+  const earlier = { backendId: "skipped-card", queueEntryId: 81, attemptId: "suppressed-phone-original",
+    completedAt: "2026-10-08T12:00:00Z", outcome: "again", guided: false, automaticRecoverySuppressed: "failed" };
+  await page.evaluate(review => {
+    localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([review]));
+    window.dispatchEvent(new Event("tempo:review-outbox"));
+  }, earlier);
+  let submissions = 0;
+  await page.route("**/api/cards/skipped-card/review", route => { submissions++; return route.fulfill({ json: { persisted: true } }); });
+  await move(page, "d2", "d4");
+  const saveStatus = page.locator(".review-save-status");
+  await expect(saveStatus).toBeVisible();
+  await expect(saveStatus).toContainText("An earlier result for this card needs attention. Use Check saved reviews to resolve it first.");
+  await expect(page.getByRole("button", { name: "Check saved reviews", exact: true })).toBeVisible();
+  await expect(page.locator(".shared-board-heading")).toContainText("London System");
+  await expect(page.getByText(/Result saved/)).toHaveCount(0);
+  const retained = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
+  expect(retained).toHaveLength(2);
+  expect(retained[0]).toEqual(earlier);
+  expect(retained[1]).toMatchObject({ backendId: "skipped-card", queueEntryId: 82, outcome: "correct" });
+  expect(retained[1].attemptId).toBeTruthy();
+  expect(submissions).toBe(0);
+  await noPageOverflow(page);
+});

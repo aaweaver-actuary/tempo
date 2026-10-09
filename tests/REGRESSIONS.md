@@ -2917,3 +2917,37 @@ infinite deadline still blocking confirmation. Terminal and blocked replay error
 have durable outbox suppression; the hook no longer keeps a second terminal block that
 could survive an explicit retry. Storage-error suspension and capped transient backoff
 remain covered by the existing named cases.
+
+
+## PR #105 attempt-specific review confirmation
+
+`tests/unit/review-attempt-confirmation-regressions.test.tsx` uses Home and the
+actual outbox/idle hook to cover these named regular-suite cases:
+
+- PR105 displayed idle conflict releases pending confirmation and retains the original completed result
+- PR105 earlier idle conflict preserves an unrelated active board logical attempt and progress
+- PR105 successful flush cannot credit or advance a suppressed same-card successor independent=%s (empty and unrelated-result flushes; Check saved reviews resolves the original dependency)
+- PR105 independent submitted review alone is credited while a suppressed result remains intact
+- PR105 Home saveFailed allows independent idle receipts without retrying the terminal result
+- PR105 independent idle confirmation waits for a held pointer before changing Home
+- PR105 foreground saving defers independent idle recovery until the save settles
+- PR105 missing submitted identity cannot become successful confirmation
+- PR105 a later independent flush failure cannot erase the submitted persisted outcome
+- PR105 explicit legacy retry credits the normalized attempt without a new identity
+
+`tests/browser/phone-opening-study.spec.ts` adds real-board proof:
+
+- Phone idle review conflict releases Check save and permits the next real board move
+- Phone skipped same-card result stays paused with actionable earlier-result status
+
+Existing study regressions retain successful-review/queue-refresh failure proof;
+existing pending-review recovery tests retain receipt-first, held-pointer, restart,
+terminal suppression, scoped explicit retry and bounded-backoff coverage.
+
+Additional receipt and shared-flush boundaries:
+
+- PR105 completion removed during feedback requires its own persisted receipt state=%s (`queued` and completed-but-unconfirmed receipts; Check save reads the same receipt without another POST).
+- phone shared flush delivers authoritative settled attempts when a later independent receipt fails (`tests/unit/pending-review-recovery-regressions.test.tsx`).
+- completed tactic survives queue reconciliation before its feedback timer grades it (`tests/unit/study-regressions.test.tsx`): existing assertions unchanged; its fixture now returns the authoritative completed receipt for the saved attempt.
+
+- PR105 late foreground persistence cannot advance an unrelated replacement attempt (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): the active logical attempt is rechecked after the flush settles.

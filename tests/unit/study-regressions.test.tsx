@@ -282,6 +282,7 @@ describe("reported study regressions", () => {
     vi.stubGlobal("fetch", vi.fn(async (input, options) => {
       const url = String(input);
       if (url.includes("/api/queue/window")) return Response.json({ cards: queue, count: queue.length });
+      if (url.includes("/api/operations/review-attempt%3A")) return Response.json({ state: "complete", response: { persisted: true } });
       if (url.endsWith("/review")) {
         reviews.push(JSON.parse(options.body));
         queue = [next];
