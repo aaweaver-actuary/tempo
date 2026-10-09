@@ -21,7 +21,7 @@ from app.services import durable_tasks
 from app.services import postgres_next_opponent as service
 from app.services.redis_admission_gate import foreground_lease
 
-ADMIN_DSN = "postgresql://postgres@postgres:5432/postgres"
+ADMIN_DSN = os.getenv("TEMPO_PROFILE_REHEARSAL_ADMIN_DSN", "postgresql://postgres@postgres:5432/postgres")
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
@@ -85,7 +85,7 @@ def test_issue107_postgres_source_race_retains_last_complete_snapshot(dsn, origi
     actual_build = service.build_profile
     def source_changes(*args, **kwargs):
         computed = actual_build(*args, **kwargs)
-        with psycopg.connect(dsn) as database:
+        with psycopg.connect(dsn, row_factory=postgres_store.tempo_row_factory) as database:
             database.execute("UPDATE imported_games SET rating_change=100 WHERE id='profile-game'")
             service.request_profile_refresh(postgres_store.PostgresConnection(database))
         return computed
@@ -183,7 +183,7 @@ def main():
     database_name = f"tempo_profile_{uuid.uuid4().hex[:12]}"
     with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
         administrator.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
-    dsn = f"postgresql://postgres@postgres:5432/{database_name}"
+    dsn = psycopg.conninfo.make_conninfo(ADMIN_DSN, dbname=database_name)
     try:
         with psycopg.connect(dsn) as database:
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
