@@ -2868,3 +2868,10 @@ is the real PostgreSQL assertion within the existing issue80 upgrade proof. A
 separate database starts at genuine schema38, upgrades to current schema with a
 pending application, preserves recovery identity, and leaves the parent database
 (and its inventory generations/migration history) intact.
+
+`test_issue108_daily_study_fixture_uses_authoritative_date_across_utc_midnight`
+protects the regular browser backlog fixture against schema-container UTC and
+product-local date disagreement. The browser reads the queue's authoritative
+local date and supplies it for fixture due dates and durable refresh requests.
+The existing `daily study opens while background analysis remains queued` browser
+regression retains its queue publication, backlog and real-board assertions.

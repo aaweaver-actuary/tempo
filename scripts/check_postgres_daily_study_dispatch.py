@@ -30,7 +30,9 @@ def configure():
 
 
 def seed(identifier, *, request_refresh):
-    today = date.today().isoformat()
+    # The schema container uses UTC; the product's queue can use another local
+    # day. Browser callers supply the date read from the authoritative queue API.
+    today = date.fromisoformat(os.getenv('TEMPO_DAILY_STUDY_QUEUE_DATE', date.today().isoformat())).isoformat()
     now = datetime.now(timezone.utc).isoformat()
     # The large cardinality proof is independent of browser fixture creation.
     locked_card_count = 128 if request_refresh else 15_000
