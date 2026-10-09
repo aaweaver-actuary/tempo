@@ -44,8 +44,12 @@ patch, not clean main. CI owns required final current-candidate verification.
 - `npm run lint`: passed, zero errors / 10 existing warnings, 44.49 s wall. No new warning suppressions.
 - `make plan`: full coverage inspected without running the complete gate locally. `git diff --check`: clean.
 
-Browser, PostgreSQL durability and pinned rendering evidence are pending. Existing
-other-task disposable Docker runs were inspected before scheduling validation;
+- `npm run test:unit -- tests/unit/validated-data-regressions.test.ts tests/unit/study-position-index-regressions.test.tsx`: 18 passed / 2 files, 1.13 s Vitest / 1.60 s wall on clean `bcebdbf4`.
+- `make ui-file FILE=workspace-flows.spec.ts` (elevated): 8 passed, 49.1 s browser / 94.33 s total wall on clean `b4fd4eab`. This includes real piece geometry, navigation, explicit Bg4 branch persistence/reload and original-line preservation, plus the partial-card chooser at 390/1470 px. Both new chooser screenshots were inspected. Project `tempo-pg-regressions-55041-c55b8187` cleaned up successfully in 8.47 s; exact container/image identifiers, creation/start times and teardown are retained in `test-results/tempo-cli/tempo-pg-regressions-55041-c55b8187/ownership.json`.
+- Additional handoff assertions: `npm run test:unit -- tests/unit/training-builder-handoff-regressions.test.tsx`: 4 passed, 3.13 s Vitest / 3.65 s wall on `b4fd4eab` plus only the new unit assertions. Games now proves the historical filter; comparison proves its complete source history and unchanged attempt.
+
+PostgreSQL durability and pinned rendering evidence are pending. Existing
+other-task disposable Docker runs are inspected before scheduling validation;
 the live study stack and those task resources are never reused or modified.
 Raw focused logs and the test plan are retained in this checkout under
 `test-results/training-builder/`. These executions are focused evidence, not a
