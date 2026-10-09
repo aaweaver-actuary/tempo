@@ -77,6 +77,7 @@ from .services.threat_pipeline import (
 from .services.threat_training import (
     execute_defense_admission_slice, execute_defense_rubric_audit_slice,
 )
+from .services.postgres_next_opponent import execute_profile_slice
 from .services.postgres_game_sync import execute_game_sync_record_slice
 from .services.postgres_game_derivation import execute_game_position_index_slice
 from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
@@ -124,6 +125,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "defensive_threat_backfill",
     "defensive_threat_validate",
     "priority_retention",
+    "next_opponent_profile",
     "game_sync_record",
     "game_derivation_positions",
     "game_derivation_compare",
@@ -325,6 +327,7 @@ def _execute_claimed_background_slice(
         "defensive_threat_backfill": execute_threat_backfill_slice,
         "defensive_threat_validate": execute_threat_validation,
         "priority_retention": execute_priority_retention_slice,
+        "next_opponent_profile": execute_profile_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_derivation_positions": execute_game_position_index_slice,
         "game_derivation_compare": execute_game_repertoire_comparison_slice,
@@ -363,7 +366,7 @@ def _execute_claimed_background_slice(
                 return False
             more_work = handler(claimed_task)
             if claimed_task["kind"] not in {
-                "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
+                "next_opponent_profile", "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
                 "game_derivation_compare", "game_derivation_findings",
                 "game_derivation_misses",
                 "game_derivation_events",

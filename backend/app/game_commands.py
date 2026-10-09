@@ -63,6 +63,8 @@ def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) ->
             {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
             priority=130,
         )
+    from .services.postgres_next_opponent import request_profile_refresh
+    request_profile_refresh(database)
     return {"game_id": game_id, "excluded": excluded}
 
 
