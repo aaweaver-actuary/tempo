@@ -63,6 +63,13 @@ Complete local durability is pending shared heavy-run availability; CI owns
 final required candidate validation. Wake/input coalescing and engine fairness
 remain subsequent changes.
 
+After including the authoritative browser-date repair, the settled scheduling
+files and schema/recovery callers pass 315 cases in 17.28 seconds. The bounded
+lease reclaimer filters by the requested pipeline, so older unrelated leases
+cannot delay explicit recovery. The repeated native PostgreSQL proof passes
+with maximum reconnect-inclusive claim 34.3 ms. These are focused results;
+complete durability and current-head CI are tracked separately.
+
 ### Queue candidate evidence
 
 Validation used the dirty queue candidate based on the revision above, macOS

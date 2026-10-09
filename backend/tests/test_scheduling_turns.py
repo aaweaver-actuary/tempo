@@ -113,3 +113,22 @@ def test_scheduling_empty_queue_preserves_turn_and_new_supported_kind_is_not_los
         assert connection.execute("SELECT next_turn FROM background_scheduling_turns WHERE lane='durable'").fetchone()[0] == 0
     queued = enqueue_pipeline('new_supported_pipeline', 'future', clock)
     assert claim_and_checkpoint(allowed)['id'] == queued['id']
+
+
+def test_bounded_lease_recovery_selects_one_expired_item_in_requested_pipeline(dispatch_store):
+    clock, _ = dispatch_store
+    for index in range(5):
+        enqueue_pipeline(PIPELINE_KINDS[0], str(index), clock)
+        assert durable_tasks.claim_task(PIPELINE_KINDS[0])
+    queued_game = enqueue_pipeline(PIPELINE_KINDS[1], 'game', clock)
+    assert durable_tasks.claim_task(PIPELINE_KINDS[1])
+    clock[0] += timedelta(seconds=61)
+    recovered = durable_tasks.claim_task(PIPELINE_KINDS[1])
+    assert recovered['id'] == queued_game['id']
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind=? AND state='leased'", (PIPELINE_KINDS[0],)).fetchone()[0] == 5
+    durable_tasks.claim_task(allowed_kinds=(PIPELINE_KINDS[0],))
+    with database.read_connection() as connection:
+        # Exactly one of the expired graph leases has a fresh lease.
+        assert connection.execute('SELECT COUNT(*) FROM background_tasks WHERE kind=? AND lease_expires_at>?',
+                                  (PIPELINE_KINDS[0], clock[0].isoformat())).fetchone()[0] == 1
