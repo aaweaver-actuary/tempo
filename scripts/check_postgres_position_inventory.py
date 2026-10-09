@@ -322,6 +322,24 @@ def verify_issue108_scope_delta_and_card_authority(dsn):
     print('PASS issue108 scope/delta: unchanged route reused, prior-scope memberships removed',flush=True)
 
 
+
+def verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn):
+    database_name = 'tempo_inventory_fresh_'+uuid.uuid4().hex[:12]
+    with psycopg.connect(admin_dsn,autocommit=True) as admin:
+        admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
+    dsn = psycopg.conninfo.make_conninfo(admin_dsn,dbname=database_name)
+    try:
+        apply_migrations(dsn)
+        with psycopg.connect(dsn) as database:
+            assert database.execute('SELECT COUNT(*) FROM background_tasks WHERE kind=%s',
+                                    (inventory.RECONCILE_KIND,)).fetchone()[0] == 0
+            assert database.execute('SELECT COUNT(*) FROM repertoires').fetchone()[0] == 0
+        print('PASS issue108 fresh install schedules no unnecessary upgrade sweep',flush=True)
+    finally:
+        with psycopg.connect(admin_dsn,autocommit=True) as admin:
+            admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
+
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Position inventory proof requires a disposable PostgreSQL instance')
@@ -331,6 +349,7 @@ def main():
         admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
     dsn = psycopg.conninfo.make_conninfo(admin_dsn, dbname=database_name)
     try:
+        verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn)
         verify_issue108_upgrade_restart_replay_and_coverage(dsn)
         verify_issue108_transpositions_duplicates_long_routes(dsn)
         verify_issue108_scope_delta_and_card_authority(dsn)

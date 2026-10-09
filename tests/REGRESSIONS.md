@@ -2852,8 +2852,13 @@ Python cases are in `backend/tests/test_position_inventory.py` and
 `background_workloads` stage runs `scripts/check_postgres_position_inventory.py`:
 `verify_issue108_upgrade_restart_replay_and_coverage` and
 `verify_issue108_transpositions_duplicates_long_routes`, and
-`verify_issue108_scope_delta_and_card_authority` cover real PostgreSQL
+`verify_issue108_scope_delta_and_card_authority`, and
+`verify_issue108_fresh_install_has_no_upgrade_task` cover real PostgreSQL
 upgrade, foreground contention, rollback, persisted restart/replay, source-change
 fences, removal reconciliation, exact legal counts, per-repertoire coverage,
 shared cache retention on deletion, duplicate/transposed routes, supported
 transposition labels, pagination, bounded long-line work and zero unchanged replay.
+
+The fresh-install case protects migration-only sweep ownership: empty databases
+contain no upgrade task, while an upgrade with existing repertoires queues one
+bounded durable sweep. It also preserves exclusive disposable fixture claims.

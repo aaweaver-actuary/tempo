@@ -38,7 +38,7 @@ published learner-response projections. Route artifacts store JSONB moves so a
 slice reads at most 16 moves without repeatedly parsing a complete text array.
 
 Graph publication and canonical-prefix saves request inventory work in the same
-transaction. A compact durable upgrade sweep visits one repertoire per delivery;
+transaction. On upgrades with existing repertoires, a compact durable sweep visits one repertoire per delivery;
 startup and foreground reads do not calculate inventories. Inputs are fenced by
 published graph generation, raw source revision, canonical-prefix revision and
 its relevant preview identity. Repeated identical requests preserve task leases

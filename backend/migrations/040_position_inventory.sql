@@ -57,6 +57,7 @@ CREATE TABLE position_cohort_evidence (
 -- One compact durable sweep, not startup traversal. Existing worker dispatch owns it.
 INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,
     payload_version,payload_json,attempt_count,max_attempts,next_attempt_at,created_at,updated_at)
-VALUES('position-inventory-upgrade','position_inventory_reconcile','all',1,85,'queued','queued',
-    1,'{"after_repertoire_id":""}',0,5,now()::text,now()::text,now()::text);
+SELECT 'position-inventory-upgrade','position_inventory_reconcile','all',1,85,'queued','queued',
+    1,'{"after_repertoire_id":""}',0,5,now()::text,now()::text,now()::text
+WHERE EXISTS(SELECT 1 FROM repertoires);
 INSERT INTO tempo_schema_migrations(version) VALUES(40);
