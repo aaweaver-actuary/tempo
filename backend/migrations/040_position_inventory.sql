@@ -18,7 +18,10 @@ CREATE TABLE inventory_generations (
 );
 CREATE INDEX inventory_generation_repertoire ON inventory_generations(repertoire_id,created_at,id);
 CREATE UNIQUE INDEX inventory_one_build ON inventory_generations(repertoire_id) WHERE state='building';
-ALTER TABLE repertoires ADD COLUMN inventory_publication_id TEXT;
+CREATE TABLE inventory_publications (
+    repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+    generation_id TEXT NOT NULL REFERENCES inventory_generations(id) ON DELETE CASCADE
+);
 CREATE TABLE inventory_routes (
     id TEXT PRIMARY KEY, start_fen TEXT NOT NULL, moves_json JSONB NOT NULL,
     trained_color TEXT NOT NULL CHECK(trained_color IN ('white','black')),

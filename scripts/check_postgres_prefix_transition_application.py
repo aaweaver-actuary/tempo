@@ -12,6 +12,8 @@ import uuid
 import chess
 from fastapi import HTTPException
 import psycopg
+from psycopg import sql
+from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app import postgres_store, prefix_evaluation_api, prefix_transition_api
 from app.command_gateway import execute_command, read_operation, CommandConflict
@@ -636,28 +638,47 @@ def test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier():
     print('PASS test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier')
 
 
+@contextmanager
+def owned_schema38_upgrade_database():
+    """A true historical schema in its own database, never a parent downgrade."""
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Schema38 upgrade proof requires the disposable runner')
+    parent_dsn = os.environ['TEMPO_DATABASE_WRITE_URL']
+    database_name = 'tempo_prefix_upgrade_'+uuid.uuid4().hex
+    owned_dsn = psycopg.conninfo.make_conninfo(parent_dsn,dbname=database_name)
+    with psycopg.connect(parent_dsn,autocommit=True) as parent:
+        before = parent.execute('SELECT COUNT(*) FROM inventory_generations').fetchone()[0]
+        parent.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
+    try:
+        migrations = Path(__file__).resolve().parents[1]/'backend/migrations'
+        with psycopg.connect(owned_dsn) as database:
+            for migration in sorted(migrations.glob('[0-9][0-9][0-9]_*.sql')):
+                if int(migration.name[:3]) > 38:
+                    break
+                database.execute(migration.read_text(),prepare=False)
+            database.execute('INSERT INTO settings(id) VALUES(1)')
+            database.execute('INSERT INTO tactic_rotation(id) VALUES(1)')
+        postgres_store.close_pools()
+        with patch.dict(os.environ,{'TEMPO_DATABASE_WRITE_URL':owned_dsn,'TEMPO_DATABASE_READ_URL':owned_dsn}):
+            yield
+    finally:
+        postgres_store.close_pools()
+        with psycopg.connect(parent_dsn,autocommit=True) as parent:
+            parent.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
+            assert parent.execute('SELECT COUNT(*) FROM inventory_generations').fetchone()[0] == before
+            from app.schema_version import POSTGRES_SCHEMA_VERSION
+            assert [row[0] for row in parent.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1,POSTGRES_SCHEMA_VERSION+1))
+
+
 def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity():
     from app.snapshot_reads import snapshot_rows
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root))
     from scripts.apply_postgres_migrations import apply_migrations
-    with fixture('upgrade-reservation') as (rep, other, lines, steps):
+    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    with owned_schema38_upgrade_database(), fixture('upgrade-reservation') as (rep, other, lines, steps):
         plan, payload = ready_plan(rep, lines)
         assert execute(payload) == {'status': 'pending'}
-        # All workload consumers are stopped by the owning disposable runner.
-        # Recreate only migration039's predecessor, retaining actual application
-        # and reservation data. No published migration is edited or skipped.
-        migration38 = (root / 'backend/migrations/038_prefix_transition_application.sql').read_text()
-        guard = migration38[migration38.index('CREATE FUNCTION guard_prefix_transition_scope('):migration38.index('CREATE FUNCTION guard_prefix_transition_write()')].replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1)
-        deletion37 = (root / 'backend/migrations/037_card_deletion.sql').read_text()
-        deletion_guard = deletion37[deletion37.index('CREATE FUNCTION prevent_deleted_card_recreation()'):deletion37.index('CREATE TRIGGER deleted_card_recreation_guard')].replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION', 1)
-        with postgres_store.connection(read_only=False) as database:
-            database.execute_native('DROP FUNCTION reserve_prefix_transition_queue_write() CASCADE')
-            database.execute_native('DROP FUNCTION reserve_permanent_deletion_write() CASCADE')
-            database.execute_native('DROP FUNCTION guard_permanent_deletion_scope() CASCADE')
-            database.raw.execute(guard, prepare=False)
-            database.raw.execute(deletion_guard, prepare=False)
-            database.execute_native('DELETE FROM tempo_schema_migrations WHERE version=39')
         queries = [('SELECT * FROM prefix_transition_applications WHERE operation_id=%s', (payload['operation_id'],)),
                    ('SELECT * FROM prefix_transition_card_fences WHERE operation_id=%s', (payload['operation_id'],)),
                    ('SELECT * FROM prefix_transition_repertoire_fences WHERE operation_id=%s', (payload['operation_id'],)),
@@ -669,10 +690,15 @@ def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identit
         apply_migrations(os.environ['TEMPO_DATABASE_WRITE_URL'])
         with postgres_store.connection(read_only=True) as database:
             assert before == [snapshot_rows(database, query, parameters) for query, parameters in queries]
-            assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 39
+            assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == POSTGRES_SCHEMA_VERSION
         final = publish(payload)
         assert final['operation_id'] == payload['operation_id'] and execute(payload) == final
     print('PASS test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity')
+    print('PASS test_issue108_schema38_upgrade_preserves_parent_inventory_and_migration_history')
+
+
+def test_issue108_schema38_upgrade_preserves_parent_inventory_and_migration_history():
+    test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity()
 
 
 def test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state():
@@ -1433,7 +1459,7 @@ def main():
             test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention()
             test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets()
             test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier()
-            test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity()
+            test_issue108_schema38_upgrade_preserves_parent_inventory_and_migration_history()
         return
     with isolate_unrelated_publication_tasks():
         test_pr102_activation_sql_statement_count_is_independent_of_transition_size()
@@ -1448,7 +1474,7 @@ def main():
         test_issue80_distinct_applications_share_a_bounded_barrier_and_recover_after_contention()
         test_issue80_permanent_deletion_exclusions_block_plans_and_fenced_absent_targets()
         test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier()
-        test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity()
+        test_issue108_schema38_upgrade_preserves_parent_inventory_and_migration_history()
         test_issue80_selected_caro_shortening_publishes_exact_graph_and_qgd_steady_state()
         test_issue80_structural_fences_target_creation_source_edits_and_duplicate_plan_delivery()
         test_issue80_authoritative_revalidation_rejects_source_and_absent_target_races_without_partial_mutation()

@@ -2862,3 +2862,9 @@ transposition labels, pagination, bounded long-line work and zero unchanged repl
 The fresh-install case protects migration-only sweep ownership: empty databases
 contain no upgrade task, while an upgrade with existing repertoires queues one
 bounded durable sweep. It also preserves exclusive disposable fixture claims.
+
+`test_issue108_schema38_upgrade_preserves_parent_inventory_and_migration_history`
+is the real PostgreSQL assertion within the existing issue80 upgrade proof. A
+separate database starts at genuine schema38, upgrades to current schema with a
+pending application, preserves recovery identity, and leaves the parent database
+(and its inventory generations/migration history) intact.

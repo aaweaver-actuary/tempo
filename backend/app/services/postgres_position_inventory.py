@@ -264,8 +264,9 @@ def execute_inventory_slice(task):
                 raise ValueError('Inventory contains an unfinished route')
             database.execute_native("UPDATE inventory_generations SET state='published',published_at=%s WHERE id=%s",
                                      (_now(), task['payload']['inventory_id']))
-            database.execute_native('UPDATE repertoires SET inventory_publication_id=%s WHERE id=%s',
-                                     (task['payload']['inventory_id'], task['payload']['repertoire_id']))
+            database.execute_native('INSERT INTO inventory_publications(repertoire_id,generation_id) VALUES(%s,%s) '
+                                    'ON CONFLICT(repertoire_id) DO UPDATE SET generation_id=excluded.generation_id',
+                                    (task['payload']['repertoire_id'], task['payload']['inventory_id']))
             return _advance(database, task, 'cleanup')
     if phase != 'cleanup':
         raise ValueError(f'Unknown inventory phase: {phase}')
@@ -278,17 +279,17 @@ def execute_inventory_slice(task):
             deleted = database.execute_native(
                 f'DELETE FROM {table} WHERE ctid IN (SELECT item.ctid FROM {table} item '
                 'JOIN inventory_generations generation ON generation.id=item.generation_id '
-                'JOIN repertoires repertoire ON repertoire.id=generation.repertoire_id '
+                'LEFT JOIN inventory_publications publication ON publication.repertoire_id=generation.repertoire_id '
                 "WHERE generation.repertoire_id=%s AND generation.state!='building' "
-                'AND generation.id IS DISTINCT FROM repertoire.inventory_publication_id LIMIT %s) RETURNING 1',
+                'AND generation.id IS DISTINCT FROM publication.generation_id LIMIT %s) RETURNING 1',
                 (task['payload']['repertoire_id'], PAGE_SIZE)).fetchall()
             if deleted:
                 return _advance(database, task, 'cleanup')
         database.execute_native(
             'DELETE FROM inventory_generations WHERE id IN (SELECT generation.id FROM inventory_generations generation '
-            'JOIN repertoires repertoire ON repertoire.id=generation.repertoire_id '
+            'LEFT JOIN inventory_publications publication ON publication.repertoire_id=generation.repertoire_id '
             "WHERE generation.repertoire_id=%s AND generation.state!='building' "
-            'AND generation.id IS DISTINCT FROM repertoire.inventory_publication_id LIMIT %s)',
+            'AND generation.id IS DISTINCT FROM publication.generation_id LIMIT %s)',
             (task['payload']['repertoire_id'], PAGE_SIZE))
         orphan = database.execute_native(
             'SELECT route.id FROM inventory_routes route WHERE NOT EXISTS('
@@ -322,8 +323,9 @@ def execute_reconcile_slice(task):
 def inventory_progress(database, repertoire_id):
     identity = input_identity(database, repertoire_id)
     publication = database.execute_native(
-        'SELECT generation.* FROM repertoires repertoire LEFT JOIN inventory_generations generation '
-        'ON generation.id=repertoire.inventory_publication_id WHERE repertoire.id=%s', (repertoire_id,)).fetchone()
+        'SELECT generation.* FROM repertoires repertoire LEFT JOIN inventory_publications publication '
+        'ON publication.repertoire_id=repertoire.id LEFT JOIN inventory_generations generation '
+        'ON generation.id=publication.generation_id WHERE repertoire.id=%s', (repertoire_id,)).fetchone()
     if publication is None:
         raise KeyError('Repertoire not found')
     task = database.execute_native('SELECT state,phase,last_error,payload_json FROM background_tasks '

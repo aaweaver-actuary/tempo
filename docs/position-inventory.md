@@ -47,13 +47,14 @@ and cursors. Unchanged route artifacts are reused, including across repertoires.
 A delivery reads one route/card segment, closes the reader before python-chess
 computation, then commits through the existing foreground admission gate. Board
 FEN and ply checkpoints commit atomically with results. Replay checks both task
-lease and artifact cursor. Publication swaps a single repertoire pointer only
-when all routes are complete and versions still match. Changed input supersedes
+lease and artifact cursor. Publication swaps an independent inventory publication
+pointer only when all routes are complete and versions still match. Changed input supersedes
 the build; the previous publication remains readable with `stale=true`.
 
 Cleanup removes old memberships/responses in 64-row slices before their generation
-headers. Unreferenced route occurrences are removed in 64-row slices, with the
-route locked against new memberships; shared positions and cohort evidence are
+headers. Publication metadata lives outside `repertoires`, so inventory work does
+not alter existing prefix-transition snapshots. Unreferenced route occurrences are
+removed in 64-row slices, with the route locked against new memberships; shared positions and cohort evidence are
 retained for future repertoires. Repertoire deletion cascades only its generation
 records. Orphan route artifacts are collected by subsequent inventory cleanup.
 
