@@ -504,7 +504,8 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
             _record_event(database, task['id'], task['generation'], 'yielded', row['phase'],
                           sanitized_error, kind=task['kind'])
         return bool(changed)
-    return submit_background_write(operation, label=f"deadline:{task['id']}")
+    with activity_gate.background_control():
+        return submit_background_write(operation, label=f"deadline:{task['id']}")
 
 
 def retry_task(task_id: str) -> dict | None:

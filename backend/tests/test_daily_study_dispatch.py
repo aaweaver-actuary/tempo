@@ -297,3 +297,30 @@ def test_discretionary_background_command_retains_receipt_without_consuming_fail
     with tasks.activity_gate.foreground():
         assert tasks.execute_background_command.run('claim', 'games.analysis.position.claim', {}) is None
     assert deferred == [('claim', 'owned')]
+
+
+def test_transaction_deadline_bookkeeping_does_not_wait_for_raced_foreground(dispatch_store, monkeypatch):
+    from psycopg.errors import TransactionTimeout
+    queued = enqueue_daily()
+    foreground_started = Event()
+    release_foreground = Event()
+    def foreground():
+        with tasks.activity_gate.foreground():
+            foreground_started.set()
+            assert release_foreground.wait(2)
+    worker = Thread(target=foreground)
+    def timed_out(claimed):
+        worker.start()
+        assert foreground_started.wait(1)
+        raise TransactionTimeout('controlled deadline after foreground arrival')
+    monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', timed_out)
+    try:
+        assert tasks.poll_background_tasks.run() is True
+        saved = task_row(queued['id'])
+        assert saved['state'] == 'retrying' and saved['transaction_timeout_count'] == 1
+        assert saved['attempt_count'] == 0 and saved['lease_token'] is None
+        assert 'controlled deadline' in saved['last_error']
+    finally:
+        release_foreground.set()
+        worker.join(1)
+    assert not worker.is_alive()
