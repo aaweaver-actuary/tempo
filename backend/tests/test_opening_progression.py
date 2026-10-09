@@ -110,3 +110,52 @@ def test_bounded_unlock_rechecks_parent_exposure_and_publication_before_update(p
 
     _unlock_eligible_opening_cards(CandidateRecheckDatabase(), '2026-10-09', after_card_id='', batch_size=8)
     assert connection.execute("SELECT state FROM cards WHERE id='child'").fetchone()[0] == 'locked'
+
+
+@pytest.mark.parametrize('unexpected_error', [False, True])
+def test_opening_progression_native_driver_replays_only_foreground_deferred_slice(monkeypatch, unexpected_error):
+    from contextlib import contextmanager
+    import importlib.util
+    from pathlib import Path
+    from app.services.activity_gate import BackgroundAdmissionDeferred
+
+    proof_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_progression.py'
+    spec = importlib.util.spec_from_file_location('opening_progression_proof', proof_path)
+    proof = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(proof)
+    task = {'id': 'queue', 'payload': {'preserve_through_entry_id': 7}}
+    calls = []
+    saved = {'state': 'running', 'payload_json': '{"preserve_through_entry_id": 7}'}
+
+    def execute(claimed):
+        assert claimed is task
+        calls.append(claimed)
+        if len(calls) == 1:
+            if unexpected_error:
+                raise ValueError('unexpected SQL failure')
+            raise BackgroundAdmissionDeferred('foreground')
+        saved['state'] = 'complete'
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            self.statement = statement
+            return self
+
+        def fetchone(self):
+            return (1,) if self.statement == 'SELECT 1' else saved.copy()
+
+    @contextmanager
+    def connection(**options):
+        assert options == {'read_only': True}
+        yield Database()
+
+    monkeypatch.setattr(proof, 'claim_task', lambda kind: task)
+    monkeypatch.setattr(proof, 'execute_postgres_queue_refresh_slice', execute)
+    monkeypatch.setattr(proof.postgres_store, 'connection', connection)
+    if unexpected_error:
+        with pytest.raises(AssertionError, match='unexpected SQL failure'):
+            proof.drain_queue_refresh(restart=True)
+        assert len(calls) == 1 and saved['state'] == 'running'
+    else:
+        proof.drain_queue_refresh(restart=True)
+        assert len(calls) == 2 and saved['state'] == 'complete'
