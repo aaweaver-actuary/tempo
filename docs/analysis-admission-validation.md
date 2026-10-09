@@ -305,3 +305,16 @@ before opening the publication writer. The foreground command preserves its
 fenced receipt without consuming a failure attempt. Two named regressions failed
 on the previous implementation; three affected Python files now pass 46 cases
 in 1.03s. Native durability and new current-candidate CI remain required.
+
+Browser traces show queue-preparation observations repeatedly opening foreground
+reads and an old retained Black card displayed after a preparation failure.
+Publication polls now use background admission after the initial foreground
+read, and expected foreground refusals do not spend the service failure budget.
+The Black board fixture waits for the import's promised queue before studying it.
+The named queue regression failed before repair; its file passes 24 cases in
+0.877s, two caller files pass 17 cases in 3.13s. Typecheck/lint pass with ten
+existing warnings. All three real PostgreSQL browser workflows pass; runner
+tempo-pg-regressions-179-0337d04d removed its containers/images in 6.47s.
+Complete browser-family and current-candidate CI remain required. Current
+lifecycle CI stopped before tests on a Docker bind capability timeout; this is
+unavailable infrastructure evidence, not a product pass or skipped requirement.
