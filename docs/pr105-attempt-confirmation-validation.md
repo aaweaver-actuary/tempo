@@ -154,3 +154,29 @@ source subsequently committed with this report, based on 10db139. No runtime
 source changed after the final unit/phone/typecheck/lint checks. Required CI for
 the new committed head and merge candidate remains pending at commit time; the
 PR and preserved evidence bundle will link its actual final result.
+
+## Current-main reconciliation after candidate CI
+
+Run 37903599930 attempt 2 passed the complete required plan for head b4c3202
+and merge candidate b73157874d53a1e7b6cc9b6f10d2a79535653a87 (base 2dd998b).
+All seven mandatory layers and quality passed: 1,348 frontend cases, 1,578
+backend cases, 256 browser cases and 66 visual/performance cases; browser and
+visual cases had no retries. PostgreSQL durability and lifecycle also passed.
+Attempt 1 was accidentally cancelled by the user; attempt 2 was explicitly
+authorized. Run: https://github.com/aaweaver-actuary/tempo/actions/runs/37903599930
+
+Main advanced during that run to d5394b1fa29a00c104efb946fbbc46f2975c4079
+(merged PR #119). Its only merge conflict was adjacent appended sections in
+tests/REGRESSIONS.md. Both sections are retained intact. Review-confirmation
+production and tests are unchanged by reconciliation. Repeat the primary
+Home/outbox/recovery files and conflict/diff checks; fresh CI owns complete
+validation against the new base, including the incoming backend changes.
+The previous successful merge candidate is historical evidence for this new
+candidate, not its required-gate result.
+
+Post-reconciliation focused execution: `npm run test:unit --
+tests/unit/review-attempt-confirmation-regressions.test.tsx
+tests/unit/pending-review-recovery-regressions.test.tsx
+tests/unit/review-outbox-regressions.test.ts` passed **90 cases across 3 files**,
+2.99s Vitest. `node scripts/check-merge-conflicts.mjs` and `git diff --check`
+passed. The review-confirmation production/tests diff against b4c3202 is empty.

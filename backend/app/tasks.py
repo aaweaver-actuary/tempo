@@ -62,7 +62,7 @@ from . import integrity_repair_commands  # noqa: F401 - registers guided integri
 from .services.activity_gate import activity_gate
 from .services.background_runtime import measure_handler
 from .services.durable_tasks import current_delivery, record_stale_delivery, defer_paused_defensive_task
-from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
+from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, defer_task_for_transaction_timeout, fail_task
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
@@ -342,7 +342,9 @@ def _execute_claimed_background_slice(
                     kind=claimed_task["kind"],
                 )
         except TransactionTimeout as error:
-            if claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention", prefix_transition_application.TASK_KIND}:
+            if claimed_task['kind'] == 'daily_queue':
+                more_work = defer_task_for_transaction_timeout(claimed_task, error)
+            elif claimed_task["kind"] in {"opening_graph_rebuild", "priority_retention", prefix_transition_application.TASK_KIND}:
                 retry_result = fail_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error,
                 )
