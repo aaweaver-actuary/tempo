@@ -140,3 +140,34 @@ no backend/database/rendering contract; CI owns its mandatory current-candidate 
 The prior c0e87b1 green run is historical evidence only. Current-head/current-base
 CI must pass before marking PR ready. Related #29, #39 and #81 remain open for their
 separate requirements. All four reported findings are fixed; no merge/deployment.
+
+
+## Final caller audit and fresh candidate
+
+A retained-review caller audit found three initialization fixtures in
+attempt-lifecycle-regressions.test.ts still assuming POST-first recovery. The
+focused command reproduced all three mismatches (1.16s Vitest): generic queue
+payloads were returned for the new receipt read, so replay correctly stayed pending.
+These fixtures now return missing receipts, and the two exact request-order
+assertions additionally require the original receipt before their existing review,
+guided-marker and queue sequence. No assertion was weakened.
+
+```sh
+npm run test:unit -- tests/unit/attempt-lifecycle-regressions.test.ts -t 'reload drains an earlier review|stale guided failure replay|reload retains an unprovable'
+npm run test:unit -- tests/unit/attempt-lifecycle-regressions.test.ts
+npm run test:unit -- tests/unit/training-failure-outbox-regressions.test.ts
+npx eslint tests/unit/attempt-lifecycle-regressions.test.ts
+npm run typecheck
+```
+
+Corrected focused cases: 3/3 passed, 0.864s Vitest. Entire lifecycle file: 24/24
+passed, 0.876s Vitest. Failure-outbox callers: 12/12 passed, 0.572s Vitest.
+Changed-fixture lint passed, 2.01s wall; final typecheck passed, 5.92s wall.
+Final aggregate relevant-file coverage is **306 cases across 16 files**, with
+production source unchanged from the earlier browser/static runs. The earlier
+whole lint result covers unchanged inputs; the final fixture also has focused lint.
+
+Initial pushed head b185486 triggered CI run 37912162058, which was superseded by
+this demonstrated fixture repair. Its partial results are not current-candidate
+validation. The new committed head must receive all mandatory checks and quality
+for its current-base merge candidate before handoff.

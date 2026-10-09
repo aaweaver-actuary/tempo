@@ -2988,3 +2988,9 @@ Additional receipt and shared-flush boundaries:
 - `Phone reload consumes a retained completed review receipt without another review POST`
   (`tests/browser/phone-opening-study.spec.ts`): real reload consumes browser-retained
   review storage by its original receipt, with zero new review POSTs.
+
+- Existing `reload drains an earlier review before marking the next guided card`,
+  `stale guided failure replay completes before today's training queue opens`, and
+  `reload retains an unprovable result as a conflict and opens independent cards`
+  (`tests/unit/attempt-lifecycle-regressions.test.ts`) retain their original outcome
+  assertions and now require receipt-first initialization before replay.
