@@ -252,21 +252,30 @@ def claim_task(
 
     def operation(database: sqlite3.Connection) -> dict | None:
         now = _iso()
-        reclaim_statement = """UPDATE background_tasks
+        kind_clause = ''
+        kind_parameters = []
+        if kind is not None:
+            kind_clause = ' AND kind=?'
+            kind_parameters.append(kind)
+        elif allowed_kinds is not None:
+            kind_clause = ' AND kind IN (' + ','.join('?' for _ in allowed_kinds) + ')'
+            kind_parameters.extend(allowed_kinds)
+        reclaim_parameters = (now, now, *kind_parameters, now)
+        reclaim_statement = f"""UPDATE background_tasks
                SET state='queued',lease_token=NULL,lease_expires_at=NULL,
                    updated_at=?
                WHERE id IN (SELECT id FROM background_tasks
-                            WHERE state='leased' AND lease_expires_at<=?
+                            WHERE state='leased' AND lease_expires_at<=?{kind_clause}
                             ORDER BY lease_expires_at,id LIMIT 1)
                AND state='leased' AND lease_expires_at<=? RETURNING id,kind,generation"""
         if hasattr(database, 'execute_native'):
             reclaimed = database.execute_native(
                 postgres_store.postgres_sql(reclaim_statement).replace(
                     'LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)'),
-                (now, now, now),
+                reclaim_parameters,
             ).fetchall()
         else:
-            reclaimed = database.execute(reclaim_statement, (now, now, now)).fetchall()
+            reclaimed = database.execute(reclaim_statement, reclaim_parameters).fetchall()
         # Reuse bounded aggregate shards rather than add one query/write per expired lease.
         from collections import Counter
         from .background_metrics import metric_shard
@@ -275,11 +284,7 @@ def claim_task(
             increment(database, reclaimed_kind, "", shard_override=shard,
                       lease_expiries=reclaimed_count, lease_reclaims=reclaimed_count,
                       generation_restarts=reclaimed_count)
-        parameters: list[str] = [now]
-        kind_clause = ""
-        if kind is not None:
-            kind_clause = " AND kind=?"
-            parameters.append(kind)
+        parameters = [now, *kind_parameters]
         scheduling_turn = None
         if allowed_kinds is not None:
             row, scheduling_turn = select_scheduled_task(database, allowed_kinds, now)
