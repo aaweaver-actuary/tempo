@@ -246,5 +246,8 @@ def test_issue107_maintenance_profile_proof_configures_disposable_redis(monkeypa
     monkeypatch.setattr(proof.sys, "argv", ["proof", "--resume"])
     observed = []
     monkeypatch.setattr(proof, "child", lambda mode: observed.append((mode, proof.os.environ["TEMPO_REDIS_URL"])))
-    proof.main()
-    assert observed == [("--resume", "redis://redis:6379/0")]
+    from unittest.mock import patch
+    with patch.dict(proof.os.environ):
+        proof.main()
+        assert observed == [("--resume", "redis://redis:6379/0")]
+    assert "TEMPO_REDIS_URL" not in proof.os.environ
