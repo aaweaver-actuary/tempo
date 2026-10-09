@@ -1459,6 +1459,9 @@ def initialize() -> None:
                 "scan_total_sources": "INTEGER NOT NULL DEFAULT 0",
                 "scan_error": "TEXT",
             },
+            "repertoire_coverage_nodes": {
+                "explorer_failure_code": "TEXT", "explorer_retry_at": "TEXT", "explorer_error": "TEXT",
+            },
             "queue_projections": {
                 "blocked_count": "INTEGER NOT NULL DEFAULT 0",
             },
