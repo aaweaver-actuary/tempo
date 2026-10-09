@@ -3012,6 +3012,9 @@ Additional receipt and shared-flush boundaries:
 - `test_issue135_queue_retry_error_is_visible_and_generation_fenced`: current
   deadline errors reach the still-refreshing projection; stale deadline, progress,
   completion and failure deliveries cannot change replacement work.
+- `test_issue135_replacement_generation_wins_failure_publication_race`: a
+  deterministic replacement commits between a failure read and its write;
+  neither deadline nor ordinary failure can publish status over that generation.
 - `test_issue135_unchanged_checkpoint_backoff_survives_restart_and_stale_replay`:
   consecutive failures retain 1/2/4/8/16/32/60-second backoff, reopened connections,
   lease reclamation and replay preserve the episode without consuming failure attempts.
@@ -3046,3 +3049,15 @@ read-only evidence, exact disposable ownership and unavailable diagnostics.
 The existing real FEN-only Studies workflow retains its 30-second readiness
 assertion and attaches task/checkpoint/lease/cooldown and #37 diagnostics on failure.
 No browser timeout, background transaction budget or assertion was weakened.
+
+The required durability gate exposed a separate admission-proof cleanup race:
+`/api/health` from the deployed API can briefly own a legitimate shared Redis
+foreground lease. The two opening-evidence HTTP proofs now check every lease
+created by their own HTTP/worker threads, including each found/missing/error
+read, without asserting that unrelated processes own no leases.
+`backend/tests/test_admission_proof_ownership.py` registers:
+- `test_admission_proof_cleanup_ignores_independent_foreground_probe`;
+- `test_admission_proof_cleanup_rejects_owned_lease_leaks` (foreground/background);
+- `test_admission_proof_cleanup_preserves_original_assertion`.
+Real Redis denial, read-only transaction settings, and local active-section
+assertions remain required; no production admission behavior changed.

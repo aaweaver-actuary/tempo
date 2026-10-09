@@ -75,3 +75,40 @@ Logs and resource provenance are retained outside the clone at
 `make ui-file FILE=studies.spec.ts`, and complete CI browser evidence remain
 pending until their final results are recorded. No merge/release readiness is
 claimed from the focused passes.
+
+## Candidate boundary failures and repairs
+
+The final queue file was expanded with an interleaving regression replacing the
+generation between the failure's read and write. All **15 cases passed in 4.68 s**
+(5.93 s command wall). The first version nested the SQLite admission fixture and
+was interrupted after 116.82 s; the corrected fixture uses an independent SQLite
+writer to model PostgreSQL's separate foreground writer. The interrupted run
+provided no passing evidence.
+
+Initial elevated `make docker-durability` (project
+`tempo-pg-regressions-12550-5ee3a29a`, base plus uncommitted product patch) failed
+before the new queue proofs. `operation_recovery` took 42.43 s and lost a
+connection; PostgreSQL logged transaction-deadline terminations. Cleanup passed
+in 31.05 s, with no owned containers, volumes or images remaining. Its stage and
+ownership records are retained beside the log. This is not a full durability pass.
+The same unmodified operation-recovery proof passed in 1.79 s on the first PR
+merge-candidate CI runner, so the local failure does not establish a product
+regression caused by this patch.
+
+First PR CI run [37931414363](https://github.com/aaweaver-actuary/tempo/actions/runs/37931414363)
+tested merge candidate `ffc232e042eb77f83f851a463c04e3f671ee8524` for head
+`ff729f0fa2ad5f20e6681f3afd0e27e05a0ead61`. Its immutable complete plan selected
+**257/257 browser cases**. All five new real PostgreSQL queue proofs passed,
+including rollback, restart, replay, manual retry and replacement fencing.
+The durability job later failed at
+`test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay`:
+a global Redis foreground-empty assertion races the deployed API health probe.
+This required-gate failure remains blocking; constituent passes are not a full
+successful candidate result.
+
+The test cleanup repair records its own foreground/background lease identities
+and asserts that each was removed, preserving immediate cleanup assertions for
+each evidence-read outcome. It does not change admission policy, remove leases
+owned by another process, add sleeps, or raise timeouts. Named ownership tests
+passed **4 cases in 1.23 s**. Real affected PostgreSQL proof and fresh full CI
+remain required after this repair.
