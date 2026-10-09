@@ -20,6 +20,13 @@ errors, historical coverage failures, and misleading activity status.
    stale-lease replay. Start with named SQLite turn/dispatcher regressions; then
    native PostgreSQL claim, restart, foreground contention and durability. CI owns
    final required candidate validation. Wake and input coalescing follow separately.
+   Wake coalescing scope: no-argument maintenance signals only. Broker ownership
+   is atomic, consumed before execution, and fenced by delivery identity; command
+   payloads and accepted callbacks remain independent. Prove one pending signal
+   under beat/continuation pressure, publication failure recovery, legacy/stale
+   delivery, restart and useful checkpoint replay with unit dispatch tests and a
+   real Redis broker proof in regular PostgreSQL durability. CI owns the final
+   complete candidate gate; no rendered product behavior changes in this slice.
 3. Integrity/segmentation: large generation publication, conservative eligibility,
    restart/replay and authoritative trained-color provenance.
 4. Coverage: safe session status, unchanged-credential recovery, partial-source
@@ -42,6 +49,25 @@ checkout; teardown: `docker rm -v tempo-analysis-unlock-proof` after stopping it
 No persistent host volume or live study data is used.
 
 ### Scheduling candidate evidence
+
+### Wake coalescing candidate evidence
+
+Base scheduling head 2bd79d5, branch codex/analysis-wake-coalescing. The named
+baseline case failed in 0.16 seconds with 1,000 broker deliveries. On the dirty
+candidate, `PYTHONPATH=backend backend/.venv/bin/python -m pytest
+backend/tests/test_background_wakes.py backend/tests/test_daily_study_dispatch.py
+backend/tests/test_postgres_background_timeouts.py
+backend/tests/test_command_transport_errors.py -q --rootdir=.` passed 56 cases
+in 1.81 seconds. `TEMPO_TEST_INSTANCE=disposable
+TEMPO_REDIS_URL=redis://127.0.0.1:49502/0 PYTHONPATH=backend:scripts
+backend/.venv/bin/python scripts/check_redis_background_wakes.py` passed the
+real 1,000-request broker/concurrent producer/restart/fenced replay proof.
+The existing task-owned ephemeral Redis fixture was reused, with only uniquely
+named proof queue/owner keys removed. No study queues were touched. Fast-worker
+consumption preserves the next owner. Publication failure cannot lose durable
+intent; queued ownership and broker messages are preserved together. No product
+rendering changes. Complete PostgreSQL durability/current-head CI remains
+pending; focused Redis evidence is not a full gate pass.
 
 Mixed-kind scheduling replaces numerical-priority dominance with persisted
 interleaved turns (graph/game/graph/game/priority/coverage/sync). One promotion

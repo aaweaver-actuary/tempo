@@ -62,6 +62,7 @@ from . import integrity_repair_commands  # noqa: F401 - registers guided integri
 from .services.activity_gate import activity_gate
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .services.background_runtime import measure_handler
+from .services.background_wakes import CoalescedWakeTask
 from .services.durable_tasks import current_delivery, record_stale_delivery, defer_paused_defensive_task
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, defer_task_for_transaction_timeout, fail_task
 
@@ -147,7 +148,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
 )
 
 
-@celery_app.task(name="app.tasks.ensure_daily_queue")
+@celery_app.task(name="app.tasks.ensure_daily_queue", base=CoalescedWakeTask)
 def ensure_daily_queue() -> bool:
     """Start the new day's queue even when the API stays up past midnight."""
 
@@ -250,7 +251,7 @@ def execute_background_command(
             raise
 
 
-@celery_app.task(name="app.tasks.recover_operations")
+@celery_app.task(name="app.tasks.recover_operations", base=CoalescedWakeTask)
 def recover_operations() -> bool:
     with activity_gate.background_job("operation_recovery", "one-run", yielding=True), \
             activity_gate.background_control():
@@ -269,7 +270,7 @@ def recover_operations() -> bool:
     return True
 
 
-@celery_app.task(name="app.tasks.poll_background_tasks", bind=True)
+@celery_app.task(name="app.tasks.poll_background_tasks", bind=True, base=CoalescedWakeTask)
 def poll_background_tasks(self) -> bool:
     """Claim and run one slice at worker capacity, then yield to the broker."""
 
@@ -287,7 +288,7 @@ def poll_background_tasks(self) -> bool:
     )
 
 
-@celery_app.task(name="app.tasks.recover_active_coverage")
+@celery_app.task(name="app.tasks.recover_active_coverage", base=CoalescedWakeTask)
 def recover_active_coverage() -> bool:
     try:
         with activity_gate.background_job("coverage_recovery", "one-run", yielding=True):
