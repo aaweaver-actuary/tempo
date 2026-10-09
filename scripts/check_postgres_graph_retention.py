@@ -29,7 +29,7 @@ from psycopg.rows import dict_row
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import postgres_store
-from app.services import postgres_opening_graph as graph, priority_retention
+from app.services import postgres_opening_graph as graph, priority_retention, redis_admission_gate
 
 
 DATABASE_URL = "postgresql://postgres@postgres:5432/tempo"
@@ -817,6 +817,32 @@ def validate_disposable_database() -> dict:
 
 
 @contextmanager
+def owned_admission_scope(owned_database_name):
+    """The exclusive helper database has no callers in the parent API workspace."""
+    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    foreground_key = f'tempo:test:{owned_database_name}:admission:foreground'
+    background_key = f'tempo:test:{owned_database_name}:admission:background'
+    server = redis_admission_gate.client()
+    token = uuid.uuid4().hex
+    try:
+        with patch.object(redis_admission_gate, '_FOREGROUND_KEY', foreground_key), \
+                patch.object(redis_admission_gate, '_BACKGROUND_KEY', background_key):
+            # A parent health/study request must not contaminate the isolated
+            # rehearsal, and isolation must never clear the parent's lease.
+            server.zadd(parent_foreground_key, {token: int(time.time()*1000)+30_000})
+            try:
+                assert not redis_admission_gate.foreground_present()
+                with redis_admission_gate.background_lease():
+                    assert server.zscore(parent_foreground_key, token) is not None
+            finally:
+                server.zrem(parent_foreground_key, token)
+            yield
+    finally:
+        server.delete(foreground_key, background_key)
+    assert redis_admission_gate._FOREGROUND_KEY == parent_foreground_key
+
+
+@contextmanager
 def owned_fixture_database():
     """Give real queue claims an empty, exclusively fixture-owned database."""
     global DATABASE_URL
@@ -844,7 +870,8 @@ def owned_fixture_database():
         with patch.dict(os.environ, {"TEMPO_DATABASE_WRITE_URL": owned_database_url,
                                     "TEMPO_DATABASE_READ_URL": owned_read_database_url,
                                     "TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS": "250",
-                                    "TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS": "25"}):
+                                    "TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS": "25"}), \
+                owned_admission_scope(owned_database_name):
             yield owned_database_name
     finally:
         postgres_store.close_pools()
@@ -889,6 +916,8 @@ def run(*, mode: str = "candidate", report_path: str | None = None) -> None:
     try:
         with owned_fixture_database() as owned_database_name:
             fixture.report["owned_database_name"] = owned_database_name
+            fixture.report["regressions"].append(
+                'test_postgres_graph_rehearsal_admission_isolates_helper_database_and_retains_parent_lease')
             fixture.seed()
             if mode == "baseline":
                 fixture.measure_baseline()

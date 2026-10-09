@@ -80,7 +80,7 @@ def attempt_http_boundary(monkeypatch):
 
 
 @pytest.mark.parametrize('outcome', ['found', 'missing', 'error'])
-def test_background_opening_attempt_http_read_waits_for_foreground_admission(attempt_http_boundary, outcome):
+def test_background_opening_attempt_http_read_yields_and_retries_after_foreground_admission(attempt_http_boundary, outcome):
     from concurrent.futures import ThreadPoolExecutor
     from app.services.activity_gate import activity_gate
     boundary = attempt_http_boundary
@@ -93,8 +93,14 @@ def test_background_opening_attempt_http_read_waits_for_foreground_admission(att
             response_future = requests.submit(boundary.client.get, '/api/opening-evidence/attempts/http-attempt',
                                               headers={'X-Tempo-Work-Class': 'background'})
             assert boundary.reached.wait(5), 'Background route reached neither admission nor evidence SQL'
+            denied = response_future.result(timeout=5)
+            assert denied.status_code == 503
+            assert denied.headers['Retry-After'] == '1'
+            assert denied.json() == {'detail': 'Waiting for foreground activity'}
             assert not boundary.sql_started.is_set(), 'Background attempt evidence SQL started before foreground admission released'
             assert not boundary.sections, 'Background attempt opened PostgreSQL before admission'
+        response_future = requests.submit(boundary.client.get, '/api/opening-evidence/attempts/http-attempt',
+                                          headers={'X-Tempo-Work-Class': 'background'})
         if outcome == 'error':
             with pytest.raises(RuntimeError, match='evidence read failed'):
                 response_future.result(timeout=5)
