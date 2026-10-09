@@ -204,3 +204,35 @@ def test_prefix_diagnostics_full_saved_route_distinguishes_identical_learner_mov
     assert [decision['expected_uci'] for decision in open_game['manifest']['decisions']] == [decision['expected_uci'] for decision in sicilian['manifest']['decisions']]
     assert open_game['presentation_san'] == '1. e4 e5 2. Nf3 Nc6 3. Bb5'
     assert sicilian['presentation_san'] == '1. e4 c5 2. Nf3 Nc6 3. Bb5'
+
+
+@pytest.mark.parametrize('deadline_phase', ['acquire', 'close'])
+def test_prefix_diagnostics_transaction_deadline_is_actionable_without_false_evidence(monkeypatch, deadline_phase):
+    from psycopg.errors import TransactionTimeout
+    lifecycle = []
+    @contextmanager
+    def scope():
+        yield
+    @contextmanager
+    def timed_connection(**options):
+        assert options == {'read_only': True, 'background': True, 'repeatable_read': True}
+        lifecycle.append('acquire')
+        try:
+            if deadline_phase == 'acquire':
+                raise TransactionTimeout('Diagnostic transaction deadline')
+            yield object()
+            raise TransactionTimeout('Diagnostic commit deadline')
+        finally:
+            lifecycle.append('closed')
+    monkeypatch.setattr(api.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(api.activity_gate, 'background_request', scope)
+    monkeypatch.setattr(api.activity_gate, 'background_database_section', scope)
+    monkeypatch.setattr(api.postgres_store, 'connection', timed_connection)
+    with pytest.raises(HTTPException) as failure:
+        with api.diagnostic_read():
+            lifecycle.append('read')
+    assert failure.value.status_code == 503
+    assert failure.value.headers == {'Retry-After': '1'}
+    assert 'Retry after study work settles' in failure.value.detail
+    assert lifecycle[-1] == 'closed'
+    assert ('read' in lifecycle) == (deadline_phase == 'close')

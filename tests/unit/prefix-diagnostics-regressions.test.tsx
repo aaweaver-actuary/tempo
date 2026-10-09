@@ -103,3 +103,24 @@ it("PD-82 prefix selectors distinguish identical learner moves across opponent b
   await screen.findByRole("button", { name: /Inspect prefix: 1\. e4 e5 2\. Nf3/ });
   expect(screen.getByRole("button", { name: /Inspect prefix: 1\. e4 c5 2\. Nf3/ })).toBeTruthy();
 });
+
+
+it("PD-82 temporary diagnostic deadline keeps evidence unavailable until explicit retry succeeds", async () => {
+  let detailReads = 0;
+  const fetcher = vi.fn(async (url: string) => {
+    if (!url.includes("manifest_id=")) return Response.json(listing);
+    detailReads += 1;
+    return detailReads === 1 ? Response.json({ detail: "Prefix difficulty is temporarily unavailable. Retry after study work settles." },
+      { status: 503, headers: { "Retry-After": "1" } }) : Response.json(detail);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  mount(); await inspect();
+  await screen.findByText("Prefix difficulty is temporarily unavailable. Retry after study work settles.");
+  expect(screen.queryByText("Unknown")).toBeNull();
+  expect(screen.queryByText("Strong evidence")).toBeNull();
+  expect(detailReads).toBe(1);
+  await inspect();
+  await screen.findByText("Strong evidence");
+  expect(screen.getByText("Unknown")).toBeTruthy();
+  expect(detailReads).toBe(2);
+});
