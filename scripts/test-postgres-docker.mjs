@@ -154,8 +154,8 @@ async function waitForReady({ requireContainerHealthy = false } = {}) {
   throw new Error("Disposable PostgreSQL Tempo did not become ready");
 }
 
-async function get(path) {
-  const response = await apiRequest(path);
+async function get(path, { background = false } = {}) {
+  const response = await apiRequest(path, background ? { headers: { "X-Tempo-Work-Class": "background" } } : {});
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
   return response.json();
 }
@@ -188,7 +188,7 @@ async function waitForStudyableImport(repertoireId) {
   let settledSamples = 0;
   for (let attempt = 0; attempt < 180; attempt += 1) {
     const [system, integrity, queue] = await Promise.all([
-      get("system/tasks"), get(`repertoires/${repertoireId}/integrity`), get("queue/today"),
+      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }), get("queue/today", { background: true }),
     ]);
     assertNoCompletedFixtureConflict(integrity, repertoireId);
     const graphTask = system.tasks.find((task) => task.kind === "opening_graph_rebuild"
@@ -645,7 +645,7 @@ async function verifyStudyBurialRetainsQuota() {
   const settingsBeforeFixture = await get("settings");
   // stdin keeps this test fixture outside the product image. It runs only
   // against the unique disposable compose project created by this runner.
-  const regression = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-"], {
+  const regression = spawnSync("docker", [...compose, "exec", "-T", "-e", "TEMPO_TEST_INSTANCE=disposable", "foreground-worker", "python", "-"], {
     input: readFileSync("tests/fixtures/postgres-study-burial-quota.py", "utf8"), encoding: "utf8", env: environment,
   });
   assert.equal(regression.status, 0, regression.stderr);
@@ -770,13 +770,22 @@ async function verifyCurrentCanonicalRouteAdmission() {
   }
   const retentionDeadline = performance.now() + 30_000;
   while (true) {
-    const snapshot = await get("migration/snapshot");
-    const previews = snapshot.tables.canonical_prefix_previews.filter(row => row.repertoire_id === repertoireId);
-    const pending = (await get("system/tasks")).tasks.some(task => task.kind === "canonical_prefix_preview"
-      && requestedPreviewIds.has(task.deduplication_key) && ["queued", "leased", "retrying"].includes(task.state));
-    if (previews.length <= 9 && !pending) {
-      const repertoire = snapshot.tables.repertoires.find(row => row.id === repertoireId);
-      assert(previews.some(row => row.id === repertoire.canonical_prefix_preview_id),
+    // This is a passive idle-work measurement. Whole-product HTTP exports
+    // create foreground leases and preempt the very slices being measured.
+    // Use the exclusively runner-owned database, bounded read-only SQL and
+    // exactly the same scoped publication/task conditions and deadline.
+    assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
+    for (const previewId of requestedPreviewIds) assert.match(previewId, /^[0-9a-f-]{36}$/i);
+    const summary = readScopedPostgresRows(`SET default_transaction_read_only=on;
+      SET statement_timeout='250ms';
+      SELECT json_build_object(
+        'preview_ids', (SELECT COALESCE(json_agg(id),'[]'::json) FROM canonical_prefix_previews WHERE repertoire_id='${repertoireId}'),
+        'active_preview_id', (SELECT canonical_prefix_preview_id FROM repertoires WHERE id='${repertoireId}'),
+        'pending', EXISTS(SELECT 1 FROM background_tasks WHERE kind='canonical_prefix_preview'
+          AND deduplication_key IN ('${[...requestedPreviewIds].join("','")}')
+          AND state IN ('queued','leased','retrying')))`);
+    if (summary.preview_ids.length <= 9 && !summary.pending) {
+      assert(summary.preview_ids.includes(summary.active_preview_id),
         "Retention preserves the active current certificate");
       break;
     }
@@ -785,6 +794,7 @@ async function verifyCurrentCanonicalRouteAdmission() {
   }
   console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
   console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
+  console.log("PASS test_postgres_canonical_retention_scoped_readonly_poll_preserves_idle_worker_admission");
 }
 
 const actions = {

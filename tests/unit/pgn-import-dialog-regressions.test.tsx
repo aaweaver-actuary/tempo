@@ -153,3 +153,15 @@ it("closing PGN dialog cancels confirmation without reporting cancellation as a 
   expect(reportDebugError).not.toHaveBeenCalled();
   expect(dialog.databaseUpdated).not.toHaveBeenCalled();
 });
+
+it("PGN admission polling yields foreground capacity while graph and queue publication progress", async () => {
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  await openDialog();
+  const fetcher = vi.mocked(fetch);
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  await screen.findByRole("heading", { name: "Imported" });
+  const polls = fetcher.mock.calls.filter(([url]) => String(url).endsWith("/repertoires") || String(url).includes("/queue/window"));
+  expect(polls.length).toBe(3);
+  for (const [, options] of polls)
+    expect(new Headers(options?.headers).get("X-Tempo-Work-Class")).toBe("background");
+});

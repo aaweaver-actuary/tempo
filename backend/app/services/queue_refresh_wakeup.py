@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import logging
 
 
@@ -54,6 +54,7 @@ def wake_queue_refresh(*, eligible_at: datetime | None = None) -> None:
         with celery_app.connection_for_write(connect_timeout=1, transport_options=transport_options) as connection:
             celery_app.send_task("app.tasks.poll_background_tasks", queue="background",
                                  connection=connection, retry=False, ignore_result=True,
+                                 headers={"queue_refresh_wake": True},
                                  **delivery_options)
     except Exception:
         # The command has committed. Do not misreport it as failed or undo its
@@ -64,3 +65,8 @@ def wake_queue_refresh(*, eligible_at: datetime | None = None) -> None:
             "Queue refresh wake unavailable; durable work remains pending for periodic recovery; next_attempt_at=%s",
             eligible_at,
         )
+
+
+def wake_queue_refresh_after_foreground_denial() -> None:
+    """Retain one future capacity hint without occupying the denied worker."""
+    wake_queue_refresh(eligible_at=datetime.now(timezone.utc) + timedelta(seconds=1))

@@ -248,6 +248,7 @@ test("Black Train prompt remains playable with a fully visible narrow board", as
   await page
     .getByRole("button", { name: "Import repertoire", exact: true })
     .click();
+  await expect(page.getByText(/2 cards are in today’s queue/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "View imported repertoire" }).click();
   await nav(page, "Train");
   await page.setViewportSize({ width: 390, height: 844 });

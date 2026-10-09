@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 import os
 import json
@@ -21,6 +20,8 @@ from psycopg.errors import TransactionTimeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import command_dispatch, postgres_store, tasks
+
+DSN = "postgresql://postgres@postgres:5432/tempo"
 from app.command_gateway import (
     CommandConflict, MAX_BACKGROUND_CYCLE_ATTEMPTS, claim_recoverable_operation,
     execute_command, read_operation, record_operation_attempt, register_command, request_digest,
@@ -171,12 +172,11 @@ def test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollb
     print("PASS test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollback")
 
 
-def main() -> None:
+def main(database_url=DSN) -> None:
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("This check requires the disposable PostgreSQL test instance")
-    os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
+    os.environ["TEMPO_DATABASE_WRITE_URL"] = database_url
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
-    tasks.activity_gate.background_job = lambda *_arguments: nullcontext()
 
     attempts: list[str] = []
     should_fail = True
@@ -337,5 +337,15 @@ def main() -> None:
     print("PASS finite retries, restart, conflict states and race, explicit cycle, stale lease, and one business effect")
 
 
+def proof_operation_recovery(parent_database_url=DSN):
+    """No deployed worker can claim this rehearsal's private test commands."""
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Operation recovery requires a disposable PostgreSQL instance')
+    import check_postgres_graph_retention as fixtures
+    with patch.dict(os.environ, {'TEMPO_REDIS_URL': os.environ.get('TEMPO_REDIS_URL', 'redis://redis:6379/0')}), \
+            patch.object(fixtures, 'DATABASE_URL', parent_database_url), fixtures.owned_fixture_database():
+        main(fixtures.DATABASE_URL)
+
+
 if __name__ == "__main__":
-    main()
+    proof_operation_recovery()

@@ -105,17 +105,20 @@ it("PD-82 prefix selectors distinguish identical learner moves across opponent b
 });
 
 
-it("PD-82 temporary diagnostic deadline keeps evidence unavailable until explicit retry succeeds", async () => {
+it.each([
+  "Prefix difficulty is temporarily unavailable. Retry after study work settles.",
+  "Waiting for a database section",
+])("PD-82 database refusal remains visible until explicit retry succeeds: %s", async (temporaryMessage) => {
   let detailReads = 0;
   const fetcher = vi.fn(async (url: string) => {
     if (!url.includes("manifest_id=")) return Response.json(listing);
     detailReads += 1;
-    return detailReads === 1 ? Response.json({ detail: "Prefix difficulty is temporarily unavailable. Retry after study work settles." },
+    return detailReads === 1 ? Response.json({ detail: temporaryMessage },
       { status: 503, headers: { "Retry-After": "1" } }) : Response.json(detail);
   });
   vi.stubGlobal("fetch", fetcher);
   mount(); await inspect();
-  await screen.findByText("Prefix difficulty is temporarily unavailable. Retry after study work settles.");
+  await screen.findByText(temporaryMessage);
   expect(screen.queryByText("Unknown")).toBeNull();
   expect(screen.queryByText("Strong evidence")).toBeNull();
   expect(detailReads).toBe(1);
@@ -123,4 +126,14 @@ it("PD-82 temporary diagnostic deadline keeps evidence unavailable until explici
   await screen.findByText("Strong evidence");
   expect(screen.getByText("Unknown")).toBeTruthy();
   expect(detailReads).toBe(2);
+});
+
+it("PD-82 foreground admission denial resumes the evidence read instead of leaving a permanent error", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Waiting for foreground activity" }, { status: 503, headers: { "Retry-After": "0.001" } }))
+    .mockResolvedValueOnce(Response.json(listing));
+  vi.stubGlobal("fetch", fetcher);
+  mount();
+  await screen.findByRole("button", { name: /^Inspect prefix/ });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });

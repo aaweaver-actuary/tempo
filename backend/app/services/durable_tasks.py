@@ -15,6 +15,7 @@ from .background_activity import claimable, control_order
 from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, task_admission_sql
 from .background_metrics import increment, record_event_counts
 from .queue_refresh_wakeup import mark_queue_refresh_requested, wake_queue_refresh
+from .activity_gate import activity_gate
 
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
@@ -248,10 +249,9 @@ def claim_task(
 
     def operation(database: sqlite3.Connection) -> dict | None:
         now = _iso()
-        reclaimed_phase = "" if postgres_store.configured() else ",phase='reclaimed'"
         reclaimed = database.execute(
-            f"""UPDATE background_tasks
-               SET state='queued'{reclaimed_phase},lease_token=NULL,lease_expires_at=NULL,
+            """UPDATE background_tasks
+               SET state='queued',lease_token=NULL,lease_expires_at=NULL,
                    updated_at=?
                WHERE state='leased' AND lease_expires_at<=? RETURNING id,kind,generation""",
             (now, now),
@@ -284,10 +284,9 @@ def claim_task(
             return None
         lease_token = str(uuid.uuid4())
         lease_expires_at = _iso(_now() + timedelta(seconds=lease_seconds))
-        claimed_phase = "" if postgres_store.configured() else ",phase='claimed'"
         changed = database.execute(
-            f"""UPDATE background_tasks
-               SET state='leased'{claimed_phase},attempt_count=attempt_count+1,
+            """UPDATE background_tasks
+               SET state='leased',attempt_count=attempt_count+1,
                    lease_token=?,lease_expires_at=?,started_at=COALESCE(started_at,?),updated_at=?
                WHERE id=? AND generation=? AND state IN ('queued','retrying')""",
             (lease_token, lease_expires_at, now, now, row["id"], row["generation"]),
@@ -480,7 +479,28 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
         _record_event(database, task_id, generation, state, state, sanitized_error, kind=row["kind"])
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 
-    return submit_background_write(operation, label=f"fail:{task_id}")
+    with activity_gate.background_control():
+        return submit_background_write(operation, label=f"fail:{task_id}")
+
+
+def defer_task_for_foreground(task: dict) -> bool:
+    """Release a raced claim without changing its checkpoint or failure budget."""
+    def operation(database):
+        changed = database.execute(
+            """UPDATE background_tasks SET state='retrying',
+               attempt_count=CASE WHEN attempt_count>0 THEN attempt_count-1 ELSE 0 END,
+               next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (_iso(_now() + timedelta(seconds=1)), _iso(),
+             task['id'], task['generation'], task['lease_token']),
+        ).rowcount
+        if changed:
+            _record_event(database, task['id'], task['generation'], 'foreground_deferred',
+                          task.get('phase'), kind=task['kind'])
+        return bool(changed)
+
+    with activity_gate.background_control():
+        return submit_background_write(operation, label=f"foreground-defer:{task['id']}")
 
 
 def defer_task_for_contention(task_id: str, generation: int, lease_token: str, *, kind: str | None = None) -> bool:
@@ -501,7 +521,8 @@ def defer_task_for_contention(task_id: str, generation: int, lease_token: str, *
             _record_event(database, task_id, generation, "yielded", "yielded", kind=kind)
         return bool(changed)
 
-    return submit_background_write(operation, label=f"yield:{task_id}")
+    with activity_gate.background_control():
+        return submit_background_write(operation, label=f"yield:{task_id}")
 
 
 def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
@@ -548,7 +569,8 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
                           sanitized_error, kind=task['kind'])
         return next_attempt_at if changed else None
 
-    committed_retry_at = submit_background_write(operation, label=f"deadline:{task['id']}")
+    with activity_gate.background_control():
+        committed_retry_at = submit_background_write(operation, label=f"deadline:{task['id']}")
     # The write boundary has committed and released its PostgreSQL connection.
     # ETA is only a capacity hint; execution-time claims still enforce eligibility.
     if committed_retry_at is not None and task['kind'] == 'daily_queue':

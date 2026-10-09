@@ -139,6 +139,7 @@ def test_docker_game_report_rejects_wrong_history_and_depth_without_advancing(tm
 
 
 def test_browser_activity_preempts_docker_search_without_database_access(tmp_path, monkeypatch):
+    monkeypatch.setattr(activity_gate, "_browser_active_until", 0)
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         response = client.post("/api/system/browser-activity",

@@ -1,5 +1,6 @@
 """Real foreground/maintenance interleaving and poisoned-receipt recovery."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 import json
 import os
@@ -386,6 +387,24 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
         postgres_store.close_pools()
 
 
+@contextmanager
+def _owned_queue_refresh_admission():
+    """Direct helper work must not inherit the parent API's health/request leases."""
+    from app.services import redis_admission_gate
+
+    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable" or not redis_admission_gate.configured():
+        raise RuntimeError("Queue preparation admission isolation requires disposable PostgreSQL/Redis")
+    namespace = "tempo:test:queue-preparation:" + uuid.uuid4().hex
+    owned_keys = namespace + ":foreground", namespace + ":background"
+    try:
+        with patch.object(redis_admission_gate, "_FOREGROUND_KEY", owned_keys[0]), \
+                patch.object(redis_admission_gate, "_BACKGROUND_KEY", owned_keys[1]):
+            yield
+    finally:
+        redis_admission_gate.client().delete(*owned_keys)
+
+
+@_owned_queue_refresh_admission()
 def test_postgres_real_game_obligation_admission_restart_publication_and_remediation():
     """One published canonical miss overrides locks/caps and survives restart."""
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":

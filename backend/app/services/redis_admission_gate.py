@@ -17,6 +17,10 @@ import redis
 _LOGGER = logging.getLogger("tempo.admission")
 
 
+class BackgroundAdmissionDeferred(RuntimeError):
+    """Admission denied or unavailable; durable intent must be retained."""
+
+
 _REGISTER_FOREGROUND = """
 local now = tonumber(ARGV[1])
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
@@ -105,13 +109,15 @@ def foreground_lease() -> Iterator[None]:
 @contextmanager
 def background_lease() -> Iterator[None]:
     token = uuid.uuid4().hex
-    while not client().eval(
-        _CLAIM_BACKGROUND, 2, _FOREGROUND_KEY, _BACKGROUND_KEY,
-        int(time.time() * 1000), token, _BACKGROUND_LEASE_MS,
-    ):
-        from .background_runtime import heartbeat
-        heartbeat()
-        time.sleep(0.01)
+    try:
+        admitted = client().eval(
+            _CLAIM_BACKGROUND, 2, _FOREGROUND_KEY, _BACKGROUND_KEY,
+            int(time.time() * 1000), token, _BACKGROUND_LEASE_MS,
+        )
+    except redis.RedisError as error:
+        raise BackgroundAdmissionDeferred('Foreground admission is unavailable') from error
+    if not admitted:
+        raise BackgroundAdmissionDeferred('Waiting for foreground activity')
     try:
         yield
     finally:

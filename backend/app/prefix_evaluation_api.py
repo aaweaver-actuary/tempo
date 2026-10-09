@@ -26,6 +26,15 @@ MAX_SOURCE_BYTES = 4 * 1024 * 1024
 COMPUTATION_SECONDS = 10
 
 
+class PrefixEvaluationForegroundDeferred(HTTPException):
+    """Keep the public retry response distinct from an execution deadline."""
+
+    def __init__(self):
+        super().__init__(503, {'code': 'evaluation_busy',
+                              'message': 'Study work is active. Retry the diagnostic when study is idle.'},
+                         headers={'Retry-After': '1'})
+
+
 def diagnostic_error(code, message, status=409):
     return HTTPException(status, {'code': code, 'message': message},
                          headers={'Retry-After': '1'} if status == 503 else None)
@@ -48,7 +57,7 @@ def check_available(deadline):
     if monotonic() >= deadline:
         raise diagnostic_error('evaluation_busy', 'Evaluation exceeded its computation deadline. Retry when study is idle.', 503)
     if activity_gate.foreground_waiting or (redis_admission_gate.configured() and redis_admission_gate.foreground_present()):
-        raise diagnostic_error('evaluation_busy', 'Study work is active. Retry the diagnostic when study is idle.', 503)
+        raise PrefixEvaluationForegroundDeferred()
 
 
 @contextmanager

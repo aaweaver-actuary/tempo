@@ -21,6 +21,7 @@ from app.services.opening_graph import GraphInput, build_graph
 from app.services.postgres_opening_graph import stage_graph_steps, create_graph_cards, execute_postgres_opening_graph_slice
 from app.services.postgres_integrity import execute_postgres_integrity_slice
 from app.services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
+from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 
 
 def idle_call(callback):
@@ -29,9 +30,9 @@ def idle_call(callback):
     while time.monotonic()<deadline:
         try:
             return callback()
-        except (HTTPException,psycopg.errors.SerializationFailure) as error:
+        except (HTTPException,psycopg.errors.SerializationFailure,BackgroundAdmissionDeferred) as error:
             cause=error.__cause__ if isinstance(error,psycopg.errors.SerializationFailure) else error
-            if not (isinstance(cause,HTTPException) and cause.status_code==503 and isinstance(cause.detail,dict)
+            if not isinstance(error, BackgroundAdmissionDeferred) and not (isinstance(cause,HTTPException) and cause.status_code==503 and isinstance(cause.detail,dict)
                     and cause.detail.get('message')=='Study work is active. Retry the diagnostic when study is idle.'):
                 raise
             from app.services.redis_admission_gate import foreground_present
@@ -76,11 +77,40 @@ def isolate_unrelated_publication_tasks():
 
 def drain(kind, handler, *, slice_budget=300):
     count = 0
-    while task := claim_task(kind):
-        handler(task)
+    while task := idle_call(lambda: claim_task(kind)):
+        idle_call(lambda: handler(task))
         count += 1
         assert count < slice_budget, (kind, task)
     return count
+
+
+def test_postgres_transition_driver_waits_only_for_foreground_admission():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from app.database import background_connection
+    from app.services.redis_admission_gate import foreground_lease
+    attempted, admitted = Event(), Event()
+    def bounded_read():
+        attempted.set()
+        with background_connection() as database:
+            admitted.set()
+            assert database.execute_native('SHOW transaction_timeout').fetchone()[0] == '250ms'
+            return database.execute_native('SELECT 1').fetchone()[0]
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with foreground_lease():
+            result = executor.submit(idle_call, bounded_read)
+            assert attempted.wait(5) and not admitted.is_set() and not result.done()
+        assert result.result(timeout=10) == 1
+    for failure in (RuntimeError('execution failed'), HTTPException(503, 'provider unavailable')):
+        def reject():
+            raise failure
+        try:
+            idle_call(reject)
+        except type(failure) as observed:
+            assert observed is failure
+        else:
+            raise AssertionError('Transition driver hid an execution failure')
+    print('PASS test_postgres_transition_driver_waits_only_for_foreground_admission (real Redis, unchanged budget, execution failures retained)')
 
 
 def publish(payload, after_activation=None):
@@ -400,6 +430,12 @@ def test_issue80_real_application_acceptance_and_activation_have_constant_lock_s
 
 
 def test_issue80_queue_and_row_contention_yield_without_losing_operation_identity():
+    from check_postgres_graph_retention import owned_admission_scope
+    with owned_admission_scope('transition-contention-'+uuid.uuid4().hex):
+        _assert_transition_row_contention()
+
+
+def _assert_transition_row_contention():
     from concurrent.futures import ThreadPoolExecutor
     import threading
     for producer_kind in ('queue', 'card', 'graph'):
@@ -885,10 +921,10 @@ def test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activa
             assert results==[{'status':'pending'},{'status':'pending'}]
         finally:
             command_gateway._preparers[application.COMMAND]=original_prepare
-        first=claim_task(application.TASK_KIND)
+        first=idle_call(lambda:claim_task(application.TASK_KIND))
         assert first
-        application.execute_application_slice(first)
-        assert application.execute_application_slice(first) is False,'Expired stage lease published twice'
+        idle_call(lambda:application.execute_application_slice(first))
+        assert idle_call(lambda:application.execute_application_slice(first)) is False,'Expired stage lease published twice'
         drain(application.TASK_KIND,application.execute_application_slice)
         def interrupted_create(database,batch,day,**options):
             original_create(database,batch,day,**options)
@@ -1025,7 +1061,7 @@ def test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_t
     with fixture('publication-failure') as (rep,other,lines,steps):
         plan,payload=ready_plan(rep,lines)
         execute(payload);drain(application.TASK_KIND,application.execute_application_slice);execute(payload)
-        graph=claim_task('opening_graph_rebuild')
+        graph=idle_call(lambda:claim_task('opening_graph_rebuild'))
         assert graph and graph['payload']['repertoire_id']==rep
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s',(graph['id'],))
@@ -1109,7 +1145,7 @@ def test_issue80_staging_failure_releases_fences_without_product_activation_and_
     with fixture('stage-failure') as (rep,other,lines,steps):
         plan,payload=ready_plan(rep,lines)
         execute(payload)
-        task=claim_task(application.TASK_KIND)
+        task=idle_call(lambda:claim_task(application.TASK_KIND))
         assert task
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s',(task['id'],))
@@ -1153,19 +1189,16 @@ def test_issue80_unclean_source_integrity_rejects_before_acceptance():
 
 def wait_for_staged_http_application(operation_id, redeliver, deadline):
     """Drive this receipt's eligible retry while the proof's scheduler is stopped."""
-    redelivered_attempt = None
+    redelivered_retry_at = None
     result = read_operation(operation_id)
     while result['state'] in {'unknown', 'queued', 'executing', 'retrying'} and time.monotonic() < deadline:
         if result['state'] == 'retrying':
-            assert result.get('last_error') == {
-                'class': 'SerializationFailure',
-                'message': 'Transition preparation yielded to foreground work; retry its durable operation',
-            }, result
+            assert not result.get('last_error') and result['attempt_count'] == result['cycle_attempt_count'] == 0, result
             eligible_at = datetime.fromisoformat(result['next_retry_at'])
             if (eligible_at <= datetime.now(timezone.utc)
-                    and result['attempt_count'] != redelivered_attempt):
+                    and result['next_retry_at'] != redelivered_retry_at):
                 redeliver()
-                redelivered_attempt = result['attempt_count']
+                redelivered_retry_at = result['next_retry_at']
         time.sleep(0.01)
         result = read_operation(operation_id)
     assert result['state'] == 'pending' and result['transition']['state'] == 'staging', result
@@ -1192,10 +1225,10 @@ def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_f
                 result=read_operation(payload['operation_id'])
                 while result['state'] in {'unknown','queued','executing'} and time.monotonic()<deadline:
                     time.sleep(0.01);result=read_operation(payload['operation_id'])
-                assert result['state']=='retrying',result
+                assert result['state']=='retrying' and result['attempt_count']==result['cycle_attempt_count']==0,result
         staged=wait_for_staged_http_application(payload['operation_id'],dispatch_original,deadline)
         if force_foreground_yield:
-            assert staged['attempt_count']>=2,staged
+            assert staged['attempt_count']==staged['cycle_attempt_count']==1,staged
         final=publish(payload)
         with urlopen(request(payload['request']),timeout=10) as response:
             assert response.status==200 and json.load(response)==final
@@ -1456,6 +1489,7 @@ def main():
     time.tzset()
     os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_PREFIX_APPLICATION_PROOF_URL','postgresql://postgres@postgres:5432/tempo')
     os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+    test_postgres_transition_driver_waits_only_for_foreground_admission()
     if '--activation-scaling' in sys.argv:
         with isolate_unrelated_publication_tasks():
             test_pr102_activation_sql_statement_count_is_independent_of_transition_size()

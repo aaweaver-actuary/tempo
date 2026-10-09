@@ -94,7 +94,7 @@ export function ImportDialogBox({
   ): Promise<number> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
       signal.throwIfAborted();
-      const response = await fetch(`${API_URL}/api/repertoires`, { signal });
+      const response = await fetch(`${API_URL}/api/repertoires`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
       if (response.ok) {
         const result = await readJsonResponse(
           response,
@@ -108,14 +108,14 @@ export function ImportDialogBox({
         if (repertoire?.integrity_scan_status === "failed")
           throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
         if (repertoire?.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
-          const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`, { signal });
+          const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
           if (queueResponse.ok) {
             const queue = await readJsonResponse(queueResponse, queueEnvelopeSchema, "imported repertoire queue");
             const projection = queue.projection;
             if (projection?.state === "failed") throw new Error("Daily queue failed after import. Retry the failed task in Settings → Service status.");
             if (projection?.state === "ready" && !projection.refresh_pending && projection.updated_at &&
                 Date.parse(projection.updated_at) >= Date.parse(repertoire.graph_updated_at)) {
-              const refreshedResponse = await fetch(`${API_URL}/api/repertoires`, { signal });
+              const refreshedResponse = await fetch(`${API_URL}/api/repertoires`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
               if (refreshedResponse.ok) {
                 const refreshed = await readJsonResponse(refreshedResponse, repertoiresResponseSchema, "published repertoire admission");
                 const refreshedRepertoire = refreshed.repertoires.find((candidate) => candidate.id === repertoireId);

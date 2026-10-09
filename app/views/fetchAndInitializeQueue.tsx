@@ -129,7 +129,7 @@ function retainPendingFailures(
     failure.expectedRevision === card.revision) ? { ...card, attemptFailed: true } : card);
 }
 
-async function fetchQueueWindow(signal: AbortSignal): Promise<Response> {
+async function fetchQueueWindow(signal: AbortSignal, observePreparation = false): Promise<Response> {
   const controller = new AbortController();
   const abortSupersededRequest = () => controller.abort();
   if (signal.aborted) abortSupersededRequest();
@@ -140,7 +140,10 @@ async function fetchQueueWindow(signal: AbortSignal): Promise<Response> {
     controller.abort();
   }, 15_000);
   try {
-    return await fetch(`${API_URL}/api/queue/window?limit=20&include_opening_evidence=true`, { signal: controller.signal });
+    return await fetch(`${API_URL}/api/queue/window?limit=20&include_opening_evidence=true`, {
+      signal: controller.signal,
+      ...(observePreparation ? { headers: { "X-Tempo-Work-Class": "background" } } : {}),
+    });
   } catch (error) {
     if (timedOut)
       throw new Error("Queue request timed out after 15 seconds. Retry loading the queue.", { cause: error });
@@ -169,7 +172,7 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
 async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayload> {
   let failedRequests = 0;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const response = await fetchQueueWindow(signal);
+    const response = await fetchQueueWindow(signal, attempt > 0);
     if (response.ok) {
       failedRequests = 0;
       let payload: QueuePayload;
@@ -198,6 +201,10 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
       retryable = payload.retryable === true || retryable;
     } catch {
       // Keep the stable HTTP fallback when the service returned no JSON body.
+    }
+    if (response.status === 503 && detail === "Waiting for foreground activity") {
+      await waitForQueueRetry(250, signal);
+      continue;
     }
     failedRequests += 1;
     if (!retryable || failedRequests >= 3) throw new Error(detail);

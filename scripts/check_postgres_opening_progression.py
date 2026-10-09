@@ -1,4 +1,5 @@
 """Real review/queue transactions in an owned freshly migrated disposable database."""
+from contextlib import ExitStack
 from datetime import date, datetime, timezone
 import json
 import os
@@ -14,7 +15,7 @@ from psycopg import sql
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app import main, postgres_store, review_commands
 from app.models import ReviewRequest
-from app.services.activity_gate import activity_gate
+from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 from app.services.durable_tasks import claim_task
 from app.services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 
@@ -45,6 +46,8 @@ def drain_queue_refresh(*, restart=False):
         task = claim_task('daily_queue')
         assert task is not None, 'Expected a runnable bounded queue slice'
         if restart and slice_index == 0:
+            with postgres_store.connection(read_only=True) as database:
+                before_denial = dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone())
             entered = Event()
             completed = Event()
             failures = []
@@ -60,11 +63,14 @@ def drain_queue_refresh(*, restart=False):
                 worker = Thread(target=run)
                 worker.start()
                 assert entered.wait(2)
-                assert not completed.wait(0.05), 'Background slice crossed foreground admission'
+                assert completed.wait(2), 'Denied background slice occupied the worker'
+                assert len(failures) == 1 and isinstance(failures[0], BackgroundAdmissionDeferred), failures
                 with postgres_store.connection(read_only=True) as database:
                     assert database.execute('SELECT 1').fetchone()[0] == 1
+                    assert dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone()) == before_denial
             worker.join(5)
-            assert not worker.is_alive() and not failures, failures
+            assert not worker.is_alive()
+            execute_postgres_queue_refresh_slice(task)
         else:
             execute_postgres_queue_refresh_slice(task)
         if restart and slice_index == 1:
@@ -94,6 +100,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
     connection_info = psycopg.conninfo.conninfo_to_dict(database_url)
     postgres_store.close_pools()
     admin_info = {**connection_info, 'dbname': 'postgres'}
+    fixture_scope = ExitStack()
     try:
         with psycopg.connect(**admin_info, autocommit=True) as admin:
             admin.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(fixture_database)))
@@ -102,6 +109,8 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
         apply_migrations(fixture_url)
         os.environ['TEMPO_DATABASE_WRITE_URL'] = fixture_url
         os.environ['TEMPO_DATABASE_READ_URL'] = fixture_url
+        from check_postgres_graph_retention import owned_admission_scope
+        fixture_scope.enter_context(owned_admission_scope(fixture_database))
         today = date.today().isoformat()
         with postgres_store.connection() as database:
             database.execute('INSERT INTO settings(id,tactics_new_per_day,study_new_per_day) VALUES(1,0,0)')
@@ -153,6 +162,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
         print('PASS test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound')
     finally:
+        fixture_scope.close()
         postgres_store.close_pools()
         for key, value in [('TEMPO_DATABASE_WRITE_URL', original_write_url), ('TEMPO_DATABASE_READ_URL', original_read_url)]:
             if value is None:
