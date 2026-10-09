@@ -87,12 +87,12 @@ def test_repertoire_statistics_primary_game_decisions_and_position_navigation(tm
         assert client.get("/api/games/summary", params={"fen": START, "repertoire_id": "second"}).json()["total"] == 0
 
 
-def test_repertoire_statistics_unlock_forecast_and_paused_parent(tmp_path, monkeypatch):
+def test_repertoire_statistics_practice_readiness_and_paused_parent(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
             _seed_repertoire(db, "first", "parent")
-            db.execute("UPDATE cards SET state='mature' WHERE id='parent'")
+            db.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('parent','again',?,0,0)", (date.today().isoformat(),))
             db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES('child','first','response',?,'[\"e2e4\"]','locked',?)", (START, date.today().isoformat()))
             db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('first','child')")
             db.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,segment_kind,
@@ -108,12 +108,13 @@ def test_repertoire_statistics_unlock_forecast_and_paused_parent(tmp_path, monke
         assert paused["unlocks"][0]["earliest_unlock_date"] is None
         with database.connection() as db:
             db.execute("UPDATE cards SET pending_validation=0,state='learning',introduced_at=? WHERE id='parent'", (date.today().isoformat(),))
+            db.execute("UPDATE reviews SET invalidated_at=? WHERE card_id='parent'", (date.today().isoformat(),))
         forecast = client.get("/api/repertoires/first/statistics").json()["unlocks"][0]
-        assert forecast["status"] == "forecast"
-        assert forecast["earliest_unlock_date"] >= date.today().isoformat()
+        assert forecast["status"] == "waiting_practice"
+        assert forecast["earliest_unlock_date"] is None
 
 
-def test_repertoire_statistics_batches_forecast_parent_reads(tmp_path, monkeypatch):
+def test_repertoire_statistics_readiness_uses_indexed_exposure_without_history_or_seed_reads(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app):
         with database.connection() as db:
@@ -129,6 +130,7 @@ def test_repertoire_statistics_batches_forecast_parent_reads(tmp_path, monkeypat
                     "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,'first','response',?,'[\"e2e4\"]','locked',?)",
                     (child_id, START, date.today().isoformat()),
                 )
+                db.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'again',?,0,0)", (parent_id, date.today().isoformat()))
                 db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('first',?)", (parent_id,))
                 db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('first',?)", (child_id,))
                 db.execute(
@@ -153,8 +155,8 @@ def test_repertoire_statistics_batches_forecast_parent_reads(tmp_path, monkeypat
         assert all(item["earliest_unlock_date"] == date.today().isoformat() for item in result["unlocks"])
         parent_review_queries = [statement for statement in statements if "FROM reviews WHERE card_id" in statement]
         parent_seed_queries = [statement for statement in statements if "FROM opening_card_schedule_seeds WHERE card_id" in statement]
-        assert len(parent_review_queries) == 1
-        assert len(parent_seed_queries) == 1
+        assert len(parent_review_queries) == 0
+        assert len(parent_seed_queries) == 0
 
 
 def test_repertoire_game_refresh_yields_to_foreground_and_replays_once_after_restart(tmp_path, monkeypatch):
@@ -235,3 +237,33 @@ def test_repertoire_statistics_gets_are_query_only_and_within_foreground_read_bu
             assert response.status_code == 200, response.text
         assert time.perf_counter() - started < 1.0
         assert database.DB_PATH.read_bytes() == before
+
+
+def test_repertoire_statistics_shared_child_keeps_requested_route_with_any_current_practiced_parent(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        with database.connection() as db:
+            _seed_repertoire(db, "first", "unpracticed-parent")
+            _seed_repertoire(db, "second", "practiced-parent")
+            db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES('shared-child','first','response',?,'[\"e2e4\"]','locked',?)", (START, date.today().isoformat()))
+            for repertoire_id, parent_id in [('first', 'unpracticed-parent'), ('second', 'practiced-parent')]:
+                db.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (repertoire_id, 'shared-child'))
+                db.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,segment_kind,
+                    decision_fen_keys_json,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color)
+                    VALUES(?,1,?,1,'decision',?,'shared-child',?,?,?,'[\"e2e4\"]','white')""",
+                    (repertoire_id, f'line-{repertoire_id}', json.dumps([FEN_KEY]), parent_id, FEN_KEY, START))
+            db.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('practiced-parent','again',?,0,0)", (date.today().isoformat(),))
+        for repertoire_id, expected_parent_id in [('first', 'unpracticed-parent'), ('second', 'practiced-parent')]:
+            unlocks = statistics_service.repertoire_statistics(repertoire_id, 'all')['unlocks']
+            assert len(unlocks) == 1
+            assert unlocks[0]['card_id'] == 'shared-child'
+            assert unlocks[0]['status'] == 'ready'
+            assert unlocks[0]['parent_card_id'] == expected_parent_id
+            assert unlocks[0]['line_name'] == repertoire_id
+        with database.connection() as db:
+            db.execute("UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id='second'")
+        unlocks = statistics_service.repertoire_statistics('first', 'all')['unlocks']
+        assert len(unlocks) == 1
+        assert unlocks[0]['status'] == 'waiting_practice'
+        assert unlocks[0]['parent_card_id'] == 'unpracticed-parent'
+        assert unlocks[0]['line_name'] == 'first'

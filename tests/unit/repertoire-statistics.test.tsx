@@ -14,7 +14,7 @@ const fixture = (url: string) => url.includes("/positions") ? {
     cards: { total: 5, new: 1, learning: 2, mature: 1, locked: 1, difficult: 1, due_today: 1, due_next_seven_days: 2 },
     study: { correct: 4, attempts: 5, accuracy: 0.8 },
     games: { matched: 4, correct: 2, decisions: 4, adherence: 0.5, wins: 2, draws: 1, losses: 1, positions_seen: 1, positions_total: 3 },
-    unlocks: [{ card_id: "child", parent_card_id: "parent", line_name: "Main line", parent_due_date: "2026-09-27", earliest_unlock_date: "2026-09-28", status: "forecast" }],
+    unlocks: [{ card_id: "child", parent_card_id: "parent", line_name: "Main line", parent_due_date: "2026-09-27", earliest_unlock_date: "2026-09-28", status: "ready" }],
   };
 
 beforeEach(() => vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(fixture(url)))));
@@ -27,7 +27,8 @@ it("repertoire statistics separates study accuracy and game adherence and opens 
   await waitFor(() => expect(screen.getByText("80.0%")).toBeTruthy());
   expect(screen.getByText("50.0%")).toBeTruthy();
   expect(screen.getByText(/1 studied · 2 unseen/)).toBeTruthy();
-  expect(screen.getByText(/Earliest dates assume/)).toBeTruthy();
+  expect(screen.getByText(/within your daily new-card limit/)).toBeTruthy();
+  expect(screen.getByText(/Ready for introduction/)).toBeTruthy();
   expect(screen.getByTestId("repertoire-board")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "View supporting games" }));
   expect(onShowGamesAtPosition).toHaveBeenCalledWith("start w KQkq - 0 1", "rep");
@@ -70,4 +71,19 @@ it("repertoire statistics directs a failed comparison task to service status", a
     onBack={vi.fn()} onShowGamesAtPosition={vi.fn()} />);
   await waitFor(() => expect(screen.getByText(/Game comparisons failed/)).toBeTruthy());
   expect(screen.getByText(/Retry the failed task in Settings/)).toBeTruthy();
+});
+
+
+it("opening progression statistics explain waiting practice and paused repairs without maturity dates", async () => {
+  vi.mocked(fetch).mockImplementation(async (input) => Response.json(
+    String(input).includes("/positions") ? fixture(String(input)) : { ...fixture(String(input)), unlocks: [
+      { card_id: "child", parent_card_id: "parent", line_name: "Main line", parent_due_date: "2026-09-27", earliest_unlock_date: null, status: "waiting_practice" },
+      { card_id: "paused", parent_card_id: "repair", line_name: "Side line", parent_due_date: "2026-09-27", earliest_unlock_date: null, status: "paused" },
+    ] },
+  ));
+  render(<RepertoireStatistics repertoireId="rep" repertoireName="Main" theme="brown" pieceSet="cburnett"
+    onBack={vi.fn()} onShowGamesAtPosition={vi.fn()} />);
+  await waitFor(() => expect(screen.getByText(/Waiting for parent practice/)).toBeTruthy());
+  expect(screen.getByText(/Paused for repair or validation/)).toBeTruthy();
+  expect(screen.queryByText(/Earliest dates assume/)).toBeNull();
 });

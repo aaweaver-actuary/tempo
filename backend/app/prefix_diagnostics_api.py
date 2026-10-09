@@ -32,7 +32,8 @@ def diagnostic_read():
             with postgres_store.connection(read_only=True, background=True, repeatable_read=True) as database:
                 yield database
     except (psycopg.OperationalError, psycopg.errors.QueryCanceled,
-            psycopg.errors.LockNotAvailable, PoolTimeout, redis.RedisError) as error:
+            psycopg.errors.LockNotAvailable, psycopg.errors.TransactionTimeout,
+            PoolTimeout, redis.RedisError) as error:
         raise diagnostic_error('Prefix difficulty is temporarily unavailable. Retry after study work settles.', 503) from error
 
 
