@@ -95,8 +95,8 @@ def project_stages(stages, preferences, *, offset=0, limit=50, group='all'):
     grouped=defaultdict(list)
     for stage in stages:
         stage=dict(stage)
-        stage['paused_by_settings']=bool(stage.get('settings_disabled',stage.get('paused_by_settings',False)))
-        stage['manual_paused']=bool(stage.get('manual_paused',stage.get('paused',False))) and not stage['paused_by_settings']
+        stage['manual_paused']=bool(stage.get('manual_paused',bool(stage.get('paused',False)) and not stage.get('paused_by_settings',False)))
+        stage['paused_by_settings']=stage['state'] != 'complete' and bool(stage.get('settings_disabled',stage.get('paused_by_settings',False)))
         stage['paused']=stage['manual_paused'] or stage['paused_by_settings']
         stage['historical']=bool(stage.get('historical',False))
         stage['phase']=stage.get('reported_phase') or stage.get('phase') or stage['state']
@@ -118,8 +118,7 @@ def project_stages(stages, preferences, *, offset=0, limit=50, group='all'):
         all_complete=all(stage['state']=='complete' for stage in members)
         completed_at=max((stage['completed_at'] for stage in members if stage['completed_at']),default=None) if all_complete else None
         archived=bool(all_complete and not any(stage['paused'] or stage['error'] for stage in members) and completed_at and preferences['cleared_through'] and activity_timestamp(completed_at)<=activity_timestamp(preferences['cleared_through']))
-        classification=('history' if members[0]['historical'] or archived else 'disabled' if all(stage['paused_by_settings'] for stage in members) and not all_complete else
-                        'needs_attention' if failed else 'progressing' if active else 'waiting' if pending else 'paused' if any(stage['paused'] for stage in members) else 'finished' if all_complete else 'history')
+        classification=('history' if members[0]['historical'] or archived else 'needs_attention' if failed else 'disabled' if all(stage['paused_by_settings'] for stage in members) and not all_complete else 'progressing' if active else 'waiting' if pending else 'paused' if any(stage['paused'] for stage in members) else 'finished' if all_complete else 'history')
         leader=(failed or active or pending or members)[0]
         item={key:leader.get(key) for key in ('source','id','title','phase','generation_key','completed','total','error')}
         item.update(logical_id=logical_id,classification=classification,

@@ -52,3 +52,5 @@ project tempo-pg-regressions-82023-74f5e0e9 was removed by its runner. See
 activity-pinned-visual.log and activity-full-browser.log in the dated root
 results directory. Full PostgreSQL durability and required current-candidate
 CI remain pending, so this is focused development evidence, not release readiness.
+
+Current-head backend CI caught the previous terminal-defensive regression expecting successful completions to be settings-disabled. The expanded assertion first failed for legacy settings pauses being interpreted as manual pauses on successful work, and disabled classification hiding failed work. Classification now preserves real manual pauses separately, gives terminal failures attention precedence, and excludes successful work from settings-disabled status. The regression requires Finished for complete work, Needs attention for failed work, and retains the original 404 control rejection and no control-row insertion assertions. This is the intended Step 6 classification change, not a relaxed control contract.

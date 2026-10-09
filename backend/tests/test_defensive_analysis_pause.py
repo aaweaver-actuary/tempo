@@ -294,7 +294,9 @@ def test_activity_terminal_defensive_work_keeps_existing_control_rejection(tmp_p
             connection.execute(f'UPDATE {table} SET state=? WHERE id=?', (state, work_id))
         item = next(item for item in background_activity.list_activity()['items']
                     if item['source'] == source and item['id'] == work_id)
-        assert item['state'] == state and item['paused_by_settings'] is True
+        assert item['state'] == state
+        assert item['paused_by_settings'] is False
+        assert item['classification'] == ('finished' if state == 'complete' else 'needs_attention')
         assert TestClient(main.app).post('/api/system/activity/control', json={
             'source': source, 'id': work_id, 'action': 'resume'}).status_code == 404
         with database.read_connection() as connection:
