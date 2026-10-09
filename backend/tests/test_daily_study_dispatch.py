@@ -169,35 +169,22 @@ def test_background_execution_preserves_pause_priority_promotion_and_delayed_eli
 
 def test_background_execution_capacity_yields_to_foreground_without_leasing(dispatch_store, monkeypatch):
     queued = enqueue_daily()
-    claim_started = Event()
-    worker_finished = Event()
-    worker_errors = []
-    original_claim = tasks.claim_task
-    def observed_claim(**kwargs):
-        claim_started.set()
-        return original_claim(**kwargs)
+    executed = []
     def complete_one(claimed):
+        executed.append(claimed['id'])
         with database.connection(background=True) as connection:
             durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
-    def run_worker():
-        try:
-            tasks.poll_background_tasks.run()
-        except BaseException as error:
-            worker_errors.append(error)
-        finally:
-            worker_finished.set()
-    monkeypatch.setattr(tasks, "claim_task", observed_claim)
-    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_one)
-    worker = Thread(target=run_worker)
+    monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', complete_one)
     with tasks.activity_gate.foreground():
-        worker.start()
-        assert claim_started.wait(2)
-        assert not worker_finished.wait(0.05)
-        assert task_row(queued["id"])["lease_token"] is None
-    worker.join(2)
-    assert not worker.is_alive() and worker_errors == []
-    assert task_row(queued["id"])["state"] == "complete"
+        for _ in range(100):
+            assert tasks.poll_background_tasks.run() is False
+        assert task_row(queued['id'])['lease_token'] is None
+        assert task_row(queued['id'])['attempt_count'] == 0
+        assert dispatch_store[1] == []
+    tasks.poll_background_tasks.run()
+    assert executed == [queued['id']]
+    assert task_row(queued['id'])['state'] == 'complete'
 
 
 def test_background_congested_wakes_complete_without_broker_lease_expiries(dispatch_store, monkeypatch):
@@ -219,3 +206,94 @@ def test_background_congested_wakes_complete_without_broker_lease_expiries(dispa
         counters = connection.execute("SELECT COALESCE(SUM(lease_expiries),0),COALESCE(SUM(stale_deliveries),0),COALESCE(SUM(completed_generations),0) FROM background_metric_buckets WHERE kind='daily_queue'").fetchone()
     assert tuple(counters) == (0, 0, 5)
     assert len(executions) == 5 and wakes == []
+
+
+def test_denied_background_admission_releases_worker_without_claim_or_failure(dispatch_store, monkeypatch):
+    queued = enqueue_daily()
+    monkeypatch.setattr(tasks, 'claim_task', lambda **kwargs: pytest.fail('denied work must remain unleased'))
+    finished = Event()
+    errors = []
+    def poll():
+        try:
+            assert tasks.poll_background_tasks.run() is False
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            finished.set()
+    with tasks.activity_gate.foreground():
+        worker = Thread(target=poll)
+        worker.start()
+        assert finished.wait(1), 'foreground denial occupied the worker'
+        row = task_row(queued['id'])
+        assert row['state'] == 'queued' and row['attempt_count'] == 0
+        assert row['lease_token'] is None
+    worker.join(1)
+    assert not worker.is_alive() and errors == []
+
+
+def test_foreground_arriving_after_claim_preserves_checkpoint_and_resumes(dispatch_store, monkeypatch):
+    clock, wakes = dispatch_store
+    queued = enqueue_daily()
+    with database.connection(background=True) as connection:
+        connection.execute("UPDATE background_tasks SET phase='admit_due',payload_json=? WHERE id=?",
+                           ('{"_queue_phase":"admit_due","after_card_id":"saved"}', queued['id']))
+    executions = []
+    def raced_slice(claimed):
+        with tasks.activity_gate.foreground():
+            with database.connection(background=True) as connection:
+                pytest.fail('database admission must yield after foreground arrives')
+    monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', raced_slice)
+    assert tasks.poll_background_tasks.run() is False
+    saved = task_row(queued['id'])
+    assert saved['state'] == 'retrying' and saved['attempt_count'] == 0
+    assert saved['phase'] == 'admit_due' and 'saved' in saved['payload_json']
+    assert saved['lease_token'] is None and saved['last_error'] is None and wakes == []
+    clock[0] += timedelta(seconds=1)
+    def complete(claimed):
+        executions.append(claimed['payload']['after_card_id'])
+        with database.connection(background=True) as connection:
+            assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+        return False
+    monkeypatch.setattr(tasks, 'execute_postgres_queue_refresh_slice', complete)
+    tasks.poll_background_tasks.run()
+    tasks.poll_background_tasks.run()
+    assert executions == ['saved'] and task_row(queued['id'])['state'] == 'complete'
+
+
+def test_foreground_deferral_cannot_overwrite_new_generation(dispatch_store):
+    queued = enqueue_daily()
+    stale_claim = durable_tasks.claim_task('daily_queue')
+    replacement = enqueue_daily()
+    with tasks.activity_gate.foreground():
+        assert durable_tasks.defer_task_for_foreground(stale_claim) is False
+    current = task_row(queued['id'])
+    assert current['generation'] == replacement['generation'] and current['state'] == 'queued'
+    assert current['attempt_count'] == 0 and current['lease_token'] is None
+
+
+def test_accepted_background_receipt_remains_prompt_during_foreground(dispatch_store, monkeypatch):
+    observed = []
+    def record(*args, **kwargs):
+        with database.connection(background=True):
+            observed.append('receipt')
+        return True, {}, 'owned-attempt', 1
+    def publish(*args, **kwargs):
+        with database.connection(background=True):
+            observed.append('publication')
+        return {'accepted': True}
+    monkeypatch.setattr(tasks, 'record_operation_attempt', record)
+    monkeypatch.setattr(tasks, 'execute_command', publish)
+    with tasks.activity_gate.foreground():
+        assert tasks.execute_background_command.run('report', 'games.analysis.position.report', {}) == {'accepted': True}
+    assert observed == ['receipt', 'publication']
+
+
+def test_discretionary_background_command_retains_receipt_without_consuming_failure(dispatch_store, monkeypatch):
+    deferred = []
+    monkeypatch.setattr(tasks, 'record_operation_attempt', lambda *args, **kwargs: (True, {}, 'owned', 1))
+    monkeypatch.setattr(tasks, 'execute_command', lambda *args, **kwargs: pytest.fail('denied calculation'))
+    monkeypatch.setattr(tasks, 'record_operation_retry', lambda *args, **kwargs: pytest.fail('denial is not failure'))
+    monkeypatch.setattr(tasks, 'defer_operation_for_foreground', lambda *args: deferred.append(args))
+    with tasks.activity_gate.foreground():
+        assert tasks.execute_background_command.run('claim', 'games.analysis.position.claim', {}) is None
+    assert deferred == [('claim', 'owned')]

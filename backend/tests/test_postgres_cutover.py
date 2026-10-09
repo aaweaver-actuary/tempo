@@ -2522,6 +2522,7 @@ def test_postgres_browser_activity_extends_cross_process_foreground_admission(mo
     from fastapi.testclient import TestClient
     from app import main
 
+    monkeypatch.setattr(main.activity_gate, '_browser_active_until', 0)
     observed = []
     class RecordingRedis:
         def eval(self, script, key_count, key, timestamp, token, duration):
@@ -3170,7 +3171,7 @@ def test_postgres_queue_celery_dispatch_keeps_atomic_slice_receipt(monkeypatch):
     claimed = {"kind": "daily_queue", "id": "queue-job", "generation": 3,
                "lease_token": "current", "payload": {"queue_date": "2026-09-27"}}
     handled = []
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext())
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice",
                         lambda task: handled.append(task["id"]) or False)
     monkeypatch.setattr(tasks, "complete_task",
@@ -3880,7 +3881,7 @@ def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_st
     monkeypatch.setattr(durable_tasks, "submit_background_write", write_background)
     claimed = {"kind": "daily_queue", "id": "queue-job", "generation": 2,
                "lease_token": "current", "payload": {"queue_date": "2026-09-27"}}
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext())
     monkeypatch.setattr(tasks, "fail_task",
                         lambda *_args: pytest.fail("Expected contention must not spend a retry"))
     monkeypatch.setattr(tasks, "defer_task_for_contention", durable_tasks.defer_task_for_contention)
@@ -4375,19 +4376,14 @@ def test_postgres_cutover_foreground_admission_blocks_background_slice(monkeypat
 
     shared_redis = AtomicRedis()
     monkeypatch.setattr(redis_admission_gate, "client", lambda: shared_redis)
-    background_started = threading.Event()
-
-    def enter_background():
-        with redis_admission_gate.background_lease():
-            background_started.set()
-
     with redis_admission_gate.foreground_lease():
-        worker = threading.Thread(target=enter_background)
-        worker.start()
-        assert not background_started.wait(0.05)
-    assert background_started.wait(1)
-    worker.join(timeout=1)
-    assert not worker.is_alive()
+        with pytest.raises(redis_admission_gate.BackgroundAdmissionDeferred):
+            with redis_admission_gate.background_lease():
+                pytest.fail('Foreground admission must deny the slice')
+        assert not shared_redis.background
+    with redis_admission_gate.background_lease():
+        assert len(shared_redis.background) == 1
+    assert not shared_redis.foreground and not shared_redis.background
 
 
 def test_postgres_cutover_background_reads_respect_foreground_admission(monkeypatch):
@@ -5369,7 +5365,7 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
         tasks, "complete_task",
         lambda task_id, _generation, _lease, *, kind: completed_tasks.append(task_id),
     )
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_arguments: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_arguments, **_kwargs: nullcontext())
     assert tasks.execute_background_slice.run(claimed_task) is False
     assert completed_tasks == ["refresh-task"]
 
@@ -5887,7 +5883,7 @@ def test_postgres_maia_background_contention_retries_same_operation(monkeypatch)
         attempted.append((operation_id, command_name, payload, background, attempt_token))
         raise TransactionTimeout("bounded section expired")
 
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext())
     monkeypatch.setattr(tasks, "record_operation_attempt",
                         lambda operation_id, command_name, payload, **_kwargs:
                             (True, payload, "claimed-token", 1))

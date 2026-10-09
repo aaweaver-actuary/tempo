@@ -38,7 +38,7 @@ def timeout_database(monkeypatch):
     monkeypatch.setattr(durable_tasks, "_now", lambda: datetime(2026, 10, 4, tzinfo=timezone.utc))
     monkeypatch.setattr(durable_tasks.random, "random", lambda: 0.0)
     monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext())
     monkeypatch.setattr(tasks, "measure_handler", lambda *_args: nullcontext())
     monkeypatch.setattr(tasks, "fail_task", durable_tasks.fail_task)
     monkeypatch.setattr(tasks, "defer_task_for_contention", durable_tasks.defer_task_for_contention)

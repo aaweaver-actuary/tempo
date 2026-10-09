@@ -15,6 +15,7 @@ from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFail
 from fastapi import HTTPException
 
 from . import postgres_store
+from .services.redis_admission_gate import BackgroundAdmissionDeferred
 
 
 CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
@@ -180,6 +181,21 @@ def record_operation_retry(
         return exhausted, delay_seconds
 
 
+def defer_operation_for_foreground(operation_id: str, attempt_token: str) -> bool:
+    """A fenced admission denial is waiting, not a failed command attempt."""
+    from .services.activity_gate import activity_gate
+    with activity_gate.background_control(), _writer_connection(True) as database:
+        return bool(database.raw.execute(
+            "UPDATE operation_receipts SET state='retrying',"
+            "attempt_count=GREATEST(0,attempt_count-1),"
+            "cycle_attempt_count=GREATEST(0,cycle_attempt_count-1),"
+            "next_retry_at=NOW()+INTERVAL '1 second',lease_expires_at=NULL,"
+            "attempt_token=NULL,updated_at=NOW() "
+            "WHERE operation_id=%s AND state='executing' AND attempt_token=%s",
+            (operation_id, attempt_token),
+        ).rowcount)
+
+
 def claim_recoverable_operation() -> dict[str, Any] | None:
     """Reserve one abandoned operation for broker redelivery."""
     with _writer_connection(True) as database:
@@ -218,7 +234,8 @@ def execute_command(
         try:
             prepared = _preparers[command_name](payload)
         except (psycopg.OperationalError, psycopg.InterfaceError,
-                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
+                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout,
+                BackgroundAdmissionDeferred):
             raise
         except Exception as error:
             # Persist definitive preparation failures through the same receipt
@@ -258,7 +275,8 @@ def execute_command(
                 raise preparation_error
             result = _handlers[command_name](database, prepared)
         except (psycopg.OperationalError, psycopg.InterfaceError,
-                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
+                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout,
+                BackgroundAdmissionDeferred):
             # The broker will redeliver; an uncertain commit must not be
             # converted into a permanent failed receipt.
             raise

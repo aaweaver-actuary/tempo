@@ -17,7 +17,7 @@ from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFail
 from .celery_app import celery_app
 from .command_gateway import (
     claim_recoverable_operation, execute_command, record_operation_attempt,
-    record_operation_retry,
+    record_operation_retry, defer_operation_for_foreground,
 )
 from .database import read_connection
 from . import study_commands  # noqa: F401 - registers explicit worker commands
@@ -60,9 +60,12 @@ from .game_analysis_publication import (
 )
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
+from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .services.background_runtime import measure_handler
 from .services.durable_tasks import current_delivery, record_stale_delivery, defer_paused_defensive_task
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, defer_task_for_transaction_timeout, fail_task
+
+from .services.durable_tasks import defer_task_for_foreground
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
@@ -98,6 +101,16 @@ from .services.postgres_coverage_recovery import recover_one_explorer_run
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
+# Accepted results/releases must not wait behind the browser that needs them.
+# These handlers publish bounded receipts; none starts a search or traversal.
+_CONTROL_BACKGROUND_COMMANDS = frozenset({
+    'coverage.maia.heartbeat', 'coverage.maia.release', 'coverage.maia.failure',
+    'coverage.maia.submit', 'threat.analysis.report', 'threat.analysis.failure',
+    'threat.analysis.release', 'games.analysis.position.report',
+    'games.analysis.position.release', 'games.analysis.failure',
+    'games.analysis.heartbeat', 'games.analysis.release',
+    'games.analysis.finalize.admit',
+})
 _SUPPORTED_BACKGROUND_KINDS = (
     "daily_queue",
     "defensive_rubric_audit",
@@ -199,34 +212,45 @@ def execute_background_command(
     """Execute an external worker callback in a bounded background section."""
 
     with measure_handler("other", (self.request.headers or {}).get("submitted_at")), \
-            activity_gate.background_job(command_name, operation_id):
-        should_execute, saved_payload, attempt_token, attempt_number = record_operation_attempt(
-            operation_id, command_name, payload, background=True,
-            expected_retry_cycle=expected_retry_cycle,
-        )
+            activity_gate.background_job(command_name, operation_id, yielding=True):
+        # Persist the source envelope even when discretionary execution is denied.
+        with activity_gate.background_control():
+            should_execute, saved_payload, attempt_token, attempt_number = record_operation_attempt(
+                operation_id, command_name, payload, background=True,
+                expected_retry_cycle=expected_retry_cycle,
+            )
         if not should_execute:
             return None
         try:
-            return execute_command(operation_id, command_name, saved_payload,
-                                   background=True, attempt_token=attempt_token)
+            with (activity_gate.background_control() if command_name in _CONTROL_BACKGROUND_COMMANDS
+                  else nullcontext()):
+                activity_gate.check_background_admission()
+                return execute_command(operation_id, command_name, saved_payload,
+                                       background=True, attempt_token=attempt_token)
+        except BackgroundAdmissionDeferred:
+            defer_operation_for_foreground(operation_id, attempt_token)
+            return None
         except (psycopg.OperationalError, psycopg.InterfaceError,
                 DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout) as error:
-            exhausted, delay_seconds = record_operation_retry(
-                operation_id, attempt_token, error, retryable=True, background=True,
-            )
+            with activity_gate.background_control():
+                exhausted, delay_seconds = record_operation_retry(
+                    operation_id, attempt_token, error, retryable=True, background=True,
+                )
             _LOGGER.warning("background command=%s operation_id=%s attempt=%s stage=execute "
                             "error_class=%s next_retry_seconds=%s", command_name, operation_id,
                             attempt_number, type(error).__name__, delay_seconds)
             return None
         except Exception as error:
-            record_operation_retry(operation_id, attempt_token, error,
-                                   retryable=False, background=True)
+            with activity_gate.background_control():
+                record_operation_retry(operation_id, attempt_token, error,
+                                       retryable=False, background=True)
             raise
 
 
 @celery_app.task(name="app.tasks.recover_operations")
 def recover_operations() -> bool:
-    with activity_gate.background_job("operation_recovery", "one-run"):
+    with activity_gate.background_job("operation_recovery", "one-run", yielding=True), \
+            activity_gate.background_control():
         operation = claim_recoverable_operation()
     if operation is None:
         return False
@@ -246,7 +270,13 @@ def recover_operations() -> bool:
 def poll_background_tasks(self) -> bool:
     """Claim and run one slice at worker capacity, then yield to the broker."""
 
-    claimed_task = claim_task(allowed_kinds=_SUPPORTED_BACKGROUND_KINDS)
+    try:
+        activity_gate.check_background_admission()
+        with activity_gate.background_job('dispatch', 'one-run', yielding=True):
+            claimed_task = claim_task(allowed_kinds=_SUPPORTED_BACKGROUND_KINDS)
+    except BackgroundAdmissionDeferred as error:
+        _LOGGER.info('background admission deferred: %s', error)
+        return False
     if claimed_task is None:
         return False
     return _execute_claimed_background_slice(
@@ -256,8 +286,12 @@ def poll_background_tasks(self) -> bool:
 
 @celery_app.task(name="app.tasks.recover_active_coverage")
 def recover_active_coverage() -> bool:
-    with activity_gate.background_job("coverage_recovery", "one-run"):
-        return recover_one_explorer_run()
+    try:
+        with activity_gate.background_job("coverage_recovery", "one-run", yielding=True):
+            activity_gate.check_background_admission()
+            return recover_one_explorer_run()
+    except BackgroundAdmissionDeferred:
+        return False
 
 
 @celery_app.task(name="app.tasks.execute_background_slice", bind=True)
@@ -309,8 +343,9 @@ def _execute_claimed_background_slice(
     if handler is None:
         raise ValueError(f"Unported background handler: {claimed_task['kind']}")
     with measure_handler(claimed_task["kind"], submitted_at), \
-            activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
+            activity_gate.background_job(claimed_task["kind"], claimed_task["id"], yielding=True):
         try:
+            activity_gate.check_background_admission()
             if defer_paused_defensive_task(claimed_task):
                 return False
             if not current_delivery(claimed_task):
@@ -341,6 +376,9 @@ def _execute_claimed_background_slice(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
                     kind=claimed_task["kind"],
                 )
+        except BackgroundAdmissionDeferred:
+            defer_task_for_foreground(claimed_task)
+            return False
         except TransactionTimeout as error:
             if claimed_task['kind'] == 'daily_queue':
                 more_work = defer_task_for_transaction_timeout(claimed_task, error)

@@ -27,6 +27,7 @@ class _PendingWrite(Generic[Result]):
     label: str
     submitted_at: float
     background: bool
+    control: bool
 
 
 class DatabaseWriter:
@@ -115,7 +116,8 @@ class DatabaseWriter:
         if not self.healthy:
             raise RuntimeError("database writer is unavailable")
         future: Future[Result] = Future()
-        pending = _PendingWrite(operation, future, label, time.perf_counter(), background)
+        pending = _PendingWrite(operation, future, label, time.perf_counter(), background,
+                                activity_gate.in_background_control)
         with self._condition:
             (self._background if background else self._foreground).append(pending)
             self._condition.notify_all()
@@ -153,9 +155,9 @@ class DatabaseWriter:
                 commit_seconds = 0.0
                 transaction_started_at: float | None = None
                 try:
-                    if pending.background and os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL"):
+                    if pending.background and not pending.control and os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL"):
                         gate_started_at = time.perf_counter()
-                        activity_gate.wait_for_foreground()
+                        activity_gate.check_background_admission()
                         gate_wait_seconds = time.perf_counter() - gate_started_at
                     compatibility_lock_started_at = time.perf_counter()
                     with database_module.write_compatibility_lock:

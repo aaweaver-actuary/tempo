@@ -166,7 +166,7 @@ def test_postgres_derivation_lock_conflicts_yield_without_failing_task(monkeypat
     claimed = {"kind": "game_derivation_positions", "id": "index-task",
                "generation": 3, "lease_token": "live", "payload": {}}
     deferred = []
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext())
     monkeypatch.setattr(tasks, "defer_task_for_contention",
                         lambda task_id, generation, lease_token, *, kind:
                         deferred.append((task_id, generation, lease_token)))
