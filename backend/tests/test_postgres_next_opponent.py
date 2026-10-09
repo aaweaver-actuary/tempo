@@ -237,3 +237,14 @@ def test_issue107_unsupported_speed_only_does_not_fabricate_supported_probabilit
     assert response.availability == "unsupported"
     assert response.profile.unsupported_speed_mass == 1
     assert [(item.speed, item.weight) for item in response.effective_speed_mixture] == [("bullet", 1)]
+
+
+def test_issue107_maintenance_profile_proof_configures_disposable_redis(monkeypatch):
+    from scripts import check_postgres_next_opponent as proof
+    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
+    monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
+    monkeypatch.setattr(proof.sys, "argv", ["proof", "--resume"])
+    observed = []
+    monkeypatch.setattr(proof, "child", lambda mode: observed.append((mode, proof.os.environ["TEMPO_REDIS_URL"])))
+    proof.main()
+    assert observed == [("--resume", "redis://redis:6379/0")]
