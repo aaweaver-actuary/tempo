@@ -16,6 +16,7 @@ from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, task_adm
 from .background_metrics import increment, record_event_counts
 from .queue_refresh_wakeup import mark_queue_refresh_requested, wake_queue_refresh
 from .activity_gate import activity_gate
+from .durable_scheduling import warm_scheduling_sql, select_scheduled_task, persist_scheduling_turn
 
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
@@ -246,16 +247,35 @@ def claim_task(
         raise ValueError("Use one durable-task kind filter")
     if allowed_kinds is not None and not allowed_kinds:
         raise ValueError("Allowed durable-task kinds cannot be empty")
+    if allowed_kinds is not None:
+        warm_scheduling_sql(allowed_kinds)
 
     def operation(database: sqlite3.Connection) -> dict | None:
         now = _iso()
-        reclaimed = database.execute(
-            """UPDATE background_tasks
+        kind_clause = ''
+        kind_parameters = []
+        if kind is not None:
+            kind_clause = ' AND kind=?'
+            kind_parameters.append(kind)
+        elif allowed_kinds is not None:
+            kind_clause = ' AND kind IN (' + ','.join('?' for _ in allowed_kinds) + ')'
+            kind_parameters.extend(allowed_kinds)
+        reclaim_parameters = (now, now, *kind_parameters, now)
+        reclaim_statement = f"""UPDATE background_tasks
                SET state='queued',lease_token=NULL,lease_expires_at=NULL,
                    updated_at=?
-               WHERE state='leased' AND lease_expires_at<=? RETURNING id,kind,generation""",
-            (now, now),
-        ).fetchall()
+               WHERE id IN (SELECT id FROM background_tasks
+                            WHERE state='leased' AND lease_expires_at<=?{kind_clause}
+                            ORDER BY lease_expires_at,id LIMIT 1)
+               AND state='leased' AND lease_expires_at<=? RETURNING id,kind,generation"""
+        if hasattr(database, 'execute_native'):
+            reclaimed = database.execute_native(
+                postgres_store.postgres_sql(reclaim_statement).replace(
+                    'LIMIT 1)', 'LIMIT 1 FOR UPDATE SKIP LOCKED)'),
+                reclaim_parameters,
+            ).fetchall()
+        else:
+            reclaimed = database.execute(reclaim_statement, reclaim_parameters).fetchall()
         # Reuse bounded aggregate shards rather than add one query/write per expired lease.
         from collections import Counter
         from .background_metrics import metric_shard
@@ -264,22 +284,19 @@ def claim_task(
             increment(database, reclaimed_kind, "", shard_override=shard,
                       lease_expiries=reclaimed_count, lease_reclaims=reclaimed_count,
                       generation_restarts=reclaimed_count)
-        parameters: list[str] = [now]
-        kind_clause = ""
-        if kind is not None:
-            kind_clause = " AND kind=?"
-            parameters.append(kind)
-        elif allowed_kinds is not None:
-            kind_clause = " AND kind IN (" + ",".join("?" for _ in allowed_kinds) + ")"
-            parameters.extend(allowed_kinds)
-        row = database.execute(
-            f"""SELECT * FROM background_tasks
-                WHERE state IN ('queued','retrying') AND next_attempt_at<=?{kind_clause}
-                  AND {claimable('durable', 'background_tasks.id')}
-                  AND {task_admission_sql('background_tasks.kind')}
-                ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1""",
-            parameters,
-        ).fetchone()
+        parameters = [now, *kind_parameters]
+        scheduling_turn = None
+        if allowed_kinds is not None:
+            row, scheduling_turn = select_scheduled_task(database, allowed_kinds, now)
+        else:
+            row = database.execute(
+                f"""SELECT * FROM background_tasks
+                    WHERE state IN ('queued','retrying') AND next_attempt_at<=?{kind_clause}
+                      AND {claimable('durable', 'background_tasks.id')}
+                      AND {task_admission_sql('background_tasks.kind')}
+                    ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1""",
+                parameters,
+            ).fetchone()
         if not row:
             return None
         lease_token = str(uuid.uuid4())
@@ -293,6 +310,8 @@ def claim_task(
         ).rowcount
         if not changed:
             return None
+        if scheduling_turn is not None:
+            persist_scheduling_turn(database, scheduling_turn)
         _record_event(database, row["id"], row["generation"], "claimed", "claimed", kind=row["kind"])
         claimed = dict(database.execute("SELECT * FROM background_tasks WHERE id=?", (row["id"],)).fetchone())
         claimed["payload"] = json.loads(claimed.pop("payload_json"))

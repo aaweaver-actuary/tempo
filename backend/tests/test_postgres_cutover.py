@@ -4428,7 +4428,7 @@ def test_postgres_cutover_background_reads_respect_foreground_admission(monkeypa
     assert not worker.is_alive()
 
 
-def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(monkeypatch):
+def test_postgres_cutover_background_claim_fairly_orders_only_supported_kinds(monkeypatch):
     from app.services import durable_tasks
 
     with sqlite3.connect(":memory:") as database:
@@ -4443,7 +4443,7 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
                 payload_version INTEGER,payload_json TEXT,attempt_count INTEGER,
                 max_attempts INTEGER,next_attempt_at TEXT,lease_token TEXT,
                 lease_expires_at TEXT,last_error TEXT,created_at TEXT,
-                started_at TEXT,completed_at TEXT,updated_at TEXT,
+                started_at TEXT,completed_at TEXT,updated_at TEXT,pending_since TEXT,
                 transaction_timeout_count INTEGER DEFAULT 0,transaction_timeout_checkpoint TEXT,
                 UNIQUE(kind,deduplication_key)
             );
@@ -4455,6 +4455,11 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
                 source TEXT,work_id TEXT,paused INTEGER DEFAULT 0,
                 promoted INTEGER DEFAULT 0
             );
+            CREATE TABLE background_scheduling_turns(
+                lane TEXT PRIMARY KEY,next_turn INTEGER DEFAULT 0,
+                promoted_since_turn INTEGER DEFAULT 0,control_streak INTEGER DEFAULT 0
+            );
+            INSERT INTO background_scheduling_turns(lane) VALUES('durable');
         """)
         priorities = (
             ("unported_analysis", 1), ("priority_retention", 200),
@@ -4474,8 +4479,8 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
         )
         claimed = [durable_tasks.claim_task(allowed_kinds=allowed_kinds) for _ in range(4)]
         assert [task["kind"] if task else None for task in claimed] == [
-            "repertoire_game_refresh", "defensive_threat_report_audit",
-            "priority_retention", None,
+            "repertoire_game_refresh", "priority_retention",
+            "defensive_threat_report_audit", None,
         ]
 
 

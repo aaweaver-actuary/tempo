@@ -14,6 +14,12 @@ errors, historical coverage failures, and misleading activity status.
    complete required candidate validation.
 2. Scheduling/coalescing: bounded admission, persisted fairness, unchanged-input
    requests, restart/replay and real foreground-contention proofs.
+   The scheduling slice changes mixed-kind dispatch only; kind-specific recovery
+   keeps its existing contract. Failure risks: graph starvation, lost turns after
+   rollback/restart, unlimited promotions/control backlog, paused admission and
+   stale-lease replay. Start with named SQLite turn/dispatcher regressions; then
+   native PostgreSQL claim, restart, foreground contention and durability. CI owns
+   final required candidate validation. Wake and input coalescing follow separately.
 3. Integrity/segmentation: large generation publication, conservative eligibility,
    restart/replay and authoritative trained-color provenance.
 4. Coverage: safe session status, unchanged-credential recovery, partial-source
@@ -34,6 +40,35 @@ Branch: `codex/analysis-queue-timeouts`.
 Local PostgreSQL proof: container `tempo-analysis-unlock-proof`, owned by this
 checkout; teardown: `docker rm -v tempo-analysis-unlock-proof` after stopping it.
 No persistent host volume or live study data is used.
+
+### Scheduling candidate evidence
+
+Mixed-kind scheduling replaces numerical-priority dominance with persisted
+interleaved turns (graph/game/graph/game/priority/coverage/sync). One promotion
+may precede an ordinary turn; two user-dependent control slices may precede
+ordinary work. Empty, manually paused, settings-disabled, delayed and row-locked
+work is skipped. Claims and turns commit together; execution-time claiming and
+generation fences from PR #93 remain intact. Kind-specific recovery retains its
+priority contract. Lease reclamation handles one expired item per invocation.
+
+The starvation regression failed on the original dispatcher (0.63 seconds).
+Affected Python files: 273 passed in 10.54 seconds on the dirty scheduling
+candidate based on 56ee085 (macOS ARM64, Python 3.14.8). The real PostgreSQL 18.6 /
+Redis 7 proof passes with 4,157 competing game-stage rows, pool recreation, locked
+turn rows, real foreground admission and rejected replay. Maximum claim including
+pool reopen was 38.2 ms after adding row-lock skipping; no deadline was raised.
+This proof is part of the regular durability scenario. Other chats were active;
+the timings establish bounded behavior, not a comparative performance claim.
+Complete local durability is pending shared heavy-run availability; CI owns
+final required candidate validation. Wake/input coalescing and engine fairness
+remain subsequent changes.
+
+After including the authoritative browser-date repair, the settled scheduling
+files and schema/recovery callers pass 315 cases in 17.28 seconds. The bounded
+lease reclaimer filters by the requested pipeline, so older unrelated leases
+cannot delay explicit recovery. The repeated native PostgreSQL proof passes
+with maximum reconnect-inclusive claim 34.3 ms. These are focused results;
+complete durability and current-head CI are tracked separately.
 
 ### Queue candidate evidence
 
