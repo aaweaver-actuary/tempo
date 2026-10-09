@@ -39,6 +39,7 @@ function isActivityResponse(value: unknown): value is ActivityResponse {
 }
 
 function ProgressBar({ item }: { item: ActivityItem }) {
+  if (item.classification === "history") return <p>Last recorded status: {item.state.replaceAll("_", " ")}</p>;
   const hasTotal = item.total !== null && item.total > 0 && item.completed !== null;
   const percentage = hasTotal ? Math.min(100, Math.round((item.completed! / item.total!) * 100)) : null;
   return <div className="activity-progress-wrap">
@@ -95,6 +96,13 @@ export function ServiceStatusPanel() {
   const [status, setStatus] = useState<ActivityResponse | null>(null);
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [foregroundWaiting, setForegroundWaiting] = useState(false);
+  const requestedForegroundWaiting = useRef(false);
+  const publishForegroundWaiting = useCallback((waiting: boolean) => {
+    if (requestedForegroundWaiting.current === waiting) return;
+    requestedForegroundWaiting.current = waiting;
+    setForegroundWaiting(waiting);
+  }, []);
   const requestedError = useRef<string | null>(null);
   const publishError = useCallback((message: string | null) => {
     if (requestedError.current === message) return;
@@ -141,6 +149,7 @@ export function ServiceStatusPanel() {
     let refreshPending = false;
     let wakeQueued = false;
     let failureCount = 0;
+    let foregroundWaitDelayMilliseconds: number | null = null;
     let latest: ActivityResponse | null = null;
     let displayedSummary: ActivityResponse | null = null;
     let displayedItems: ActivityItem[] = [];
@@ -148,6 +157,7 @@ export function ServiceStatusPanel() {
     const eligible = () => !stopped && document.visibilityState === "visible" && navigator.onLine;
     const clearTimer = () => { clearTimeout(timer); timer = undefined; };
     const delay = () => {
+      if (foregroundWaitDelayMilliseconds !== null) return foregroundWaitDelayMilliseconds;
       if (failureCount) {
         const backoff = [5_000, 10_000, 20_000, 60_000][Math.min(failureCount - 1, 3)];
         return panelOpen ? backoff : Math.max(30_000, backoff);
@@ -189,12 +199,25 @@ export function ServiceStatusPanel() {
           const requestGeneration = offsetGeneration;
           try {
             const response = await backgroundFetch(`${API_URL}/api/system/activity?offset=${currentOffset}&limit=50${currentGroup === "all" ? "" : `&group=${currentGroup}`}`);
+            if (response.status === 503) {
+              const retrySeconds = Number(response.headers.get("Retry-After"));
+              const body = await response.clone().json().catch(() => null) as { detail?: string } | null;
+              if (body?.detail === "Waiting for foreground activity" && Number.isFinite(retrySeconds) && retrySeconds > 0) {
+                if (!stopped && requestGeneration === offsetGeneration) {
+                  foregroundWaitDelayMilliseconds = Math.min(60, Math.max(1, retrySeconds)) * 1000;
+                  publishForegroundWaiting(true);
+                }
+                continue;
+              }
+            }
             if (!response.ok) throw new Error(`Activity status failed: HTTP ${response.status}`);
             const value: unknown = await response.json();
             if (!isActivityResponse(value)) throw new Error("Activity status has an unexpected format");
             if (!stopped && requestGeneration === offsetGeneration) {
               latest = value;
               failureCount = 0;
+              foregroundWaitDelayMilliseconds = null;
+              publishForegroundWaiting(false);
               publish(value);
               // Retain current main's activity-triggered diagnostics read and 15-second minimum.
               if (eligible() && performance.now() - lastDiagnosticsRequest.current >= 15_000) {
@@ -211,6 +234,8 @@ export function ServiceStatusPanel() {
             }
           } catch (cause) {
             if (!stopped && requestGeneration === offsetGeneration) {
+              foregroundWaitDelayMilliseconds = null;
+              publishForegroundWaiting(false);
               failureCount += 1;
               const message = cause instanceof Error ? cause.message : "Could not load activity status";
               publishError(message);
@@ -260,7 +285,7 @@ export function ServiceStatusPanel() {
       window.removeEventListener("offline", recover);
       document.removeEventListener("visibilitychange", recover);
     };
-  }, [publishError]);
+  }, [publishError, publishForegroundWaiting]);
   useEffect(() => { updatePollingDemand.current(open, offset, groupFilter); }, [open, offset, groupFilter]);
 
   const control = async (item: ActivityItem, action: string) => {
@@ -302,7 +327,7 @@ export function ServiceStatusPanel() {
     const key = `${item.source}:${item.id}`;
     const children = item.stages ?? [];
     const controlEligible = !children.length && item.classification !== "history" && item.source !== "study" && item.state !== "complete" && item.state !== "failed";
-    return <article key={key} className="tempo-activity-item">
+    return <article key={key} className="tempo-activity-item" data-source={item.source}>
       <div className="tempo-activity-item-heading"><strong>{item.title}</strong><span>{item.classification ? classificationLabels[item.classification] : item.state.replaceAll("_", " ")}</span></div>
       <p>{item.phase.replaceAll("_", " ")}{item.error ? ` · ${item.error}` : ""}</p>
       <ProgressBar item={item} />
@@ -321,7 +346,7 @@ export function ServiceStatusPanel() {
 
   const visibleItems = useMemo(() => {
     if (!open) return [];
-    const localItems: ActivityItem[] = browserItems.map(item => ({
+    const localItems: ActivityItem[] = browserItems.filter(item => item.state !== "complete").map(item => ({
       source: "study", id: item.id, title: item.title, state: item.state,
       phase: item.phase, completed: null, total: null, updated_at: item.updated_at,
       error: item.error ?? null, paused: false, paused_by_settings: false, promoted: false,
@@ -344,12 +369,13 @@ export function ServiceStatusPanel() {
     {open && <section ref={popupRef} id="tempo-activity-content" className="tempo-activity-content" aria-label="Analysis activity">
       <div className="tempo-activity-heading"><strong>Background activity</strong><Button type="button" onClick={() => setOpen(false)}>Close</Button></div>
       {!usesLocalApi() && <p>This practice demo has no local analysis service.</p>}
+      {foregroundWaiting && <p role="status">Activity status will refresh after study activity settles.</p>}
       {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}
       {status?.writer?.healthy === false && <p role="alert">The database writer is unavailable. Restart Tempo before making changes.</p>}
       {status && (status.clearable_finished === undefined
         ? <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>
         : <p>{status.counts.running} progressing · {status.counts.queued} waiting · {status.counts.failed} need attention · {status.counts.disabled ?? 0} disabled in Settings · {status.counts.manual_paused ?? 0} manually paused</p>)}
-      {!error && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
+      {!error && !foregroundWaiting && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
       {!error && status !== null && visibleItems.length === 0 && <p>No background activity yet.</p>}
       {status?.clearable_finished !== undefined && <div className="tempo-activity-filters">
         <label>Show <select aria-label="Activity group" value={groupFilter} onChange={event => { setOffset(0); setGroupFilter(event.target.value); }}>

@@ -237,3 +237,44 @@ test("status_recovery_during_training_preserves_held_drag_and_command_execution"
       probe: result.probe, snapshot: result.snapshot }), contentType: "application/json" });
   } finally { releaseInitialStatus?.(); }
 });
+
+// Real PostgreSQL visibility and receipt workflow; no activity/command routes mocked.
+test("clear finished archives across browser devices while retaining failures, pauses and later completions", async ({ page, browser }) => {
+  const { execFileSync } = await import("node:child_process");
+  const { randomUUID } = await import("node:crypto");
+  const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
+  if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("Owned PostgreSQL runner required");
+  const identity = `activity-history-proof-${randomUUID()}`;
+  const fixture = (action: string) => execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml", "run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_activity_history.py", action, identity], { encoding: "utf8", timeout: 30_000 });
+  const secondDevice = await browser.newContext({ baseURL: test.info().project.use.baseURL, viewport: { width: 390, height: 844 } });
+  try {
+    fixture("seed");
+    await page.setViewportSize({ width: 1280, height: 844 });
+    await prepareUI(page);
+    await page.getByRole("button", { name: "Analysis activity", exact: true }).click();
+    const clear = page.getByRole("button", { name: "Clear finished" });
+    await expect(clear).toBeEnabled();
+    await clear.click();
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem("tempo-pending-activity-clear-v1"))).toBeNull();
+    await page.getByRole("combobox", { name: "Activity group" }).selectOption("history");
+    await page.getByText(/^History ·/).click();
+    await expect(page.getByText("Activity Fixture Finished", { exact: true })).toBeVisible();
+    const other = await secondDevice.newPage();
+    await prepareUI(other);
+    await other.getByRole("button", { name: "Analysis activity", exact: true }).click();
+    await other.getByRole("combobox", { name: "Activity group" }).selectOption("history");
+    await other.getByText(/^History ·/).click();
+    await expect(other.getByText("Activity Fixture Finished", { exact: true })).toBeVisible();
+    await other.getByRole("combobox", { name: "Activity group" }).selectOption("needs_attention");
+    await expect(other.getByText("Activity Fixture Failed", { exact: true })).toBeVisible();
+    await other.getByRole("combobox", { name: "Activity group" }).selectOption("paused");
+    await other.getByText(/^Manually paused ·/).click();
+    await expect(other.getByText("Activity Fixture Paused", { exact: true })).toBeVisible();
+    fixture("finish-later");
+    await other.getByRole("combobox", { name: "Activity group" }).selectOption("finished");
+    await other.getByText(/^Finished ·/).click();
+    await expect(other.getByText("Activity Fixture Later", { exact: true })).toBeVisible();
+    await expect(other.getByRole("button", { name: "Clear finished" })).toBeEnabled();
+    await noPageOverflow(page); await noPageOverflow(other);
+  } finally { await secondDevice.close(); fixture("cleanup"); }
+});

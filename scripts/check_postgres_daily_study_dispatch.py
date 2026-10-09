@@ -51,8 +51,12 @@ def seed(identifier, *, request_refresh, queue_date=None):
         connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,trained_color,introduced_at) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning','2000-01-01','white','2000-01-01')", (identifier+'-due', identifier, FEN))
         connection.execute("INSERT INTO repertoire_cards VALUES(%s,%s)", (identifier, identifier+'-due'))
         connection.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,'correct','2000-01-01',1,7)", (identifier+'-due',))
+        # Real current game parents keep this backlog authoritative. Missing-game
+        # stages are obsolete history, so they must not inflate the active count.
+        connection.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) SELECT %s||'-game-'||number,'lichess','fixture',%s,'rapid',1,'white','win',%s,'[]' FROM generate_series(1,3000) number",(identifier,now,FEN))
+        connection.execute("INSERT INTO game_derivation_jobs(game_id,status,updated_at) SELECT id,'queued',%s FROM imported_games WHERE id LIKE %s",(now,identifier+'-game-%'))
         # Eligible low-priority durable jobs remain behind foreground queue preparation.
-        connection.execute("INSERT INTO background_tasks(id,kind,deduplication_key,priority,payload_json,next_attempt_at,created_at,updated_at) SELECT %s||'-analysis-'||number,'game_derivation_compare',%s||'-missing-game-'||number,127,json_build_object('game_id',%s||'-missing-game-'||number,'derivation_version',1)::text,%s,%s,%s FROM generate_series(1,3000) number", (identifier, identifier, identifier, now, now, now))
+        connection.execute("INSERT INTO background_tasks(id,kind,deduplication_key,priority,payload_json,next_attempt_at,created_at,updated_at) SELECT %s||'-analysis-'||number,'game_derivation_compare',%s||'-game-'||number,127,json_build_object('game_id',%s||'-game-'||number,'derivation_version',1)::text,%s,%s,%s FROM generate_series(1,3000) number", (identifier, identifier, identifier, now, now, now))
     if request_refresh:
         with postgres_store.connection() as connection:
             request_queue_refresh_in_transaction(connection, today)
@@ -61,7 +65,8 @@ def seed(identifier, *, request_refresh, queue_date=None):
 def cleanup(identifier):
     postgres_store.close_pools()
     with psycopg.connect(DSN) as connection:
-        connection.execute("DELETE FROM background_tasks WHERE id LIKE %s OR deduplication_key=%s", (identifier+'-%', identifier))
+        connection.execute("DELETE FROM background_tasks WHERE id LIKE %s OR deduplication_key=%s OR deduplication_key LIKE %s", (identifier+'-%', identifier,identifier+'-game-%'))
+        connection.execute("DELETE FROM imported_games WHERE id LIKE %s",(identifier+'-game-%',))
         connection.execute("DELETE FROM reviews WHERE card_id IN (SELECT id FROM cards WHERE repertoire_id=%s)", (identifier,))
         connection.execute("DELETE FROM cards WHERE repertoire_id=%s", (identifier,))
         connection.execute("DELETE FROM repertoires WHERE id=%s", (identifier,))

@@ -160,7 +160,7 @@ it("study worker activity reports queued running and completion in order", async
 });
 
 it("logical activity separates collapsed disabled, paused and history groups and filters every page", async () => {
-  const request = vi.fn(async (input: RequestInfo | URL) => Response.json({
+  const request = vi.fn(async () => Response.json({
     ...activityResponse, clearable_finished: 0, completion_cutoff: null, completion_snapshot: null,
     items: [
       { ...activityItem, id: "disabled", classification: "disabled", paused: true, paused_by_settings: true },
@@ -201,4 +201,19 @@ it("clear finished keeps results visible while its receipt is pending and refres
   expect(screen.getByText("Finished · 1")).toBeTruthy();
   expect(request.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
   localStorage.clear();
+});
+
+it("expected foreground waiting stays visible without a failure and refreshes after admission resumes", async () => {
+  let waiting = true;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).includes("/api/system/activity") && waiting
+    ? Response.json({ detail: "Waiting for foreground activity" }, { status: 503, headers: { "Retry-After": "1" } })
+    : Response.json(activityResponse)));
+  render(<ServiceStatusPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+  expect(await screen.findByText("Activity status will refresh after study activity settles.")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  waiting = false;
+  fireEvent(window, new Event("focus"));
+  expect(await screen.findByText("Opening graph rebuild")).toBeTruthy();
+  expect(screen.queryByText("Activity status will refresh after study activity settles.")).toBeNull();
 });

@@ -70,3 +70,13 @@ def test_activity_groups_game_stages_and_settings_disabled_is_separate_from_manu
     assert game['stage_count']==2 and response['counts']['queued']==1
     assert next(item for item in response['items'] if item['id']==defensive['id'])['classification']=='disabled'
     assert response['counts']['disabled']==1 and response['counts']['manual_paused']==0
+
+
+def test_activity_legacy_timestamp_normalization_preserves_retry_delays_and_clear_cutoffs():
+    from app.services.activity_history import project_stages
+    base={'source':'durable','title':'Historical timestamp','phase':'queued','completed':None,'total':None,'error':None,'promoted':False}
+    stages=[{**base,'id':'done','state':'complete','updated_at':'2020-01-01'},
+            {**base,'id':'delayed','state':'queued','updated_at':'2020-01-01','next_attempt_at':'2050-01-01'}]
+    response=project_stages(stages,{'cleared_through':None,'signing_key':'fixture'})
+    assert response['completion_cutoff']=='2020-01-01T00:00:00+00:00'
+    assert next(item for item in response['items'] if item['id']=='delayed')['waiting_reason']=='retry_delay'

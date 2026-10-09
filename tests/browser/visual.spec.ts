@@ -141,10 +141,11 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
   test(`activity-tray-${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const activityResponse: ActivityResponse = {
-      items: [{ source: "integrity", id: "visual-repertoire", title: "Spanish opening integrity",
+      items: [{ source: "integrity", id: "visual-repertoire", title: "Spanish opening integrity", classification: "progressing",
         state: "running", phase: "Scanning sources", completed: 2, total: 5,
         updated_at: "2026-09-18T16:00:00Z", error: null, paused: false, promoted: false }],
-      counts: { running: 1, queued: 0, paused: 0, failed: 0 }, total: 1, next_offset: null,
+      counts: { running: 1, queued: 0, paused: 0, failed: 0, disabled: 0, manual_paused: 0, finished: 0, history: 0 }, total: 1, next_offset: null,
+      clearable_finished: 0, completion_cutoff: null, completion_snapshot: null,
       writer: { healthy: true, foreground: 0, background: 0 },
     };
     await prepareVisualUI(page, true, undefined, undefined, activityResponse);

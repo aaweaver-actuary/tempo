@@ -58,4 +58,28 @@ def proof_activity_history(parent_database_url):
         print(json.dumps({'test':'test_postgres_activity_logical_scale_legacy_history_cross_device_clear_receipt_restart_new_generation_and_retained_pauses','logical_games':2143,'activity_read_ms':round(read_seconds*1000,3),'duration_seconds':round(time.monotonic()-started,2)}))
 
 
-if __name__=='__main__': proof_activity_history(os.environ['TEMPO_ACTIVITY_PROOF_URL'])
+def browser_fixture(action, identity):
+    import uuid
+    import psycopg
+    import check_postgres_graph_retention as fixtures
+    if not identity.startswith('activity-history-proof-') or str(uuid.UUID(identity.removeprefix('activity-history-proof-'))) != identity.removeprefix('activity-history-proof-'):
+        raise ValueError('A browser-owned activity proof identity is required')
+    fixtures.validate_disposable_database()
+    now=datetime.now(timezone.utc).isoformat()
+    with psycopg.connect(fixtures.DATABASE_URL) as db:
+        if action=='seed':
+            for suffix,state in [('finished','complete'),('paused','queued'),('failed','failed'),('later','queued')]:
+                db.execute("INSERT INTO background_tasks(id,kind,deduplication_key,state,phase,next_attempt_at,created_at,updated_at,completed_at,last_error) VALUES(%s,%s,%s,%s,%s,'2050-01-01',%s,%s,%s,%s)", (identity+'-'+suffix,'activity_fixture_'+suffix,identity,state,state,now,now,now if state=='complete' else None,'Repair fixture failure' if state=='failed' else None))
+            db.execute("INSERT INTO background_activity(source,work_id,paused,updated_at) VALUES('durable',%s,1,%s)",(identity+'-paused',now))
+        elif action=='finish-later':
+            db.execute("UPDATE background_tasks SET state='complete',phase='published',completed_at=%s,updated_at=%s WHERE id=%s",(now,now,identity+'-later'))
+        elif action=='cleanup':
+            db.execute("DELETE FROM background_activity WHERE source='durable' AND work_id IN (SELECT id FROM background_tasks WHERE deduplication_key=%s)",(identity,))
+            db.execute('DELETE FROM background_tasks WHERE deduplication_key=%s',(identity,))
+        else: raise ValueError('Unknown fixture action')
+
+
+if __name__=='__main__':
+    if len(sys.argv)==1: proof_activity_history(os.environ['TEMPO_ACTIVITY_PROOF_URL'])
+    elif len(sys.argv)==3: browser_fixture(*sys.argv[1:])
+    else: raise ValueError('Expected owned browser action and identity')

@@ -30,3 +30,15 @@ Disposable PostgreSQL 18.6/schema48/Redis7 native proof: 2,143 logical games,
 concurrent completion and new generations passed. Full Docker durability,
 activity/training browser and pinned visual evidence remain pending on the settled
 candidate; these focused results do not imply full-gate or release readiness.
+
+Follow-up evidence on 13a4c957 plus the recorded working changes: all 71 cases in
+status-polling, service-status-panel and activity-clear-command passed (1.52s).
+Activity/history Python 4 passed (0.84s), background activity 7 passed (1.14s),
+and PostgreSQL cutover 199 passed (1.83s). Typecheck passed. The actual two-device
+clear browser case passed in 8.8s (stage 9.48s, cleanup 8.70s), disposable project
+79659-6cba3c0b; its containers and volumes were removed by the owning runner.
+The timestamp regression first raised the previous naive/aware comparison error;
+the foreground-wait regression first produced an outage notification. The regular
+render-identity regression caught a redundant state update and now passes.
+Evidence: root test-results/analysis-activity-2026-10-09/activity-clear-browser-timestamps.log.
+Pinned visual and settled Docker durability remain pending.
