@@ -435,13 +435,24 @@ def publish_integrity_issues_in_transaction(
     issue = prepared_page.issue
     if issue["run_id"] != run_id or issue["repertoire_id"] != repertoire_id:
         raise ValueError("Integrity publication page belongs to another generation")
+    immutable_issue_fields = ("repertoire_id", "kind", "fen_key", "fen", "trained_color",
+                              "signature", "moves_json", "sources_json")
+    immutable_issue_content = tuple(issue[field] for field in immutable_issue_fields)
     now = datetime.now(timezone.utc).isoformat()
     database.execute_native(
         "INSERT INTO integrity_issue_generations(run_id,id,repertoire_id,kind,fen_key,fen,trained_color,"
         "signature,moves_json,sources_json,created_at,updated_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
         "ON CONFLICT(run_id,id) DO NOTHING",
-        tuple(issue[key] for key in ("run_id","id","repertoire_id","kind","fen_key","fen","trained_color", "signature","moves_json","sources_json")) + (now,now),
+        (run_id, issue["id"], *immutable_issue_content, now, now),
     )
+    # Completeness assumes an immutable candidate. A conflicting replay must
+    # fail before adding blocks or accepting a saved blocks_complete flag.
+    staged_issue = database.execute_native(
+        "SELECT repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json "
+        "FROM integrity_issue_generations WHERE run_id=%s AND id=%s", (run_id, issue["id"]),
+    ).fetchone()
+    if staged_issue is None or tuple(staged_issue) != immutable_issue_content:
+        raise RuntimeError("Integrity staged issue does not match immutable candidate content; retain its checkpoint")
     database.execute_native(
         "INSERT INTO integrity_block_generations(run_id,repertoire_id,card_id,issue_id,published_at) "
         "SELECT %s,%s,id,%s,%s FROM cards WHERE id=ANY(%s::text[]) "

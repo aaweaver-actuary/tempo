@@ -8,6 +8,87 @@ import pytest
 from app.services import postgres_integrity as integrity
 
 
+@pytest.fixture
+def publication_replay(monkeypatch):
+    monkeypatch.setattr(integrity, 'lock_current_slice', lambda *_: True)
+    monkeypatch.setattr(integrity, '_graph_generation_is_current', lambda *_: True)
+    task = {'id': 'scan', 'generation': 7,
+            'payload': {'repertoire_id': 'large', 'graph_generation': 7}}
+    issue = {'run_id': 'scan:7', 'id': 'issue', 'repertoire_id': 'large',
+             'kind': 'invalid_source', 'fen_key': None, 'fen': None,
+             'trained_color': None, 'signature': 'signature', 'moves_json': '[]',
+             'sources_json': '[{"type":"card","id":"card"}]'}
+    advances = []
+    monkeypatch.setattr(integrity, 'advance_task_slice_in_transaction',
+                        lambda _database, _task, **checkpoint: advances.append(checkpoint) or True)
+
+    class StagedPublication:
+        def __init__(self):
+            self.issues = {}
+            self.blocks = set()
+            self.statements = []
+
+        def execute_native(self, statement, parameters=()):
+            self.statements.append(statement)
+            if statement.startswith('INSERT INTO integrity_issue_generations'):
+                self.issues.setdefault(tuple(parameters[:2]), dict(zip(
+                    ('run_id', 'id', 'repertoire_id', 'kind', 'fen_key', 'fen',
+                     'trained_color', 'signature', 'moves_json', 'sources_json',
+                     'created_at', 'updated_at'), parameters), blocks_complete=0))
+            elif statement.startswith('SELECT repertoire_id,kind,fen_key,fen,trained_color,'):
+                staged_issue = self.issues.get(tuple(parameters))
+                content = tuple(staged_issue[field] for field in (
+                    'repertoire_id', 'kind', 'fen_key', 'fen', 'trained_color',
+                    'signature', 'moves_json', 'sources_json')) if staged_issue else None
+                return SimpleNamespace(fetchone=lambda: content)
+            elif statement.startswith('INSERT INTO integrity_block_generations'):
+                self.blocks.update((parameters[0], card_id, parameters[2])
+                                   for card_id in parameters[4])
+            elif statement.startswith('UPDATE integrity_issue_generations'):
+                self.issues[tuple(parameters)]['blocks_complete'] = 1
+            return SimpleNamespace(fetchone=lambda: None)
+
+    return StagedPublication(), task, issue, advances
+
+
+def test_integrity_publication_identical_page_replay_is_idempotent(publication_replay):
+    database, task, issue, advances = publication_replay
+    page = integrity.PreparedIntegrityPublicationPage(issue, ('card',), 0, True)
+    assert integrity.publish_integrity_issues_in_transaction(database, task, page)
+    original_staged_issue = dict(database.issues[('scan:7', 'issue')])
+    assert integrity.publish_integrity_issues_in_transaction(database, task, page)
+    assert database.issues == {('scan:7', 'issue'): original_staged_issue}
+    assert database.blocks == {('scan:7', 'card', 'issue')}
+    assert original_staged_issue['blocks_complete'] == 1
+    assert len(advances) == 2 and advances[0] == advances[1]
+
+
+@pytest.mark.parametrize('field,conflicting_value', [
+    ('repertoire_id', 'other'), ('kind', 'missing_response'),
+    ('fen_key', 'other-position'), ('fen', 'other-fen'), ('trained_color', 'black'),
+    ('signature', 'other-signature'), ('moves_json', '["e2e4"]'),
+    ('sources_json', '[{"type":"card","id":"other-card"}]'),
+])
+@pytest.mark.parametrize('blocks_complete', [0, 1])
+def test_integrity_publication_conflicting_page_replay_fails_before_completion(
+    publication_replay, field, conflicting_value, blocks_complete,
+):
+    database, task, issue, advances = publication_replay
+    database.issues[('scan:7', 'issue')] = {
+        **issue, field: conflicting_value, 'created_at': 'original',
+        'updated_at': 'original', 'blocks_complete': blocks_complete,
+    }
+    original_staged_issue = dict(database.issues[('scan:7', 'issue')])
+    page = integrity.PreparedIntegrityPublicationPage(issue, ('card',), 0, True)
+    with pytest.raises(RuntimeError, match='immutable candidate content'):
+        integrity.publish_integrity_issues_in_transaction(database, task, page)
+    assert database.issues == {('scan:7', 'issue'): original_staged_issue}
+    assert not database.blocks and not advances
+    assert not any(statement.startswith(('INSERT INTO integrity_block_generations',
+                                         'UPDATE integrity_issue_generations'))
+                   for statement in database.statements)
+
+
 def test_integrity_publication_accepts_large_completed_generation_without_hard_caps(monkeypatch):
     monkeypatch.setattr(integrity, 'lock_current_slice', lambda *_: True)
     monkeypatch.setattr(integrity, '_graph_generation_is_current', lambda *_: True)
