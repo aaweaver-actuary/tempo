@@ -670,6 +670,9 @@ test("discarding an unknown PGN import permits a different file after reload", a
 
 productTest("repair choices advance before a delayed save and survive reload through real PostgreSQL receipts", async ({ page, request }) => {
   await prepareUI(page);
+  // Await analysis from a passive view so the active Train workspace does not
+  // intentionally preempt the integrity slices this receipt test needs.
+  await navigate(page, "Builder");
   const repairPgn = '[Event "First e4"]\n\n1. e4 *\n\n[Event "First d4"]\n\n1. d4 *\n\n' +
     '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *\n\n' +
     '[Event "Second d4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. d4 *';

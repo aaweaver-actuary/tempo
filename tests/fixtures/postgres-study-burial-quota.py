@@ -8,16 +8,39 @@ from app.command_gateway import execute_command
 from app.services import postgres_queue_refresh
 from app.services.review_service import preserve_daily_queue_order
 
-from pathlib import Path
+from contextlib import contextmanager
 import os
-import sys
+import time
 from unittest.mock import patch
 import uuid
-sys.path.insert(0, str(Path('/app/scripts')))
-import check_postgres_graph_retention as fixtures
+from app.services import redis_admission_gate
 
 
-def proof_study_burial_quota():
+@contextmanager
+def owned_admission_scope():
+    """Keep this in-image fixture independent of host-only helper scripts."""
+    assert os.environ.get("TEMPO_TEST_INSTANCE") == "disposable"
+    with postgres_store.connection(read_only=True) as database:
+        marker = database.execute_native("SELECT shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()), 'pg_database')").fetchone()[0]
+    assert marker == "tempo-disposable-postgres-test", "A disposable database marker is required"
+    namespace = "tempo:test:study-burial:" + uuid.uuid4().hex
+    foreground_key, background_key = namespace + ":foreground", namespace + ":background"
+    parent_key = redis_admission_gate._FOREGROUND_KEY
+    server = redis_admission_gate.client()
+    token = uuid.uuid4().hex
+    try:
+        with patch.object(redis_admission_gate, "_FOREGROUND_KEY", foreground_key), patch.object(redis_admission_gate, "_BACKGROUND_KEY", background_key):
+            server.zadd(parent_key, {token: int(time.time() * 1000) + 30_000})
+            assert not redis_admission_gate.foreground_present()
+            with redis_admission_gate.background_lease():
+                assert server.zscore(parent_key, token) is not None
+            yield
+    finally:
+        server.zrem(parent_key, token)
+        server.delete(foreground_key, background_key)
+
+
+def proof_study_burial_quota_with_worker_local_admission_isolation():
     assert postgres_store.configured(), "This regression requires real PostgreSQL"
     queue_date = date.today().isoformat()
     start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -61,7 +84,5 @@ def proof_study_burial_quota():
     print(json.dumps({"unrelated_order": unrelated_order, "queue_date": queue_date}))
 
 
-with patch.object(fixtures, 'DATABASE_URL', os.environ['TEMPO_DATABASE_WRITE_URL']):
-    fixtures.validate_disposable_database()
-    with fixtures.owned_admission_scope('study_burial_' + uuid.uuid4().hex):
-        proof_study_burial_quota()
+with owned_admission_scope():
+    proof_study_burial_quota_with_worker_local_admission_isolation()
