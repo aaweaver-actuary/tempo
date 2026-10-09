@@ -172,6 +172,95 @@ def test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollb
     print("PASS test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollback")
 
 
+def test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery() -> None:
+    from contextlib import nullcontext
+    from app.services.activity_gate import activity_gate
+
+    # Run the ordinary race and force the valid delivery's discretionary section
+    # to overlap conflicting control bookkeeping. Deferral is allowed; loss of
+    # the persisted envelope, conflict acceptance, or duplicate effects is not.
+    for force_overlap in (False, True):
+        concurrent_id = f"concurrent-{uuid.uuid4().hex}"
+        payload = {"value": concurrent_id}
+        with postgres_store.connection(read_only=False) as database:
+            database.raw.execute(
+                "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,"
+                "payload_json,background) VALUES(%s,'test.recovery.state',%s,'queued',%s,TRUE)",
+                (concurrent_id, request_digest("test.recovery.state", payload), json.dumps(payload)),
+            )
+        valid_claimed = threading.Event()
+        conflicting_control_active = threading.Event()
+        valid_finished = threading.Event()
+        original_record = tasks.record_operation_attempt
+
+        def coordinated_record(operation_id, command_name, submitted_payload, **kwargs):
+            if submitted_payload == payload:
+                result = original_record(operation_id, command_name, submitted_payload, **kwargs)
+                valid_claimed.set()
+                assert conflicting_control_active.wait(5), "Conflicting control reservation did not start"
+                return result
+            assert valid_claimed.wait(5), "Valid receipt was not claimed"
+            # Only hold the process-local reservation: event coordination must
+            # not hold a PostgreSQL transaction or change its 250ms/25ms budgets.
+            with activity_gate.background_control(), activity_gate.background_database_section():
+                conflicting_control_active.set()
+                assert valid_finished.wait(5), "Valid delivery did not yield"
+            return original_record(operation_id, command_name, submitted_payload, **kwargs)
+
+        def deliver_valid():
+            try:
+                return tasks.execute_background_command.run(concurrent_id, "test.recovery.state", payload)
+            finally:
+                valid_finished.set()
+
+        coordination = patch.object(tasks, "record_operation_attempt", coordinated_record) if force_overlap else nullcontext()
+        with coordination, ThreadPoolExecutor(max_workers=2) as executor:
+            valid = executor.submit(deliver_valid)
+            conflicting = executor.submit(tasks.execute_background_command.run,
+                                          concurrent_id, "test.recovery.state", {"value": "changed"})
+            valid_result = valid.result()
+            try:
+                conflicting.result()
+            except CommandConflict:
+                pass
+            else:
+                raise AssertionError("Concurrent conflicting task was accepted")
+        if force_overlap:
+            assert valid_result is None, "Controlled overlap did not exercise admission deferral"
+        if valid_result is None:
+            receipt = read_operation(concurrent_id)
+            assert receipt["state"] == "retrying"
+            assert receipt["attempt_count"] == receipt["cycle_attempt_count"] == 0
+            with postgres_store.connection(read_only=False) as database:
+                row = database.raw.execute(
+                    "SELECT payload_json,attempt_token,lease_expires_at FROM operation_receipts WHERE operation_id=%s",
+                    (concurrent_id,),
+                ).fetchone()
+                assert json.loads(row[0]) == payload and row[1] is None and row[2] is None
+                assert database.raw.execute("SELECT COUNT(*) FROM internal_migrations WHERE name=%s",
+                                            (concurrent_id,)).fetchone()[0] == 0
+                # Advance this fixture's due timestamp, as in the finite-retry
+                # proof, then recover through the real durable claim boundary.
+                database.raw.execute("UPDATE operation_receipts SET next_retry_at=NOW()-INTERVAL '1 second' WHERE operation_id=%s",
+                                     (concurrent_id,))
+            postgres_store.close_pools()
+            recovered = claim_recoverable_operation()
+            assert recovered == {"operation_id": concurrent_id, "command_name": "test.recovery.state",
+                                 "payload": payload, "background": True}
+            valid_result = tasks.execute_background_command.run(
+                recovered["operation_id"], recovered["command_name"], recovered["payload"],
+            )
+        assert valid_result == payload
+        completed = read_operation(concurrent_id)
+        assert completed["state"] == "complete" and completed["response"] == payload
+        assert tasks.execute_background_command.run(concurrent_id, "test.recovery.state", payload) is None
+        assert read_operation(concurrent_id) == completed
+        with postgres_store.connection(read_only=True) as database:
+            assert database.raw.execute("SELECT COUNT(*) FROM internal_migrations WHERE name=%s",
+                                        (concurrent_id,)).fetchone()[0] == 1
+    print("PASS test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery")
+
+
 def main(database_url=DSN) -> None:
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("This check requires the disposable PostgreSQL test instance")
@@ -296,31 +385,7 @@ def main(database_url=DSN) -> None:
             )
             assert read_operation(state_id)["state"] == "complete"
 
-    concurrent_id = f"concurrent-{uuid.uuid4().hex}"
-    with postgres_store.connection(read_only=False) as database:
-        database.raw.execute(
-            "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,"
-            "payload_json,background) VALUES(%s,'test.recovery.state',%s,'queued',%s,TRUE)",
-            (concurrent_id, request_digest("test.recovery.state", {"value": concurrent_id}),
-             '{"value":"' + concurrent_id + '"}'),
-        )
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        valid = executor.submit(tasks.execute_background_command.run,
-                                concurrent_id, "test.recovery.state", {"value": concurrent_id})
-        conflicting = executor.submit(tasks.execute_background_command.run,
-                                      concurrent_id, "test.recovery.state", {"value": "changed"})
-        assert valid.result() == {"value": concurrent_id}
-        try:
-            conflicting.result()
-        except CommandConflict:
-            pass
-        else:
-            raise AssertionError("Concurrent conflicting task was accepted")
-    assert read_operation(concurrent_id)["state"] == "complete"
-    with postgres_store.connection(read_only=True) as database:
-        assert database.raw.execute(
-            "SELECT COUNT(*) FROM internal_migrations WHERE name=%s", (concurrent_id,),
-        ).fetchone()[0] == 1
+    test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery()
 
     legacy_id = f"legacy-{uuid.uuid4().hex}"
     with postgres_store.connection(read_only=False) as database:
