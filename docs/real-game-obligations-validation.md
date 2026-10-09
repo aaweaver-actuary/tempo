@@ -55,3 +55,16 @@ Rebased onto updated main `24a2272c702b20caa278998c672c7e96ac3baea7` (PR #133).
 Only the appended regression registry conflicted; both sets of coverage were
 preserved. PR #134 is still open and mergeable at `ee53d39c6a1830e2dd07be7a957933ac26242596`.
 Final candidate validation follows the restart-fixture correction.
+
+Updated-base development checks (base `24a2272`, candidate `c3bf427`):
+
+- Same ten affected whole backend files: **279 passed**, 123.70 s wall.
+- `npm run test:unit -- tests/unit/desktop-queue-regressions.test.ts tests/unit/training-burial-regressions.test.ts tests/unit/study-regressions.test.tsx tests/unit/training-builder-handoff-regressions.test.tsx`: **145 passed**, 69.71 s wall.
+- After aligning retained commands with the card-before-queue lock order: whole feedback, queue-randomization, and queue-attempt files **87 passed**, 67.25 s wall.
+- `npm run typecheck`: pass, 62.01 s wall; `npm run lint`: no errors, 10 existing warnings, 79.94 s wall.
+
+The second durability run began at `c3bf427`; the source-mounted proof also
+includes the subsequent retained-command lock-order correction, contended study,
+and rollback-only existing-game migration rehearsal. Its image labels record
+that starting revision; this mixed development run will not be presented as
+clean-HEAD evidence. Required CI owns clean final-candidate validation.

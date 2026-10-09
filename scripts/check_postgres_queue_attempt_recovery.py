@@ -430,6 +430,14 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
             before_studied = dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[1],)).fetchone())
             # No exact-history match exists. Only the atomically published events are visible.
             assert database.execute("SELECT COUNT(*) FROM current_repertoire_decision_events WHERE game_id=?", (identifier,)).fetchone()[0] == 2
+        # Rehearse an upgrade with existing games, then roll back the isolated
+        # schema/task writes. Fresh installs do not need the one-time backfill.
+        migration = (Path(__file__).resolve().parents[1] / 'backend/migrations/041_real_game_study_obligations.sql').read_text()
+        with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"]) as upgrade:
+            upgrade.execute(migration.split('INSERT INTO tempo_schema_migrations')[0])
+            backfill = upgrade.execute("SELECT state,payload_json FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
+            assert backfill[0] == 'queued' and json.loads(backfill[1]) == {'after_game_id':''}
+            upgrade.rollback()
         ordinary_order_plan = refresh._prepare_queue_randomization(today)
         with postgres_store.connection() as database:
             promote_real_game_card(database,card_ids[1],today)
@@ -485,7 +493,22 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         operation = f'{identifier}-remediate'
         operations.append(operation)
         payload = {'card_id':card_ids[1],'review':{'outcome':'correct','guided':False,'queue_entry_id':studied_entry,'expected_revision':1,'attempt_id':operation,'recorded_at':(now+timedelta(seconds=1)).isoformat()}}
-        assert execute_command(operation,'cards.review',payload)['persisted']
+        # Hold the production publication lock, then let an actual foreground
+        # study contend. Independent retained-attempt reads still finish.
+        with ThreadPoolExecutor(max_workers=1) as review_executor:
+            with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"], row_factory=postgres_store.tempo_row_factory) as publication:
+                publication.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{card_ids[1]}",))
+                review_future = review_executor.submit(execute_command,operation,'cards.review',payload)
+                deadline = time.monotonic()+5
+                with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"],autocommit=True) as observer:
+                    while not observer.execute("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT pg_advisory_xact_lock(hashtextextended%')").fetchone()[0]:
+                        if review_future.done() or time.monotonic()>deadline:
+                            raise AssertionError('Foreground review did not reach publication lock')
+                assert promote_real_game_card(postgres_store.PostgresConnection(publication),card_ids[1],today)
+                with postgres_store.connection(read_only=True) as reader:
+                    assert reader.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone()[0] == 1
+                publication.commit()
+            assert review_future.result(timeout=5)['persisted']
         assert execute_command(operation,'cards.review',payload)['persisted']
         with postgres_store.connection() as database:
             assert not has_outstanding_real_game_miss(database,card_ids[1])
@@ -498,6 +521,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
             assert has_outstanding_real_game_miss(database,card_ids[1])
             assert promote_real_game_card(database,card_ids[1],today)
             assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued'", (today,card_ids[1])).fetchone()[0] == 1
+        print('PASS test_postgres_real_game_obligation_admission_restart_publication_and_remediation',flush=True)
     finally:
         with postgres_store.connection() as database:
             for operation in operations:

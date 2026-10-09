@@ -31,6 +31,17 @@ def warm_queue_refresh_sql() -> None:
     postgres_sql(_QUEUE_REFRESH_PROJECTION_SQL)
 
 
+def _lock_attempt_card(database, entry_id: int) -> None:
+    """Follow review's card-before-queue lock order for retained commands."""
+    if not isinstance(database, PostgresConnection):
+        return
+    entry = database.execute("SELECT card_id FROM daily_queue WHERE id=?", (entry_id,)).fetchone()
+    if entry:
+        database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                                (f"tempo:card-edit:{entry['card_id']}",))
+        database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (entry['card_id'],))
+
+
 def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
     """A retained, identified attempt remains operable after queue promotion."""
     identified = card_id is not None and expected_revision is not None
@@ -61,6 +72,7 @@ def validate_available_attempt(database, entry_id: int, card_id=None, expected_r
 
 def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
     entry_id = int(payload["entry_id"])
+    _lock_attempt_card(database, entry_id)
     validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
     changed = database.execute(
         "UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",
@@ -74,6 +86,7 @@ def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -
 def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     entry_id = int(payload["entry_id"])
     queue_date = date.today().isoformat()
+    _lock_attempt_card(database, entry_id)
     lock_queue_date_for_position(database, queue_date)
     validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is

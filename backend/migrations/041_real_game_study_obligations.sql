@@ -21,6 +21,6 @@ WHERE EXISTS(SELECT 1 FROM imported_games)
 ON CONFLICT(kind,deduplication_key) DO UPDATE SET state='queued',
     generation=background_tasks.generation+1,payload_json=excluded.payload_json,
     phase='queued',attempt_count=0,lease_token=NULL,lease_expires_at=NULL,next_attempt_at=excluded.next_attempt_at,
-    updated_at=excluded.updated_at;
+    last_error=NULL,started_at=NULL,completed_at=NULL,updated_at=excluded.updated_at;
 
 INSERT INTO tempo_schema_migrations(version) VALUES(41);
