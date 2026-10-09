@@ -287,7 +287,7 @@ export async function fetchAndInitializeQueue(
       pendingReviewError = "Previously saved reviews are waiting for confirmation.";
     if (options.replaySavedReviews !== false && pendingReviews().length) {
       try {
-        await flushPendingReviews();
+        await flushPendingReviews(Infinity, true);
       } catch (error) {
         pendingReviewError = error instanceof Error ? error.message : String(error);
         if (generation === requestGeneration)

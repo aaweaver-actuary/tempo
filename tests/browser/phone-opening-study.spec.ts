@@ -259,3 +259,27 @@ test("Phone skipped same-card result stays paused with actionable earlier-result
   expect(submissions).toBe(0);
   await noPageOverflow(page);
 });
+
+
+test("Phone reload consumes a retained completed review receipt without another review POST", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page, true, [openingCard("next-ruy", "Ruy Lopez", "e2e4", 812)]);
+  const traffic: string[] = [];
+  await page.route("**/api/cards/reload-london/review", route => {
+    traffic.push("POST");
+    return route.fulfill({ status: 503, json: { detail: "A persisted review must not be replayed" } });
+  });
+  await page.route("**/api/operations/review-attempt%3Areload-original", route => {
+    traffic.push("receipt");
+    return route.fulfill({ json: { state: "complete", response: { persisted: true, review_id: 88 } } });
+  });
+  await page.evaluate(() => localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([{
+    backendId: "reload-london", queueEntryId: 811, attemptId: "reload-original", outcome: "correct", guided: false,
+    completedAt: "2026-09-18T15:00:00Z",
+  }])));
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]").length)).toBe(0);
+  await expect(page.locator(".phone-study-heading h2")).toHaveText("Ruy Lopez");
+  expect(traffic).toEqual(["receipt"]);
+  await noPageOverflow(page);
+});

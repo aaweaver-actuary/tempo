@@ -2981,3 +2981,10 @@ Additional receipt and shared-flush boundaries:
   (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): a native storage
   exception leaves concise inline guidance, original exception details and a debug
   reference on one attempt-owned notice, with no render-created incidents or POST.
+
+- `PR105 initial queue recovery confirms retained reviews before replay receipt=%s`
+  (`tests/unit/desktop-queue-regressions.test.ts`): completed receipts drain without
+  POST; missing receipts replay only the original key and completion time.
+- `Phone reload consumes a retained completed review receipt without another review POST`
+  (`tests/browser/phone-opening-study.spec.ts`): real reload consumes browser-retained
+  review storage by its original receipt, with zero new review POSTs.

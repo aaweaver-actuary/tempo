@@ -3,7 +3,7 @@ import { waitFor } from "@testing-library/react";
 import { fetchAndInitializeQueue, loadEligibleOfflineQueue } from "../../app/views/fetchAndInitializeQueue";
 import { useTrainingStore } from "../../app/state/training-store";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
-import { enqueuePendingReview } from "../../app/lib/review-outbox";
+import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
 import { localDayKey } from "../../app/utils/local";
 import { OfflineReplayError, type PreparedTraining } from "../../app/lib/offline-training";
 import { clearNotificationHistory, notificationToastIds, notifications, publishNotification } from "../../app/lib/notifications";
@@ -398,4 +398,27 @@ it.each(legacyFailureFormats)("confirmed legacy $name replay accepts a fresh aut
   expect(pendingTrainingFailures()).toEqual([]);
   expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
   expect(useTrainingStore.getState().serviceError).toBe("");
+});
+
+
+it.each(["complete", "missing"])("PR105 initial queue recovery confirms retained reviews before replay receipt=%s", async receiptState => {
+  enqueuePendingReview({ backendId: "retained-card", queueEntryId: 811, attemptId: "reload-original", outcome: "correct", guided: false });
+  const original = pendingReviews()[0];
+  const fetcher = vi.fn<typeof fetch>(async (input, options) => {
+    if (String(input).includes("/api/operations/")) return receiptState === "complete"
+      ? Response.json({ state: "complete", response: { persisted: true } }) : new Response(null, { status: 404 });
+    if (options?.method === "POST" && String(input).endsWith("/review")) return Response.json({ persisted: true });
+    return Response.json({ cards: [], count: 0 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await fetchAndInitializeQueue(false, { preparePhoneQueue: false });
+  const reviewTraffic = fetcher.mock.calls.filter(([input]) => String(input).includes("/api/operations/") || String(input).endsWith("/review"));
+  expect(reviewTraffic[0][0]).toContain("/api/operations/review-attempt%3Areload-original");
+  const posts = reviewTraffic.filter(([, options]) => options?.method === "POST");
+  expect(posts).toHaveLength(receiptState === "complete" ? 0 : 1);
+  if (receiptState === "missing") {
+    expect(new Headers(posts[0][1]?.headers).get("Idempotency-Key")).toBe("review-attempt:reload-original");
+    expect(JSON.parse(String(posts[0][1]?.body))).toMatchObject({ attempt_id: original.attemptId, recorded_at: original.completedAt });
+  }
+  expect(pendingReviews()).toEqual([]);
 });
