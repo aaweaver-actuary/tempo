@@ -1,4 +1,5 @@
 """Periodic and continuation signals cannot accumulate behind one worker."""
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 from celery import Celery
@@ -15,21 +16,75 @@ def wake_broker(monkeypatch):
     published = []
     values = {}
     class Server:
-        def eval(self, script, _keys, key, token):
+        def __init__(self):
+            self.metadata = {}
+            self.queues = {}
+            self.unacked = {}
+
+        def lpush(self, queue, message):
+            self.queues.setdefault(queue, []).insert(0, message)
+
+        def eval(self, script, key_count, *parameters):
+            keys, arguments = parameters[:key_count], parameters[key_count:]
+            key, metadata_key = keys[:2]
+            token = arguments[0]
+            metadata = self.metadata.get(metadata_key, {})
             if script.startswith('-- reserve'):
                 if key in values:
-                    return [0, values[key]]
+                    tracked = (metadata.get('token') == values[key]
+                               and metadata.get('phase') == 'published')
+                    if not tracked or (metadata['message'] in self.queues.get(metadata['queue'], [])
+                                       or metadata['tag'] in self.unacked):
+                        return [0, values[key]]
                 values[key] = token
+                self.metadata[metadata_key] = {'token': token, 'phase': 'reserved'}
                 return [1, token]
+            if script.startswith('-- publish'):
+                if metadata.get('token') != token or metadata.get('phase') not in ('reserved', 'published'):
+                    return 0
+                if values.get(key, token) != token:
+                    return 0
+                if metadata['phase'] == 'published':
+                    if values.get(key) != token:
+                        return 0
+                    if metadata['message'] in self.queues.get(metadata['queue'], []):
+                        return 1
+                queue, unacked_key = keys[2:]
+                message, tag, direction = arguments[1:]
+                if direction == 'LPUSH':
+                    self.lpush(queue, message)
+                else:
+                    self.queues.setdefault(queue, []).append(message)
+                values[key] = token
+                self.metadata[metadata_key] = dict(token=token, phase='published',
+                                                  queue=queue, message=message, tag=tag, unacked=unacked_key)
+                return 1
+            if script.startswith('-- abort'):
+                if metadata.get('token') != token or metadata.get('phase') != 'reserved':
+                    return 0
+                if values.get(key) == token:
+                    del values[key]
+                metadata['phase'] = 'aborted'
+                return 1
             if values.get(key) != token:
                 return 0
-            if script.startswith('-- consume'):
-                del values[key]
+            del values[key]
+            if metadata.get('token') == token:
+                self.metadata[metadata_key] = {'token': token, 'phase': 'consumed'}
             return 1
-    monkeypatch.setattr(redis.Redis, 'from_url', lambda *args, **kwargs: Server())
+    server = Server()
+    monkeypatch.setattr(redis.Redis, 'from_url', lambda *args, **kwargs: server)
+    channel = object.__new__(background_wakes.WakeRedisChannel)
+    monkeypatch.setattr(channel, 'conn_or_acquire', lambda: nullcontext(server))
     def publish(_app, name, args=None, kwargs=None, **options):
-        published.append((name, args, kwargs, options))
-        return SimpleNamespace(id=options.get('task_id', str(len(published))))
+        identifier = options.get('task_id', str(len(published)))
+        message = {'headers': {'task': name, **options.get('headers', {})},
+                   'properties': {'delivery_tag': identifier, 'delivery_info': {}}}
+        before = sum(map(len, server.queues.values()))
+        channel._put(options.get('queue', 'background'), message)
+        if sum(map(len, server.queues.values())) > before:
+            published.append((name, args, kwargs, options))
+        return SimpleNamespace(id=identifier)
     monkeypatch.setattr(Celery, 'send_task', publish)
     monkeypatch.setattr(celery_app, 'AsyncResult', lambda identifier: SimpleNamespace(id=identifier))
     yield published, values
@@ -134,3 +189,176 @@ def test_fast_wake_execution_preserves_newer_pending_ownership(wake_broker, monk
     result = celery_app.send_task(task_name)
     assert result.id == published[0][3]['task_id']
     assert values[background_wakes._KEY_PREFIX + task_name] == 'newer-owner'
+
+
+def deliver_wake(token, monkeypatch, useful_executions):
+    """Exercise the actual consumer wrapper without maintenance database work."""
+    from app import tasks
+    task = tasks.poll_background_tasks
+    monkeypatch.setattr(task, 'run', lambda: useful_executions.append(token) or True)
+    task.push_request(id=token, headers={background_wakes.WAKE_HEADER: token})
+    try:
+        return task()
+    finally:
+        task.pop_request()
+
+
+def test_slow_publication_preserves_newer_owner_and_fences_obsolete_execution(wake_broker, monkeypatch):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    ownership_key = background_wakes._KEY_PREFIX + task_name
+    original_publish = Celery.send_task
+    useful_executions = []
+    def pause_first_publication(app, name, args=None, kwargs=None, **options):
+        if options['task_id'] == 'slow-A':
+            assert values[ownership_key] == 'slow-A'
+            del values[ownership_key]  # advance the reservation clock without sleeping
+            celery_app.send_task(task_name, task_id='new-B')
+        return original_publish(app, name, args, kwargs, **options)
+    monkeypatch.setattr(Celery, 'send_task', pause_first_publication)
+    celery_app.send_task(task_name, task_id='slow-A')
+    assert values[ownership_key] == 'new-B'
+    assert not deliver_wake('slow-A', monkeypatch, useful_executions)
+    assert values[ownership_key] == 'new-B'
+    assert deliver_wake('new-B', monkeypatch, useful_executions)
+    assert useful_executions == ['new-B']
+    celery_app.send_task(task_name, task_id='following-C')
+    assert values[ownership_key] == 'following-C'
+    assert [options['task_id'] for _, _, _, options in published] == ['new-B', 'following-C']
+
+
+def test_repeated_expired_publications_cannot_accumulate_unowned_deliveries(wake_broker, monkeypatch):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    ownership_key = background_wakes._KEY_PREFIX + task_name
+    original_publish = Celery.send_task
+    def expire_before_enqueue(app, name, args=None, kwargs=None, **options):
+        del values[ownership_key]
+        return original_publish(app, name, args, kwargs, **options)
+    monkeypatch.setattr(Celery, 'send_task', expire_before_enqueue)
+    results = [celery_app.send_task(task_name) for _ in range(100)]
+    assert len(published) == 1
+    assert len({result.id for result in results}) == 1
+    useful_executions = []
+    assert deliver_wake(results[0].id, monkeypatch, useful_executions)
+    assert useful_executions == [results[0].id]
+    assert ownership_key not in values
+
+
+def test_late_publication_cannot_revive_after_successor_consumption(wake_broker, monkeypatch):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    ownership_key = background_wakes._KEY_PREFIX + task_name
+    original_publish = Celery.send_task
+    useful_executions = []
+    def publish_successor_then_resume(app, name, args=None, kwargs=None, **options):
+        if options['task_id'] == 'slow-A':
+            del values[ownership_key]
+            celery_app.send_task(task_name, task_id='new-B')
+            assert deliver_wake('new-B', monkeypatch, useful_executions)
+        return original_publish(app, name, args, kwargs, **options)
+    monkeypatch.setattr(Celery, 'send_task', publish_successor_then_resume)
+    celery_app.send_task(task_name, task_id='slow-A')
+    assert ownership_key not in values
+    assert not deliver_wake('slow-A', monkeypatch, useful_executions)
+    assert useful_executions == ['new-B']
+    assert [options['task_id'] for _, _, _, options in published] == ['new-B']
+
+
+def test_stranded_persistent_wake_recovers_on_next_request(wake_broker, monkeypatch):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    first = celery_app.send_task(task_name, task_id='lost-delivery')
+    published.clear()  # broker removed delivery, interrupted before unacked registration
+    background_wakes.client(celery_app.conf.broker_url).queues.clear()
+    replacement = celery_app.send_task(task_name, task_id='recovery')
+    assert replacement.id != first.id
+    assert len(published) == 1
+    assert values[background_wakes._KEY_PREFIX + task_name] == replacement.id
+    useful_executions = []
+    assert not deliver_wake(first.id, monkeypatch, useful_executions)
+    assert deliver_wake(replacement.id, monkeypatch, useful_executions)
+    assert useful_executions == [replacement.id]
+
+
+def test_committed_wake_survives_publication_response_failure(wake_broker, monkeypatch):
+    from kombu.exceptions import OperationalError
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    original_publish = Celery.send_task
+    def lose_publication_response(app, name, args=None, kwargs=None, **options):
+        original_publish(app, name, args, kwargs, **options)
+        raise OperationalError('publication committed, response lost')
+    monkeypatch.setattr(Celery, 'send_task', lose_publication_response)
+    with pytest.raises(OperationalError, match='response lost'):
+        celery_app.send_task(task_name, task_id='committed')
+    assert len(published) == 1
+    assert values.get(background_wakes._KEY_PREFIX + task_name) == 'committed'
+    useful_executions = []
+    assert deliver_wake('committed', monkeypatch, useful_executions)
+    assert useful_executions == ['committed']
+
+
+def test_failed_slow_publisher_cannot_cancel_newer_owner(wake_broker, monkeypatch):
+    from kombu.exceptions import OperationalError
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    ownership_key = background_wakes._KEY_PREFIX + task_name
+    original_publish = Celery.send_task
+    def fail_after_successor(app, name, args=None, kwargs=None, **options):
+        if options['task_id'] == 'slow-A':
+            del values[ownership_key]
+            celery_app.send_task(task_name, task_id='new-B')
+            raise OperationalError('old producer failed late')
+        return original_publish(app, name, args, kwargs, **options)
+    monkeypatch.setattr(Celery, 'send_task', fail_after_successor)
+    with pytest.raises(OperationalError, match='failed late'):
+        celery_app.send_task(task_name, task_id='slow-A')
+    assert values[ownership_key] == 'new-B'
+    assert len(published) == 1
+    useful_executions = []
+    assert deliver_wake('new-B', monkeypatch, useful_executions)
+    assert useful_executions == ['new-B']
+
+
+def test_existing_unacked_wake_remains_authoritative(wake_broker):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    first = celery_app.send_task(task_name)
+    server = background_wakes.client(celery_app.conf.broker_url)
+    metadata = server.metadata[background_wakes.ownership_keys(task_name)[1]]
+    server.queues.clear()
+    server.unacked[metadata['tag']] = metadata['message']
+    assert celery_app.send_task(task_name).id == first.id
+    assert len(published) == 1
+    assert values[background_wakes._KEY_PREFIX + task_name] == first.id
+
+
+def test_payload_kwargs_callbacks_and_unmarked_tokens_keep_standard_transport(wake_broker):
+    published, _values = wake_broker
+    for _ in range(3):
+        celery_app.send_task('app.tasks.poll_background_tasks', kwargs={'legacy': 'payload'})
+        celery_app.send_task('app.tasks.result_callback', args=['receipt', {'result': True}])
+        celery_app.send_task('app.tasks.poll_background_tasks', headers={background_wakes.WAKE_HEADER: 'legacy-token'})
+    assert len(published) == 9
+    assert all(background_wakes._PUBLICATION_HEADER not in options.get('headers', {})
+               for _, _, _, options in published)
+
+
+def test_consumed_metadata_is_bounded_and_rejects_late_publication(wake_broker):
+    _published, _values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    server = background_wakes.client(celery_app.conf.broker_url)
+    for _ in range(100):
+        current = celery_app.send_task(task_name)
+        assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, current.id)
+    assert len(server.metadata) == 1
+    assert server.metadata[background_wakes.ownership_keys(task_name)[1]] == {
+        'token': current.id, 'phase': 'consumed',
+    }
+
+    publication_count = len(_published)
+    celery_app.send_task(task_name, task_id=current.id, headers={
+        background_wakes.WAKE_HEADER: current.id, background_wakes._PUBLICATION_HEADER: True,
+    })
+    assert len(_published) == publication_count
