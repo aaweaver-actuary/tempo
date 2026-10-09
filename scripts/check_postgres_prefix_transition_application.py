@@ -21,6 +21,7 @@ from app.services.opening_graph import GraphInput, build_graph
 from app.services.postgres_opening_graph import stage_graph_steps, create_graph_cards, execute_postgres_opening_graph_slice
 from app.services.postgres_integrity import execute_postgres_integrity_slice
 from app.services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
+from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 
 
 def idle_call(callback):
@@ -29,9 +30,9 @@ def idle_call(callback):
     while time.monotonic()<deadline:
         try:
             return callback()
-        except (HTTPException,psycopg.errors.SerializationFailure) as error:
+        except (HTTPException,psycopg.errors.SerializationFailure,BackgroundAdmissionDeferred) as error:
             cause=error.__cause__ if isinstance(error,psycopg.errors.SerializationFailure) else error
-            if not (isinstance(cause,HTTPException) and cause.status_code==503 and isinstance(cause.detail,dict)
+            if not isinstance(error, BackgroundAdmissionDeferred) and not (isinstance(cause,HTTPException) and cause.status_code==503 and isinstance(cause.detail,dict)
                     and cause.detail.get('message')=='Study work is active. Retry the diagnostic when study is idle.'):
                 raise
             from app.services.redis_admission_gate import foreground_present
@@ -76,11 +77,40 @@ def isolate_unrelated_publication_tasks():
 
 def drain(kind, handler, *, slice_budget=300):
     count = 0
-    while task := claim_task(kind):
-        handler(task)
+    while task := idle_call(lambda: claim_task(kind)):
+        idle_call(lambda: handler(task))
         count += 1
         assert count < slice_budget, (kind, task)
     return count
+
+
+def test_postgres_transition_driver_waits_only_for_foreground_admission():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from app.database import background_connection
+    from app.services.redis_admission_gate import foreground_lease
+    attempted, admitted = Event(), Event()
+    def bounded_read():
+        attempted.set()
+        with background_connection() as database:
+            admitted.set()
+            assert database.execute_native('SHOW transaction_timeout').fetchone()[0] == '250ms'
+            return database.execute_native('SELECT 1').fetchone()[0]
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with foreground_lease():
+            result = executor.submit(idle_call, bounded_read)
+            assert attempted.wait(5) and not admitted.is_set() and not result.done()
+        assert result.result(timeout=10) == 1
+    for failure in (RuntimeError('execution failed'), HTTPException(503, 'provider unavailable')):
+        def reject():
+            raise failure
+        try:
+            idle_call(reject)
+        except type(failure) as observed:
+            assert observed is failure
+        else:
+            raise AssertionError('Transition driver hid an execution failure')
+    print('PASS test_postgres_transition_driver_waits_only_for_foreground_admission (real Redis, unchanged budget, execution failures retained)')
 
 
 def publish(payload, after_activation=None):
@@ -1456,6 +1486,7 @@ def main():
     time.tzset()
     os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_PREFIX_APPLICATION_PROOF_URL','postgresql://postgres@postgres:5432/tempo')
     os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+    test_postgres_transition_driver_waits_only_for_foreground_admission()
     if '--activation-scaling' in sys.argv:
         with isolate_unrelated_publication_tasks():
             test_pr102_activation_sql_statement_count_is_independent_of_transition_size()
