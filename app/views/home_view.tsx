@@ -339,11 +339,14 @@ export default function Home() {
   usePendingReviewRecovery(usesLocalApi() && !offlineQueue, queueReadiness === "ready",
     pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
     reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue", result => {
+      const confirmsDisplayedAttempt = Boolean(reviewPersistenceIdentity?.attemptId &&
+        result.persistedAttemptIds.includes(reviewPersistenceIdentity.attemptId) &&
+        useTrainingStore.getState().attempt.attemptId === reviewPersistenceIdentity.attemptId);
       if (reviewPersistenceIdentity?.attemptId && result.persistedAttemptIds.includes(reviewPersistenceIdentity.attemptId)) {
         setReviewPersistenceState("saved"); setReviewSaveError("");
       }
       if (!pendingReviews().length) setPendingReviewError("");
-      void refreshDatabaseQueue(false, false).catch(() => undefined);
+      void refreshDatabaseQueue(confirmsDisplayedAttempt, false).catch(() => undefined);
     });
   const repertoireLine = card.moves;
 
