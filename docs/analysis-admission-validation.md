@@ -84,3 +84,23 @@ shared image `postgres:18.6-trixie`, no host data mounts. Each proof uses a fres
 database; teardown `docker stop tempo-analysis-receipt-proof` then
 `docker rm -v tempo-analysis-receipt-proof`. New complete durability/CI evidence
 is required for this repaired head.
+# Current CI follow-up
+
+Admission head 4b09b0c exposed three older HTTP admission expectations and parent
+health-probe contention in the isolated graph helper database. The HTTP cases
+now require prompt retryable rejection and preserve every subsequent evidence
+outcome. All 39 opening-evidence contract cases pass (0.78 seconds).
+
+The graph helper now owns separate Redis admission keys, retains a real parent
+foreground token, and deletes only its own keys. The complete focused graph/
+retention rehearsal passed all 11 named proofs on PostgreSQL 18.6 / Redis 7,
+including genuine lock contention, generation replacement, timeout rollback,
+restart and replay. Setup took 28.76 seconds; graph drain took 5.35 seconds.
+Other chat validation was active, so these timings make no speedup claim.
+
+`make docker-durability` on dirty 4b09b0c reproduced real foreground denial in
+that helper and failed its background workload stage (104.32 seconds), after
+earlier stages passed. Cleanup succeeded. It is not a complete pass. The fixed
+focused proof and new current-head CI provide subsequent evidence; the full
+required CI candidate validation remains pending. Logs/resources are retained
+in root `test-results/analysis-activity-2026-10-09`.
