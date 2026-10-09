@@ -688,8 +688,16 @@ productTest("repair choices advance before a delayed save and survive reload thr
     const result = await (await request.get(`${api}/repertoires`, { headers: { "X-Tempo-Work-Class": "background" } })).json();
     const repertoire = result.repertoires.find((item: { name: string }) => item.name === "queued-repair");
     repertoireId = repertoire?.id ?? "";
-    return repertoire?.integrity_issue_count;
-  }, { timeout: 20_000 }).toBe(2);
+    return {
+      integrity_issue_count: repertoire?.integrity_issue_count,
+      integrity_status: repertoire?.integrity_status,
+      integrity_scan_status: repertoire?.integrity_scan_status,
+    };
+  }, { timeout: 20_000 }).toEqual({
+    integrity_issue_count: 2,
+    integrity_status: "needs_repair",
+    integrity_scan_status: "idle",
+  });
   let releaseSave: (() => void) | undefined;
   const saveHold = new Promise<void>(resolve => { releaseSave = resolve; });
   let savedOnServer = false;
