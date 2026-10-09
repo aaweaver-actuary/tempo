@@ -112,3 +112,26 @@ each evidence-read outcome. It does not change admission policy, remove leases
 owned by another process, add sleeps, or raise timeouts. Named ownership tests
 passed **4 cases in 1.23 s**. Real affected PostgreSQL proof and fresh full CI
 remain required after this repair.
+
+Focused real PostgreSQL follow-up on clean `226b35a` used project
+`tempo-issue135-focus-3fb593a1`: two isolated tmpfs database/broker containers,
+no published ports, and a task-owned backend image. It applied the regular
+schema/role bootstrap, then ran these exact Python consumers through
+`docker compose -p <owned-project> -f <temporary-compose> run --rm --no-deps runner python`:
+
+- `/source/scripts/check_postgres_operation_recovery.py`: passed, **3.48 s**;
+  the earlier transaction-deadline connection loss did not recur in focused scope.
+- `check_postgres_daily_study_dispatch.proof_deadline_recovery(identifier)` with
+  its owned-task cleanup: all five issue-135 PostgreSQL cases passed, **4.11 s**.
+- `check_postgres_opening_evidence.test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()`
+  and `test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics()`:
+  both repaired real Redis/PostgreSQL HTTP proofs passed, **3.78 s**.
+
+The command driver, bootstrap, diagnostics and teardown totaled **26.75 s**.
+Every connection used this disposable cluster's administrator; this focused
+follow-up does not claim deployed-reader role parity or a complete gate pass.
+Task-owned containers and runner image were removed, and absence of containers
+and volumes was verified. Shared base images and caches were retained.
+`focused-postgres-boundaries.log` and `focused-postgres-ownership.json` preserve
+project, revision, resource identities and teardown provenance outside the clone.
+The standard durability runner remains the required settled-candidate evidence.
