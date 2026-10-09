@@ -61,3 +61,13 @@ also passed in the preceding 191-case run (six failures were the subsequently
 repaired canonical/fixture assumptions); that partial run is not a complete
 pass. Eight new coalescing cases pass after the final input-version refinement
 in 0.90 seconds. CI owns the complete new candidate evidence.
+
+Complete backend CI on head561a2e3 exposed six portable native-rehearsal setup
+errors: its SQLite fixture recreated epoch tables now supplied by compatibility
+initialization. The fixture reuses those tables and explicitly models the real
+PostgreSQL scoped trigger rather than SQLite's broad compatibility triggers;
+only this disposable in-memory model removes its own broad trigger definitions.
+The production paths are unchanged. All six isolation/restoration assertions
+pass in 1.01 seconds, including atomic failed cleanup and exact unrelated state.
+The separate refresh-input regressions retain real SQLite broad invalidation
+coverage; required PostgreSQL CI retains the actual production trigger behavior.

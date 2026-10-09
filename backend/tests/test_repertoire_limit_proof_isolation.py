@@ -50,13 +50,19 @@ def proof_environment(tmp_path, monkeypatch):
     today = date.today().isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     with connection() as stored:
+        # This portable rehearsal models PostgreSQL scoped invalidation. The
+        # SQLite broad compatibility triggers are covered by refresh-input
+        # tests and must not change this model's shared epoch on card writes.
+        for trigger in stored.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'refresh_source_%'").fetchall():
+            stored.execute(f'DROP TRIGGER "{trigger[0]}"')
         stored.execute('CREATE TABLE operation_receipts(operation_id TEXT PRIMARY KEY)')
         stored.execute("INSERT INTO operation_receipts VALUES('unrelated-receipt')")
         # Model migration 21's audited card-update trigger. Real PostgreSQL is
-        # covered by make docker-durability; SQLite's optional schema lacks it.
-        stored.execute('CREATE TABLE priority_repertoire_source_epochs(repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,version INTEGER NOT NULL)')
-        stored.execute('CREATE TABLE priority_source_epoch(id INTEGER PRIMARY KEY,version INTEGER NOT NULL)')
-        stored.execute('INSERT INTO priority_source_epoch VALUES(1,55)')
+        # covered by make docker-durability. SQLite now has conservative source
+        # epochs; this fixture still models the PostgreSQL scoped card trigger.
+        stored.execute('CREATE TABLE IF NOT EXISTS priority_repertoire_source_epochs(repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,version INTEGER NOT NULL)')
+        stored.execute('CREATE TABLE IF NOT EXISTS priority_source_epoch(id INTEGER PRIMARY KEY,version INTEGER NOT NULL)')
+        stored.execute('UPDATE priority_source_epoch SET version=55 WHERE id=1')
         stored.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('unrelated','Unrelated','synthetic',?)", (today,))
         stored.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('shared','Shared','synthetic',?)", (today,))
         stored.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES('unrelated-card','unrelated','prefix',?,'[]','learning',?,?)", (proof.chess.STARTING_FEN, today, today))
