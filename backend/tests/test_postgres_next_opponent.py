@@ -195,3 +195,45 @@ def test_issue107_http_contract_invalid_speed_unsupported_and_storage_error(monk
     assert response.status_code == 503
     assert "check Tempo service status" in response.json()["detail"]
     assert "private internal details" not in response.text
+
+
+def test_issue107_regular_worker_dispatch_completes_profile_receipt_once(monkeypatch):
+    from app import tasks
+    claimed = {**task(), "kind": service.TASK_KIND, "generation": 1}
+    calls = []
+    assert service.TASK_KIND in tasks._SUPPORTED_BACKGROUND_KINDS
+    monkeypatch.setattr(tasks, "current_delivery", lambda *_: True)
+    monkeypatch.setattr(tasks, "defer_paused_defensive_task", lambda *_: False)
+    monkeypatch.setattr(tasks, "measure_handler", lambda *_: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_: nullcontext())
+    monkeypatch.setattr(tasks, "execute_profile_slice", lambda saved: calls.append(saved) or False)
+    monkeypatch.setattr(tasks, "complete_task", lambda *_args, **_kwargs: pytest.fail("handler already owns atomic receipt"))
+    assert not tasks._execute_claimed_background_slice(claimed, None)
+    assert calls == [claimed]
+
+
+def test_issue107_profile_http_reads_only_published_account_snapshot(monkeypatch):
+    database = Database()
+    profile = build_profile("alice", [game()], as_of=CUTOFF)
+    database.state.update(profile_json=profile.model_dump_json(), published_at=CUTOFF.isoformat(),
+                          published_generation=1, published_method=METHOD_VERSION)
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(database))
+    response = TestClient(main.app).get("/api/games/next-opponent-profile?speed=rapid")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["profile"]["version"] == profile.version
+    assert payload["effective_speed_mixture"] == [{"speed": "rapid", "weight": 1.0}]
+    assert all(statement.startswith("SELECT") for statement in database.statements)
+
+
+def test_issue107_unsupported_speed_only_does_not_fabricate_supported_probability():
+    database = Database()
+    profile = build_profile("alice", [game(speed="bullet")], as_of=CUTOFF)
+    database.state.update(profile_json=profile.model_dump_json(), published_at=CUTOFF.isoformat(),
+                          published_generation=1, published_method=METHOD_VERSION)
+    response = service.read_profile(database, now=CUTOFF)
+    assert response.availability == "unsupported"
+    assert response.profile.unsupported_speed_mass == 1
+    assert [(item.speed, item.weight) for item in response.effective_speed_mixture] == [("bullet", 1)]
