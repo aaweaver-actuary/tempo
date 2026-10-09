@@ -204,6 +204,33 @@ def test_issue79_postgres_rehearsal_coordinates_only_explicit_foreground_rejecti
     assert response is (ready if expected_requests == 2 else busy)
 
 
+
+def test_issue79_rehearsal_never_replays_a_started_calculation_after_foreground_preemption(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    from threading import Event
+    from types import SimpleNamespace
+    from app.services import redis_admission_gate
+
+    script_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_opening_segmentation.py'
+    specification = importlib.util.spec_from_file_location('issue79_started_plan_rehearsal', script_path)
+    rehearsal = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(rehearsal)
+    monkeypatch.setattr(redis_admission_gate, 'foreground_present', lambda: False)
+    calculation_started = Event()
+    busy_body = {'detail': {'code': 'evaluation_busy', 'message': 'Study work is active. Retry the diagnostic when study is idle.'}}
+    busy = SimpleNamespace(status_code=503, headers={'Retry-After': '1'}, text=json.dumps(busy_body), json=lambda: busy_body)
+    ready = SimpleNamespace(status_code=200, headers={}, text='fresh plan', json=lambda: {'status': 'ready'})
+    requests = []
+    def post(path, *, json):
+        requests.append((path, json))
+        calculation_started.set()
+        return busy if len(requests) == 1 else ready
+    response = rehearsal.post_transition_when_foreground_idle(SimpleNamespace(post=post), '/plan', {'snapshot_id': 'original'},
+                                                              calculation_started=calculation_started)
+    assert response is busy
+    assert len(requests) == 1
+
 def test_pr102_snapshot_size_checks_use_one_statement_with_unchanged_native_rows(monkeypatch):
     from types import SimpleNamespace
     captured_fixture = prepared_snapshot()

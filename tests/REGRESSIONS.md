@@ -3027,3 +3027,8 @@ The unchanged FEN study queue-ready assertion failed on PR #133 integration `9da
 
 - `queue failure diagnostics retain the original assertion and redact runner secrets before workers are replaced`; `queue failure diagnostics refuse non-disposable target %s without masking the failure`; `queue diagnostics capture remaining evidence after one read fails and never run on success` (`queue-readiness-diagnostics-regressions.test.ts`).
 - `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` retains its existing real API/authoring/review assertions and initial 30-second deadline. Diagnostics inspect only the owning disposable Compose project; missing capture never converts the readiness failure to a pass.
+
+## Stale-plan concurrency rehearsal request identity (2026-10-09)
+
+- `test_issue79_rehearsal_never_replays_a_started_calculation_after_foreground_preemption` (`backend/tests/test_prefix_transition_api.py`) failed against the existing retry behavior: an explicitly preempted calculation was silently replaced by a fresh 200 plan. The helper now returns that started request's rejection. Pre-calculation foreground admission still coordinates as before.
+- `test_issue79_readonly_planner_foreground_concurrency_and_stale_replay` keeps the native 50ms read budget, released-reader/foreground review checks, read-only snapshots, and mandatory same-request `409 stale_plan`. Explicit foreground preemption restarts the complete capture/review experiment within the existing 10-second coordination window, records its count, and never accepts false success, other errors, or exhausted coordination as a pass.
