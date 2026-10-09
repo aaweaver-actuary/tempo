@@ -84,7 +84,7 @@ WHERE c.content_type='opening'
           SELECT c.repertoire_id AS repertoire_id
           UNION SELECT link.repertoire_id FROM repertoire_cards link WHERE link.card_id=c.id
       ) eligible_link JOIN repertoires allowed ON allowed.id=eligible_link.repertoire_id
-      WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+      WHERE NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                        WHERE block.repertoire_id=allowed.id AND block.card_id=c.id)
   )
   AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=%s)"""
@@ -306,7 +306,7 @@ _DUE_CARD_ELIGIBILITY = """c.due_date<=%s AND c.state IN ('learning','mature')
         WHERE (repertoire.id=c.repertoire_id OR EXISTS(
             SELECT 1 FROM repertoire_cards link
             WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
-          AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+          AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                          WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id)))
     AND (c.content_type!='study_exercise' OR (
         EXISTS(SELECT 1 FROM study_exercises exercise JOIN studies study
@@ -628,7 +628,7 @@ _QUARANTINE_OPENING_ELIGIBILITY = """q.queue_date=%s AND q.status='queued'
                WHERE (repertoire.id=c.repertoire_id OR EXISTS(
                    SELECT 1 FROM repertoire_cards link
                    WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                 AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block
                                 WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id))"""
 
 
@@ -709,7 +709,7 @@ _PROJECTION_BLOCKED_COUNT_SQL = """SELECT COUNT(*) FROM (
     SELECT card.id FROM cards card
     WHERE card.content_type='opening' AND card.archived=0
       AND card.state IN ('learning','mature') AND card.due_date<=%s
-      AND EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+      AND EXISTS(SELECT 1 FROM integrity_training_blocks block
                  WHERE block.card_id=card.id
                    AND (block.repertoire_id=card.repertoire_id OR EXISTS(
                        SELECT 1 FROM repertoire_cards link

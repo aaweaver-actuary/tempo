@@ -82,8 +82,8 @@ def resolve_integrity_issue(
     ).fetchone() is None:
         raise HTTPException(404, "Repertoire not found")
     issue = database.execute_native(
-        "SELECT signature FROM repertoire_integrity_issues "
-        "WHERE id=%s AND repertoire_id=%s FOR UPDATE",
+        "SELECT signature FROM current_repertoire_integrity_issues "
+        "WHERE id=%s AND repertoire_id=%s",
         (prepared.issue_id, repertoire_id),
     ).fetchone()
     if issue is None:

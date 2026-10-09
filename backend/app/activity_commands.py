@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 from fastapi import HTTPException
@@ -65,11 +66,43 @@ def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> 
     ).fetchone()
     if failed is None:
         raise HTTPException(404, "Terminal task not found")
+    resume_phase = 'queued'
+    if failed['kind'] == 'integrity_scan':
+        from .services.postgres_integrity import _graph_generation_is_current, request_integrity_scan_in_transaction, integrity_publication_is_complete
+        saved_payload = json.loads(failed['payload_json'])
+        repertoire_id = saved_payload['repertoire_id']
+        saved_run = f"{task_id}:{failed['generation']}"
+        scan_state = database.execute_native(
+            "SELECT scan_generation FROM repertoire_integrity_state WHERE repertoire_id=%s", (repertoire_id,),
+        ).fetchone()
+        compatible = (scan_state and scan_state[0] == saved_run
+                      and failed['phase'] in {'queued','scan','aggregate','evaluate','publish','validate_cards','complete','cleanup'}
+                      and _graph_generation_is_current(database,repertoire_id,int(saved_payload['graph_generation'])))
+        if compatible:
+            resume_phase = failed['phase']
+            if resume_phase in {'validate_cards','complete'} and not integrity_publication_is_complete(database,saved_run):
+                # A pre-upgrade publisher can have reached card validation
+                # without creating the new pages. Retain its scan candidates,
+                # and replay publication from the first bounded page.
+                resume_phase='publish'
+                saved_payload.update(after_issue_id='',publishing_issue_id='',block_source_offset=0)
+                database.execute_native('UPDATE background_tasks SET payload_json=%s WHERE id=%s', (json.dumps(saved_payload),task_id))
+            database.execute_native(
+                "UPDATE repertoire_integrity_state SET scan_status='queued',scan_error=NULL WHERE repertoire_id=%s AND scan_generation=%s",
+                (repertoire_id,saved_run),
+            )
+        else:
+            current_graph = database.execute_native(
+                "SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s", (repertoire_id,),
+            ).fetchone()
+            if not current_graph or not _graph_generation_is_current(database,repertoire_id,int(current_graph[0])):
+                raise HTTPException(409,'Wait for the current opening graph to publish, then retry this integrity scan')
+            return serialize_task(request_integrity_scan_in_transaction(database,repertoire_id,int(current_graph[0]),saved_payload['local_day']))
     now = datetime.now(timezone.utc).isoformat()
     database.execute_native(
-        "UPDATE background_tasks SET state='queued',phase='queued',attempt_count=0,"
+        "UPDATE background_tasks SET state='queued',phase=%s,attempt_count=0,"
         "next_attempt_at=%s,lease_token=NULL,lease_expires_at=NULL,last_error=NULL,"
-        "completed_at=NULL,updated_at=%s WHERE id=%s", (now, now, task_id),
+        "completed_at=NULL,updated_at=%s WHERE id=%s", (resume_phase, now, now, task_id),
     )
     database.execute_native(
         "INSERT INTO background_activity(source,work_id,paused,phase,updated_at) "

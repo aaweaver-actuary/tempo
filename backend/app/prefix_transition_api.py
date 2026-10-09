@@ -54,7 +54,7 @@ def load_transition_snapshot(identifier, lookup_card_ids, study_day, deadline, *
         include_table('opening_evidence_queue_contexts',
              'SELECT context.* FROM opening_evidence_queue_contexts context JOIN opening_evidence_presentations presentation '
              'ON presentation.id=context.presentation_snapshot_id WHERE presentation.card_id=ANY(%s)', card_parameters)
-        include_table('repertoire_integrity_card_blocks', 'SELECT * FROM repertoire_integrity_card_blocks WHERE card_id=ANY(%s)', card_parameters)
+        include_table('repertoire_integrity_card_blocks', 'SELECT * FROM current_repertoire_integrity_card_blocks WHERE card_id=ANY(%s)', card_parameters)
         include_table('pending_commands',
              "SELECT resolved.* FROM (SELECT receipt.*,COALESCE(receipt.payload_json::jsonb->>'card_id',"
              "receipt.payload_json::jsonb#>>'{checkpoint,manifest,card_id}',receipt.payload_json::jsonb#>>'{attempt,card_id}',"

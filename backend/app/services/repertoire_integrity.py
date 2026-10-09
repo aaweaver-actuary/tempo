@@ -224,7 +224,7 @@ def _publish_card_blocks(
     )
     database.execute(
         """UPDATE cards SET pending_validation=CASE WHEN EXISTS(
-               SELECT 1 FROM repertoire_integrity_card_blocks published_block
+               SELECT 1 FROM current_repertoire_integrity_card_blocks published_block
                WHERE published_block.card_id=cards.id
            ) THEN 1 ELSE 0 END
            WHERE archived=0 AND content_type='opening' AND
@@ -579,11 +579,11 @@ def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
     if not row:
         raise KeyError("Repertoire not found")
     issue = database.execute(
-        "SELECT id FROM repertoire_integrity_issues WHERE repertoire_id=? ORDER BY updated_at,id LIMIT 1",
+        "SELECT id FROM current_repertoire_integrity_issues WHERE repertoire_id=? ORDER BY updated_at,id LIMIT 1",
         (repertoire_id,),
     ).fetchone()
     count = database.execute(
-        "SELECT COUNT(*) FROM repertoire_integrity_issues WHERE repertoire_id=?",
+        "SELECT COUNT(*) FROM current_repertoire_integrity_issues WHERE repertoire_id=?",
         (repertoire_id,),
     ).fetchone()[0]
     return {
@@ -604,7 +604,7 @@ def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
 def list_integrity_issues(database: sqlite3.Connection, repertoire_id: str) -> list[dict]:
     rows = database.execute(
         """SELECT id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json
-           FROM repertoire_integrity_issues WHERE repertoire_id=? ORDER BY updated_at,id""",
+           FROM current_repertoire_integrity_issues WHERE repertoire_id=? ORDER BY updated_at,id""",
         (repertoire_id,),
     ).fetchall()
     results = []
@@ -778,7 +778,7 @@ def _archive_unsupported_card(
 @refresh_game_publications_after_mutation
 def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: str, signature: str, selected_move: str) -> dict:
     row = database.execute(
-        "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
+        "SELECT * FROM current_repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
         (issue_id, repertoire_id),
     ).fetchone()
     if not row:
@@ -842,7 +842,7 @@ def prepare_issue_resolution(
 
     with read_connection() as database:
         issue_row = database.execute(
-            "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
+            "SELECT * FROM current_repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
             (issue_id, repertoire_id),
         ).fetchone()
         if not issue_row:
@@ -949,7 +949,7 @@ def execute_durable_integrity_repair(task: dict) -> None:
     @refresh_game_publications_after_mutation
     def publish(database: sqlite3.Connection) -> None:
         current = database.execute(
-            "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
+            "SELECT signature FROM current_repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
             (prepared["issue_id"], prepared["repertoire_id"]),
         ).fetchone()
         if not current or current["signature"] != prepared["signature"]:

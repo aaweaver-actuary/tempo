@@ -74,7 +74,7 @@ def prepare_next_integrity_source(
 
     if source_type not in {"line", "card"}:
         raise ValueError("Unknown integrity source type")
-    with background_read_connection() as database:
+    with background_read_connection(authoritative=True) as database:
         first_line = database.execute_native(
             "SELECT trained_color FROM repertoire_lines WHERE repertoire_id=%s "
             "ORDER BY created_at,id LIMIT 1", (repertoire_id,),
@@ -201,7 +201,7 @@ def prepare_next_integrity_run(
 ) -> PreparedIntegrityRun | None:
     """Read one staged source, then parse observations outside PostgreSQL."""
 
-    with background_read_connection() as database:
+    with background_read_connection(authoritative=True) as database:
         source_run = database.execute_native(
             "SELECT observations_json,invalid_json "
             "FROM repertoire_integrity_source_runs "
@@ -293,7 +293,7 @@ def prepare_next_integrity_position(
 ) -> PreparedIntegrityPosition | None:
     """Read one accumulated position and derive any issue after closing PostgreSQL."""
 
-    with background_read_connection() as database:
+    with background_read_connection(authoritative=True) as database:
         row = database.execute_native(
             "SELECT fen_key,fen,trained_color,moves_json,sources_json "
             "FROM repertoire_integrity_position_accumulators "
@@ -381,75 +381,112 @@ def _graph_generation_is_current(
     )
 
 
+@dataclass(frozen=True)
+class PreparedIntegrityPublicationPage:
+    issue: dict[str, Any]
+    card_ids: tuple[str, ...]
+    source_offset: int
+    complete: bool
+
+
+def prepare_integrity_publication_page(task: dict[str, Any]) -> PreparedIntegrityPublicationPage | None:
+    payload = task["payload"]
+    run_id = f"{task['id']}:{task['generation']}"
+    active_issue = str(payload.get("publishing_issue_id", ""))
+    with background_read_connection(authoritative=True) as database:
+        row = database.execute_native(
+            "SELECT * FROM repertoire_integrity_issue_candidates WHERE run_id=%s "
+            + ("AND id=%s" if active_issue else "AND id>%s ORDER BY id LIMIT 1"),
+            (run_id, active_issue or str(payload.get("after_issue_id", ""))),
+        ).fetchone()
+        issue = dict(row) if row else None
+    if issue is None:
+        if active_issue:
+            raise RuntimeError("Integrity publication source is missing; restart the scan from current inputs")
+        return None
+    # Parsing and deduplication never occupy the database transaction.
+    card_ids = sorted({str(source["id"]) for source in json.loads(issue["sources_json"])
+                       if source.get("type") == "card" and source.get("id")})
+    offset = int(payload.get("block_source_offset", 0)) if active_issue else 0
+    if not 0 <= offset <= len(card_ids):
+        raise ValueError("Integrity block publication cursor is invalid")
+    page = tuple(card_ids[offset:offset + 32])
+    return PreparedIntegrityPublicationPage(issue, page, offset, offset + len(page) == len(card_ids))
+
+
 def publish_integrity_issues_in_transaction(
     database: PostgresConnection, task: dict[str, Any],
+    prepared_page: PreparedIntegrityPublicationPage | None = None,
 ) -> bool:
-    """Atomically replace a bounded issue and block set, then validate cards."""
-
+    """Stage one issue and at most 32 blocks; publish no reader-visible rows."""
     if not lock_current_slice(database, task):
         return False
     payload = dict(task["payload"])
     repertoire_id = str(payload["repertoire_id"])
-    if not _graph_generation_is_current(
-        database, repertoire_id, int(payload["graph_generation"]),
-    ):
+    if not _graph_generation_is_current(database, repertoire_id, int(payload["graph_generation"])):
         return complete_task_slice_in_transaction(database, task)
     run_id = f"{task['id']}:{task['generation']}"
-    issue_count = database.execute_native(
-        "SELECT COUNT(*) FROM repertoire_integrity_issue_candidates WHERE run_id=%s",
-        (run_id,),
-    ).fetchone()[0]
-    if issue_count > 32:
-        raise RuntimeError("Integrity publication exceeds one bounded transaction; retain unchecked state")
-    card_block_count = database.execute_native(
-        "SELECT COUNT(*) FROM repertoire_integrity_issue_candidates candidate "
-        "CROSS JOIN LATERAL jsonb_array_elements(candidate.sources_json::jsonb) source "
-        "WHERE candidate.run_id=%s AND source->>'type'='card'",
-        (run_id,),
-    ).fetchone()[0]
-    if card_block_count > 64:
-        raise RuntimeError("Integrity card blocks exceed one bounded transaction; retain unchecked state")
-    published_at = datetime.now(timezone.utc).isoformat()
+    if prepared_page is None:
+        if not integrity_publication_is_complete(database,run_id):
+            raise RuntimeError("Integrity generation has incomplete publication pages; retain its checkpoint")
+        return advance_task_slice_in_transaction(
+            database, task, next_phase="validate_cards", next_payload={**payload, "after_card_id": ""},
+        )
+    issue = prepared_page.issue
+    if issue["run_id"] != run_id or issue["repertoire_id"] != repertoire_id:
+        raise ValueError("Integrity publication page belongs to another generation")
+    immutable_issue_fields = ("repertoire_id", "kind", "fen_key", "fen", "trained_color",
+                              "signature", "moves_json", "sources_json")
+    immutable_issue_content = tuple(issue[field] for field in immutable_issue_fields)
+    now = datetime.now(timezone.utc).isoformat()
     database.execute_native(
-        "DELETE FROM repertoire_integrity_issues WHERE repertoire_id=%s",
-        (repertoire_id,),
+        "INSERT INTO integrity_issue_generations(run_id,id,repertoire_id,kind,fen_key,fen,trained_color,"
+        "signature,moves_json,sources_json,created_at,updated_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON CONFLICT(run_id,id) DO NOTHING",
+        (run_id, issue["id"], *immutable_issue_content, now, now),
     )
+    # Completeness assumes an immutable candidate. A conflicting replay must
+    # fail before adding blocks or accepting a saved blocks_complete flag.
+    staged_issue = database.execute_native(
+        "SELECT repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json "
+        "FROM integrity_issue_generations WHERE run_id=%s AND id=%s", (run_id, issue["id"]),
+    ).fetchone()
+    if staged_issue is None or tuple(staged_issue) != immutable_issue_content:
+        raise RuntimeError("Integrity staged issue does not match immutable candidate content; retain its checkpoint")
     database.execute_native(
-        "INSERT INTO repertoire_integrity_issues("
-        "id,repertoire_id,kind,fen_key,fen,trained_color,signature,"
-        "moves_json,sources_json,created_at,updated_at) "
-        "SELECT id,repertoire_id,kind,fen_key,fen,trained_color,signature,"
-        "moves_json,sources_json,%s,%s "
-        "FROM repertoire_integrity_issue_candidates WHERE run_id=%s",
-        (published_at, published_at, run_id),
+        "INSERT INTO integrity_block_generations(run_id,repertoire_id,card_id,issue_id,published_at) "
+        "SELECT %s,%s,id,%s,%s FROM cards WHERE id=ANY(%s::text[]) "
+        "ON CONFLICT(run_id,card_id,issue_id) DO NOTHING",
+        (run_id,repertoire_id,issue["id"],now,list(prepared_page.card_ids)),
     )
-    database.execute_native(
-        "INSERT INTO repertoire_integrity_card_blocks("
-        "repertoire_id,card_id,issue_id,scan_generation,published_at) "
-        "SELECT DISTINCT %s,source->>'id',candidate.id,%s,%s "
-        "FROM repertoire_integrity_issue_candidates candidate "
-        "CROSS JOIN LATERAL jsonb_array_elements(candidate.sources_json::jsonb) source "
-        "JOIN cards card ON card.id=source->>'id' "
-        "WHERE candidate.run_id=%s AND source->>'type'='card' "
-        "ON CONFLICT(repertoire_id,card_id,issue_id) DO NOTHING",
-        (repertoire_id, run_id, published_at, run_id),
-    )
-    return advance_task_slice_in_transaction(
-        database, task, next_phase="validate_cards",
-        next_payload={**payload, "after_card_id": ""},
-    )
+    if prepared_page.complete:
+        database.execute_native("UPDATE integrity_issue_generations SET blocks_complete=1 WHERE run_id=%s AND id=%s", (run_id,issue["id"]))
+        next_payload = {**payload,"after_issue_id":issue["id"],"publishing_issue_id":"","block_source_offset":0}
+    else:
+        next_payload = {**payload,"publishing_issue_id":issue["id"],"block_source_offset":prepared_page.source_offset+len(prepared_page.card_ids)}
+    return advance_task_slice_in_transaction(database, task, next_phase="publish", next_payload=next_payload)
+
+
+def integrity_publication_is_complete(database: PostgresConnection, run_id: str) -> bool:
+    return not database.execute_native(
+        "SELECT 1 FROM repertoire_integrity_issue_candidates candidate "
+        "LEFT JOIN integrity_issue_generations staged ON staged.run_id=candidate.run_id "
+        "AND staged.id=candidate.id WHERE candidate.run_id=%s "
+        "AND (staged.id IS NULL OR staged.blocks_complete<>1) LIMIT 1", (run_id,),
+    ).fetchone()
 
 
 def execute_integrity_publish_slice(task: dict[str, Any]) -> bool:
+    prepared_page = prepare_integrity_publication_page(task)
     with background_lease():
         with postgres_store.connection(read_only=False, background=True) as database:
-            return publish_integrity_issues_in_transaction(database, task)
+            return publish_integrity_issues_in_transaction(database, task, prepared_page)
 
 
 def prepare_next_integrity_cards(
     repertoire_id: str, after_card_id: str,
 ) -> tuple[str, ...]:
-    with background_read_connection() as database:
+    with background_read_connection(authoritative=True) as database:
         rows = database.execute_native(
             "SELECT card.id FROM cards card WHERE card.id>%s "
             "AND card.archived=0 AND card.content_type='opening' "
@@ -467,6 +504,8 @@ def validate_integrity_cards_in_transaction(
     if not lock_current_slice(database, task):
         return False
     payload = dict(task["payload"])
+    if not _graph_generation_is_current(database, str(payload['repertoire_id']), int(payload['graph_generation'])):
+        return complete_task_slice_in_transaction(database, task)
     if not card_ids:
         return advance_task_slice_in_transaction(
             database, task, next_phase="complete", next_payload=payload,
@@ -474,9 +513,11 @@ def validate_integrity_cards_in_transaction(
     with database.raw.cursor() as cursor:
         cursor.executemany(
             "UPDATE cards SET pending_validation=CASE WHEN EXISTS("
-            "SELECT 1 FROM repertoire_integrity_card_blocks block "
-            "WHERE block.card_id=cards.id) THEN 1 ELSE 0 END WHERE id=%s",
-            [(card_id,) for card_id in card_ids],
+            "SELECT 1 FROM current_repertoire_integrity_card_blocks block "
+            "WHERE block.card_id=cards.id AND block.repertoire_id<>%s) OR EXISTS("
+            "SELECT 1 FROM integrity_block_generations staged WHERE staged.run_id=%s "
+            "AND staged.card_id=cards.id) THEN 1 ELSE 0 END WHERE id=%s",
+            [(payload["repertoire_id"], f"{task['id']}:{task['generation']}", card_id) for card_id in card_ids],
         )
     return advance_task_slice_in_transaction(
         database, task, next_phase="validate_cards",
@@ -501,14 +542,18 @@ def complete_integrity_scan_in_transaction(
         return False
     payload = task["payload"]
     repertoire_id = str(payload["repertoire_id"])
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))", (f'tempo:opening-graph:{repertoire_id}',))
     if not _graph_generation_is_current(
         database, repertoire_id, int(payload["graph_generation"]),
     ):
         return complete_task_slice_in_transaction(database, task)
     run_id = f"{task['id']}:{task['generation']}"
+    if not integrity_publication_is_complete(database,run_id):
+        raise RuntimeError('Integrity publication pages are incomplete; retry from their saved generation')
+    database.execute_native("SELECT id FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,))
     status = "needs_repair" if database.execute_native(
-        "SELECT 1 FROM repertoire_integrity_issues WHERE repertoire_id=%s LIMIT 1",
-        (repertoire_id,),
+        "SELECT 1 FROM integrity_issue_generations WHERE run_id=%s LIMIT 1",
+        (run_id,),
     ).fetchone() else "clean"
     updated_state = database.execute_native(
         "UPDATE repertoire_integrity_state SET status=%s,checked_at=%s,"
@@ -521,6 +566,12 @@ def complete_integrity_scan_in_transaction(
         if not complete_task_slice_in_transaction(database, task):
             raise RuntimeError("Integrity lease changed before stale scan completion")
         return False
+    database.execute_native(
+        "INSERT INTO integrity_publications(repertoire_id,run_id,graph_generation,published_at) "
+        "VALUES(%s,%s,%s,%s) ON CONFLICT(repertoire_id) DO UPDATE SET run_id=excluded.run_id,"
+        "graph_generation=excluded.graph_generation,published_at=excluded.published_at",
+        (repertoire_id, run_id, int(payload["graph_generation"]), datetime.now(timezone.utc).isoformat()),
+    )
     from .postgres_opening_segmentation import request_segmentation_in_transaction
     request_segmentation_in_transaction(database, repertoire_id, int(payload["graph_generation"]))
 
@@ -534,9 +585,7 @@ def complete_integrity_scan_in_transaction(
     queue_day = date.today().isoformat() if transitioning else str(payload['local_day'])
     queue_task = request_queue_refresh_in_transaction(database, queue_day)
     record_queue_target(database, repertoire_id, int(payload['graph_generation']), queue_task, queue_day)
-    if not complete_task_slice_in_transaction(database, task):
-        raise RuntimeError("Integrity lease changed before publication")
-    return False
+    return advance_task_slice_in_transaction(database, task, next_phase="cleanup", next_payload=dict(payload))
 
 
 def execute_integrity_complete_slice(task: dict[str, Any]) -> bool:
@@ -548,6 +597,61 @@ def execute_integrity_complete_slice(task: dict[str, Any]) -> bool:
             return complete_integrity_scan_in_transaction(database, task)
 
 
+def cleanup_integrity_generation_in_transaction(database: PostgresConnection, task: dict[str, Any]) -> bool:
+    """Remove one bounded obsolete page; never cascade a large block set."""
+    if not lock_current_slice(database, task):
+        return False
+    repertoire_id = task["payload"]["repertoire_id"]
+    run_id = f"{task['id']}:{task['generation']}"
+    published = database.execute_native(
+        "SELECT run_id FROM integrity_publications WHERE repertoire_id=%s", (repertoire_id,),
+    ).fetchone()
+    if not published or published[0] != run_id:
+        return complete_task_slice_in_transaction(database, task)
+    changed = database.execute_native(
+        "WITH page AS (SELECT run_id,card_id,issue_id FROM integrity_block_generations "
+        "WHERE repertoire_id=%s AND run_id<>%s ORDER BY run_id,card_id,issue_id LIMIT 32) "
+        "DELETE FROM integrity_block_generations obsolete USING page WHERE "
+        "(obsolete.run_id,obsolete.card_id,obsolete.issue_id)=(page.run_id,page.card_id,page.issue_id)",
+        (repertoire_id,run_id),
+    ).rowcount
+    if not changed:
+        changed = database.execute_native(
+            "WITH page AS (SELECT run_id,id FROM integrity_issue_generations WHERE repertoire_id=%s "
+            "AND run_id<>%s AND NOT EXISTS(SELECT 1 FROM integrity_block_generations block "
+            "WHERE block.run_id=integrity_issue_generations.run_id AND block.issue_id=integrity_issue_generations.id) "
+            "ORDER BY run_id,id LIMIT 16) DELETE FROM integrity_issue_generations obsolete USING page "
+            "WHERE (obsolete.run_id,obsolete.id)=(page.run_id,page.id)", (repertoire_id,run_id),
+        ).rowcount
+    if not changed:
+        # These staging tables use the immutable task identity rather than a
+        # repertoire column. The narrow range selects only this task's runs.
+        for table, key, limit in (
+            ("repertoire_integrity_issue_candidates","id",16),
+            ("repertoire_integrity_position_accumulators","fen_key",2),
+            ("repertoire_integrity_source_runs","source_offset",1),
+        ):
+            changed = database.execute_native(
+                f"WITH page AS (SELECT run_id,{key} FROM {table} WHERE run_id COLLATE \"C\">=%s AND run_id COLLATE \"C\"<%s "
+                f"AND run_id<>%s ORDER BY run_id,{key} LIMIT {limit}) DELETE FROM {table} obsolete USING page "
+                f"WHERE (obsolete.run_id,obsolete.{key})=(page.run_id,page.{key})",
+                (task['id']+':',task['id']+';',run_id),
+            ).rowcount
+            if changed:
+                break
+    if changed:
+        return advance_task_slice_in_transaction(database, task, next_phase="cleanup", next_payload={
+            **task['payload'], 'cleanup_completed_units':int(task['payload'].get('cleanup_completed_units',0))+changed,
+        })
+    return complete_task_slice_in_transaction(database, task)
+
+
+def execute_integrity_cleanup_slice(task: dict[str, Any]) -> bool:
+    with background_lease():
+        with postgres_store.connection(read_only=False, background=True) as database:
+            return cleanup_integrity_generation_in_transaction(database, task)
+
+
 def execute_postgres_integrity_slice(task: dict[str, Any]) -> bool:
     handlers = {
         "queued": execute_integrity_source_slice,
@@ -557,6 +661,7 @@ def execute_postgres_integrity_slice(task: dict[str, Any]) -> bool:
         "publish": execute_integrity_publish_slice,
         "validate_cards": execute_integrity_validate_cards_slice,
         "complete": execute_integrity_complete_slice,
+        "cleanup": execute_integrity_cleanup_slice,
     }
     phase = str(task.get("phase", "queued"))
     if phase not in handlers:

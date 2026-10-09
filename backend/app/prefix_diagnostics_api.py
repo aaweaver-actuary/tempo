@@ -65,7 +65,7 @@ def prefix_rows(database, repertoire_id: str, generation: int, *, after: str = '
         " AND card.archived=0 AND card.content_type='opening' "
         "AND (card.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards link "
         "WHERE link.repertoire_id=%s AND link.card_id=card.id)) "
-        "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+        "AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block "
         "WHERE block.repertoire_id=%s AND block.card_id=card.id) ORDER BY step.card_id LIMIT %s) "
         "SELECT card.id card_id,card.revision,card.start_fen,card.moves_json,card.trained_color,snapshot.id, "
         "ARRAY(SELECT DISTINCT step.trained_color FROM opening_graph_steps step "

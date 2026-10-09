@@ -31,7 +31,7 @@ def prioritize_real_game_miss(database: sqlite3.Connection, event_id: str) -> bo
              AND card.archived=0 AND card.content_type='opening'
              AND COALESCE(card.pending_validation,0)=0
              AND NOT EXISTS(
-                 SELECT 1 FROM repertoire_integrity_card_blocks block
+                 SELECT 1 FROM integrity_training_blocks block
                  WHERE block.card_id=card.id AND block.repertoire_id=event.repertoire_id
              )""",
         (event_id,),

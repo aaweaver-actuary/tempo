@@ -1214,7 +1214,7 @@ def _existing_decision_training_plan(database: sqlite3.Connection, repertoire_id
     if not card:
         raise ValueError("The saved card is unavailable or awaiting validation")
     if database.execute(
-        """SELECT 1 FROM repertoire_integrity_card_blocks
+        """SELECT 1 FROM integrity_training_blocks
            WHERE repertoire_id=? AND card_id=?""",
         (repertoire_id, card["id"]),
     ).fetchone():
