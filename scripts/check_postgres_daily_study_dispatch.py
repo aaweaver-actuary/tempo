@@ -651,10 +651,54 @@ def test_issue135_postgres_ensure_current_absent_task_creation_lock_order():
         assert foreground.result(timeout=5)['task_id'] == created['id']
         saved, projection = _lock_order_state(queue_date)
         assert saved['state'] == 'queued' and saved['lease_token'] is None
-        assert saved['generation'] == created['generation'] + 1
+        assert saved['generation'] == created['generation']
         assert datetime.fromisoformat(saved['next_attempt_at']) == clock
         assert (projection['state'], projection['refresh_pending'], projection['last_error'], projection['generation']) == ('refreshing', 1, None, 17)
     print('PASS test_issue135_postgres_ensure_current_absent_task_creation_lock_order', flush=True)
+
+
+
+def test_issue135_postgres_first_ensure_calls_preserve_singleton_creation():
+    """Two initially absent-task ensures serialize creation before projection writes."""
+    queue_date = '2099-10-09'
+    first_inserted, release_first, second_connected = Event(), Event(), Event()
+    first_pid, second_pid = [], []
+    original_enqueue = durable_tasks.enqueue_task_in_transaction
+
+    def pause_first_insert(database, *args, **kwargs):
+        queued = original_enqueue(database, *args, **kwargs)
+        if database.raw.info.backend_pid in first_pid:
+            first_inserted.set()
+            assert release_first.wait(4), 'First ensure barrier was not released'
+        return queued
+
+    def ensure(pids, connected=None):
+        with _lock_order_connection() as database:
+            pids.append(database.raw.info.backend_pid)
+            if connected is not None:
+                connected.set()
+            return ensure_current_queue(database, {'queue_date': queue_date})
+
+    with _queue_lock_order_fixture(leased=False), \
+            patch('app.queue_commands.enqueue_task_in_transaction', pause_first_insert), \
+            ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(ensure, first_pid)
+        try:
+            assert first_inserted.wait(3), 'First ensure did not insert the task'
+            second = executor.submit(ensure, second_pid, second_connected)
+            assert second_connected.wait(3)
+            _wait_for_lock_owner(second_pid[0], first_pid[0], second)
+        finally:
+            release_first.set()
+        accepted = first.result(timeout=5)
+        assert second.result(timeout=5) == accepted
+        saved, projection = _lock_order_state(queue_date)
+        assert saved['id'] == accepted['task_id'] and saved['generation'] == 1
+        assert saved['state'] == 'queued' and saved['lease_token'] is None
+        assert (projection['state'], projection['refresh_pending'], projection['last_error']) == ('refreshing', 1, None)
+        with _lock_order_connection() as observer:
+            assert observer.execute("SELECT COUNT(*) FROM background_task_events WHERE task_id=? AND event='enqueued'", (saved['id'],)).fetchone()[0] == 1
+    print('PASS test_issue135_postgres_first_ensure_calls_preserve_singleton_creation', flush=True)
 
 
 def proof():
@@ -731,6 +775,7 @@ def proof():
         test_issue135_postgres_ensure_current_timeout_deferral_lock_order()
         test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral()
         test_issue135_postgres_ensure_current_absent_task_creation_lock_order()
+        test_issue135_postgres_first_ensure_calls_preserve_singleton_creation()
     finally:
         cleanup(identifier)
 

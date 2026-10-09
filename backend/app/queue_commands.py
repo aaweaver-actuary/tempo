@@ -109,10 +109,17 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(422, "A valid queue_date is required") from error
     # Every task/projection write locks the task first, including timeout recovery.
-    active_task = database.execute(
-        """SELECT id,state,payload_json,last_error FROM background_tasks
-           WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE""",
-    ).fetchone()
+    current_task_lock_sql = """SELECT id,state,payload_json,last_error FROM background_tasks
+           WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE"""
+    active_task = database.execute(current_task_lock_sql).fetchone()
+    if active_task is None and isinstance(database, PostgresConnection):
+        # Serialize first ensures without owning a projection while waiting for
+        # task creation. Recheck after the creator's transaction has committed.
+        database.execute_native(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            ("tempo:daily-queue:current:ensure",),
+        )
+        active_task = database.execute(current_task_lock_sql).fetchone()
     # An absent task cannot be locked: let refresh enqueue it before locking the
     # projection. A ready projection still needs no new task.
     projection_lock_clause = " FOR UPDATE" if active_task else ""

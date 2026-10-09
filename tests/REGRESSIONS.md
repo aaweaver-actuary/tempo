@@ -3272,3 +3272,11 @@ Fixtures restore the prior singleton, events, projections and daily-queue metric
 `backend/tests/test_queue_refresh_deadline_recovery.py::test_issue135_ensure_ready_projection_without_task_does_not_enqueue`
 preserves the ready fast return when the singleton is absent. Existing issue-135
 retry-wake, generation, backoff, rollback and broker-failure regressions remain required.
+
+The absent-task branch also takes a command-local transaction advisory lock and
+rereads the task before projection access. This preserves first-ensure serialization
+without changing the generic enqueue subsystem. The regular PostgreSQL workload's
+`test_issue135_postgres_first_ensure_calls_preserve_singleton_creation` holds the
+first ensure after insertion, observes the second waiting on its owning backend,
+and verifies both return the same task/generation with one enqueue event. Generic
+concurrent first enqueues from other callers remain tracked separately in #144.
