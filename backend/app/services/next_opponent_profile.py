@@ -45,7 +45,7 @@ def build_profile(account: str, records: list[dict], *, as_of: datetime,
     explicitly stale rating without an unbounded history scan.
     """
     normalized_account = account.strip().lower()
-    cutoff = as_of.astimezone(timezone.utc)
+    cutoff = as_of.replace(tzinfo=timezone.utc) if as_of.tzinfo is None else as_of.astimezone(timezone.utc)
 
     def eligible_rows(rows):
         normalized = []

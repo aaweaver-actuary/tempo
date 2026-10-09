@@ -18,7 +18,7 @@ the evidence digest; the API exposes this digest, watermark and sample counts.
 
 Only rated, non-excluded games for the configured Lichess account are eligible.
 Chess.com ratings never enter this model. Dates normalize to UTC, and replay
-uses an explicit cutoff. The estimator examines at most 1,000 latest eligible
+uses an explicit cutoff (timezone-free cutoffs mean UTC on every host). The estimator examines at most 1,000 latest eligible
 games, retaining a truncation flag. Independent indexed lookups retain the
 latest valid rating observation for each supported speed, even if it is older
 than the bounded recent sample.
