@@ -20,9 +20,12 @@ for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay 
   const { repertoire_id: repertoireId } = await imported.json();
   await page.getByRole("button", { name: "View imported repertoire" }).click();
   await nav(page, "Insights"); await nav(page, "Repertoire");
-  await expect.poll(async () => (await request.get(`${api}/repertoires/${repertoireId}/prefix-diagnostics`)).status(), { timeout: 30_000 }).toBe(200);
+  await expect.poll(async () => (await request.get(`${api}/repertoires/${repertoireId}/prefix-diagnostics`, { headers: { "X-Tempo-Work-Class": "background" } })).status(), { timeout: 30_000 }).toBe(200);
   await expect.poll(async () => {
-    const queue = await (await request.get(`${api}/queue/today`)).json();
+    const response = await request.get(`${api}/queue/today`, { headers: { "X-Tempo-Work-Class": "background" } });
+    if (response.status() === 503 && response.headers()["retry-after"]) return false;
+    expect(response.ok()).toBe(true);
+    const queue = await response.json();
     return queue.cards.some((card: { repertoire_id: string }) => card.repertoire_id === repertoireId);
   }, { timeout: 30_000 }).toBe(true);
   const before = await (await request.get(`${api}/queue/today`)).json();

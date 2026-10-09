@@ -711,6 +711,13 @@ def proof():
 
     from check_postgres_background_admission import proof_background_admission
     proof_background_admission(DSN)
+    import check_postgres_graph_retention as fixtures
+    with patch.object(fixtures, 'DATABASE_URL', DSN), fixtures.owned_fixture_database():
+        with patch.dict(globals(), {'DSN': os.environ['TEMPO_DATABASE_WRITE_URL']}):
+            _proof_daily_queue_dispatch_and_sparse_unlock()
+
+
+def _proof_daily_queue_dispatch_and_sparse_unlock():
     identifier = 'daily-study-proof-'+str(uuid.uuid4())
     try:
         seed(identifier, request_refresh=False)

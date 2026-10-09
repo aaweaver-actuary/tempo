@@ -18,6 +18,12 @@ from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferre
 
 
 def proof_background_admission(database_url):
+    import check_postgres_graph_retention as fixtures
+    with patch.object(fixtures, "DATABASE_URL", database_url), fixtures.owned_fixture_database():
+        _proof_background_admission(os.environ["TEMPO_DATABASE_WRITE_URL"])
+
+
+def _proof_background_admission(database_url):
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Admission proof requires an explicitly disposable database')
     identity = 'admission-proof-'+uuid.uuid4().hex
