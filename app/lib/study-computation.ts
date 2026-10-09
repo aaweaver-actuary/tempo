@@ -9,6 +9,7 @@ import {
 import { mapPackagedPuzzleToPracticeCard } from "../domain/adapters/practice-card-adapters";
 import { queueCardsFromPayload } from "../domain/adapters/practice-card-adapters";
 import { canonicalizeLine } from "../utils/canonical-line";
+import { resolveTrainingRoute } from "./training-builder-route";
 import {
   indexRepertoirePositions,
   prepareChessPositionDistance,
@@ -16,6 +17,7 @@ import {
 } from "./position-similarity";
 
 export type PureStudyTask =
+  | { kind: "resolveTrainingRoute"; repertoireId: string; startingFen: string; moves: string[]; lines: CanonicalLine[] }
   | { kind: "workspace"; url: string; payload: unknown }
   | { kind: "transportLines"; payload: unknown }
   | { kind: "queue"; payload: unknown }
@@ -42,6 +44,8 @@ export type StudyTask = PureStudyTask | StudyPositionTask;
 // Runs in the study worker in browsers, never during a React render.
 export function computeStudyTask(task: PureStudyTask) {
   switch (task.kind) {
+    case "resolveTrainingRoute":
+      return resolveTrainingRoute(task.lines, task.repertoireId, task.startingFen, task.moves);
     case "workspace":
       return validateWorkspacePayload(task.url, task.payload);
     case "transportLines":

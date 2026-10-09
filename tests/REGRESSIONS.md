@@ -3001,3 +3001,34 @@ Additional receipt and shared-flush boundaries:
   `reload retains an unprovable result as a conflict and opens independent cards`
   (`tests/unit/attempt-lifecycle-regressions.test.ts`) retain their original outcome
   assertions and now require receipt-first initialization before replay.
+
+## Training-to-Builder route context (2026-10-09)
+
+Opening a review position previously created a FEN-only Builder session at ply zero,
+so existing responses inside an authored line appeared missing. Training now passes
+the displayed cursor and complete card history; partial cards resolve exact earlier
+routes in the study worker, with explicit choice for distinct transposed prefixes.
+Only the complete training-card continuation is loaded, without choosing later branches.
+
+- `training Builder handoff keeps the middle-line cursor and full saved continuation without changing the attempt`; `training Analysis handoff uses the displayed historical position and retains the full route`; `training Games here handoff filters the historical position without advancing the live attempt`; `training comparison handoff preserves the historical cursor full continuation and live attempt` (`training-builder-handoff-regressions.test.tsx`). Games checks the requested position filter and comparison checks the persisted source board. The first two failed on main `d5394b1f`: empty history / cursor zero and the live rather than viewed position.
+- `partial training card restores the exact original prefix and keeps the full card continuation`; `training route restoration excludes similar positions wrong repertoires and incompatible continuations`; `ambiguous transposed training routes remain distinct but duplicate earlier routes collapse`; `custom-FEN training routes retain their authored starting position instead of assuming the standard opening`; `training route recovery handles repeated positions by comparing the continuation at each occurrence`; `invalid training cursors and off-route displayed positions report an actionable handoff error`; `training route context is optional in legacy Builder sessions and roundtrips unresolved sessions`; `training route recovery runs through the validated regular study-worker protocol` (`training-builder-route-regressions.test.ts`).
+- `Builder restores a partial training route once and persists its original root cursor and keyboard anchor across remount`; `Builder stepping back from the training launch saves Bg4 on the original route without replacing the saved Nc6 line`; `ambiguous partial training routes require an explicit choice and keep the displayed board fixed`; `failed route loading shows a retry action and never reports a false missing response or enables branch writes`; `unmatched training continuation remains available for analysis while original-route writes stay blocked`; `late training route resolution cannot overwrite a replacement Builder session`; `training route worker failure preserves the pending session and retries without inventing a route`; `unplayed saved continuation cannot submit a training Builder branch at its launch cursor` (`training-builder-context-regressions.test.tsx`).
+- `training Builder restores the viewed mid-line position and durably saves Bg4 on the original route` (`workspace-flows.spec.ts`) verifies real piece geometry, full history, saved responses, PostgreSQL-backed branch saving with the original root, original-line preservation, unchanged active training position/no review write, and reload.
+- `switching repertoires during unresolved training recovery preserves the card board route and draft anchor` (`training-builder-context-regressions.test.tsx`) keeps the unresolved card intact while another repertoire is selected, blocks writes, and restores the original cursor/anchor after returning and retrying. It failed before the guard by resetting the board to the standard starting position.
+
+Existing Builder, shared-board training, study-worker failure/coalescing and index
+regressions remain in the regular suite. No backend route, migration or grading
+contract changes; real browser persistence and required CI durability cover the
+existing command boundary.
+
+## Queue readiness failure evidence (2026-10-09)
+
+The unchanged FEN study queue-ready assertion failed on PR #133 integration `9dabbb13` with generation 55 frozen for 30 seconds. Later worker replacement discarded causal history. A failure-only, read-only snapshot now retains the task/projection and redacted worker history before replacement, without changing deadlines or the original failure.
+
+- `queue failure diagnostics retain the original assertion and redact runner secrets before workers are replaced`; `queue failure diagnostics refuse non-disposable target %s without masking the failure`; `queue diagnostics capture remaining evidence after one read fails and never run on success` (`queue-readiness-diagnostics-regressions.test.ts`).
+- `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` retains its existing real API/authoring/review assertions and initial 30-second deadline. Diagnostics inspect only the owning disposable Compose project; missing capture never converts the readiness failure to a pass. After the first captured failure showed queued daily work and stopped scheduler messages, the same bounded capture also retains service states and the scheduler's process status/wait channel; the unit regression verifies these reads and redaction.
+
+## Stale-plan concurrency rehearsal request identity (2026-10-09)
+
+- `test_issue79_rehearsal_never_replays_a_started_calculation_after_foreground_preemption` (`backend/tests/test_prefix_transition_api.py`) failed against the existing retry behavior: an explicitly preempted calculation was silently replaced by a fresh 200 plan. The helper now returns that started request's rejection. Pre-calculation foreground admission still coordinates as before.
+- `test_issue79_readonly_planner_foreground_concurrency_and_stale_replay` keeps the native 50ms read budget, released-reader/foreground review checks, read-only snapshots, and mandatory same-request `409 stale_plan`. Explicit foreground preemption restarts the complete capture/review experiment within the existing 10-second coordination window, records its count, and never accepts false success, other errors, or exhausted coordination as a pass.
