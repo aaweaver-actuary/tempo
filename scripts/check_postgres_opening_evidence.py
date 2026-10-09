@@ -594,6 +594,12 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
 
 @_assert_owned_admission_cleanup()
 def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics():
+    from check_postgres_graph_retention import owned_admission_scope
+    with owned_admission_scope('attempt-http-' + uuid.uuid4().hex):
+        _prove_opening_attempt_http_admission_preserves_foreground_diagnostics()
+
+
+def _prove_opening_attempt_http_admission_preserves_foreground_diagnostics():
     from app import main, opening_evidence_api, tasks
     from app.services import redis_admission_gate
     from app.services.activity_gate import activity_gate

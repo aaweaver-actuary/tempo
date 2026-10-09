@@ -921,10 +921,10 @@ def test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activa
             assert results==[{'status':'pending'},{'status':'pending'}]
         finally:
             command_gateway._preparers[application.COMMAND]=original_prepare
-        first=claim_task(application.TASK_KIND)
+        first=idle_call(lambda:claim_task(application.TASK_KIND))
         assert first
-        application.execute_application_slice(first)
-        assert application.execute_application_slice(first) is False,'Expired stage lease published twice'
+        idle_call(lambda:application.execute_application_slice(first))
+        assert idle_call(lambda:application.execute_application_slice(first)) is False,'Expired stage lease published twice'
         drain(application.TASK_KIND,application.execute_application_slice)
         def interrupted_create(database,batch,day,**options):
             original_create(database,batch,day,**options)
@@ -1061,7 +1061,7 @@ def test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_t
     with fixture('publication-failure') as (rep,other,lines,steps):
         plan,payload=ready_plan(rep,lines)
         execute(payload);drain(application.TASK_KIND,application.execute_application_slice);execute(payload)
-        graph=claim_task('opening_graph_rebuild')
+        graph=idle_call(lambda:claim_task('opening_graph_rebuild'))
         assert graph and graph['payload']['repertoire_id']==rep
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s',(graph['id'],))
@@ -1145,7 +1145,7 @@ def test_issue80_staging_failure_releases_fences_without_product_activation_and_
     with fixture('stage-failure') as (rep,other,lines,steps):
         plan,payload=ready_plan(rep,lines)
         execute(payload)
-        task=claim_task(application.TASK_KIND)
+        task=idle_call(lambda:claim_task(application.TASK_KIND))
         assert task
         with postgres_store.connection(read_only=False) as database:
             database.execute_native('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s',(task['id'],))
