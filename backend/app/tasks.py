@@ -101,11 +101,13 @@ from .services.postgres_coverage_recovery import recover_one_explorer_run
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
-# Accepted results/releases must not wait behind the browser that needs them.
+# Only bounded accepted results/releases may bypass foreground admission.
 # These handlers publish bounded receipts; none starts a search or traversal.
+# Maia submit aggregates a whole run; threat report fans out to all candidates.
+# Their source receipts remain durable, but execution needs normal admission.
 _CONTROL_BACKGROUND_COMMANDS = frozenset({
     'coverage.maia.heartbeat', 'coverage.maia.release', 'coverage.maia.failure',
-    'coverage.maia.submit', 'threat.analysis.report', 'threat.analysis.failure',
+    'threat.analysis.failure',
     'threat.analysis.release', 'games.analysis.position.report',
     'games.analysis.position.release', 'games.analysis.failure',
     'games.analysis.heartbeat', 'games.analysis.release',

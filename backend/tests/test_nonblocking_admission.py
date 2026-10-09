@@ -181,3 +181,251 @@ def test_prefix_foreground_receipt_denial_does_not_consume_failure_attempts(monk
     monkeypatch.setattr(tasks, 'record_operation_retry', lambda *_args, **_kwargs: pytest.fail('denial spent failure budget'))
     assert tasks.execute_foreground_command.run('retained-apply', command_name, {}) is None
     assert observed == [('retained-apply', 'fenced-attempt')]
+
+
+@pytest.fixture
+def control_command_store(monkeypatch):
+    """SQL-backed command harness; native proof owns PostgreSQL lock/budget evidence."""
+    import sqlite3
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from contextlib import nullcontext
+    from app import postgres_store, tasks
+    from app.services.background_metrics_schema import SCHEMA
+
+    database = sqlite3.connect(':memory:')
+    database.row_factory = sqlite3.Row
+    database.create_function('NOW', 0, lambda: datetime.now(timezone.utc).isoformat())
+    database.executescript(SCHEMA)
+    database.executescript('''
+        CREATE TABLE operation_receipts(operation_id TEXT PRIMARY KEY, command_name TEXT,
+            request_hash TEXT, state TEXT, response_json TEXT, error_json TEXT,
+            payload_json TEXT, background INTEGER, attempt_count INTEGER DEFAULT 0,
+            cycle_attempt_count INTEGER DEFAULT 0, retry_cycle INTEGER DEFAULT 0,
+            attempt_token TEXT, lease_expires_at TEXT, next_retry_at TEXT,
+            last_error_json TEXT, updated_at TEXT);
+        CREATE TABLE imported_games(id TEXT PRIMARY KEY, analysis_state TEXT);
+        CREATE TABLE game_analysis_jobs(game_id TEXT PRIMARY KEY, status TEXT,
+            lease_id TEXT, lease_expires_at TEXT, analysis_version INTEGER,
+            analysis_evidence_version INTEGER, idempotency_key TEXT, last_error TEXT,
+            updated_at TEXT);
+        CREATE TABLE game_analysis_position_reports(id TEXT PRIMARY KEY, game_id TEXT,
+            state TEXT, lease_id TEXT, parent_lease_id TEXT, lease_expires_at TEXT,
+            request_json TEXT, report_json TEXT, last_error TEXT, updated_at TEXT);
+        CREATE TABLE game_analysis_publications(game_id TEXT PRIMARY KEY,
+            analysis_version INTEGER, analysis_evidence_version INTEGER, prepared_json TEXT,
+            next_ply INTEGER, status TEXT, result_json TEXT, last_error TEXT, updated_at TEXT);
+        CREATE TABLE background_tasks(id TEXT PRIMARY KEY, kind TEXT,
+            deduplication_key TEXT, payload_json TEXT);
+    ''')
+    database.execute("INSERT INTO imported_games VALUES('game','analyzing')")
+    database.execute("INSERT INTO game_analysis_jobs(game_id,status,lease_id,analysis_version,"
+                     "analysis_evidence_version) VALUES('game','leased','parent-lease',2,1)")
+    database.execute("INSERT INTO game_analysis_position_reports(id,game_id,state,lease_id,"
+                     "parent_lease_id,request_json) VALUES('report','game','leased','position-lease',"
+                     "'parent-lease','accepted-request')")
+    database.commit()
+    connections = []
+
+    def execute(statement, parameters=()):
+        if statement.startswith('SELECT pg_advisory_xact_lock'):
+            return database.execute('SELECT 1')
+        translated = statement.replace('%s', '?').replace(' FOR UPDATE', '')
+        translated = translated.replace('GREATEST(', 'MAX(')
+        translated = translated.replace("NOW()+INTERVAL '1 second'", "datetime(NOW(), '+1 second')")
+        return database.execute(translated, tuple(
+            value.isoformat() if isinstance(value, datetime) else value for value in parameters))
+
+    @contextmanager
+    def connection(**options):
+        assert options == {'read_only': False, 'background': True}
+        connections.append(options)
+        # Explicit BEGIN lets SAVEPOINT release preserve the outer transaction.
+        database.execute('BEGIN')
+        try:
+            yield SimpleNamespace(raw=SimpleNamespace(execute=execute), execute_native=execute)
+            database.commit()
+        except BaseException:
+            database.rollback()
+            raise
+
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(postgres_store, 'connection', connection)
+    monkeypatch.setattr(redis_admission_gate, 'configured', lambda: False)
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
+    monkeypatch.setattr(tasks, 'measure_handler', lambda *_args: nullcontext())
+    try:
+        yield database, connections
+    finally:
+        database.close()
+
+
+def _forbid_control_analysis(monkeypatch):
+    import chess.engine
+    import httpx
+    from app import game_analysis_commands, game_analysis_publication, main, tasks
+    from app.services import game_analysis_worker, repertoire_coverage, threat_pipeline
+
+    def prohibited(*_args, **_kwargs):
+        pytest.fail('control command invoked analysis, traversal, or publication execution')
+
+    monkeypatch.setattr(chess.engine.SimpleEngine, 'popen_uci', prohibited)
+    monkeypatch.setattr(httpx.Client, 'request', prohibited)
+
+    for module, names in (
+        (game_analysis_commands, ('prepare_position_claim', 'prepare_position_report', '_positions', '_confirmed_indices')),
+        (game_analysis_worker, ('build_game_evaluations', '_positions', '_confirmed_indices')),
+        (main, ('build_game_evaluations', '_validated_analysis_evaluations', 'classify_swings')),
+        (game_analysis_publication, ('execute_game_analysis_publication_slice', 'execute_game_analysis_followup_slice', '_slice_rows')),
+        (tasks, ('execute_game_analysis_publication_slice', 'execute_game_analysis_followup_slice', 'execute_game_findings_slice')),
+        (threat_pipeline, ('execute_threat_scan_slice', 'execute_threat_validation', 'validate_analysis_report')),
+        (repertoire_coverage, ('discover_opponent_positions',)),
+    ):
+        for name in names:
+            monkeypatch.setattr(module, name, prohibited)
+
+
+@pytest.mark.parametrize('replacement_parent', [False, True])
+def test_position_report_control_commits_during_foreground_without_analysis(
+    control_command_store, monkeypatch, replacement_parent,
+):
+    import json
+    from app import tasks
+    from app.services.activity_gate import activity_gate
+    database, connections = control_command_store
+    _forbid_control_analysis(monkeypatch)
+    if replacement_parent:
+        database.execute("UPDATE game_analysis_jobs SET lease_id='new-parent',analysis_version=3")
+        database.commit()
+    payload = {'report_id': 'report', 'lease_id': 'position-lease',
+               'request_json': 'accepted-request', 'report': {'accepted': True}}
+    with activity_gate.foreground():
+        assert tasks.execute_background_command.run('position-result', 'games.analysis.position.report', payload) == {'status': 'complete'}
+        assert tasks.execute_background_command.run('position-result', 'games.analysis.position.report', payload) is None
+        assert not activity_gate.in_background_control
+        assert activity_gate.active_background_sections == 0
+    report = database.execute('SELECT state,report_json FROM game_analysis_position_reports').fetchone()
+    assert report['state'] == 'complete' and json.loads(report['report_json']) == payload['report']
+    assert database.execute('SELECT state FROM operation_receipts').fetchone()[0] == 'complete'
+    parent = database.execute('SELECT status,lease_id,analysis_version FROM game_analysis_jobs').fetchone()
+    assert tuple(parent) == (('leased', 'new-parent', 3) if replacement_parent else ('queued', None, 2))
+    assert all(options['background'] for options in connections)
+
+
+def test_finalize_admit_control_only_queues_publication_during_foreground(control_command_store, monkeypatch):
+    import json
+    from app import game_analysis_publication, tasks
+    from app.services.activity_gate import activity_gate
+    database, _connections = control_command_store
+    _forbid_control_analysis(monkeypatch)
+    enqueued = []
+    def enqueue(database_adapter, kind, key, payload, *, priority):
+        enqueued.append((kind, key, payload, priority))
+        database_adapter.execute_native('INSERT INTO background_tasks VALUES(%s,%s,%s,%s)',
+                                        ('publication-task', kind, key, json.dumps(payload)))
+    monkeypatch.setattr(game_analysis_publication, 'enqueue_compact_postgres_task_in_transaction', enqueue)
+    payload = {'game_id': 'game', 'analysis_version': 2, 'analysis_evidence_version': 3,
+               'expected_evidence_version': 1, 'lease_id': 'parent-lease',
+               'idempotency_key': 'game:2:3', 'prepared': {'evaluations': [{'already': 'computed'}]},
+               'result': {'major_mistake_ply': None}}
+    with activity_gate.foreground():
+        assert tasks.execute_background_command.run('finalize', 'games.analysis.finalize.admit', payload) == {'status': 'preparing', 'task_id': 'publication-task'}
+        assert tasks.execute_background_command.run('finalize', 'games.analysis.finalize.admit', payload) is None
+        assert not activity_gate.in_background_control
+    assert enqueued == [('game_analysis_publish', 'game', {'game_id': 'game', 'analysis_version': 2, 'next_ply': 0}, 75)]
+    publication = database.execute('SELECT * FROM game_analysis_publications').fetchone()
+    assert publication['status'] == 'queued' and publication['next_ply'] == 0
+    assert json.loads(publication['prepared_json']) == payload['prepared']
+    assert json.loads(publication['result_json']) == payload['result']
+    assert database.execute('SELECT status,lease_id FROM game_analysis_jobs').fetchone()[:] == ('publishing', None)
+    assert database.execute('SELECT state FROM operation_receipts').fetchone()[0] == 'complete'
+
+
+@pytest.mark.parametrize('command_name', ['coverage.maia.submit', 'threat.analysis.report'])
+def test_unbounded_result_callbacks_defer_during_foreground(control_command_store, monkeypatch, command_name):
+    import json
+    from app import command_gateway, tasks
+    from app.services.activity_gate import activity_gate
+    database, _connections = control_command_store
+    monkeypatch.setitem(command_gateway._handlers, command_name,
+                        lambda *_args: pytest.fail('unbounded result callback ran during foreground'))
+    payload = {'accepted_result': 'retain-for-replay'}
+    with activity_gate.foreground():
+        assert tasks.execute_background_command.run('unbounded-result', command_name, payload) is None
+        assert not activity_gate.in_background_control
+        with pytest.raises(BackgroundAdmissionDeferred):
+            activity_gate.check_background_admission()
+    receipt = database.execute('SELECT * FROM operation_receipts').fetchone()
+    assert receipt['state'] == 'retrying'
+    assert receipt['attempt_count'] == receipt['cycle_attempt_count'] == 0
+    assert receipt['attempt_token'] is None and receipt['error_json'] is None
+    assert json.loads(receipt['payload_json']) == payload
+    assert database.execute('SELECT status FROM game_analysis_jobs').fetchone()[0] == 'leased'
+
+
+def test_discretionary_position_claim_still_defers_during_foreground(control_command_store, monkeypatch):
+    from app import command_gateway, tasks
+    from app.services.activity_gate import activity_gate
+    database, _connections = control_command_store
+    monkeypatch.setitem(command_gateway._handlers, 'games.analysis.position.claim',
+                        lambda *_args: pytest.fail('denied position claim ran'))
+    with activity_gate.foreground():
+        assert tasks.execute_background_command.run('claim', 'games.analysis.position.claim', {}) is None
+        with pytest.raises(BackgroundAdmissionDeferred):
+            activity_gate.check_background_admission()
+        assert not activity_gate.in_background_control
+    assert database.execute('SELECT state,attempt_count,cycle_attempt_count FROM operation_receipts').fetchone()[:] == ('retrying', 0, 0)
+
+
+@pytest.mark.parametrize('command_name,payload', [
+    ('games.analysis.position.report', {'report_id': 'report', 'lease_id': 'obsolete',
+                                      'request_json': 'accepted-request', 'report': {}}),
+    ('games.analysis.position.report', {'report_id': 'report', 'lease_id': 'position-lease',
+                                      'request_json': 'replacement-request', 'report': {}}),
+    ('games.analysis.finalize.admit', {'game_id': 'game', 'analysis_version': 3,
+                                    'analysis_evidence_version': 3, 'expected_evidence_version': 1,
+                                    'lease_id': 'parent-lease'}),
+    ('games.analysis.finalize.admit', {'game_id': 'game', 'analysis_version': 2,
+                                    'analysis_evidence_version': 3, 'expected_evidence_version': 2,
+                                    'lease_id': 'parent-lease'}),
+    ('games.analysis.finalize.admit', {'game_id': 'game', 'analysis_version': 2,
+                                    'analysis_evidence_version': 3, 'expected_evidence_version': 1,
+                                    'lease_id': 'obsolete'}),
+])
+def test_control_publication_fences_stale_delivery(control_command_store, command_name, payload):
+    from app import command_gateway, tasks
+    from app.services.activity_gate import activity_gate
+    database, _connections = control_command_store
+    with activity_gate.foreground():
+        assert tasks.execute_background_command.run('stale-result', command_name, payload) is None
+        assert database.execute('SELECT state FROM operation_receipts').fetchone()[0] == 'failed'
+        # A replaced operation attempt cannot enter even a safe control handler.
+        with activity_gate.background_job('test', 'stale-attempt', yielding=True), activity_gate.background_control():
+            allowed, saved, _token, _number = command_gateway.record_operation_attempt('old-attempt', command_name, payload, background=True)
+            assert allowed
+            assert command_gateway.execute_command('old-attempt', command_name, saved,
+                                                   background=True, attempt_token='obsolete') is None
+    assert database.execute('SELECT status,lease_id FROM game_analysis_jobs').fetchone()[:] == ('leased', 'parent-lease')
+    assert database.execute('SELECT state,report_json FROM game_analysis_position_reports').fetchone()[:] == ('leased', None)
+    assert database.execute('SELECT COUNT(*) FROM game_analysis_publications').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('transaction_timeout', [False, True])
+def test_control_result_failure_rolls_back_before_receipt_recovery(control_command_store, monkeypatch, transaction_timeout):
+    from psycopg.errors import TransactionTimeout
+    from app import game_analysis_commands, tasks
+    from app.services.activity_gate import activity_gate
+    database, _connections = control_command_store
+    def failed_diagnostics(*_args, **_kwargs):
+        # The handler has written the result, but the enclosing transaction must undo it.
+        assert database.execute('SELECT state FROM game_analysis_position_reports').fetchone()[0] == 'complete'
+        raise TransactionTimeout('controlled budget') if transaction_timeout else ValueError('controlled failure')
+    monkeypatch.setattr(game_analysis_commands, 'record_engine_outcome', failed_diagnostics)
+    with activity_gate.foreground():
+        assert tasks.execute_background_command.run('failed-result', 'games.analysis.position.report',
+            {'report_id': 'report', 'lease_id': 'position-lease',
+             'request_json': 'accepted-request', 'report': {'accepted': True}}) is None
+        assert not activity_gate.in_background_control
+    assert database.execute('SELECT state,report_json FROM game_analysis_position_reports').fetchone()[:] == ('leased', None)
+    assert database.execute('SELECT status,lease_id FROM game_analysis_jobs').fetchone()[:] == ('leased', 'parent-lease')
+    assert database.execute('SELECT state FROM operation_receipts').fetchone()[0] == ('retrying' if transaction_timeout else 'failed')

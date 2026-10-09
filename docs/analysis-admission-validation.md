@@ -318,3 +318,70 @@ tempo-pg-regressions-179-0337d04d removed its containers/images in 6.47s.
 Complete browser-family and current-candidate CI remain required. Current
 lifecycle CI stopped before tests on a Docker bind capability timeout; this is
 unavailable infrastructure evidence, not a product pass or skipped requirement.
+# PR #120 narrow control-command audit (October 9, 2026)
+
+Audit source: `b71556e94d775d4dd1e93dafb4500c48e4b56e1a`. The allowlist originally
+contains all 13 commands below. Only Maia submit and threat report are removed:
+the former aggregates a whole coverage run; the latter enqueues once per linked
+candidate without a fixed fan-out limit. Their existing handlers, source receipt
+retention, lease fences, and retry semantics are unchanged. No scheduling or
+admission architecture is redesigned.
+
+Selected proof scope: classification at the Celery task/gateway boundary, accepted
+result publication, stale delivery/replay, and PostgreSQL/Redis control capacity.
+Failure modes are accidental expensive-handler entry, lost source receipts,
+newer-result/lease overwrite, synchronous publication, leaked control context,
+and lost database budgets. Use the named focused admission tests first, then
+the four requested Python files and threat-command/cutover callers, plus the
+existing native admission proof. CI owns all required current-candidate and
+current-base broad validation; no local full/browser sweep is needed for this
+classification-only production change.
+
+Handler modules: C = `backend/app/coverage_maia_commands.py`,
+T = `backend/app/threat_analysis_commands.py`,
+G = `backend/app/game_analysis_commands.py`,
+P = `backend/app/game_analysis_publication.py`.
+
+| Original command | Registered handler | Synchronous work / database behavior | Durable follow-up | Verdict |
+| --- | --- | --- | --- | --- |
+| `coverage.maia.heartbeat` | C `heartbeat_maia_node` | Indexed node/run/prefix lease and latest-scope checks; heartbeat update | None | Safe |
+| `coverage.maia.release` | C `release_maia_node` | One lease-conditional node update | None | Safe |
+| `coverage.maia.failure` | C `fail_maia_node` | Same lease/scope reads; node and run failure writes | One opportunity intent | Safe |
+| `coverage.maia.submit` | C `submit_maia_node` | Lease/scope reads, move insertion, candidate blend/sort, whole-run node progress aggregate | Fixed priority/retention/opportunity intents | Removed: uncapped aggregate |
+| `threat.analysis.report` | T `submit_threat_report` | Locked request, supplied history/PV legality validation, report/metrics write, all linked candidates read/enqueued in loop | One intent per candidate | Removed: uncapped fan-out |
+| `threat.analysis.failure` | T `fail_threat_analysis` | Lease-conditional failure/requeue; bounded diagnostics | None | Safe |
+| `threat.analysis.release` | T `release_threat_analysis` | Lease-conditional release/attempt adjustment; bounded diagnostics | None | Safe |
+| `games.analysis.position.report` | G `publish_position_report` | One locked report; request/lease fence, supplied JSON and metrics write; matching parent release | None | Safe |
+| `games.analysis.position.release` | G `release_position_report` | One locked leased report; report/error and matching parent/game writes | None | Safe |
+| `games.analysis.failure` | G `fail_parent_analysis` | Lease-conditional parent and game failure writes | None | Safe |
+| `games.analysis.heartbeat` | G `heartbeat_parent_analysis` | One lease-conditional heartbeat update | None | Safe |
+| `games.analysis.release` | G `release_parent_analysis` | Lease-conditional parent and game update | None | Safe |
+| `games.analysis.finalize.admit` | P `admit_game_analysis_publication` | One locked job, generation/evidence/lease fence; save prepared envelope and publishing status | One publication intent | Safe |
+
+Every original handler receives already-accepted work. None invokes an engine,
+model/provider, network request, repertoire/graph traversal, or gateway preparer.
+Threat report validation does replay supplied chess moves, and its downstream
+candidate loop is uncapped. Maia blends one node's candidates and also counts all
+nodes in its run. Those are the concrete reasons for removing their exemptions.
+Priority/opportunity helpers only enqueue intent; compact enqueue uses a fixed
+task/event write, indexed task read, bounded metric deltas, and capped per-task
+event retention. Applicable SQL triggers update epochs or metadata, not analysis.
+
+Finalization calls only `_queue_game_analysis_publication`: serialize accepted
+prepared/result data, update one publication/job, enqueue `game_analysis_publish`,
+and read its task ID. HTTP evaluation building/validation/classification is before
+command dispatch and is not in this control handler. Actual publication runs in
+normal admitted eight-ply slices; follow-up derivation runs separately.
+
+Position reports are validated before dispatch and fenced at publication by
+report ID, request JSON, report lease, and matching parent lease. An old position
+result cannot release a newer parent generation. Identical completed results
+replay without writes. Threat reports match saved request identity and active
+lease before publishing; completed reports are not overwritten. Maia uses active
+node lease, current canonical scope, and newest coverage attempt fencing.
+
+Control bypass changes only admission. Background writers still set transaction
+and lock limits (250 ms / 25 ms defaults), and the gateway retains digest checks,
+receipt advisory/row locks, operation attempt-token fencing, savepoint rollback
+for definitive errors, and full transaction rollback for admission/database
+errors. No limit, retry count, or wait is increased.

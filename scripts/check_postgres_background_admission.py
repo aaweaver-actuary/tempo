@@ -1,5 +1,7 @@
 """Real bounded admission/control/restart proof in the regular durability stage."""
 import json
+from contextlib import ExitStack
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import sys
@@ -53,6 +55,7 @@ def _proof_background_admission(database_url):
         return {'accepted': payload['value']}
     command_gateway.register_command(command_name, receipt)
     try:
+        _proof_real_control_callbacks(database_url, identity)
         with patch.object(tasks, 'claim_task', claim_owned), patch.object(tasks, 'execute_postgres_queue_refresh_slice', publish):
             with activity_gate.foreground():
                 started = time.perf_counter()
@@ -105,3 +108,118 @@ def _proof_background_admission(database_url):
         with psycopg.connect(database_url) as database:
             database.execute('DELETE FROM background_tasks WHERE id=%s',(task['id'],))
             database.execute('DELETE FROM operation_receipts WHERE operation_id IN (%s,%s)',(identity,identity+'-denied'))
+
+
+def _proof_real_control_callbacks(database_url, identity):
+    """Real registered callbacks commit; discretionary handlers never enter."""
+    import chess.engine
+    import httpx
+    from app import game_analysis_commands, game_analysis_publication, main
+    from app.services import game_analysis_worker, repertoire_coverage, threat_pipeline
+    from app.services import redis_admission_gate
+
+    assert redis_admission_gate.configured(), 'Control proof requires real shared Redis admission'
+    report_game = identity + '-report-game'
+    finalize_game = identity + '-finalize-game'
+    report_id = identity + '-position'
+    operation_ids = [identity + suffix for suffix in (
+        '-position-result', '-finalize', '-stale-result', '-stale-finalize',
+        '-maia-denied', '-threat-denied', '-claim-denied')]
+    timestamp = datetime.now(timezone.utc).isoformat()
+    raw_report = {'accepted': 'already-computed-result'}
+    finalization = {
+        'game_id': finalize_game, 'analysis_version': 2, 'expected_evidence_version': 1,
+        'analysis_evidence_version': 3, 'lease_id': 'parent-lease',
+        'idempotency_key': finalize_game + ':2:3',
+        'prepared': {'evaluations': [{'already': 'computed'}]},
+        'result': {'major_mistake_ply': None},
+    }
+
+    def prohibited(*_args, **_kwargs):
+        raise AssertionError('Control command invoked engine/provider/traversal/publication')
+
+    try:
+        with psycopg.connect(database_url) as database:
+            for game_id in (report_game, finalize_game):
+                database.execute(
+                    "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,"
+                    "color,result,start_fen,moves_json,analysis_state) "
+                    "VALUES(%s,'lichess','proof',%s,'rapid',1,'white','win',%s,'[]','analyzing')",
+                    (game_id, timestamp, chess.STARTING_FEN))
+                database.execute(
+                    "INSERT INTO game_analysis_jobs(game_id,status,lease_id,analysis_version,"
+                    "analysis_evidence_version,updated_at) VALUES(%s,'leased','parent-lease',2,1,%s)",
+                    (game_id, timestamp))
+            database.execute(
+                "INSERT INTO game_analysis_position_reports(id,game_id,analysis_version,scan_pass,"
+                "position_index,request_json,state,lease_id,parent_lease_id,updated_at) "
+                "VALUES(%s,%s,2,'shallow',0,'accepted-request','leased','position-lease','parent-lease',%s)",
+                (report_id, report_game, timestamp))
+
+        with ExitStack() as boundaries:
+            for module, names in (
+                (chess.engine.SimpleEngine, ('popen_uci',)),
+                (httpx.Client, ('request',)),
+                (game_analysis_commands, ('prepare_position_claim', 'prepare_position_report', '_positions', '_confirmed_indices')),
+                (game_analysis_worker, ('build_game_evaluations', '_positions', '_confirmed_indices')),
+                (main, ('build_game_evaluations', '_validated_analysis_evaluations', 'classify_swings')),
+                (game_analysis_publication, ('execute_game_analysis_publication_slice', 'execute_game_analysis_followup_slice', '_slice_rows')),
+                (tasks, ('execute_game_analysis_publication_slice', 'execute_game_analysis_followup_slice', 'execute_game_findings_slice')),
+                (threat_pipeline, ('execute_threat_scan_slice', 'execute_threat_validation', 'validate_analysis_report')),
+                (repertoire_coverage, ('discover_opponent_positions',)),
+            ):
+                for name in names:
+                    boundaries.enter_context(patch.object(module, name, prohibited))
+            for command_name in ('coverage.maia.submit', 'threat.analysis.report', 'games.analysis.position.claim'):
+                boundaries.enter_context(patch.dict(command_gateway._handlers, {command_name: prohibited}))
+            with activity_gate.foreground():
+                assert redis_admission_gate.foreground_present()
+                position_payload = {'report_id': report_id, 'lease_id': 'position-lease',
+                                    'request_json': 'accepted-request', 'report': raw_report}
+                assert tasks.execute_background_command.run(operation_ids[0], 'games.analysis.position.report', position_payload) == {'status': 'complete'}
+                queued = tasks.execute_background_command.run(operation_ids[1], 'games.analysis.finalize.admit', finalization)
+                assert queued['status'] == 'preparing'
+                assert tasks.execute_background_command.run(operation_ids[0], 'games.analysis.position.report', position_payload) is None
+                assert tasks.execute_background_command.run(operation_ids[1], 'games.analysis.finalize.admit', finalization) is None
+                # Completed result and publishing job cannot be overwritten by old deliveries.
+                assert tasks.execute_background_command.run(operation_ids[2], 'games.analysis.position.report',
+                    {**position_payload, 'lease_id': 'obsolete', 'report': {'obsolete': True}}) is None
+                assert tasks.execute_background_command.run(operation_ids[3], 'games.analysis.finalize.admit',
+                    {**finalization, 'analysis_version': 3}) is None
+                for operation_id, command_name in zip(operation_ids[4:], (
+                    'coverage.maia.submit', 'threat.analysis.report', 'games.analysis.position.claim')):
+                    assert tasks.execute_background_command.run(operation_id, command_name, {'saved': True}) is None
+                with activity_gate.background_job('test', identity, yielding=True), activity_gate.background_control(), background_connection() as database:
+                    assert database.execute_native('SHOW transaction_timeout').fetchone()[0] == '250ms'
+                    assert database.execute_native('SHOW lock_timeout').fetchone()[0] == '25ms'
+                assert not activity_gate.in_background_control
+                try:
+                    activity_gate.check_background_admission()
+                except BackgroundAdmissionDeferred:
+                    pass
+                else:
+                    raise AssertionError('Control bypass leaked into ordinary admission')
+
+        postgres_store.close_pools()
+        with psycopg.connect(database_url) as database:
+            assert database.execute('SELECT state,report_json FROM game_analysis_position_reports WHERE id=%s', (report_id,)).fetchone() == ('complete', json.dumps(raw_report))
+            assert database.execute('SELECT status,lease_id FROM game_analysis_jobs WHERE game_id=%s', (report_game,)).fetchone() == ('queued', None)
+            assert database.execute('SELECT status,lease_id FROM game_analysis_jobs WHERE game_id=%s', (finalize_game,)).fetchone() == ('publishing', None)
+            publication = database.execute('SELECT status,next_ply,prepared_json FROM game_analysis_publications WHERE game_id=%s', (finalize_game,)).fetchone()
+            assert publication[:2] == ('queued', 0) and json.loads(publication[2]) == finalization['prepared']
+            assert database.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='game_analysis_publish' AND deduplication_key=%s", (finalize_game,)).fetchone()[0] == 1
+            assert database.execute('SELECT COUNT(*) FROM game_move_analysis_staged WHERE game_id IN (%s,%s)', (report_game, finalize_game)).fetchone()[0] == 0
+            for operation_id in operation_ids[:2]:
+                assert database.execute('SELECT state FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone() == ('complete',)
+            for operation_id in operation_ids[2:4]:
+                assert database.execute('SELECT state FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone() == ('failed',)
+            for operation_id in operation_ids[4:]:
+                receipt = database.execute('SELECT state,attempt_count,cycle_attempt_count,payload_json FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()
+                assert receipt[:3] == ('retrying', 0, 0) and json.loads(receipt[3]) == {'saved': True}
+        print('PASS test_postgres_real_control_results_and_finalization_commit_without_analysis_during_foreground')
+    finally:
+        postgres_store.close_pools()
+        with psycopg.connect(database_url) as database:
+            database.execute('DELETE FROM background_tasks WHERE deduplication_key=%s', (finalize_game,))
+            database.execute('DELETE FROM imported_games WHERE id IN (%s,%s)', (report_game, finalize_game))
+            database.execute('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', (operation_ids,))
