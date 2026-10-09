@@ -465,10 +465,12 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         with postgres_store.connection() as database:
             database.execute("UPDATE background_tasks SET lease_expires_at=? WHERE id=?", ((now-timedelta(seconds=1)).isoformat(),abandoned['id']))
         postgres_store.close_pools()
+        restarted = claim_task('daily_queue')
+        assert restarted and restarted['lease_token'] != abandoned['lease_token']
         assert not refresh.execute_postgres_queue_refresh_slice(abandoned)
         phases = []
-        for _ in range(30):
-            task = claim_task('daily_queue')
+        for slice_index in range(30):
+            task = restarted if slice_index == 0 else claim_task('daily_queue')
             if not task:
                 break
             phases.append(task['payload'].get('_queue_phase'))

@@ -41,3 +41,17 @@ These are development results from a dirty implementation tree based on `f269f90
 not a clean-HEAD or full-gate claim. PostgreSQL durability, affected real browsers,
 updated-base checks, and required CI remain pending. Durations are observations
 under shared host load, not performance comparisons.
+
+The first disposable durability run failed in the new restart fixture after
+355.89 s wall: expiration alone leaves a lease current until another worker
+reclaims it. The corrected proof now obtains the new lease, verifies its token
+changed, then rejects the old delivery. This is a fixture correction to the
+existing generation/token contract. Diagnostics and ownership were captured by
+the runner under `test-results/tempo-cli/tempo-pg-regressions-28246-f6fd8522/`;
+its teardown succeeded (12.74 s), including owned containers, volumes, and images.
+The run applied migration 41 successfully. It is not a successful gate.
+
+Rebased onto updated main `24a2272c702b20caa278998c672c7e96ac3baea7` (PR #133).
+Only the appended regression registry conflicted; both sets of coverage were
+preserved. PR #134 is still open and mergeable at `ee53d39c6a1830e2dd07be7a957933ac26242596`.
+Final candidate validation follows the restart-fixture correction.
