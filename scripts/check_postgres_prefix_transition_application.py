@@ -1189,19 +1189,16 @@ def test_issue80_unclean_source_integrity_rejects_before_acceptance():
 
 def wait_for_staged_http_application(operation_id, redeliver, deadline):
     """Drive this receipt's eligible retry while the proof's scheduler is stopped."""
-    redelivered_attempt = None
+    redelivered_retry_at = None
     result = read_operation(operation_id)
     while result['state'] in {'unknown', 'queued', 'executing', 'retrying'} and time.monotonic() < deadline:
         if result['state'] == 'retrying':
-            assert result.get('last_error') == {
-                'class': 'SerializationFailure',
-                'message': 'Transition preparation yielded to foreground work; retry its durable operation',
-            }, result
+            assert not result.get('last_error') and result['attempt_count'] == result['cycle_attempt_count'] == 0, result
             eligible_at = datetime.fromisoformat(result['next_retry_at'])
             if (eligible_at <= datetime.now(timezone.utc)
-                    and result['attempt_count'] != redelivered_attempt):
+                    and result['next_retry_at'] != redelivered_retry_at):
                 redeliver()
-                redelivered_attempt = result['attempt_count']
+                redelivered_retry_at = result['next_retry_at']
         time.sleep(0.01)
         result = read_operation(operation_id)
     assert result['state'] == 'pending' and result['transition']['state'] == 'staging', result
@@ -1228,10 +1225,10 @@ def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_f
                 result=read_operation(payload['operation_id'])
                 while result['state'] in {'unknown','queued','executing'} and time.monotonic()<deadline:
                     time.sleep(0.01);result=read_operation(payload['operation_id'])
-                assert result['state']=='retrying',result
+                assert result['state']=='retrying' and result['attempt_count']==result['cycle_attempt_count']==0,result
         staged=wait_for_staged_http_application(payload['operation_id'],dispatch_original,deadline)
         if force_foreground_yield:
-            assert staged['attempt_count']>=2,staged
+            assert staged['attempt_count']==staged['cycle_attempt_count']==1,staged
         final=publish(payload)
         with urlopen(request(payload['request']),timeout=10) as response:
             assert response.status==200 and json.load(response)==final

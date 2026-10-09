@@ -294,12 +294,11 @@ def test_issue80_http_proof_redelivers_only_eligible_original_foreground_yield(m
         Path(__file__).resolve().parents[2] / 'scripts/check_postgres_prefix_transition_application.py')
     proof = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(proof)
-    receipt = {'state': 'retrying', 'attempt_count': 1,
+    receipt = {'state': 'retrying', 'attempt_count': 0, 'cycle_attempt_count': 0,
         'next_retry_at': (datetime.now(timezone.utc) + timedelta(seconds=60 if scenario == 'not_due' else -1)).isoformat(),
-        'last_error': {'class': 'SerializationFailure',
-            'message': 'Transition preparation yielded to foreground work; retry its durable operation'}}
+        'last_error': None}
     if scenario == 'unexpected_error':
-        receipt['last_error']['class'] = 'TransactionTimeout'
+        receipt['last_error'] = {'class': 'TransactionTimeout', 'message': 'unexpected execution error'}
     elapsed = [0.0]
     delivered = []
     monkeypatch.setattr(proof.time, 'monotonic', lambda: elapsed[0])

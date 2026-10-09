@@ -255,6 +255,9 @@ def _execute_command(
                 BackgroundAdmissionDeferred):
             raise
         except Exception as error:
+            from .prefix_evaluation_api import PrefixEvaluationForegroundDeferred
+            if isinstance(error, PrefixEvaluationForegroundDeferred):
+                raise BackgroundAdmissionDeferred('Waiting for foreground activity') from error
             # Persist definitive preparation failures through the same receipt
             # envelope, after checking delivery identity and the attempt fence.
             preparation_error = error

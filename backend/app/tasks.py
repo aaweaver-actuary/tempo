@@ -188,6 +188,9 @@ def execute_foreground_command(
         try:
             result = execute_command(operation_id, command_name, saved_payload,
                                      attempt_token=attempt_token)
+        except BackgroundAdmissionDeferred:
+            defer_operation_for_foreground(operation_id, attempt_token)
+            return None
         except Exception as error:
             record_operation_retry(operation_id, attempt_token, error,
                                    retryable=(command_name == prefix_transition_application.COMMAND and
