@@ -22,6 +22,24 @@ from app.services.opening_graph import GraphInput, build_graph
 from app.services.review_service import apply_scheduling_review
 from app.opening_segmentation_api import segmentation_list, segmentation_detail, save_preference
 from app.command_gateway import execute_command
+from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+
+
+def admitted_segmentation_call(operation, *arguments):
+    """Retry only explicit foreground denial, retaining the same durable lease.
+
+    The deployed API's health/read requests share this rehearsal's admission
+    keys. A denial is expected waiting, not an execution failure; every other
+    exception must still fail the proof immediately.
+    """
+    admission_deadline = time.monotonic() + 10
+    while True:
+        try:
+            return operation(*arguments)
+        except BackgroundAdmissionDeferred:
+            if time.monotonic() >= admission_deadline:
+                raise AssertionError('Segmentation never obtained foreground-idle admission within 10 seconds')
+            time.sleep(0.01)
 
 
 def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(repertoire_id, lines, product_snapshot):
@@ -447,12 +465,12 @@ def main():
                      json.dumps(step.decision_fen_keys), step.card_id, step.parent_card_id, step.decision_fen_key, step.starting_fen, json.dumps(step.moves), step.trained_color))
             database.execute_native("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (repertoire_id, now))
             worker.request_segmentation_in_transaction(database, repertoire_id, 1)
-        first = claim_task('opening_segmentation')
+        first = admitted_segmentation_call(claim_task, 'opening_segmentation')
         assert first and first['payload']['repertoire_id'] == repertoire_id
         test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids)
         worker.presentation_occurrences = delayed_traverse
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(worker.execute_segmentation_slice, first)
+            future = executor.submit(admitted_segmentation_call, worker.execute_segmentation_slice, first)
             assert prepared_event.wait(5)
             started = time.perf_counter()
             with postgres_store.connection(read_only=False) as database:
@@ -465,17 +483,17 @@ def main():
             assert future.result(timeout=5)
         worker.presentation_occurrences = original_traverse
         # Replay a stale claimed slice, then simulate process restart by reclaiming its durable cursor.
-        assert not worker.execute_segmentation_slice(first)
+        assert not admitted_segmentation_call(worker.execute_segmentation_slice, first)
         traversals.clear()
         def count_traverse(*args):
             traversals.append(args[1]['id']); return original_traverse(*args)
         worker.presentation_occurrences = count_traverse
         slices = 1
         for _ in range(200):
-            task = claim_task('opening_segmentation')
+            task = admitted_segmentation_call(claim_task, 'opening_segmentation')
             if task is None: break
             assert task['payload']['repertoire_id'] == repertoire_id
-            worker.execute_segmentation_slice(task)
+            admitted_segmentation_call(worker.execute_segmentation_slice, task)
             slices += 1
             assert snapshot() == expected_learning_state, 'Advisory slice changed learning or queue state'
         else: raise AssertionError('Segmentation failed to terminate')
@@ -549,9 +567,9 @@ def main():
         assert snapshot() == expected_learning_state
         # Supersede a claimed generation before its publication; it may never expose ready results.
         with postgres_store.connection(read_only=False) as database: worker.request_segmentation_in_transaction(database, repertoire_id, 1)
-        stale = claim_task('opening_segmentation')
+        stale = admitted_segmentation_call(claim_task, 'opening_segmentation')
         with postgres_store.connection(read_only=False) as database: worker.invalidate_segmentation_in_transaction(database, repertoire_id)
-        assert not worker.execute_segmentation_slice(stale)
+        assert not admitted_segmentation_call(worker.execute_segmentation_slice, stale)
         assert segmentation_list(repertoire_id)['state'] == 'stale'
         print(json.dumps({'test': 'test_segmentation_analysis_yields_restarts_and_replays_idempotently',
                           'slices': slices, 'foreground_review_during_traversal_ms': round(review_ms, 2),
