@@ -1168,6 +1168,13 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_background_tasks_claim ON background_tasks(state,priority,next_attempt_at,created_at)",
+        """CREATE TABLE IF NOT EXISTS background_scheduling_turns (
+            lane TEXT PRIMARY KEY,
+            next_turn INTEGER NOT NULL DEFAULT 0 CHECK(next_turn>=0 AND next_turn<7),
+            promoted_since_turn INTEGER NOT NULL DEFAULT 0 CHECK(promoted_since_turn IN (0,1)),
+            control_streak INTEGER NOT NULL DEFAULT 0 CHECK(control_streak>=0 AND control_streak<=2)
+        )""",
+        "INSERT OR IGNORE INTO background_scheduling_turns(lane) VALUES('durable')",
         """
         CREATE TABLE IF NOT EXISTS background_task_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
