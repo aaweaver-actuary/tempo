@@ -2835,3 +2835,70 @@ Stalemate Swindles (October 5, 2026):
 ## PR #91 PostgreSQL reviewed-history preservation — October 8, 2026
 
 - `test_postgres_stalemate_import_reimport_preserves_existing_review_history` runs in the regular disposable PostgreSQL study-durability stage after the self-contained checked-in corpus proof. It explicitly enrolls and reviews a separate synthetic Study through production foreground commands, requires nonempty review/Study-attempt/receipt/scheduling snapshots, and verifies every existing reviewed card and history row is unchanged after real-corpus import, reversed-row reimport, and changed-content rejection. The 300 corpus exercises remain draft and unenrolled; only the independent disposable fixture is enrolled.
+
+## Issue #108 — shared legal position inventory
+
+PR #117 repairs and recovery proofs (regular PostgreSQL `background_workloads`
+stage, invoked by `scripts/check_postgres_position_inventory.py`):
+
+- `test_pr117_foreground_mutation_and_graph_publication_have_no_lock_cycle`:
+  independent PostgreSQL connections, real PGN-import/branch commands, both
+  lock schedules repeated ten times each, stale delivery fencing, atomic graph
+  visibility/inventory requests, and eventual current inventory publication.
+- `test_pr117_inventory_failure_and_refresh_have_no_lock_cycle`: terminal
+  inventory failure overlapping source mutation/refresh cannot deadlock or lose
+  the replacement request.
+- `test_pr117_graph_inventory_handoff_rolls_back_atomically`: publication and
+  inventory enqueue roll back together, including generation rows and cursors;
+  a committed replay is fenced.
+- `test_pr117_inventory_manual_retry_publishes_replacement_without_stale_memberships`:
+  production claim/failure exhaustion and PostgreSQL `activity.task.retry`
+  replace failed work, publish once, reject stale delivery replay, and clean old
+  memberships/responses. This passes the original recovery implementation.
+- `test_pr117_inventory_publication_rejects_incomplete_routes`: unfinished
+  routes cannot become visible or advance the durable task; the same delivery
+  resumes and publishes only after traversal completes.
+
+Graph publication and inventory failure/refresh regressions both reproduce a
+real PostgreSQL `DeadlockDetected` on original service revision `d6e07e19f0`.
+Test synchronization uses events and `pg_blocking_pids`, with no transaction
+budget changes. The instrumented raw transactions expose row-lock cycles;
+eventual graph/inventory slices use ordinary production background budgets.
+
+- `test_issue108_uncovered_legal_replies_and_terminal_opponent_positions`: all legal replies, including missing replies and terminal opponent positions, remain represented.
+- `test_issue108_custom_fen_castling_en_passant_and_illegal_moves`: custom FENs, castling/legal en-passant identity and invalid authored moves.
+- `test_issue108_segment_checkpoint_preserves_absolute_ply_without_prefix_replay`: bounded segments equal complete traversal without repeating the prefix.
+- `test_issue108_source_cohort_keys_share_positions_and_preserve_supported_contexts`: shared source/model/cohort keys distinguish actual contexts and reject incomplete provenance.
+- `test_issue108_foreground_contention_restart_and_idempotent_replay`: foreground admission, closed connections during computation, committed checkpoints and duplicate-delivery rejection.
+- `test_issue108_same_input_request_keeps_lease_and_cursor`: unchanged requests do not reset useful work.
+- `test_issue108_invalid_pages_and_unknown_evidence_do_not_fabricate_success`: bounded read contracts and absent source evidence.
+- `test_issue108_handlers_are_registered_in_regular_worker_dispatch`: normal worker ownership of build and upgrade reconciliation.
+
+Python cases are in `backend/tests/test_position_inventory.py` and
+`backend/tests/test_postgres_position_inventory.py`. The regular PostgreSQL
+`background_workloads` stage runs `scripts/check_postgres_position_inventory.py`:
+`verify_issue108_upgrade_restart_replay_and_coverage` and
+`verify_issue108_transpositions_duplicates_long_routes`, and
+`verify_issue108_scope_delta_and_card_authority`, and
+`verify_issue108_fresh_install_has_no_upgrade_task` cover real PostgreSQL
+upgrade, foreground contention, rollback, persisted restart/replay, source-change
+fences, removal reconciliation, exact legal counts, per-repertoire coverage,
+shared cache retention on deletion, duplicate/transposed routes, supported
+transposition labels, pagination, bounded long-line work and zero unchanged replay.
+
+The fresh-install case protects migration-only sweep ownership: empty databases
+contain no upgrade task, while an upgrade with existing repertoires queues one
+bounded durable sweep. It also preserves exclusive disposable fixture claims.
+
+`test_issue108_schema38_upgrade_preserves_parent_inventory_and_migration_history`
+is the real PostgreSQL assertion within the existing issue80 upgrade proof. A
+separate database starts at genuine schema38, upgrades to current schema with a
+pending application, preserves recovery identity, and leaves the parent database
+(and its inventory generations/migration history) intact.
+
+`test_issue108_daily_study_fixture_uses_authoritative_date_across_utc_midnight`
+protects the regular browser backlog fixture against schema-container UTC and
+product-local date disagreement. The browser reads the queue's authoritative
+local date and supplies it for fixture due dates and durable refresh requests.
+The existing `daily study opens while background analysis remains queued` browser
+regression retains its queue publication, backlog and real-board assertions.

@@ -12,9 +12,14 @@ productTest("daily study opens while background analysis remains queued", async 
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
     throw new Error("Daily study backlog proof requires the owning disposable PostgreSQL runner");
   const fixtureId = `daily-study-proof-${randomUUID()}`;
+  const queueDateResponse = await request.get(`${api}/queue/window?limit=1`);
+  expect(queueDateResponse.ok()).toBeTruthy();
+  const queueDate = (await queueDateResponse.json()).local_date;
+  expect(queueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const composeArguments = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
   const docker = (...args: string[]) => execFileSync("docker", [...composeArguments, ...args], { encoding: "utf8", timeout: 30_000 });
   const fixture = (action: string) => docker("run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
+    "-e", `TEMPO_DAILY_STUDY_QUEUE_DATE=${queueDate}`,
     "schema", "python", "/source/scripts/check_postgres_daily_study_dispatch.py", action, fixtureId);
   try {
     docker("stop", "background-worker", "background-scheduler");

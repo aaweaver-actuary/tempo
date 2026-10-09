@@ -92,6 +92,7 @@ from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
 )
 from .services.postgres_coverage_seed import execute_coverage_seed_slice
+from .services.postgres_position_inventory import execute_inventory_slice, execute_reconcile_slice
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 from .services.postgres_coverage_explorer import execute_coverage_explorer_slice
 from .services.postgres_coverage_recovery import recover_one_explorer_run
@@ -127,6 +128,8 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "discovery_recommendation",
     "discovery_admission",
     "coverage_seed",
+    "position_inventory",
+    "position_inventory_reconcile",
     "canonical_prefix_preview",
     "coverage_explorer",
     "game_analysis_publish",
@@ -300,6 +303,8 @@ def _execute_claimed_background_slice(
         "discovery_recommendation": execute_recommendation_request_slice,
         "discovery_admission": execute_admission_intent_slice,
         "coverage_seed": execute_coverage_seed_slice,
+        "position_inventory": execute_inventory_slice,
+        "position_inventory_reconcile": execute_reconcile_slice,
         "canonical_prefix_preview": execute_prefix_preview_slice,
         "coverage_explorer": execute_coverage_explorer_slice,
         "game_analysis_publish": execute_game_analysis_publication_slice,
@@ -330,6 +335,8 @@ def _execute_claimed_background_slice(
                 "integrity_scan",
                 "opening_segmentation",
                 "coverage_seed",
+                "position_inventory",
+                "position_inventory_reconcile",
                 "canonical_prefix_preview",
                 "coverage_explorer",
                 "game_analysis_publish",

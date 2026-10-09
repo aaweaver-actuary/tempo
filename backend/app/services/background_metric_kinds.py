@@ -7,6 +7,6 @@ KINDS = frozenset((
     "game_derivation_misses", "game_derivation_events", "game_derivation_features",
     "game_derivation_priorities", "repertoire_priority", "daily_statistics", "game_sync_window",
     "opening_graph_rebuild", "prefix_transition_application", "integrity_scan", "opening_segmentation", "repertoire_opportunity",
-    "discovery_recommendation", "discovery_admission", "canonical_prefix_preview", "coverage_seed", "coverage_explorer",
+    "discovery_recommendation", "discovery_admission", "canonical_prefix_preview", "coverage_seed", "coverage_explorer", "position_inventory", "position_inventory_reconcile",
     "game_analysis_publish", "game_analysis_followup", "engine_game", "engine_defense", "other",
 ))
