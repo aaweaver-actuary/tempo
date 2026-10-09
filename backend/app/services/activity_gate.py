@@ -158,7 +158,7 @@ class ApplicationActivityGate:
                 self.wait_for_foreground()
                 with self._condition:
                     if _yield_admission.get() or redis_admission_gate.configured() or _control_section.get():
-                        if self._active_background_sections or (
+                        if (self._active_background_sections and not _control_section.get()) or (
                             self._foreground_requests and not _control_section.get()
                         ):
                             raise BackgroundAdmissionDeferred('Waiting for a database section')

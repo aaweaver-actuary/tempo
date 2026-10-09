@@ -70,3 +70,17 @@ def test_background_http_admission_reports_waiting_and_retry_without_false_succe
                                        headers={'X-Tempo-Work-Class':'background'})
     assert response.status_code == 503 and response.headers['Retry-After'] == '1'
     assert response.json() == {'detail':'Waiting for foreground activity'}
+
+
+def test_short_control_receipt_is_admitted_during_existing_background_reservation(monkeypatch):
+    monkeypatch.setattr(redis_admission_gate, 'configured', lambda: False)
+    gate = ApplicationActivityGate()
+    with gate.background_job('test', 'reservation', yielding=True):
+        with gate.background_database_section():
+            with gate.background_control(), gate.background_database_section():
+                assert gate.active_background_sections == 2
+            assert gate.active_background_sections == 1
+            with pytest.raises(BackgroundAdmissionDeferred):
+                with gate.background_database_section():
+                    pytest.fail('discretionary section must yield')
+    assert gate.active_background_sections == 0

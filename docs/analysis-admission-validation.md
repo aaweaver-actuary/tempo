@@ -60,3 +60,27 @@ After composition: 234 affected Python tests passed in 4.18 s. The regular
 PostgreSQL proof passed again: large graph maximum slice 18.3 ms; denied worker
 2.8 ms; sparse graph three slices (maximum section 22 ms); control receipt,
 rollback, restart and stale legacy replay all passed.
+
+## Durability follow-up
+
+`make docker-durability` on clean 9b9badf failed at operation recovery because its
+old context double did not accept `yielding`. Stages through background budget
+passed; this was not a complete gate pass. The owning runner removed its project
+containers, volumes and images (cleanup 10.99 s). Project:
+`tempo-pg-regressions-38255-98fdf314`; evidence retained under root
+`test-results/analysis-activity-2026-10-09/admission-durability.log`.
+
+Focused repair also reproduced a real concurrent-control reservation denial;
+control receipts may overlap a process-local reservation while remaining subject
+to the existing database lock/transaction budgets. Discretionary sections still
+yield. Named reservation regression: six admission cases passed in 0.54 s.
+Fresh PostgreSQL operation proof (DSN overridden to the task-owned fixture)
+passed finite retries, conflict race, restart, explicit retry, stale lease,
+failed-handler rollback, PGN discard fencing and one business effect.
+
+Focused PostgreSQL fixture `tempo-analysis-receipt-proof` id
+`09791cef0025d0aa231da7c6a466ab0e36a38ab194ba085818283a60acdc238d`,
+shared image `postgres:18.6-trixie`, no host data mounts. Each proof uses a fresh
+database; teardown `docker stop tempo-analysis-receipt-proof` then
+`docker rm -v tempo-analysis-receipt-proof`. New complete durability/CI evidence
+is required for this repaired head.
