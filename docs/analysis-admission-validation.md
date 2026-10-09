@@ -205,6 +205,25 @@ These are local observations, not broad speedup claims. Evidence is retained in
 root `test-results/analysis-activity-2026-10-09/admission-incident-isolation-proof.log`.
 Complete candidate CI remains pending.
 
+The stacked schema45 candidate 457f323 durability run passed background budgets,
+operation recovery, migrations, priority recovery, diagnostics, all background
+workloads, candidate upsert, command recreation and backup restoration. It failed
+the later preview-retention deadline: its idle measurement polled whole-product
+foreground HTTP exports every 100 ms, preempting the queued work. Passive polling
+now reads only that repertoire's preview identifiers/current certificate and
+requested task status, through read-only SQL with a 250 ms statement budget.
+The exact 30-second deadline and all acceptance assertions are unchanged.
+`node --test tests/runner/postgres-test-speedups.test.mjs` passes 48 cases in
+1.102 s. A fresh PostgreSQL 18.6/Redis 7 helper accepts the current certificate,
+requests ten additional previews and completes 68 real slices with nine previews
+retained in 1.28 s including setup. The first scratch fixture omitted certificate
+acceptance and failed; its log remains preserved. The successful focused log is
+root `test-results/analysis-activity-2026-10-09/admission-passive-retention-proof-repaired.log`.
+The broad failed run and exact resource/timing ownership are preserved under
+`integrity-candidate-durability-repaired.log` and `durability-66193/`; cleanup
+passed in 7.82 s and no project containers remain. This is not a complete local
+durability pass. New current-head CI owns the required complete candidate proof.
+
 Current-head 25b8a17 CI and the stacked integrity durability rehearsal exposed
 parent health leases affecting the row-contention timing and the deliberately
 stale checkpoint commit. Those two helper proofs now own admission keys for
