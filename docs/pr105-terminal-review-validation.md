@@ -79,3 +79,11 @@ failed all three in 21.54s; after adding only valid missing-receipt HTTP 404 res
 the same command passed all three in 6.02s. No existing assertion was changed and no
 production code repair was needed. `make unit-file FILE=tests/unit/study-regressions.test.tsx` passed all 76 cases
 in 23.02s; fresh required CI will validate the resulting new committed candidate.
+
+
+Final test typing: the strengthened Jobs workflow mock initially inferred an empty
+argument tuple; final typecheck rejected its request assertions. Typed that mock as
+`typeof fetch`. `make unit-file FILE=tests/unit/pending-review-recovery-regressions.test.tsx`
+passed 15 cases in 1.12s and `npm run typecheck` passed after correction. Full lint
+passed in 24.27s (same ten existing warnings); focused ESLint passed after the type
+annotation. This is test-only; production source remains the validated repair.

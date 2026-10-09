@@ -145,7 +145,7 @@ it.each([false, true])("phone definitive foreground failure suppresses idle repl
 it("phone blocked review suppression survives reload and permits explicit intervention", async () => {
   enqueuePendingReview(review);
   const original = pendingReviews()[0];
-  const fetcher = vi.fn(async () => Response.json({ state: "blocked", message: "Repair service in Jobs" }));
+  const fetcher = vi.fn<typeof fetch>(async () => Response.json({ state: "blocked", message: "Repair service in Jobs" }));
   vi.stubGlobal("fetch", fetcher);
   const mounted = render(<Harness confirmed={vi.fn()} />);
   await advance(1000); mounted.unmount();
