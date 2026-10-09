@@ -90,20 +90,21 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
             f"""SELECT DISTINCT child.card_id,child.parent_card_id,line.name line_name,
                       parent.state,parent.due_date,parent.pending_validation,
                       parent.archived parent_archived,candidate.pending_validation child_pending_validation,
-                      CASE WHEN {PRACTICED_OPENING_PARENT_SQL} THEN 1 ELSE 0 END parent_practiced
+                      CASE WHEN EXISTS(
+                          SELECT 1 FROM opening_graph_steps incoming_route
+                          JOIN opening_graph_publications incoming_publication
+                            ON incoming_publication.repertoire_id=incoming_route.repertoire_id
+                           AND incoming_publication.generation=incoming_route.generation
+                          JOIN cards parent ON parent.id=incoming_route.parent_card_id
+                          WHERE incoming_route.card_id=child.card_id AND {PRACTICED_OPENING_PARENT_SQL}
+                      ) THEN 1 ELSE 0 END parent_practiced
                FROM opening_graph_steps child
                JOIN opening_graph_publications published ON published.repertoire_id=child.repertoire_id AND published.generation=child.generation
                JOIN cards candidate ON candidate.id=child.card_id AND candidate.state IN ('locked','new')
                    AND candidate.introduced_at IS NULL AND candidate.archived=0
                JOIN cards parent ON parent.id=child.parent_card_id
                JOIN repertoire_lines line ON line.id=child.line_id
-               WHERE parent.state!='locked' AND EXISTS(
-                   SELECT 1 FROM opening_graph_steps scoped
-                   JOIN opening_graph_publications scope_publication
-                     ON scope_publication.repertoire_id=scoped.repertoire_id
-                    AND scope_publication.generation=scoped.generation
-                   WHERE scoped.repertoire_id=? AND scoped.card_id=child.card_id
-               )""", (repertoire_id,),
+               WHERE child.repertoire_id=? AND parent.state!='locked'""", (repertoire_id,),
         )]
 
     valid_study_reviews = [row for row in review_rows if row["source_kind"] == "study" and row["card_id"] in card_ids]

@@ -3048,7 +3048,7 @@ The standalone user-requested fix preserves existing introduction priorities, li
 - Browser `one real short-prefix practice admits its child while parent is learning` (390/1280) uses actual import, piece moves, persisted review and PostgreSQL queue; grandchild stays locked and no parent is force-matured.
 
 - `test_bounded_unlock_rechecks_parent_exposure_and_publication_before_update` invalidates the selected evidence or replaces its publication before the write; neither admits the child.
-- `test_repertoire_statistics_shared_child_is_ready_from_any_current_practiced_route` failed when a valid practiced parent belonged to another repertoire. Readiness now matches global shared-card eligibility, deduplicates the child and excludes superseded routes.
+- `test_repertoire_statistics_shared_child_keeps_requested_route_with_any_current_practiced_parent` reproduces a foreign practiced route displacing the requested repertoire's parent and line in "Next unlocks". It requires presentation from the requested repertoire while preserving readiness from any current published practiced-parent route, shared-card deduplication and exclusion of superseded routes.
 
 - CI follow-up: `new unclassified specs fail planning and every test has nightly and release coverage` and `every current browser spec belongs to exactly one complete family` reproduced the missing opening-progression registration (2 failures). The new spec is registered in the existing complete training family; required planner validation and coverage selection remain unchanged.
 

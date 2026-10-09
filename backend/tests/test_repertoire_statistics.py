@@ -239,9 +239,9 @@ def test_repertoire_statistics_gets_are_query_only_and_within_foreground_read_bu
         assert database.DB_PATH.read_bytes() == before
 
 
-def test_repertoire_statistics_shared_child_is_ready_from_any_current_practiced_route(tmp_path, monkeypatch):
+def test_repertoire_statistics_shared_child_keeps_requested_route_with_any_current_practiced_parent(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    with TestClient(app) as client:
+    with TestClient(app):
         with database.connection() as db:
             _seed_repertoire(db, "first", "unpracticed-parent")
             _seed_repertoire(db, "second", "practiced-parent")
@@ -253,13 +253,17 @@ def test_repertoire_statistics_shared_child_is_ready_from_any_current_practiced_
                     VALUES(?,1,?,1,'decision',?,'shared-child',?,?,?,'[\"e2e4\"]','white')""",
                     (repertoire_id, f'line-{repertoire_id}', json.dumps([FEN_KEY]), parent_id, FEN_KEY, START))
             db.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('practiced-parent','again',?,0,0)", (date.today().isoformat(),))
-        for repertoire_id in ('first', 'second'):
-            unlocks = client.get(f'/api/repertoires/{repertoire_id}/statistics?window=all').json()['unlocks']
+        for repertoire_id, expected_parent_id in [('first', 'unpracticed-parent'), ('second', 'practiced-parent')]:
+            unlocks = statistics_service.repertoire_statistics(repertoire_id, 'all')['unlocks']
             assert len(unlocks) == 1
+            assert unlocks[0]['card_id'] == 'shared-child'
             assert unlocks[0]['status'] == 'ready'
-            assert unlocks[0]['parent_card_id'] == 'practiced-parent'
+            assert unlocks[0]['parent_card_id'] == expected_parent_id
+            assert unlocks[0]['line_name'] == repertoire_id
         with database.connection() as db:
             db.execute("UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id='second'")
-        unlocks = client.get('/api/repertoires/first/statistics?window=all').json()['unlocks']
+        unlocks = statistics_service.repertoire_statistics('first', 'all')['unlocks']
+        assert len(unlocks) == 1
         assert unlocks[0]['status'] == 'waiting_practice'
         assert unlocks[0]['parent_card_id'] == 'unpracticed-parent'
+        assert unlocks[0]['line_name'] == 'first'
