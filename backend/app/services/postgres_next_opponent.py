@@ -26,10 +26,13 @@ def request_profile_refresh(database) -> bool:
     if not account:
         return False
     database.execute("INSERT INTO next_opponent_accounts(account) VALUES(?) ON CONFLICT DO NOTHING", (account,))
-    state = database.execute("SELECT * FROM next_opponent_accounts WHERE account=? FOR UPDATE", (account,)).fetchone()
-    future_evidence_due = state["next_evidence_at"] is not None and state["next_evidence_at"] <= _current_utc_time()
+    state = database.execute(
+        "SELECT input_generation,published_generation,published_method,"
+        "COALESCE(next_evidence_at<=?,FALSE) AS future_evidence_due "
+        "FROM next_opponent_accounts WHERE account=? FOR UPDATE", (_current_utc_time(), account),
+    ).fetchone()
     if (state["published_generation"] == state["input_generation"]
-            and state["published_method"] == METHOD_VERSION and not future_evidence_due):
+            and state["published_method"] == METHOD_VERSION and not state["future_evidence_due"]):
         return False
     payload = {"account": account, "input_generation": state["input_generation"], "method_version": METHOD_VERSION}
     existing = database.execute(
@@ -42,7 +45,7 @@ def request_profile_refresh(database) -> bool:
     return True
 
 
-def _load_inputs(account: str, as_of: datetime) -> tuple[int, list[dict], list[dict], datetime | None] | None:
+def _load_inputs(account: str, as_of: datetime) -> tuple[int, list[dict], list[dict], str | None] | None:
     with background_lease():
         with connection(read_only=True, background=True) as database:
             state = database.execute("SELECT input_generation FROM next_opponent_accounts WHERE account=?", (account,)).fetchone()
@@ -67,7 +70,8 @@ def _load_inputs(account: str, as_of: datetime) -> tuple[int, list[dict], list[d
                 if rating:
                     latest_ratings.append(dict(rating))
             next_evidence = database.execute_native(
-                "SELECT next_opponent_game_time(played_at) AS next_evidence_at FROM imported_games "
+                # PostgreSQL's timestamp range exceeds Python's datetime range.
+                "SELECT CAST(next_opponent_game_time(played_at) AS TEXT) AS next_evidence_at FROM imported_games "
                 "WHERE provider='lichess' AND rated=1 AND adaptive_excluded=0 AND lower(trim(username))=%s "
                 "AND next_opponent_game_time(played_at)>%s "
                 "ORDER BY next_opponent_game_time(played_at) ASC,id ASC LIMIT 1",
@@ -78,10 +82,10 @@ def _load_inputs(account: str, as_of: datetime) -> tuple[int, list[dict], list[d
 
 
 def _publish(database, task: dict, input_generation: int, profile: NextOpponentProfile,
-             next_evidence_at: datetime | None) -> bool:
+             next_evidence_at: str | None) -> bool:
     # Same order as account commands: settings, account state, durable task.
     configured = database.execute("SELECT lichess_username FROM settings WHERE id=1 FOR SHARE").fetchone()
-    state = database.execute("SELECT * FROM next_opponent_accounts WHERE account=? FOR UPDATE",
+    state = database.execute("SELECT input_generation FROM next_opponent_accounts WHERE account=? FOR UPDATE",
                              (profile.source_account,)).fetchone()
     if not lock_current_slice(database, task):
         return False
@@ -132,9 +136,10 @@ def read_profile(database, speed: str = "auto", *, now: datetime | None = None) 
         return NextOpponentProfileResponse(availability="unknown", refresh_status="idle", stale=True,
             stale_reasons=("no_account",), requested_speed=speed, detail="Configure a Lichess account and sync games.")
     row = database.execute(
-        "SELECT a.input_generation,a.published_generation,a.published_method,a.next_evidence_at,s.profile_json,s.published_at "
+        "SELECT a.input_generation,a.published_generation,a.published_method,"
+        "COALESCE(a.next_evidence_at<=?,FALSE) AS future_evidence_due,s.profile_json,s.published_at "
         "FROM next_opponent_accounts a LEFT JOIN next_opponent_snapshots s ON s.version=a.profile_version "
-        "WHERE a.account=?", (account,),
+        "WHERE a.account=?", (now, account),
     ).fetchone()
     sync = database.execute("SELECT username,status,last_success_at FROM game_sync_state WHERE provider='lichess'").fetchone()
     task = database.execute("SELECT state FROM background_tasks WHERE kind=? AND deduplication_key=?", (TASK_KIND, account)).fetchone()
@@ -143,7 +148,7 @@ def read_profile(database, speed: str = "auto", *, now: datetime | None = None) 
     last_success = utc_time(sync_time)
     pending = (row is None or row["published_generation"] != row["input_generation"]
                or row["published_method"] != METHOD_VERSION
-               or (row["next_evidence_at"] is not None and row["next_evidence_at"] <= now))
+               or row["future_evidence_due"])
     refresh_status = ("sync_error" if same_sync and sync["status"] == "error" else
                       "failed" if task and task["state"] == "failed" else
                       "pending" if pending else "idle")

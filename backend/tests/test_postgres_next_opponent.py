@@ -39,6 +39,9 @@ class Database:
         if "FROM settings" in statement:
             return cursor({"lichess_username": self.account})
         if "FROM next_opponent_accounts" in statement:
+            if "AS future_evidence_due" in statement:
+                return cursor({**self.state, "future_evidence_due": self.state["next_evidence_at"] is not None
+                               and self.state["next_evidence_at"] <= parameters[0]})
             return cursor(self.state)
         if "FROM background_tasks" in statement:
             return cursor(self.task)
@@ -119,7 +122,7 @@ def test_issue107_stale_source_account_and_delivery_cannot_replace_snapshot(monk
         claimed["payload"]["method_version"] = "retired"
     monkeypatch.setattr(service, "lock_current_slice", lambda *_: change != "delivery")
     monkeypatch.setattr(service, "complete_task_slice_in_transaction", lambda *_: True)
-    service._publish(database, claimed, 2 if change == "loaded_newer" else 1, profile, CUTOFF)
+    service._publish(database, claimed, 2 if change == "loaded_newer" else 1, profile, CUTOFF.isoformat())
     assert not any(statement.startswith("INSERT INTO next_opponent_snapshots") for statement in database.statements)
     assert database.state["next_evidence_at"] is None
 

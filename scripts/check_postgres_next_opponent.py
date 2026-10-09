@@ -300,6 +300,29 @@ def test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_sourc
     print("PASS test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_source_mutation")
 
 
+def test_pr116_far_future_timestamp_does_not_break_profile_deadline_publication(dsn):
+    # PostgreSQL accepts this offset date as year 10000 UTC, beyond Python's
+    # datetime range. Deadline handling must not deserialize it into datetime.
+    with psycopg.connect(dsn) as database:
+        database.execute("UPDATE settings SET lichess_username='distant' WHERE id=1")
+        database.execute(
+            "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,"
+            "moves_json,player_rating,opponent_rating,rating_change) "
+            "VALUES('distant-game','lichess','distant','9999-12-31T23:59:59-01:00','rapid',1,"
+            "'white','1-0',%s,'[]',1450,1500,0)", (FEN,))
+    with patch.object(service, '_current_utc_time', lambda: datetime(2026, 1, 1, tzinfo=timezone.utc)):
+        assert request()
+        assert service.execute_profile_slice(durable_tasks.claim_task(kind=service.TASK_KIND))
+        published = read()
+        assert published.profile.game_count == 0 and published.refresh_status == 'idle'
+        assert not request()
+        assert read().profile == published.profile and read().published_at == published.published_at
+    with psycopg.connect(dsn) as database:
+        assert database.execute(
+            "SELECT next_evidence_at::text FROM next_opponent_accounts WHERE account='distant'").fetchone()[0].startswith('10000-01-01')
+    print("PASS test_pr116_far_future_timestamp_does_not_break_profile_deadline_publication")
+
+
 def main():
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Next-opponent proof requires a disposable PostgreSQL instance")
@@ -362,6 +385,7 @@ def main():
             test_issue107_postgres_foreground_contends_without_compute_transaction(dsn, shifted)
             test_issue107_postgres_profile_reads_preserve_queue_and_exclusions(dsn)
             test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_source_mutation(dsn)
+            test_pr116_far_future_timestamp_does_not_break_profile_deadline_publication(dsn)
     finally:
         postgres_store.close_pools()
         with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
