@@ -164,3 +164,18 @@ including schema setup). Foreground reviews completed before reduction was
 released; measured review times were 31.24/141.82 ms, and accepted background
 transactions remained below the unchanged 250 ms limit. This focused pass is
 not complete candidate CI; the new current-head check is pending.
+
+Head 9a1eec2 PostgreSQL CI progressed through the repaired checkpoint proofs,
+then a real parent foreground lease preempted integrity fixture preparation in
+PR #102's activation-scaling rehearsal. Its existing idle driver now also
+recognizes explicit BackgroundAdmissionDeferred, retaining the same claimed
+lease. All other exceptions still fail immediately. Its drain uses that driver
+for both claims and slices. A new regular native case proves real Redis denial,
+no SQL before release, unchanged 250 ms read budget, and immediate ordinary and
+provider errors. The new case plus the existing 128/512 membership activation
+scaling proof passed in a fresh marked helper database (51.29 seconds including
+setup). Acceptance/activation SQL call counts remained 60/75 at both sizes;
+foreground command transaction measurements are retained in the log and are
+not background latency claims. Root evidence:
+`test-results/analysis-activity-2026-10-09/admission-transition-driver-proof.log`.
+The helper database/keys were removed. Complete new-head CI remains pending.
