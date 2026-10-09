@@ -177,6 +177,9 @@ def test_issue107_postgres_profile_reads_preserve_queue_and_exclusions(dsn):
 def main():
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Next-opponent proof requires a disposable PostgreSQL instance")
+    # The maintenance container intentionally lacks application broker wiring.
+    # This proof opts into its disposable sibling Redis for actual admission.
+    os.environ.setdefault("TEMPO_REDIS_URL", "redis://redis:6379/0")
     if len(sys.argv) > 1:
         child(sys.argv[1])
         return
