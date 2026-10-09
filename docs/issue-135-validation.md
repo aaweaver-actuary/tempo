@@ -167,3 +167,25 @@ real Studies browser file. Fresh complete head and merge-candidate evidence
 remains required before readiness.
 
 Settled integrated diagnostics: `make unit-file FILE=tests/unit/queue-readiness-diagnostics-regressions.test.ts` passed **9 cases in 4.99 s**; typecheck passed. Lint is recorded when complete.
+
+Integrated candidate `6929aa0`: typecheck/lint passed (10 existing lint warnings).
+Elevated `make ui-file FILE=studies.spec.ts` ran 11 cases: 9 passed and 2
+failed during the uncoordinated PostgreSQL fixture exclusion reset, before their
+queue-readiness assertion. Total command wall time was **243.84 s**; cleanup
+passed in **23.30 s**. Project `tempo-pg-regressions-31079-ff61f0e8` left no
+containers, volumes or task-specific images; diagnostics and scenario timings
+are preserved outside the clone. These are fixture failures, not queue-recovery
+evidence.
+
+Validation dependency: the existing #136 repair from PR #139, original commit
+`f3d6c98e020bc60f25e14855b2d725b73316a6e8`, was cherry-picked with provenance
+as `7db1998`. It retains the production reservation guard and retries only its
+exact coordination-yield error with a finite budget, verifying disposable ownership
+before SQL. Its 32 named unit cases passed in **0.855 s**. The dedicated PR's real
+fixture cases passed; its complete browser workload then reached the unchanged
+30-second queue-readiness failure. This dependency is included to obtain meaningful
+Studies/full-workload evidence without duplicating or weakening that repair.
+
+Current sources still require fresh Studies browser, PostgreSQL durability,
+complete browser workload and all mandatory CI layers for both exact head and
+applicable current-base merge candidate. No earlier pass qualifies this candidate.
