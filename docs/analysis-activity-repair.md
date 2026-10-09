@@ -84,3 +84,21 @@ Task-owned focused resources: `tempo-analysis-upgrade-proof`
 (shared `redis:7-alpine`, persistence disabled). No host data mounts. Exact
 teardown: stop both names, then `docker rm -v` those same two names; shared
 base images retained. Full logs are preserved in root test-results.
+
+### Browser date repair
+
+Queue head 070fc11 passed required PostgreSQL, backend, frontend, build, lifecycle
+and pinned visual checks. Browser CI passed 249 cases but failed the real backlog
+fixture after UTC midnight: its helper queued October 9 while the API served
+October 8 in America/New_York. Saved trace responses establish the unchanged
+October 8 refreshing publication and absent fixture card. The helper now takes
+the API's reported workspace date, with strict ISO validation. The named browser
+case retains its 30-second deadline and all worker/backlog/board assertions.
+
+`make ui-file FILE=training-queue-contention.spec.ts` passes both cases in 24.7
+seconds (browser stage 25.77 seconds), on the dirty queue candidate based on
+070fc11; disposable runner cleanup passed in 7.88 seconds. Typecheck and lint pass
+(10 existing lint warnings). An initial invocation using a repository-relative
+file path was rejected before tests: this runner requires the spec basename.
+New current-head CI remains required; the older failing browser result is not
+reclassified as a pass.

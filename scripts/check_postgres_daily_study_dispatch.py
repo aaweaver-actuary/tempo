@@ -29,8 +29,10 @@ def configure():
     postgres_store.close_pools()
 
 
-def seed(identifier, *, request_refresh):
-    today = date.today().isoformat()
+def seed(identifier, *, request_refresh, queue_date=None):
+    today = queue_date or date.today().isoformat()
+    if date.fromisoformat(today).isoformat() != today:
+        raise ValueError('An ISO workspace study date is required')
     now = datetime.now(timezone.utc).isoformat()
     # The large cardinality proof is independent of browser fixture creation.
     locked_card_count = 128 if request_refresh else 15_000
@@ -139,11 +141,13 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         proof()
     else:
-        action, identifier = sys.argv[1:]
+        action, identifier, *queue_dates = sys.argv[1:]
+        if len(queue_dates) > 1 or (queue_dates and action != 'seed'):
+            raise ValueError('Only seed accepts one workspace study date')
         if not identifier.startswith('daily-study-proof-') or str(uuid.UUID(identifier.removeprefix('daily-study-proof-'))) != identifier.removeprefix('daily-study-proof-'):
             raise ValueError('A task-owned daily study proof identity is required')
         if action == 'seed':
-            seed(identifier, request_refresh=True)
+            seed(identifier, request_refresh=True, queue_date=queue_dates[0] if queue_dates else None)
             tasks.celery_app.send_task('app.tasks.poll_background_tasks', queue='background')
         elif action == 'cleanup':
             cleanup(identifier)
