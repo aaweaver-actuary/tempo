@@ -449,6 +449,43 @@ def defer_task_for_contention(task_id: str, generation: int, lease_token: str, *
     return submit_background_write(operation, label=f"yield:{task_id}")
 
 
+def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
+    """Preserve a checkpoint and cool repeated deadline failures down to 60 s.
+
+    A transaction deadline is not evidence of a competing lock. Keep its error
+    visible and its episode counter durable without exhausting ordinary retries.
+    """
+    def operation(database):
+        row = database.execute(
+            "SELECT phase,payload_json,transaction_timeout_count,transaction_timeout_checkpoint "
+            "FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'",
+            (task['id'], task['generation'], task['lease_token']),
+        ).fetchone()
+        if row is None:
+            return False
+        checkpoint = json.dumps([row['phase'], json.loads(row['payload_json'])], sort_keys=True)
+        timeout_count = (int(row['transaction_timeout_count']) + 1
+                         if row['transaction_timeout_checkpoint'] == checkpoint else 1)
+        delay_seconds = min(60, 2 ** min(timeout_count - 1, 6))
+        now = _now()
+        sanitized_error = str(error)[:500]
+        changed = database.execute(
+            """UPDATE background_tasks SET state='retrying',
+               attempt_count=CASE WHEN attempt_count>0 THEN attempt_count-1 ELSE 0 END,
+               transaction_timeout_count=?,transaction_timeout_checkpoint=?,
+               next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,
+               last_error=?,updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (timeout_count, checkpoint, _iso(now + timedelta(seconds=delay_seconds)),
+             sanitized_error, _iso(now), task['id'], task['generation'], task['lease_token']),
+        ).rowcount
+        if changed:
+            _record_event(database, task['id'], task['generation'], 'yielded', row['phase'],
+                          sanitized_error, kind=task['kind'])
+        return bool(changed)
+    return submit_background_write(operation, label=f"deadline:{task['id']}")
+
+
 def retry_task(task_id: str) -> dict | None:
     def operation(database: sqlite3.Connection) -> dict | None:
         row = database.execute(

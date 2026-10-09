@@ -1293,6 +1293,8 @@ def initialize() -> None:
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
             "background_tasks": {
+                "transaction_timeout_count": "INTEGER NOT NULL DEFAULT 0",
+                "transaction_timeout_checkpoint": "TEXT",
                 "replaced_pending_generation": "INTEGER NOT NULL DEFAULT 0",
                 "pending_since": "TEXT",
                 "generation_started_at": "TEXT",

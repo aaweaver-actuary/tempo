@@ -7,15 +7,20 @@ import { prepareUI } from "./ui-fixtures";
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-productTest("daily study opens while background analysis remains queued", async ({ page, request }) => {
+productTest("daily study opens on the workspace date while background analysis remains queued", async ({ page, request }) => {
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
     throw new Error("Daily study backlog proof requires the owning disposable PostgreSQL runner");
   const fixtureId = `daily-study-proof-${randomUUID()}`;
   const composeArguments = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
   const docker = (...args: string[]) => execFileSync("docker", [...composeArguments, ...args], { encoding: "utf8", timeout: 30_000 });
+  const queueResponse = await request.get(`${api}/queue/window?limit=20`);
+  expect(queueResponse.ok()).toBeTruthy();
+  const workspaceDate = (await queueResponse.json()).local_date as string;
+  expect(workspaceDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const fixture = (action: string) => docker("run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
-    "schema", "python", "/source/scripts/check_postgres_daily_study_dispatch.py", action, fixtureId);
+    "schema", "python", "/source/scripts/check_postgres_daily_study_dispatch.py", action, fixtureId,
+    ...(action === 'seed' ? [workspaceDate] : []));
   try {
     docker("stop", "background-worker", "background-scheduler");
     fixture("seed");
