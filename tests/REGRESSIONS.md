@@ -3255,3 +3255,20 @@ automatically drives real execution-time PostgreSQL claims and the production
 queue publication slice. An independent writer locks the committed task before
 broker publication. There are no periodic ticks, manual recovery polls or sleeps.
 Existing contention, restart/replay, backoff and 30-second Studies proofs remain.
+
+## PR #140 task/projection lock ordering (2026-10-09)
+
+Canonical order is `background_tasks` before `queue_projections`, including
+initial singleton creation. The regular PostgreSQL daily-study workload in
+`scripts/check_postgres_daily_study_dispatch.py` invokes:
+
+- `test_issue135_postgres_ensure_current_timeout_deferral_lock_order`: pause the accepted deferral after its task UPDATE, observe foreground ensure blocked on that backend, then release projection publication. The original projection-first ensure deterministically raises PostgreSQL `DeadlockDetected`; the correction retains the lease-fenced retry, checkpoint/backoff, projection error and exact post-commit ETA wake.
+- `test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral`: pause ensure after locking the current task, observe old deferral blocked on it, then replace the generation for the requested queue date. The replacement remains queued without a lease, stale deferral/replay cannot overwrite either projection, and no stale ETA wake is emitted.
+- `test_issue135_postgres_ensure_current_absent_task_creation_lock_order`: pause after ensure observes no task, commit its creation and hold its task lock concurrently, observe ensure waiting on that task, and independently acquire the projection NOWAIT before releasing the creator. Concurrent uncommitted first-INSERT identity is a separate enqueue defect, outside this lock-order proof. Initial creation cannot reintroduce projection-before-task ordering.
+
+Barriers and PostgreSQL blocking PIDs force these interleavings; bounded diagnostic
+connections accommodate coordination without changing production timeout settings.
+Fixtures restore the prior singleton, events, projections and daily-queue metrics.
+`backend/tests/test_queue_refresh_deadline_recovery.py::test_issue135_ensure_ready_projection_without_task_does_not_enqueue`
+preserves the ready fast return when the singleton is absent. Existing issue-135
+retry-wake, generation, backoff, rollback and broker-failure regressions remain required.

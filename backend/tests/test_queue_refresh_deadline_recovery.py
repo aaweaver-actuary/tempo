@@ -250,6 +250,16 @@ def test_issue135_periodic_ensure_preserves_current_queue_retry_error(queue_refr
     assert _projection()["last_error"] == "Daily queue database deadline exceeded"
 
 
+def test_issue135_ensure_ready_projection_without_task_does_not_enqueue(queue_refresh_store):
+    with database.connection(background=True) as connection:
+        connection.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?", (QUEUE_DATE,))
+        assert queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE}) == {
+            "queue_date": QUEUE_DATE, "refresh_pending": False,
+        }
+        assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='daily_queue'").fetchone()[0] == 0
+    assert _projection()["state"] == "ready"
+
+
 @pytest.mark.parametrize("failure_transition", ["deadline", "failure"])
 def test_issue135_replacement_generation_wins_failure_publication_race(
     queue_refresh_store, monkeypatch, failure_transition,

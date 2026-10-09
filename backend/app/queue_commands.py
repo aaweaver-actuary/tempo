@@ -108,16 +108,20 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
         queue_date = date.fromisoformat(str(payload["queue_date"])).isoformat()
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(422, "A valid queue_date is required") from error
-    projection = database.execute(
-        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=? FOR UPDATE",
-        (queue_date,),
-    ).fetchone()
-    if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
-        return {"queue_date": queue_date, "refresh_pending": False}
+    # Every task/projection write locks the task first, including timeout recovery.
     active_task = database.execute(
         """SELECT id,state,payload_json,last_error FROM background_tasks
            WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE""",
     ).fetchone()
+    # An absent task cannot be locked: let refresh enqueue it before locking the
+    # projection. A ready projection still needs no new task.
+    projection_lock_clause = " FOR UPDATE" if active_task else ""
+    projection = database.execute(
+        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?" + projection_lock_clause,
+        (queue_date,),
+    ).fetchone()
+    if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
+        return {"queue_date": queue_date, "refresh_pending": False}
     if (active_task and active_task["state"] in {"queued", "leased", "retrying"}
             and json.loads(active_task["payload_json"]).get("queue_date") == queue_date):
         database.execute(

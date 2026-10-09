@@ -1,4 +1,6 @@
 """Disposable sparse-unlock, dispatch/replay, and real-browser backlog fixtures."""
+from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 import heapq
 import json
@@ -16,7 +18,7 @@ from psycopg.errors import TransactionTimeout
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import postgres_store, tasks
 from app.main import _unlock_eligible_opening_cards
-from app.queue_commands import request_queue_refresh_in_transaction
+from app.queue_commands import ensure_current_queue, request_queue_refresh_in_transaction
 from app.services import durable_tasks
 from app import activity_commands
 from app.services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
@@ -410,6 +412,251 @@ def proof_deferred_capacity_wakes(identifier):
                 connection.execute('DELETE FROM queue_projections WHERE queue_date=%s', (queue_date,))
 
 
+
+@contextmanager
+def _lock_order_connection():
+    """Diagnostic transactions accommodate barriers; production budgets stay unchanged."""
+    with psycopg.connect(DSN, row_factory=postgres_store.tempo_row_factory,
+                         options="-c statement_timeout=5000 -c transaction_timeout=10000") as raw:
+        database = postgres_store.PostgresConnection(raw)
+        yield database
+        database.flush_background_metrics()
+
+
+def _wait_for_lock_owner(waiting_pid, owning_pid, waiting_future):
+    deadline = time.monotonic() + 3
+    with psycopg.connect(DSN, autocommit=True) as observer:
+        while True:
+            blockers = observer.execute('SELECT pg_blocking_pids(%s)', (waiting_pid,)).fetchone()[0]
+            if owning_pid in blockers:
+                return
+            assert not waiting_future.done(), f'Operation finished before lock wait: {waiting_future.result()}'
+            assert time.monotonic() < deadline, f'Backend {waiting_pid} did not wait for {owning_pid}: {blockers}'
+
+
+@contextmanager
+def _queue_lock_order_fixture(*, task_queue_date='2099-10-09', leased=True):
+    """Preserve the singleton, its pruned events, projections and metric buckets."""
+    from check_postgres_repertoire_limits import restore_queue_environment
+
+    queue_dates = ('2099-10-09', '2099-10-10')
+    clock = datetime(2026, 10, 9, 12, tzinfo=timezone.utc)
+    with _lock_order_connection() as database:
+        saved_task = database.execute("SELECT * FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
+        snapshot = {
+            'queue_dates': queue_dates,
+            'task': dict(saved_task) if saved_task else None,
+            'events': [dict(row) for row in database.execute('SELECT * FROM background_task_events WHERE task_id=? ORDER BY id', (saved_task['id'],))] if saved_task else [],
+            'projections': [dict(row) for row in database.execute('SELECT * FROM queue_projections WHERE queue_date IN (?,?) ORDER BY queue_date', queue_dates)],
+            'metrics': [dict(row) for row in database.execute("SELECT * FROM background_metric_buckets WHERE kind='daily_queue' ORDER BY shard,slot")],
+            'stale_introductions': [], 'priority_epochs': [],
+        }
+    try:
+        with patch.object(durable_tasks, '_now', lambda: clock):
+            with _lock_order_connection() as database:
+                database.execute("DELETE FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'")
+                task = None
+                if leased:
+                    task = request_queue_refresh_in_transaction(database, task_queue_date)
+                    database.execute("UPDATE background_tasks SET state='leased',phase='publish_projection',attempt_count=1,lease_token='lock-order-lease',lease_expires_at=? WHERE id=?",
+                                     ((clock + timedelta(seconds=30)).isoformat(), task['id']))
+                    task = dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone())
+                    task['payload'] = json.loads(task.pop('payload_json'))
+                for queue_date in queue_dates:
+                    database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending,last_error) VALUES(?,'refreshing',17,1,'Before race') ON CONFLICT(queue_date) DO UPDATE SET state='refreshing',generation=17,refresh_pending=1,last_error='Before race'", (queue_date,))
+            yield task, clock
+    finally:
+        with _lock_order_connection() as database:
+            restore_queue_environment(database, snapshot)
+
+
+def _lock_order_state(queue_date):
+    with _lock_order_connection() as database:
+        task = database.execute("SELECT * FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
+        projection = database.execute('SELECT * FROM queue_projections WHERE queue_date=?', (queue_date,)).fetchone()
+        return dict(task) if task else None, dict(projection)
+
+
+def test_issue135_postgres_ensure_current_timeout_deferral_lock_order():
+    """B owns the task; A waits for it before B publishes to their projection."""
+    from app.services import queue_refresh_wakeup
+
+    queue_date = '2099-10-09'
+    task_updated, release_deferral, ensure_connected = Event(), Event(), Event()
+    deferral_pid, ensure_pid, wakes = [], [], []
+    original_status = durable_tasks.update_queue_refresh_status_in_transaction
+
+    def pause_before_projection(database, *args, **kwargs):
+        deferral_pid.append(database.raw.info.backend_pid)
+        task_updated.set()
+        assert release_deferral.wait(4), 'Deferral barrier was not released'
+        return original_status(database, *args, **kwargs)
+
+    def background_write(operation, *, label):
+        with _lock_order_connection() as database:
+            return operation(database)
+
+    def ensure():
+        with _lock_order_connection() as database:
+            ensure_pid.append(database.raw.info.backend_pid)
+            ensure_connected.set()
+            return ensure_current_queue(database, {'queue_date': queue_date})
+
+    def publish(name, **options):
+        assert name == 'app.tasks.poll_background_tasks' and options['queue'] == 'background'
+        assert options['eta'] == clock + timedelta(seconds=1)
+        assert not options.get('args') and not options.get('kwargs')
+        assert options['retry'] is False and options['ignore_result'] is True
+        # Independent NOWAIT access plus absent backend proves commit and close.
+        with _lock_order_connection() as observer:
+            assert observer.execute('SELECT 1 FROM pg_stat_activity WHERE pid=?', (deferral_pid[0],)).fetchone() is None
+            saved = observer.execute('SELECT state,next_attempt_at,lease_token FROM background_tasks WHERE id=? FOR UPDATE NOWAIT', (task['id'],)).fetchone()
+            assert saved['state'] == 'retrying' and saved['lease_token'] is None
+            assert datetime.fromisoformat(saved['next_attempt_at']) == options['eta']
+            assert observer.execute('SELECT last_error FROM queue_projections WHERE queue_date=?', (queue_date,)).fetchone()[0] == 'Controlled lock-order deadline'
+        wakes.append(options['eta'])
+
+    with _queue_lock_order_fixture() as (task, clock), \
+            patch.object(durable_tasks, 'submit_background_write', background_write), \
+            patch.object(durable_tasks, 'update_queue_refresh_status_in_transaction', pause_before_projection), \
+            patch.object(tasks.celery_app, 'send_task', publish), \
+            patch.object(queue_refresh_wakeup._LOGGER, 'exception') as broker_error, \
+            ThreadPoolExecutor(max_workers=2) as executor:
+        deferral = executor.submit(durable_tasks.defer_task_for_transaction_timeout, task, TransactionTimeout('Controlled lock-order deadline'))
+        try:
+            assert task_updated.wait(3), 'Deferral did not lock the task'
+            foreground = executor.submit(ensure)
+            assert ensure_connected.wait(3)
+            _wait_for_lock_owner(ensure_pid[0], deferral_pid[0], foreground)
+        finally:
+            release_deferral.set()
+        assert deferral.result(timeout=5)
+        assert foreground.result(timeout=5) == {'queue_date': queue_date, 'refresh_pending': True, 'task_id': task['id']}
+        assert not broker_error.called, 'Post-commit wake assertions or publication failed'
+        saved, projection = _lock_order_state(queue_date)
+        assert saved['generation'] == task['generation'] and saved['state'] == 'retrying'
+        assert saved['lease_token'] is None and saved['lease_expires_at'] is None and saved['attempt_count'] == 0
+        assert saved['transaction_timeout_count'] == 1
+        assert json.loads(saved['transaction_timeout_checkpoint']) == [task['generation'], task['phase'], task['payload']]
+        assert datetime.fromisoformat(saved['next_attempt_at']) == clock + timedelta(seconds=1)
+        assert (projection['state'], projection['refresh_pending'], projection['last_error'], projection['generation']) == ('refreshing', 1, saved['last_error'], 17)
+        assert wakes == [clock + timedelta(seconds=1)]
+    print('PASS test_issue135_postgres_ensure_current_timeout_deferral_lock_order', flush=True)
+
+
+def test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral():
+    """A owns the singleton; B's old fenced UPDATE waits until A replaces it."""
+    queue_date = '2099-10-10'
+    task_locked, release_foreground, deferral_connected = Event(), Event(), Event()
+    foreground_pid, deferral_pid = [], []
+    original_execute = postgres_store.PostgresConnection.execute
+
+    def pause_after_task_lock(database, statement, parameters=()):
+        cursor = original_execute(database, statement, parameters)
+        if database.raw.info.backend_pid in foreground_pid and "deduplication_key='current' FOR UPDATE" in statement:
+            task_locked.set()
+            assert release_foreground.wait(4), 'Replacement barrier was not released'
+        return cursor
+
+    def ensure():
+        with _lock_order_connection() as database:
+            foreground_pid.append(database.raw.info.backend_pid)
+            return ensure_current_queue(database, {'queue_date': queue_date})
+
+    def background_write(operation, *, label):
+        with _lock_order_connection() as database:
+            deferral_pid.append(database.raw.info.backend_pid)
+            deferral_connected.set()
+            return operation(database)
+
+    with _queue_lock_order_fixture() as (task, clock), \
+            patch.object(postgres_store.PostgresConnection, 'execute', pause_after_task_lock), \
+            patch.object(durable_tasks, 'submit_background_write', background_write), \
+            patch.object(durable_tasks, 'wake_queue_refresh') as wake, \
+            ThreadPoolExecutor(max_workers=2) as executor:
+        foreground = executor.submit(ensure)
+        try:
+            assert task_locked.wait(3), 'Ensure did not lock the singleton'
+            deferral = executor.submit(durable_tasks.defer_task_for_transaction_timeout, task, TransactionTimeout('Stale lock-order deadline'))
+            assert deferral_connected.wait(3)
+            _wait_for_lock_owner(deferral_pid[0], foreground_pid[0], deferral)
+        finally:
+            release_foreground.set()
+        assert foreground.result(timeout=5)['task_id'] == task['id']
+        assert deferral.result(timeout=5) is False
+        saved, projection = _lock_order_state(queue_date)
+        assert saved['generation'] == task['generation'] + 1 and saved['state'] == 'queued'
+        assert json.loads(saved['payload_json']) == {'queue_date': queue_date}
+        assert saved['lease_token'] is None and saved['lease_expires_at'] is None
+        assert saved['last_error'] is None and saved['transaction_timeout_count'] == 0
+        assert saved['transaction_timeout_checkpoint'] is None
+        assert datetime.fromisoformat(saved['next_attempt_at']) == clock
+        assert (projection['state'], projection['refresh_pending'], projection['last_error'], projection['generation']) == ('refreshing', 1, None, 17)
+        assert _lock_order_state(task['payload']['queue_date'])[1]['last_error'] == 'Before race'
+        assert not durable_tasks.defer_task_for_transaction_timeout(task, TransactionTimeout('Stale replay'))
+        assert _lock_order_state(queue_date) == (saved, projection)
+        wake.assert_not_called()
+    print('PASS test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral', flush=True)
+
+
+def test_issue135_postgres_ensure_current_absent_task_creation_lock_order():
+    """A observes no task; B creates/locks it; A waits without owning the projection."""
+    queue_date = '2099-10-09'
+    task_missing, task_inserted, release_creator, ensure_connected = Event(), Event(), Event(), Event()
+    ensure_pid, creator_pid = [], []
+    original_execute = postgres_store.PostgresConnection.execute
+
+    def pause_after_missing_task(database, statement, parameters=()):
+        cursor = original_execute(database, statement, parameters)
+        if database.raw.info.backend_pid in ensure_pid and "deduplication_key='current' FOR UPDATE" in statement:
+            task_missing.set()
+            assert task_inserted.wait(4), 'Creator did not insert the singleton'
+        return cursor
+
+    def ensure():
+        with _lock_order_connection() as database:
+            ensure_pid.append(database.raw.info.backend_pid)
+            ensure_connected.set()
+            return ensure_current_queue(database, {'queue_date': queue_date})
+
+    def create():
+        # Commit creation before the lock race. Concurrent INSERT event identity
+        # is a separate enqueue defect; this proof isolates task/projection order.
+        with _lock_order_connection() as database:
+            created = durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', 'current',
+                {'queue_date': queue_date}, priority=10)
+        with _lock_order_connection() as database:
+            creator_pid.append(database.raw.info.backend_pid)
+            assert database.execute('SELECT id FROM background_tasks WHERE id=? FOR UPDATE', (created['id'],)).fetchone()
+            task_inserted.set()
+            assert release_creator.wait(4), 'Creator barrier was not released'
+            durable_tasks.update_queue_refresh_status_in_transaction(database, 'daily_queue',
+                {'queue_date': queue_date}, state='refreshing')
+        return created
+
+    with _queue_lock_order_fixture(leased=False) as (_task, clock), \
+            patch.object(postgres_store.PostgresConnection, 'execute', pause_after_missing_task), \
+            ThreadPoolExecutor(max_workers=2) as executor:
+        foreground = executor.submit(ensure)
+        try:
+            assert ensure_connected.wait(3) and task_missing.wait(3)
+            creator = executor.submit(create)
+            assert task_inserted.wait(3)
+            _wait_for_lock_owner(ensure_pid[0], creator_pid[0], foreground)
+            with _lock_order_connection() as observer:
+                observer.execute('SELECT queue_date FROM queue_projections WHERE queue_date=? FOR UPDATE NOWAIT', (queue_date,)).fetchone()
+        finally:
+            release_creator.set()
+        created = creator.result(timeout=5)
+        assert foreground.result(timeout=5)['task_id'] == created['id']
+        saved, projection = _lock_order_state(queue_date)
+        assert saved['state'] == 'queued' and saved['lease_token'] is None
+        assert saved['generation'] == created['generation'] + 1
+        assert datetime.fromisoformat(saved['next_attempt_at']) == clock
+        assert (projection['state'], projection['refresh_pending'], projection['last_error'], projection['generation']) == ('refreshing', 1, None, 17)
+    print('PASS test_issue135_postgres_ensure_current_absent_task_creation_lock_order', flush=True)
+
+
 def proof():
     from check_redis_socket_deadlines import test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery
     test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery()
@@ -481,6 +728,9 @@ def proof():
         print('PASS test_postgres_background_execution_capacity_restart_and_legacy_replay')
         proof_deadline_recovery(identifier)
         proof_deferred_capacity_wakes(identifier)
+        test_issue135_postgres_ensure_current_timeout_deferral_lock_order()
+        test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral()
+        test_issue135_postgres_ensure_current_absent_task_creation_lock_order()
     finally:
         cleanup(identifier)
 
