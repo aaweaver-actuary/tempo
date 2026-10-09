@@ -354,10 +354,13 @@ def read_operation(
 ) -> dict[str, Any]:
     if background:
         from .database import background_read_connection
+        from .services.activity_gate import activity_gate
         receipt_connection = background_read_connection()
+        receipt_control = activity_gate.background_control()
     else:
         receipt_connection = postgres_store.connection(read_only=True)
-    with receipt_connection as database:
+        receipt_control = nullcontext()
+    with receipt_control, receipt_connection as database:
         receipt = database.raw.execute(
             "SELECT command_name,request_hash,state,response_json,error_json,attempt_count,"
             "next_retry_at,last_error_json,lease_expires_at,payload_json,retry_cycle,cycle_attempt_count "

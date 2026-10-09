@@ -166,11 +166,15 @@ def _assert_prefix_diagnostics(repertoire_id):
         with redis_admission_gate.foreground_lease():
             pending = requests.submit(client.get, detail_url)
             assert denied.wait(5), 'Diagnostic did not yield to foreground admission'
+            deferred = pending.result(timeout=5)
+            assert deferred.status_code == 503 and deferred.headers['Retry-After'] == '1', deferred.text
+            assert deferred.json() == {'detail': 'Waiting for foreground activity'}
             assert not sql_started.is_set()
             foreground = client.get('/api/settings')
             assert foreground.status_code == 200, foreground.text
             assert 'initial_depth' in foreground.json()
-        assert pending.result(timeout=10).json() == expected
+        retried = client.get(detail_url)
+        assert retried.status_code == 200 and retried.json() == expected, retried.text
     assert activity_gate.active_background_sections == 0 and server.zcard(redis_admission_gate._BACKGROUND_KEY) == 0
     with postgres_store.connection(read_only=True) as database:
         assert _fixture_scheduling(database, fixture) == before and shadow_digest(database, repertoire_id) == shadow_before
