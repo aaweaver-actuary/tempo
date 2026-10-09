@@ -1,5 +1,8 @@
 import { test, expect, api, nav } from "./product-fixtures";
 
+// These fault-injection routes must intercept fetches before the offline worker.
+test.use({ serviceWorkers: "block" });
+
 test("paste SAN from a repertoire gap previews its destination and saves the continuation", async ({ page, request }) => {
   const imported = await request.post(`${api}/imports/pgn`, {
     multipart: {
@@ -61,10 +64,13 @@ test("paste analysis reports a preview service failure without claiming a save",
   await page.getByRole("button", { name: "Paste analysis", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Paste analysis" });
   await dialog.getByRole("textbox", { name: "SAN or PGN" }).fill("1. e4 e5 2. Nf3");
-  await page.route("**/api/repertoire/paste/preview", (route) => route.fulfill({
-    status: 503, json: { detail: "Analysis service unavailable" },
-  }));
+  let previewFailureRequestCount = 0;
+  await page.route("**/api/repertoire/paste/preview", (route) => {
+    previewFailureRequestCount += 1;
+    return route.fulfill({ status: 503, json: { detail: "Analysis service unavailable" } });
+  });
   await dialog.getByRole("button", { name: "Preview lines" }).click();
   await expect(dialog.getByRole("alert")).toContainText("Analysis service unavailable");
+  expect(previewFailureRequestCount).toBe(1);
   await expect(dialog.getByRole("button", { name: "Save selected lines" })).toBeDisabled();
 });

@@ -123,3 +123,18 @@ After this SQLite-only initialization repair:
 and browser product behavior are unchanged by this follow-up. CI owns fresh
 complete candidate qualification; earlier Docker/browser passes retain their
 original `79f5354` provenance and are not relabeled as new-commit results.
+
+CI run 37953954372 (`79f5354`, merge candidate `6ca6719`) passed backend (1,658
+tests), frontend (1,417 tests), build, PostgreSQL (16 stages), lifecycle (5 stages),
+and visual verification. Browser execution finished with 265 passed / 1 failed
+in 13.7 minutes; aggregate quality correctly remained failed.
+
+The sole browser failure was the existing paste-analysis HTTP fault-injection
+case. Its trace records page routing installed, but a service-worker fetch reached
+the real API and returned 422 (empty repertoire) rather than the injected 503.
+The spec now blocks service workers for its mocked HTTP routes and asserts that
+the failure request is intercepted exactly once. Product/offline code is unchanged.
+Elevated `make ui-file FILE=paste-analysis.spec.ts`: 2 passed, 6.9 s Playwright /
+124.98 s wall including 9.54 s cleanup (dirty `79f5354` plus both repairs).
+`npm run lint`: passed, 70.80 s wall, existing warnings only; `npm run typecheck`:
+passed, 54.78 s wall. Fresh complete CI is required for the repair commits.
