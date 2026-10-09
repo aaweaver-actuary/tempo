@@ -46,6 +46,38 @@ def read():
         return service.read_profile(database)
 
 
+def test_pr116_migration041_malformed_historical_timestamps_upgrade_idempotently(dsn):
+    with psycopg.connect(dsn) as database:
+        source_before = database.execute("SELECT * FROM imported_games ORDER BY id").fetchall()
+    apply_migrations(dsn)
+    with psycopg.connect(dsn) as database:
+        database.execute("SET TIME ZONE 'America/New_York'")
+        parsed = dict(database.execute(
+            "SELECT id,next_opponent_game_time(played_at) FROM imported_games WHERE username='historical'"))
+        assert parsed == {
+            'historical-offset': datetime(2026, 1, 1, 5, tzinfo=timezone.utc),
+            'historical-naive': datetime(2026, 1, 1, tzinfo=timezone.utc),
+            'historical-malformed': None,
+            'historical-calendar': None,
+            'historical-displacement': None,
+        }
+        assert database.execute("SELECT next_opponent_game_time(NULL)").fetchone()[0] is None
+        indexes = database.execute(
+            "SELECT c.relname,i.indisvalid,i.indisready FROM pg_index i "
+            "JOIN pg_class c ON c.oid=i.indexrelid WHERE c.relname IN "
+            "('idx_next_opponent_account_time','idx_next_opponent_speed_rating_time')").fetchall()
+        assert len(indexes) == 2 and all(valid and ready for _, valid, ready in indexes)
+        assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == source_before
+        assert [row[0] for row in database.execute(
+            "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 42))
+    apply_migrations(dsn)
+    with psycopg.connect(dsn) as database:
+        assert [row[0] for row in database.execute(
+            "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 42))
+        assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == source_before
+    print("PASS test_pr116_migration041_malformed_historical_timestamps_upgrade_idempotently")
+
+
 def test_issue107_postgres_profile_upgrade_restart_concurrency_and_replay(dsn):
     request()
     interrupted = subprocess.run([sys.executable, __file__, "--interrupt"], timeout=30)
@@ -198,8 +230,38 @@ def main():
             database.execute("INSERT INTO settings(id,lichess_username) VALUES(1,'Alice')")
             database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,player_rating,opponent_rating,rating_change) VALUES('profile-game','lichess','Alice',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500,0)", (now, FEN))
             database.execute("INSERT INTO game_sync_state(provider,username,status,last_success_at) VALUES('lichess','Alice','idle',%s)", (now,))
-        apply_migrations(dsn)
-        apply_migrations(dsn)
+            for identifier, timestamp in (
+                ('offset', '2026-01-01T00:00:00-05:00'),
+                ('naive', '2026-01-01T00:00:00'),
+                ('malformed', 'not-a-timestamp'),
+                ('calendar', '2026-02-30T00:00:00Z'),
+                ('displacement', '2026-01-01T00:00:00+99:00'),
+            ):
+                database.execute(
+                    "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,"
+                    "start_fen,moves_json,player_rating,opponent_rating) "
+                    "VALUES(%s,'lichess','historical',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500)",
+                    (f'historical-{identifier}', timestamp, FEN))
+        with psycopg.connect(dsn) as database:
+            assert [row[0] for row in database.execute(
+                "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 40))
+            source_before = database.execute("SELECT * FROM imported_games ORDER BY id").fetchall()
+            settings_before = database.execute("SELECT * FROM settings ORDER BY id").fetchall()
+        test_pr116_migration041_malformed_historical_timestamps_upgrade_idempotently(dsn)
+        with psycopg.connect(dsn) as database:
+            assert [row[0] for row in database.execute(
+                "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
+            assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == source_before
+            assert database.execute("SELECT * FROM settings ORDER BY id").fetchall() == settings_before
+            for schema_object in ('idx_opening_graph_current_roots', 'idx_opening_graph_mature_parent_candidates',
+                                  'idx_cards_locked_openings', 'idx_cards_mature_parent',
+                                  'next_opponent_accounts', 'next_opponent_snapshots'):
+                assert database.execute('SELECT to_regclass(%s)', (schema_object,)).fetchone()[0] == schema_object
+            assert {row[0] for row in database.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name='background_tasks' "
+                "AND column_name IN ('transaction_timeout_count','transaction_timeout_checkpoint')",
+            )} == {'transaction_timeout_count', 'transaction_timeout_checkpoint'}
+        print('PASS test_pr116_schema39_upgrade_preserves_sources_and_contiguous_queue_profile_history')
         with patch.dict(os.environ, {"TEMPO_DATABASE_WRITE_URL": dsn, "TEMPO_DATABASE_READ_URL": dsn}):
             original = test_issue107_postgres_profile_upgrade_restart_concurrency_and_replay(dsn)
             shifted = test_issue107_postgres_source_race_retains_last_complete_snapshot(dsn, original)
