@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.durable_tasks import enqueue_task_in_transaction
+from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
 
 
 def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -58,11 +59,7 @@ def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) ->
         (game_id,),
     )]
     for repertoire_id in sorted(set(affected_repertoire_ids)):
-        enqueue_task_in_transaction(
-            database, "repertoire_opportunity", repertoire_id,
-            {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
-            priority=130,
-        )
+        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     return {"game_id": game_id, "excluded": excluded}
 
 

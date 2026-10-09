@@ -1180,6 +1180,17 @@ def initialize() -> None:
             automated_streak INTEGER NOT NULL DEFAULT 0 CHECK(automated_streak BETWEEN 0 AND 3)
         )""",
         "INSERT OR IGNORE INTO engine_scheduling_state(id) VALUES(1)",
+        """CREATE TABLE IF NOT EXISTS analysis_refresh_requests (
+            kind TEXT NOT NULL CHECK(kind IN ('repertoire_priority','repertoire_opportunity')),
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            input_version TEXT NOT NULL,pending_since TEXT,requested_at TEXT NOT NULL,
+            PRIMARY KEY(kind,repertoire_id)
+        )""",
+        "CREATE TABLE IF NOT EXISTS priority_source_epoch(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)",
+        "INSERT OR IGNORE INTO priority_source_epoch(id,version) VALUES(1,0)",
+        """CREATE TABLE IF NOT EXISTS priority_repertoire_source_epochs(
+            repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,version INTEGER NOT NULL)
+        """,
         """
         CREATE TABLE IF NOT EXISTS background_task_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1696,6 +1707,34 @@ def initialize() -> None:
                  )""",
             (now, now, now),
         )
+        # SQLite compatibility uses conservative broad invalidation. PostgreSQL
+        # keeps its existing per-repertoire/visible-publication source epochs.
+        refresh_source_columns = {
+            'settings': ('coverage_horizon_fullmoves','coverage_path_floor','discovery_window_days'),
+            'cards': ('state','introduced_at','start_fen','moves_json','content_type','archived','trained_color','repertoire_id','revision'),
+            'reviews': ('card_id','source_kind','reviewed_at'),
+            'repertoires': ('scope_source_revision','canonical_prefix_revision','canonical_prefix_preview_id'),
+            'repertoire_lines': ('repertoire_id','trained_color','start_fen','moves_json'),
+            'repertoire_cards': ('repertoire_id','card_id'),
+            'repertoire_line_training_depths': ('line_id','learner_decision_count'),
+            'repertoire_coverage_runs': ('status','created_at'),
+            'repertoire_coverage_nodes': ('explorer_status','explorer_games','maia_status'),
+            'repertoire_coverage_candidates': ('node_id','move_uci','explorer_probability','maia_probability'),
+            'imported_games': ('played_at','speed','color','adaptive_excluded'),
+            'game_position_occurrences': ('game_id','fen_key','move_uci'),
+            'game_findings': ('status','evidence_json','card_id','analysis_version'),
+            'game_analysis_jobs': ('analysis_version','analysis_evidence_version'),
+            'repertoire_decision_events': ('game_id','repertoire_id','card_id','outcome','played_at'),
+        }
+        for source_table, source_columns in refresh_source_columns.items():
+            available_columns = {row['name'] for row in database.execute(f'PRAGMA table_info({source_table})')}
+            tracked_columns = [column for column in source_columns if column in available_columns]
+            for source_change in ('INSERT','UPDATE','DELETE'):
+                changed_values = (' WHEN ' + ' OR '.join(f'OLD.{column} IS NOT NEW.{column}' for column in tracked_columns)
+                                  if source_change == 'UPDATE' else '')
+                database.execute(f'CREATE TRIGGER IF NOT EXISTS refresh_source_{source_table}_{source_change.lower()} '
+                                 f'AFTER {source_change} ON {source_table}{changed_values} BEGIN '
+                                 'UPDATE priority_source_epoch SET version=version+1 WHERE id=1; END')
         database.execute("PRAGMA optimize")
     from .study_migration import migrate_studies
 

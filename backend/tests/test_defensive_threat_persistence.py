@@ -749,6 +749,8 @@ def test_issue11_analysis_report_requires_matching_lease_and_request(tmp_path, m
 def test_pending_defensive_report_delivers_while_paused_and_resume_preserves_one_review(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
+        from app.services.game_sync_coordinator import coordinator
+        client.portal.call(coordinator.stop)
         candidate_id = seed_candidate()
         with database.connection() as db:
             request_row = db.execute(

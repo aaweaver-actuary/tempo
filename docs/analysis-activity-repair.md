@@ -34,6 +34,15 @@ errors, historical coverage failures, and misleading activity status.
    Prove the actual SQLite claim path first, then PostgreSQL claims, rollback,
    row contention, restart, idempotent receipts and existing worker-cycle callers.
    CI owns complete current-head validation; no engine search algorithm changes.
+   Refresh input scope: version-fenced coalescing for priority/opportunity source
+   requests, with five-second quiet time and a persisted 60-second ceiling.
+   Continuations and explicit retry controls keep their own contracts. Prove
+   unchanged generation/cursor, boundary clocks, restart/rollback, changed-source
+   replacement, retained failed state and current publications first. Scope-only
+   game refresh may reuse an index only with a matching committed source receipt;
+   missing/obsolete proof conservatively schedules position indexing. Include
+   native PostgreSQL durability and existing source/derivation callers. CI owns
+   final complete candidate validation.
 3. Integrity/segmentation: large generation publication, conservative eligibility,
    restart/replay and authoritative trained-color provenance.
 4. Coverage: safe session status, unchanged-credential recovery, partial-source

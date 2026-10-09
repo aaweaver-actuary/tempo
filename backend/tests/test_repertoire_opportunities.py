@@ -1145,6 +1145,13 @@ def test_issue4_background_scan_yields_to_foreground_and_replays_without_duplica
     database_writer.start()
     request.addfinalizer(database_writer.stop)
     assert TestClient(app).post("/api/repertoires/rep/opportunities/refresh").status_code == 202
+    # Advance the intentional quiet window without waiting on wall-clock time.
+    from app.services import durable_tasks
+    with database.read_connection() as db:
+        eligible_at = datetime.fromisoformat(db.execute(
+            "SELECT next_attempt_at FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key='rep'"
+        ).fetchone()[0])
+    monkeypatch.setattr(durable_tasks, '_now', lambda: eligible_at)
     target_task = None
     for _ in range(12):
         candidate = claim_task("repertoire_opportunity")
