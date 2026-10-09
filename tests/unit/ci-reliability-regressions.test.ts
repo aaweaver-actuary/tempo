@@ -8,8 +8,15 @@ it("committed merge-conflict guard regressions pass in the regular suite", () =>
   expect(result.stdout).toMatch(/(?:#|ℹ) tests 5/);
 });
 it("CI reliability planning and browser selection regressions pass in the regular suite", () => {
-  const result = spawnSync(process.execPath, ["--test", "tests/runner/ci-reliability.test.mjs", "tests/runner/ci-development.test.mjs"], { encoding: "utf8" });
+  const result = spawnSync(process.execPath, ["--test", "tests/runner/ci-reliability.test.mjs"], { encoding: "utf8" });
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
   expect(result.stdout).toContain("demoted critical cases remain required by their complete browser families");
   expect(result.stdout).toContain("documented global browser smoke count and titles match inventory and real collection");
+}, 30_000);
+
+it("draft development and merge qualification regressions execute nonzero cases", () => {
+  const result = spawnSync(process.execPath, ["--test", "tests/runner/ci-development.test.mjs"], { encoding: "utf8" });
+  expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+  expect(result.stdout).toContain("draft ready and converted-to-draft transitions separate execution from qualification");
+  expect(result.stdout).toMatch(/(?:#|ℹ) tests [1-9][0-9]*/);
 }, 30_000);

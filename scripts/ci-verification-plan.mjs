@@ -37,9 +37,9 @@ function developmentSelection(paths, comparisonAvailable, sourceInventory) {
   for (const path of paths) {
     const prose = (path.startsWith("docs/") && path.endsWith(".md")) || /(?:^|\/)README\.md$/.test(path) || sourceInventory.prosePaths?.includes(path);
     if (prose) continue;
-    if (/^tests\/unit\/[^/]+\.test\.tsx?$/.test(path)) {
+    if (/^tests\/unit\/.*\.test\.tsx?$/.test(path)) {
       selected.add("frontend"); if (existsSync(path)) frontend.add(path); else allFrontend = true;
-    } else if (/^backend\/tests\/test_[^/]+\.py$/.test(path)) {
+    } else if (/^backend\/tests\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path)) {
       selected.add("backend"); if (existsSync(path)) backend.add(path); else allBackend = true;
     } else if (sourceInventory.development?.harnessPaths.includes(path)) {
       selected.add("frontend"); sourceInventory.development.harnessTests.forEach(file => frontend.add(file));
@@ -152,7 +152,7 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     const rendering = /\.(css|scss|svg|png|jpe?g|webp)$/.test(path) || /(?:layout|chessboard|board-|visual|theme|pieces)/i.test(path);
     if (rendering || (path.startsWith("app/") && path.endsWith(".tsx"))) visual = true;
     const ordinaryProse = (path.startsWith("docs/") && path.endsWith(".md")) || /(?:^|\/)README\.md$/.test(path) || sourceInventory.prosePaths?.includes(path);
-    const standaloneCoreTest = /^tests\/unit\/[^/]+\.test\.tsx?$/.test(path) || /^backend\/tests\/test_[^/]+\.py$/.test(path);
+    const standaloneCoreTest = /^tests\/unit\/.*\.test\.tsx?$/.test(path) || /^backend\/tests\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path);
     if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: reviewed consumer families; ${mapping.reason}`); }
     else if (specFamily && specFamily !== "pinned") { families.add(specFamily); reasons.push(`${path}: complete ${specFamily} browser family`); }
     else if (specFamily === "pinned") { visual = true; reasons.push(`${path}: pinned rendering verification`); }
@@ -186,6 +186,18 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     jobs[layer].mode = mode;
     jobs[layer].planned_stages = postgresTestStages({ mode });
   }
+  const regressionFiles = { frontend: [], backend: [] };
+  for (const path of paths.filter(path => existsSync(path))) {
+    if (/^tests\/unit\/.*\.test\.tsx?$/.test(path)) regressionFiles.frontend.push(path);
+    else if (/^tests\/unit\/.*\.test\./.test(path)) throw new Error(`Regression file is outside the regular Vitest collection: ${path}`);
+    else if (/^backend\/tests\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path)) regressionFiles.backend.push(path);
+    else if (/^tests\/runner\/.*\.test\.mjs$/.test(path)) {
+      const owners = sourceInventory.development?.runnerOwners?.[path];
+      if (!owners?.length || owners.some(owner => !existsSync(owner))) throw new Error(`Register regular-suite ownership for runner regression: ${path}`);
+      regressionFiles.frontend.push(...owners);
+    }
+  }
+  for (const layer of ["frontend", "backend"]) regressionFiles[layer] = [...new Set(regressionFiles[layer])].sort();
   let core = { frontend: "all", backend: "all" };
   if (tier === "development") {
     const development = developmentSelection(paths, comparisonAvailable, sourceInventory);
@@ -207,7 +219,7 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     }
     collection.forEach(item => { if (!jobs.browser.applicable) item.selected = false; });
   }
-  const plan = { version: 2, tier, draft, head, base, commit, event, ref, core, scope: (tier === "development" ? mandatoryLayers.every(layer => jobs[layer].required) && jobs.lifecycle.required && jobs.visual.required && collection.every(item => item.selected || item.quarantined) && core.frontend === "all" && core.backend === "all" : broad && lifecycle.applicable) ? "complete" : "targeted", comparisonAvailable, paths, reasons,
+  const plan = { version: 2, tier, draft, head, base, commit, event, ref, core, regressionFiles, scope: (tier === "development" ? mandatoryLayers.every(layer => jobs[layer].required) && jobs.lifecycle.required && jobs.visual.required && collection.every(item => item.selected || item.quarantined) && core.frontend === "all" && core.backend === "all" : broad && lifecycle.applicable) ? "complete" : "targeted", comparisonAvailable, paths, reasons,
     families: [...families].sort(), jobs,
     browserGrep: collection.filter(item => item.selected).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|"), collection, quarantine,
     pinnedCollection: pinnedCases.map(item => ({ ...item, selected: jobs.visual.applicable, nightly: true, release: true })) };

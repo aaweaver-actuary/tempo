@@ -163,6 +163,13 @@
     {"file": "held-drag-preservation.spec.ts", "title": "held training drag survives sync, service, notification and parent updates and drops once", "covers": "held drag preservation"}
   ],
   "development": {
+    "runnerOwners": {
+      "tests/runner/ci-development.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
+      "tests/runner/ci-reliability.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
+      "tests/runner/merge-conflict-guard.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
+      "tests/runner/postgres-test-speedups.test.mjs": ["tests/unit/postgres-test-speedups-regressions.test.ts"],
+      "tests/runner/tempo-cli.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"]
+    },
     "postgresFixturePaths": ["scripts/check_postgres_opening_evidence.py"],
     "harnessPaths": [
       ".github/workflows/pages.yml",

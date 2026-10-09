@@ -73,7 +73,8 @@ export function browserResults(report) {
 export function validateUnitResults(layer, plan, report) {
   if (!report?.test_count || report.failed || report.skipped) throw new Error(`${layer}: missing, failed, skipped or zero-test results`);
   const selected = plan.core?.[layer];
-  if (Array.isArray(selected)) for (const file of selected) {
+  const requiredFiles = [...new Set([...(Array.isArray(selected) ? selected : []), ...(plan.regressionFiles?.[layer] ?? [])])];
+  for (const file of requiredFiles) {
     if (!(report.files?.[file] > 0)) throw new Error(`${layer}: changed regression file did not execute: ${file}`);
   }
 }
@@ -135,7 +136,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       if (!report.test_count || suites.some(suite => ["failures", "errors", "skipped"].some(attribute => Number(suite.match(new RegExp(`\\b${attribute}="(\\d+)"`))?.[1] ?? 0)))) throw new Error("Missing, failed or skipped backend results");
       report.files = {};
       const xml = readFileSync("test-results/ci/backend-tests.xml", "utf8");
-      for (const file of Array.isArray(plan.core.backend) ? plan.core.backend : []) {
+      for (const file of [...new Set([...(Array.isArray(plan.core.backend) ? plan.core.backend : []), ...(plan.regressionFiles?.backend ?? [])])]) {
         const moduleName = file.slice(0, -3).replaceAll("/", ".");
         report.files[file] = [...xml.matchAll(/<testcase\b[^>]*>/g)].filter(match => match[0].includes(`classname="${moduleName}`)).length;
       }

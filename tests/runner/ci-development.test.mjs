@@ -67,7 +67,7 @@ function results(planned) {
     needs[layer] = {result: planned.jobs[layer].applicable ? 'success' : 'skipped'};
     if (!planned.jobs[layer].applicable) continue;
     reports[layer] = {layer, commit:planned.commit, planHash:planned.hash, completed:true, status:'success', test_count:10,
-      files: Object.fromEntries((Array.isArray(planned.core[layer]) ? planned.core[layer] : []).map(file => [file, 1])),
+      files: Object.fromEntries([...(Array.isArray(planned.core[layer]) ? planned.core[layer] : []), ...(planned.regressionFiles?.[layer] ?? [])].map(file => [file, 1])),
       commands: layerCommands(layer, planned).map(([name, command, args]) => ({name, command, args, exit_code:0})),
       tests: (layer === 'visual' ? planned.pinnedCollection : planned.collection.filter(item => item.selected)).map(item => ({id:item.id, status:'passed', retries:0})),
       scenarios: {runner:'postgres', mode:planned.jobs[layer].mode, commit:planned.commit, plan_hash:planned.hash,
@@ -194,4 +194,18 @@ test('manual feature-branch full execution cannot qualify a draft via a head-onl
   assert.equal(evaluateQuality(planned,completeEvidence.needs,completeEvidence.reports).success,false);
   assert(evaluateQuality(planned,completeEvidence.needs,completeEvidence.reports,{development:true}).success);
   assert(evidence.needs.postgres.result==='success');
+});
+test('whole-subsystem qualification still requires every changed regression file', () => {
+  const ready={...pr,draft:false};
+  const planned=captured(ready,['app/views/studies_view.tsx','tests/unit/ci-reliability-regressions.test.ts','backend/tests/test_studies.py']);
+  // Rendering is applicable; provide a pinned case in this synthetic inventory.
+  planned.pinnedCollection=[{id:'visual',file:'visual.spec.ts'}]; planned.hash=planHash(planned);
+  const evidence=results(planned); assert(verdict(planned,evidence,ready).success);
+  for(const layer of ['frontend','backend']) {
+    const missing=results(planned); missing.reports[layer].files={};
+    assert.equal(verdict(planned,missing,ready).success,false);
+  }
+  const runner=captured(pr,['tests/runner/ci-development.test.mjs']);
+  assert(runner.regressionFiles.frontend.includes('tests/unit/ci-reliability-regressions.test.ts'));
+  assert.throws(()=>draft(['tests/runner/ci-development.test.mjs'],{sourceInventory:{...inventory,development:{...inventory.development,runnerOwners:{}}}}), /regular-suite ownership/);
 });

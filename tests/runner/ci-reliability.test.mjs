@@ -42,6 +42,7 @@ function successfulResults(planned) {
     needs[layer] = { result: planned.jobs[layer].applicable ? "success" : "skipped" };
     if (!planned.jobs[layer].applicable) continue;
     reports[layer] = { layer, commit: planned.commit, planHash: planned.hash, completed: true, status: "success", test_count: 123,
+      files: Object.fromEntries((planned.regressionFiles[layer] ?? []).map(file => [file, 1])),
       commands: layerCommands(layer, planned).map(([name, command, args]) => ({ name, command, args, exit_code: 0 })),
       tests: (layer === "visual" ? [{ id: "visual" }] : planned.collection.filter(item => layer === "quarantine" ? item.quarantined : item.selected)).map(item => ({ id: item.id, status: "passed", retries: 0 })),
       scenarios: { runner: "postgres", mode: layer === "lifecycle" ? "lifecycle" : "durability", commit: planned.commit, plan_hash: planned.hash,
