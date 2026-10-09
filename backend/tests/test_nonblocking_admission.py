@@ -143,3 +143,41 @@ def test_background_receipt_read_is_prompt_during_foreground_without_false_succe
         assert activity_gate.active_background_sections == 0
         assert not activity_gate.in_background_control
     assert observations == [{'read_only': True, 'background': True}]
+
+
+def test_prefix_preparation_foreground_denial_yields_before_writer_and_preserves_http_contract(monkeypatch):
+    from app import command_gateway, prefix_evaluation_api
+    command_name = 'repertoire.prefix_transition.apply'
+    monkeypatch.setattr(prefix_evaluation_api.redis_admission_gate, 'configured', lambda: False)
+    monkeypatch.setattr(type(prefix_evaluation_api.activity_gate), 'foreground_waiting', property(lambda _: True))
+    def prepare(_payload):
+        prefix_evaluation_api.check_available(float('inf'))
+    monkeypatch.setitem(command_gateway._preparers, command_name, prepare)
+    monkeypatch.setitem(command_gateway._handlers, command_name, lambda *_args: pytest.fail('denied preparation published'))
+    monkeypatch.setattr(command_gateway, '_writer_connection', lambda *_args: pytest.fail('denied preparation opened writer'))
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as response:
+        prepare({})
+    assert response.value.status_code == 503 and response.value.detail['code'] == 'evaluation_busy'
+    assert isinstance(response.value, prefix_evaluation_api.PrefixEvaluationForegroundDeferred)
+    with pytest.raises(HTTPException) as expired:
+        prefix_evaluation_api.check_available(0)
+    assert not isinstance(expired.value, prefix_evaluation_api.PrefixEvaluationForegroundDeferred)
+    with pytest.raises(BackgroundAdmissionDeferred):
+        command_gateway.execute_command('retained-apply', command_name, {})
+
+
+def test_prefix_foreground_receipt_denial_does_not_consume_failure_attempts(monkeypatch):
+    from contextlib import nullcontext
+    from app import tasks
+    command_name = 'repertoire.prefix_transition.apply'
+    monkeypatch.setattr(tasks.activity_gate, 'foreground', nullcontext)
+    monkeypatch.setattr(tasks, 'record_operation_attempt', lambda *_args, **_kwargs: (True, {'saved': True}, 'fenced-attempt', 1))
+    def denied(*_args, **_kwargs):
+        raise BackgroundAdmissionDeferred('Waiting for study')
+    monkeypatch.setattr(tasks, 'execute_command', denied)
+    observed = []
+    monkeypatch.setattr(tasks, 'defer_operation_for_foreground', lambda *args: observed.append(args))
+    monkeypatch.setattr(tasks, 'record_operation_retry', lambda *_args, **_kwargs: pytest.fail('denial spent failure budget'))
+    assert tasks.execute_foreground_command.run('retained-apply', command_name, {}) is None
+    assert observed == [('retained-apply', 'fenced-attempt')]

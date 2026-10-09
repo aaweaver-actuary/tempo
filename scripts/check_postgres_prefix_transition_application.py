@@ -1190,17 +1190,35 @@ def test_issue80_unclean_source_integrity_rejects_before_acceptance():
 def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result():
     from urllib.request import Request,urlopen
     from urllib.error import HTTPError
+    from app.celery_app import celery_app
+    from app.services.activity_gate import activity_gate
     with fixture('http') as (rep,other,lines,steps):
         plan,payload=ready_plan(rep,lines)
         path=f'http://api:8000/api/repertoires/{rep}/prefix-transition/apply'
         def request(body):
             return Request(path,method='POST',headers={'Content-Type':'application/json','Idempotency-Key':payload['operation_id']},data=json.dumps(body).encode())
-        with urlopen(request(payload['request']),timeout=10) as response:
-            assert response.status==202 and response.headers['Location']==f"/api/operations/{payload['operation_id']}"
-            assert json.load(response)['operation_id']==payload['operation_id']
+        with activity_gate.foreground():
+            with urlopen(request(payload['request']),timeout=10) as response:
+                assert response.status==202 and response.headers['Location']==f"/api/operations/{payload['operation_id']}"
+                assert json.load(response)['operation_id']==payload['operation_id']
+            deadline=time.monotonic()+10
+            result=read_operation(payload['operation_id'])
+            while result['state'] in {'unknown','queued','executing'} and time.monotonic()<deadline:
+                time.sleep(0.01);result=read_operation(payload['operation_id'])
+            assert result['state']=='retrying' and result['attempt_count']==0 and result['cycle_attempt_count']==0,result
         deadline=time.monotonic()+10
         result=read_operation(payload['operation_id'])
+        redelivered_retries=set()
         while result['state'] in {'unknown','queued','executing','retrying'} and time.monotonic()<deadline:
+            # The owning runner stops periodic recovery during this native proof.
+            # Redeliver only this fixture's due receipt through the real worker,
+            # once per retained retry; never claim unrelated operations.
+            retry_at=result.get('next_retry_at')
+            if result['state']=='retrying' and retry_at and retry_at not in redelivered_retries and datetime.fromisoformat(retry_at)<=datetime.now(timezone.utc):
+                redelivered_retries.add(retry_at)
+                celery_app.send_task('app.tasks.execute_foreground_command',
+                                     args=[payload['operation_id'],application.COMMAND,payload],
+                                     queue='foreground',headers={'submitted_at':time.time()})
             time.sleep(0.01);result=read_operation(payload['operation_id'])
         assert result['state']=='pending' and result['transition']['state']=='staging',result
         final=publish(payload)

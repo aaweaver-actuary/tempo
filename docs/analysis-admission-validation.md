@@ -294,3 +294,14 @@ CI found that the burial fixture imported a host-only helper missing from the pr
 The d80 current-head browser logs identify an API writer-pool request from `defensive_engine_control`, not a checkpoint preparation failure. Its bounded read now uses the existing primary API reader. The new three-case regression fails on d80 in 0.78s (current/stale/completed lease) and retains exact admission/read budgets. The burial quota worker fixture now receives `TEMPO_TEST_INSTANCE=disposable` only through the owning disposable runner invocation; its database marker guard is unchanged. Focused and current-candidate durability/browser evidence follow.
 
 Follow-up focused commands: `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_nonblocking_admission.py backend/tests/test_defensive_analysis_pause.py -q -o cache_dir=.pytest_cache --rootdir=.`: 47 passed, 3.35s. `node --test tests/runner/postgres-test-speedups.test.mjs`: 48 passed, 0.98s. The initial multi-file `make python-file` invocation selected no tests; the direct two-file command supplies the execution evidence. Real durability/browser and required current-head CI remain pending.
+
+The 957fb2e PostgreSQL CI reached the deployed prefix-apply proof. Its isolated
+runner stops periodic recovery, so a correctly retained preparation could wait
+indefinitely. The proof now holds real foreground admission, requires zero
+failure attempts on denial, then redelivers only its own due receipt once per
+retry through the real foreground worker. Prefix preparation distinguishes its
+typed foreground-wait HTTP response from a computation deadline and yields
+before opening the publication writer. The foreground command preserves its
+fenced receipt without consuming a failure attempt. Two named regressions failed
+on the previous implementation; three affected Python files now pass 46 cases
+in 1.03s. Native durability and new current-candidate CI remain required.
