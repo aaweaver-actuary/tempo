@@ -177,5 +177,5 @@ class BackgroundDiagnostics(BaseModel):
     available: bool
     unavailable_reason: Literal["query_deadline", "storage_unavailable"] | None = None
     queues: list[QueueDiagnostic] = Field(default_factory=list, max_length=27)
-    counters: list[KindCounts] = Field(default_factory=list, max_length=33)
+    counters: list[KindCounts] = Field(default_factory=list, max_length=len(KINDS))
     runtime: "RuntimeSnapshot"
