@@ -430,6 +430,12 @@ def test_issue80_real_application_acceptance_and_activation_have_constant_lock_s
 
 
 def test_issue80_queue_and_row_contention_yield_without_losing_operation_identity():
+    from check_postgres_graph_retention import owned_admission_scope
+    with owned_admission_scope('transition-contention-'+uuid.uuid4().hex):
+        _assert_transition_row_contention()
+
+
+def _assert_transition_row_contention():
     from concurrent.futures import ThreadPoolExecutor
     import threading
     for producer_kind in ('queue', 'card', 'graph'):

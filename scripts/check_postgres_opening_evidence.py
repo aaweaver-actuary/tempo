@@ -266,6 +266,12 @@ def _assert_large_checkpoint(database, payload, *, state='active'):
 
 
 def _paused_checkpoint_review(*, complete_same_attempt):
+    from check_postgres_graph_retention import owned_admission_scope
+    with owned_admission_scope('checkpoint-review-'+uuid.uuid4().hex):
+        _assert_paused_checkpoint_review(complete_same_attempt=complete_same_attempt)
+
+
+def _assert_paused_checkpoint_review(*, complete_same_attempt):
     from app import command_gateway, database as database_module, tasks
     from app.services import postgres_opening_evidence as evidence
     from app.services.activity_gate import activity_gate
