@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sys
 import uuid
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 import chess
@@ -994,10 +995,10 @@ def prove_canonical_scope_lifecycle():
         postgres_store.close_pools()
 
 
-def main():
+def main(database_url='postgresql://postgres@postgres:5432/tempo'):
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Canonical freshness proof requires the runner-owned disposable PostgreSQL instance')
-    os.environ['TEMPO_DATABASE_WRITE_URL'] = 'postgresql://postgres@postgres:5432/tempo'
+    os.environ['TEMPO_DATABASE_WRITE_URL'] = database_url
     os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
     # Small real transactions retain the production background limits.
     warm_completion_sql()
@@ -1185,5 +1186,15 @@ def main():
             database.execute('DELETE FROM repertoires WHERE id IN (?,?,?,?)',(repertoire_id,other_repertoire_id,baseline_repertoire_id,mutation_repertoire_id))
         postgres_store.close_pools()
 
+def proof_canonical_freshness(parent_database_url='postgresql://postgres@postgres:5432/tempo'):
+    """Parent health leases cannot preempt an exclusively owned helper database."""
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Canonical freshness requires a disposable PostgreSQL instance')
+    import check_postgres_graph_retention as fixtures
+    with patch.dict(os.environ, {'TEMPO_REDIS_URL': os.environ.get('TEMPO_REDIS_URL', 'redis://redis:6379/0')}), \
+            patch.object(fixtures, 'DATABASE_URL', parent_database_url), fixtures.owned_fixture_database():
+        main(fixtures.DATABASE_URL)
+
+
 if __name__ == '__main__':
-    main()
+    proof_canonical_freshness()
