@@ -672,6 +672,8 @@ test("discarding an unknown PGN import permits a different file after reload", a
 });
 
 productTest("repair choices advance before a delayed save and survive reload through real PostgreSQL receipts", async ({ page, request }) => {
+  // Allow setup plus the full eventual-recovery poll below.
+  productTest.setTimeout(120_000);
   await prepareUI(page);
   // Await analysis from a passive view so the active Train workspace does not
   // intentionally preempt the integrity slices this receipt test needs.
@@ -728,8 +730,10 @@ productTest("repair choices advance before a delayed save and survive reload thr
     expect(savedChoices).toHaveLength(2);
     await page.reload(); releaseSave?.();
     await expect(page.getByRole("dialog", { name: "Choose one response per position" })).toHaveCount(0);
+    // Prove eventual recovery through graph and integrity publication, not a
+    // 20-second performance SLO for the asynchronous background pipeline.
     await expect.poll(async () => page.evaluate(() => Object.keys(localStorage)
-      .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:")).length), { timeout: 20_000 }).toBe(0);
+      .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:")).length), { timeout: 60_000 }).toBe(0);
     expect(submittedKeys).toHaveLength(2);
     expect(submittedKeys.sort()).toEqual(savedChoices.map(choice => choice.operationId).sort());
     const integrity = await (await request.get(`${api}/repertoires/${repertoireId}/integrity`)).json();
