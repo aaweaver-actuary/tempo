@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { verificationPlan, inventory } from '../../scripts/ci-verification-plan.mjs';
 import { evaluateQuality } from '../../scripts/ci-quality.mjs';
 const files = Object.values(inventory.families).flat();
@@ -226,4 +227,16 @@ test('Python regression evidence distinguishes exact modules from similarly name
   const unrelated = '<testcase classname="backend.tests.test_studies_extra" name="unrelated"/>';
   const report = {test_count: 1, files: backendUnitFileCounts(unrelated, [file])};
   assert.throws(() => validateUnitResults('backend', {core: {backend: 'all'}, regressionFiles: {backend: [file]}}, report), /did not execute/);
+});
+
+test('unregistered regression files cannot qualify through unrelated whole-suite passes', () => {
+  const directory=mkdtempSync(join(process.cwd(),'tests','unregistered-ci-'));
+  try {
+    for (const filename of ['new-regression.test.ts','test_new_regression.py']) {
+      const file=relative(process.cwd(),join(directory,filename));
+      writeFileSync(file,'\n');
+      for (const state of [pr,{...pr,draft:false}])
+        assert.throws(()=>captured(state,[file]),/outside the regular test collection/);
+    }
+  } finally { rmSync(directory,{recursive:true,force:true}); }
 });

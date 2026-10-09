@@ -1,17 +1,20 @@
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { redact } from "./tempo-deployment.mjs";
 
 // Capture before browser recovery cases can replace the containers whose
 // history explains an earlier failure. File descriptors keep draining while
 // the parent waits synchronously for Playwright.
-export async function withBrowserServiceLogs(verify, { compose, environment, project, output, secrets,
+export async function withBrowserServiceLogs(verify, { compose, environment, project, output, privateLog, secrets,
   spawnLogs = spawn }) {
   if (!/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
     throw new Error("Browser evidence requires an owned disposable PostgreSQL project");
   mkdirSync(dirname(output), { recursive: true });
-  const descriptor = openSync(output, "w", 0o600);
+  // A cancelled parent may not reach finally; raw logs therefore live with
+  // the private runner secrets, outside every uploaded artifact directory.
+  mkdirSync(dirname(privateLog), { recursive: true, mode: 0o700 });
+  const descriptor = openSync(privateLog, "w", 0o600);
   let logProcess;
   let captureError;
   let verificationError;
@@ -40,9 +43,12 @@ export async function withBrowserServiceLogs(verify, { compose, environment, pro
   finally {
     try {
       closeSync(descriptor);
-      writeFileSync(output, redact(readFileSync(output, "utf8"), secrets));
+      writeFileSync(output, redact(readFileSync(privateLog, "utf8"), secrets), { mode: 0o600 });
     } catch (error) {
       captureError = captureError ? new AggregateError([captureError, error], "Browser evidence cleanup failed") : error;
+    } finally {
+      try { rmSync(privateLog, { force: true }); }
+      catch (error) { captureError = captureError ? new AggregateError([captureError, error], "Browser raw log cleanup failed") : error; }
     }
   }
   if (verificationError && captureError)

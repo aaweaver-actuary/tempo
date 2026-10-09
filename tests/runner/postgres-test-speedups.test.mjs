@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +42,7 @@ test("browser evidence retains replaced-worker history and redacts secrets befor
     writeSync(descriptor, "old worker: queue stalled secret-value\n");
     writeSync(descriptor, "replacement worker: started\n");
   }, { compose: ["compose", "-p", "tempo-pg-regressions-123-abc123", "-f", "fixture.yml"],
-    environment: {}, project: "tempo-pg-regressions-123-abc123", output, secrets: ["secret-value"],
+    environment: {}, project: "tempo-pg-regressions-123-abc123", output, privateLog: output + ".raw", secrets: ["secret-value"],
     spawnLogs: (command, args, options) => {
       assert.equal(command, "docker");
       assert.deepEqual(args.slice(-4), ["logs", "--follow", "--no-color", "--timestamps"]);
@@ -63,7 +63,7 @@ test("browser evidence failure preserves the original verification failure and r
   const originalFailure = new Error("prepared queue did not become ready");
   const captureFailure = new Error("docker log capture unavailable");
   let child;
-  const settings = { compose: [], environment: {}, project: "tempo-pg-regressions-123-abc123", output,
+  const settings = { compose: [], environment: {}, project: "tempo-pg-regressions-123-abc123", output, privateLog: output + ".raw",
     secrets: [], spawnLogs: () => {
       child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null,
         kill: () => { queueMicrotask(() => { child.emit("error", captureFailure); child.emit("close", -1, null); }); return true; } });
@@ -86,11 +86,13 @@ test("actual browser runner starts CI history capture before verification and st
     const originalFailure = new Error("browser failure");
     const context = { options: parse(["--mode", "browser"]), buildPostgresPlaywrightArguments, environment: {},
       origin: "http://127.0.0.1:1234", project: "tempo-pg-regressions-123-abc123", compose: [], join,
+      secretsDirectory: "private-runner-secrets",
       process: { cwd: () => root, pid: 123, env: { TEMPO_CI_REPORT: ciReport } },
       administratorPassword: "admin", readerPassword: "reader", writerPassword: "writer",
       run: () => { calls.push("browser"); throw originalFailure; },
       withBrowserServiceLogs: async (verify, settings) => {
         assert.match(settings.output, /browser-tempo-pg-regressions-123-abc123-live-services\.log$/);
+        assert.equal(settings.privateLog, join("private-runner-secrets", "browser-services.raw.log"));
         calls.push("capture starts");
         try { verify(); } finally { calls.push("capture stops"); }
       } };
@@ -103,7 +105,7 @@ test("actual browser runner starts CI history capture before verification and st
 test("Docker log follower exit 130 is accepted only after this runner requests termination", async context => {
   for (const stoppedByRunner of [false, true]) {
     const output = join(temporaryDirectory(context), "services.log");
-    const settings = { compose: [], environment: {}, project: "tempo-pg-regressions-123-abc123", output,
+    const settings = { compose: [], environment: {}, project: "tempo-pg-regressions-123-abc123", output, privateLog: output + ".raw",
       secrets: [], spawnLogs: () => {
         const child = Object.assign(new EventEmitter(), { exitCode: stoppedByRunner ? null : 130, signalCode: null,
           kill: () => { queueMicrotask(() => child.emit("close", 130, null)); return true; } });
@@ -113,6 +115,25 @@ test("Docker log follower exit 130 is accepted only after this runner requests t
     if (stoppedByRunner) await withBrowserServiceLogs(() => {}, settings);
     else await assert.rejects(withBrowserServiceLogs(() => {}, settings), /ended with code 130/);
   }
+});
+
+test("browser raw logs remain private until redacted artifacts are written and raw data is removed", async context => {
+  const directory = temporaryDirectory(context);
+  const output = join(directory, "artifacts", "services.log");
+  const privateLog = join(directory, "private", "services.raw.log");
+  let child;
+  await withBrowserServiceLogs(() => {
+    assert(!existsSync(output), "Cancellation must not expose a partial raw artifact");
+    assert.match(readFileSync(privateLog, "utf8"), /private-test-password/);
+  }, { compose: [], environment: {}, project: "tempo-pg-regressions-123-abc123", output, privateLog,
+    secrets: ["private-test-password"], spawnLogs: (_command, _args, options) => {
+      writeSync(options.stdio[1], "worker history private-test-password\n");
+      child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null,
+        kill: signal => { queueMicrotask(() => child.emit("close", null, signal)); return true; } });
+      return child;
+    } });
+  assert(!readFileSync(output, "utf8").includes("private-test-password"));
+  assert(!existsSync(privateLog), "Normal completion removes raw capture data");
 });
 
 test("default PostgreSQL gate retains every recovery check and one unfiltered browser matrix", () => {

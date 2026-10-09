@@ -1070,6 +1070,7 @@ const actions = {
       if (process.env.TEMPO_CI_REPORT) {
         await withBrowserServiceLogs(verifyBrowser, { compose, environment, project,
           output: `test-results/ci/${options.mode}-${project}-live-services.log`,
+          privateLog: join(secretsDirectory, "browser-services.raw.log"),
           secrets: [administratorPassword, readerPassword, writerPassword] });
       } else verifyBrowser();
   },

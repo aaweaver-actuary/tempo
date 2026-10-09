@@ -198,6 +198,10 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
       const owners = sourceInventory.development?.runnerOwners?.[path];
       if (!owners?.length || owners.some(owner => !existsSync(owner))) throw new Error(`Register regular-suite ownership for runner regression: ${path}`);
       regressionFiles.frontend.push(...owners);
+    } else if (/^(?:tests|backend\/tests)\/.*\.(?:test|spec)\./.test(path)
+      || /^(?:tests|backend\/tests)\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path)) {
+      if (/^tests\/browser\/[^/]+\.spec\.ts$/.test(path) && files.includes(path.slice("tests/browser/".length))) continue;
+      throw new Error(`Regression file is outside the regular test collection: ${path}`);
     }
   }
   for (const layer of ["frontend", "backend"]) regressionFiles[layer] = [...new Set(regressionFiles[layer])].sort();
