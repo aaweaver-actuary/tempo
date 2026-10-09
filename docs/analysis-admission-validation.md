@@ -50,3 +50,13 @@ regular proof immediately before cleanup. Exact teardown: `docker stop
  tempo-analysis-unlock-proof tempo-analysis-admission-proof`, then `docker rm -v
  tempo-analysis-unlock-proof tempo-analysis-admission-proof`. Shared base images
 and other chats' resources are retained. No live study data or queues were used.
+
+The admission candidate is stacked on queue PR #119 so CI verifies their combined
+behavior. Rebase on queue head 70188ea preserved both regular PostgreSQL proofs
+and their named regressions. Deadline bookkeeping joins the same narrow control
+path; a raced foreground regression proves it cannot wait recursively.
+
+After composition: 234 affected Python tests passed in 4.18 s. The regular
+PostgreSQL proof passed again: large graph maximum slice 18.3 ms; denied worker
+2.8 ms; sparse graph three slices (maximum section 22 ms); control receipt,
+rollback, restart and stale legacy replay all passed.

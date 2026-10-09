@@ -569,7 +569,8 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
                           sanitized_error, kind=task['kind'])
         return next_attempt_at if changed else None
 
-    committed_retry_at = submit_background_write(operation, label=f"deadline:{task['id']}")
+    with activity_gate.background_control():
+        committed_retry_at = submit_background_write(operation, label=f"deadline:{task['id']}")
     # The write boundary has committed and released its PostgreSQL connection.
     # ETA is only a capacity hint; execution-time claims still enforce eligibility.
     if committed_retry_at is not None and task['kind'] == 'daily_queue':
