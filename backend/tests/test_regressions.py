@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app, enqueue_daily_queue_refresh
-from helpers import wait_for_integrity
+from helpers import wait_for_daily_queue, wait_for_integrity
 
 PGN = b'[Event "Rated blitz game"]\n[White "andy"]\n[Black "opponent"]\n[UTCDate "2026.09.16"]\n[UTCTime "12:30:00"]\n[Site "https://lichess.org/game1"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 3. d4 *'
 BRANCH_PGN = b'[Event "QGD"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 d5 2. c4 e6 *\n\n[Event "Nimzo"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 *'
@@ -118,6 +118,9 @@ def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews
             time.sleep(0.01)
         queue = client.get("/api/queue/today").json()
         assert queue["count"] == 2  # due reinforcement plus one new introduction
+        introduced_card = next(card for card in queue['cards'] if card['id'] != first['id'])
+        assert introduced_card['has_study_review'] == 0
+        assert len({card['id'] for card in queue['cards']}) == 2
         assert queue == client.get("/api/queue/today").json()
         with database.connection() as db:
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 1
@@ -125,8 +128,15 @@ def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews
                 db.execute(
                     "SELECT COUNT(*) FROM cards WHERE state='new' AND introduced_at IS NULL"
                 ).fetchone()[0]
-                == 145
+                == 146  # the practiced root also exposes one genuine descendant
             )
+            child_states = db.execute(
+                "SELECT child.state FROM opening_graph_steps step "
+                "JOIN opening_graph_publications publication ON publication.repertoire_id=step.repertoire_id "
+                "AND publication.generation=step.generation JOIN cards child ON child.id=step.card_id "
+                "WHERE step.parent_card_id=?", (first['id'],),
+            ).fetchall()
+            assert child_states and all(row[0] in ('new', 'learning') for row in child_states)
 
 
 def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_the_future(
@@ -134,6 +144,9 @@ def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_th
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
+        settings = client.get('/api/settings').json()
+        settings['new_cards_per_day'] = 1
+        assert client.put('/api/settings', json=settings).status_code == 200
         imported = client.post(
             "/api/imports/pgn",
             files={"file": ("one.pgn", PGN)},
@@ -169,7 +182,7 @@ def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_th
         ).json()
         assert scheduled["interval_days"] >= 1
         assert scheduled["next_due"] > date.today().isoformat()
-        assert client.get("/api/queue/today").json()["count"] == 0
+        assert wait_for_daily_queue(client, 0)['count'] == 0
         with database.connection() as db:
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 2
 

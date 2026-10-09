@@ -262,6 +262,46 @@ def post_transition_when_foreground_idle(client, path, payload, *, calculation_s
     raise AssertionError('Transition diagnostic never obtained foreground-idle admission within 10 seconds')
 
 
+@contextmanager
+def isolated_diagnostic_admission():
+    """Keep a controlled concurrency proof independent of deployed health reads."""
+    from app.services import redis_admission_gate as admission
+
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable' or not admission.configured():
+        raise RuntimeError('Diagnostic admission isolation requires the owned disposable Redis stack')
+    original_keys = admission._FOREGROUND_KEY, admission._BACKGROUND_KEY
+    proof_namespace = 'tempo:test:transition:' + uuid.uuid4().hex
+    owned_keys = proof_namespace + ':foreground', proof_namespace + ':background'
+    admission._FOREGROUND_KEY, admission._BACKGROUND_KEY = owned_keys
+    try:
+        yield
+    finally:
+        admission.client().delete(*owned_keys)
+        admission._FOREGROUND_KEY, admission._BACKGROUND_KEY = original_keys
+
+
+def test_issue79_transition_admission_isolation_preserves_foreground_priority(client, path, payload):
+    from app.services import redis_admission_gate as admission
+
+    external_key = admission._FOREGROUND_KEY
+    external_token = 'external-health-' + uuid.uuid4().hex
+    admission.client().eval(admission._REGISTER_FOREGROUND, 1, external_key,
+                            int(time.time() * 1000), external_token, 30_000)
+    try:
+        with isolated_diagnostic_admission():
+            assert admission.client().zscore(external_key, external_token) is not None
+            assert not admission.foreground_present()
+            with admission.foreground_lease():
+                assert admission.foreground_present()
+                response = client.post(path, json=payload)
+                assert response.status_code == 503 and response.json()['detail']['code'] == 'evaluation_busy', response.text
+            assert not admission.foreground_present()
+    finally:
+        admission.client().zrem(external_key, external_token)
+    print('PASS test_issue79_transition_admission_isolation_preserves_foreground_priority', flush=True)
+
+
+@isolated_diagnostic_admission()
 def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repertoire_id, lines, card_ids, product_snapshot):
     """Release readers, permit a real review, and reject the stale plan."""
     from fastapi.testclient import TestClient
@@ -277,6 +317,7 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
     path = f'/api/repertoires/{repertoire_id}/prefix-transition/plan'
     payload = {'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
                'candidate_depths': {lines[0]['id']: 1}}
+    test_issue79_transition_admission_isolation_preserves_foreground_priority(client, path, payload)
     before = product_snapshot()
     response = post_transition_when_foreground_idle(client, path, payload)
     assert response.status_code == 200 and response.json()['status'] == 'ready', response.text

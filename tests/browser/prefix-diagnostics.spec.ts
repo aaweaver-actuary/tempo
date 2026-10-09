@@ -39,7 +39,25 @@ for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay 
   expect(diagnosticReads).toHaveLength(0);
   await card.locator("details.card-menu summary").click();
   await card.getByRole("menuitem", { name: "Prefix difficulty", exact: true }).click();
-  await page.getByRole("button", { name: /^Inspect prefix/ }).click();
+  const inspectButton = page.getByRole("button", { name: /^Inspect prefix/ });
+  await expect(inspectButton).toBeVisible();
+  await expect(inspectButton).toBeEnabled();
+  const [initialDetailResponse] = await Promise.all([
+    page.waitForResponse(response => response.url().includes("/prefix-diagnostics/") && response.request().method() === "GET", { timeout: 5_000 }),
+    inspectButton.click(),
+  ]);
+  if (initialDetailResponse.status() === 503) {
+    // A bounded diagnostic may yield; preserve the real error and retry once
+    // through the same user action. Other errors and persistent failures fail.
+    expect(initialDetailResponse.headers()["retry-after"]).toBe("1");
+    const temporaryMessage = "Prefix difficulty is temporarily unavailable. Retry after study work settles.";
+    expect(await initialDetailResponse.json()).toEqual({ detail: temporaryMessage });
+    await expect(page.getByRole("alert")).toContainText(temporaryMessage);
+    await expect(page.getByText("Unknown", { exact: true })).toHaveCount(0);
+    await inspectButton.click();
+  } else {
+    expect(initialDetailResponse.status()).toBe(200);
+  }
   await expect(page.getByText("Unknown", { exact: true })).toHaveCount(3);
   await expect(page.getByText("No observations for this decision.", { exact: true })).toHaveCount(3);
   await expect(page.getByText(/Latest 0 of up to 100 attempts/)).toBeVisible();

@@ -91,6 +91,7 @@ from .services.activity_gate import activity_gate
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order
+from .services.opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
 from .services.real_game_feedback import (
     MISS_REASON, prioritize_real_game_miss, outstanding_miss_query, outstanding_miss_sql,
@@ -1269,7 +1270,7 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
     return next_position
 
 
-_OPENING_UNLOCK_ELIGIBILITY_SQL = """content_type='opening' AND state='locked' AND archived=0
+_OPENING_UNLOCK_ELIGIBILITY_SQL = f"""content_type='opening' AND state='locked' AND archived=0
     AND EXISTS(
         SELECT 1 FROM opening_graph_steps step
         JOIN opening_graph_publications publication
@@ -1278,14 +1279,14 @@ _OPENING_UNLOCK_ELIGIBILITY_SQL = """content_type='opening' AND state='locked' A
         WHERE step.card_id=cards.id
           AND (step.parent_card_id IS NULL OR EXISTS(
               SELECT 1 FROM cards parent
-              WHERE parent.id=step.parent_card_id AND parent.state='mature'
+              WHERE parent.id=step.parent_card_id AND {PRACTICED_OPENING_PARENT_SQL}
           ))
     )"""
 
 # Drive eligibility from the current graph, rather than probing every locked
 # card against all historical graph generations. Each branch limits distinct
 # IDs before the final merge; transposed incoming paths cannot consume a page.
-_OPENING_UNLOCK_CANDIDATES_SQL = """WITH root_candidates AS (
+_OPENING_UNLOCK_CANDIDATES_SQL = f"""WITH root_candidates AS (
     SELECT DISTINCT card.id FROM opening_graph_publications publication
     JOIN opening_graph_steps step ON step.repertoire_id=publication.repertoire_id
         AND step.generation=publication.generation
@@ -1293,19 +1294,19 @@ _OPENING_UNLOCK_CANDIDATES_SQL = """WITH root_candidates AS (
     WHERE step.parent_card_id IS NULL AND card.content_type='opening'
         AND card.state='locked' AND card.archived=0 AND card.id>?
     ORDER BY card.id LIMIT ?
-), mature_parent_candidates AS (
+), practiced_parent_candidates AS (
     SELECT DISTINCT card.id FROM cards parent
     JOIN opening_graph_steps step ON step.parent_card_id=parent.id
     JOIN opening_graph_publications publication ON publication.repertoire_id=step.repertoire_id
         AND publication.generation=step.generation
     JOIN cards card ON card.id=step.card_id
-    WHERE parent.state='mature' AND card.content_type='opening'
+    WHERE {PRACTICED_OPENING_PARENT_SQL} AND card.content_type='opening'
         AND card.state='locked' AND card.archived=0 AND card.id>?
     ORDER BY card.id LIMIT ?
-) SELECT id FROM root_candidates UNION SELECT id FROM mature_parent_candidates
+) SELECT id FROM root_candidates UNION SELECT id FROM practiced_parent_candidates
 ORDER BY id LIMIT ?"""
 
-_OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL = """WITH root_candidates AS (
+_OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL = f"""WITH root_candidates AS (
     SELECT candidate.id FROM opening_graph_publications publication
     CROSS JOIN LATERAL (
         SELECT DISTINCT card.id FROM opening_graph_steps step
@@ -1315,7 +1316,7 @@ _OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL = """WITH root_candidates AS (
           AND card.content_type='opening' AND card.state='locked' AND card.archived=0
           AND card.id>%s ORDER BY card.id NULLS FIRST LIMIT %s
     ) candidate
-), mature_parent_candidates AS (
+), practiced_parent_candidates AS (
     SELECT candidate.id FROM cards parent
     CROSS JOIN LATERAL (
         SELECT DISTINCT card.id FROM opening_graph_steps step
@@ -1325,8 +1326,8 @@ _OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL = """WITH root_candidates AS (
         WHERE step.parent_card_id=parent.id AND card.content_type='opening'
           AND card.state='locked' AND card.archived=0 AND card.id>%s
         ORDER BY card.id NULLS FIRST LIMIT %s
-    ) candidate WHERE parent.state='mature'
-) SELECT id FROM root_candidates UNION SELECT id FROM mature_parent_candidates
+    ) candidate WHERE {PRACTICED_OPENING_PARENT_SQL}
+) SELECT id FROM root_candidates UNION SELECT id FROM practiced_parent_candidates
 ORDER BY id NULLS FIRST LIMIT %s"""
 
 
@@ -1532,7 +1533,7 @@ def seed_queue(db, day):
                        (day, study_row["id"], next_position + offset))
 
 
-_QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,c.content_type,
+_QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,q.position,c.content_type,
                   CASE WHEN q.admission_kind='explicit' THEN 'explicit'
                        WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id AND r.invalidated_at IS NULL) THEN 'review'
                        ELSE 'new' END admission_kind,
@@ -1550,7 +1551,7 @@ def _queue_membership_hash(rows) -> str:
     ).hexdigest()
 
 
-def _plan_daily_queue_order(rows, day: str, saved) -> tuple[int, str, list]:
+def _plan_daily_queue_order(rows, day: str, saved, *, preserve_through_entry_id: int | None = None) -> tuple[int, str, list]:
     """Compute the stable queue mix after its database read has closed."""
 
     membership_hash = _queue_membership_hash(rows)
@@ -1599,10 +1600,17 @@ def _plan_daily_queue_order(rows, day: str, saved) -> tuple[int, str, list]:
     if prioritized_misses:
         ordinary_cards = [row for row in ordered if row["gameplay_priority_reason"] != MISS_REASON]
         ordered = sorted(prioritized_misses, key=lambda row: (row["card_id"], row["id"])) + ordinary_cards
+    if preserve_through_entry_id is not None:
+        # A review can extend today's queue, but cannot move a surviving attempt.
+        preserved_rows = sorted(
+            (row for row in rows if row["id"] <= preserve_through_entry_id),
+            key=lambda row: (row["position"], row["id"]),
+        )
+        ordered = preserved_rows + [row for row in ordered if row["id"] > preserve_through_entry_id]
     return seed, membership_hash, ordered
 
 
-def randomize_daily_queue(db, day: str) -> None:
+def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None = None) -> None:
     """Create a stable mixed queue whenever that day's membership changes."""
     rows = db.execute(_QUEUE_RANDOMIZATION_ROWS_SQL, (day,)).fetchall()
     if not rows:
@@ -1614,7 +1622,9 @@ def randomize_daily_queue(db, day: str) -> None:
     if saved and saved["membership_hash"] == membership_hash:
         prioritize_queued_misses(db, day)
         return
-    seed, membership_hash, ordered = _plan_daily_queue_order(rows, day, saved)
+    seed, membership_hash, ordered = _plan_daily_queue_order(
+        rows, day, saved, preserve_through_entry_id=preserve_through_entry_id,
+    )
     for position, row in enumerate(ordered):
         db.execute(
             """UPDATE daily_queue SET position=?,card_bucket=?,admission_kind=? WHERE id=?""",
@@ -1675,7 +1685,7 @@ def _quarantine_malformed_opening_cards(database, queue_date: str) -> list[dict]
     return diagnostics
 
 
-def materialize_daily_queue(database, queue_date: str) -> None:
+def materialize_daily_queue(database, queue_date: str, *, preserve_through_entry_id: int | None = None) -> None:
     """Publish one complete queue generation in a bounded writer transaction."""
 
     database.execute(
@@ -1686,7 +1696,7 @@ def materialize_daily_queue(database, queue_date: str) -> None:
         (queue_date,),
     )
     seed_queue(database, queue_date)
-    randomize_daily_queue(database, queue_date)
+    randomize_daily_queue(database, queue_date, preserve_through_entry_id=preserve_through_entry_id)
     diagnostics = _quarantine_malformed_opening_cards(database, queue_date)
     database.execute(
         "DELETE FROM queue_projection_diagnostics WHERE queue_date=?", (queue_date,)
@@ -1731,7 +1741,8 @@ def _execute_daily_queue_task(task: dict) -> None:
     queue_date = task["payload"].get("queue_date") or date.today().isoformat()
     try:
         submit_background_write(
-            lambda database: materialize_daily_queue(database, queue_date),
+            lambda database: materialize_daily_queue(database, queue_date,
+                preserve_through_entry_id=task["payload"].get("preserve_through_entry_id")),
             label=f"daily-queue:{queue_date}",
         )
     except Exception as error:
@@ -2946,6 +2957,18 @@ def _reconcile_review(identifier: str, request: ReviewRequest, *, database=None)
         return {"persisted": False, "conflict": error.information()}
 
 
+def _refresh_progression_after_saved_review(database, day: str, content_row, result: dict) -> None:
+    """Publish the opening exposure and queue invalidation in one transaction."""
+    if content_row["content_type"] == "opening" and result.get("review_id") is not None:
+        from .queue_commands import request_queue_refresh_in_transaction
+        preserved_entry_id = database.execute(
+            "SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=?", (day,),
+        ).fetchone()[0]
+        request_queue_refresh_in_transaction(database, day, preserve_through_entry_id=preserved_entry_id)
+        if not postgres_store.configured():
+            coordinator.wake()
+
+
 def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
     original_request = {"outcome": request.outcome, "guided": request.guided}
     now = datetime.now(timezone.utc)
@@ -3070,6 +3093,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                     if postgres_store.configured() and content_row and content_row["content_type"] == "opening":
                         for repertoire_id in owner_ids:
                             enqueue_priority_refresh_in_transaction(db, repertoire_id)
+                    _refresh_progression_after_saved_review(db, day, content_row, reconciled)
                     return reconciled
                 if recorded_request is not None and recorded_request != original_request:
                     raise ReviewConflict("queue_attempt_result_conflict", "A different review already completed this queue attempt")
@@ -3130,6 +3154,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                 if postgres_store.configured() and content_row["content_type"] == "opening":
                     for repertoire_id in owner_ids:
                         enqueue_priority_refresh_in_transaction(db, repertoire_id)
+                _refresh_progression_after_saved_review(db, day, content_row, reconciled)
                 return reconciled
         if entry["attempt_failed"] or request.guided:
             request = request.model_copy(update={"outcome": "again", "guided": True})
@@ -3208,8 +3233,9 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
         if recovered_entry:
             from .queue_attempt_origins import retain_recovered_completion
             retain_recovered_completion(db, entry, queue_result_json)
+        _refresh_progression_after_saved_review(db, day, content_row, persisted_result)
         if postgres_store.configured():
-            if persisted_result["state"] == "mature":
+            if content_row["content_type"] != "opening" and persisted_result["state"] == "mature":
                 enqueue_task_in_transaction(
                     db, "daily_queue", "current", {"queue_date": day}, priority=10,
                 )
@@ -3224,7 +3250,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                 for repertoire_id in owner_ids:
                     enqueue_priority_refresh_in_transaction(db, repertoire_id)
     if not postgres_store.configured():
-        if persisted_result["state"] == "mature":
+        if content_row["content_type"] != "opening" and persisted_result["state"] == "mature":
             enqueue_daily_queue_refresh()
         if content_row and content_row["content_type"] == "opening":
             for repertoire_id in owner_ids:

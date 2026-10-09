@@ -297,7 +297,7 @@ def test_distinct_opponent_cues_to_the_same_position_remain_distinct_cards():
     assert direct[1].moves != alternate[1].moves
 
 
-def test_any_mature_incoming_path_unlocks_a_transposed_descendant():
+def test_transposed_routes_share_descendant_with_distinct_parents():
     first_route = decision_segments(
         STARTING_FEN,
         ["g1f3", "d7d5", "g2g3", "g8f6", "f1g2"],
@@ -319,7 +319,7 @@ def test_any_mature_incoming_path_unlocks_a_transposed_descendant():
     } == {first_route[0].card_id, second_route[0].card_id}
 
 
-def test_descendant_requires_a_mature_parent(tmp_path, monkeypatch):
+def test_descendant_requires_completed_parent_practice(tmp_path, monkeypatch):
     from app.main import seed_queue
 
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
@@ -343,7 +343,8 @@ def test_descendant_requires_a_mature_parent(tmp_path, monkeypatch):
                 "SELECT state FROM cards WHERE id=?", (steps[1]["card_id"],)
             ).fetchone()[0] == "locked"
             connection.execute(
-                "UPDATE cards SET state='mature' WHERE id=?", (steps[0]["card_id"],)
+                "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'again',?,0,0)",
+                (steps[0]["card_id"], date.today().isoformat())
             )
             seed_queue(connection, date.today().isoformat())
             assert connection.execute(

@@ -22,13 +22,15 @@ for (const width of [390, 1280]) {
         cards: { total: 8, new: 2, learning: 3, mature: 2, locked: 1, difficult: 1, due_today: 1, due_next_seven_days: 2 },
         study: { correct: 4, attempts: 5, accuracy: 0.8 },
         games: { matched: 3, correct: 2, decisions: 3, adherence: 2 / 3, wins: 2, draws: 0, losses: 1, positions_seen: 1, positions_total: 4 },
-        unlocks: [{ card_id: "child", parent_card_id: "parent", line_name: "Spanish continuation", parent_due_date: "2026-09-19", earliest_unlock_date: "2026-09-22", status: "forecast" }],
+        unlocks: [{ card_id: "child", parent_card_id: "parent", line_name: "Spanish continuation", parent_due_date: "2026-09-19", earliest_unlock_date: "2026-09-22", status: "ready" }],
       } });
     });
     await navigate(page, "Repertoire");
     await page.getByRole("button", { name: "Statistics", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Prefix cards" })).toBeVisible();
     await expect(page.getByText("80.0%")).toBeVisible();
+    await expect(page.getByText(/Ready for introduction/)).toBeVisible();
+    await expect(page.getByText(/within your daily new-card limit/)).toBeVisible();
     await expect(page.locator(".repertoire-position-board .board-frame")).toHaveAttribute("data-fen", startFen);
     const supportingRequest = page.waitForRequest((request) => request.url().includes("/api/games/summary") && request.url().includes("repertoire_id=visual-repertoire"));
     await page.getByRole("button", { name: "View supporting games" }).click();

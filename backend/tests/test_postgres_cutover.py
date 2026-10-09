@@ -2880,7 +2880,8 @@ def test_postgres_queue_randomization_replans_changed_membership_and_rejects_sta
     def wait_for_foreground():
         observed.append("foreground-cleared")
 
-    def prepare(queue_date):
+    def prepare(queue_date, *, preserve_through_entry_id=None):
+        assert preserve_through_entry_id is None
         assert observed[-1] == "foreground-cleared"
         return plan
 
@@ -4755,6 +4756,7 @@ def test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips(
         database.row_factory = sqlite3.Row
         database.executescript("""
             CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,archived INTEGER);
+            CREATE TABLE reviews(card_id TEXT,source_kind TEXT,invalidated_at TEXT);
             CREATE TABLE opening_graph_steps(card_id TEXT,parent_card_id TEXT,
                                              repertoire_id TEXT,generation INTEGER);
             CREATE TABLE opening_graph_publications(repertoire_id TEXT,generation INTEGER);
@@ -4800,6 +4802,7 @@ def test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_rep
     with sqlite3.connect(database_path) as database:
         database.executescript("""
             CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,archived INTEGER);
+            CREATE TABLE reviews(card_id TEXT,source_kind TEXT,invalidated_at TEXT);
             CREATE TABLE opening_graph_steps(card_id TEXT,parent_card_id TEXT,
                                              repertoire_id TEXT,generation INTEGER);
             CREATE TABLE opening_graph_publications(repertoire_id TEXT,generation INTEGER);
