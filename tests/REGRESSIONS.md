@@ -3043,3 +3043,46 @@ Immediate real-game study obligations (October 9, 2026):
 - CI caller regressions retain shared-card repertoire admission ownership and explicit discovery admission metadata (`test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards`, `test_discovery_explicit_locked_decision_survives_daily_cap_and_duplicate_clicks`). Review-confirmation fixtures now remove confirmed entries from authoritative queues while preserving prior-conflict attribution. The real CLI lifecycle rejection proof removes ledger versions 40 and later while retaining migration 40’s column, so safely replayable latest view DDL cannot accidentally turn the rejection fixture into a success.
 
 - `test_celery_unresponsive_redis_read_yields_an_error_instead_of_freezing_wakes` (broker/results) first failed twice with real client threads blocked on owned reachable peers that withheld replies. Individual Redis connect/read/write operations now have five-second socket limits; existing publication retries, acknowledgements, visibility and receipt policy remain unchanged. `test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery` runs in regular PostgreSQL daily-study durability against real Redis through an owned reply-dropping proxy: independent publication completes during the fault, the failed channel closes, a recreated channel consumes the retained message and resumed publication exactly once, and only UUID-qualified fixture queues are removed. Historical scheduler stalls remain related to #135; missing I/O bounds are demonstrated separately, without claiming their exact causal role.
+
+
+
+## Issue #136: coordinated disposable PostgreSQL fixture reset
+
+The product fixture previously issued one uncoordinated `DELETE FROM deleted_cards`
+while real workers held migration 039's shared structural/queue reservation. Its
+expected `55P03` yield aborted the provider case before the test body.
+
+- `Issue136 fixture reset yields to a held writer and succeeds after release`
+  (`tests/unit/product-fixture-reset-regressions.test.ts` and
+  `tests/browser/product-fixture-reset.spec.ts`) proves bounded exact-error retries;
+  the real PostgreSQL case first requires the original one-shot deletion to fail,
+  observes the new helper's real yield, then explicitly releases the writer and
+  verifies committed deletion, repeated reset and the enabled production trigger.
+- `Issue136 fixture reset stops at its contention deadline and reports holders`
+  and `Issue136 fixture reset retains contention diagnostics when holder inspection fails`
+  protect the finite retry/diagnostic budgets and original cause. The browser case
+  `Issue136 fixture reset stops at its contention deadline and retains exclusions`
+  keeps a real writer held through failure and verifies no exclusions were lost.
+- `Issue136 fixture reset waits out a deadline too short for another observed command`
+  avoids starting a final attempt with less than the observed Docker command cost.
+- `Issue136 fixture reset rejects unexpected database errors without retry: %j`
+  protects other `55P03` messages, `P0080`, missing relations, transport errors,
+  killed/signaled commands and multiple errors. The browser case
+  `Issue136 fixture reset rejects unexpected real database errors without retry`
+  requires one real `42P01` attempt.
+- `Issue136 fixture reset refuses unmarked or mismatched targets: %j`,
+  `Issue136 fixture reset refuses another project's published API before SQL`,
+  `Issue136 fixture reset propagates ownership inspection failure without SQL`,
+  and `Issue136 fixture reset succeeds immediately and repeated resets remain idempotent`
+  protect disposable-only targeting and ordinary/reset replay behavior.
+- `Issue136 fixture reset refuses invalid container ownership without SQL: %s`
+  requires matching project/service labels, exact container IDs and one loopback
+  API binding before executing against the verified PostgreSQL container.
+
+Cleanup audit: this is the only direct `deleted_cards` reset in browser fixtures.
+The SQLite branch retains its historical behavior. The daily-study contention
+fixture cleans only its uniquely identified rows with its owned background worker
+stopped; it does not clear exclusions. PostgreSQL durability scripts manipulate
+scoped exclusions in their isolated scenario boundaries; their deliberate
+production coordination/fence assertions remain unchanged. No general SQL retry,
+production guard disablement, worker pause or migration/API change was introduced.
