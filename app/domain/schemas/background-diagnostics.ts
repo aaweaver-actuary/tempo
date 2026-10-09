@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const backgroundKindSchema = z.enum(["coverage_explorer", "coverage_seed", "daily_queue", "daily_statistics", "defensive_admission", "defensive_rubric_audit", "defensive_threat_backfill", "defensive_threat_report_audit", "defensive_threat_scan", "defensive_threat_validate", "discovery_admission", "discovery_recommendation", "engine_defense", "engine_game", "game_analysis_followup", "game_analysis_publish", "game_derivation_compare", "game_derivation_events", "game_derivation_features", "game_derivation_findings", "game_derivation_misses", "game_derivation_positions", "game_derivation_priorities", "game_sync_record", "game_sync_window", "integrity_scan", "opening_graph_rebuild", "opening_segmentation", "other", "priority_retention", "repertoire_game_refresh", "repertoire_opportunity", "repertoire_priority"]);
+export const backgroundKindSchema = z.enum(["canonical_prefix_preview", "coverage_explorer", "coverage_seed", "daily_queue", "daily_statistics", "defensive_admission", "defensive_rubric_audit", "defensive_threat_backfill", "defensive_threat_report_audit", "defensive_threat_scan", "defensive_threat_validate", "discovery_admission", "discovery_recommendation", "engine_defense", "engine_game", "game_analysis_followup", "game_analysis_publish", "game_derivation_compare", "game_derivation_events", "game_derivation_features", "game_derivation_findings", "game_derivation_misses", "game_derivation_positions", "game_derivation_priorities", "game_sync_record", "game_sync_window", "integrity_scan", "next_opponent_profile", "opening_graph_rebuild", "opening_segmentation", "other", "prefix_transition_application", "priority_retention", "repertoire_game_refresh", "repertoire_opportunity", "repertoire_priority"]);
 const nonnegative = z.number().finite().nonnegative();
 const timestamp = z.iso.datetime({ offset: true });
 export const engineAttemptDiagnosticsSchema = z.object({
@@ -60,7 +60,7 @@ export const backgroundDiagnosticsSchema = z.object({
   }).strict()).max(27).default([]),
   counters: z.array(z.object({ kind: backgroundKindSchema, counts,
     useful_completion_unit: z.enum(["accepted_position", "published_priority_generation", "published_game_analysis"]).nullable().default(null),
-  }).strict()).max(33).default([]),
+  }).strict()).max(backgroundKindSchema.options.length).default([]),
   runtime: z.object({ available: z.boolean().default(false), retention_seconds: z.literal(15).default(15),
     coverage: z.literal("fixed_slots_latest_samples").default("fixed_slots_latest_samples"),
     workers: z.array(worker).max(16).default([]),

@@ -48,6 +48,79 @@ def counts(kind='daily_queue'):
     return matches[0].counts if matches else None
 
 
+def test_pr116_next_opponent_queued_task_is_supported(diagnostic_database):
+    durable_tasks.enqueue_task('next_opponent_profile', 'profile', {})
+    projection = background_diagnostics.snapshot()
+    assert projection.available, projection
+    durable_queues = [queue for queue in projection.queues if queue.queue == 'durable']
+    assert [(queue.state, queue.underlying_state, queue.count) for queue in durable_queues] == [
+        ('queued', 'queued', 1)]
+
+
+def test_pr116_next_opponent_eligible_retry_is_not_blocked(diagnostic_database):
+    profile_task = durable_tasks.enqueue_task('next_opponent_profile', 'profile', {})
+    claimed_profile = durable_tasks.claim_task('next_opponent_profile')
+    retry_result = durable_tasks.fail_task(claimed_profile['id'], claimed_profile['generation'],
+                                          claimed_profile['lease_token'], RuntimeError('synthetic'))
+    assert retry_result['state'] == 'retrying'
+    with database.connection() as connection:
+        connection.execute('UPDATE background_tasks SET next_attempt_at=? WHERE id=?',
+                           ('2020-01-01T00:00:00+00:00', profile_task['id']))
+    projection = background_diagnostics.snapshot()
+    assert projection.available, projection
+    durable_queues = [queue for queue in projection.queues if queue.queue == 'durable']
+    assert [(queue.state, queue.underlying_state, queue.count) for queue in durable_queues] == [
+        ('retrying', 'retrying', 1)]
+
+
+def test_pr116_next_opponent_lifecycle_metrics_retain_kind(diagnostic_database):
+    durable_tasks.enqueue_task('next_opponent_profile', 'profile', {})
+    claimed_profile = durable_tasks.claim_task('next_opponent_profile')
+    durable_tasks.fail_task(claimed_profile['id'], claimed_profile['generation'],
+                           claimed_profile['lease_token'], RuntimeError('synthetic'))
+    projection = background_diagnostics.snapshot()
+    assert projection.available, projection
+    counters_by_kind = {counter.kind: counter.counts for counter in projection.counters}
+    assert set(counters_by_kind) == {'next_opponent_profile'}
+    profile_counts = counters_by_kind['next_opponent_profile']
+    assert (profile_counts.generations_started, profile_counts.claims, profile_counts.retries) == (1, 1, 1)
+    with database.read_connection() as connection:
+        assert {row['kind'] for row in connection.execute('SELECT kind FROM background_metric_buckets')} == {
+            'next_opponent_profile'}
+    assert background_runtime.RuntimeMeasurement('next_opponent_profile').sample().kind == 'next_opponent_profile'
+
+
+def test_pr116_diagnostic_contract_accepts_all_supported_kinds_and_bounds_counters(diagnostic_database):
+    from app.services.background_metric_kinds import KINDS
+
+    with database.connection() as connection:
+        for supported_kind in sorted(KINDS):
+            increment(connection, supported_kind, 'contract', claims=1)
+    projection = background_diagnostics.snapshot()
+    assert projection.available, projection
+    assert {counter.kind for counter in projection.counters} == KINDS
+    assert all(counter.counts.claims == 1 for counter in projection.counters)
+    assert BackgroundDiagnostics.model_validate_json(projection.model_dump_json()) == projection
+    for supported_kind in sorted(KINDS):
+        worker_sample = background_runtime.RuntimeMeasurement(supported_kind).sample()
+        assert worker_sample.kind == supported_kind
+        raw_projection = projection.model_dump()
+        raw_projection['runtime']['workers'] = [worker_sample.model_dump()]
+        assert BackgroundDiagnostics.model_validate(raw_projection).runtime.workers[0].kind == supported_kind
+    raw_projection = projection.model_dump()
+    raw_projection['counters'].append(raw_projection['counters'][0])
+    with pytest.raises(ValidationError):
+        BackgroundDiagnostics.model_validate(raw_projection)
+    raw_projection = projection.model_dump()
+    raw_projection['counters'][0]['kind'] = 'unsupported-kind'
+    with pytest.raises(ValidationError):
+        BackgroundDiagnostics.model_validate(raw_projection)
+    raw_projection = projection.model_dump()
+    raw_projection['runtime']['workers'] = [{**worker_sample.model_dump(), 'kind': 'unsupported-kind'}]
+    with pytest.raises(ValidationError):
+        BackgroundDiagnostics.model_validate(raw_projection)
+
+
 def test_background_known_kind_lifecycle_has_no_redundant_kind_select(diagnostic_database, monkeypatch):
     statements = []
     original_connection = database.connection
