@@ -657,7 +657,6 @@ def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identit
             database.execute_native('DROP FUNCTION guard_permanent_deletion_scope() CASCADE')
             database.raw.execute(guard, prepare=False)
             database.raw.execute(deletion_guard, prepare=False)
-            database.execute_native('DELETE FROM tempo_schema_migrations WHERE version=39')
         queries = [('SELECT * FROM prefix_transition_applications WHERE operation_id=%s', (payload['operation_id'],)),
                    ('SELECT * FROM prefix_transition_card_fences WHERE operation_id=%s', (payload['operation_id'],)),
                    ('SELECT * FROM prefix_transition_repertoire_fences WHERE operation_id=%s', (payload['operation_id'],)),
@@ -665,12 +664,24 @@ def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identit
                    ('SELECT review.* FROM reviews review JOIN cards card ON card.id=review.card_id WHERE card.repertoire_id=ANY(%s)', ([rep, other],))]
         with postgres_store.connection(read_only=True) as database:
             before = [snapshot_rows(database, query, parameters) for query, parameters in queries]
+            versions_before = [row[0] for row in database.execute_native(
+                'SELECT version FROM tempo_schema_migrations ORDER BY version')]
+        # Replay this specific immutable guard upgrade atomically. Removing only
+        # its receipt outside the transaction leaves a gap when later versions
+        # exist. Later schema objects/receipts remain intact, and the normal
+        # migration driver still validates the complete contiguous history.
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('DELETE FROM tempo_schema_migrations WHERE version=39')
+            database.raw.execute((root / 'backend/migrations/039_prefix_transition_lock_budget.sql').read_text(),
+                                 prepare=False)
         apply_migrations(os.environ['TEMPO_DATABASE_WRITE_URL'])
         apply_migrations(os.environ['TEMPO_DATABASE_WRITE_URL'])
         with postgres_store.connection(read_only=True) as database:
             assert before == [snapshot_rows(database, query, parameters) for query, parameters in queries]
             from app.schema_version import POSTGRES_SCHEMA_VERSION
             assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == POSTGRES_SCHEMA_VERSION
+            assert [row[0] for row in database.execute_native(
+                'SELECT version FROM tempo_schema_migrations ORDER BY version')] == versions_before
         final = publish(payload)
         assert final['operation_id'] == payload['operation_id'] and execute(payload) == final
     print('PASS test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity')

@@ -62,3 +62,25 @@ compliance rather than a general speedup.
 - CI owns the full selected candidate gate; local Docker durability is pending
   until other active heavy validation releases shared resources. No live queue
   recovery or deployment has occurred.
+
+### Migration rehearsal repair
+
+Queue head 70188ea passed backend CI but its PostgreSQL stage found the existing
+schema38 guard rehearsal deleting receipt 039 while leaving 040 recorded. The
+rehearsal now replays the immutable guard migration and its receipt atomically,
+retaining later schema objects/history; the normal migration driver still
+validates the full contiguous history twice. No production migration changed.
+The focused PostgreSQL run reached both schema40 validations and passed retained
+application/card/review/version-list assertions, then its final publication
+encountered a transaction deadline in the unchanged generic claim path while
+two other heavy Docker suites were active. The whole regression is pending new
+CI evidence, not reported as passed. Prerequisite-only attempts lacked Redis or
+bootstrap settings and were replaced with fresh correctly bootstrapped databases.
+
+Task-owned focused resources: `tempo-analysis-upgrade-proof`
+`e377f2a0826a246be5b1498ef78478e4bdfe9a7f2c5d731542e18031ba7205c5`
+(shared `postgres:18.6-trixie`) and `tempo-analysis-upgrade-redis-proof`
+`502f3c4639a36693f422c6b3b67f02f82a36d374a8e04fa69dda963821983a61`
+(shared `redis:7-alpine`, persistence disabled). No host data mounts. Exact
+teardown: stop both names, then `docker rm -v` those same two names; shared
+base images retained. Full logs are preserved in root test-results.
