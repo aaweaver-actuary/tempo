@@ -204,3 +204,17 @@ including schema40 setup: committed threat claim 8 ms, recurring read 22 ms,
 These are local observations, not broad speedup claims. Evidence is retained in
 root `test-results/analysis-activity-2026-10-09/admission-incident-isolation-proof.log`.
 Complete candidate CI remains pending.
+
+Current-head 25b8a17 CI and the stacked integrity durability rehearsal exposed
+parent health leases affecting the row-contention timing and the deliberately
+stale checkpoint commit. Those two helper proofs now own admission keys for
+their helper database, preserving real foreground reviews, Redis admission,
+SQL row locks, stale-result rejection and all original deadlines. Their shared
+admission proofs remain required. The fresh PostgreSQL 18.6/Redis 7 run passed
+both 256-event/20-decision checkpoint proofs and all three queue/card/graph
+contention cases in 4.83 seconds including schema setup. Foreground reviews
+took 30.619/165.373 ms; contention yielded in 57.488/54.279/61.514 ms; background
+transactions remained below 250 ms. Evidence: root
+`test-results/analysis-activity-2026-10-09/admission-contention-isolation-proof.log`.
+The earlier full durability run failed before the new integrity proof; its
+owned runner cleanup passed. Complete candidate CI remains pending.
