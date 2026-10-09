@@ -19,6 +19,7 @@ from .services.game_analysis_worker import _confirmed_indices, _positions
 from .services.threat_pipeline import ENGINE_VERSION, NETWORK_VERSION
 from .services.threat_pipeline import report_from_json, validate_analysis_report
 from .services.threat_validation import AnalysisRequest
+from .services.engine_scheduling import record_ordinary_selection
 
 
 def claim_game_analysis(database: PostgresConnection, _payload: dict[str, Any]) -> dict[str, Any]:
@@ -41,6 +42,7 @@ def claim_game_analysis(database: PostgresConnection, _payload: dict[str, Any]) 
     ).fetchone()
     if job is None:
         return {"job": None}
+    record_ordinary_selection(database)
     lease_id = str(uuid.uuid4())
     expires_at = (now + timedelta(minutes=5)).isoformat()
     database.execute_native(
@@ -163,6 +165,7 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
             return {"job": None}
         if existing is not None and existing["state"] == "complete":
             return {"job": None}
+    record_ordinary_selection(database)
     parent_lease_id = str(uuid.uuid4())
     database.execute_native(
         "UPDATE game_analysis_jobs SET status='leased',lease_id=%s,lease_expires_at=%s,"

@@ -53,6 +53,8 @@ def test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue():
             statements.append(statement)
             if statement.startswith("SELECT defensive_analysis_enabled"):
                 return Cursor((1,))
+            if statement.startswith("SELECT automated_streak"):
+                return Cursor((0,))
             if statement.startswith("SELECT request.id"):
                 request_queries += 1
                 if request_queries == 2:

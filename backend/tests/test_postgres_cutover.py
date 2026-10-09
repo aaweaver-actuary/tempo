@@ -446,8 +446,9 @@ def test_postgres_game_analysis_claim_uses_skip_locked_and_preserves_lease_shape
     assert "FOR UPDATE OF j SKIP LOCKED" in statements[0]
     assert "COALESCE(control.paused,0)=0" in statements[0]
     assert "COALESCE(control.promoted,0) DESC" in statements[0]
-    assert "UPDATE game_analysis_jobs" in statements[1]
-    assert "UPDATE imported_games" in statements[2]
+    assert "UPDATE engine_scheduling_state" in statements[1]
+    assert "UPDATE game_analysis_jobs" in statements[2]
+    assert "UPDATE imported_games" in statements[3]
 
 
 def test_postgres_game_position_claim_dispatches_prepared_plan_to_background(monkeypatch):
