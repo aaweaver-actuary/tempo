@@ -3196,3 +3196,31 @@ is not yet proven; this fix removes foreground dependence on its next tick.
 - `test_issue135_advisory_queue_wake_preserves_process_control` retains
   KeyboardInterrupt and SystemExit propagation. Existing named rollback cases
   still require no wake for handled or raised command failures.
+
+
+### PR #140 review: deferred queue capacity recovery
+
+`backend/tests/test_queue_refresh_retry_wakes.py` adds:
+
+- `test_issue135_deferred_queue_recovers_without_periodic_polling`: only published
+  messages drive execution; the initial command wake defers for one second, its
+  immediate continuation cannot claim early, and its ETA delivery obtains the
+  same current generation and publishes ready. A duplicate finds no work.
+- `test_issue135_delayed_capacity_wake_cannot_execute_replaced_generation` and
+  `test_issue135_earlier_progress_makes_old_delayed_wake_harmless`: replacement
+  before ETA and completion before ETA preserve current work and its projection.
+- `test_issue135_rejected_or_rolled_back_deferral_emits_no_delayed_wake` and
+  `test_issue135_delayed_wake_failure_retains_committed_deferral`: fences/rollback
+  publish nothing, and a failed ETA publish keeps committed eligibility/error.
+
+The first two cases failed before repair because no delayed message existed.
+The regular PostgreSQL daily-study durability proof adds
+`test_issue135_postgres_deferred_queue_recovers_without_periodic_polling`,
+`test_issue135_postgres_delayed_wake_replacement_and_duplicate_are_fenced`, and
+`test_issue135_postgres_advisory_broker_errors_preserve_committed_receipts`.
+The existing runner stops consumers/scheduler. Real Celery/Redis messages retain
+empty args/kwargs and the exact persisted ETA; a controlled broker-delivery clock
+automatically drives real execution-time PostgreSQL claims and the production
+queue publication slice. An independent writer locks the committed task before
+broker publication. There are no periodic ticks, manual recovery polls or sleeps.
+Existing contention, restart/replay, backoff and 30-second Studies proofs remain.

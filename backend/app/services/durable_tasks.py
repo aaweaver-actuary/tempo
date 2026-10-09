@@ -14,7 +14,7 @@ from .database_executor import submit_background_write, submit_foreground_write
 from .background_activity import claimable, control_order
 from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, task_admission_sql
 from .background_metrics import increment, record_event_counts
-from .queue_refresh_wakeup import mark_queue_refresh_requested
+from .queue_refresh_wakeup import mark_queue_refresh_requested, wake_queue_refresh
 
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
@@ -517,7 +517,7 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
             (task['id'], task['generation'], task['lease_token']),
         ).fetchone()
         if row is None:
-            return False
+            return None
         saved_payload = json.loads(row['payload_json'])
         checkpoint = json.dumps([task['generation'], row['phase'], saved_payload], sort_keys=True)
         # Upgrade an existing episode in place; old rows lack the generation
@@ -527,6 +527,7 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
                          if row['transaction_timeout_checkpoint'] in {checkpoint, legacy_checkpoint} else 1)
         delay_seconds = min(60, 2 ** min(timeout_count - 1, 6))
         now = _now()
+        next_attempt_at = now + timedelta(seconds=delay_seconds)
         sanitized_error = str(error)[:500]
         changed = database.execute(
             """UPDATE background_tasks SET state='retrying',
@@ -535,7 +536,7 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
                next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,
                last_error=?,updated_at=?
                WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
-            (timeout_count, checkpoint, _iso(now + timedelta(seconds=delay_seconds)),
+            (timeout_count, checkpoint, _iso(next_attempt_at),
              sanitized_error, _iso(now), task['id'], task['generation'], task['lease_token']),
         ).rowcount
         if changed:
@@ -545,8 +546,14 @@ def defer_task_for_transaction_timeout(task: dict, error: Exception) -> bool:
             )
             _record_event(database, task['id'], task['generation'], 'yielded', row['phase'],
                           sanitized_error, kind=task['kind'])
-        return bool(changed)
-    return submit_background_write(operation, label=f"deadline:{task['id']}")
+        return next_attempt_at if changed else None
+
+    committed_retry_at = submit_background_write(operation, label=f"deadline:{task['id']}")
+    # The write boundary has committed and released its PostgreSQL connection.
+    # ETA is only a capacity hint; execution-time claims still enforce eligibility.
+    if committed_retry_at is not None and task['kind'] == 'daily_queue':
+        wake_queue_refresh(eligible_at=committed_retry_at)
+    return committed_retry_at is not None
 
 
 def retry_task(task_id: str) -> dict | None:

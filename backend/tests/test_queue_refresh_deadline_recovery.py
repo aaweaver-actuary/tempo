@@ -33,6 +33,7 @@ def queue_refresh_store(tmp_path, monkeypatch):
     database_path = tmp_path / "queue-refresh.sqlite"
     monkeypatch.setattr(database, "DB_PATH", database_path)
     database.initialize()
+    monkeypatch.setattr(durable_tasks, "wake_queue_refresh", lambda **options: None)
     observed_clock = [datetime(2026, 10, 7, 8, tzinfo=timezone.utc)]
     monkeypatch.setattr(durable_tasks, "_now", lambda: observed_clock[0])
     monkeypatch.setattr(durable_tasks.random, "random", lambda: 0.0)

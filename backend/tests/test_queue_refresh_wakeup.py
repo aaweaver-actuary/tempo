@@ -152,6 +152,8 @@ def test_issue135_queue_wake_publish_failure_preserves_committed_result(
         assert options["connect_timeout"] == 1
         assert options["transport_options"]["socket_timeout"] == 1
         assert options["transport_options"]["socket_connect_timeout"] == 1
+        assert options["transport_options"]["max_retries"] == 0
+        assert options["transport_options"]["retry_on_timeout"] is False
         observed_stages.append("connection")
         if failure_stage == "connection":
             raise broker_error

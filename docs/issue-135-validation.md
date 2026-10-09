@@ -304,3 +304,21 @@ hole. OperationalError, rollback and process-control cases already passed.
 
 After broker repair: the same wakeup file passed 20/20 cases (7.22 s pytest /
 8.278 s command). Ordinary foreground transaction handling was not changed.
+
+Deferred-wake baseline: the initial lifecycle file produced 2 failures / 1 pass
+(1.86 s pytest / 2.728 s command): both required a missing delayed delivery.
+After repair, those three passed (1.46 s pytest / 3.381 s command). Additional
+rollback, rejected-fence and delayed broker failure cases were then added.
+The first combined run passed 301 cases and failed only a new diagnostic-format
+assertion (ISO `T` versus datetime's space); the assertion was corrected to
+inspect the logged datetime without weakening the eligibility check.
+
+Focused settled behavior: the combined nine-file Python command (queue wakeup,
+retry wakes, deadline recovery, background timeouts, daily dispatch, durable
+phase, durable queue, command transport and cutover) passed **302 cases** in
+35.98 s pytest / 37.397 s command. This validates the dirty patch atop `3567197`;
+it is not a clean-HEAD or complete-gate claim. The exact command and dirty paths
+are retained in root `test-results/2026-10-09-pr140-retry-followup/focused-python-final.json`.
+Diagnostic units passed 9 cases (1.23 s Vitest / 2.325 s command); runner contracts
+passed 48 cases (4.631 s Node / 4.897 s command). Runtime/broker proof remains
+pending the disposable PostgreSQL gate and complete candidate CI.

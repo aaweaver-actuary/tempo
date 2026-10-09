@@ -1,5 +1,6 @@
 """Disposable sparse-unlock, dispatch/replay, and real-browser backlog fixtures."""
 from datetime import date, datetime, timedelta, timezone
+import heapq
 import json
 import os
 from pathlib import Path
@@ -246,6 +247,169 @@ def proof_deadline_recovery(identifier):
             connection.execute('DELETE FROM queue_projections WHERE queue_date=%s', (queue_date,))
 
 
+
+def proof_deferred_capacity_wakes(identifier):
+    """No beat: consume real Redis poll messages with an explicit delivery clock."""
+    from kombu import Exchange, Queue
+    from kombu.exceptions import EncodeError, OperationalError
+    from app import command_gateway
+    from app.celery_app import celery_app
+    from app.services import queue_refresh_wakeup
+
+    queue_date = '2099-10-08'
+    observed_clock = [datetime.now(timezone.utc)]
+    publication_payload = {'queue_date': queue_date, '_queue_phase': 'publish_projection'}
+    proof_command = 'proof.issue135.deferred_capacity'
+    broker_queue = Queue(identifier + '-eta', Exchange(identifier + '-eta', type='direct'),
+                         routing_key=identifier + '-eta')
+    deliveries, publications, executions, polls, operation_ids = [], [], [], [], []
+    fail_next_slice = [True]
+    original_send = celery_app.send_task
+    original_claim = durable_tasks.claim_task
+
+    def saved_state():
+        with psycopg.connect(DSN, row_factory=psycopg.rows.dict_row) as connection:
+            task = connection.execute("SELECT * FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=%s", (identifier,)).fetchone()
+            projection = connection.execute('SELECT * FROM queue_projections WHERE queue_date=%s', (queue_date,)).fetchone()
+            return task, projection
+
+    def enqueue_from_command(database, payload):
+        task = durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', identifier,
+            publication_payload, priority=1)
+        database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) "
+            "VALUES(?,'refreshing',?,1) ON CONFLICT(queue_date) DO UPDATE SET "
+            "state='refreshing',generation=excluded.generation,refresh_pending=1,last_error=NULL",
+            (queue_date, task['generation']))
+        return {'accepted': True, 'generation': task['generation']}
+
+    def command(suffix):
+        operation_id = identifier + '-' + suffix
+        operation_ids.append(operation_id)
+        result = command_gateway.execute_command(operation_id, proof_command, {})
+        with psycopg.connect(DSN) as observer:
+            assert observer.execute('SELECT state FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()[0] == 'complete'
+        return result
+
+    with celery_app.connection_for_write(connect_timeout=1,
+            transport_options={'socket_timeout': 1, 'socket_connect_timeout': 1, 'max_retries': 0}) as broker:
+        broker_queue(broker).declare()
+        capacity_messages = broker.SimpleQueue(broker_queue)
+
+        def publish_capacity(name, **options):
+            assert name == 'app.tasks.poll_background_tasks' and options['queue'] == 'background'
+            assert not options.get('args') and not options.get('kwargs') and 'task_id' not in options
+            # Independent real writer must obtain the row before broker I/O.
+            with psycopg.connect(DSN) as observer:
+                saved = observer.execute("SELECT state,next_attempt_at,lease_token FROM background_tasks "
+                    "WHERE kind='daily_queue' AND deduplication_key=%s FOR UPDATE NOWAIT", (identifier,)).fetchone()
+                if 'eta' in options:
+                    assert saved[0] == 'retrying' and saved[2] is None
+                    assert datetime.fromisoformat(saved[1]) == options['eta']
+                    assert options['retry'] is False and options['ignore_result'] is True
+            # Only the transport queue is isolated; the production task name,
+            # serializer and ETA envelope pass through real Celery and Redis.
+            original_send(name, **{**options, 'queue': broker_queue})
+            message = capacity_messages.get(block=False)
+            try:
+                assert message.headers['task'] == name
+                assert message.payload[0] == [] and message.payload[1] == {}
+                delivery_at = (datetime.fromisoformat(message.headers['eta'])
+                    if message.headers.get('eta') else observed_clock[0])
+                assert delivery_at == options.get('eta', observed_clock[0])
+                publications.append((delivery_at, dict(options)))
+                heapq.heappush(deliveries, (delivery_at, len(publications)))
+            finally:
+                message.ack()
+
+        def claim_owned(**options):
+            claimed = original_claim('daily_queue')
+            if claimed is not None:
+                assert claimed['deduplication_key'] == identifier
+            return claimed
+
+        def execute_slice(claimed):
+            executions.append((claimed['generation'], observed_clock[0]))
+            if fail_next_slice[0]:
+                fail_next_slice[0] = False
+                raise TransactionTimeout('Controlled deferred PostgreSQL queue deadline')
+            return execute_postgres_queue_refresh_slice(claimed)
+
+        def deliver_due():
+            for _delivery_number in range(100):
+                if not deliveries or deliveries[0][0] > observed_clock[0]:
+                    return
+                delivery_at, _sequence = heapq.heappop(deliveries)
+                polls.append((delivery_at, tasks.poll_background_tasks.run()))
+            raise AssertionError('Unbounded capacity delivery loop')
+
+        command_gateway.register_command(proof_command, enqueue_from_command)
+        try:
+            with patch.object(durable_tasks, '_now', lambda: observed_clock[0]), \
+                    patch.object(celery_app, 'send_task', publish_capacity), \
+                    patch.object(tasks, 'claim_task', claim_owned), \
+                    patch.object(tasks, 'execute_postgres_queue_refresh_slice', execute_slice):
+                for scenario in ('recover', 'replace', 'earlier_progress'):
+                    fail_next_slice[0] = True
+                    first_execution = len(executions)
+                    first_poll = len(polls)
+                    accepted = command(scenario)
+                    assert publications[-1][0] == observed_clock[0] and 'eta' not in publications[-1][1]
+                    deliver_due()
+                    saved_task, projection = saved_state()
+                    eligibility = datetime.fromisoformat(saved_task['next_attempt_at'])
+                    assert eligibility == observed_clock[0] + timedelta(seconds=1)
+                    assert saved_task['state'] == 'retrying' and saved_task['generation'] == accepted['generation']
+                    assert projection['state'] == 'refreshing' and projection['last_error'] is not None
+                    assert polls[first_poll:] == [(observed_clock[0], True), (observed_clock[0], False)]
+                    assert len(deliveries) == 1 and deliveries[0][0] == eligibility
+                    current_generation = accepted['generation']
+                    if scenario != 'recover':
+                        if scenario == 'replace':
+                            # Commit replacement without injecting a new poll.
+                            with postgres_store.connection() as database:
+                                replacement = enqueue_from_command(database, {})
+                        else:
+                            replacement = command(scenario + '-replacement')
+                            deliver_due()
+                        current_generation = replacement['generation']
+                        assert current_generation == accepted['generation'] + 1
+                    observed_clock[0] = eligibility - timedelta(microseconds=1)
+                    deliver_due()
+                    assert len(executions) == first_execution + (2 if scenario == 'earlier_progress' else 1)
+                    observed_clock[0] = eligibility
+                    heapq.heappush(deliveries, deliveries[0])  # duplicate broker delivery
+                    deliver_due()
+                    saved_task, projection = saved_state()
+                    assert [generation for generation, _time in executions[first_execution:]] == [accepted['generation'], current_generation]
+                    assert saved_task['state'] == 'complete' and saved_task['generation'] == current_generation
+                    assert (projection['state'], projection['refresh_pending'], projection['last_error']) == ('ready', 0, None)
+                    assert projection['generation'] == current_generation + 1
+                    assert polls[-1] == (eligibility, False)
+                    assert not deliveries
+                print('PASS test_issue135_postgres_deferred_queue_recovers_without_periodic_polling')
+                print('PASS test_issue135_postgres_delayed_wake_replacement_and_duplicate_are_fenced')
+
+                for exception_type in (OperationalError, EncodeError):
+                    with patch.object(celery_app, 'send_task', side_effect=exception_type('Controlled advisory broker failure')), \
+                            patch.object(queue_refresh_wakeup._LOGGER, 'exception', wraps=queue_refresh_wakeup._LOGGER.exception) as logged:
+                        accepted = command('broker-' + exception_type.__name__)
+                        assert logged.call_count == 1
+                    saved_task, projection = saved_state()
+                    assert saved_task['generation'] == accepted['generation'] and saved_task['state'] == 'queued'
+                    assert projection['generation'] == accepted['generation'] and projection['state'] == 'refreshing'
+                    # Finish only this proof's retained task before the next scenario.
+                    assert not execute_postgres_queue_refresh_slice(claim_owned())
+                print('PASS test_issue135_postgres_advisory_broker_errors_preserve_committed_receipts')
+        finally:
+            command_gateway._handlers.pop(proof_command)
+            capacity_messages.close()
+            broker_queue(broker).delete()
+            postgres_store.close_pools()
+            with psycopg.connect(DSN) as connection:
+                connection.execute('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', (operation_ids,))
+                connection.execute('DELETE FROM queue_projections WHERE queue_date=%s', (queue_date,))
+
+
 def proof():
     from check_redis_socket_deadlines import test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery
     test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery()
@@ -314,6 +478,7 @@ def proof():
                 assert connection.execute("SELECT state FROM background_tasks WHERE id=%s", (durable_task['id'],)).fetchone()[0] == 'complete'
         print('PASS test_postgres_background_execution_capacity_restart_and_legacy_replay')
         proof_deadline_recovery(identifier)
+        proof_deferred_capacity_wakes(identifier)
     finally:
         cleanup(identifier)
 
