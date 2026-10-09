@@ -33,8 +33,10 @@ counter arrays. This is unavailable evidence, not an empty queue. The server
 reports its measured `query_duration_seconds` (seconds). Redis live samples are
 independently available, with 5 ms connect/read timeouts and no retries.
 
-Persistent counters have **33 fixed kinds × 16 shards × 288 five-minute slots**:
-at most **152,064 rows** regardless of runtime or event history. Each kind/slot is
+Persistent counters have **36 fixed kinds × 16 shards × 288 five-minute slots**:
+at most **165,888 rows** regardless of runtime or event history. The finite kind
+inventory is defined in `background_metric_kinds.KINDS`; both public diagnostic
+schemas derive their counter bounds from that inventory. Each kind/slot is
 reused after 24 hours. Snapshot sums cover the current partial bucket and previous
 287 buckets (23h55m to 24h of elapsed coverage), with explicit UTC `window_start`
 and `window_end`. They are not lifetime totals or an exact sliding 86,400-second
