@@ -708,6 +708,9 @@ def proof():
     proof_graph_scale(DSN)
     from check_postgres_opening_progression import test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound
     test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound(DSN)
+
+    from check_postgres_background_admission import proof_background_admission
+    proof_background_admission(DSN)
     identifier = 'daily-study-proof-'+str(uuid.uuid4())
     try:
         seed(identifier, request_refresh=False)
@@ -729,9 +732,8 @@ def proof():
         durable_task = durable_tasks.enqueue_task('daily_queue', identifier, {}, priority=1, foreground=False)
         original_claim = durable_tasks.claim_task
         executions = []
-        claim_started = Event()
+        worker_finished = Event()
         def claim_owned(**kwargs):
-            claim_started.set()
             return original_claim('daily_queue')
         def publish(claimed):
             assert claimed['id'] == durable_task['id']
@@ -745,16 +747,20 @@ def proof():
                 tasks.poll_background_tasks.run()
             except BaseException as error:
                 worker_errors.append(error)
+            finally:
+                worker_finished.set()
         with patch.object(tasks, 'claim_task', claim_owned), patch.object(tasks, 'execute_postgres_queue_refresh_slice', publish):
             worker = Thread(target=execute_at_capacity)
             with tasks.activity_gate.foreground():
                 worker.start()
-                assert claim_started.wait(2)
+                assert worker_finished.wait(1), 'Admission denial occupied analysis capacity'
+                assert not executions
                 with psycopg.connect(DSN) as connection:
                     assert connection.execute("SELECT lease_token FROM background_tasks WHERE id=%s", (durable_task['id'],)).fetchone()[0] is None
                     assert connection.execute('SELECT 1').fetchone()[0] == 1
             worker.join(5)
             assert not worker.is_alive() and not worker_errors, worker_errors
+            tasks.poll_background_tasks.run()
         assert len(executions) == 1
         executions.clear()
         durable_task = durable_tasks.enqueue_task('daily_queue', identifier, {}, priority=1, foreground=False)

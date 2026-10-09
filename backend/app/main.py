@@ -88,6 +88,7 @@ from .services.analysis_paste import (
     parse_pasted_lines,
 )
 from .services.activity_gate import activity_gate
+from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order
@@ -767,6 +768,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
             )
         if request_scope is not None:
             request_scope.__exit__(None, None, None)
+
+
+@app.exception_handler(BackgroundAdmissionDeferred)
+async def background_waiting(_request: Request, error: BackgroundAdmissionDeferred):
+    return JSONResponse(status_code=503, content={'detail': str(error)},
+                        headers={'Retry-After': '1'})
 
 
 @app.exception_handler(sqlite3.IntegrityError)
