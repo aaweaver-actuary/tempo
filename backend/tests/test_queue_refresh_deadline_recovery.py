@@ -247,3 +247,54 @@ def test_issue135_periodic_ensure_preserves_current_queue_retry_error(queue_refr
     assert ensured["task_id"] == queued["id"] and ensured["refresh_pending"] is True
     assert _saved_task(queued["id"]) == before_ensure
     assert _projection()["last_error"] == "Daily queue database deadline exceeded"
+
+
+@pytest.mark.parametrize("failure_transition", ["deadline", "failure"])
+def test_issue135_replacement_generation_wins_failure_publication_race(
+    queue_refresh_store, monkeypatch, failure_transition,
+):
+    queued = _queue_task()
+    original_delivery = durable_tasks.claim_task("daily_queue")
+
+    class ReplacementBeforeWrite:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute(self, statement, parameters=()):
+            cursor = self.connection.execute(statement, parameters)
+            if not statement.startswith("SELECT ") or "AND lease_token=? AND state='leased'" not in statement:
+                return cursor
+            selected_task = cursor.fetchone()
+            cursor.close()
+            # Commit a replacement after the failure's read and before its write.
+            # This deterministic interleaving exercises the accepted-write fence.
+            # Independent writer bypasses this fixture's process-local admission;
+            # PostgreSQL foreground writers do not share the SQLite admission gate.
+            with sqlite3.connect(database.DB_PATH) as replacement_connection:
+                replacement_connection.row_factory = sqlite3.Row
+                durable_tasks.enqueue_task_in_transaction(replacement_connection,
+                    "daily_queue", "current", {"queue_date": QUEUE_DATE}, priority=10)
+                replacement_connection.execute("UPDATE queue_projections SET last_error=? WHERE queue_date=?",
+                    ("Replacement generation owns status", QUEUE_DATE))
+
+            class SelectedTask:
+                def fetchone(self):
+                    return selected_task
+
+            return SelectedTask()
+
+    def write_with_replacement(operation, *, label):
+        with database.connection(background=True) as connection:
+            return operation(ReplacementBeforeWrite(connection))
+
+    monkeypatch.setattr(durable_tasks, "submit_background_write", write_with_replacement)
+    if failure_transition == "deadline":
+        assert not _deadline(original_delivery)
+    else:
+        assert durable_tasks.fail_task(original_delivery["id"], original_delivery["generation"],
+            original_delivery["lease_token"], RuntimeError("Late failure"))["state"] == "superseded"
+    saved = _saved_task(queued["id"])
+    assert saved["generation"] == original_delivery["generation"] + 1
+    assert saved["state"] == "queued" and saved["transaction_timeout_count"] == 0
+    assert saved["last_error"] is None
+    assert _projection()["last_error"] == "Replacement generation owns status"
