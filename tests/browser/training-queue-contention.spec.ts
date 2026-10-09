@@ -24,7 +24,8 @@ productTest("daily study opens on the workspace date while background analysis r
   try {
     docker("stop", "background-worker", "background-scheduler");
     fixture("seed");
-    docker("start", "background-worker");
+    // A denied wake returns promptly; normal durable polling must redeliver it.
+    docker("start", "background-worker", "background-scheduler");
     const initialActivity = await (await request.get(`${api}/system/activity?limit=1`)).json();
     expect(initialActivity.counts.queued).toBeGreaterThan(1000);
     // A cold focused run can reach the browser before the restarted worker

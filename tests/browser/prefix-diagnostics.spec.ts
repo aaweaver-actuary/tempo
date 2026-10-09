@@ -50,14 +50,21 @@ for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay 
     inspectButton.click(),
   ]);
   if (initialDetailResponse.status() === 503) {
-    // A bounded diagnostic may yield; preserve the real error and retry once
-    // through the same user action. Other errors and persistent failures fail.
     expect(initialDetailResponse.headers()["retry-after"]).toBe("1");
-    const temporaryMessage = "Prefix difficulty is temporarily unavailable. Retry after study work settles.";
-    expect(await initialDetailResponse.json()).toEqual({ detail: temporaryMessage });
-    await expect(page.getByRole("alert")).toContainText(temporaryMessage);
-    await expect(page.getByText("Unknown", { exact: true })).toHaveCount(0);
-    await inspectButton.click();
+    const body = await initialDetailResponse.json();
+    if (body.detail === "Waiting for foreground activity") {
+      // The same inspection retries admission automatically after release.
+      // A database deadline remains a visible error with explicit user retry.
+      expect(body).toEqual({ detail: "Waiting for foreground activity" });
+      await expect(page.getByRole("status")).toContainText("Loading evidence");
+      await expect(page.getByRole("alert")).toHaveCount(0);
+    } else {
+      const temporaryMessage = "Prefix difficulty is temporarily unavailable. Retry after study work settles.";
+      expect(body).toEqual({ detail: temporaryMessage });
+      await expect(page.getByRole("alert")).toContainText(temporaryMessage);
+      await expect(page.getByText("Unknown", { exact: true })).toHaveCount(0);
+      await inspectButton.click();
+    }
   } else {
     expect(initialDetailResponse.status()).toBe(200);
   }
