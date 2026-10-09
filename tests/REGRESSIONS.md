@@ -2981,6 +2981,13 @@ Additional receipt and shared-flush boundaries:
   (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): a native storage
   exception leaves concise inline guidance, original exception details and a debug
   reference on one attempt-owned notice, with no render-created incidents or POST.
+  Explicit retry of this unretained result performs no receipt lookup and keeps
+  the same save-failure state and incident.
+
+- `PR105 non-replay replacement save failure keeps diagnostics off the prior saved attempt`
+  (`tests/unit/review-attempt-confirmation-regressions.test.tsx`): a replacement
+  card's storage failure owns its diagnostic notice without reopening the prior
+  saved attempt's notice.
 
 - `PR105 initial queue recovery confirms retained reviews before replay receipt=%s`
   (`tests/unit/desktop-queue-regressions.test.ts`): completed receipts drain without

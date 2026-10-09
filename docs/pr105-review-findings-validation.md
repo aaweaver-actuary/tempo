@@ -204,3 +204,70 @@ missing visual report. The artifact is preserved under the dated root evidence
 ci-37912763420/visual. No snapshots, timeouts or CI configuration are changed.
 The fixture correction receives a fresh full candidate plan; prior partial or
 failed CI results are not reused as final evidence.
+
+
+## Diagnostic ownership preservation follow-up
+
+Extended the native local-retention regression to click Retry save. It reproduced
+an unintended diagnostic-only change: early persistence identity made an unretained
+result eligible for receipt lookup and changed saveFailed to pendingConfirmation
+(1.75s Vitest). The fix keeps diagnostic ownership in a UI-only ref, while receipt
+checks and replay continue to use the existing retained-review persistence identity.
+Only a current transition may update that UI ref; late errors still report their
+original attempt diagnostics. No new persistence store or retry path is introduced.
+
+Added and registered `PR105 non-replay replacement save failure keeps diagnostics
+off the prior saved attempt`. It proves a storage failure on replacement B owns
+one error incident without reopening saved A's notice. The original diagnostic
+regression now also requires zero receipt reads and one unchanged incident after
+explicit retry of an unretained result. Both cases pass.
+
+The previous candidate ae437347fedfbd8591c81263fd5c82c1af203cb0 received complete
+successful CI in run 37913488790. This result is historical only: the diagnostic
+ownership follow-up requires fresh current-head/current-base comprehensive CI.
+
+
+Final changed-source check (dirty ae43734 plus only the diagnostic ownership/ref,
+its two regression assertions and registry/documentation changes):
+
+```sh
+npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/phone-recovery-messaging-regressions.test.tsx tests/unit/phone-opening-study-regressions.test.tsx tests/unit/opening-evidence-home-lifecycle.test.tsx tests/unit/study-regressions.test.tsx tests/unit/review-conflict-ui-regressions.test.tsx
+npm run typecheck
+npm run lint
+git diff --check
+```
+
+All 114 cases in six directly affected Home/caller files passed, 32.71s Vitest /
+33.41s wall. Typecheck passed in 57.77s wall; whole lint passed in 61.72s wall with
+ten pre-existing warnings and zero errors; diff check passed in 0.06s. The aggregate
+is now 307 distinct relevant cases across 16 files, combining unchanged earlier
+files with these freshly rerun affected callers. These are focused development
+passes, not a local full-suite result or a performance comparison. Logs/timings:
+test-results/pr105-review-findings/settled-owner-check-{0..3}.log and JSON record.
+
+
+Final phone run on those identical production hashes:
+`make ui-file FILE=phone-opening-study.spec.ts` — all 13 passed, 22.4s Playwright /
+149.28s runner wall (browser stage 25.54s, startup 55s, cleanup 9.81s). This includes
+the new zero-POST reload case plus existing terminal/suppression, conflict and
+phone preservation cases. Project tempo-pg-regressions-48912-55170ed6 was fully
+removed by its owning runner. Earlier intermediate follow-up project
+ tempo-pg-regressions-42609-924be076 also completed all 13 cases and owning cleanup;
+only this settled run is final changed-source phone evidence.
+
+
+Final foreground preservation run on the same production hashes:
+`make view VIEW='repair confirmation during a held training piece'` — 1 passed,
+3.9s Playwright / 59.70s runner wall (browser stage 5.66s, startup 22.5s, cleanup
+12.37s). Project tempo-pg-regressions-50663-7faf4b85 was fully removed. Explicit
+Docker checks confirmed no remaining containers, images, volumes or networks for
+this project and the two diagnostic-follow-up phone projects. Prior five projects
+were already verified removed. Only shared safe caches and the unmerged review
+checkout remain. Ownership/teardown/timestamps and checksum-verified logs are
+preserved outside the clone under root test-results/2026-10-09/pr105-review-findings.
+
+All four findings are corrected. Fresh main remains d5394b1; related issues
+#29/#39/#81 and open PR #120 were rechecked and retain their separate requirements.
+No issue closure or status change is justified by this scoped recovery repair.
+Final committed source must receive fresh complete selected CI; results will be
+recorded in the PR and dated root evidence without another source-only commit.

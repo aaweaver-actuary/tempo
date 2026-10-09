@@ -355,6 +355,38 @@ it("PR105 non-replay save failure retains raw diagnostics in one attempt-owned i
       details: { error: failure.message, errorName: "SecurityError", debugRecordId: saveDiagnostics[0].id } });
     act(() => useTrainingStore.getState().setQueueNotice("Unrelated projection"));
     expect(incidents()).toHaveLength(1); expect(incidents()[0].occurrenceCount).toBe(1);
+    const receiptReads = () => fetcher.mock.calls.filter(([url]) => String(url).includes("/api/operations/"));
+    expect(receiptReads()).toEqual([]);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry save" })); });
+    // Diagnostics cannot create a retained result or change the pre-retention retry path.
+    expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
+    expect(receiptReads()).toEqual([]);
+    expect(incidents()).toHaveLength(1); expect(incidents()[0].occurrenceCount).toBe(1);
     expect(reviewPosts()).toEqual([]);
+  } finally { storageWrite.mockRestore(); }
+});
+
+
+it("PR105 non-replay replacement save failure keeps diagnostics off the prior saved attempt", async () => {
+  queue = [queueCard("card-a", 11), queueCard("card-b", 12)];
+  await readyHome(); vi.useRealTimers();
+  const earlierAttemptId = useTrainingStore.getState().attempt.attemptId;
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  await waitFor(() => expect(useTrainingStore.getState().getCard().backendId).toBe("card-b"));
+  const failedAttemptId = useTrainingStore.getState().attempt.attemptId;
+  expect(failedAttemptId).not.toBe(earlierAttemptId);
+  const failure = new Error("Replacement review retention denied");
+  const originalWrite = Storage.prototype.setItem;
+  const storageWrite = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+    if (key === "tempo-pending-training-reviews-v1") throw failure;
+    originalWrite.call(this, key, value);
+  });
+  try {
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
+    const failures = notifications().filter(record => record.source === "training review" && record.severity === "error" && !record.resolvedAt);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ key: `review-save:${failedAttemptId}`, details: { attemptId: failedAttemptId, error: failure.message } });
+    expect(notifications().find(record => record.key === `review-save:${earlierAttemptId}`)?.severity).not.toBe("error");
   } finally { storageWrite.mockRestore(); }
 });

@@ -200,6 +200,7 @@ export default function Home() {
     | "queueFailed"
   >("idle");
   const [reviewPersistenceIdentity, setReviewPersistenceIdentity] = useState<Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId">>();
+  const reviewSaveDiagnosticIdentity = useRef<Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId"> | undefined>(undefined);
   useEffect(() => {
     const showUpdate = () => publishNotification({
       severity: "warning", source: "phone update", key: "phone-update-ready",
@@ -1085,11 +1086,10 @@ export default function Home() {
       let submittedAttemptId: string | undefined;
       // Retention/capture can fail before an outbox envelope exists. Keep diagnostics
       // owned by the original attempt even if a later projection replaces the card.
-      const saveIdentity = retryPending && reviewPersistenceIdentity ? reviewPersistenceIdentity : {
+      const saveIdentity = (retryPending && (retryReview ?? reviewPersistenceIdentity ?? reviewSaveDiagnosticIdentity.current)) || {
         backendId: card.backendId, queueEntryId: card.queueEntryId ?? 0,
-        attemptId: retryPending ? retryAttemptId : useTrainingStore.getState().attempt.attemptId,
+        attemptId: useTrainingStore.getState().attempt.attemptId,
       };
-      setReviewPersistenceIdentity(saveIdentity);
       const showSubmittedReviewUnconfirmed = () => {
         if (transitionGeneration !== reviewTransitionGeneration.current) return;
         const retainedReviews = pendingReviews();
@@ -1130,6 +1130,7 @@ export default function Home() {
           const submittedReview = pendingReviews().find((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
           submittedAttemptId = submittedReview ? logicalAttemptId(submittedReview)
             : recordedAtCompletion ? useTrainingStore.getState().attempt.attemptId : undefined;
+          reviewSaveDiagnosticIdentity.current = undefined;
           setReviewPersistenceIdentity(submittedAttemptId ? { backendId: card.backendId,
             queueEntryId: card.queueEntryId, attemptId: submittedAttemptId } : undefined);
           const finishNextCard = measureTempoDragPhase("next-card-readiness");
@@ -1142,6 +1143,7 @@ export default function Home() {
         }
         if (retryPending) {
           submittedAttemptId = retryAttemptId;
+          reviewSaveDiagnosticIdentity.current = undefined;
           setReviewPersistenceIdentity(retryReview ? { ...retryReview, attemptId: submittedAttemptId } : reviewPersistenceIdentity);
         }
         if (!submittedAttemptId) throw new Error("The completed review identity is unavailable. Keep this browser's data and check saved reviews.");
@@ -1209,7 +1211,13 @@ export default function Home() {
             endpoint: error.endpoint, status: error.status, retryable: error.retryable,
             cardId: error.backendId, queueEntryId: error.queueEntryId, attemptId: error.attemptId, code: error.code,
             classification: error.classification, notify: false });
-        } else reportReviewSaveFailure(error, saveIdentity);
+        } else {
+          // Diagnostic ownership must never make an unretained result eligible for receipt checks.
+          const diagnosticIdentity = submittedAttemptId ? { ...saveIdentity, attemptId: submittedAttemptId } : saveIdentity;
+          if (transitionGeneration === reviewTransitionGeneration.current)
+            reviewSaveDiagnosticIdentity.current = diagnosticIdentity;
+          reportReviewSaveFailure(error, diagnosticIdentity);
+        }
         if (transitionGeneration !== reviewTransitionGeneration.current) return;
         if (error instanceof ReviewReplayError && error.attemptId !== submittedAttemptId) {
           // The outbox reports that other attempt separately; it cannot settle this result.
@@ -1748,7 +1756,7 @@ export default function Home() {
               }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
-              reviewPersistenceIdentity={reviewPersistenceIdentity}
+              reviewPersistenceIdentity={reviewSaveDiagnosticIdentity.current ?? reviewPersistenceIdentity}
               retryReviewSave={() =>
                 void rateCard("correct", { retryPending: true })
               }
