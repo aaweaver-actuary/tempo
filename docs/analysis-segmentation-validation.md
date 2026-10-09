@@ -36,7 +36,7 @@ modified by the projection worker.
 
 Dirty candidate based on integrity 493e225, macOS ARM64/Python 3.14.8:
 
-- Original six-case baseline failed in 0.24 s (scratch test file outside source;
+- Original six-case baseline failed in 0.29 s (scratch test file outside source;
   actual generic null-color error and reset-to-queued retry). See baseline log.
 - `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_segmentation_provenance.py backend/tests/test_postgres_opening_segmentation.py backend/tests/test_postgres_cutover.py backend/tests/test_canonical_repertoire_prefix.py backend/tests/test_integrity_publication_pages.py backend/tests/test_background_activity.py -q -o cache_dir=.pytest_cache --rootdir=.`: 379 passed in 20.87 s before final cleanup simplification. The initial scope command named a nonexistent file and ran zero tests; it is not counted as validation.
 - After final one-run cleanup and new boundary cases, the two whole affected
