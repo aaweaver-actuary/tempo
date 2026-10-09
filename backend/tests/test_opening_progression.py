@@ -83,3 +83,30 @@ def test_republished_routes_reuse_real_exposure_but_shortened_new_parent_does_no
     _unlock_eligible_opening_cards(connection, '2026-10-09')
     assert connection.execute("SELECT state FROM cards WHERE id='child'").fetchone()[0] == 'locked'
     assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 1
+
+
+@pytest.mark.parametrize('stale_evidence', ['invalidated_review', 'unpublished_route'])
+def test_bounded_unlock_rechecks_parent_exposure_and_publication_before_update(progression_database, stale_evidence):
+    connection = progression_database
+    connection.execute("INSERT INTO reviews VALUES('parent','again','study',NULL)")
+
+    class CandidateRecheckDatabase:
+        def execute(self, statement, parameters=()):
+            cursor = connection.execute(statement, parameters)
+            if statement.startswith('WITH root_candidates'):
+                candidates = cursor.fetchall()
+                assert candidates == [('child',)]
+                if stale_evidence == 'invalidated_review':
+                    connection.execute("UPDATE reviews SET invalidated_at='2026-10-09'")
+                else:
+                    connection.execute('UPDATE opening_graph_publications SET generation=3')
+
+                class SelectedCandidates:
+                    def fetchall(self):
+                        return candidates
+
+                return SelectedCandidates()
+            return cursor
+
+    _unlock_eligible_opening_cards(CandidateRecheckDatabase(), '2026-10-09', after_card_id='', batch_size=8)
+    assert connection.execute("SELECT state FROM cards WHERE id='child'").fetchone()[0] == 'locked'

@@ -1,4 +1,4 @@
-"""Real review/queue transactions in an owned clone of the disposable schema."""
+"""Real review/queue transactions in an owned freshly migrated disposable database."""
 from datetime import date, datetime, timezone
 import json
 import os
@@ -61,7 +61,7 @@ def drain_queue_refresh(*, restart=False):
                 worker.start()
                 assert entered.wait(2)
                 assert not completed.wait(0.05), 'Background slice crossed foreground admission'
-                with postgres_store.read_connection() as database:
+                with postgres_store.connection(read_only=True) as database:
                     assert database.execute('SELECT 1').fetchone()[0] == 1
             worker.join(5)
             assert not worker.is_alive() and not failures, failures
@@ -77,7 +77,7 @@ def drain_queue_refresh(*, restart=False):
             assert resumed_task['lease_token'] != crashed_task['lease_token']
             assert execute_postgres_queue_refresh_slice(crashed_task) is False
             execute_postgres_queue_refresh_slice(resumed_task)
-        with postgres_store.read_connection() as database:
+        with postgres_store.connection(read_only=True) as database:
             saved = database.execute("SELECT state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
             assert 'preserve_through_entry_id' in json.loads(saved['payload_json'])
             if saved['state'] == 'complete':
@@ -92,19 +92,19 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
     original_read_url = os.environ.get('TEMPO_DATABASE_READ_URL')
     fixture_database = 'opening_progression_' + uuid.uuid4().hex
     connection_info = psycopg.conninfo.conninfo_to_dict(database_url)
-    template_database = connection_info['dbname']
     postgres_store.close_pools()
     admin_info = {**connection_info, 'dbname': 'postgres'}
     try:
         with psycopg.connect(**admin_info, autocommit=True) as admin:
-            admin.execute(sql.SQL('CREATE DATABASE {} TEMPLATE {}').format(sql.Identifier(fixture_database), sql.Identifier(template_database)))
+            admin.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(fixture_database)))
         fixture_url = psycopg.conninfo.make_conninfo(**{**connection_info, 'dbname': fixture_database})
+        from apply_postgres_migrations import apply_migrations
+        apply_migrations(fixture_url)
         os.environ['TEMPO_DATABASE_WRITE_URL'] = fixture_url
         os.environ['TEMPO_DATABASE_READ_URL'] = fixture_url
         today = date.today().isoformat()
         with postgres_store.connection() as database:
-            database.raw.execute('TRUNCATE repertoires,imported_games,background_tasks,daily_queue,daily_queue_days,queue_projections CASCADE')
-            database.execute('UPDATE settings SET tactics_new_per_day=0,study_new_per_day=0 WHERE id=1')
+            database.execute('INSERT INTO settings(id,tactics_new_per_day,study_new_per_day) VALUES(1,0,0)')
         for outcome, guided in [('correct', False), ('again', False), ('correct', True)]:
             identifier = 'practice-' + uuid.uuid4().hex
             with postgres_store.connection() as database:
@@ -120,7 +120,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                     raise ValueError('Simulated crash before review commit')
             except ValueError as error:
                 assert str(error) == 'Simulated crash before review commit'
-            with postgres_store.read_connection() as database:
+            with postgres_store.connection(read_only=True) as database:
                 assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', (root_id,)).fetchone()[0] == 0
                 assert database.execute('SELECT COUNT(*) FROM review_attempt_receipts WHERE attempt_id=?', (request.attempt_id,)).fetchone()[0] == 0
             with postgres_store.connection() as database:

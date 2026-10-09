@@ -291,7 +291,8 @@ def main_check():
                 assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (repetition_line,)).fetchone()[0] == repetition_source["moves_json"]
                 assert database.execute("SELECT 1 FROM cards WHERE id=?", (repeated_steps[1].card_id,)).fetchone() is None
         with postgres_store.connection() as database:
-            database.execute("UPDATE cards SET state='mature' WHERE id=?", (repeated_steps[0].card_id,))
+            database.execute("UPDATE cards SET state='learning' WHERE id=?", (repeated_steps[0].card_id,))
+            database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,0,1)", (repeated_steps[0].card_id, today))
             child_id = repeated_steps[2].card_id
             cursor = f"{int(child_id, 16) - 1:064x}"
             assert database.execute(f"SELECT id FROM cards WHERE {main._OPENING_UNLOCK_ELIGIBILITY_SQL} AND id>? ORDER BY id LIMIT 1", (cursor,)).fetchone()[0] == child_id

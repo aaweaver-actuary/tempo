@@ -97,7 +97,13 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
                    AND candidate.introduced_at IS NULL AND candidate.archived=0
                JOIN cards parent ON parent.id=child.parent_card_id
                JOIN repertoire_lines line ON line.id=child.line_id
-               WHERE child.repertoire_id=? AND parent.state!='locked'""", (repertoire_id,),
+               WHERE parent.state!='locked' AND EXISTS(
+                   SELECT 1 FROM opening_graph_steps scoped
+                   JOIN opening_graph_publications scope_publication
+                     ON scope_publication.repertoire_id=scoped.repertoire_id
+                    AND scope_publication.generation=scoped.generation
+                   WHERE scoped.repertoire_id=? AND scoped.card_id=child.card_id
+               )""", (repertoire_id,),
         )]
 
     valid_study_reviews = [row for row in review_rows if row["source_kind"] == "study" and row["card_id"] in card_ids]

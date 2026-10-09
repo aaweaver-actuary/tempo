@@ -237,3 +237,29 @@ def test_repertoire_statistics_gets_are_query_only_and_within_foreground_read_bu
             assert response.status_code == 200, response.text
         assert time.perf_counter() - started < 1.0
         assert database.DB_PATH.read_bytes() == before
+
+
+def test_repertoire_statistics_shared_child_is_ready_from_any_current_practiced_route(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            _seed_repertoire(db, "first", "unpracticed-parent")
+            _seed_repertoire(db, "second", "practiced-parent")
+            db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES('shared-child','first','response',?,'[\"e2e4\"]','locked',?)", (START, date.today().isoformat()))
+            for repertoire_id, parent_id in [('first', 'unpracticed-parent'), ('second', 'practiced-parent')]:
+                db.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (repertoire_id, 'shared-child'))
+                db.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,segment_kind,
+                    decision_fen_keys_json,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color)
+                    VALUES(?,1,?,1,'decision',?,'shared-child',?,?,?,'[\"e2e4\"]','white')""",
+                    (repertoire_id, f'line-{repertoire_id}', json.dumps([FEN_KEY]), parent_id, FEN_KEY, START))
+            db.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('practiced-parent','again',?,0,0)", (date.today().isoformat(),))
+        for repertoire_id in ('first', 'second'):
+            unlocks = client.get(f'/api/repertoires/{repertoire_id}/statistics?window=all').json()['unlocks']
+            assert len(unlocks) == 1
+            assert unlocks[0]['status'] == 'ready'
+            assert unlocks[0]['parent_card_id'] == 'practiced-parent'
+        with database.connection() as db:
+            db.execute("UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id='second'")
+        unlocks = client.get('/api/repertoires/first/statistics?window=all').json()['unlocks']
+        assert unlocks[0]['status'] == 'waiting_practice'
+        assert unlocks[0]['parent_card_id'] == 'unpracticed-parent'
