@@ -79,6 +79,17 @@ export function validateUnitResults(layer, plan, report) {
   }
 }
 
+export function backendUnitFileCounts(xml, requiredFiles) {
+  return Object.fromEntries(requiredFiles.map(file => {
+    const moduleName = file.slice(0, -3).replaceAll("/", ".");
+    return [file, [...xml.matchAll(/<testcase\b[^>]*>/g)]
+      .filter(match => {
+        const reportedClass = match[0].match(/\sclassname="([^"]*)"/)?.[1];
+        return reportedClass === moduleName || reportedClass?.startsWith(`${moduleName}.`);
+      }).length];
+  }));
+}
+
 // Dependency injection proves diagnostic repeats cannot overwrite the first result.
 export function executeLayer(commands, run, diagnosticRetry = false) {
   const results = [], diagnostics = [];
@@ -134,12 +145,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const suites = [...readFileSync("test-results/ci/backend-tests.xml", "utf8").matchAll(/<testsuite\b[^>]*>/g)].map(match => match[0]);
       report.test_count = suites.reduce((count, suite) => count + Number(suite.match(/\btests="(\d+)"/)?.[1] ?? 0), 0);
       if (!report.test_count || suites.some(suite => ["failures", "errors", "skipped"].some(attribute => Number(suite.match(new RegExp(`\\b${attribute}="(\\d+)"`))?.[1] ?? 0)))) throw new Error("Missing, failed or skipped backend results");
-      report.files = {};
       const xml = readFileSync("test-results/ci/backend-tests.xml", "utf8");
-      for (const file of [...new Set([...(Array.isArray(plan.core.backend) ? plan.core.backend : []), ...(plan.regressionFiles?.backend ?? [])])]) {
-        const moduleName = file.slice(0, -3).replaceAll("/", ".");
-        report.files[file] = [...xml.matchAll(/<testcase\b[^>]*>/g)].filter(match => match[0].includes(`classname="${moduleName}`)).length;
-      }
+      report.files = backendUnitFileCounts(xml, [...new Set([...(Array.isArray(plan.core.backend) ? plan.core.backend : []), ...(plan.regressionFiles?.backend ?? [])])]);
       validateUnitResults(layer, plan, report);
     } else if (["postgres", "lifecycle"].includes(layer)) {
       const { mode } = postgresVerification(layer, plan);

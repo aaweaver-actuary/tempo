@@ -55,7 +55,7 @@ else:
 });
 
 import { verificationContext, planHash, allLayers, createPlan } from '../../scripts/ci-verification-plan.mjs';
-import { layerCommands, validateUnitResults, executeLayer } from '../../scripts/ci-run-layer.mjs';
+import { layerCommands, validateUnitResults, executeLayer, backendUnitFileCounts } from '../../scripts/ci-run-layer.mjs';
 import { validateMigrationInventory } from '../../scripts/check-migration-inventory.mjs';
 const pr = { draft: true, state: 'open', head: {sha: 'head'}, base: {sha: 'base'}, labels: [], merge_commit_sha: 'integration' };
 function captured(pullRequest = pr, paths = ['docs/testing.md']) {
@@ -208,4 +208,15 @@ test('whole-subsystem qualification still requires every changed regression file
   const runner=captured(pr,['tests/runner/ci-development.test.mjs']);
   assert(runner.regressionFiles.frontend.includes('tests/unit/ci-reliability-regressions.test.ts'));
   assert.throws(()=>draft(['tests/runner/ci-development.test.mjs'],{sourceInventory:{...inventory,development:{...inventory.development,runnerOwners:{}}}}), /regular-suite ownership/);
+});
+
+test('Python regression evidence distinguishes exact modules from similarly named files', () => {
+  const file = 'backend/tests/test_studies.py';
+  const xml = '<testsuite tests="3"><testcase classname="backend.tests.test_studies_extra" name="unrelated"/>' +
+    '<testcase classname="backend.tests.test_studies" name="function"/>' +
+    '<testcase classname="backend.tests.test_studies.TestStudy" name="method"/></testsuite>';
+  assert.deepEqual(backendUnitFileCounts(xml, [file]), {[file]: 2});
+  const unrelated = '<testcase classname="backend.tests.test_studies_extra" name="unrelated"/>';
+  const report = {test_count: 1, files: backendUnitFileCounts(unrelated, [file])};
+  assert.throws(() => validateUnitResults('backend', {core: {backend: 'all'}, regressionFiles: {backend: [file]}}, report), /did not execute/);
 });
