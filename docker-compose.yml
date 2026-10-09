@@ -30,6 +30,17 @@ services:
       retries: 30
     restart: unless-stopped
 
+  explorer-session-store:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs: [/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-e", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -39,6 +50,7 @@ services:
       TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS:-250}
       TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS:-25}
       TEMPO_REDIS_URL: redis://redis:6379/0
+      TEMPO_EXPLORER_SESSION_REDIS_URL: redis://explorer-session-store:6379/0
       TEMPO_COORDINATOR_MODE: external
       PGPASSFILE: /run/secrets/reader_pgpass
       TZ: ${TZ:-America/New_York}
@@ -51,6 +63,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+      explorer-session-store: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).close()"]
       interval: 3s
@@ -70,6 +83,7 @@ services:
       TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS:-250}
       TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS:-25}
       TEMPO_REDIS_URL: redis://redis:6379/0
+      TEMPO_EXPLORER_SESSION_REDIS_URL: redis://explorer-session-store:6379/0
       PGPASSFILE: /run/secrets/writer_pgpass
       TZ: ${TZ:-America/New_York}
     secrets:
@@ -79,6 +93,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+      explorer-session-store: {condition: service_healthy}
     restart: unless-stopped
 
   background-worker:
@@ -92,6 +107,7 @@ services:
       TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS:-250}
       TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS:-25}
       TEMPO_REDIS_URL: redis://redis:6379/0
+      TEMPO_EXPLORER_SESSION_REDIS_URL: redis://explorer-session-store:6379/0
       TEMPO_LICHESS_EXPLORER_TOKEN: ${TEMPO_LICHESS_EXPLORER_TOKEN:-}
       PGPASSFILE: /run/secrets/writer_pgpass
       TZ: ${TZ:-America/New_York}
@@ -102,6 +118,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
+      explorer-session-store: {condition: service_healthy}
     cpus: 1
     restart: unless-stopped
 

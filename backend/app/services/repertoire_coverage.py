@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 import uuid
 from statistics import median
 
@@ -16,7 +17,7 @@ import httpx
 
 from ..database import connection
 from .. import postgres_store
-from .redis_admission_gate import client as redis_client
+from . import explorer_sessions
 from .repertoire_comparison import canonical_fen
 from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity, latest_coverage_attempt_predicate, latest_coverage_run_id
 from .canonical_prefix import read_prefix, scope_line
@@ -26,7 +27,9 @@ from .activity_gate import activity_gate
 _explorer_session_lock = threading.Lock()
 _explorer_session_token: str | None = None
 _explorer_environment_token_rejected = False
-_EXPLORER_SESSION_KEY = "tempo:coverage:explorer-session-token"
+_explorer_session_expires_at = 0.0
+_explorer_rejected_fingerprint: str | None = None
+_explorer_rejection_expires_at = 0.0
 
 
 class ExplorerAuthenticationError(RuntimeError):
@@ -40,24 +43,55 @@ class ExplorerRequestError(RuntimeError):
 
 
 def set_explorer_session_token(token: str | None) -> None:
-    global _explorer_session_token
+    global _explorer_session_token, _explorer_session_expires_at, _explorer_rejected_fingerprint
     if postgres_store.configured():
-        if token:
-            redis_client().setex(_EXPLORER_SESSION_KEY, 24 * 60 * 60, token)
-        else:
-            redis_client().delete(_EXPLORER_SESSION_KEY)
+        explorer_sessions.register(token)
+        return
     with _explorer_session_lock:
+        if (token and time.monotonic() < _explorer_rejection_expires_at
+                and explorer_sessions.fingerprint(token) == _explorer_rejected_fingerprint):
+            raise explorer_sessions.ExplorerCredentialRejected('Explorer rejected this credential; reconnect with Lichess')
         _explorer_session_token = token or None
+        _explorer_session_expires_at = time.monotonic() + explorer_sessions.SESSION_SECONDS if token else 0
+        if token:
+            _explorer_rejected_fingerprint = None
 
 
 def get_explorer_session_token() -> str | None:
+    if postgres_store.configured():
+        return explorer_sessions.get_token()
     with _explorer_session_lock:
+        if _explorer_session_token and time.monotonic() < _explorer_session_expires_at:
+            return _explorer_session_token
         if os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN") and not _explorer_environment_token_rejected:
             return os.environ["TEMPO_LICHESS_EXPLORER_TOKEN"]
-        if postgres_store.configured():
-            stored = redis_client().get(_EXPLORER_SESSION_KEY)
-            return stored.decode() if stored else None
-        return _explorer_session_token
+        return None
+
+
+def reject_explorer_session_token(token: str) -> bool:
+    global _explorer_session_token, _explorer_environment_token_rejected, _explorer_rejected_fingerprint, _explorer_rejection_expires_at
+    if postgres_store.configured():
+        return explorer_sessions.reject(token)
+    with _explorer_session_lock:
+        if _explorer_session_token and _explorer_session_token != token:
+            return False
+        _explorer_session_token = None
+        _explorer_rejected_fingerprint = explorer_sessions.fingerprint(token)
+        _explorer_rejection_expires_at = time.monotonic() + explorer_sessions.SESSION_SECONDS
+        if os.getenv('TEMPO_LICHESS_EXPLORER_TOKEN') == token:
+            _explorer_environment_token_rejected = True
+        return True
+
+
+def explorer_session_status(browser_token: str | None = None) -> dict[str, str]:
+    if postgres_store.configured():
+        return explorer_sessions.status(browser_token)
+    if (browser_token and _explorer_rejected_fingerprint
+            and explorer_sessions.fingerprint(browser_token) != _explorer_rejected_fingerprint):
+        return {'status': 'available' if get_explorer_session_token() else 'registration_missing'}
+    return {'status': 'available' if get_explorer_session_token() else
+            'credential_rejected' if (_explorer_environment_token_rejected or
+             (_explorer_rejected_fingerprint and time.monotonic() < _explorer_rejection_expires_at)) else 'registration_missing'}
 
 
 @dataclass(frozen=True)
@@ -412,6 +446,7 @@ def _fetch_explorer(fen: str, speeds: str, ratings: str, access_token: str) -> d
                 },
             )
             if response.status_code in {401, 403}:
+                reject_explorer_session_token(access_token)
                 raise ExplorerAuthenticationError(response.status_code)
             if response.status_code == 429:
                 raise ExplorerRequestError("Lichess Explorer rate limited (HTTP 429)")
@@ -631,10 +666,8 @@ def execute_coverage_node(node: dict) -> None:
                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                         progress_counts["total"] * 2)
     except ExplorerAuthenticationError as error:
-        global _explorer_environment_token_rejected
-        if os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN"):
-            _explorer_environment_token_rejected = True
-        set_explorer_session_token(None)
+        if error.status is not None:
+            reject_explorer_session_token(access_token)
         with connection(background=True) as database:
             database.execute("BEGIN IMMEDIATE")
             if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):

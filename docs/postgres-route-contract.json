@@ -1293,5 +1293,12 @@
     "handler": "prefix_transition_apply",
     "treatment": "foreground_command",
     "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoire-coverage/explorer-session",
+    "handler": "coverage_explorer_session_status",
+    "treatment": "reader",
+    "state": "staged"
   }
 ]

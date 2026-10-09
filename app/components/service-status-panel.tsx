@@ -3,6 +3,7 @@ import { Button } from "./buttons/BaseButton";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
+import { startExplorerSessionRecovery } from "../lib/explorer-session";
 import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
 import { requestActivityControl } from "../lib/activity-control-command";
@@ -71,6 +72,7 @@ function sameActivitySummary(left: ActivityResponse | null, right: ActivityRespo
 const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently completed"];
 
 export function ServiceStatusPanel() {
+  useEffect(() => usesLocalApi() ? startExplorerSessionRecovery() : undefined, []);
   const lastDiagnosticsRequest = useRef(Number.NEGATIVE_INFINITY);
   const [open, setOpen] = useState(false);
   const popupRef = useRef<HTMLElement>(null);
