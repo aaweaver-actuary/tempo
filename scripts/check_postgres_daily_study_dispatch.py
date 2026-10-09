@@ -72,6 +72,8 @@ def proof():
     proof_background_wakes()
     from check_postgres_engine_fairness import proof_engine_fairness
     proof_engine_fairness(DSN)
+    from check_postgres_refresh_inputs import proof_refresh_inputs
+    proof_refresh_inputs(DSN)
     from check_postgres_scheduling_turns import proof_scheduling_turns
     proof_scheduling_turns(DSN)
     from check_postgres_queue_unlock_scale import proof_graph_scale

@@ -1,6 +1,8 @@
 """Assumed openings bound repertoire analysis without changing study cards."""
 
 import json
+from datetime import datetime
+from unittest.mock import patch
 
 import chess
 import pytest
@@ -20,6 +22,17 @@ from app.services.repertoire_coverage import discover_opponent_positions
 
 
 ITALIAN = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"]
+
+
+def claim_due_opportunity():
+    """The fixture driver reaches the quiet deadline without wall-clock waits."""
+    from app.services import durable_tasks
+    with database.read_connection() as connection:
+        pending = connection.execute("SELECT next_attempt_at FROM background_tasks WHERE kind='repertoire_opportunity' AND deduplication_key='italian' AND state IN ('queued','retrying')").fetchone()
+    if pending is None:
+        return None
+    with patch.object(durable_tasks, '_now', lambda: datetime.fromisoformat(pending[0])):
+        return claim_task('repertoire_opportunity')
 
 
 def test_italian_prefix_suppresses_sicilian_and_philidor_coverage_nodes():
@@ -863,7 +876,7 @@ def test_canonical_opportunity_compute_source_race_discards_then_rebuilds(prefix
     monkeypatch.setattr(opportunities, "_calculate_node_opportunities", original_calculate)
     apply_preview(prepare_prefix())
     _complete_gap_run()
-    next_task = claim_task("repertoire_opportunity")
+    next_task = claim_due_opportunity()
     assert next_task is not None
     for _ in range(20):
         if not opportunities.execute_opportunity_slice(next_task):
@@ -1940,7 +1953,7 @@ def refresh_canonical_publications():
     assert main.repertoire_coverage('italian')['status'] == 'complete'
     main.refresh_repertoire_opportunities('italian', None)
     for _ in range(80):
-        task = claim_task('repertoire_opportunity')
+        task = claim_due_opportunity()
         if task is None:
             break
         assert task['deduplication_key'] == 'italian'

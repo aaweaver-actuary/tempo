@@ -271,6 +271,9 @@ def claim_task(
             return None
         if scheduling_turn is not None:
             persist_scheduling_turn(database, scheduling_turn)
+        if row['kind'] in {'repertoire_priority', 'repertoire_opportunity'}:
+            database.execute('UPDATE analysis_refresh_requests SET pending_since=NULL WHERE kind=? AND repertoire_id=?',
+                             (row['kind'], row['deduplication_key']))
         _record_event(database, row["id"], row["generation"], "claimed", "claimed", kind=row["kind"])
         claimed = dict(database.execute("SELECT * FROM background_tasks WHERE id=?", (row["id"],)).fetchone())
         claimed["payload"] = json.loads(claimed.pop("payload_json"))

@@ -275,6 +275,8 @@ def execute_repertoire_priority_slice(task: dict[str, Any]) -> bool:
         )
         completed = complete_task_slice_in_transaction(database, task)
         if completed:
+            from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
             increment(database, "repertoire_priority", task["id"], priority_publications=1,
                       priority_published_records=expected_count, useful_completions=1)
         return completed

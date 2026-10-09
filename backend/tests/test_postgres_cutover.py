@@ -91,6 +91,9 @@ def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(mon
     monkeypatch.setattr(game_commands, "enqueue_task_in_transaction",
                         lambda _database, kind, key, payload, *, priority:
                         followups.append((kind, key, payload, priority)))
+    monkeypatch.setattr(game_commands, 'enqueue_opportunity_refresh_in_transaction',
+                        lambda _database, key: followups.append(('repertoire_opportunity', key,
+                            {'repertoire_id': key, 'phase': 'summaries', 'cursor': ''}, 130)))
     assert game_commands.set_game_exclusion(
         Database(), {"game_id": "provider:one", "excluded": True},
     ) == {"game_id": "provider:one", "excluded": True}
@@ -5403,15 +5406,13 @@ def test_postgres_opportunity_refresh_dispatches_idempotent_command(monkeypatch)
             return SimpleNamespace(fetchone=lambda: (1,))
 
     monkeypatch.setattr(
-        opportunity_commands, "enqueue_task_in_transaction",
-        lambda _database, kind, key, payload, *, priority:
-            queued.append((kind, key, payload, priority)),
+        opportunity_commands, "enqueue_opportunity_refresh_in_transaction",
+        lambda _database, key, *, quiet_seconds=5: queued.append((key, quiet_seconds)),
     )
     assert opportunity_commands.refresh_opportunities(
         ExistingRepertoire(), {"repertoire_id": "rep"},
     ) == {"queued": True}
-    assert queued == [("repertoire_opportunity", "rep",
-                       {"repertoire_id": "rep", "phase": "summaries", "cursor": ""}, 130)]
+    assert queued == [('rep', 0)]
 
 
 def test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay(monkeypatch, unscoped_canonical_prefix):
@@ -5994,6 +5995,8 @@ def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch, unsc
 @pytest.mark.parametrize("remaining_nodes", [True, False])
 def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nodes, monkeypatch):
     from app import coverage_maia_commands, postgres_store
+    from app.services import refresh_requests
+    monkeypatch.setattr(refresh_requests, 'request_refresh', lambda *_args, **_kwargs: 5)
 
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
 

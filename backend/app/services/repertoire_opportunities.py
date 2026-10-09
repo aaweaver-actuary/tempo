@@ -724,19 +724,25 @@ def _apply_post_gap_opportunity(database: sqlite3.Connection, repertoire_id: str
              opponent_move_uci=move_uci, score=decision["score"], evidence=decision["evidence"])
 
 
-def enqueue_opportunity_refresh_in_transaction(database, repertoire_id: str) -> None:
+def enqueue_opportunity_refresh_in_transaction(database, repertoire_id: str, *, quiet_seconds=5) -> None:
+    from .refresh_requests import request_refresh
+    scheduled_delay = request_refresh(database, 'repertoire_opportunity', repertoire_id,
+                                      quiet_seconds=quiet_seconds)
+    if scheduled_delay is None:
+        return
     enqueue = (enqueue_compact_postgres_task_in_transaction
                if hasattr(database, "execute_native") else enqueue_task_in_transaction)
     enqueue(database, "repertoire_opportunity", repertoire_id,
             {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
-            priority=130, delay_seconds=5)
+            priority=130, delay_seconds=scheduled_delay)
 
 
 def enqueue_opportunity_refresh(repertoire_id: str, *, background: bool = False) -> None:
-    enqueue_task("repertoire_opportunity", repertoire_id,
-                 {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
-                 priority=130, delay_seconds=5 if background else 0,
-                 foreground=not background)
+    from ..database import connection
+    with connection(background=background) as database:
+        enqueue_opportunity_refresh_in_transaction(
+            database, repertoire_id, quiet_seconds=5 if background else 0,
+        )
 
 
 def _advance_slice(database: sqlite3.Connection, task: dict, phase: str, cursor: str) -> None:

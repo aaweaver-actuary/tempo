@@ -437,11 +437,8 @@ def execute_game_analysis_followup_slice(task: dict[str, Any]) -> bool:
             (game_id, next_repertoire_id),
         ).fetchone()
         if exists is not None:
-            enqueue_compact_postgres_task_in_transaction(
-                database, "repertoire_opportunity", next_repertoire_id,
-                {"repertoire_id": next_repertoire_id, "phase": "summaries", "cursor": ""},
-                priority=130, delay_seconds=5,
-            )
+            from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+            enqueue_opportunity_refresh_in_transaction(database, next_repertoire_id)
         return advance_task_slice_in_transaction(
             database, task, next_phase="repertoires",
             next_payload={**payload, "cursor": next_repertoire_id},

@@ -12,8 +12,7 @@ from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
-from .services.repertoire_opportunities import active_opportunity_for_state_change, admit_existing_decision
-from .services.durable_tasks import enqueue_task_in_transaction
+from .services.repertoire_opportunities import active_opportunity_for_state_change, admit_existing_decision, enqueue_opportunity_refresh_in_transaction
 
 
 def _active_state_action_opportunity(database: PostgresConnection, payload: dict[str, Any]):
@@ -120,11 +119,7 @@ def refresh_opportunities(database: PostgresConnection, payload: dict[str, Any])
     ).fetchone()
     if exists is None:
         raise HTTPException(404, "Repertoire not found")
-    enqueue_task_in_transaction(
-        database, "repertoire_opportunity", repertoire_id,
-        {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
-        priority=130,
-    )
+    enqueue_opportunity_refresh_in_transaction(database, repertoire_id, quiet_seconds=0)
     return {"queued": True}
 
 
