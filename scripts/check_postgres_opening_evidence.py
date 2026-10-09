@@ -472,9 +472,19 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
                     allow_preparation.set()
                     assert admission_denied.wait(5), 'Worker source preparation never waited on shared foreground admission'
                     assert not source_sql_started.is_set() and not source_connection_pids, 'Worker source read opened before admission'
+                    response = posted.result(timeout=5)
+                    assert response.status_code == 202 and response.json()['state'] == 'retrying', response.text
+                    receipt = _checkpoint_operation_receipt(operation_id)
+                    assert receipt['state'] == 'retrying' and receipt['attempt_count'] == 1
+                    assert json.loads(receipt['payload_json']) == historical_payload
             finally:
                 allow_preparation.set()
-            response = posted.result(timeout=10)
+            # Make this owned receipt's saved retry deadline due, then use the
+            # genuine recovery claim. Never wait inside the analysis worker.
+            recovered_result = _recover_checkpoint_operation(operation_id)
+            assert recovered_result['persisted']
+            response = client.post('/api/opening-evidence/checkpoints', json=checkpoint,
+                                   headers={'Idempotency-Key': operation_id})
             assert response.status_code == 200 and response.json()['persisted']
             result = response.json()
             assert client.post('/api/opening-evidence/checkpoints', json=checkpoint,
@@ -568,7 +578,12 @@ def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostic
                 attempt_request = requests.submit(client.get, '/api/opening-evidence/attempts/' + attempt_id,
                                           headers={'X-Tempo-Work-Class': 'background'})
                 assert admission_denied.wait(5), 'Background HTTP attempt did not wait on real shared admission'
+                deferred = attempt_request.result(timeout=5)
+                assert deferred.status_code == 503 and deferred.headers['Retry-After'] == '1', deferred.text
+                assert deferred.json() == {'detail': 'Waiting for foreground activity'}
                 assert not evidence_sql_started.is_set(), 'HTTP attempt evidence SQL bypassed foreground admission'
+            attempt_request = requests.submit(client.get, '/api/opening-evidence/attempts/' + attempt_id,
+                                             headers={'X-Tempo-Work-Class': 'background'})
             if outcome == 'error':
                 try:
                     attempt_request.result(timeout=10)

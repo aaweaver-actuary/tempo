@@ -86,6 +86,23 @@ database; teardown `docker stop tempo-analysis-receipt-proof` then
 is required for this repaired head.
 # Current CI follow-up
 
+On the rebased d9625a7 candidate, two named receipt-read baseline cases failed:
+foreground activity prevented both retrying and unknown receipt lookup. Those
+bounded, read-only lookups now use short control capacity. They retain their
+background database budgets, cannot return false completion, and release the
+control context. Analysis diagnostics still yield promptly before SQL.
+
+The old native prefix/evidence proofs expected blocked HTTP reads. They now
+assert 503/Retry-After, absence of analysis SQL, and a fresh read after release;
+the accepted checkpoint retains a 202/retrying receipt and historical source
+payload, then resumes through genuine recovery with exact replay. All three
+focused native PostgreSQL/Redis proofs pass (prefix read 8.334 ms), and the
+affected admission/evidence/cutover files pass 245 cases in 2.16 seconds. The
+complete scheduling durability run on 00d73ff first exposed the old prefix
+expectation after preceding stages passed; it failed background_workloads in
+88.79 seconds and cleaned its own resources in 9.96 seconds. No complete pass
+is claimed from the subsequent focused repair.
+
 Admission head 4b09b0c exposed three older HTTP admission expectations and parent
 health-probe contention in the isolated graph helper database. The HTTP cases
 now require prompt retryable rejection and preserve every subsequent evidence
