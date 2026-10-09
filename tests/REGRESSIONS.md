@@ -2904,3 +2904,9 @@ card for retry; successful review is not reported as failed when queue refresh f
 return the real missing-receipt HTTP 404 for explicit receipt-first retries. Previously
 their generic HTTP 200 payload had no operation state and correctly left saves pending.
 All ordering, payload-retention, grading-block and queue-error assertions are unchanged.
+
+`phone terminal explicit retry cannot suspend an independent idle review sharing its
+in-flight flush` reproduces a recovery observer for B sharing A's explicit in-flight
+retry. A terminal response must suspend A, not B; confirmed results likewise clear
+only their own backoff entries. It failed before the identity-attribution correction,
+then passed with independent B confirmed and original A retained unchanged.

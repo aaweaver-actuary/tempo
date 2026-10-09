@@ -87,3 +87,30 @@ argument tuple; final typecheck rejected its request assertions. Typed that mock
 passed 15 cases in 1.12s and `npm run typecheck` passed after correction. Full lint
 passed in 24.27s (same ten existing warnings); focused ESLint passed after the type
 annotation. This is test-only; production source remains the validated repair.
+
+
+## Shared in-flight flush attribution
+
+The independent-review requirement also covers an idle observer sharing another
+attempt's explicit flush. A named regression on dirty 15f9558 failed first (one
+failure in 3.90s): terminal A incorrectly suspended the scheduled B's backoff entry,
+leaving B permanently retained. Recovery now attributes errors to ReviewReplayError's
+actual attempt ID and clears backoff only for IDs in confirmed/conflicted results.
+No new scheduler or transport identity is introduced.
+
+Final affected command is the eleven-file settled-source command above plus
+`tests/unit/study-regressions.test.tsx`: 229 passed in 22.36s. It includes the new
+shared-flush regression and every affected retry, queue, operation, conflict and
+phone caller file. Required complete CI must run again for this final hook change;
+previous candidate passes are not attributed to it.
+
+
+Final shared-flush candidate static checks: typecheck passed in 6.65s and lint passed
+in 11.54s (ten existing warnings, no errors). Final elevated focused browser command
+is the same five-case `make view` selection above: five passed in 7.2s / runner stage
+7.92s. Project tempo-pg-regressions-51468-063b9872: build 10.81s, startup 14.88s,
+cleanup 9.53s, all exit 0. Ownership/IDs/timestamps/exact teardown are under
+`test-results/tempo-cli/tempo-pg-regressions-51468-063b9872/ownership.json`;
+scenario timing is under `test-results/performance/postgres-scenarios-browser-tempo-pg-regressions-51468-063b9872.json`.
+Verified no project containers or images remain. This run tested dirty final source
+based on 15f9558; fresh committed-head and merge-candidate CI remains mandatory.

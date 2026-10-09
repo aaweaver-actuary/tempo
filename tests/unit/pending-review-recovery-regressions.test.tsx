@@ -213,3 +213,24 @@ it("phone transient recovery caps backoff at thirty seconds without changing the
   fetcher.mockResolvedValue(Response.json({ state: "complete", response: { persisted: true } }));
   await advance(30000); expect(pendingReviews()).toEqual([]);
 });
+
+
+it("phone terminal explicit retry cannot suspend an independent idle review sharing its in-flight flush", async () => {
+  enqueuePendingReview({ ...review, automaticRecoverySuppressed: "failed" });
+  enqueuePendingReview({ ...review, backendId: "independent-card", queueEntryId: 102, attemptId: "independent" });
+  let rejectRetry: ((response: Response) => void) | undefined;
+  const fetcher = vi.fn(async (url: RequestInfo | URL, options?: RequestInit) => {
+    if (String(url).includes("review-attempt%3Aoriginal-attempt")) return new Response(null, { status: 404 });
+    if (options?.method === "POST") return new Promise<Response>(resolve => { rejectRetry = resolve; });
+    return Response.json({ state: "complete", response: { persisted: true } });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const explicitRetry = flushPendingReviews(Infinity, true, "original-attempt");
+  const rejected = expect(explicitRetry).rejects.toMatchObject({ status: 422 });
+  render(<Harness confirmed={vi.fn()} />);
+  await advance(1000); // B's idle observer shares A's still-running explicit flush.
+  await act(async () => { rejectRetry!(Response.json({ detail: "Still invalid" }, { status: 422 })); await rejected; });
+  await advance(60000);
+  expect(pendingReviews().map(item => item.attemptId)).toEqual(["original-attempt"]);
+  expect(fetcher.mock.calls.filter(([url]) => String(url).includes("review-attempt%3Aindependent"))).toHaveLength(1);
+});

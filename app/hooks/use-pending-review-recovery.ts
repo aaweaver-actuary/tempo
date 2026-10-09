@@ -37,14 +37,18 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
           if (disposed || navigator.onLine === false || document.visibilityState === "hidden") return;
           running.current = true;
           void flushPendingReviews(1, true).then(result => {
-            deadlines.current.delete(identity);
+            for (const confirmedIdentity of [...result.persistedAttemptIds, ...result.conflictedAttemptIds])
+              deadlines.current.delete(confirmedIdentity);
             // The receipt is authoritative even if foreground readiness changed during the read.
             deferredConfirmations.current.push(result);
           }).catch(error => {
-            const previous = deadlines.current.get(identity)?.failures ?? 0;
+            // A manual flush may be shared with this idle observer. Attribute its
+            // result to the attempted review, never the independent scheduled one.
+            const failedIdentity = error instanceof ReviewReplayError ? error.attemptId : identity;
+            const previous = deadlines.current.get(failedIdentity)?.failures ?? 0;
             const retryable = error instanceof ReviewReplayError && ["pending", "transient"].includes(error.classification) &&
               !(error.cause instanceof PendingOperationError && error.cause.blocked);
-            deadlines.current.set(identity, { failures: previous + 1,
+            deadlines.current.set(failedIdentity, { failures: previous + 1,
               retryAt: retryable ? Date.now() + Math.min(30000, 1000 * 2 ** previous) : Infinity });
             reportDebugError(error, { source: "training-review-replay", operation: "recover saved review", notify: false });
           }).finally(() => {
