@@ -3853,7 +3853,7 @@ def test_postgres_exercise_train_now_replay_keeps_one_explicit_queue_entry(monke
 
 
 def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_stale_lease(monkeypatch, tmp_path):
-    from psycopg.errors import LockNotAvailable, TransactionTimeout
+    from psycopg.errors import LockNotAvailable, SerializationFailure
     from app import tasks
     monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
     from app.services import durable_tasks
@@ -3885,7 +3885,7 @@ def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_st
                         lambda *_args: pytest.fail("Expected contention must not spend a retry"))
     monkeypatch.setattr(tasks, "defer_task_for_contention", durable_tasks.defer_task_for_contention)
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda *_args, **_kwargs: None)
-    for expected_contention in (LockNotAvailable, TransactionTimeout):
+    for expected_contention in (LockNotAvailable, SerializationFailure):
         with sqlite3.connect(database_path) as database:
             database.execute(
                 "UPDATE background_tasks SET state='leased',phase='claimed',"
