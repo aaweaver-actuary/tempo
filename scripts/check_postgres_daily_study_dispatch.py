@@ -66,6 +66,8 @@ def cleanup(identifier):
 
 
 def proof():
+    from check_postgres_queue_unlock_scale import proof_graph_scale
+    proof_graph_scale(DSN)
     identifier = 'daily-study-proof-'+str(uuid.uuid4())
     try:
         seed(identifier, request_refresh=False)

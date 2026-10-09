@@ -669,7 +669,8 @@ def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identit
         apply_migrations(os.environ['TEMPO_DATABASE_WRITE_URL'])
         with postgres_store.connection(read_only=True) as database:
             assert before == [snapshot_rows(database, query, parameters) for query, parameters in queries]
-            assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 39
+            from app.schema_version import POSTGRES_SCHEMA_VERSION
+            assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == POSTGRES_SCHEMA_VERSION
         final = publish(payload)
         assert final['operation_id'] == payload['operation_id'] and execute(payload) == final
     print('PASS test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity')

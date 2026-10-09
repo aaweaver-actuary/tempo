@@ -1281,6 +1281,53 @@ _OPENING_UNLOCK_ELIGIBILITY_SQL = """content_type='opening' AND state='locked' A
           ))
     )"""
 
+# Drive eligibility from the current graph, rather than probing every locked
+# card against all historical graph generations. Each branch limits distinct
+# IDs before the final merge; transposed incoming paths cannot consume a page.
+_OPENING_UNLOCK_CANDIDATES_SQL = """WITH root_candidates AS (
+    SELECT DISTINCT card.id FROM opening_graph_publications publication
+    JOIN opening_graph_steps step ON step.repertoire_id=publication.repertoire_id
+        AND step.generation=publication.generation
+    JOIN cards card ON card.id=step.card_id
+    WHERE step.parent_card_id IS NULL AND card.content_type='opening'
+        AND card.state='locked' AND card.archived=0 AND card.id>?
+    ORDER BY card.id LIMIT ?
+), mature_parent_candidates AS (
+    SELECT DISTINCT card.id FROM cards parent
+    JOIN opening_graph_steps step ON step.parent_card_id=parent.id
+    JOIN opening_graph_publications publication ON publication.repertoire_id=step.repertoire_id
+        AND publication.generation=step.generation
+    JOIN cards card ON card.id=step.card_id
+    WHERE parent.state='mature' AND card.content_type='opening'
+        AND card.state='locked' AND card.archived=0 AND card.id>?
+    ORDER BY card.id LIMIT ?
+) SELECT id FROM root_candidates UNION SELECT id FROM mature_parent_candidates
+ORDER BY id LIMIT ?"""
+
+_OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL = """WITH root_candidates AS (
+    SELECT candidate.id FROM opening_graph_publications publication
+    CROSS JOIN LATERAL (
+        SELECT DISTINCT card.id FROM opening_graph_steps step
+        JOIN cards card ON card.id=step.card_id
+        WHERE step.repertoire_id=publication.repertoire_id
+          AND step.generation=publication.generation AND step.parent_card_id IS NULL
+          AND card.content_type='opening' AND card.state='locked' AND card.archived=0
+          AND card.id>%s ORDER BY card.id NULLS FIRST LIMIT %s
+    ) candidate
+), mature_parent_candidates AS (
+    SELECT candidate.id FROM cards parent
+    CROSS JOIN LATERAL (
+        SELECT DISTINCT card.id FROM opening_graph_steps step
+        JOIN opening_graph_publications publication ON publication.repertoire_id=step.repertoire_id
+          AND publication.generation=step.generation
+        JOIN cards card ON card.id=step.card_id
+        WHERE step.parent_card_id=parent.id AND card.content_type='opening'
+          AND card.state='locked' AND card.archived=0 AND card.id>%s
+        ORDER BY card.id NULLS FIRST LIMIT %s
+    ) candidate WHERE parent.state='mature'
+) SELECT id FROM root_candidates UNION SELECT id FROM mature_parent_candidates
+ORDER BY id NULLS FIRST LIMIT %s"""
+
 
 def _unlock_eligible_opening_cards(
     db, day, *, after_card_id: str | None = None, batch_size: int | None = None,
@@ -1290,10 +1337,11 @@ def _unlock_eligible_opening_cards(
     if batch_size is not None:
         if batch_size < 1:
             raise ValueError("Queue unlock batch size must be positive")
-        candidates = db.execute(
-            f"SELECT id FROM cards WHERE {_OPENING_UNLOCK_ELIGIBILITY_SQL} "
-            "AND id>? ORDER BY id LIMIT ?",
-            (after_card_id or "", batch_size + 1),
+        selector = (db.execute_native if hasattr(db, 'execute_native') else db.execute)
+        candidates = selector(
+            _OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL if hasattr(db, 'execute_native') else _OPENING_UNLOCK_CANDIDATES_SQL,
+            (after_card_id or "", batch_size + 1,
+             after_card_id or "", batch_size + 1, batch_size + 1),
         ).fetchall()
         selected_card_ids = [row[0] for row in candidates[:batch_size]]
         has_more_candidates = len(candidates) > batch_size
