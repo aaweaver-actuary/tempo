@@ -2636,6 +2636,9 @@ def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_p
     monkeypatch.setattr(postgres_queue_refresh, "lock_queue_date_for_position",
                         lambda _database, _queue_date: None)
 
+    # This SQL-translation fixture contains opportunity evidence only.
+    monkeypatch.setattr(postgres_queue_refresh, "has_outstanding_real_game_miss", lambda *_args: False)
+
     database_path = tmp_path / "priority-opening-publication.db"
     with sqlite3.connect(database_path) as database:
         database.executescript("""
@@ -2649,6 +2652,8 @@ def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_p
                                      gameplay_priority_reason TEXT,admission_repertoire_id TEXT,cycle INTEGER DEFAULT 0);
             CREATE TABLE repertoire_opportunities(repertoire_id TEXT,card_id TEXT,
                 kind TEXT,evidence_json TEXT,status TEXT,resolved_at TEXT,updated_at TEXT);
+            CREATE TABLE repertoire_integrity_card_blocks(repertoire_id TEXT,card_id TEXT);
+            CREATE VIEW current_repertoire_opportunities AS SELECT * FROM repertoire_opportunities;
             INSERT INTO cards VALUES('opening','new',NULL,0,0,'opening','rep');
             INSERT INTO repertoire_opportunities(repertoire_id,card_id,kind,evidence_json,status)
                 VALUES('rep','opening','weak_known_decision','{}','active');
@@ -2852,7 +2857,7 @@ def test_postgres_study_admission_waits_for_foreground_and_checkpoints_restart(m
     assert admitted == ["study-card"]
     resumed = {**task, "lease_token": "second", "payload": saved_payload}
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(resumed)
-    assert saved_payload["_queue_phase"] == "randomize_queue"
+    assert saved_payload["_queue_phase"] == "real_game_misses"
 
 
 def test_postgres_queue_randomization_replans_changed_membership_and_rejects_stale_lease(monkeypatch):
@@ -4946,6 +4951,12 @@ def test_postgres_queue_opening_reset_phases_are_idempotent_and_preserve_active_
 def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering(monkeypatch, tmp_path):
     from app.main import reconcile_unseen_queue
     from app.services import postgres_queue_refresh
+
+    # This small parity fixture models ordinary quota reconciliation. Actual
+    # current miss evidence is proved by feedback and PostgreSQL durability tests.
+    from app import main
+    monkeypatch.setattr(main, "has_outstanding_real_game_miss", lambda *_args: False)
+    monkeypatch.setattr(postgres_queue_refresh, "has_outstanding_real_game_miss", lambda *_args: False)
 
     schema = """
         CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,content_type TEXT,

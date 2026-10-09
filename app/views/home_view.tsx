@@ -845,7 +845,9 @@ export default function Home() {
         throw new Error("The active queue entry is unavailable. Refresh the queue.");
       setPendingBurialEntryId(queueEntryId);
       try {
-        await buryTrainingEntry(queueEntryId, pendingBurialEntryId !== undefined);
+        await buryTrainingEntry(queueEntryId, pendingBurialEntryId !== undefined, {
+          card_id: String(card.backendId ?? card.id), expected_revision: card.revision,
+        });
         await refreshDatabaseQueue(true);
         finishTrainingBurial(queueEntryId);
         setPendingBurialEntryId(undefined);
@@ -1083,7 +1085,6 @@ export default function Home() {
       return;
     }
     if (databaseQueue && card.backendId) {
-      let advancedFromCache = false;
       let submittedAttemptId: string | undefined;
       // Retention/capture can fail before an outbox envelope exists. Keep diagnostics
       // owned by the original attempt even if a later projection replaces the card.
@@ -1134,12 +1135,8 @@ export default function Home() {
           reviewSaveDiagnosticIdentity.current = undefined;
           setReviewPersistenceIdentity(submittedAttemptId ? { backendId: card.backendId,
             queueEntryId: card.queueEntryId, attemptId: submittedAttemptId } : undefined);
-          const finishNextCard = measureTempoDragPhase("next-card-readiness");
-          // Retention permits responsive advancement only when this attempt is eligible.
-          advancedFromCache = recoverableReviews().some(review => logicalAttemptId(review) === submittedAttemptId) &&
-            useTrainingStore.getState().advanceCachedQueue();
-          if (advancedFromCache) requestAnimationFrame(() => finishNextCard());
-          else finishNextCard(true);
+          // Connected completion waits for the authoritative queue before starting
+          // another attempt; gameplay may have promoted work since this snapshot.
           setReviewed((count) => count + 1);
         }
         if (retryPending) {
@@ -1181,7 +1178,7 @@ export default function Home() {
           setReviewPersistenceState(resultConflicted ? "conflicted" : "saved");
         setQueueNotice("");
         reviewPendingEntries.current.delete(entryKey);
-        const advanceDisplayedAttempt = !advancedFromCache && useTrainingStore.getState().attempt.attemptId === submittedAttemptId;
+        const advanceDisplayedAttempt = useTrainingStore.getState().attempt.attemptId === submittedAttemptId;
         if (
           transitionGeneration === reviewTransitionGeneration.current &&
           advanceDisplayedAttempt
@@ -1240,7 +1237,7 @@ export default function Home() {
           "This result could not be confirmed. Keep this browser's data and open Notifications for details before retrying.",
         );
         setQueueNotice("");
-        if (!advancedFromCache && !retryPending)
+        if (!retryPending)
           setAttemptPhase("feedbackPause");
         return;
       }

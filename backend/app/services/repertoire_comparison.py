@@ -200,7 +200,7 @@ def _load_repertoire_index(*, background: bool = False) -> tuple[list[dict], dic
     return repertoires, graphs, colors, card_positions
 
 
-def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[str, set[str]], set[str]], card_positions: dict[tuple[str, str, str], str]) -> dict:
+def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[str, set[str]], set[str]], card_positions: dict[tuple[str, str, str], str], *, include_assumed_decisions: bool = False) -> dict:
     expected_by_position, known_positions = graph
     board = chess.Board(game["start_fen"])
     player_is_white = game["color"] == "white"
@@ -210,14 +210,11 @@ def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[
     decision_events: list[dict] = []
     prefix_moves = json.loads(repertoire.get("canonical_prefix_moves_json", "[]"))
     for ply, actual_uci in enumerate(game["moves"]):
-        if ply < len(prefix_moves):
-            board.push_uci(actual_uci)
-            continue
         fen = board.fen()
         key = canonical_fen(fen)
         expected = expected_by_position.get(key, set())
         player_turn = board.turn == player_is_white
-        if player_turn and expected:
+        if player_turn and expected and (include_assumed_decisions or ply >= len(prefix_moves)):
             expected_move = actual_uci if actual_uci in expected else next(
                 (move for move in sorted(expected) if (repertoire["id"], key, move) in card_positions),
                 sorted(expected)[0],
@@ -230,6 +227,12 @@ def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[
                 "outcome": "success" if actual_uci in expected else "miss",
                 "card_id": card_positions.get((repertoire["id"], key, expected_move)),
             })
+        if ply < len(prefix_moves):
+            try:
+                board.push_uci(actual_uci)
+            except ValueError:
+                break
+            continue
         if key in known_positions:
             if not expected:
                 if out_of_book is None:
@@ -300,6 +303,24 @@ def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[
     }
 
 
+def prepare_game_comparisons(game: dict, repertoires: list[dict], graphs: dict,
+                             colors: dict, card_positions: dict) -> tuple[list[dict], dict | None]:
+    """Reuse one traversal; classify scoped games separately from owned decisions."""
+    all_comparisons = [
+        _compare_game_to_repertoire(game, repertoire, graphs.get(repertoire["id"], ({}, set())),
+                                   card_positions, include_assumed_decisions=True)
+        for repertoire in repertoires if game["color"] in colors.get(repertoire["id"], set())
+    ]
+    all_comparisons.sort(key=lambda item: (-item["matched"], -item["deepest"], -item["is_main"], item["repertoire_id"]))
+    prefixes = {repertoire["id"]: json.loads(repertoire.get("canonical_prefix_moves_json", "[]")) for repertoire in repertoires}
+    scoped_comparisons = [item for item in all_comparisons
+                          if game_in_scope(game["start_fen"], game["moves"], prefixes[item["repertoire_id"]])]
+    evidence_owner = scoped_comparisons[0] if scoped_comparisons else next(
+        (item for item in all_comparisons if any(event["card_id"] for event in item["decision_events"])), None,
+    )
+    return scoped_comparisons, evidence_owner
+
+
 def compare_games(
     game_ids: list[str] | None = None, *, background: bool = False
 ) -> None:
@@ -315,18 +336,10 @@ def compare_games(
         ]
     computed: list[tuple[dict, list[dict]]] = []
     for game in games:
-        matches = [
-            _compare_game_to_repertoire(
-                game,
-                repertoire,
-                graphs_by_repertoire.get(repertoire["id"], ({}, set())),
-                card_positions,
-            )
-            for repertoire in repertoires
-            if game["color"] in colors_by_repertoire.get(repertoire["id"], set())
-            and game_in_scope(game["start_fen"], game["moves"], json.loads(repertoire.get("canonical_prefix_moves_json", "[]")))
-        ]
-        matches.sort(key=lambda item: (-item["matched"], -item["deepest"], -item["is_main"], item["repertoire_id"]))
+        matches, evidence_owner = prepare_game_comparisons(
+            game, repertoires, graphs_by_repertoire, colors_by_repertoire, card_positions,
+        )
+        game["decision_evidence_owner"] = evidence_owner
         computed.append((game, matches))
     if background:
         activity_gate.wait_for_foreground()
@@ -352,10 +365,11 @@ def compare_games(
                     ),
                 )
             primary = matches[0] if matches else None
-            if primary:
-                for event in primary["decision_events"]:
+            evidence_owner = game["decision_evidence_owner"]
+            if evidence_owner:
+                for event in evidence_owner["decision_events"]:
                     event_id = hashlib.sha256(
-                        f"{game['id']}\0{primary['repertoire_id']}\0{event['ply']}".encode()
+                        f"{game['id']}\0{evidence_owner['repertoire_id']}\0{event['ply']}".encode()
                     ).hexdigest()
                     database.execute(
                         """INSERT INTO repertoire_decision_events(
@@ -363,7 +377,7 @@ def compare_games(
                                expected_uci,actual_uci,outcome,played_at,updated_at
                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                         (
-                            event_id, game["id"], primary["repertoire_id"],
+                            event_id, game["id"], evidence_owner["repertoire_id"],
                             event["card_id"], event["ply"], event["fen_key"],
                             event["expected_uci"], event["actual_uci"],
                             event["outcome"], game["played_at"], now,

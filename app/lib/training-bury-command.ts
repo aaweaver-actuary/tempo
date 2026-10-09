@@ -1,9 +1,14 @@
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse, retryBlockedOperation } from "./operation-status";
 
-export async function buryTrainingEntry(queueEntryId: number, retry = false): Promise<void> {
+export async function buryTrainingEntry(queueEntryId: number, retry = false, identity?: { card_id: string; expected_revision?: number }): Promise<void> {
   const operationKey = `tempo-bury-operation-${queueEntryId}`;
-  const operationId = localStorage.getItem(operationKey) ?? crypto.randomUUID();
+  const existingOperationId = localStorage.getItem(operationKey);
+  const operationId = existingOperationId ?? crypto.randomUUID();
+  const identityKey = `tempo-bury-identity-${queueEntryId}`;
+  const savedIdentity = localStorage.getItem(identityKey);
+  const requestBody = savedIdentity ?? (!existingOperationId && identity ? JSON.stringify(identity) : undefined);
+  if (requestBody) localStorage.setItem(identityKey, requestBody);
   localStorage.setItem(operationKey, operationId);
   localStorage.setItem("tempo-pending-burial-entry", String(queueEntryId));
   try {
@@ -20,7 +25,8 @@ export async function buryTrainingEntry(queueEntryId: number, retry = false): Pr
       if (confirmed) { await validateTrainingBurial(confirmed, queueEntryId); return; }
     }
     let response = await fetch(`${API_URL}/api/queue/entries/${queueEntryId}/bury`, {
-      method: "POST", headers: { "Idempotency-Key": operationId },
+      method: "POST", headers: { "Idempotency-Key": operationId, ...(requestBody ? { "Content-Type": "application/json" } : {}) },
+      body: requestBody,
     });
     // A direct server error can replay a permanently failed receipt, or hide
     // a committed command. Only its durable receipt resolves that ambiguity.
@@ -47,6 +53,7 @@ export async function buryTrainingEntry(queueEntryId: number, retry = false): Pr
 
 export function finishTrainingBurial(queueEntryId: number): void {
   localStorage.removeItem(`tempo-bury-operation-${queueEntryId}`);
+  localStorage.removeItem(`tempo-bury-identity-${queueEntryId}`);
   if (localStorage.getItem("tempo-pending-burial-entry") === String(queueEntryId))
     localStorage.removeItem("tempo-pending-burial-entry");
 }

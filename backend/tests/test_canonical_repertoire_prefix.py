@@ -401,7 +401,9 @@ def test_canonical_prefix_game_matches_and_statistics_exclude_sicilian_philidor_
         matches = list(connection.execute("SELECT game_id FROM game_repertoire_matches WHERE repertoire_id='italian'"))
         assert [row["game_id"] for row in matches] == ["italian-game"]
         assert connection.execute("SELECT COUNT(*) FROM imported_games").fetchone()[0] == 4
-        assert all(row["ply"] >= 5 for row in connection.execute("SELECT ply FROM repertoire_decision_events WHERE repertoire_id='italian'"))
+        # Canonical prefix decisions remain evidence even when the exact route
+        # is excluded from opening classification and coverage statistics.
+        assert connection.execute("SELECT COUNT(*) FROM repertoire_decision_events WHERE repertoire_id='italian' AND ply<5").fetchone()[0] > 0
     statistics = repertoire_statistics("italian", "all")
     assert statistics["games"]["matched"] == 1
 

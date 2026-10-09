@@ -358,7 +358,7 @@ Quiet notifications (October 2, 2026):
 | Daily chess insights run before sync watermarks and game analysis settle | `test_daily_insights_wait_for_sync_and_analysis_completion` |
 | A late-arriving game leaves a stale daily snapshot or insight | `test_late_game_arrival_invalidates_affected_daily_snapshot` |
 | Ignoring gameplay evidence changes scheduling | `test_ignored_gameplay_finding_never_changes_card_scheduling` |
-| A confirmed gameplay miss double-counts, changes FSRS, or reorders its queue entry on replay | `test_accepted_repertoire_finding_prioritizes_without_fsrs_review`; `test_confirmed_gameplay_miss_replays_without_fsrs_review_or_queue_reordering` |
+| A confirmed gameplay miss double-counts, changes FSRS, or reorders its queue entry on replay | `test_accepted_repertoire_finding_prioritizes_without_fsrs_review`; `test_confirmed_gameplay_miss_promotes_then_replays_without_fsrs_review_or_reordering` |
 | A real-game repertoire miss is not linked to its existing card or cannot bring it into training | `test_real_game_miss_maps_to_existing_card_once_and_reaches_introduction_queue`; `test_studied_game_miss_prioritizes_without_changing_fsrs_or_creating_review` |
 | Opponent moves, line endings, or missing cards create false player priority | `test_opponent_deviation_and_line_end_create_no_player_miss_event`; `test_missing_card_keeps_finding_without_priority_or_review` |
 | Transpositions lose decision identity or later correct gameplay is not measurable | `test_transposed_decision_keeps_canonical_card_identity`; `test_targeted_study_updates_fsrs_and_later_success_is_measurable` |
@@ -3073,3 +3073,60 @@ The unchanged FEN study queue-ready assertion failed on PR #133 integration `9da
 
 - `test_issue79_rehearsal_never_replays_a_started_calculation_after_foreground_preemption` (`backend/tests/test_prefix_transition_api.py`) failed against the existing retry behavior: an explicitly preempted calculation was silently replaced by a fresh 200 plan. The helper now returns that started request's rejection. Pre-calculation foreground admission still coordinates as before.
 - `test_issue79_readonly_planner_foreground_concurrency_and_stale_replay` keeps the native 50ms read budget, released-reader/foreground review checks, read-only snapshots, and mandatory same-request `409 stale_plan`. Explicit foreground preemption restarts the complete capture/review experiment within the existing 10-second coordination window, records its count, and never accepts false success, other errors, or exhausted coordination as a pass.
+Immediate real-game study obligations (October 9, 2026):
+
+- `backend/tests/test_real_game_feedback.py`: `test_real_game_miss_admits_locked_or_new_card_despite_daily_limit` (new/locked, zero/exhausted allowance), `test_real_game_miss_promotes_existing_entry_ahead_of_ordinary_work_and_replays_once`, `test_real_game_miss_obligation_survives_next_day_without_fsrs_mutation`, `test_real_game_miss_uses_exact_study_instants_including_equal_and_microsecond_times`, `test_real_game_miss_transposed_prefix_decision_prioritizes_whole_card_without_split`, and `test_real_game_miss_inside_configured_prefix_is_not_assumed_away` reproduced nine failures on unchanged main. The whole-card identity, FSRS separation, opponent deviation, unknown decision, and remediation regressions remain required.
+- The same suite adds `test_real_game_miss_retains_unsafe_or_excluded_evidence_without_admission` (excluded, archived, pending, superseded, deleted, integrity blocked), `test_real_game_obligation_uses_valid_study_and_equivalent_timezone_instants`, `test_real_game_misses_deduplicate_by_card_and_study_consumes_all`, `test_real_game_priority_retains_identified_active_attempt_and_burial_defers_obligation`, and `test_canonical_decisions_recognize_deep_reentry_and_accepted_alternatives`. The canonical-prefix statistics regression now retains prefix decision evidence while preserving exact-route opening classification assertions.
+- `scripts/check_postgres_queue_attempt_recovery.py`: `test_postgres_real_game_obligation_admission_restart_publication_and_remediation`, in the regular disposable durability gate, proves zero-allowance locked admission/reconciliation, unchanged ancestor and FSRS state, card-ID order, retained foreground marker identity, expired-lease restart/replay, next-day restoration, atomic staged publication, study consumption, and a newly published miss after study.
+- `tests/unit/desktop-queue-regressions.test.ts`: `real-game promotion preserves the displayed attempt then starts the authoritative obligation`; `tests/unit/study-regressions.test.tsx`: `connected completion waits for authoritative real-game obligations before starting the next card`, connected sequential tactic progression and failed-save retention; `tests/unit/training-burial-regressions.test.ts`: `retained active burial retries preserve the original card and revision identity`.
+- Real browser workflow: `tests/browser/real-game-feedback.spec.ts`: `connected completion fetches a new real-game obligation before cached ordinary work`. The connected-confirmation cases in `training-prefetch.spec.ts` now require authoritative advancement while preserving quiet saves and sequential tactic completion. Network responses are controlled; application persistence, board rendering, completion handling, and browser events are real. Offline study remains covered by the existing offline suites.
+
+- CI caller regressions retain shared-card repertoire admission ownership and explicit discovery admission metadata (`test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards`, `test_discovery_explicit_locked_decision_survives_daily_cap_and_duplicate_clicks`). Review-confirmation fixtures now remove confirmed entries from authoritative queues while preserving prior-conflict attribution. The real CLI lifecycle rejection proof removes ledger versions 40 and later while retaining migration 40’s column, so safely replayable latest view DDL cannot accidentally turn the rejection fixture into a success.
+
+- `test_celery_unresponsive_redis_read_yields_an_error_instead_of_freezing_wakes` (broker/results) first failed twice with real client threads blocked on owned reachable peers that withheld replies. Individual Redis connect/read/write operations now have five-second socket limits; existing publication retries, acknowledgements, visibility and receipt policy remain unchanged. `test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery` runs in regular PostgreSQL daily-study durability against real Redis through an owned reply-dropping proxy: independent publication completes during the fault, the failed channel closes, a recreated channel consumes the retained message and resumed publication exactly once, and only UUID-qualified fixture queues are removed. Historical scheduler stalls remain related to #135; missing I/O bounds are demonstrated separately, without claiming their exact causal role.
+
+
+
+## Issue #136: coordinated disposable PostgreSQL fixture reset
+
+The product fixture previously issued one uncoordinated `DELETE FROM deleted_cards`
+while real workers held migration 039's shared structural/queue reservation. Its
+expected `55P03` yield aborted the provider case before the test body.
+
+- `Issue136 fixture reset yields to a held writer and succeeds after release`
+  (`tests/unit/product-fixture-reset-regressions.test.ts` and
+  `tests/browser/product-fixture-reset.spec.ts`) proves bounded exact-error retries;
+  the real PostgreSQL case first requires the original one-shot deletion to fail,
+  observes the new helper's real yield, then explicitly releases the writer and
+  verifies committed deletion, repeated reset and the enabled production trigger.
+- `Issue136 fixture reset stops at its contention deadline and reports holders`
+  and `Issue136 fixture reset retains contention diagnostics when holder inspection fails`
+  protect the finite retry/diagnostic budgets and original cause. The browser case
+  `Issue136 fixture reset stops at its contention deadline and retains exclusions`
+  keeps a real writer held through failure and verifies no exclusions were lost.
+- `Issue136 fixture reset waits out a deadline too short for another observed command`
+  avoids starting a final attempt with less than the observed Docker command cost.
+- `Issue136 fixture reset rejects unexpected database errors without retry: %j`
+  protects other `55P03` messages, `P0080`, missing relations, transport errors,
+  killed/signaled commands and multiple errors. The browser case
+  `Issue136 fixture reset rejects unexpected real database errors without retry`
+  requires one real `42P01` attempt.
+- `Issue136 fixture reset refuses unmarked or mismatched targets: %j`,
+  `Issue136 fixture reset refuses another project's published API before SQL`,
+  `Issue136 fixture reset propagates ownership inspection failure without SQL`,
+  and `Issue136 fixture reset succeeds immediately and repeated resets remain idempotent`
+  protect disposable-only targeting and ordinary/reset replay behavior.
+- `Issue136 fixture reset refuses invalid container ownership without SQL: %s`
+  requires matching project/service labels, exact container IDs and one loopback
+  API binding before executing against the verified PostgreSQL container.
+
+Cleanup audit: this is the only direct `deleted_cards` reset in browser fixtures.
+The SQLite branch retains its historical behavior. The daily-study contention
+fixture cleans only its uniquely identified rows with its owned background worker
+stopped; it does not clear exclusions. PostgreSQL durability scripts manipulate
+scoped exclusions in their isolated scenario boundaries; their deliberate
+production coordination/fence assertions remain unchanged. No general SQL retry,
+production guard disablement, worker pause or migration/API change was introduced.
+
+
+- `test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption` forces a real Redis foreground lease while the reader-only deployed API dispatches. The original receipt must record its precise preparation yield, then reach staging after eligible same-key/body redelivery with the proof's background scheduler stopped, within the original ten-second bound. Final publication replay and changed-identity rejection remain mandatory. `test_issue80_http_proof_redelivers_only_eligible_original_foreground_yield` covers one redelivery per attempt, future eligibility, unexpected errors and exhausted deadlines; no production retries or budgets change. CI reproduced the missing test-driver wake before this repair.

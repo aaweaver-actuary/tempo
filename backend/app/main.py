@@ -92,7 +92,11 @@ from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order
 from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
-from .services.real_game_feedback import MISS_REASON, prioritize_real_game_miss
+from .services.real_game_feedback import (
+    MISS_REASON, prioritize_real_game_miss, outstanding_miss_query, outstanding_miss_sql,
+    has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses,
+    clear_satisfied_miss_priority,
+)
 from .services.endgames import (
     category_for_player,
     generate_position,
@@ -1089,7 +1093,7 @@ def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
         repertoire_id = row["repertoire_id"]
         introduced = introduced_by_repertoire.get(repertoire_id, 0)
         daily_limit = repertoire_limits.get(repertoire_id, limit) if repertoire_limits is not None else limit
-        if introduced < daily_limit:
+        if introduced < daily_limit or has_outstanding_real_game_miss(db, row["card_id"]):
             db.execute(
                 "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
                 (day, row["card_id"]),
@@ -1113,20 +1117,13 @@ def _priority_frontier_depth(priority_row) -> int:
         return 0
 
 
-_ACTIVE_OPENING_MISS_SQL = """SELECT DISTINCT event.card_id
-               FROM current_repertoire_decision_events event
-               JOIN imported_games game ON game.id=event.game_id
-               WHERE event.outcome='miss' AND game.adaptive_excluded=0
-                 AND NOT EXISTS(
-                     SELECT 1 FROM reviews review
-                     WHERE review.card_id=event.card_id AND review.source_kind='study'
-                       AND julianday(review.reviewed_at)>julianday(event.played_at)
-                 )"""
+_ACTIVE_OPENING_MISS_SQL = outstanding_miss_sql(postgres=True)
 _PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
-                  CASE WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
+                  CASE WHEN active_miss.card_id IS NOT NULL THEN ?
+                    WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
                     'Priority introduction · reached ' || json_extract(opportunity.evidence_json,'$.encounter_count') ||
                     ' times in games, missed ' || json_extract(opportunity.evidence_json,'$.miss_count') || ' times'
-                    WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.reason END gameplay_priority_reason,
+                    ELSE p.reason END gameplay_priority_reason,
                   CASE WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.priority_date END priority_date,
                   COALESCE(published_priority.priority_score,legacy_priority.priority_score) priority_score,
                   COALESCE(published_priority.completed_line_ids_json,legacy_priority.completed_line_ids_json) completed_line_ids_json,
@@ -1154,17 +1151,14 @@ _PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_
            LEFT JOIN current_repertoire_card_introduction_priorities legacy_priority
              ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.id
            WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL OR opportunity.id IS NOT NULL)
-             AND (c.state='new' OR (c.state='locked' AND opportunity.id IS NOT NULL))
+             AND (c.state='new' OR (c.state='locked' AND (opportunity.id IS NOT NULL OR active_miss.card_id IS NOT NULL)))
              AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
              AND EXISTS(SELECT 1 FROM repertoires r_ok
                         WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
                           AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                          WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id))
              AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)"""
-_PRIORITY_OPENING_CANDIDATES_SQL = (
-    f"WITH active_miss AS ({_ACTIVE_OPENING_MISS_SQL}) "
-    + _PRIORITY_OPENING_CANDIDATE_BODY
-)
+
 
 
 def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
@@ -1181,6 +1175,13 @@ def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
         remaining = max(0, daily_limit - introduced_by_repertoire.get(repertoire_id, 0))
         selected_ids: set[str] = set()
         breadth_line_ids: set[str] = set()
+        for obligation in sorted((row for row in rows if row["gameplay_priority_reason"] == MISS_REASON), key=lambda row: row["id"]):
+            if obligation["id"] in globally_selected_ids:
+                continue
+            planned.append((repertoire_id, obligation))
+            selected_ids.add(obligation["id"])
+            globally_selected_ids.add(obligation["id"])
+            remaining = max(0, remaining - 1)
         while remaining:
             available = [
                 row for row in rows
@@ -1229,7 +1230,7 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
     """Admit unseen opening cards by impact without changing the active queue."""
 
     candidates = db.execute(
-        _PRIORITY_OPENING_CANDIDATES_SQL,
+        f"WITH active_miss AS ({outstanding_miss_query(db)}) " + _PRIORITY_OPENING_CANDIDATE_BODY,
         (MISS_REASON, day, day, day, day),
     ).fetchall()
     # Historical introductions consume allowance even if eligibility changes later.
@@ -1499,6 +1500,13 @@ def seed_queue(db, day):
         )
     maximum += len(rows)
     admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
+    outstanding_studied_cards = db.execute(outstanding_miss_query(
+        db, additional_where="AND card.state IN ('learning','mature') ORDER BY event.card_id",
+    )).fetchall()
+    for missed_card in outstanding_studied_cards:
+        promote_real_game_card(db, missed_card["card_id"], day)
+    for stale_priority in db.execute("SELECT DISTINCT card_id FROM daily_queue WHERE queue_date=? AND gameplay_priority_reason=?", (day, MISS_REASON)).fetchall():
+        clear_satisfied_miss_priority(db, stale_priority["card_id"])
     study_allowance = db.execute("SELECT study_new_per_day FROM settings WHERE id=1").fetchone()[0]
     admitted_studies = db.execute(
         """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -1590,7 +1598,7 @@ def _plan_daily_queue_order(rows, day: str, saved) -> tuple[int, str, list]:
     prioritized_misses = [row for row in ordered if row["gameplay_priority_reason"] == MISS_REASON]
     if prioritized_misses:
         ordinary_cards = [row for row in ordered if row["gameplay_priority_reason"] != MISS_REASON]
-        ordered = ordinary_cards[:4] + prioritized_misses + ordinary_cards[4:]
+        ordered = sorted(prioritized_misses, key=lambda row: (row["card_id"], row["id"])) + ordinary_cards
     return seed, membership_hash, ordered
 
 
@@ -1604,6 +1612,7 @@ def randomize_daily_queue(db, day: str) -> None:
     ).fetchone()
     membership_hash = _queue_membership_hash(rows)
     if saved and saved["membership_hash"] == membership_hash:
+        prioritize_queued_misses(db, day)
         return
     seed, membership_hash, ordered = _plan_daily_queue_order(rows, day, saved)
     for position, row in enumerate(ordered):
@@ -2846,18 +2855,9 @@ def mark_attempt_failed(entry_id: int,
         return dispatch_command("queue.attempt_failed", {"entry_id": entry_id, **(request.model_dump(exclude_none=True) if request else {})},
                                 idempotency_key=idempotency_key)
     with connection() as db:
-        active_entry = db.execute(
-            """SELECT id FROM daily_queue WHERE queue_date=? AND status='queued'
-               AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
-                    OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-               ORDER BY position,id LIMIT 1""",
-            (date.today().isoformat(),),
-        ).fetchone()
-        if not active_entry or active_entry["id"] != entry_id:
-            raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
-        from .queue_attempt_origins import validate_failure_marker
-        validate_failure_marker(db, entry_id, request.card_id if request else None,
-                                request.expected_revision if request else None)
+        from .queue_commands import validate_available_attempt
+        validate_available_attempt(db, entry_id, request.card_id if request else None,
+                                   request.expected_revision if request else None)
         if not db.execute(
             """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'
                AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
@@ -2870,22 +2870,17 @@ def mark_attempt_failed(entry_id: int,
 
 @app.post("/api/queue/entries/{entry_id}/bury")
 def bury_queue_entry(entry_id: int,
+                     request: QueueAttemptFailureRequest | None = None,
                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command("queue.bury", {"entry_id": entry_id},
+        return dispatch_command("queue.bury", {"entry_id": entry_id, **(request.model_dump(exclude_none=True) if request else {})},
                                 idempotency_key=idempotency_key)
     day = date.today().isoformat()
     with connection() as db:
-        active_entry = db.execute(
-            """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
-               WHERE q.queue_date=? AND q.status='queued'
-                 AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-               ORDER BY q.position,q.id LIMIT 1""",
-            (day,),
-        ).fetchone()
-        if active_entry is None or active_entry["id"] != entry_id:
-            raise HTTPException(409, "This queue entry is no longer active")
+        from .queue_commands import validate_available_attempt
+        validate_available_attempt(db, entry_id, request.card_id if request else None,
+                                   request.expected_revision if request else None)
         # Retained rows prevent same-day refreshes from readmitting the card.
         db.execute(
             """UPDATE daily_queue SET status='buried'

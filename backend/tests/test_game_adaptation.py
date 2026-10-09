@@ -178,7 +178,7 @@ def test_blocked_repertoire_finding_preserves_event_without_queuing(tmp_path, mo
             assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='card'").fetchone()[0] == 0
 
 
-def test_confirmed_gameplay_miss_replays_without_fsrs_review_or_queue_reordering(
+def test_confirmed_gameplay_miss_promotes_then_replays_without_fsrs_review_or_reordering(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
@@ -225,7 +225,7 @@ def test_confirmed_gameplay_miss_replays_without_fsrs_review_or_queue_reordering
                 (date.today().isoformat(),),
             ).fetchall()
         assert [row["card_id"] for row in queued] == first_order
-        assert first_order.index("card") == 4
+        assert first_order.index("card") == 0
 
 
 def test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card(

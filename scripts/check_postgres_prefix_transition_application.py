@@ -1,5 +1,5 @@
 """Issue 80 durable application proofs, exclusively on runner-owned PostgreSQL."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import date, datetime, timezone
 import json
@@ -1151,22 +1151,51 @@ def test_issue80_unclean_source_integrity_rejects_before_acceptance():
     print('PASS test_issue80_unclean_source_integrity_rejects_before_acceptance')
 
 
-def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result():
+def wait_for_staged_http_application(operation_id, redeliver, deadline):
+    """Drive this receipt's eligible retry while the proof's scheduler is stopped."""
+    redelivered_attempt = None
+    result = read_operation(operation_id)
+    while result['state'] in {'unknown', 'queued', 'executing', 'retrying'} and time.monotonic() < deadline:
+        if result['state'] == 'retrying':
+            assert result.get('last_error') == {
+                'class': 'SerializationFailure',
+                'message': 'Transition preparation yielded to foreground work; retry its durable operation',
+            }, result
+            eligible_at = datetime.fromisoformat(result['next_retry_at'])
+            if (eligible_at <= datetime.now(timezone.utc)
+                    and result['attempt_count'] != redelivered_attempt):
+                redeliver()
+                redelivered_attempt = result['attempt_count']
+        time.sleep(0.01)
+        result = read_operation(operation_id)
+    assert result['state'] == 'pending' and result['transition']['state'] == 'staging', result
+    return result
+
+
+def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result(*, force_foreground_yield=False):
     from urllib.request import Request,urlopen
     from urllib.error import HTTPError
+    from app.services.redis_admission_gate import foreground_lease
     with fixture('http') as (rep,other,lines,steps):
         plan,payload=ready_plan(rep,lines)
         path=f'http://api:8000/api/repertoires/{rep}/prefix-transition/apply'
         def request(body):
             return Request(path,method='POST',headers={'Content-Type':'application/json','Idempotency-Key':payload['operation_id']},data=json.dumps(body).encode())
-        with urlopen(request(payload['request']),timeout=10) as response:
-            assert response.status==202 and response.headers['Location']==f"/api/operations/{payload['operation_id']}"
-            assert json.load(response)['operation_id']==payload['operation_id']
+        def dispatch_original():
+            with urlopen(request(payload['request']),timeout=10) as response:
+                assert response.status==202 and response.headers['Location']==f"/api/operations/{payload['operation_id']}"
+                assert json.load(response)['operation_id']==payload['operation_id']
         deadline=time.monotonic()+10
-        result=read_operation(payload['operation_id'])
-        while result['state'] in {'unknown','queued','executing','retrying'} and time.monotonic()<deadline:
-            time.sleep(0.01);result=read_operation(payload['operation_id'])
-        assert result['state']=='pending' and result['transition']['state']=='staging',result
+        with foreground_lease() if force_foreground_yield else nullcontext():
+            dispatch_original()
+            if force_foreground_yield:
+                result=read_operation(payload['operation_id'])
+                while result['state'] in {'unknown','queued','executing'} and time.monotonic()<deadline:
+                    time.sleep(0.01);result=read_operation(payload['operation_id'])
+                assert result['state']=='retrying',result
+        staged=wait_for_staged_http_application(payload['operation_id'],dispatch_original,deadline)
+        if force_foreground_yield:
+            assert staged['attempt_count']>=2,staged
         final=publish(payload)
         with urlopen(request(payload['request']),timeout=10) as response:
             assert response.status==200 and json.load(response)==final
@@ -1174,7 +1203,13 @@ def test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_f
         try: urlopen(request(changed),timeout=10)
         except HTTPError as error: assert error.code==409
         else: raise AssertionError('Reader API accepted changed command identity after completion')
-    print('PASS test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result')
+    if not force_foreground_yield:
+        print('PASS test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result')
+
+
+def test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption():
+    test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result(force_foreground_yield=True)
+    print('PASS test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption')
 
 @contextmanager
 def measure_application_transactions():
@@ -1474,6 +1509,7 @@ def main():
         test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay()
         test_issue80_unclean_source_integrity_rejects_before_acceptance()
         test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result()
+        test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption()
 
 
 if __name__ == '__main__':
