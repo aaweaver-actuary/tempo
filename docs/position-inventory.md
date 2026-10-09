@@ -44,6 +44,21 @@ published graph generation, raw source revision, canonical-prefix revision and
 its relevant preview identity. Repeated identical requests preserve task leases
 and cursors. Unchanged route artifacts are reused, including across repertoires.
 
+Blocking graph publication locks the repertoire before its graph task, then
+checks the claimed generation/lease again. Inventory requests and slices lock
+the repertoire, then the inventory task, before changing generation state;
+terminal failure locks the task before its generation. Reconciliation locks its
+selected repertoire before its own task and the inventory request. This prevents
+both graph-task/repertoire and inventory-task/generation cycles. Prefix-transition
+activation already owns the repertoire before shared publication; its earlier
+task/reservation acquisitions retain their NOWAIT/try-lock behavior.
+
+Manual Retry keeps the failed generation immutable. On delivery, `_current()`
+fences the failed input, completes that obsolete delivery, and atomically queues
+a replacement generation on the same durable task identity. The replacement
+remains queued until publication and bounded cleanup finish; replay of the old
+delivery cannot complete or overwrite it.
+
 A delivery reads one route/card segment, closes the reader before python-chess
 computation, then commits through the existing foreground admission gate. Board
 FEN and ply checkpoints commit atomically with results. Replay checks both task
@@ -88,3 +103,11 @@ replay, source fencing, cache retention, transpositions, pagination and long-rou
 bounds. The regular durability runner invokes this checker. Existing coverage,
 canonical-prefix, graph, durable-task and schema tests protect callers. CI owns
 final required current-head/current-base validation; no UI rendering changed.
+
+PR #117 repair validation: the changed behavior is graph/inventory lock ordering
+and failed-generation retry recovery. Risks are foreground deadlocks, stale
+publication, lost refresh requests, and retained obsolete memberships. The
+smallest proof uses independent PostgreSQL connections in the inventory checker,
+then affected graph/inventory/task tests and the settled Docker durability gate.
+CI owns final required candidate validation. Migration integration waits for
+PR #116 to merge; no transaction budgets or published migrations are weakened.

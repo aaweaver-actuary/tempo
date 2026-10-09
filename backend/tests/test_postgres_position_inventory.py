@@ -94,9 +94,11 @@ def test_issue108_same_input_request_keeps_lease_and_cursor(monkeypatch):
     identity = dict(graph_generation=2,source_revision=7,prefix_revision=0,preview_id=None)
     latest = {**identity,'id':'existing','state':'building'}
     writes = []
-    database = SimpleNamespace(execute_native=lambda statement,params=(): (
-        SimpleNamespace(fetchone=lambda: latest) if statement.startswith('SELECT *')
-        else writes.append(statement)))
+    def execute(statement, params=()):
+        if statement.startswith('SELECT'):
+            return SimpleNamespace(fetchone=lambda: latest if statement.startswith('SELECT *') else None)
+        writes.append(statement)
+    database = SimpleNamespace(execute_native=execute)
     monkeypatch.setattr(inventory,'input_identity',lambda *args,**kwargs: identity)
     monkeypatch.setattr(inventory,'enqueue_task_in_transaction',lambda *args,**kwargs: pytest.fail('Reset task'))
     assert inventory.request_inventory_in_transaction(database,'repertoire') == 'existing'

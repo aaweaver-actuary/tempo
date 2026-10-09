@@ -2838,6 +2838,33 @@ Stalemate Swindles (October 5, 2026):
 
 ## Issue #108 — shared legal position inventory
 
+PR #117 repairs and recovery proofs (regular PostgreSQL `background_workloads`
+stage, invoked by `scripts/check_postgres_position_inventory.py`):
+
+- `test_pr117_foreground_mutation_and_graph_publication_have_no_lock_cycle`:
+  independent PostgreSQL connections, real PGN-import/branch commands, both
+  lock schedules repeated ten times each, stale delivery fencing, atomic graph
+  visibility/inventory requests, and eventual current inventory publication.
+- `test_pr117_inventory_failure_and_refresh_have_no_lock_cycle`: terminal
+  inventory failure overlapping source mutation/refresh cannot deadlock or lose
+  the replacement request.
+- `test_pr117_graph_inventory_handoff_rolls_back_atomically`: publication and
+  inventory enqueue roll back together, including generation rows and cursors;
+  a committed replay is fenced.
+- `test_pr117_inventory_manual_retry_publishes_replacement_without_stale_memberships`:
+  production claim/failure exhaustion and PostgreSQL `activity.task.retry`
+  replace failed work, publish once, reject stale delivery replay, and clean old
+  memberships/responses. This passes the original recovery implementation.
+- `test_pr117_inventory_publication_rejects_incomplete_routes`: unfinished
+  routes cannot become visible or advance the durable task; the same delivery
+  resumes and publishes only after traversal completes.
+
+Graph publication and inventory failure/refresh regressions both reproduce a
+real PostgreSQL `DeadlockDetected` on original service revision `d6e07e19f0`.
+Test synchronization uses events and `pg_blocking_pids`, with no transaction
+budget changes. The instrumented raw transactions expose row-lock cycles;
+eventual graph/inventory slices use ordinary production background budgets.
+
 - `test_issue108_uncovered_legal_replies_and_terminal_opponent_positions`: all legal replies, including missing replies and terminal opponent positions, remain represented.
 - `test_issue108_custom_fen_castling_en_passant_and_illegal_moves`: custom FENs, castling/legal en-passant identity and invalid authored moves.
 - `test_issue108_segment_checkpoint_preserves_absolute_ply_without_prefix_replay`: bounded segments equal complete traversal without repeating the prefix.

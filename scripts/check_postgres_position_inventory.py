@@ -1,6 +1,7 @@
 """Named #108 upgrade, restart, replay and route-coverage proofs on disposable PostgreSQL."""
 from __future__ import annotations
 from contextlib import contextmanager
+import argparse
 import json
 import os
 from pathlib import Path
@@ -35,7 +36,7 @@ def seed(database, repertoire_id, lines):
                          (line_id, repertoire_id, line_id, trained_color, start_fen, json.dumps(moves), NOW))
 
 
-def publish_graph(database, repertoire_id, generation=1):
+def publish_graph(database, repertoire_id, generation=1, *, publish=True):
     lines = tuple(dict(row) for row in database.execute_native('SELECT * FROM repertoire_lines WHERE repertoire_id=%s',
                                                                (repertoire_id,)).fetchall())
     steps = build_graph(GraphInput(repertoire_id, lines, 6))
@@ -46,7 +47,8 @@ def publish_graph(database, repertoire_id, generation=1):
                                 (step.card_id, repertoire_id, step.starting_fen, json.dumps(step.moves)))
         database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s) ON CONFLICT DO NOTHING',
                                  (repertoire_id, step.card_id))
-    publish_graph_generation(database, repertoire_id, generation)
+    if publish:
+        publish_graph_generation(database, repertoire_id, generation)
 
 
 def claim(database, repertoire_id=None, *, kind=inventory.TASK_KIND):
@@ -341,6 +343,16 @@ def verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn):
 
 
 def main():
+    from scripts import check_postgres_inventory_recovery as recovery
+    repair_cases = {name: getattr(recovery, name) for name in (
+        'test_pr117_foreground_mutation_and_graph_publication_have_no_lock_cycle',
+        'test_pr117_inventory_failure_and_refresh_have_no_lock_cycle',
+        'test_pr117_graph_inventory_handoff_rolls_back_atomically',
+        'test_pr117_inventory_manual_retry_publishes_replacement_without_stale_memberships',
+        'test_pr117_inventory_publication_rejects_incomplete_routes')}
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--case', choices=repair_cases)
+    options = parser.parse_args()
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Position inventory proof requires a disposable PostgreSQL instance')
     admin_dsn = os.getenv('TEMPO_INVENTORY_TEST_ADMIN_URL', 'postgresql://postgres@postgres:5432/postgres')
@@ -349,10 +361,20 @@ def main():
         admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
     dsn = psycopg.conninfo.make_conninfo(admin_dsn, dbname=database_name)
     try:
-        verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn)
-        verify_issue108_upgrade_restart_replay_and_coverage(dsn)
-        verify_issue108_transpositions_duplicates_long_routes(dsn)
-        verify_issue108_scope_delta_and_card_authority(dsn)
+        if options.case:
+            apply_migrations(dsn)
+            os.environ['TEMPO_DATABASE_WRITE_URL'] = dsn
+            os.environ['TEMPO_DATABASE_READ_URL'] = dsn
+            with postgres_store.connection() as database:
+                database.execute_native('INSERT INTO settings(id) VALUES(1)')
+            repair_cases[options.case](dsn)
+        else:
+            verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn)
+            verify_issue108_upgrade_restart_replay_and_coverage(dsn)
+            verify_issue108_transpositions_duplicates_long_routes(dsn)
+            verify_issue108_scope_delta_and_card_authority(dsn)
+            for repair in repair_cases.values():
+                repair(dsn)
     finally:
         postgres_store.close_pools()
         with psycopg.connect(admin_dsn,autocommit=True) as admin:

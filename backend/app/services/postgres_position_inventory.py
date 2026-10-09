@@ -50,6 +50,11 @@ def request_inventory_in_transaction(database, repertoire_id):
     identity = input_identity(database, repertoire_id, lock=True)
     if identity is None:
         return None  # First graph publication will enqueue it.
+    # Failure handling and inventory slices hold the task before changing their
+    # generation. Match that order before superseding a builder or enqueueing.
+    database.execute_native(
+        'SELECT id FROM background_tasks WHERE kind=%s AND deduplication_key=%s FOR UPDATE',
+        (TASK_KIND, repertoire_id)).fetchone()
     latest = database.execute_native(
         "SELECT * FROM inventory_generations WHERE repertoire_id=%s "
         "AND state IN ('building','published') ORDER BY created_at DESC,id DESC LIMIT 1",
@@ -311,6 +316,11 @@ def execute_reconcile_slice(task):
         row = database.execute_native('SELECT id FROM repertoires WHERE id>%s ORDER BY id LIMIT 1',
                                        (task['payload'].get('after_repertoire_id', ''),)).fetchone()
     with background_lease(), connection(background=True) as database:
+        if row is not None:
+            # Repertoire -> reconcile task -> inventory task, matching all
+            # requests that can wait on a foreground repertoire mutation.
+            database.execute_native('SELECT id FROM repertoires WHERE id=%s FOR UPDATE',
+                                    (row[0],)).fetchone()
         if not lock_current_slice(database, task):
             return False
         if row is None:
