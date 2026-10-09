@@ -135,3 +135,35 @@ and volumes was verified. Shared base images and caches were retained.
 `focused-postgres-boundaries.log` and `focused-postgres-ownership.json` preserve
 project, revision, resource identities and teardown provenance outside the clone.
 The standard durability runner remains the required settled-candidate evidence.
+
+The first exact-head complete run
+[37931613261](https://github.com/aaweaver-actuary/tempo/actions/runs/37931613261)
+passed every required layer for `ff729f0`, including complete PostgreSQL durability
+and all 257 browser cases. Its successful result is historical evidence only;
+subsequent ownership/test additions and integration with current main require
+fresh candidate validation. The first merge candidate's browser failure was
+fixture cleanup (`DELETE FROM deleted_cards` collided with a structural/queue
+writer), the defect tracked by #136 / PR #139; it did not fail queue readiness.
+
+A second elevated `make docker-durability` on runtime sources `226b35a` (only
+validation prose advanced to `4d86356` during the run) passed operation recovery
+in 11.34 s, then failed `priority_recovery` after 41.50 s when an unchanged
+priority-evidence query exceeded PostgreSQL's 250 ms transaction budget.
+Cleanup passed in 31.75 s and removed owned resources. No local full durability
+pass is claimed, and no budget, isolation or assertion was relaxed. Focused
+queue/recovery/HTTP proofs passed as recorded above; current-candidate CI owns
+the final complete durability evidence. Timings/ownership records for project
+`tempo-pg-regressions-23996-4986f9e6` are preserved outside this checkout.
+
+Main advanced to `24a2272` (merged PR #133) and added overlapping readiness
+capture. Integration preserves its single assertion wrapper, secret redaction,
+worker/process evidence and tests; task/projection summaries are bounded and
+read-only, worker logs are capped at 200 lines and each command at 128 KiB/5 s.
+The existing #37 endpoint supplies service diagnostics. The unbounded task-list
+endpoint is not used for failure capture. The merged diagnostic test file passed
+9 cases in 1.63 s before the final bounded-projection addition; it is rerun on
+the settled integrated version, together with typecheck/lint and the required
+real Studies browser file. Fresh complete head and merge-candidate evidence
+remains required before readiness.
+
+Settled integrated diagnostics: `make unit-file FILE=tests/unit/queue-readiness-diagnostics-regressions.test.ts` passed **9 cases in 4.99 s**; typecheck passed. Lint is recorded when complete.

@@ -241,7 +241,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
                       'source_changed_response': 409, 'background_transaction_budget_ms': 50}))
 
 
-def post_transition_when_foreground_idle(client, path, payload):
+def post_transition_when_foreground_idle(client, path, payload, *, calculation_started=None):
     """Honor real foreground leases without hiding database or planner failures."""
     from app.services import redis_admission_gate
 
@@ -257,6 +257,8 @@ def post_transition_when_foreground_idle(client, path, payload):
                 or detail.get('message') != 'Study work is active. Retry the diagnostic when study is idle.'):
             return response
         assert response.headers.get('Retry-After') == '1', response.text
+        if calculation_started is not None and calculation_started.is_set():
+            return response
     raise AssertionError('Transition diagnostic never obtained foreground-idle admission within 10 seconds')
 
 
@@ -309,26 +311,46 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
             calculation.close()
     postgres_store.connection = observed_connection
     planner_api.iter_transition_plan = paused_calculation
+    foreground_preemptions = 0
+    experiment_deadline = time.monotonic() + 10
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(post_transition_when_foreground_idle, client, path, payload)
-            assert prepared.wait(5)
-            with psycopg.connect(os.environ['TEMPO_DATABASE_READ_URL'], row_factory=dict_row) as observer:
-                observer.execute('SET TRANSACTION READ ONLY')
-                readers = observer.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
-                assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers), readers
-            started = time.perf_counter()
-            with original_connection(read_only=False) as database:
-                database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
-                apply_scheduling_review(database, card_ids[0], 'correct', guided=False, source_kind='study',
-                    source_ref=f'prefix-transition:{repertoire_id}', light_first_interval_days=7,
-                    reviewed_at=datetime.now(timezone.utc), review_day=date.today())
-            review_ms = (time.perf_counter() - started) * 1000
-            after_review = product_snapshot()
-            released.set()
-            response = future.result(timeout=5)
-            assert response.status_code == 409 and response.json()['detail']['code'] == 'stale_plan', response.text
+        while time.monotonic() < experiment_deadline:
+            prepared.clear()
+            released.clear()
+            reader_pids.clear()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(post_transition_when_foreground_idle, client, path, payload,
+                                         calculation_started=prepared)
+                assert prepared.wait(5)
+                with psycopg.connect(os.environ['TEMPO_DATABASE_READ_URL'], row_factory=dict_row) as observer:
+                    observer.execute('SET TRANSACTION READ ONLY')
+                    readers = observer.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s)', (reader_pids,)).fetchall()
+                    assert readers and all(row['state'] == 'idle' and row['xact_start'] is None for row in readers), readers
+                started = time.perf_counter()
+                with original_connection(read_only=False) as database:
+                    database.execute_native('SELECT id FROM cards WHERE id=%s FOR UPDATE NOWAIT', (card_ids[0],))
+                    apply_scheduling_review(database, card_ids[0], 'correct', guided=False, source_kind='study',
+                        source_ref=f'prefix-transition:{repertoire_id}', light_first_interval_days=7,
+                        reviewed_at=datetime.now(timezone.utc), review_day=date.today())
+                review_ms = (time.perf_counter() - started) * 1000
+                after_review = product_snapshot()
+                released.set()
+                response = future.result(timeout=5)
             assert product_snapshot() == after_review
+            detail = response.json().get('detail', {})
+            if (response.status_code == 503 and isinstance(detail, dict)
+                    and detail.get('code') == 'evaluation_busy'
+                    and detail.get('message') == 'Study work is active. Retry the diagnostic when study is idle.'):
+                assert response.headers.get('Retry-After') == '1', response.text
+                foreground_preemptions += 1
+                # This is an explicitly deferred experiment, not a stale-plan
+                # result. Repeat the entire capture/review boundary; never replay
+                # only the HTTP request with the now-current schedule snapshot.
+                continue
+            assert response.status_code == 409 and detail.get('code') == 'stale_plan', response.text
+            break
+        else:
+            raise AssertionError('Foreground preemption prevented a complete stale-plan experiment within 10 seconds')
     finally:
         released.set()
         postgres_store.connection = original_connection
@@ -340,7 +362,8 @@ def test_issue79_readonly_planner_foreground_concurrency_and_stale_replay(repert
     assert product_snapshot() == after_review
     print(json.dumps({'test': 'test_issue79_readonly_planner_foreground_concurrency_and_stale_replay',
                       'foreground_review_ms': round(review_ms, 3), 'readers_idle_during_calculation': True,
-                      'product_state_unchanged': True, 'stale_plan_rejected': True, 'fresh_retry_succeeded': True}))
+                      'product_state_unchanged': True, 'stale_plan_rejected': True, 'fresh_retry_succeeded': True,
+                      'foreground_preempted_experiments': foreground_preemptions}))
 
 
 def test_issue79_pending_command_bindings_are_accounted_before_delivery(client, path, payload, card_id, product_snapshot):

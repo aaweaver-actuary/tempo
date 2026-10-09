@@ -100,6 +100,7 @@ export type BuilderSession = {
   dismissedTranspositions?: string[];
   sourceGapId?: string;
   selectedMoveUci?: UciMove;
+  trainingRouteToResolve?: { repertoireId: RepertoireId; cardId: string; cardRevision: number };
 };
 
 export type CardNameSource = "title" | "moves" | "startingFen";
