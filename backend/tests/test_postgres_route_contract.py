@@ -17,7 +17,7 @@ from app.main import app
 CONTRACT_PATH = Path(__file__).resolve().parents[2] / "docs/postgres-route-contract.json"
 TREATMENTS = {
     "reader", "read_only_post", "foreground_command", "background_callback",
-    "ephemeral_signal",
+    "ephemeral_signal", "queue_issuance",
 }
 
 
@@ -37,8 +37,12 @@ def test_postgres_route_contract_matches_registered_endpoints():
     assert declared_keys == actual_routes
     assert all(row["treatment"] in TREATMENTS for row in declared_routes)
     assert all(row["state"] in {"staged", "blocked"} for row in declared_routes)
-    assert all(row["treatment"] == "reader" for row in declared_routes
-               if row["method"] == "GET")
+    assert {row["path"] for row in declared_routes if row["treatment"] == "queue_issuance"} == {
+        "/api/queue/today", "/api/queue/prepared", "/api/queue/window",
+    }
+    assert all(row["treatment"] == ("queue_issuance" if row["path"] in {
+        "/api/queue/today", "/api/queue/prepared", "/api/queue/window",
+    } else "reader") for row in declared_routes if row["method"] == "GET")
     assert all(row["treatment"] != "reader" for row in declared_routes
                if row["method"] != "GET")
 

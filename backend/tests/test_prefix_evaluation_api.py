@@ -305,6 +305,8 @@ def test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_o
         assert asyncio.run(probe(method, '/api/repertoires/rep/prefix-evaluation/' + suffix)).status_code == 204
     assert observed == [(True, True), (True, True)]
     assert asyncio.run(probe('GET', '/api/queue/today')).status_code == 204
+    assert observed[-1] == (False, False)  # Queue GETs commit only head issuance.
+    assert asyncio.run(probe('GET', '/api/settings')).status_code == 204
     assert observed[-1] == (False, True)
 
 

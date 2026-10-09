@@ -20,6 +20,8 @@ def test_tactic_discovery_uses_local_day_after_utc_midnight(tmp_path, monkeypatc
         def now(cls, tz=None):
             return datetime(2026, 9, 17, 1, tzinfo=timezone.utc)
     monkeypatch.setattr(main, "date", LocalDate)
+    from app import queue_commands
+    monkeypatch.setattr(queue_commands, "date", LocalDate)
     monkeypatch.setattr(main, "datetime", UtcClock)
     with TestClient(app) as client:
         result = client.post("/api/tactics/attempt", json={
@@ -65,6 +67,8 @@ def install_clock(monkeypatch):
         @classmethod
         def now(cls, tz=None): return clock["now"].astimezone(tz) if tz else clock["now"].replace(tzinfo=None)
     monkeypatch.setattr(main, "date", ClockDate)
+    from app import queue_commands
+    monkeypatch.setattr(queue_commands, "date", ClockDate)
     monkeypatch.setattr(main, "datetime", ClockDatetime)
     return clock
 

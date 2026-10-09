@@ -743,7 +743,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
         request.method == "GET" and len(request_path_parts) == 3
         and request_path_parts[:2] == ["api", "guided-reviews"]
     )
-    request_scope = query_only_request() if (request.method == "GET" and not guided_review_reconciliation_read) or read_only_post else None
+    queue_issuance_read = request.method == "GET" and request.url.path in {
+        "/api/queue/today", "/api/queue/prepared", "/api/queue/window",
+    }
+    request_scope = query_only_request() if (request.method == "GET" and not guided_review_reconciliation_read and not queue_issuance_read) or read_only_post else None
     if request_scope is not None:
         request_scope.__enter__()
     try:
@@ -1861,6 +1864,30 @@ def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
     return task
 
 
+def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
+    """Use the writer boundary without granting write credentials to the API."""
+    payload = {"queue_date": queue_date, "entry_id": card["queue_entry_id"],
+               "card_id": card["id"], "expected_revision": card["revision"]}
+    with read_connection() as database:
+        issued = database.execute(
+            "SELECT issued_as_head FROM queue_attempt_origins "
+            "WHERE queue_entry_id=? AND card_id=? AND revision=?",
+            (payload["entry_id"], payload["card_id"], payload["expected_revision"]),
+        ).fetchone()
+    if issued and issued["issued_as_head"]:
+        return
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        result = dispatch_command("queue.issue_head", payload, idempotency_key=None)
+    else:
+        from .queue_commands import issue_queue_head
+        with connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            result = issue_queue_head(database, payload)
+    if isinstance(result, JSONResponse) or not result.get("issued"):
+        raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
+
+
 def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
     day = date.today().isoformat()
     with read_connection() as db:
@@ -2020,6 +2047,8 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                        AND block.card_id=c.id))""",
             (day,),
         ).fetchone()[0]
+    if cards:
+        _issue_returned_queue_head(day, cards[0])
     for card in cards:
         card.pop("moves_json", None)
         card["trained_color"] = card.pop("effective_trained_color")

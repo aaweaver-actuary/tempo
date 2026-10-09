@@ -607,6 +607,9 @@ def test_real_game_priority_retains_identified_active_attempt_and_burial_defers_
         _seed_repertoire(db, studied_at='2026-01-01T00:00:00Z')
         active_id = _ordinary_queue_card(db, 'active', 0, content_type='tactic')
         _seed_game(db, 'active-miss', ['d2d4'], datetime.now(timezone.utc).isoformat())
+    issued = TestClient(app).get('/api/queue/today')
+    assert issued.status_code == 200, issued.text
+    assert issued.json()['cards'][0]['queue_entry_id'] == active_id
     compare_games(['active-miss'])
     apply_real_game_misses('active-miss')
     with TestClient(app) as client:
