@@ -1,6 +1,60 @@
 import { test, expect, prepareUI, navigate, noPageOverflow } from "./ui-fixtures";
 import { heldDrag, prepareHeldDrag } from "./held-drag-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
+import type { Page, TestInfo } from "@playwright/test";
+
+async function notificationLayoutGeometry(page: Page) {
+  return page.evaluate(() => {
+    const bounds = (selector: string) => {
+      const rectangle = document.querySelector(selector)?.getBoundingClientRect();
+      return rectangle ? { x: rectangle.x, y: rectangle.y, width: rectangle.width, height: rectangle.height } : null;
+    };
+    return {
+      board: bounds(".persistent-board-shell .board-viewport"),
+      heading: bounds(".shared-board-heading"),
+      phoneHeading: bounds(".phone-study-heading"),
+      header: bounds(".topbar"),
+      topActions: bounds(".top-actions"),
+      fonts: document.fonts.status,
+    };
+  });
+}
+
+async function recordNotificationGeometry(page: Page, testInfo: TestInfo, label: string) {
+  const geometry = await notificationLayoutGeometry(page);
+  await testInfo.attach(`notification-geometry-${label}`, {
+    body: JSON.stringify(geometry), contentType: "application/json",
+  });
+  return geometry;
+}
+
+async function readyNotificationStudyBounds(page: Page) {
+  const studyBoard = page.locator(".persistent-board-shell .board-viewport");
+  // The persistent board and notification controls mount before queue/worker hydration.
+  await expect(page.getByRole("heading", { name: "Spanish opening", exact: true })).toBeVisible();
+  await expect(page.locator(".persistent-board-shell")).toHaveAttribute("data-board-owner", "train");
+  await expect(page.locator(".persistent-board-shell")).toHaveAttribute("data-unavailable", "false");
+  await expect(studyBoard.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+  await expect(studyBoard).toBeVisible();
+  if (page.viewportSize()!.width < 768) {
+    await expect(page.locator(".shared-board-heading .phone-study-heading")).toContainText("white to play");
+  }
+  await expect.poll(() => page.evaluate(() => document.fonts.status)).toBe("loaded");
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  let previousGeometry = "";
+  let consecutiveStableFrames = 0;
+  let latestGeometry: Awaited<ReturnType<typeof notificationLayoutGeometry>> | undefined;
+  await expect.poll(async () => {
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    latestGeometry = await notificationLayoutGeometry(page);
+    const currentGeometry = JSON.stringify(latestGeometry);
+    consecutiveStableFrames = currentGeometry === previousGeometry ? consecutiveStableFrames + 1 : 1;
+    previousGeometry = currentGeometry;
+    return latestGeometry.board!.width > 0 && latestGeometry.board!.height > 0 &&
+      latestGeometry.fonts === "loaded" && consecutiveStableFrames >= 3;
+  }, { timeout: 5000, intervals: [0], message: "loaded notification study layout must settle across three animation frames" }).toBe(true);
+  return latestGeometry!.board!;
+}
 
 test("phone notification history groups retries and opens to needs attention", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 320, height: 700 });
@@ -92,6 +146,52 @@ test("notifications tray remains inside a 320px phone viewport", async ({ page }
   await expect(page.getByRole("button", { name: "Copy JSON" })).toBeVisible();
 });
 
+test("issue137_notification_geometry_waits_for_training_heading_after_delayed_reload", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await prepareVisualUI(page);
+  const phoneHeading = page.locator(".shared-board-heading .phone-study-heading");
+  await expect(phoneHeading.getByRole("heading", { name: "Spanish opening", exact: true })).toBeVisible();
+  const originalBoardBounds = await readyNotificationStudyBounds(page);
+  const headingHeight = (await phoneHeading.boundingBox())!.height;
+  let releaseQueueResponse!: () => void;
+  let markQueueRequested!: () => void;
+  const queueResponseReleased = new Promise<void>(resolve => { releaseQueueResponse = resolve; });
+  const queueRequested = new Promise<void>(resolve => { markQueueRequested = resolve; });
+  await page.route("**/api/queue/window?**", async route => {
+    markQueueRequested();
+    await queueResponseReleased;
+    await route.fallback();
+  });
+  let readyBounds: ReturnType<typeof readyNotificationStudyBounds> | undefined;
+  try {
+    await page.reload();
+    await queueRequested;
+    await expect(phoneHeading).toHaveCount(0);
+    await expect(page.locator(".persistent-board-shell")).toHaveAttribute("data-unavailable", "true");
+    await recordNotificationGeometry(page, testInfo, "delayed-reload-unready");
+    const unreadyBoardBounds = (await page.locator(".persistent-board-shell .board-viewport").boundingBox())!;
+    expect(Math.abs(originalBoardBounds.y - unreadyBoardBounds.y - headingHeight)).toBeLessThanOrEqual(1);
+    await testInfo.attach("delayed-reload-board-geometry", {
+      body: JSON.stringify({ originalBoardBounds, unreadyBoardBounds, headingHeight }), contentType: "application/json",
+    });
+    let readinessCompleted = false;
+    readyBounds = readyNotificationStudyBounds(page).then(bounds => { readinessCompleted = true; return bounds; });
+    // Notification controls are usable while the training response is still held.
+    await page.getByRole("button", { name: "Notifications", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Notifications", exact: true })).toBeVisible();
+    expect(readinessCompleted, "geometry readiness must wait for the training heading").toBe(false);
+    releaseQueueResponse();
+    const reloadedBoardBounds = await readyBounds;
+    await recordNotificationGeometry(page, testInfo, "delayed-reload-ready");
+    for (const coordinate of ["x", "y", "width", "height"] as const)
+      expect(Math.abs(reloadedBoardBounds[coordinate] - originalBoardBounds[coordinate])).toBeLessThanOrEqual(1);
+    await noPageOverflow(page);
+  } finally {
+    releaseQueueResponse();
+    await readyBounds;
+  }
+});
+
 for (const width of [320, 1280]) {
   test(`notification clear controls preserve history across reload and count new arrivals at ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
@@ -115,9 +215,10 @@ for (const width of [320, 1280]) {
     const countBadge = notificationTrigger.locator(".notification-count");
     await expect(countBadge).toHaveText("2");
     const studyBoard = page.locator(".persistent-board-shell .board-viewport");
-    await expect(studyBoard).toBeVisible();
-    const originalBoardBounds = (await studyBoard.boundingBox())!;
+    const originalBoardBounds = await readyNotificationStudyBounds(page);
+    await recordNotificationGeometry(page, testInfo, "initial-ready");
     await notificationTrigger.click();
+    await recordNotificationGeometry(page, testInfo, "opened");
     const notificationTray = page.getByRole("region", { name: "Notifications", exact: true });
     const errorEntry = notificationTray.getByRole("article").filter({ hasText: "Clear fixture service failure" });
     await expect(errorEntry.getByText("New", { exact: true })).toBeVisible();
@@ -127,38 +228,52 @@ for (const width of [320, 1280]) {
     await individualClear.focus();
     await individualClear.press("Enter");
     await expect(errorEntry).toHaveCount(0);
+    await recordNotificationGeometry(page, testInfo, "individual-clear");
     await notificationTray.getByRole("button", { name: "All", exact: true }).click();
     await expect(errorEntry.getByText("Cleared", { exact: true })).toBeVisible();
     await expect(countBadge).toHaveText("1");
+    await recordNotificationGeometry(page, testInfo, "individual-clear-all-filter");
     const boardAfterIndividualClear = (await studyBoard.boundingBox())!;
     for (const coordinate of ["x", "y", "width", "height"] as const)
       expect(Math.abs(boardAfterIndividualClear[coordinate] - originalBoardBounds[coordinate])).toBeLessThanOrEqual(1);
     await notificationTray.getByRole("button", { name: "error", exact: true }).click();
+    await recordNotificationGeometry(page, testInfo, "error-filter");
     await notificationTray.getByRole("button", { name: "Clear all", exact: true }).click();
     await expect(countBadge).toHaveCount(0);
+    await recordNotificationGeometry(page, testInfo, "clear-all");
     await expect(notificationTray.getByRole("button", { name: "Clear all", exact: true })).toBeDisabled();
     await notificationTray.getByRole("button", { name: "All", exact: true }).click();
     await expect(notificationTray.getByRole("article")).toHaveCount(3);
     await expect(notificationTray.getByText("Cleared", { exact: true })).toHaveCount(3);
+    await recordNotificationGeometry(page, testInfo, "cleared-history");
     const trayBounds = (await notificationTray.boundingBox())!;
     expect(trayBounds.x).toBeGreaterThanOrEqual(0);
     expect(trayBounds.x + trayBounds.width).toBeLessThanOrEqual(width);
     await noPageOverflow(page);
     await page.screenshot({ path: testInfo.outputPath(`cleared-notifications-${width}.png`), fullPage: true });
     await page.reload();
+    await recordNotificationGeometry(page, testInfo, "reload-before-readiness");
+    const reloadedBoardBounds = await readyNotificationStudyBounds(page);
+    await recordNotificationGeometry(page, testInfo, "reload-ready");
+    for (const coordinate of ["x", "y", "width", "height"] as const)
+      expect(Math.abs(reloadedBoardBounds[coordinate] - originalBoardBounds[coordinate])).toBeLessThanOrEqual(1);
     await expect(countBadge).toHaveCount(0);
     await notificationTrigger.click();
+    await recordNotificationGeometry(page, testInfo, "reload-opened");
     await expect(notificationTray.getByRole("article")).toHaveCount(0);
     await notificationTray.getByRole("button", { name: "All", exact: true }).click();
     await expect(notificationTray.getByText("Cleared", { exact: true })).toHaveCount(3);
+    await recordNotificationGeometry(page, testInfo, "reload-cleared-history");
     await page.evaluate(() => window.dispatchEvent(new ErrorEvent("error", {
       message: "New notification after clearing", error: new Error("New notification after clearing"),
     })));
     await expect(countBadge).toHaveText("1");
+    await recordNotificationGeometry(page, testInfo, "new-arrival");
     const newEntry = notificationTray.getByRole("article").filter({ hasText: "New notification after clearing" });
     await expect(newEntry.getByText("New", { exact: true })).toBeVisible();
     await expect(newEntry.getByRole("button", { name: "Clear", exact: true })).toBeVisible();
     await expect(notificationTray.getByText("Cleared", { exact: true })).toHaveCount(3);
+    await recordNotificationGeometry(page, testInfo, "final");
     const finalBoardBounds = (await studyBoard.boundingBox())!;
     for (const coordinate of ["x", "y", "width", "height"] as const)
       expect(Math.abs(finalBoardBounds[coordinate] - originalBoardBounds[coordinate])).toBeLessThanOrEqual(1);
