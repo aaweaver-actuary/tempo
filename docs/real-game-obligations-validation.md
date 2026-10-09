@@ -82,3 +82,6 @@ CI follow-up and local boundary evidence (starting head `f6d024c`, dirty repairs
 - The lifecycle rejection fixture now replays existing migration 40’s non-idempotent column DDL rather than assuming the latest migration cannot be safely replayed. Its real lifecycle proof remains mandatory in the next CI run.
 
 Final repaired-head required checks and merge-candidate validation remain owned by CI. Local evidence and task resource ownership are preserved outside this clone under the root checkout’s `test-results/2026-10-09/real-game-obligations-pr142/`.
+
+
+Integration dependency: PR #134’s separate commit `a47315f` supplies bounded broker/result Redis socket I/O and its real-client fault/recovery regressions. Initial obligation CI reproduced an eligible queue with zero attempts while scheduler messages stopped; that does not establish causation. Reuse the existing demonstrated boundary repair rather than duplicating it or weakening browser deadlines. Only the socket commit is cherry-picked; ordinary parent-exposure progression remains separate. The unrelated progression validation document is excluded, and its socket coverage is retained here and in the regular registry. Combined-head complete CI, including the real Redis durability proof and full browser workload, is required.
