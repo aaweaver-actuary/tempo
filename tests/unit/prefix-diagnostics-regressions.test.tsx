@@ -124,3 +124,13 @@ it("PD-82 temporary diagnostic deadline keeps evidence unavailable until explici
   expect(screen.getByText("Unknown")).toBeTruthy();
   expect(detailReads).toBe(2);
 });
+
+it("PD-82 foreground admission denial resumes the evidence read instead of leaving a permanent error", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Waiting for foreground activity" }, { status: 503, headers: { "Retry-After": "0.001" } }))
+    .mockResolvedValueOnce(Response.json(listing));
+  vi.stubGlobal("fetch", fetcher);
+  mount();
+  await screen.findByRole("button", { name: /^Inspect prefix/ });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

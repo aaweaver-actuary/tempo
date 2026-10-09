@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { z } from "zod";
 import { API_URL } from "../const";
-import { backgroundFetch } from "../lib/background-fetch";
+import { backgroundReadWhenAdmitted } from "../lib/background-fetch";
 import { Button } from "./buttons/BaseButton";
 import { Notice } from "./task-tabs";
 import { prefixDiagnosticsListSchema, prefixDiagnosticsDetailSchema,
@@ -12,7 +12,7 @@ function moveLabel(fen: string, expectedUci: string): string {
   return new Chess(fen).move(expectedUci)?.san ?? expectedUci;
 }
 async function readDiagnostics<T>(url: string, schema: z.ZodType<T>, signal: AbortSignal): Promise<T> {
-  const response = await backgroundFetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]) });
+  const response = await backgroundReadWhenAdmitted(url, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: unknown };
     throw new Error(typeof body.detail === "string" ? body.detail : `Prefix difficulty unavailable (HTTP ${response.status}). Retry when study work settles.`);

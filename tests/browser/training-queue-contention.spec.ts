@@ -31,7 +31,7 @@ productTest("daily study opens on the workspace date while background analysis r
     // publishes the fixture's due card. Establish the real queue boundary
     // without waiting for the independent analysis backlog to drain.
     await expect.poll(async () => {
-      const publishedQueueResponse = await request.get(`${api}/queue/window?limit=20`);
+      const publishedQueueResponse = await request.get(`${api}/queue/window?limit=20`, { headers: { "X-Tempo-Work-Class": "background" } });
       expect(publishedQueueResponse.ok()).toBeTruthy();
       const publishedQueue = await publishedQueueResponse.json();
       return publishedQueue.cards.some((card: { id: string }) => card.id === `${fixtureId}-due`);
