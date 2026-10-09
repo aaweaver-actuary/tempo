@@ -2910,3 +2910,10 @@ in-flight flush` reproduces a recovery observer for B sharing A's explicit in-fl
 retry. A terminal response must suspend A, not B; confirmed results likewise clear
 only their own backoff entries. It failed before the identity-attribution correction,
 then passed with independent B confirmed and original A retained unchanged.
+
+`phone explicit retry after an idle terminal failure resumes automatic recovery when it
+becomes transient` failed first with the durable marker cleared but an obsolete in-memory
+infinite deadline still blocking confirmation. Terminal and blocked replay errors already
+have durable outbox suppression; the hook no longer keeps a second terminal block that
+could survive an explicit retry. Storage-error suspension and capped transient backoff
+remain covered by the existing named cases.

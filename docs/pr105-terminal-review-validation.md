@@ -114,3 +114,27 @@ cleanup 9.53s, all exit 0. Ownership/IDs/timestamps/exact teardown are under
 scenario timing is under `test-results/performance/postgres-scenarios-browser-tempo-pg-regressions-51468-063b9872.json`.
 Verified no project containers or images remain. This run tested dirty final source
 based on 15f9558; fresh committed-head and merge-candidate CI remains mandatory.
+
+
+## Explicit terminal-to-transient resume
+
+The final transition regression exposed an obsolete second suppression mechanism:
+after an idle terminal failure, an explicit replay becoming transient cleared the
+outbox marker but left its old infinite in-memory deadline. The new named hook case
+failed first in 0.890s. Terminal/blocked replay errors now rely on the outbox marker
+that is persisted before they propagate; storage errors retain the existing infinite
+in-memory suspension. This removes the stale block without changing the scheduler,
+backoff intervals, operation identities or foreground protections.
+
+The same final twelve-file command passed all 230 cases in 14.96s on this final
+production source. Fresh static, focused browser and committed-candidate CI evidence
+is required for this last correction; earlier-head successes are not a substitute.
+
+
+Final terminal-to-transient candidate: typecheck passed in 6.94s; lint passed in
+14.08s (ten existing warnings, zero errors). The same elevated five-case phone
+browser selection passed all five in 7.6s / runner browser stage 8.20s; build 12.36s,
+startup 17.09s, cleanup 8.59s, all exit 0. The owning project, IDs, timestamps and
+exact teardown are recorded in the latest test-results/tempo-cli ownership.json;
+the corresponding postgres-scenarios-browser timing JSON records its source
+provenance. This tested dirty source based on e086af0, preceding the final commit.

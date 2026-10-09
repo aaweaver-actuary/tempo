@@ -234,3 +234,25 @@ it("phone terminal explicit retry cannot suspend an independent idle review shar
   expect(pendingReviews().map(item => item.attemptId)).toEqual(["original-attempt"]);
   expect(fetcher.mock.calls.filter(([url]) => String(url).includes("review-attempt%3Aindependent"))).toHaveLength(1);
 });
+
+
+it("phone explicit retry after an idle terminal failure resumes automatic recovery when it becomes transient", async () => {
+  enqueuePendingReview(review);
+  let posts = 0;
+  const fetcher = vi.fn(async (_url: RequestInfo | URL, options?: RequestInit) => {
+    if (options?.method !== "POST") return posts < 2 ? new Response(null, { status: 404 })
+      : Response.json({ state: "complete", response: { persisted: true } });
+    posts++;
+    return Response.json({ detail: posts === 1 ? "Invalid" : "Busy" }, { status: posts === 1 ? 422 : 503 });
+  });
+  vi.stubGlobal("fetch", fetcher); render(<Harness confirmed={vi.fn()} />);
+  await advance(1000);
+  expect(pendingReviews()[0].automaticRecoverySuppressed).toBe("failed");
+  await advance(60000); expect(posts).toBe(1);
+  await act(async () => { await expect(flushPendingReviews(Infinity, true, review.attemptId))
+    .rejects.toMatchObject({ classification: "transient" }); });
+  expect(pendingReviews()[0].automaticRecoverySuppressed).toBeUndefined();
+  await advance(60000);
+  expect(pendingReviews()).toEqual([]);
+  expect(posts).toBe(2); // The explicit replay lost confirmation; idle recovery only reads its receipt.
+});

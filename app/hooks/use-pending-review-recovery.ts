@@ -48,7 +48,11 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
             const previous = deadlines.current.get(failedIdentity)?.failures ?? 0;
             const retryable = error instanceof ReviewReplayError && ["pending", "transient"].includes(error.classification) &&
               !(error.cause instanceof PendingOperationError && error.cause.blocked);
-            deadlines.current.set(failedIdentity, { failures: previous + 1,
+            // The outbox durably suppresses terminal/blocked attempts before throwing.
+            // Keep no second terminal latch that could survive an explicit retry.
+            if (error instanceof ReviewReplayError && (error.blocked || ["failed", "conflict"].includes(error.classification)))
+              deadlines.current.delete(failedIdentity);
+            else deadlines.current.set(failedIdentity, { failures: previous + 1,
               retryAt: retryable ? Date.now() + Math.min(30000, 1000 * 2 ** previous) : Infinity });
             reportDebugError(error, { source: "training-review-replay", operation: "recover saved review", notify: false });
           }).finally(() => {
