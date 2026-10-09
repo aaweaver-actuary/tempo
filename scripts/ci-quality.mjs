@@ -1,14 +1,28 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { layerCommands, validatePostgresScenarios } from "./ci-run-layer.mjs";
-import { allLayers } from "./ci-verification-plan.mjs";
+import { layerCommands, validatePostgresScenarios, validateUnitResults } from "./ci-run-layer.mjs";
+import { allLayers, mandatoryLayers, planHash } from "./ci-verification-plan.mjs";
 
-export function evaluateQuality(plan, needs, reports) {
+export function evaluateQuality(plan, needs, reports, { development = false, currentPullRequest } = {}) {
   const failures = [], nonblocking = [];
-  if (!plan || plan.version !== 1 || !plan.hash || needs.plan?.result !== "success") failures.push("Required plan did not succeed or its report is missing");
+  if (!plan || plan.version !== 2 || !plan.hash || needs.plan?.result !== "success") failures.push("Required plan did not succeed or its report is missing");
   if (!plan) return { success: false, failures, nonblocking };
-  if (plan.scope === "complete" && (!plan.jobs.lifecycle?.applicable || !plan.jobs.lifecycle.required)) {
+  if (plan.hash !== planHash(plan)) failures.push("Immutable plan hash mismatch");
+  if (!development && (plan.tier !== "qualification" || plan.draft)) failures.push("Development evidence or a draft PR cannot qualify for merging");
+  if (!development && plan.event === "workflow_dispatch" && plan.ref !== "refs/heads/main") failures.push("Manual branch execution is evidence only; qualify the PR integration candidate when ready");
+  if (plan.tier === "qualification") {
+    if (mandatoryLayers.some(layer => !plan.jobs[layer]?.applicable || !plan.jobs[layer]?.required)
+      || plan.core?.frontend !== "all" || plan.core?.backend !== "all"
+      || !plan.collection?.some(item => item.critical)
+      || plan.collection.some(item => item.critical && !item.selected)) failures.push("Qualification requires complete core, durability and critical browser coverage");
+  }
+  if (plan.event === "pull_request") {
+    if (!currentPullRequest || currentPullRequest.state !== "open" || currentPullRequest.draft !== plan.draft
+      || currentPullRequest.head?.sha !== plan.head || currentPullRequest.base?.sha !== plan.base
+      || currentPullRequest.merge_commit_sha !== plan.commit) failures.push("PR state, head, base or integration revision changed; fresh verification required");
+  }
+  if (plan.tier === "qualification" && plan.scope === "complete" && (!plan.jobs.lifecycle?.applicable || !plan.jobs.lifecycle.required)) {
     failures.push("Complete verification must require deployment lifecycle");
   }
   for (const layer of allLayers) {
@@ -26,13 +40,15 @@ export function evaluateQuality(plan, needs, reports) {
       failures.push(`${layer}: missing, incomplete or mismatched result report`); continue;
     }
     let expectedCommands;
-    try { expectedCommands = layerCommands(layer, plan).map(([name]) => name); }
+    try { expectedCommands = layerCommands(layer, plan); }
     catch (error) { failures.push(`${layer}: ${error.message}`); continue; }
-    if (JSON.stringify(expectedCommands) !== JSON.stringify(report.commands.map(command => command.name))) failures.push(`${layer}: absent required command results`);
+    if (JSON.stringify(expectedCommands) !== JSON.stringify(report.commands.map(({ name, command, args }) => [name, command, args]))) failures.push(`${layer}: absent required command results`);
     if (planned.required) {
       if (result !== "success" || report.status !== "success" || report.commands.some(command => command.exit_code !== 0 || command.error)) failures.push(`${layer}: mandatory verification ${result ?? "absent"}`);
     } else if (result !== "success" || report.status !== "success") nonblocking.push(`${layer}: confirmed harness failures remain visible (${result ?? "absent"})`);
-    if (["frontend", "backend"].includes(layer) && !report.test_count) failures.push(`${layer}: no unit test results`);
+    if (["frontend", "backend"].includes(layer)) {
+      try { validateUnitResults(layer, plan, report); } catch (error) { failures.push(error.message); }
+    }
     if (["postgres", "lifecycle"].includes(layer)) {
       try { validatePostgresScenarios(layer, plan, report.scenarios); }
       catch (error) { failures.push(error.message); }
@@ -64,13 +80,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const path = join("test-results/ci", `${layer}.json`);
     if (existsSync(path)) reports[layer] = JSON.parse(readFileSync(path, "utf8"));
   }
-  const verdict = evaluateQuality(plan, JSON.parse(process.env.TEMPO_CI_NEEDS ?? "{}"), reports);
+  const development = process.argv.includes("--development");
+  const currentPath = "test-results/ci/current-pr.json";
+  const currentPullRequest = existsSync(currentPath) ? JSON.parse(readFileSync(currentPath, "utf8")) : undefined;
+  const revision = (await import("node:child_process")).spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout?.trim();
+  const verdict = evaluateQuality(plan, JSON.parse(process.env.TEMPO_CI_NEEDS ?? "{}"), reports, { development, currentPullRequest });
+  if (revision !== plan?.commit) { verdict.failures.push("Aggregation checkout differs from captured integration revision"); verdict.success = false; }
   console.log(JSON.stringify({ verdict, jobs: plan?.jobs }, null, 2));
   if (process.env.GITHUB_STEP_SUMMARY) {
     const { appendFileSync } = await import("node:fs");
     const rows = Object.entries(reports).map(([layer, report]) => `| ${layer} | ${report.status} | ${report.test_count ?? report.tests?.length ?? "—"} | ${(report.commands ?? []).reduce((seconds, command) => seconds + (command.duration_seconds ?? 0), 0).toFixed(2)} |`).join("\n");
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n| Layer | Result | Cases | Command seconds |\n| --- | --- | --- | --- |\n${rows}\n\nCommand times include setup and do not sum to parallel workflow wall time. Source: ${plan?.commit ?? "missing"}; scope: ${plan?.scope ?? "missing"}.\n`);
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Quality: **${verdict.success ? "passed" : "failed"}**\n\n${[...verdict.failures, ...verdict.nonblocking].map(item => `- ${item}`).join("\n")}\n\nExplicit inapplicability: ${Object.entries(plan?.jobs ?? {}).filter(([, job]) => !job.applicable).map(([name, job]) => `${name} (${job.reason})`).join("; ")}\n`);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${development ? "Development evidence" : "Quality"}: **${verdict.success ? "passed" : "failed"}**\n\n${[...verdict.failures, ...verdict.nonblocking].map(item => `- ${item}`).join("\n")}\n\nExplicit inapplicability: ${Object.entries(plan?.jobs ?? {}).filter(([, job]) => !job.applicable).map(([name, job]) => `${name} (${job.reason})`).join("; ")}\n`);
   }
   process.exitCode = verdict.success ? 0 : 1;
 }

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited, labeled, unlabeled]
+  release:
+    types: [published]
   merge_group:
     types: [checks_requested]
   schedule:
@@ -22,6 +25,7 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
   pages: write
   id-token: write
 
@@ -38,16 +42,26 @@ jobs:
       lifecycle: ${{ steps.inventory.outputs.lifecycle }}
       quarantine: ${{ steps.inventory.outputs.quarantine }}
       scope: ${{ steps.inventory.outputs.scope }}
+      tier: ${{ steps.inventory.outputs.tier }}
+      commit: ${{ steps.inventory.outputs.commit }}
+      frontend: ${{ steps.inventory.outputs.frontend }}
+      backend: ${{ steps.inventory.outputs.backend }}
+      build: ${{ steps.inventory.outputs.build }}
+      postgres: ${{ steps.inventory.outputs.postgres }}
+      browser: ${{ steps.inventory.outputs.browser }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.3'
           cache: npm
       - name: Reject committed merge-conflict artifacts
         run: node scripts/check-merge-conflicts.mjs
+      - name: Guard migration numbering and schema agreement
+        run: node scripts/check-migration-inventory.mjs
       - run: npm ci
       - name: Collect complete inventory and select required work
         id: inventory
@@ -69,26 +83,34 @@ jobs:
           overwrite: true
   frontend:
     needs: plan
+    if: needs.plan.outputs.frontend == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: frontend
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   backend:
     needs: plan
+    if: needs.plan.outputs.backend == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: backend
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   build:
     needs: plan
+    if: needs.plan.outputs.build == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: build
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   postgres:
     needs: plan
+    if: needs.plan.outputs.postgres == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: postgres
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   lifecycle:
@@ -96,12 +118,15 @@ jobs:
     if: needs.plan.outputs.lifecycle == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: lifecycle
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   browser:
     needs: plan
+    if: needs.plan.outputs.browser == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: browser
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   visual:
@@ -109,6 +134,7 @@ jobs:
     if: needs.plan.outputs.visual == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: visual
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   quarantine:
@@ -116,13 +142,16 @@ jobs:
     if: needs.plan.outputs.quarantine == 'true'
     uses: ./.github/workflows/verify-layer.yml
     with:
+      candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: quarantine
-  quality:
-    if: always()
+  development:
+    if: always() && (needs.plan.outputs.tier == 'development' || github.event.pull_request.draft == true || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'))
     needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.commit || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.3'
@@ -138,6 +167,52 @@ jobs:
           pattern: ci-result-*
           path: test-results
           merge-multiple: true
+      - name: Refresh PR qualification context
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEMPO_REPOSITORY: ${{ github.repository }}
+          TEMPO_PR: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p test-results/ci
+          gh api "repos/$TEMPO_REPOSITORY/pulls/$TEMPO_PR" > test-results/ci/current-pr.json
+      - name: Require every planned mandatory result
+        if: always()
+        env:
+          TEMPO_CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-quality.mjs --development
+  quality:
+    if: always()
+    needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.commit || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+      - name: Download immutable plan
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+          path: test-results/ci
+      - name: Download available layer reports
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-result-*
+          path: test-results
+          merge-multiple: true
+      - name: Refresh PR qualification context
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEMPO_REPOSITORY: ${{ github.repository }}
+          TEMPO_PR: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p test-results/ci
+          gh api "repos/$TEMPO_REPOSITORY/pulls/$TEMPO_PR" > test-results/ci/current-pr.json
       - name: Require every planned mandatory result
         if: always()
         env:
@@ -178,6 +253,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.commit || github.sha }}
       - uses: actions/configure-pages@v5
       - uses: actions/setup-node@v4
         with:

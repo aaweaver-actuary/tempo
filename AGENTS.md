@@ -34,6 +34,11 @@ Training, tactics, editing, and reads for the active workspace are foreground wo
 
 Keep coherent fixes in separate commits and preserve existing uncommitted work. Migrate deterministic logic toward Rust/WASM only after Python/Rust parity fixtures pass. Do not remove the Python compatibility path before parity.
 
+
+Draft PRs default to development evidence: reviewed prose runs conflict/migration guards; changed regression files run directly; product changes expand the affected subsystem and relevant boundaries. Persistence changes retain complete PostgreSQL durability. Unknown/shared paths expand coverage. `ci:full` requests complete execution on a draft, but a draft never qualifies for merging. `development` reports selected evidence; mandatory `quality` fails for development or draft state. Becoming ready for review starts complete applicable qualification; new heads/base candidates require fresh revision-bound evidence. Main, merge-group, nightly, release and manual requests retain complete coverage. Every layer and aggregation checkout is pinned to the captured integration SHA. See `docs/testing.md`.
+
+During iteration run the smallest failing regression, then affected files/subsystem once coherent. CI owns the complete candidate gate. Do not run an equivalent local `make full` concurrently; after complete failure reproduce the failed stage. Reuse dependencies/build caches, never passing test outcomes.
+
 ## Testing policy: smallest proof first, complete gate at the boundary
 
 This section determines **what to test, how, and when**. `docs/testing.md` and `make plan` describe the executable scopes. Required regression coverage and the complete release gate are unchanged. CI uses explicit required core/integration and source-selected browser tiers documented in `docs/testing.md`; a smaller development run does not replace them.
@@ -71,7 +76,7 @@ For a new feature, cover the intended behavior, important boundary/error cases, 
 
 ### 3. Who runs the complete gate, and when
 
-`make full`, `npm test`, and `npm run test:full` are the **same complete gate**, not three checks. CI separates its reusable stages; every PR runs all units/builds/durability and critical browser cases, plus conservatively selected complete families and pinned checks. Complete verification runs nightly, on demand and before publishing. Default: the implementing agent supplies focused local evidence and **CI owns final required candidate validation**. A full local run is not a prerequisite to opening a PR or requesting review. Mark pending or unavailable validation explicitly; never claim merge/release readiness until all required checks pass for the current candidate, including the applicable current-base/merge result.
+`make full`, `npm test`, and `npm run test:full` are the **same complete gate**, not three checks. CI separates its reusable stages; every ready-for-review PR runs all units/builds/durability and critical browser cases, plus conservatively selected complete families and pinned checks. Complete verification runs nightly, on demand and before publishing. Default: the implementing agent supplies focused local evidence and **CI owns final required candidate validation**. A full local run is not a prerequisite to opening a PR or requesting review. Mark pending or unavailable validation explicitly; never claim merge/release readiness until all required checks pass for the current candidate, including the applicable current-base/merge result.
 
 Run `make full` locally on the settled candidate when the user/task explicitly requires it, CI cannot supply the required evidence, a failure must be reproduced locally, or a local-only deployment needs validation. Explain that reason before launching it. When a local full run is necessary, do not first run broad overlapping scopes merely as a checklist. Existing CI still runs; this policy does not disable it or make a local pass a substitute for required status checks.
 
