@@ -262,3 +262,45 @@ verified, but its anonymous `/data` mount identity was not retained before
 removal. A possible anonymous volume cannot be safely attributed among existing
 volumes; uncertain volumes are retained. No global prune or speculative removal
 was performed. Disposable runner resources have explicit ownership records.
+
+
+## PR #140 review follow-up: selected validation scope
+
+Reviewed head: `edc7de582eae752c7473f83901f920a3afccf214`.
+Reconciled main: `2d3364ce76041f06e513c2b602235ebb9e47d237`.
+The clean, idle issue-135 checkout is reused on a new branch from latest main.
+Merged #139 fixture-reset work is preserved without duplication.
+
+Changed behavior: accepted daily-queue transaction-timeout deferrals publish one
+bounded ETA capacity poll after commit and PostgreSQL connection release.
+Advisory connection/publication/teardown failures cannot change a committed
+foreground result. PostgreSQL retains identity, generation, checkpoint and
+eligibility; ordinary immediate continuation and periodic recovery remain.
+
+Risks: early-poll starvation, stale/duplicate replacement corruption, broker errors
+escaping after commit, pre-commit publication, rollback/rejected-fence wakes and
+backoff/contention regressions. No public API, schema, admission or FSRS change.
+
+Smallest proof: controlled-clock lifecycle and broker exceptions in wake/deadline/
+dispatch files, then durable phase/fencing and command/cutover tests. Boundary
+proof: regular real PostgreSQL daily-study scenario with consumers and scheduler
+stopped, plus unchanged Studies browser readiness. Include diagnostics/runner,
+lint/typecheck and diff checks. Existing timing artifacts identify background
+workloads as the dominant durability cost; run heavy scopes sequentially.
+CI owns complete exact-head and current-main merge verification. No timeout,
+assertion, fixture policy or required coverage is reduced.
+
+Broker exception audit: installed Celery 5.6.3/Kombu 5.6.2/Redis 6.4.0 wrap
+recoverable transport errors only within `send_task` publication. Connection
+creation/routing/message serialization and connection release surround that
+normalization boundary; e.g. socket/OSError and Kombu EncodeError can escape.
+Catch Exception only at the advisory helper, never at the foreground transaction.
+The connection and Redis socket limits remain one second, with retry=False.
+
+Before repair: `make python-file FILE=backend/tests/test_queue_refresh_wakeup.py`
+produced 9 failures / 11 passes (5.82 s pytest / 6.953 s command). All nine
+non-OperationalError setup/publication/teardown cases exposed the committed-result
+hole. OperationalError, rollback and process-control cases already passed.
+
+After broker repair: the same wakeup file passed 20/20 cases (7.22 s pytest /
+8.278 s command). Ordinary foreground transaction handling was not changed.

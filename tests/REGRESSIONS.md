@@ -3184,3 +3184,15 @@ The wake invokes the existing bounded capacity poll after commit/connection
 closure; it never claims tasks or bypasses priority/fencing. Durable recovery
 and periodic polling remain enabled. The underlying periodic publisher stall
 is not yet proven; this fix removes foreground dependence on its next tick.
+
+
+### PR #140 review: committed commands survive advisory broker failures
+
+- `test_issue135_queue_wake_publish_failure_preserves_committed_result` now covers
+  connection setup, publication and teardown with OperationalError, connection
+  refusal, socket timeout and EncodeError. It verifies the mutation and queue
+  task committed, successful result survives, and the failure is logged. Nine
+  non-normalized-error cases failed before repair.
+- `test_issue135_advisory_queue_wake_preserves_process_control` retains
+  KeyboardInterrupt and SystemExit propagation. Existing named rollback cases
+  still require no wake for handled or raised command failures.

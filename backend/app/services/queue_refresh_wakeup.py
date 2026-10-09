@@ -5,8 +5,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 import logging
 
-from kombu.exceptions import OperationalError as BrokerUnavailable
-
 
 @dataclass
 class QueueRefreshRequest:
@@ -38,9 +36,8 @@ def mark_queue_refresh_requested() -> None:
 def wake_queue_refresh() -> None:
     """Publish only a capacity wake; PostgreSQL still owns claims and recovery."""
 
-    from ..celery_app import celery_app
-
     try:
+        from ..celery_app import celery_app
         # A disposable connection bounds this advisory publish independently
         # of the command receipt. Never hold its database connection over I/O.
         transport_options = {
@@ -50,7 +47,9 @@ def wake_queue_refresh() -> None:
         with celery_app.connection_for_write(connect_timeout=1, transport_options=transport_options) as connection:
             celery_app.send_task("app.tasks.poll_background_tasks", queue="background",
                                  connection=connection, retry=False, ignore_result=True)
-    except BrokerUnavailable:
+    except Exception:
         # The command has committed. Do not misreport it as failed or undo its
-        # receipt; durable work remains eligible for periodic recovery.
+        # receipt. Celery normalizes transport errors only around publication;
+        # connection setup, encoding and teardown can raise other Exceptions.
+        # Process-control BaseExceptions still propagate.
         _LOGGER.exception("Queue refresh wake unavailable; durable work remains pending for periodic recovery")

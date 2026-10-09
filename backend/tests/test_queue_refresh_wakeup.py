@@ -1,11 +1,12 @@
 """Issue135: a committed foreground queue request does not depend on beat."""
 
 from contextlib import contextmanager
+import socket
 import sqlite3
 from types import SimpleNamespace
 from threading import Thread
 
-from kombu.exceptions import OperationalError as BrokerUnavailable
+from kombu.exceptions import EncodeError, OperationalError as BrokerUnavailable
 import pytest
 
 from app import command_gateway, database
@@ -128,27 +129,47 @@ def test_issue135_queue_wake_requests_do_not_cross_concurrent_commands():
         assert not later_request.requested
 
 
-def test_issue135_queue_wake_publish_failure_preserves_committed_result(queue_wakeup_store, monkeypatch, caplog):
+@pytest.mark.parametrize("failure_stage", ["connection", "publish", "teardown"])
+@pytest.mark.parametrize("broker_error", [BrokerUnavailable("Connection refused"),
+    ConnectionRefusedError("Connection refused"), socket.timeout("Broker socket timed out"),
+    EncodeError("Broker message encoding failed")], ids=["operational", "refused", "timeout", "encode"])
+def test_issue135_queue_wake_publish_failure_preserves_committed_result(
+    queue_wakeup_store, monkeypatch, caplog, failure_stage, broker_error,
+):
     from app.celery_app import celery_app
 
     def committed_command(*args, **kwargs):
         with sqlite3.connect(queue_wakeup_store) as connection:
             connection.row_factory = sqlite3.Row
+            connection.execute("UPDATE settings SET new_cards_per_day=17 WHERE id=1")
             enqueue_queue(connection)
         return {"saved": True}
+
+    observed_stages = []
 
     @contextmanager
     def bounded_connection(**options):
         assert options["connect_timeout"] == 1
         assert options["transport_options"]["socket_timeout"] == 1
         assert options["transport_options"]["socket_connect_timeout"] == 1
+        observed_stages.append("connection")
+        if failure_stage == "connection":
+            raise broker_error
         yield SimpleNamespace(name="owned-test-connection")
+        observed_stages.append("teardown")
+        if failure_stage == "teardown":
+            raise broker_error
 
     def unavailable_wake(name, **options):
         assert name == "app.tasks.poll_background_tasks"
         assert options["queue"] == "background" and options["ignore_result"] is True
         assert options["retry"] is False
-        raise BrokerUnavailable("Controlled lost post-commit wake")
+        observed_stages.append("publish")
+        with sqlite3.connect(queue_wakeup_store) as observer:
+            assert observer.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0] == 17
+            assert observer.execute("SELECT state FROM background_tasks").fetchone()[0] == "queued"
+        if failure_stage == "publish":
+            raise broker_error
 
     monkeypatch.setattr(command_gateway, "_execute_command", committed_command)
     monkeypatch.setattr(celery_app, "connection_for_write", bounded_connection)
@@ -156,4 +177,19 @@ def test_issue135_queue_wake_publish_failure_preserves_committed_result(queue_wa
     assert command_gateway.execute_command("wake-loss", "settings.update", {}) == {"saved": True}
     with sqlite3.connect(queue_wakeup_store) as observer:
         assert observer.execute("SELECT generation,state,lease_token FROM background_tasks").fetchone() == (1, "queued", None)
+        assert observer.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0] == 17
+    assert failure_stage in observed_stages
     assert "durable work remains pending for periodic recovery" in caplog.text
+    assert str(broker_error) in caplog.text
+
+
+@pytest.mark.parametrize("process_control", [KeyboardInterrupt, SystemExit])
+def test_issue135_advisory_queue_wake_preserves_process_control(monkeypatch, process_control):
+    from app.celery_app import celery_app
+
+    def interrupted_connection(**options):
+        raise process_control()
+
+    monkeypatch.setattr(celery_app, "connection_for_write", interrupted_connection)
+    with pytest.raises(process_control):
+        queue_refresh_wakeup.wake_queue_refresh()
