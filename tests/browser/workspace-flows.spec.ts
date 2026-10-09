@@ -343,7 +343,7 @@ test("training Builder restores the viewed mid-line position and durably saves B
   const reviewsBefore = await page.evaluate(() => localStorage.getItem("tempo-pending-training-reviews-v1"));
   const reviewWrites: string[] = [];
   page.on("request", request => { if (request.method() === "POST" && /\/reviews?(?:\?|$)/.test(request.url())) reviewWrites.push(request.url()); });
-  await page.getByRole("button", { name: /Back/ }).click();
+  await page.keyboard.press("ArrowLeft");
   await expect(board).toHaveAttribute("data-fen", positions[8]);
   await page.getByLabel("Open review position").getByRole("button", { name: "Builder", exact: true }).click();
   await expect(page.getByRole("button", { name: "Save branch", exact: true })).toBeDisabled();
