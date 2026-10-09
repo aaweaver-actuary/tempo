@@ -66,6 +66,7 @@ from .services.durable_tasks import current_delivery, record_stale_delivery, def
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, defer_task_for_transaction_timeout, fail_task
 
 from .services.durable_tasks import defer_task_for_foreground
+from .services.queue_refresh_wakeup import wake_queue_refresh, wake_queue_refresh_after_foreground_denial
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
@@ -275,17 +276,21 @@ def recover_operations() -> bool:
 def poll_background_tasks(self) -> bool:
     """Claim and run one slice at worker capacity, then yield to the broker."""
 
+    queue_refresh_wake = (self.request.headers or {}).get("queue_refresh_wake") is True
     try:
         activity_gate.check_background_admission()
         with activity_gate.background_job('dispatch', 'one-run', yielding=True):
             claimed_task = claim_task(allowed_kinds=_SUPPORTED_BACKGROUND_KINDS)
     except BackgroundAdmissionDeferred as error:
         _LOGGER.info('background admission deferred: %s', error)
+        if queue_refresh_wake:
+            wake_queue_refresh_after_foreground_denial()
         return False
     if claimed_task is None:
         return False
     return _execute_claimed_background_slice(
         claimed_task, (self.request.headers or {}).get("submitted_at"),
+        queue_refresh_wake=queue_refresh_wake,
     )
 
 
@@ -308,7 +313,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
 
 
 def _execute_claimed_background_slice(
-    claimed_task: dict[str, Any], submitted_at: float | None,
+    claimed_task: dict[str, Any], submitted_at: float | None, *, queue_refresh_wake: bool = False,
 ) -> bool:
     background_handlers = {
         "daily_queue": execute_postgres_queue_refresh_slice,
@@ -382,7 +387,9 @@ def _execute_claimed_background_slice(
                     kind=claimed_task["kind"],
                 )
         except BackgroundAdmissionDeferred:
-            defer_task_for_foreground(claimed_task)
+            deferred = defer_task_for_foreground(claimed_task)
+            if deferred and queue_refresh_wake:
+                wake_queue_refresh_after_foreground_denial()
             return False
         except TransactionTimeout as error:
             if claimed_task['kind'] == 'daily_queue':
@@ -417,6 +424,9 @@ def _execute_claimed_background_slice(
             )
             raise
     if more_work:
+        if queue_refresh_wake:
+            wake_queue_refresh()
+            return more_work
         try:
             celery_app.send_task("app.tasks.poll_background_tasks", queue="background")
         except BrokerUnavailable:

@@ -265,9 +265,16 @@ def proof_deferred_capacity_wakes(identifier):
     broker_queue = Queue(identifier + '-eta', Exchange(identifier + '-eta', type='direct'),
                          routing_key=identifier + '-eta')
     deliveries, publications, executions, polls, operation_ids = [], [], [], [], []
+    delivery_headers = []
     fail_next_slice = [True]
     original_send = celery_app.send_task
     original_claim = durable_tasks.claim_task
+
+    class WakeClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is not None
+            return observed_clock[0].astimezone(tz)
 
     def saved_state():
         with psycopg.connect(DSN, row_factory=psycopg.rows.dict_row) as connection:
@@ -305,8 +312,9 @@ def proof_deferred_capacity_wakes(identifier):
                 saved = observer.execute("SELECT state,next_attempt_at,lease_token FROM background_tasks "
                     "WHERE kind='daily_queue' AND deduplication_key=%s FOR UPDATE NOWAIT", (identifier,)).fetchone()
                 if 'eta' in options:
-                    assert saved[0] == 'retrying' and saved[2] is None
-                    assert datetime.fromisoformat(saved[1]) == options['eta']
+                    assert saved[0] in {'queued', 'retrying'} and saved[2] is None
+                    if not tasks.activity_gate.foreground_waiting:
+                        assert datetime.fromisoformat(saved[1]) == options['eta']
                     assert options['retry'] is False and options['ignore_result'] is True
             # Only the transport queue is isolated; the production task name,
             # serializer and ETA envelope pass through real Celery and Redis.
@@ -319,6 +327,9 @@ def proof_deferred_capacity_wakes(identifier):
                     if message.headers.get('eta') else observed_clock[0])
                 assert delivery_at == options.get('eta', observed_clock[0])
                 publications.append((delivery_at, dict(options)))
+                received_headers = {'queue_refresh_wake': message.headers.get('queue_refresh_wake')}
+                assert received_headers == options.get('headers', {'queue_refresh_wake': None})
+                delivery_headers.append(received_headers)
                 heapq.heappush(deliveries, (delivery_at, len(publications)))
             finally:
                 message.ack()
@@ -340,16 +351,67 @@ def proof_deferred_capacity_wakes(identifier):
             for _delivery_number in range(100):
                 if not deliveries or deliveries[0][0] > observed_clock[0]:
                     return
-                delivery_at, _sequence = heapq.heappop(deliveries)
-                polls.append((delivery_at, tasks.poll_background_tasks.run()))
+                delivery_at, publication_number = heapq.heappop(deliveries)
+                tasks.poll_background_tasks.push_request(headers=delivery_headers[publication_number - 1])
+                try:
+                    polls.append((delivery_at, tasks.poll_background_tasks.run()))
+                finally:
+                    tasks.poll_background_tasks.pop_request()
             raise AssertionError('Unbounded capacity delivery loop')
 
         command_gateway.register_command(proof_command, enqueue_from_command)
         try:
             with patch.object(durable_tasks, '_now', lambda: observed_clock[0]), \
+                    patch.object(queue_refresh_wakeup, 'datetime', WakeClock), \
                     patch.object(celery_app, 'send_task', publish_capacity), \
                     patch.object(tasks, 'claim_task', claim_owned), \
                     patch.object(tasks, 'execute_postgres_queue_refresh_slice', execute_slice):
+                fail_next_slice[0] = False
+                finished = Event()
+                worker_errors = []
+
+                def consume_committed_wake():
+                    try:
+                        deliver_due()
+                    except BaseException as error:
+                        worker_errors.append(error)
+                    finally:
+                        finished.set()
+
+                with tasks.activity_gate.foreground():
+                    accepted = command('foreground-denied')
+                    before = saved_state()
+                    worker = Thread(target=consume_committed_wake)
+                    worker.start()
+                    assert finished.wait(1), 'Denied committed queue wake occupied its worker'
+                    worker.join(1)
+                    assert not worker.is_alive() and worker_errors == [], worker_errors
+                    assert saved_state() == before and executions == []
+                    assert before[0]['attempt_count'] == 0 and before[0]['lease_token'] is None
+                    assert before[0]['lease_expires_at'] is None and before[0]['last_error'] is None
+                    assert len(deliveries) == 1
+                    assert deliveries[0][0] == observed_clock[0] + timedelta(seconds=1)
+                    for _denial_number in range(2):
+                        eligibility = deliveries[0][0]
+                        observed_clock[0] = eligibility - timedelta(microseconds=1)
+                        poll_count = len(polls)
+                        deliver_due()
+                        assert len(polls) == poll_count
+                        observed_clock[0] = eligibility
+                        deliver_due()
+                        assert len(polls) == poll_count + 1 and len(deliveries) == 1
+                        assert deliveries[0][0] == eligibility + timedelta(seconds=1)
+                        assert saved_state() == before and executions == []
+                postgres_store.close_pools()
+                observed_clock[0] = deliveries[0][0]
+                deliver_due()
+                saved_task, projection = saved_state()
+                assert executions == [(accepted['generation'], observed_clock[0])]
+                assert saved_task['generation'] == accepted['generation'] and saved_task['state'] == 'complete'
+                assert (projection['state'], projection['refresh_pending'], projection['last_error']) == ('ready', 0, None)
+                assert not deliveries
+                print('PASS test_issue135_postgres_foreground_denied_queue_wake_retains_future_delivery_without_periodic_polling')
+
                 for scenario in ('recover', 'replace', 'earlier_progress'):
                     fail_next_slice[0] = True
                     first_execution = len(executions)
