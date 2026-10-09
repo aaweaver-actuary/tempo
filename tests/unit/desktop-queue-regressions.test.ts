@@ -45,6 +45,30 @@ beforeEach(() => {
 });
 
 describe("desktop live queue isolation", () => {
+  it("queue preparation polls yield admission without spending the service failure budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const request = vi.fn().mockResolvedValueOnce(Response.json({ count: 0, cards: [], projection: { state: "refreshing" } }));
+      for (let refusal = 0; refusal < 4; refusal += 1)
+        request.mockResolvedValueOnce(Response.json({ detail: "Waiting for foreground activity" }, { status: 503 }));
+      request.mockResolvedValueOnce(Response.json({ count: 1, cards: [{
+        id: "prepared-live", queue_entry_id: 807, start_fen: startingFen, moves: ["e2e4"],
+        content_type: "opening", repertoire_name: "Prepared", repertoire_source: "PGN",
+      }], projection: { state: "ready", generation: 1, updated_at: new Date().toISOString(),
+        refresh_pending: 0, last_error: null } }));
+      vi.stubGlobal("fetch", request);
+      const loading = fetchAndInitializeQueue();
+      const settled = loading.then(() => null, error => error);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await settled).toBeNull();
+      expect(request).toHaveBeenCalledTimes(6);
+      expect(request.mock.calls[0][1]?.headers).toBeUndefined();
+      for (const call of request.mock.calls.slice(1))
+        expect(call[1]?.headers).toEqual({ "X-Tempo-Work-Class": "background" });
+      expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+      expect(useTrainingStore.getState().serviceError).toBe("");
+    } finally { vi.useRealTimers(); }
+  });
   it("AS-15 only the current queue generation can settle recovery readiness", async () => {
     let firstRead!: (value: null) => void;
     let secondRead!: (value: null) => void;
