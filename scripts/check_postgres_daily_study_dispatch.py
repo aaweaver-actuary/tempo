@@ -68,6 +68,8 @@ def cleanup(identifier):
 
 
 def proof():
+    from check_redis_socket_deadlines import test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery
+    test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery()
     from check_postgres_queue_unlock_scale import proof_graph_scale
     proof_graph_scale(DSN)
     from check_postgres_opening_progression import test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound
