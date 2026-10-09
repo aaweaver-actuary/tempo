@@ -103,3 +103,13 @@ it("PD-82 prefix selectors distinguish identical learner moves across opponent b
   await screen.findByRole("button", { name: /Inspect prefix: 1\. e4 e5 2\. Nf3/ });
   expect(screen.getByRole("button", { name: /Inspect prefix: 1\. e4 c5 2\. Nf3/ })).toBeTruthy();
 });
+
+it("PD-82 foreground admission denial resumes the evidence read instead of leaving a permanent error", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Waiting for foreground activity" }, { status: 503, headers: { "Retry-After": "0.001" } }))
+    .mockResolvedValueOnce(Response.json(listing));
+  vi.stubGlobal("fetch", fetcher);
+  mount();
+  await screen.findByRole("button", { name: /^Inspect prefix/ });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

@@ -260,3 +260,17 @@ interruption cases, admission-driver proof, and 256-event HTTP read denial,
 The HTTP proof owns helper-database admission keys so unrelated parent health
 reads cannot invalidate its deliberate foreground lease/release assertion.
 These are focused validations; new complete current-candidate CI remains required.
+
+CI 37883537595 passed native PostgreSQL durability but its browser matrix found a
+permanent prefix-evidence admission error and passive training fixture starvation.
+The component regression fails against 5efe6c9. Evidence reads now honor only an
+explicit admission wait's Retry-After within their existing 15-second deadline,
+with cancellation and timer cleanup. Passive runner publication waits and the
+browser fixture readiness poll no longer claim foreground capacity. Real
+`make view VIEW='PD-82 PostgreSQL prefix diagnostics|daily study opens on the workspace date'`
+passes all three cases (65.35s browser stage, 8.77s cleanup); project
+`tempo-pg-regressions-76306-11aa7f5f` resources are removed. Ten affected unit
+cases pass in 0.75s; runner 48 cases in 1.07s; typecheck/lint pass with ten existing
+warnings. These results cover the dirty follow-up to 5efe6c9; new current-head CI
+is required. Native runner passive-read change additionally needs current
+PostgreSQL durability evidence on the scheduling candidate.

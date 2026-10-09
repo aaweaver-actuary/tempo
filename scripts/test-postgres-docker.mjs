@@ -154,8 +154,8 @@ async function waitForReady({ requireContainerHealthy = false } = {}) {
   throw new Error("Disposable PostgreSQL Tempo did not become ready");
 }
 
-async function get(path) {
-  const response = await apiRequest(path);
+async function get(path, { background = false } = {}) {
+  const response = await apiRequest(path, background ? { headers: { "X-Tempo-Work-Class": "background" } } : {});
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
   return response.json();
 }
@@ -188,7 +188,7 @@ async function waitForStudyableImport(repertoireId) {
   let settledSamples = 0;
   for (let attempt = 0; attempt < 180; attempt += 1) {
     const [system, integrity, queue] = await Promise.all([
-      get("system/tasks"), get(`repertoires/${repertoireId}/integrity`), get("queue/today"),
+      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }), get("queue/today", { background: true }),
     ]);
     assertNoCompletedFixtureConflict(integrity, repertoireId);
     const graphTask = system.tasks.find((task) => task.kind === "opening_graph_rebuild"
