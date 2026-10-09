@@ -3032,3 +3032,20 @@ The unchanged FEN study queue-ready assertion failed on PR #133 integration `9da
 
 - `test_issue79_rehearsal_never_replays_a_started_calculation_after_foreground_preemption` (`backend/tests/test_prefix_transition_api.py`) failed against the existing retry behavior: an explicitly preempted calculation was silently replaced by a fresh 200 plan. The helper now returns that started request's rejection. Pre-calculation foreground admission still coordinates as before.
 - `test_issue79_readonly_planner_foreground_concurrency_and_stale_replay` keeps the native 50ms read budget, released-reader/foreground review checks, read-only snapshots, and mandatory same-request `409 stale_plan`. Explicit foreground preemption restarts the complete capture/review experiment within the existing 10-second coordination window, records its count, and never accepts false success, other errors, or exhausted coordination as a pass.
+
+## Builder repertoire response ordering after PR #133 (2026-10-09)
+
+Only the latest applicable initial/refresh repertoire-lines request may publish
+Builder lines, readiness or error; unmount invalidates outstanding requests.
+The current UI blocks retry while initial loading is pending, so a test-scoped
+state initializer exposes that boundary for controlled overlap. These failures
+demonstrate the publication invariant, not a reachable current-UI race.
+
+- `obsolete initial repertoire lines cannot replace a successfully recovered training route` failed on main `24a2272c`: late initial data changed the restored active repertoire to `obsolete-repertoire`.
+- `obsolete initial repertoire failure cannot interrupt a newer training-route lookup` failed on that main: the obsolete error displayed Retry and cancelled the newer lookup.
+- `obsolete initial repertoire failure cannot replace successful training recovery` preserves the restored root, full history, cursor, branch anchor, selection, board and write permissions after a late failure; it already passed before the guard.
+- `late training route lookup cannot overwrite a newer retry in the same Builder session` ignores cancellation deliberately, then releases an old result after newer adoption; the existing worker guards already passed. The replacement-session regression remains unchanged.
+
+All four tests are in `training-builder-context-regressions.test.tsx`, use deferred
+fetch/worker promises, and await processing before assertions. Initial loads and
+refreshes share a request-generation guard; route matching and adoption are unchanged.
