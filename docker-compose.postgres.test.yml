@@ -61,7 +61,6 @@ services:
     environment:
       PGPASSFILE: /run/secrets/admin_pgpass
       TEMPO_TEST_INSTANCE: disposable
-      TZ: America/New_York
     secrets:
       - source: admin_pgpass
         mode: 0400

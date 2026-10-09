@@ -1,7 +1,7 @@
 """Study queue work must claim its lease only at execution capacity."""
 
 from contextlib import nullcontext
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from threading import Event, Thread
 
 import pytest
@@ -9,6 +9,31 @@ from kombu.exceptions import OperationalError as BrokerUnavailable
 
 from app import database, tasks
 from app.services import durable_tasks
+
+
+def test_issue107_browser_fixture_uses_application_day_without_host_clock(monkeypatch):
+    from scripts import check_postgres_daily_study_dispatch as proof
+    statements, queue_dates = [], []
+    class FixtureDatabase:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+        def commit(self):
+            pass
+    fixture_database = FixtureDatabase()
+    monkeypatch.setattr(proof.psycopg, "connect", lambda *_: nullcontext(fixture_database))
+    monkeypatch.setattr(proof.postgres_store, "connection", lambda: nullcontext(fixture_database))
+    monkeypatch.setattr(proof, "request_queue_refresh_in_transaction", lambda _db, day: queue_dates.append(day))
+    class HostClockForbidden:
+        fromisoformat = staticmethod(date.fromisoformat)
+
+        @staticmethod
+        def today():
+            pytest.fail("The browser fixture must use its application's supplied day")
+    monkeypatch.setattr(proof, "date", HostClockForbidden)
+    proof.seed("daily-study-proof-fixture", request_refresh=True, queue_date="2026-10-08")
+    assert queue_dates == ["2026-10-08"]
+    locked_inserts = [parameters for statement, parameters in statements if "generate_series" in statement and "INSERT INTO cards" in statement]
+    assert locked_inserts and all(parameters[3] == "2026-10-08" for parameters in locked_inserts)
 
 
 @pytest.fixture
