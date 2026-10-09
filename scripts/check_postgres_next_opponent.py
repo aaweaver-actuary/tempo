@@ -1,6 +1,6 @@
 """Issue #107: populated upgrade, real task restart, source races and foreground proof."""
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -206,6 +206,100 @@ def test_issue107_postgres_profile_reads_preserve_queue_and_exclusions(dsn):
     print("PASS test_issue107_postgres_profile_reads_preserve_queue_and_exclusions")
 
 
+def test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_source_mutation(dsn):
+    from app.services.postgres_game_sync_completion import finish_game_sync_if_complete
+    cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    first_eligible = cutoff + timedelta(days=1)
+    second_eligible = cutoff + timedelta(days=2)
+
+    def account_state():
+        with psycopg.connect(dsn, row_factory=postgres_store.tempo_row_factory) as database:
+            return dict(database.execute("SELECT * FROM next_opponent_accounts WHERE account='future'").fetchone())
+
+    def task_state():
+        with psycopg.connect(dsn, row_factory=postgres_store.tempo_row_factory) as database:
+            return dict(database.execute(
+                "SELECT state,generation,payload_json FROM background_tasks WHERE kind=%s AND deduplication_key='future'",
+                (service.TASK_KIND,)).fetchone())
+
+    def successful_sync():
+        job_id = str(uuid.uuid4())
+        with postgres_store.connection() as database:
+            database.execute(
+                "INSERT INTO game_sync_jobs(id,request_json,status,created_at,updated_at) VALUES(?,?,'running',?,?)",
+                (job_id, json.dumps({'lichess_username': 'future'}), cutoff.isoformat(), cutoff.isoformat()))
+            database.execute(
+                "INSERT INTO game_sync_windows(id,job_id,provider,window_kind,window_start_ms,window_end_ms,"
+                "status,created_at,updated_at) VALUES(?,?,'lichess','games',0,1,'complete',?,?)",
+                (str(uuid.uuid4()), job_id, cutoff.isoformat(), cutoff.isoformat()))
+            assert finish_game_sync_if_complete(database, job_id)
+            assert not finish_game_sync_if_complete(database, job_id)
+
+    with psycopg.connect(dsn) as database:
+        database.execute("UPDATE settings SET lichess_username='future' WHERE id=1")
+        for identifier, played_at in [('future-first', first_eligible), ('future-second', second_eligible)]:
+            database.execute(
+                "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,"
+                "moves_json,player_rating,opponent_rating,rating_change) "
+                "VALUES(%s,'lichess','future',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500,0)",
+                (identifier, played_at.isoformat(), FEN))
+    source_generation = account_state()['input_generation']
+    # Freeze only the profile cutoff; durable delivery keeps its normal lease clock.
+    clock = {'now': cutoff}
+    with patch.object(service, '_current_utc_time', lambda: clock['now']):
+        assert request()
+        assert service.execute_profile_slice(durable_tasks.claim_task(kind=service.TASK_KIND))
+        original = read()
+        assert original.profile.game_count == 0
+        assert account_state()['next_evidence_at'] == first_eligible
+        original_task = task_state()
+        for _ in range(3):
+            assert not request()
+            successful_sync()
+        assert task_state() == original_task
+        assert read().profile == original.profile and read().published_at == original.published_at
+
+        for eligible_at, expected_count in [(first_eligible, 1), (second_eligible, 2)]:
+            clock['now'] = eligible_at
+            assert read().refresh_status == 'pending'
+            successful_sync()
+            queued = task_state()
+            assert queued['state'] == 'queued', 'Successful sync must refresh newly eligible evidence'
+            assert json.loads(queued['payload_json'])['input_generation'] == source_generation
+            assert not request()
+            successful_sync()
+            assert task_state() == queued
+            claimed = durable_tasks.claim_task(kind=service.TASK_KIND)
+            leased = task_state()
+            assert leased['state'] == 'leased'
+            assert not request()
+            successful_sync()
+            assert task_state() == leased
+            assert service.execute_profile_slice(claimed)
+            assert not service.execute_profile_slice(claimed)
+            published = read()
+            assert published.profile.game_count == expected_count
+            assert published.profile.cohorts[1].latest_game_at == eligible_at.isoformat()
+            assert account_state()['input_generation'] == source_generation
+            assert account_state()['next_evidence_at'] == (second_eligible if expected_count == 1 else None)
+            completed = task_state()
+            successful_sync()
+            assert not request() and task_state() == completed
+            assert read().profile == published.profile and read().published_at == published.published_at
+
+        # Equivalent forced publication reuses immutable semantic identity/time.
+        with psycopg.connect(dsn) as database:
+            database.execute("UPDATE next_opponent_accounts SET published_generation=NULL WHERE account='future'")
+        clock['now'] += timedelta(days=1)
+        assert request()
+        assert service.execute_profile_slice(durable_tasks.claim_task(kind=service.TASK_KIND))
+        assert read().profile == published.profile and read().published_at == published.published_at
+        assert not request()
+        with psycopg.connect(dsn) as database:
+            assert database.execute("SELECT COUNT(*) FROM next_opponent_snapshots WHERE account='future'").fetchone()[0] == 3
+    print("PASS test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_source_mutation")
+
+
 def main():
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Next-opponent proof requires a disposable PostgreSQL instance")
@@ -267,6 +361,7 @@ def main():
             shifted = test_issue107_postgres_source_race_retains_last_complete_snapshot(dsn, original)
             test_issue107_postgres_foreground_contends_without_compute_transaction(dsn, shifted)
             test_issue107_postgres_profile_reads_preserve_queue_and_exclusions(dsn)
+            test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_source_mutation(dsn)
     finally:
         postgres_store.close_pools()
         with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:

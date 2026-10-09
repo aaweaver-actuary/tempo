@@ -51,6 +51,13 @@ triggers increment an account input generation for relevant source changes;
 other analysis updates do not invalidate the model. Existing installations
 initialize on their next sync, without a migration/startup history traversal.
 
+Publication retains only the earliest otherwise-eligible future game timestamp
+in account state. Matching generations skip refresh until that timestamp passes;
+the next existing sync/account/exclusion refresh boundary can then request a
+coalesced rebuild even without a source mutation. The worker advances or clears
+this timestamp under the same publication fences. Reads report due evidence as
+pending without enqueueing work; no timer or provider polling is added.
+
 A task reads bounded inputs, closes the connection, computes, then commits one
 short publication. Source generation, account identity, method and durable task
 lease fence that commit. Snapshots reject updates and deletes. Retried tasks

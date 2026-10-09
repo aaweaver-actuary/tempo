@@ -11,7 +11,8 @@ CREATE TABLE next_opponent_accounts (
     input_generation BIGINT NOT NULL DEFAULT 0,
     published_generation BIGINT,
     published_method TEXT,
-    profile_version TEXT REFERENCES next_opponent_snapshots(version)
+    profile_version TEXT REFERENCES next_opponent_snapshots(version),
+    next_evidence_at TIMESTAMPTZ
 );
 CREATE FUNCTION protect_next_opponent_snapshot() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
