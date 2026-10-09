@@ -115,7 +115,7 @@ def _proof_real_control_callbacks(database_url, identity):
     import chess.engine
     import httpx
     from app import game_analysis_commands, game_analysis_publication, main
-    from app.services import game_analysis_worker, repertoire_coverage, threat_pipeline
+    from app.services import game_analysis_worker, repertoire_coverage, threat_pipeline, queue_refresh_wakeup
     from app.services import redis_admission_gate
 
     assert redis_admission_gate.configured(), 'Control proof requires real shared Redis admission'
@@ -167,6 +167,7 @@ def _proof_real_control_callbacks(database_url, identity):
                 (tasks, ('execute_game_analysis_publication_slice', 'execute_game_analysis_followup_slice', 'execute_game_findings_slice')),
                 (threat_pipeline, ('execute_threat_scan_slice', 'execute_threat_validation', 'validate_analysis_report')),
                 (repertoire_coverage, ('discover_opponent_positions',)),
+                (queue_refresh_wakeup, ('wake_queue_refresh',)),
             ):
                 for name in names:
                     boundaries.enter_context(patch.object(module, name, prohibited))

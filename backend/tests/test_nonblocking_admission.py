@@ -264,7 +264,7 @@ def _forbid_control_analysis(monkeypatch):
     import chess.engine
     import httpx
     from app import game_analysis_commands, game_analysis_publication, main, tasks
-    from app.services import game_analysis_worker, repertoire_coverage, threat_pipeline
+    from app.services import game_analysis_worker, repertoire_coverage, threat_pipeline, queue_refresh_wakeup
 
     def prohibited(*_args, **_kwargs):
         pytest.fail('control command invoked analysis, traversal, or publication execution')
@@ -280,6 +280,7 @@ def _forbid_control_analysis(monkeypatch):
         (tasks, ('execute_game_analysis_publication_slice', 'execute_game_analysis_followup_slice', 'execute_game_findings_slice')),
         (threat_pipeline, ('execute_threat_scan_slice', 'execute_threat_validation', 'validate_analysis_report')),
         (repertoire_coverage, ('discover_opponent_positions',)),
+        (queue_refresh_wakeup, ('wake_queue_refresh',)),
     ):
         for name in names:
             monkeypatch.setattr(module, name, prohibited)
