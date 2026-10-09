@@ -2896,3 +2896,11 @@ receipt caused idle recovery to resubmit the rejected result, including after re
 Unit cases live in `tests/unit/pending-review-recovery-regressions.test.tsx` and
 `tests/unit/review-outbox-regressions.test.ts`; browser cases live in
 `tests/browser/phone-opening-study.spec.ts`. All are in the regular suite.
+
+CI caller-fixture follow-up: the existing `failed earlier save blocks grading after a
+completed tactic until ordered retry succeeds`, `failed tactic review save keeps the next
+card visible but blocks grading until retry`, and `failed review save retains the completed
+card for retry; successful review is not reported as failed when queue refresh fails` now
+return the real missing-receipt HTTP 404 for explicit receipt-first retries. Previously
+their generic HTTP 200 payload had no operation state and correctly left saves pending.
+All ordering, payload-retention, grading-block and queue-error assertions are unchanged.

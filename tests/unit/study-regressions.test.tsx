@@ -235,6 +235,7 @@ describe("reported study regressions", () => {
     const savedEntries: number[] = [];
     vi.stubGlobal("fetch", vi.fn((input, options) => {
       const url = String(input);
+      if (url.includes("/api/operations/")) return Promise.resolve(new Response(null, { status: 404 }));
       if (url.includes("/api/queue/window"))
         return Promise.resolve(Response.json({ cards: [first, tactic, third], count: 3 }));
       if (url.endsWith("/review")) {
@@ -356,6 +357,7 @@ describe("reported study regressions", () => {
     let reviews = 0;
     vi.stubGlobal("fetch", vi.fn(async (input) => {
       const url = String(input);
+      if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
       if (url.includes("/api/queue/window")) return Response.json({ cards: [tactic, next], count: 2 });
       if (url.endsWith("/review")) {
         reviews += 1;
@@ -454,6 +456,7 @@ describe("reported study regressions", () => {
       "fetch",
       vi.fn(async (input) => {
         const url = String(input);
+        if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
         if (url.includes("/api/queue/window")) {
           if (reviewSaved)
             return Response.json(

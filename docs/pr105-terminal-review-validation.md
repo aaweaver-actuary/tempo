@@ -66,3 +66,16 @@ Reviewed open issues and PRs against current main: #29/#39 remain independent
 background-admission work; #81 concerns prefix resegmentation recovery. This patch
 closes none of those acceptance criteria. Follow-up to merged #92, retaining PR #105's
 original scope. The original PR checkout and this clone remain preserved for review.
+
+
+## CI caller-fixture follow-up
+
+Run 37868397707 on repair head 8653f13 / merge candidate c334139 failed three
+existing study caller cases; all other 1,328 frontend cases passed. The fixtures
+returned HTTP 200 generic unrelated JSON for receipt reads, so the newly explicit
+receipt-first retry correctly stayed pending. Focused reproduction:
+`npm run test:unit -- tests/unit/study-regressions.test.tsx -t 'failed earlier save blocks|failed tactic review save keeps|failed review save retains'`
+failed all three in 21.54s; after adding only valid missing-receipt HTTP 404 responses,
+the same command passed all three in 6.02s. No existing assertion was changed and no
+production code repair was needed. `make unit-file FILE=tests/unit/study-regressions.test.tsx` passed all 76 cases
+in 23.02s; fresh required CI will validate the resulting new committed candidate.
