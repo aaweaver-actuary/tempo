@@ -28,10 +28,10 @@ def request_segmentation_in_transaction(database, repertoire_id: str, graph_gene
         "INSERT INTO opening_segmentation_state(repertoire_id) VALUES(%s) ON CONFLICT DO NOTHING", (repertoire_id,),
     )
     state = database.execute_native(
-        "SELECT content_version,run_id,state FROM opening_segmentation_state WHERE repertoire_id=%s FOR UPDATE",
+        "SELECT content_version,run_id,state,graph_generation FROM opening_segmentation_state WHERE repertoire_id=%s FOR UPDATE",
         (repertoire_id,),
     ).fetchone()
-    if state[2] in {'ready', 'building'}:
+    if state[2] in {'ready', 'building'} and state[3] == graph_generation:
         return {"queued": state[2] == 'building'}
     task = enqueue_task_in_transaction(
         database, "opening_segmentation", repertoire_id,
@@ -52,6 +52,8 @@ def run_identity(task: dict) -> str:
 
 
 def current_slice(database, task: dict) -> bool:
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))",
+                            (f"tempo:opening-graph:{task['payload']['repertoire_id']}",))
     if not lock_current_slice(database, task):
         return False
     payload = task["payload"]
@@ -59,7 +61,10 @@ def current_slice(database, task: dict) -> bool:
         "SELECT 1 FROM opening_segmentation_state state "
         "JOIN opening_graph_publications graph ON graph.repertoire_id=state.repertoire_id "
         "WHERE state.repertoire_id=%s AND state.content_version=%s AND state.run_id=%s "
-        "AND graph.generation=%s AND state.state='building' FOR UPDATE OF state",
+        "AND graph.generation=%s AND graph.state='ready' AND state.state='building' "
+        "AND NOT EXISTS(SELECT 1 FROM background_tasks rebuild WHERE rebuild.kind='opening_graph_rebuild' "
+        "AND rebuild.deduplication_key=state.repertoire_id "
+        "AND (rebuild.generation<>graph.generation OR rebuild.state<>'complete')) FOR UPDATE OF state",
         (payload['repertoire_id'], payload['content_version'], run_identity(task), payload['graph_generation']),
     ).fetchone()
     if current is None:
@@ -67,24 +72,90 @@ def current_slice(database, task: dict) -> bool:
         return False
     return True
 
+def graph_generation_is_current(database, repertoire_id: str, graph_generation: int) -> bool:
+    return database.execute_native(
+        "SELECT 1 FROM opening_graph_publications graph WHERE graph.repertoire_id=%s "
+        "AND graph.generation=%s AND graph.state='ready' AND NOT EXISTS("
+        "SELECT 1 FROM background_tasks rebuild WHERE rebuild.kind='opening_graph_rebuild' "
+        "AND rebuild.deduplication_key=graph.repertoire_id "
+        "AND (rebuild.generation<>graph.generation OR rebuild.state<>'complete'))",
+        (repertoire_id, graph_generation),
+    ).fetchone() is not None
 
-def prepare_presentation(task: dict) -> tuple[str, tuple[dict, ...]] | None:
+
+def matching_graph_colors(database, payload: dict, presentation: dict) -> tuple[str, ...]:
+    rows = database.execute_native(
+        "SELECT DISTINCT step.trained_color FROM opening_graph_steps step "
+        "JOIN opening_graph_publications graph ON graph.repertoire_id=step.repertoire_id "
+        "AND graph.generation=step.generation AND graph.state='ready' "
+        "WHERE step.repertoire_id=%s AND step.generation=%s AND step.card_id=%s "
+        "AND step.starting_fen=%s AND step.moves_json=%s LIMIT 2",
+        (payload['repertoire_id'], payload['graph_generation'], presentation['id'],
+         presentation['start_fen'], presentation['moves_json']),
+    ).fetchall()
+    return tuple(row[0] for row in rows)
+
+
+def resolve_presentation_color(payload: dict, presentation: dict, colors: tuple[str, ...]) -> str:
+    reason = None
+    if not colors:
+        reason = 'missing'
+    elif any(color not in {'white', 'black'} for color in colors) or presentation['trained_color'] not in {None, 'white', 'black'}:
+        reason = 'invalid'
+    elif len(set(colors)) != 1 or presentation['trained_color'] not in {None, colors[0]}:
+        reason = 'conflicting'
+    if reason:
+        raise ValueError(f"segmentation_provenance_{reason}: repertoire {payload['repertoire_id']}, "
+                         f"card {presentation['id']}, graph {payload['graph_generation']}. "
+                         "Repair this card's matching current graph source, then retry segmentation.")
+    return colors[0]
+
+
+def retry_segmentation_in_transaction(database, failed: dict) -> str | dict:
+    from fastapi import HTTPException
+    from .durable_tasks import serialize_task
+    payload = json.loads(failed['payload_json'])
+    repertoire_id = payload['repertoire_id']
+    database.execute_native("SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))",
+                            (f'tempo:opening-graph:{repertoire_id}',))
+    state = database.execute_native(
+        "SELECT content_version,run_id,state,graph_generation FROM opening_segmentation_state "
+        "WHERE repertoire_id=%s FOR UPDATE", (repertoire_id,),
+    ).fetchone()
+    if (state and state[0] == payload['content_version'] and state[1] == run_identity(failed)
+            and state[2] == 'building' and state[3] == payload['graph_generation']
+            and failed['phase'] in {'queued', 'scan', 'groups', 'cleanup', 'publish'}
+            and graph_generation_is_current(database, repertoire_id, payload['graph_generation'])):
+        return failed['phase']
+    graph = database.execute_native(
+        'SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s', (repertoire_id,),
+    ).fetchone()
+    if not graph or not graph_generation_is_current(database, repertoire_id, graph[0]):
+        raise HTTPException(409, 'Wait for the current opening graph to publish, then retry segmentation')
+    database.execute_native("UPDATE opening_segmentation_state SET state='stale' WHERE repertoire_id=%s", (repertoire_id,))
+    request = request_segmentation_in_transaction(database, repertoire_id, graph[0])
+    queued = database.execute_native('SELECT * FROM background_tasks WHERE id=%s', (request['task_id'],)).fetchone()
+    return serialize_task(queued)
+
+
+def prepare_presentation(task: dict) -> tuple[str, tuple[dict, ...], dict] | None:
     payload = task['payload']
-    with background_read_connection() as database:
+    with background_read_connection(authoritative=True) as database:
         row = database.execute_native(
             "SELECT card.id,card.start_fen,card.moves_json,card.revision,card.trained_color "
             "FROM cards card WHERE card.id>%s AND card.archived=0 AND card.pending_validation=0 "
             "AND EXISTS(SELECT 1 FROM opening_graph_steps step WHERE step.repertoire_id=%s "
-            "AND step.generation=%s AND step.card_id=card.id "
-            "AND step.starting_fen=card.start_fen AND step.moves_json=card.moves_json) "
+            "AND step.generation=%s AND step.card_id=card.id) "
             "AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block "
             "WHERE block.repertoire_id=%s AND block.card_id=card.id) ORDER BY card.id LIMIT 1",
             (payload.get('after_card_id', ''), payload['repertoire_id'], payload['graph_generation'], payload['repertoire_id']),
         ).fetchone()
         presentation = dict(row) if row else None
+        colors = matching_graph_colors(database, payload, presentation) if presentation else ()
     if presentation is None:
         return None
-    return presentation['id'], presentation_occurrences(payload['repertoire_id'], presentation)
+    prepared_presentation = {**presentation, 'trained_color': resolve_presentation_color(payload, presentation, colors)}
+    return presentation['id'], presentation_occurrences(payload['repertoire_id'], prepared_presentation), presentation
 
 
 def stage_presentation(database, task: dict, prepared: tuple | None) -> bool:
@@ -94,7 +165,19 @@ def stage_presentation(database, task: dict, prepared: tuple | None) -> bool:
     if prepared is None:
         return advance_task_slice_in_transaction(database, task, next_phase='groups',
                                                 next_payload={**payload, 'after_kind': '', 'after_group_key': ''})
-    card_id, occurrences = prepared
+    card_id, occurrences, prepared_source = prepared
+    source = database.execute_native(
+        'SELECT id,start_fen,moves_json,revision,trained_color FROM cards WHERE id=%s '
+        'AND archived=0 AND pending_validation=0 AND NOT EXISTS(SELECT 1 FROM integrity_training_blocks block '
+        'WHERE block.repertoire_id=%s AND block.card_id=cards.id) FOR SHARE',
+        (card_id, payload['repertoire_id']),
+    ).fetchone()
+    expected = occurrences[0]
+    if (source is None or any(source[field] != prepared_source[field]
+            for field in ('revision', 'start_fen', 'moves_json', 'trained_color'))
+            or resolve_presentation_color(payload, dict(source), matching_graph_colors(database, payload, dict(source)))
+               != expected['trained_color']):
+        raise ValueError(f'segmentation_source_changed: card {card_id}. Rebuild the current graph and retry segmentation.')
     run_id = run_identity(task)
     with database.raw.cursor() as cursor:
         cursor.executemany(
@@ -115,7 +198,7 @@ def stage_presentation(database, task: dict, prepared: tuple | None) -> bool:
 def prepare_group_page(task: dict) -> tuple[str, str, tuple[dict, ...]] | None:
     payload = task['payload']
     run_id = run_identity(task)
-    with background_read_connection() as database:
+    with background_read_connection(authoritative=True) as database:
         if payload.get('group_key'):
             kind, group_key = payload['group_kind'], payload['group_key']
         else:
@@ -225,25 +308,40 @@ def cleanup_previous_runs(database, task: dict) -> bool:
     if not current_slice(database, task):
         return False
     payload = dict(task['payload'])
+    obsolete_run_id = payload.get('cleanup_run_id')
+    if obsolete_run_id is None:
+        obsolete = database.execute_native(
+            'SELECT id FROM opening_segmentation_runs WHERE repertoire_id=%s '
+            'AND id<>%s ORDER BY id LIMIT 1', (payload['repertoire_id'], run_identity(task)),
+        ).fetchone()
+        if obsolete is None:
+            return advance_task_slice_in_transaction(database, task, next_phase='publish', next_payload=payload)
+        obsolete_run_id = obsolete[0]
+        # Rewind a pre-upgrade namespace cursor: one run's children must all
+        # drain before its parent can be removed, including imported run IDs.
+        payload.update(cleanup_run_id=obsolete_run_id, cleanup_table=0)
     table_index = int(payload.get('cleanup_table', 0))
     if table_index == len(_RETENTION_TABLES):
-        # All old projection rows have already been removed in bounded slices.
-        database.execute_native(
-            'DELETE FROM opening_segmentation_runs WHERE id IN(SELECT id FROM opening_segmentation_runs '
-            'WHERE repertoire_id=%s AND id<>%s ORDER BY id LIMIT 8)',
-            (payload['repertoire_id'], run_identity(task)),
-        )
-        remaining = database.execute_native('SELECT 1 FROM opening_segmentation_runs WHERE repertoire_id=%s AND id<>%s LIMIT 1',
-                                            (payload['repertoire_id'], run_identity(task))).fetchone()
-        return advance_task_slice_in_transaction(database, task, next_phase='cleanup' if remaining else 'publish', next_payload=payload)
+        no_children = ' AND '.join(f'NOT EXISTS(SELECT 1 FROM {table} WHERE run_id=run.id)' for table in _RETENTION_TABLES)
+        removed = database.execute_native(
+            f'DELETE FROM opening_segmentation_runs run WHERE run.id=%s AND run.repertoire_id=%s '
+            f'AND run.id<>%s AND {no_children}',
+            (obsolete_run_id, payload['repertoire_id'], run_identity(task)),
+        ).rowcount
+        if removed != 1:
+            raise RuntimeError('Segmentation cleanup parent still has children; retain its checkpoint and retry')
+        payload.pop('cleanup_run_id')
+        payload.update(cleanup_table=0, cleanup_completed_units=int(payload.get('cleanup_completed_units', 0)) + 1)
+        return advance_task_slice_in_transaction(database, task, next_phase='cleanup', next_payload=payload)
     table = _RETENTION_TABLES[table_index]
     removed = database.execute_native(
-        f'DELETE FROM {table} WHERE ctid IN(SELECT ctid FROM {table} WHERE run_id>=%s AND run_id<%s '
-        'AND run_id<>%s ORDER BY run_id LIMIT 8)',
-        (task['id'] + ':', task['id'] + ';', run_identity(task)),
+        f'DELETE FROM {table} WHERE ctid IN(SELECT ctid FROM {table} WHERE run_id=%s LIMIT 8)',
+        (obsolete_run_id,),
     ).rowcount
-    return advance_task_slice_in_transaction(database, task, next_phase='cleanup',
-        next_payload={**payload, 'cleanup_table': table_index if removed else table_index + 1})
+    return advance_task_slice_in_transaction(database, task, next_phase='cleanup', next_payload={
+        **payload, 'cleanup_table': table_index if removed else table_index + 1,
+        'cleanup_completed_units': int(payload.get('cleanup_completed_units', 0)) + removed,
+    })
 
 
 def execute_segmentation_slice(task: dict[str, Any]) -> bool:

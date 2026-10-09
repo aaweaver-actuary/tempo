@@ -34,11 +34,13 @@ def test_segmentation_analysis_yields_restarts_and_replays_idempotently(monkeypa
               'moves_json': json.dumps(['e2e4','e7e5','g1f3']), 'revision': 1}
     class Cursor:
         def fetchone(self): return source
+        def fetchall(self): return [('white',)]
     class Read:
         def execute_native(self, *_args): return Cursor()
     @contextmanager
-    def read_connection():
+    def read_connection(**options):
         nonlocal read_open
+        assert options == {'authoritative': True}
         read_open = True
         try: yield Read()
         finally: read_open = False
@@ -58,6 +60,7 @@ def test_segmentation_analysis_yields_restarts_and_replays_idempotently(monkeypa
         def executemany(self, statement, values): events.append(('write', len(values), statement))
     class Database:
         raw = type('Raw', (), {'cursor': lambda _: WriterCursor()})()
+        def execute_native(self, *_args): return Cursor()
     lease_current = True
     monkeypatch.setattr(worker, 'current_slice', lambda *_args: lease_current)
     def checkpoint(_database, _task, *, next_phase, next_payload):
@@ -97,7 +100,9 @@ def test_group_preparation_reads_only_eight_indexed_occurrences_and_closes_conne
         def execute_native(self, statement, parameters):
             statements.append((statement, parameters)); return Cursor()
     @contextmanager
-    def read(): yield Read()
+    def read(**options):
+        assert options == {'authoritative': True}
+        yield Read()
     monkeypatch.setattr(worker, 'background_read_connection', read)
     task = {'id': 'task', 'generation': 1, 'payload': {'group_key': 'key', 'group_kind': 'transposition'}}
     assert worker.prepare_group_page(task) == ('transposition', 'key', (), ())

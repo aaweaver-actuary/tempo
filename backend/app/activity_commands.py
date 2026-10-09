@@ -98,6 +98,12 @@ def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> 
             if not current_graph or not _graph_generation_is_current(database,repertoire_id,int(current_graph[0])):
                 raise HTTPException(409,'Wait for the current opening graph to publish, then retry this integrity scan')
             return serialize_task(request_integrity_scan_in_transaction(database,repertoire_id,int(current_graph[0]),saved_payload['local_day']))
+    if failed['kind'] == 'opening_segmentation':
+        from .services.postgres_opening_segmentation import retry_segmentation_in_transaction
+        resumed = retry_segmentation_in_transaction(database, dict(failed))
+        if isinstance(resumed, dict):
+            return resumed
+        resume_phase = resumed
     now = datetime.now(timezone.utc).isoformat()
     database.execute_native(
         "UPDATE background_tasks SET state='queued',phase=%s,attempt_count=0,"
