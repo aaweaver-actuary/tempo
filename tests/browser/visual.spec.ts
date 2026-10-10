@@ -177,6 +177,29 @@ test("pending-import-dialog-phone", async ({ page }) => {
   await expect(page).toHaveScreenshot("pending-import-dialog-phone.png");
 });
 
+test("acknowledged-import-publication-phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page);
+  await page.route("**/api/imports/pgn", route => route.fulfill({ json: {
+    repertoire_id: "visual-repertoire", source_name: "opening.pgn", games_found: 1,
+    unique_lines: 1, cards_created: 1, duplicates_merged: 0, cards_admitted_today: 0,
+  } }));
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{
+    id: "visual-repertoire", name: "Opening", source_name: "opening.pgn", line_count: 1,
+    card_count: 1, due_count: 0, graph_state: "refreshing", integrity_status: "unchecked",
+  }] } }));
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Import repertoire" })).toBeDisabled();
+  await dialog.locator('input[type="file"]').setInputFiles({ name: "opening.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
+  await dialog.getByRole("button", { name: "Import repertoire" }).click();
+  await expect(dialog.getByRole("status")).toContainText("Repertoire imported. Preparing today's queue");
+  await expect(dialog.getByText("Import confirmed", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Preparing queue…" })).toBeDisabled();
+  await expect(page).toHaveScreenshot("acknowledged-import-publication-phone.png");
+});
+
 test("board-unavailable", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/queue/window?**", (route) =>

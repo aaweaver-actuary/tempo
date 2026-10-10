@@ -120,7 +120,7 @@ export default function RepertoireView({
     typeof window === "undefined" ? null : sessionStorage.getItem("tempo-statistics-repertoire"));
 
   const loadBackend = useCallback(async () => {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi()) return true;
     try {
       const response = await readWorkspaceResponse(
         `${API_URL}/api/repertoires`,
@@ -174,14 +174,22 @@ export default function RepertoireView({
       );
       setLoaded(true);
       setError("");
-      const pending = pendingRepertoireDeletion();
-      if (pending) {
-        setPendingDeletePolicy(pending.learnedCards);
-        setDeleteTarget(current => current ?? {
-          id: asRepertoireId(pending.repertoireId), title: body.repertoires.find(item => item.id === pending.repertoireId)?.name ?? "Pending repertoire",
-          side: "white", detail: "", sourceName: "", progress: 0, due: 0, backend: true,
+      try {
+        const pending = pendingRepertoireDeletion();
+        if (pending) {
+          setPendingDeletePolicy(pending.learnedCards);
+          setDeleteTarget(current => current ?? {
+            id: asRepertoireId(pending.repertoireId), title: body.repertoires.find(item => item.id === pending.repertoireId)?.name ?? "Pending repertoire",
+            side: "white", detail: "", sourceName: "", progress: 0, due: 0, backend: true,
+          });
+        }
+      } catch (failure) {
+        reportDebugError(failure, {
+          kind: "ui", source: "repertoire-delete-recovery", operation: "load pending repertoire deletion",
         });
+        setError(`Pending repertoire deletion unavailable: ${failure instanceof Error ? failure.message : "recovery record unreadable"}. Check browser recovery data before retrying deletion.`);
       }
+      return true;
     } catch (failure) {
       reportDebugError(failure, {
         kind: "api",
@@ -192,6 +200,7 @@ export default function RepertoireView({
       setError(
         `Repertoires unavailable: ${failure instanceof Error ? failure.message : "connection failed"}.`,
       );
+      return false;
     }
   }, []);
 
@@ -391,7 +400,9 @@ export default function RepertoireView({
         repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
         onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
           invalidateWorkspaceData(); setCoverageByRepertoire({}); setGapsByRepertoire({}); setOpportunitiesByRepertoire({});
-          await loadBackend(); await onQueueChanged();
+          if (!await loadBackend()) throw new Error("Saved prefix metadata could not be reloaded.");
+          // The queue callback reports training failures independently of confirmed prefix metadata.
+          void onQueueChanged().catch(() => undefined);
         }} />)}
       {error && (
         <Notice
