@@ -510,6 +510,23 @@ def _assert_owned_admission_cleanup():
 
 @_assert_owned_admission_cleanup()
 def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay():
+    from check_postgres_graph_retention import owned_admission_scope
+    from app.services import redis_admission_gate
+    server = redis_admission_gate.client()
+    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    parent_activity_token = uuid.uuid4().hex
+    # Persistent unrelated activity makes accidental parent admission fail at
+    # setup or recovery, independent of health-probe/lease-expiry timing.
+    server.zadd(parent_foreground_key, {parent_activity_token: float('inf')})
+    try:
+        with owned_admission_scope('checkpoint-http-' + uuid.uuid4().hex):
+            _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+            assert server.zscore(parent_foreground_key, parent_activity_token) == float('inf')
+    finally:
+        server.zrem(parent_foreground_key, parent_activity_token)
+
+
+def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     from app import main, command_dispatch, command_gateway, database as database_module, tasks
     from app.services import redis_admission_gate
     fixture = _create_color_fixture('white')
@@ -517,8 +534,8 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
     checkpoint = _color_checkpoint(fixture, manifest).model_dump(mode='json')
     operation_id = fixture['card_id'] + '-http-checkpoint'
     historical_payload = {'checkpoint': checkpoint, 'prepared_manifest': {'obsolete': True}}
-    claimed, saved, _, _ = _wait_for_checkpoint_admission(lambda: command_gateway.record_operation_attempt(
-        operation_id, 'opening_evidence.checkpoint', historical_payload, background=True))
+    claimed, saved, _, _ = command_gateway.record_operation_attempt(
+        operation_id, 'opening_evidence.checkpoint', historical_payload, background=True)
     assert claimed and saved == historical_payload
     with postgres_store.connection() as connection:
         connection.execute_native("UPDATE operation_receipts SET state='queued',attempt_token=NULL,lease_expires_at=NULL WHERE operation_id=%s", (operation_id,))
@@ -619,8 +636,8 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
         assert sessions and all(row[0] == 'idle' and row[1] is None for row in sessions)
     for state in ('queued', 'retrying'):
         recovery_id = operation_id + '-' + state
-        assert _wait_for_checkpoint_admission(lambda: command_gateway.record_operation_attempt(
-            recovery_id, 'opening_evidence.checkpoint', historical_payload, background=True))[0]
+        assert command_gateway.record_operation_attempt(
+            recovery_id, 'opening_evidence.checkpoint', historical_payload, background=True)[0]
         with postgres_store.connection() as connection:
             connection.execute_native('UPDATE operation_receipts SET state=%s WHERE operation_id=%s', (state, recovery_id))
         assert _recover_checkpoint_operation(recovery_id) == result
