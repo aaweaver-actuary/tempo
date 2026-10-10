@@ -100,8 +100,18 @@ def test_relaxed_frontier_requires_every_prerequisite_on_one_complete_route():
 def test_relaxed_frontier_handles_short_and_cumulative_prefixes_for_both_colors(color, prefix):
     route = _route(color=color, prefix=prefix)
     root_id, child_id = (step.card_id for step in route.steps[:2])
-    assert _result(_snapshot(route), root_id).status == "eligible"
-    assert _result(_snapshot(route, reviewed=(root_id,)), child_id).status == "eligible"
+    root = _result(_snapshot(route), root_id)
+    child = _result(_snapshot(route, reviewed=(root_id,)), child_id)
+    assert root.status == "eligible"
+    assert child.status == "eligible"
+    for assessment, step in zip((root, child), route.steps):
+        provenance = assessment.qualifying_routes[0]
+        assert provenance.publication == route.publication
+        assert provenance.line_id == route.line_id
+        assert provenance.trained_color == color
+        assert provenance.decision_index == step.decision_index
+        assert provenance.first_decision_index == step.first_decision_index
+        assert provenance.last_decision_index == step.last_decision_index
 
 
 def test_relaxed_frontier_accepts_an_explicit_custom_position_root_and_clock_only_transitions():

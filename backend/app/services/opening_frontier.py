@@ -84,6 +84,9 @@ class OpeningRouteEligibility:
     publication: OpeningFrontierPublication
     line_id: str
     decision_index: int
+    trained_color: str
+    first_decision_index: int
+    last_decision_index: int
     parent_card_id: str | None
     prerequisite_card_ids: tuple[str, ...]
     missing_prerequisite_card_ids: tuple[str, ...]
@@ -262,7 +265,8 @@ def project_opening_frontier(snapshot: OpeningFrontierSnapshot) -> OpeningFronti
                 review_id for prerequisite in prerequisites for review_id in exposure_by_card.get(prerequisite, ())
             }))
             route_results_by_card[step.card_id].append(OpeningRouteEligibility(
-                route.publication, route.line_id, step.decision_index, step.parent_card_id,
+                route.publication, route.line_id, step.decision_index, step.trained_color,
+                step.first_decision_index, step.last_decision_index, step.parent_card_id,
                 tuple(prerequisites), missing_prerequisites, exposure_ids, tuple(sorted(prefix_reasons)),
             ))
             prerequisites.append(step.card_id)

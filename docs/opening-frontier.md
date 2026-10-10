@@ -132,7 +132,9 @@ Stable output order is serialization order, not a pedagogical preference.
 ## Future integration boundary
 
 A scorer takes `eligible_card_ids` and each card's `qualifying_routes`, including
-publication, line/decision position, prerequisite identities and review witnesses.
+publication, trained color, segment/learner decision indices, prerequisite
+identities and review witnesses. Cumulative-prefix depth remains explicit in the
+route's first/last learner decision indices.
 It independently computes probability/marginal value and soft prerequisite recall.
 This module has no score/probability fields, ranking inputs or dependencies on
 PR #116/#117. A future live adapter must load a bounded coherent snapshot, close
@@ -156,12 +158,14 @@ CPython 3.14.8, Node 26.10.0; pinned Python environment installed once):
 
 | Command | Result | Observed wall time |
 | --- | --- | --- |
-| `make python-file FILE=backend/tests/test_opening_frontier.py` | 61 passed; 0.51 s pytest | 1.05 s |
+| `make python-file FILE=backend/tests/test_opening_frontier.py` | 61 passed; 0.48 s pytest | 1.07 s |
 | `make python-file FILE=backend/tests/test_opening_graph.py` | 24 passed; 23.34 s pytest | 24.92 s |
 | `make python-file FILE=backend/tests/test_opening_progression.py` | 15 passed; 3.03 s pytest | 6.84 s |
 | `backend/.venv/bin/python scripts/show_opening_frontier.py` | Valid deterministic JSON; four unique eligible card IDs, ten classified cards, one obligation annotation | Not separately timed |
 
-The graph/progression runs retain existing library deprecation warnings. These
+The final frontier run includes assertions preserving trained color and learner
+decision ranges in qualifying route output. The graph/progression source and its
+existing fixtures did not change. Those runs retain existing library deprecation warnings. These
 are 100 focused cases, not a full gate or performance measurement. The tests ran
 on the dirty implementation before its commit; model/test/diagnostic SHA-256
 provenance and raw logs are preserved outside the clone in
