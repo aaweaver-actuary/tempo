@@ -21,6 +21,34 @@ import { readJsonResponse } from "./lib/validated-data";
 import { reportDebugError } from "./lib/debug-reporting";
 import { savePgnImportCommand, readPendingPgnImport, discardPendingPgnImport } from "./lib/pgn-import-command";
 import { PendingOperationError } from "./lib/operation-status";
+import { backgroundReadWhenAdmitted } from "./lib/background-fetch";
+import type { z } from "zod";
+
+// Bound each read, including its body, independently of the publication lifetime.
+async function readImportPublication<T>(url: string, schema: z.ZodType<T>, source: string, ownerSignal: AbortSignal): Promise<T> {
+  ownerSignal.throwIfAborted();
+  const deadlineController = new AbortController();
+  const requestSignal = AbortSignal.any([ownerSignal, deadlineController.signal]);
+  const deadlineTimer = window.setTimeout(() => deadlineController.abort(
+    new Error("Import publication request timed out after 15 seconds. Check publication when the service is available."),
+  ), 15_000);
+  let rejectCancellation!: (reason: unknown) => void;
+  const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
+  const cancelRead = () => rejectCancellation(requestSignal.reason);
+  requestSignal.addEventListener("abort", cancelRead, { once: true });
+  const read = async () => {
+    const response = await backgroundReadWhenAdmitted(url, requestSignal);
+    requestSignal.throwIfAborted();
+    const result = await readJsonResponse(response, schema, source);
+    requestSignal.throwIfAborted();
+    return result;
+  };
+  try { return await Promise.race([read(), cancellation]); }
+  finally {
+    window.clearTimeout(deadlineTimer);
+    requestSignal.removeEventListener("abort", cancelRead);
+  }
+}
 
 export function ImportDialogBox({
   onClose,
@@ -34,7 +62,12 @@ export function ImportDialogBox({
   onDatabaseUpdated: () => Promise<void>;
 }): JSX.Element {
   const dialogRef = useDialogRef<HTMLDivElement>(null);
-  useDialogFocus(dialogRef, onClose);
+  const importController = useDialogRef<AbortController | null>(null);
+  const closeDialog = useCallback(() => {
+    importController.current?.abort();
+    onClose();
+  }, [onClose, importController]);
+  useDialogFocus(dialogRef, closeDialog);
   const [file, setFile] = useState<File | null>(null);
   const [initialDepth, setInitialDepth] = useState(6);
   const [trainedColor, setTrainedColor] = useState<"white" | "black">("white");
@@ -49,6 +82,7 @@ export function ImportDialogBox({
     backend: false,
   });
   const [working, setWorking] = useState(false);
+  const [acknowledgedImport, setAcknowledgedImport] = useState<Awaited<ReturnType<typeof savePgnImportCommand>> | null>(null);
   const [error, setError] = useState("");
   function rememberedPendingImport() {
     if (!usesLocalApi()) return null;
@@ -61,7 +95,6 @@ export function ImportDialogBox({
   const [pendingImport, setPendingImport] = useState<PendingOperationError | null>(rememberedPendingImport);
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const [discarding, setDiscarding] = useState(false);
-  const importController = useDialogRef<AbortController | null>(null);
   useEffect(() => () => importController.current?.abort(), [importController]);
   const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
   const [settingsError, setSettingsError] = useState("");
@@ -92,43 +125,40 @@ export function ImportDialogBox({
     repertoireId: string,
     signal: AbortSignal,
   ): Promise<number> {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
+    while (true) {
       signal.throwIfAborted();
-      const response = await fetch(`${API_URL}/api/repertoires`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
-      if (response.ok) {
-        const result = await readJsonResponse(
-          response,
-          repertoiresResponseSchema,
-          "imported repertoire admission",
-        );
-        const repertoire = result.repertoires.find(
-          (candidate) => candidate.id === repertoireId,
-        );
-        if (repertoire?.graph_state === "failed") throw new Error("Repertoire graph failed after import. Retry the failed task in Settings → Service status.");
-        if (repertoire?.integrity_scan_status === "failed")
-          throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
-        if (repertoire?.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
-          const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
-          if (queueResponse.ok) {
-            const queue = await readJsonResponse(queueResponse, queueEnvelopeSchema, "imported repertoire queue");
-            const projection = queue.projection;
-            if (projection?.state === "failed") throw new Error("Daily queue failed after import. Retry the failed task in Settings → Service status.");
-            if (projection?.state === "ready" && !projection.refresh_pending && projection.updated_at &&
-                Date.parse(projection.updated_at) >= Date.parse(repertoire.graph_updated_at)) {
-              const refreshedResponse = await fetch(`${API_URL}/api/repertoires`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
-              if (refreshedResponse.ok) {
-                const refreshed = await readJsonResponse(refreshedResponse, repertoiresResponseSchema, "published repertoire admission");
-                const refreshedRepertoire = refreshed.repertoires.find((candidate) => candidate.id === repertoireId);
-                if (refreshedRepertoire) return refreshedRepertoire.due_count;
-              }
-            }
-          }
+      const result = await readImportPublication(`${API_URL}/api/repertoires`, repertoiresResponseSchema, "imported repertoire admission", signal);
+      signal.throwIfAborted();
+      const repertoire = result.repertoires.find(candidate => candidate.id === repertoireId);
+      if (!repertoire) throw new Error("Imported repertoire unavailable. Reload Repertoire or check Settings → Service status.");
+      if (repertoire.graph_state === "failed") throw new Error("Repertoire graph failed after import. Retry the failed task in Settings → Service status.");
+      if (repertoire.integrity_scan_status === "failed")
+        throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
+      if (repertoire.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
+        const queue = await readImportPublication(`${API_URL}/api/queue/window?limit=1`, queueEnvelopeSchema, "imported repertoire queue", signal);
+        signal.throwIfAborted();
+        const projection = queue.projection;
+        if (projection?.state === "failed") throw new Error("Daily queue failed after import. Retry the failed task in Settings → Service status.");
+        if (projection?.state === "ready" && !projection.refresh_pending && projection.updated_at &&
+            Date.parse(projection.updated_at) >= Date.parse(repertoire.graph_updated_at)) {
+          const refreshed = await readImportPublication(`${API_URL}/api/repertoires`, repertoiresResponseSchema, "published repertoire admission", signal);
+          signal.throwIfAborted();
+          const refreshedRepertoire = refreshed.repertoires.find(candidate => candidate.id === repertoireId);
+          if (!refreshedRepertoire) throw new Error("Imported repertoire unavailable. Reload Repertoire or check Settings → Service status.");
+          return refreshedRepertoire.due_count;
         }
-        if (repertoire?.integrity_status === "needs_repair") return 0;
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      if (repertoire.integrity_status === "needs_repair") return 0;
+      signal.throwIfAborted();
+      await new Promise<void>((resolve, reject) => {
+        const cancelObservation = () => { window.clearTimeout(observationTimer); reject(signal.reason); };
+        const observationTimer = window.setTimeout(() => {
+          signal.removeEventListener("abort", cancelObservation);
+          resolve();
+        }, 50);
+        signal.addEventListener("abort", cancelObservation, { once: true });
+      });
     }
-    throw new Error("Repertoire imported, but today's queue is still preparing. Check Activity before starting training.");
   }
 
   async function importFile(retryBlocked = false) {
@@ -146,6 +176,7 @@ export function ImportDialogBox({
         trainedColor,
         initialDepth,
       );
+      controller.signal.throwIfAborted();
       let backend = false;
       let admitted = 0;
       let lines = parsed.cards.length;
@@ -155,9 +186,11 @@ export function ImportDialogBox({
       let sharedPrefixes = parsed.sharedPrefixes;
       let integrityRepertoireId: string | undefined;
       if (usesLocalApi()) {
-        const result = await savePgnImportCommand(file, trainedColor, initialDepth, {
+        const result = acknowledgedImport ?? await savePgnImportCommand(file, trainedColor, initialDepth, {
           signal: controller.signal, retryBlocked,
         });
+        controller.signal.throwIfAborted();
+        setAcknowledgedImport(result);
         backend = true;
         if (backend) {
           admitted = result.cards_admitted_today ?? 0;
@@ -207,7 +240,7 @@ export function ImportDialogBox({
           : "Tempo could not read this PGN.",
       );
     } finally {
-      importController.current = null;
+      if (importController.current === controller) importController.current = null;
       if (!controller.signal.aborted) {
         setWorking(false);
         setPendingImport(current => current ?? rememberedPendingImport());
@@ -236,13 +269,13 @@ export function ImportDialogBox({
         setError(failure instanceof Error ? failure.message : "Discard confirmation unavailable. Check again.");
       }
     } finally {
-      importController.current = null;
+      if (importController.current === controller) importController.current = null;
       if (!controller.signal.aborted) { setWorking(false); setDiscarding(false); }
     }
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={closeDialog}>
       <section
         className="ui-dialog import-dialog"
         ref={dialogRef}
@@ -252,7 +285,7 @@ export function ImportDialogBox({
         aria-labelledby="import-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <CloseButton onClose={onClose} ariaLabel="Close import dialog" />
+        <CloseButton onClose={closeDialog} ariaLabel="Close import dialog" />
         {finished ? (
           <div className="import-finished">
             <span>✓</span>
@@ -293,7 +326,7 @@ export function ImportDialogBox({
               <TextInput
                 type="file"
                 accept=".pgn"
-                disabled={working}
+                disabled={working || !!acknowledgedImport}
                 onChange={(event) => {
                   setFile(event.target.files?.[0] ?? null);
                   setError("");
@@ -301,7 +334,7 @@ export function ImportDialogBox({
               />
               <span>{file ? "♟" : "⇧"}</span>
               <strong>{file?.name || "Choose a PGN file"}</strong>
-              <small>{file ? "Ready to import" : ".pgn files only"}</small>
+              <small>{acknowledgedImport ? "Import confirmed" : file ? "Ready to import" : ".pgn files only"}</small>
             </label>
             <div className="color-setting">
               <span>
@@ -311,14 +344,14 @@ export function ImportDialogBox({
               <span className="color-toggle">
                 <Button
                   className={trainedColor === "white" ? "active" : ""}
-                  disabled={working}
+                  disabled={working || !!acknowledgedImport}
                   onClick={() => setTrainedColor("white")}
                 >
                   White
                 </Button>
                 <Button
                   className={trainedColor === "black" ? "active" : ""}
-                  disabled={working}
+                  disabled={working || !!acknowledgedImport}
                   onClick={() => setTrainedColor("black")}
                 >
                   Black
@@ -332,14 +365,14 @@ export function ImportDialogBox({
               </span>
               <span className="stepper">
                 <Button
-                  disabled={working}
+                  disabled={working || !!acknowledgedImport}
                   onClick={() => setInitialDepth(Math.max(2, initialDepth - 1))}
                 >
                   −
                 </Button>
                 <b>{initialDepth} user moves</b>
                 <Button
-                  disabled={working}
+                  disabled={working || !!acknowledgedImport}
                   onClick={() =>
                     setInitialDepth(Math.min(20, initialDepth + 1))
                   }
@@ -351,6 +384,7 @@ export function ImportDialogBox({
             {!settingsLoaded && !settingsError && <Notice>Loading import settings…</Notice>}
             {settingsError && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadImportSettings(); }}>{settingsError}</Notice>}
             {error && <p className="editor-error" role="alert">{error}</p>}
+            {acknowledgedImport && working && <Notice>Repertoire imported. Preparing today&apos;s queue… You can close this dialog; preparation will continue.</Notice>}
             {pendingImport && <Notice error={pendingImport.blocked}>{pendingImport.message}</Notice>}
             {recoveryNotice && <Notice>{recoveryNotice}</Notice>}
             {pendingImport && <Button disabled={working} onClick={() => void discardImport()}>
@@ -365,7 +399,7 @@ export function ImportDialogBox({
                 disabled={!file || working || !settingsLoaded}
                 onClick={() => void importFile(pendingImport?.blocked ?? false)}
               >
-                {working ? "Importing…" : pendingImport?.blocked ? "Retry blocked import" : pendingImport ? "Check again" : "Import repertoire"}
+                {working ? acknowledgedImport ? "Preparing queue…" : "Importing…" : acknowledgedImport ? "Check publication" : pendingImport?.blocked ? "Retry blocked import" : pendingImport ? "Check again" : "Import repertoire"}
               </Button>
             </div>
           </>
