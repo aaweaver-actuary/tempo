@@ -35,10 +35,13 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   let recoveryRequests = 0;
   let network: Sample["network"] = [];
   let firstReview: { url: string; body: string; key: string } | undefined;
+  const submittedEvidenceEvents = new Map<string, number>();
   page.on("request", request => {
     if (request.url().endsWith("/review")) {
       operationId = request.headers()["idempotency-key"] ?? ""; submissionEpochMs = Date.now();
       firstReview ??= { url: request.url(), body: request.postData()!, key: operationId };
+      const body = request.postDataJSON();
+      if (body.opening_evidence_completion) submittedEvidenceEvents.set(body.attempt_id, body.opening_evidence_completion.events.length);
     }
     if (request.url().includes("/api/opening-evidence/checkpoints")) recoveryRequests++;
   });
@@ -118,6 +121,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       await page.mouse.click(currentBoard.x + currentBoard.width * 4.5 / 8, currentBoard.y + currentBoard.height * 4.5 / 8);
       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4P3/);
       if (samples.length) samples.at(-1)!.nextInputAcceptedEpochMs = Date.now();
+      await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
       const previousEntry = await page.locator("#train").getAttribute("data-queue-entry-id");
       queueNetworkMs = []; network = []; reviewResponseEpochMs = 0;
       await page.evaluate(() => {
@@ -168,7 +172,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     });
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
-      fixture: { prepared: 64, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup: 3, samples: 50 },
+      fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], competingJobs: 3000, lockedCards: 15000, journals: 100, warmup: 3, samples: 50 },
       clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. Worker/host offset bracketed by five reads; smallest uncertainty retained.", ...clockReads[0] }, measured, recoveryRequests,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
@@ -176,7 +180,10 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     await testInfo.attach("training-transition", { body: JSON.stringify(report), contentType: "application/json" });
     expect(report.persisted.reviews).toBe(53);
     expect(report.persisted.complete_evidence).toBe(53);
-    expect(report.persisted.completion_events).toBe(53);
+    const expectedEvents = [...submittedEvidenceEvents.values()].reduce((total, count) => total + count, 0);
+    expect(submittedEvidenceEvents.size).toBe(53);
+    expect(expectedEvents).toBeGreaterThanOrEqual(53);
+    expect(report.persisted.completion_events).toBe(expectedEvents);
     if (process.env.TEMPO_TRAINING_TIMINGS === "1" && condition !== "refresh") {
       expect(measured.every(sample => sample.commitToInteractiveMs !== null && sample.commitToInteractiveMs >= 0)).toBe(true);
       const durations = measured.map(sample => sample.commitToInputAcceptedMs!).sort((left, right) => left - right);
@@ -193,7 +200,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
         "Content-Type": "application/json" }, data: firstReview!.body });
       expect(replay.ok()).toBe(true);
       expect((await replay.json()).prepared_continuation?.card_id).toContain("-prepared-001");
-      expect(JSON.parse(fixture("verify"))).toMatchObject({ reviews: 53, complete_evidence: 53, completion_events: 53 });
+      expect(JSON.parse(fixture("verify"))).toMatchObject({ reviews: 53, complete_evidence: 53, completion_events: expectedEvents });
     }
   } finally {
     await page.evaluate(() => (Reflect.get(window, "releaseMeasuredRecovery") as (() => void) | undefined)?.()).catch(() => undefined);
