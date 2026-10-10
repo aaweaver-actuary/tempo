@@ -387,3 +387,12 @@ test('PR132 workflow skips setup and execution only after validated reuse', () =
   assert(source.includes('if (plan.event === "pull_request")'));
   assert(source.includes('per_page=20'));
 });
+
+test('PR132 fresh execution cannot silently substitute another workflow run', () => {
+  const ready = {...pr,draft:false}, planned = captured(ready), evidence = results(planned);
+  assert(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:ready,currentRun:{id:100,attempt:1}}).success);
+  assert.equal(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:ready,currentRun:{id:101,attempt:1}}).success,false);
+  assert(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:ready,currentRun:{id:100,attempt:2}}).success);
+  evidence.reports.frontend.execution.attempt=3;
+  assert.equal(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:ready,currentRun:{id:100,attempt:2}}).success,false);
+});

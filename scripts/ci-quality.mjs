@@ -35,7 +35,7 @@ export function layerFailures(plan, layer, result, report) {
   return failures;
 }
 
-export function evaluateQuality(plan, needs, reports, { development = false, currentPullRequest, verifiedReuse = {} } = {}) {
+export function evaluateQuality(plan, needs, reports, { development = false, currentPullRequest, currentRun, verifiedReuse = {} } = {}) {
   const failures = [], nonblocking = [];
   if (!plan || plan.version !== 3 || !plan.hash || needs.plan?.result !== "success") failures.push("Required plan did not succeed or its report is missing");
   if (!plan) return { success: false, failures, nonblocking };
@@ -63,7 +63,13 @@ export function evaluateQuality(plan, needs, reports, { development = false, cur
         if (result !== "success" || !plan.jobs[layer]?.applicable) throw new Error(`${layer}: reused layer did not succeed`);
         validateReuseEvidence(plan, layer, report, layerCommands(layer, plan), verifiedReuse[layer], layerFailures);
       } catch (error) { failures.push(error.message); }
-    } else failures.push(...layerFailures(plan, layer, result, report));
+    } else {
+      // GitHub retains successful jobs when only failed jobs are rerun in this same run.
+      if (report && currentRun && (report.execution?.runId !== currentRun.id || report.execution?.attempt > currentRun.attempt)) {
+        failures.push(`${layer}: fresh execution provenance differs from current workflow run/attempt`);
+      }
+      failures.push(...layerFailures(plan, layer, result, report));
+    }
     if (plan.jobs[layer]?.applicable && !plan.jobs[layer].required && (result !== "success" || report?.status !== "success")) {
       nonblocking.push(`${layer}: confirmed harness failures remain visible (${result ?? "absent"})`);
     }
@@ -92,7 +98,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const currentPath = "test-results/ci/current-pr.json";
   const currentPullRequest = existsSync(currentPath) ? JSON.parse(readFileSync(currentPath, "utf8")) : undefined;
   const revision = (await import("node:child_process")).spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout?.trim();
-  const verdict = evaluateQuality(plan, JSON.parse(process.env.TEMPO_CI_NEEDS ?? "{}"), reports, { development, currentPullRequest, verifiedReuse });
+  const currentRun = process.env.GITHUB_RUN_ID ? { id: Number(process.env.GITHUB_RUN_ID), attempt: Number(process.env.GITHUB_RUN_ATTEMPT) } : undefined;
+  const verdict = evaluateQuality(plan, JSON.parse(process.env.TEMPO_CI_NEEDS ?? "{}"), reports, { development, currentPullRequest, currentRun, verifiedReuse });
   if (revision !== plan?.commit) verdict.failures.push("Aggregation checkout differs from captured integration revision");
   if (process.env.GITHUB_REPOSITORY && plan?.repository !== process.env.GITHUB_REPOSITORY) verdict.failures.push("Aggregation repository differs from captured repository");
   if (process.env.GITHUB_EVENT_NAME && plan?.event !== process.env.GITHUB_EVENT_NAME) verdict.failures.push("Aggregation event differs from captured event");
