@@ -1,6 +1,8 @@
 """Retention must spend bounded row batches, not one scheduler turn per child."""
 
 from contextlib import contextmanager
+import importlib.util
+from pathlib import Path
 import pytest
 
 from app import database
@@ -8,9 +10,15 @@ from app.canonical_prefix_api import save_prefix
 from app.services import canonical_prefix_preview as previews
 from app.services.durable_tasks import claim_task, requeue_interrupted_tasks
 from test_canonical_repertoire_prefix import prefix_database
-from scripts.check_postgres_canonical_retention import (
-    RetentionMeasurements, seed_retention_fixture, run_retention_fixture,
-)
+
+# CI collects from a script entrypoint without the repository root on sys.path.
+retention_proof_path = Path(__file__).resolve().parents[2] / 'scripts/check_postgres_canonical_retention.py'
+retention_proof_specification = importlib.util.spec_from_file_location('canonical_retention_proof', retention_proof_path)
+retention_proof = importlib.util.module_from_spec(retention_proof_specification)
+retention_proof_specification.loader.exec_module(retention_proof)
+RetentionMeasurements = retention_proof.RetentionMeasurements
+seed_retention_fixture = retention_proof.seed_retention_fixture
+run_retention_fixture = retention_proof.run_retention_fixture
 
 
 @pytest.fixture
