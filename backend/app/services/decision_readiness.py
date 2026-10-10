@@ -141,6 +141,8 @@ def _fsrs_memory_estimate(snapshot: ReadinessSnapshot, as_of: datetime) -> tuple
         # Card's constructor supplies wall-clock defaults for absent identity/due.
         if not isinstance(serialized, dict) or not serialized.get("card_id") or not serialized.get("due"):
             raise ValueError("Incomplete scheduler state")
+        if any(isinstance(serialized.get(field), bool) for field in ("card_id", "state", "stability", "difficulty")):
+            raise ValueError("Boolean scheduler values are not memory parameters")
         memory_card = Card.from_json(snapshot.fsrs_card_json)
         reference = _utc(memory_card.last_review) if memory_card.last_review else None
         _utc(memory_card.due)

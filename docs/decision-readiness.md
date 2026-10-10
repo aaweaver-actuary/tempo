@@ -139,7 +139,7 @@ cards use `fsrs-card:<card_id>`.
 | Clean aggregate prefix review without optional observations | Card estimate available; per-decision scores unknown; no invented first responses |
 | Mature overdue card | Ordinary FSRS decay; no maturity floor, due-date cliff or added overdue multiplier |
 | Seeded decision card with no own review | Coarse inherited card estimate; independent decision readiness unknown |
-| Missing/malformed/nonfinite/invalid scheduler state | Raw model unavailable with reason; reliable observed failure can still yield conservative zero |
+| Missing/malformed/nonfinite/boolean/invalid scheduler state | Raw model unavailable with reason; reliable observed failure can still yield conservative zero |
 
 Both evidence freshness and FSRS memory reference are exposed because Tempo may
 clamp effective review time for overdue scheduling. Actual review freshness must

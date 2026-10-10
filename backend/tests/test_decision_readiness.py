@@ -415,3 +415,13 @@ def test_decision_readiness_studied_card_without_scheduler_state_is_unavailable(
     estimate = decision_readiness(replace(reviewed(), fsrs_card_json=None), REVIEW_TIME, decision_index=0)
     assert estimate.readiness_score is None and estimate.availability == "unavailable"
     assert "missing_scheduler_state" in estimate.reasons
+
+
+@pytest.mark.parametrize("field", ["card_id", "state", "stability", "difficulty"])
+def test_decision_readiness_boolean_scheduler_parameters_are_unavailable(field):
+    current = reviewed()
+    serialized = json.loads(current.fsrs_card_json)
+    serialized[field] = True
+    estimate = decision_readiness(replace(current, fsrs_card_json=json.dumps(serialized)), REVIEW_TIME)
+    assert estimate.readiness_score is None
+    assert estimate.availability == "unavailable" and "invalid_scheduler_state" in estimate.reasons
