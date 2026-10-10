@@ -8,7 +8,7 @@ import pytest
 from app.opening_move_probability_contracts import (
     CountEvidence, EvidenceFreshness, FusedMoveDistribution, FusionRequest,
     MethodDescriptor, MoveWeight, OpeningMoveEvidence, OpeningMoveEvidenceBundle,
-    PositionMoveUniverse, coverage_mass_summary, empirical_frequencies,
+    PositionMoveUniverse, ScoreEvidence, coverage_mass_summary, empirical_frequencies,
     fuse_move_evidence, move_universe, normalize_evidence_weights, serialize_contract,
 )
 
@@ -72,6 +72,17 @@ def test_opening_probability_empty_samples_and_zero_weights_do_not_fabricate_dis
     for weights in [(), (MoveWeight(move_uci="e8d7", value=0),)]:
         with pytest.raises(ValueError, match="empty or zero"):
             normalize_evidence_weights(evidence, weights, evidence_id="derived-fixture", unknown_mass=.2, method=method)
+
+
+def test_opening_probability_raw_helpers_reject_duplicate_observations():
+    for model, payload in [
+        (CountEvidence, {"kind": "counts", "total_count": 10,
+                         "moves": [{"move_uci": "e8d7", "count": 0}] * 2}),
+        (ScoreEvidence, {"kind": "scores", "basis": "probability",
+                         "moves": [{"move_uci": "e8d7", "value": 0}] * 2}),
+    ]:
+        with pytest.raises(ValueError, match="duplicate"):
+            model.model_validate(payload)
 
 
 def test_opening_probability_normalization_preserves_raw_evidence_and_provenance():
@@ -159,6 +170,18 @@ def test_opening_probability_serialization_orders_sets_but_preserves_context_seq
     payload["target_context"]["profile"]["effective_speed_mixture"].reverse()
     assert serialize_contract(OpeningMoveEvidenceBundle.model_validate(payload)) != serialize_contract(
         OpeningMoveEvidenceBundle.model_validate(EXAMPLES["bundle"]))
+
+
+def test_opening_probability_serialization_keeps_opaque_context_and_orders_provenance():
+    payload = deepcopy(EXAMPLES["bundle"])
+    payload["target_context"]["provenance"] = [{"sequence": 2}, {"sequence": 1}]
+    record = deepcopy(payload["sources"][0]["provenance"][0])
+    record["record_id"] = "zzz-input"
+    payload["sources"][0]["provenance"].insert(0, record)
+    bundle = OpeningMoveEvidenceBundle.model_validate(payload)
+    output = json.loads(serialize_contract(bundle))
+    assert output["target_context"]["provenance"] == [{"sequence": 2}, {"sequence": 1}]
+    assert bundle.sources[0].provenance[0].record_id != "zzz-input"
 
 
 def test_opening_probability_coverage_retains_uncovered_and_unknown_mass():

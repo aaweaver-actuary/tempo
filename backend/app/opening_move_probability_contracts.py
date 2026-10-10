@@ -35,6 +35,12 @@ Timestamp = Annotated[StrictStr, AfterValidator(_timestamp)]
 class ContractModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
+    @field_validator("provenance", check_fields=False)
+    @classmethod
+    def order_provenance(cls, records):
+        return tuple(sorted(records, key=lambda record: (
+            record.record_id, record.input_fingerprint, record.references, record.limitations)))
+
     @model_validator(mode="before")
     @classmethod
     def validate_json_numbers(cls, value):
@@ -123,8 +129,11 @@ class CountEvidence(ContractModel):
 
     @model_validator(mode="after")
     def validate_counts(self):
+        if len({item.move_uci for item in self.moves}) != len(self.moves):
+            raise ValueError("Raw evidence contains duplicate moves")
         if sum(item.count for item in self.moves) > self.total_count:
             raise ValueError("Reported counts exceed the sample denominator")
+        object.__setattr__(self, "moves", tuple(sorted(self.moves, key=lambda item: item.move_uci)))
         return self
 
 
@@ -140,8 +149,11 @@ class ScoreEvidence(ContractModel):
 
     @model_validator(mode="after")
     def validate_probabilities(self):
+        if len({item.move_uci for item in self.moves}) != len(self.moves):
+            raise ValueError("Raw evidence contains duplicate moves")
         if self.basis == "probability" and math.fsum(item.value for item in self.moves) > 1 + PROBABILITY_TOLERANCE:
             raise ValueError("Raw probability mass cannot exceed one")
+        object.__setattr__(self, "moves", tuple(sorted(self.moves, key=lambda item: item.move_uci)))
         return self
 
 
@@ -216,9 +228,6 @@ class OpeningMoveEvidence(ContractModel):
         if self.normalization is None and (self.distribution.unknown_mass != 1 or any(
                 item.probability is not None for item in self.distribution.moves)):
             raise ValueError("Raw-only evidence cannot assign predictive probabilities")
-        ordered_raw = self.raw_evidence.model_dump()
-        ordered_raw["moves"] = sorted(ordered_raw["moves"], key=lambda item: item["move_uci"])
-        object.__setattr__(self, "raw_evidence", type(self.raw_evidence).model_validate(ordered_raw))
         return self
 
 
@@ -351,16 +360,4 @@ def coverage_mass_summary(distribution: MoveProbabilityDistribution, covered_mov
 
 def serialize_contract(value: ContractModel) -> str:
     """Authoritative JSON: set-like collections ordered, context sequences intact."""
-    payload = value.model_dump(mode="json")
-
-    def ordered(item):
-        if isinstance(item, dict):
-            result = {key: ordered(child) for key, child in item.items()}
-            if "provenance" in result:
-                result["provenance"] = sorted(result["provenance"], key=lambda record: json.dumps(record, sort_keys=True))
-            return result
-        if isinstance(item, list):
-            return [ordered(child) for child in item]
-        return item
-
-    return json.dumps(ordered(payload), sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return json.dumps(value.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False)

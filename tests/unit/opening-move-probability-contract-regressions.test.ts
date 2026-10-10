@@ -58,6 +58,12 @@ it("opening_probability_python_typescript_share_valid_and_invalid_contract_corpu
     as_of: "2026-10-10T12:00:00.000002Z", valid_until: "2026-10-10T12:00:00.000002Z", state: "stale" }, true);
   sourceCase("unknown_expiry", fixtures.explorer, ["freshness"], {
     as_of: "2026-10-10T12:00:00Z", valid_until: null, state: "unknown" }, true);
+  sourceCase("provenance_order", fixtures.explorer, ["provenance"], [
+    { ...fixtures.explorer.provenance[0], record_id: "zzz-input" }, fixtures.explorer.provenance[0]], true);
+  sourceCase("unicode_flags", fixtures.explorer, ["quality", "flags"], ["😀", "\ue000"], true);
+  sourceCase("unicode_identifier_length", fixtures.explorer, ["source_version"], "😀".repeat(300), true);
+  cases.push({ name: "opaque_context_provenance", schema: "bundle", valid: true,
+    payload: change(fixtures.bundle, ["target_context", "provenance"], [{ sequence: 2 }, { sequence: 1 }]) });
   cases.push({ name: "duplicate_sources", schema: "bundle", valid: false,
     payload: change(fixtures.bundle, ["sources"], [...fixtures.bundle.sources, fixtures.bundle.sources[0]]) });
   cases.push({ name: "different_position", schema: "bundle", valid: false,
@@ -84,6 +90,12 @@ it("opening_probability_missing_counts_observed_zero_and_raw_only_mass_remain_di
   expect(evidence.distribution.moves.every(move => move.probability === null)).toBe(true);
   expect(evidence.distribution.unknown_mass).toBe(1);
   expect(empiricalFrequencies({ kind: "counts", total_count: 0, moves: [{ move_uci: evidence.distribution.position.legal_moves[0], count: 0 }] })).toEqual({ e8d7: null });
+});
+
+it("opening_probability_raw_helpers_reject_duplicate_observations", () => {
+  const move = openingMoveEvidenceSchema.parse(fixtures.explorer).distribution.position.legal_moves[0];
+  expect(() => empiricalFrequencies({ kind: "counts", total_count: 10,
+    moves: [{ move_uci: move, count: 0 }, { move_uci: move, count: 0 }] })).toThrow("duplicate");
 });
 
 it("opening_probability_normalization_keeps_raw_provenance_and_explicit_residual", () => {

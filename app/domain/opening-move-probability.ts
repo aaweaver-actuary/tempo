@@ -4,14 +4,14 @@ import { canonicalFenKey } from "../utils/canonical-line";
 import { fenKeySchema, uciMoveSchema } from "./schemas/primitives";
 
 export const PROBABILITY_TOLERANCE = 1e-9;
-const identifier = z.string().min(1).max(512);
+const identifier = z.string().min(1).refine(value => [...value].length <= 512, "Identifier exceeds 512 Unicode code points");
 const uci = z.string().regex(/^[a-h][1-8][a-h][1-8][qrbn]?$/).pipe(uciMoveSchema);
 const nonnegative = z.number().nonnegative().refine(value => !Number.isInteger(value) || Number.isSafeInteger(value),
   "JSON integers must be exactly representable");
 const timestamp = z.iso.datetime({ offset: true }).regex(
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/,
 );
-const flags = z.array(identifier).transform(values => [...new Set(values)].sort());
+const flags = z.array(identifier).transform(values => [...new Set(values)].sort(compare));
 const jsonObject = z.record(z.string(), z.json()).superRefine((value, context) => {
   function check(item: unknown) {
     if (typeof item === "number" && Number.isInteger(item) && !Number.isSafeInteger(item))
@@ -68,22 +68,26 @@ export function unknownDistribution(position: PositionMoveUniverse): MoveProbabi
 export const countEvidenceSchema = z.strictObject({ kind: z.literal("counts"), total_count: z.number().int().nonnegative(),
   moves: z.array(z.strictObject({ move_uci: uci, count: z.number().int().nonnegative() })),
 }).superRefine((evidence, context) => {
+  if (new Set(evidence.moves.map(move => move.move_uci)).size !== evidence.moves.length)
+    context.addIssue({ code: "custom", message: "Raw evidence contains duplicate moves" });
   // Subtract to avoid overflow/rounding when malformed counts exceed the denominator.
   let remaining = evidence.total_count;
   for (const move of evidence.moves) {
     remaining -= move.count;
     if (remaining < 0) { context.addIssue({ code: "custom", message: "Reported counts exceed the sample denominator" }); break; }
   }
-});
+}).transform(evidence => ({ ...evidence, moves: [...evidence.moves].sort((left, right) => compare(left.move_uci, right.move_uci)) }));
 export type CountEvidence = z.infer<typeof countEvidenceSchema>;
 export const moveWeightSchema = z.strictObject({ move_uci: uci, value: nonnegative });
 export type MoveWeight = z.infer<typeof moveWeightSchema>;
 const scoreEvidenceSchema = z.strictObject({ kind: z.literal("scores"), basis: z.enum(["probability", "weight"]),
   moves: z.array(moveWeightSchema),
 }).superRefine((evidence, context) => {
+  if (new Set(evidence.moves.map(move => move.move_uci)).size !== evidence.moves.length)
+    context.addIssue({ code: "custom", message: "Raw evidence contains duplicate moves" });
   if (evidence.basis === "probability" && evidence.moves.reduce((total, move) => total + move.value, 0) > 1 + PROBABILITY_TOLERANCE)
     context.addIssue({ code: "custom", message: "Raw probability mass cannot exceed one" });
-});
+}).transform(evidence => ({ ...evidence, moves: [...evidence.moves].sort((left, right) => compare(left.move_uci, right.move_uci)) }));
 
 export const methodDescriptorSchema = z.strictObject({ id: identifier, version: identifier, parameters: jsonObject });
 export type MethodDescriptor = z.infer<typeof methodDescriptorSchema>;
@@ -109,7 +113,7 @@ export const openingMoveEvidenceSchema = z.strictObject({
   raw_evidence: z.discriminatedUnion("kind", [countEvidenceSchema, scoreEvidenceSchema]),
   distribution: moveProbabilityDistributionSchema, normalization: methodDescriptorSchema.nullable(),
   source_timestamp: timestamp.nullable(), captured_at: timestamp, freshness: evidenceFreshnessSchema,
-  quality: evidenceQualitySchema, provenance: z.array(provenanceRecordSchema).min(1),
+  quality: evidenceQualitySchema, provenance: z.array(provenanceRecordSchema).min(1).transform(orderProvenance),
 }).superRefine((evidence, context) => {
   if (evidence.derived_from.includes(evidence.evidence_id))
     context.addIssue({ code: "custom", message: "Evidence cannot derive from itself" });
@@ -118,9 +122,7 @@ export const openingMoveEvidenceSchema = z.strictObject({
     context.addIssue({ code: "custom", message: "Raw evidence contains duplicate or illegal moves" });
   if (evidence.normalization === null && (evidence.distribution.unknown_mass !== 1 || evidence.distribution.moves.some(move => move.probability !== null)))
     context.addIssue({ code: "custom", message: "Raw-only evidence cannot assign predictive probabilities" });
-}).transform(evidence => ({ ...evidence, raw_evidence: evidence.raw_evidence.kind === "counts" ? {
-  ...evidence.raw_evidence, moves: [...evidence.raw_evidence.moves].sort((left, right) => compare(left.move_uci, right.move_uci)),
-} : { ...evidence.raw_evidence, moves: [...evidence.raw_evidence.moves].sort((left, right) => compare(left.move_uci, right.move_uci)) } }));
+});
 export type OpeningMoveEvidence = z.infer<typeof openingMoveEvidenceSchema>;
 
 export const openingMoveEvidenceBundleSchema = z.strictObject({ contract_version: z.literal(1).default(1),
@@ -141,7 +143,7 @@ export const fusedMoveDistributionSchema = z.strictObject({ contract_version: z.
   status: z.enum(["available", "unavailable"]), distribution: moveProbabilityDistributionSchema.nullable(),
   unavailable_reason: identifier.nullable(), contributions: z.array(z.strictObject({ evidence_id: identifier,
     weight: nonnegative.nullable(), effective_sample_size: nonnegative.nullable() })),
-  freshness: evidenceFreshnessSchema, quality: evidenceQualitySchema, provenance: z.array(provenanceRecordSchema),
+  freshness: evidenceFreshnessSchema, quality: evidenceQualitySchema, provenance: z.array(provenanceRecordSchema).transform(orderProvenance),
 }).superRefine((result, context) => {
   if (result.status === "available") {
     if (result.distribution === null || !samePosition(result.distribution.position, result.position) ||
@@ -204,7 +206,26 @@ export function coverageMassSummary(distribution: MoveProbabilityDistribution, c
     unknown_mass: checkedDistribution.unknown_mass };
 }
 
-function compare(left: string, right: string): number { return left < right ? -1 : left > right ? 1 : 0; }
+function compare(left: string, right: string): number {
+  const leftCodepoints = [...left].map(character => character.codePointAt(0)!);
+  const rightCodepoints = [...right].map(character => character.codePointAt(0)!);
+  for (let index = 0; index < Math.min(leftCodepoints.length, rightCodepoints.length); index++) {
+    if (leftCodepoints[index] !== rightCodepoints[index]) return leftCodepoints[index] - rightCodepoints[index];
+  }
+  return leftCodepoints.length - rightCodepoints.length;
+}
+function compareSequence(left: readonly string[], right: readonly string[]): number {
+  for (let index = 0; index < Math.min(left.length, right.length); index++) {
+    const comparison = compare(left[index], right[index]);
+    if (comparison) return comparison;
+  }
+  return left.length - right.length;
+}
+function orderProvenance(records: z.infer<typeof provenanceRecordSchema>[]) {
+  return [...records].sort((left, right) => compare(left.record_id, right.record_id) ||
+    compare(left.input_fingerprint, right.input_fingerprint) || compareSequence(left.references, right.references) ||
+    compareSequence(left.limitations, right.limitations));
+}
 function samePosition(left: PositionMoveUniverse, right: PositionMoveUniverse): boolean {
   return left.fen_key === right.fen_key && JSON.stringify(left.legal_moves) === JSON.stringify(right.legal_moves);
 }
