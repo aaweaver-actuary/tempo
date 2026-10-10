@@ -46,6 +46,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   let queueNetworkMs: number[] = [];
   let submissionEpochMs = 0;
   let recoveryRequests = 0;
+  let historicalRecoveryRequests = 0;
   let network: Sample["network"] = [];
   let firstReview: { url: string; body: string; key: string } | undefined;
   const submittedEvidenceEvents = new Map<string, number>();
@@ -56,7 +57,10 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const body = request.postDataJSON();
       if (body.opening_evidence_completion) submittedEvidenceEvents.set(body.attempt_id, body.opening_evidence_completion.events.length);
     }
-    if (request.url().includes("/api/opening-evidence/checkpoints")) recoveryRequests++;
+    if (request.url().includes("/api/opening-evidence/checkpoints")) {
+      recoveryRequests++;
+      if (String(request.postDataJSON()?.attempt_id).startsWith("00000000-0000-4000-8000-")) historicalRecoveryRequests++;
+    }
   });
   page.on("response", response => {
     const path = new URL(response.url()).pathname;
@@ -107,19 +111,9 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const attempts = await new Promise<{ manifest: { decisions: { decision_index: number; decision_id: string; expected_uci: string }[] } }[]>(resolve => { read.onsuccess = () => resolve(read.result); });
       const header = attempts[0];
       const decision = header.manifest.decisions[0];
-      const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
-      const attemptIds: string[] = [];
-      for (let index = 0; index < 100; index++) {
-        const attemptId = crypto.randomUUID();
-        attemptIds.push(attemptId);
-        transaction.objectStore("opening_attempts").put({ ...header, attempt_id: attemptId, final_sequence: 1, delivery_state: "pending",
-          terminal: { state: "partial", final_sequence: 1, ended_at: new Date().toISOString() } });
-        transaction.objectStore("opening_events").put({ attempt_id: attemptId, sequence: 1, decision_index: decision.decision_index,
-          decision_id: decision.decision_id, expected_uci: decision.expected_uci, kind: "assistance", observed_at: new Date().toISOString(),
-          response_uci: null, assistance: "hint", disposition: null });
-      }
-      await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); });
-      database.close();
+      const attemptIds = Array.from({ length: 100 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`);
+      // Orphaned open journals require ownership checks. Already-partial journals
+      // intentionally bypass leases and therefore cannot isolate this hypothesis.
       if (holdRecovery) {
         const releases: (() => void)[] = [];
         await Promise.all(attemptIds.map(attemptId => new Promise<void>(resolve => {
@@ -129,6 +123,16 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
         })));
         Reflect.set(window, "releaseMeasuredRecovery", () => releases.forEach(release => release()));
       }
+      const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
+      for (const attemptId of attemptIds) {
+        transaction.objectStore("opening_attempts").put({ ...header, attempt_id: attemptId, owner_session_id: "orphaned-training-fixture-session",
+          final_sequence: 1, delivery_state: "pending", terminal: null });
+        transaction.objectStore("opening_events").put({ attempt_id: attemptId, sequence: 1, decision_index: decision.decision_index,
+          decision_id: decision.decision_id, expected_uci: decision.expected_uci, kind: "assistance", observed_at: new Date().toISOString(),
+          response_uci: null, assistance: "hint", disposition: null });
+      }
+      await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); });
+      database.close();
       window.dispatchEvent(new Event("online"));
     }, condition === "recovery-held");
     const readClockBracket = async () => {
@@ -171,8 +175,8 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
         document.addEventListener("pointerdown", captureInput, true);
         const observer = new MutationObserver(() => {
           const nextEntryActive = document.querySelector("#train")?.getAttribute("data-queue-entry-id") !== startedEntry;
-          const board = document.querySelector('.board-frame[data-input-enabled="true"]');
-          if (!readinessScheduled && nextEntryActive && board?.getAttribute("data-fen") === expectedStartingFen) {
+          const board = document.querySelector('.board-frame');
+          if (!readinessScheduled && nextEntryActive && board?.getAttribute("data-input-enabled") === "true" && board.getAttribute("data-fen") === expectedStartingFen) {
             readinessScheduled = true;
             requestAnimationFrame(() => { Reflect.set(window, "transitionInteractiveEpochMs", performance.timeOrigin + performance.now()); });
           }
@@ -227,7 +231,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
       fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup, samples: measuredCount, snapshot },
-      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Native-input time includes test-driver scheduling.", ...clock }, measured, recoveryRequests,
+      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Commit-to-input time includes test-driver scheduling; nativeInputProcessingMs uses browser event/mutation clocks.", ...clock }, measured, recoveryRequests, historicalRecoveryRequests,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
     mkdirSync(output, { recursive: true }); writeFileSync(join(output, `training-transition-${condition}.json`), JSON.stringify(report, null, 2));
@@ -238,6 +242,8 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     expect(submittedEvidenceEvents.size).toBe(transitionCount);
     expect(expectedEvents).toBeGreaterThanOrEqual(transitionCount);
     expect(report.persisted.completion_events).toBe(expectedEvents);
+    if (condition === "recovery-held") expect(historicalRecoveryRequests).toBe(0);
+    if (condition === "prepared") expect(historicalRecoveryRequests).toBeGreaterThan(0);
     if (process.env.TEMPO_TRAINING_TIMINGS === "1" && condition !== "refresh") {
       expect(measured.every(sample => sample.commitToInteractiveMs !== null && sample.commitToInteractiveMs >= 0)).toBe(true);
       const durations = measured.map(sample => sample.commitToInteractiveMs!).sort((left, right) => left - right);

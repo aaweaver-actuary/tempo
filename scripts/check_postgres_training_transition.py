@@ -57,7 +57,8 @@ def main():
             complete = connection.execute("SELECT count(*) FROM opening_evidence_attempts WHERE state='complete' AND card_id LIKE %s", (identifier+'-prepared-%',)).fetchone()[0]
             events = connection.execute("SELECT count(*) FROM opening_evidence_events e JOIN opening_evidence_attempts a ON a.attempt_id=e.attempt_id WHERE a.state='complete' AND a.card_id LIKE %s", (identifier+'-prepared-%',)).fetchone()[0]
             pending = connection.execute("SELECT count(*) FROM background_tasks WHERE id LIKE %s AND state!='complete'", (identifier+'-analysis-%',)).fetchone()[0]
-            print(json.dumps({"reviews": reviews, "complete_evidence": complete, "completion_events": events, "pending_maintenance": pending}))
+            recovered = connection.execute("SELECT count(*) FROM opening_evidence_attempts WHERE state='partial' AND card_id=%s", (identifier+'-prepared-000',)).fetchone()[0]
+            print(json.dumps({"reviews": reviews, "complete_evidence": complete, "completion_events": events, "pending_maintenance": pending, "historical_partials": recovered}))
         return
     raise ValueError("Unknown fixture action")
 
