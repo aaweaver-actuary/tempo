@@ -3458,3 +3458,5 @@ The exact-once regression first failed against main `1e0ca502` because the plan 
 The aggregation CLI regression creates its own temporary workspace, including when CI begins without local diagnostic directories; the first fresh frontend job exposed and rejected the initial fixture assumption.
 
 `pinned browser preflight detects an inaccessible checkout mount before tests` retains its missing-bind-mount assertion with the fake daemon updated for the server-version endpoint. The fresh current-base frontend gate identified this existing mock as a required consumer of the capability probe.
+
+`layout fixture starts with an empty disposable queue regardless of preceding specs` in the regular `layout.spec.ts` suite first failed after the real `Builder right-click annotation saves the exact clicked square` case: two opening cards remained. Layout now uses the existing disposable product fixture, establishing its previously implicit empty-queue precondition before every case. The original 1px geometry comparisons and disabled-hover assertion remain unchanged. This directly protects whole-spec shard independence and adds one required browser identity (267 → 268).

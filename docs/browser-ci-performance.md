@@ -127,3 +127,16 @@ It now requests `docker version --format '{{.Server.Version}}'`, avoiding full d
 inventory while retaining the five-second deadline, inaccessible/empty-daemon failure,
 and real workspace bind-mount check. The failed candidate is excluded from successful
 wall-time evidence; the repaired candidate requires fresh qualification.
+
+
+The first current-main shard execution exposed layout's implicit dependency on
+an empty queue left by preceding specs. A focused real import/annotation followed
+by the new empty-queue regression reproduced two inherited opening cards. Layout
+now uses the existing disposable product fixture before each case; its geometry
+tolerance, disabled-control assertion, and deadlines are unchanged. This is a
+prerequisite for spec independence, not an application change. The required
+inventory gains one regression (267 baseline identities plus one new identity);
+new timing uses the captured median fallback. The captured 268-case assignment
+has 96/88/53/31 identities and modeled loads 214.570/213.433/214.680/214.572s.
+Per-case reset cost is included in
+the measured final shard execution, and may make the shard containing layout the longest.
