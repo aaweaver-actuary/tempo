@@ -19,8 +19,9 @@ def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     capture = commands.add_parser("capture", help="Capture current PostgreSQL candidates; never admit cards")
-    capture.add_argument("--study-day", help="Optional current server-local production day; backdating is rejected")
+    capture.add_argument("--study-day", help="Optional current deployed production day; backdating is rejected")
     capture.add_argument("--repertoire-id", action="append", default=[])
+    capture.add_argument("--production-timezone", help="Match deployed Tempo TZ; defaults to TZ or America/New_York")
     capture.add_argument("--output", type=Path, required=True)
     comparison = commands.add_parser("compare", help="Replay a saved snapshot without database access")
     comparison.add_argument("--snapshot", type=Path, required=True)
@@ -31,7 +32,8 @@ def main(arguments=None):
     try:
         if options.command == "capture":
             from app.services.opening_ranking_snapshot import capture_snapshot
-            result = capture_snapshot(study_day=options.study_day, repertoire_ids=options.repertoire_id)
+            result = capture_snapshot(study_day=options.study_day, repertoire_ids=options.repertoire_id,
+                                      production_timezone=options.production_timezone)
         else:
             # Limit input before parsing; oversized files cannot bypass capture budgets.
             with options.snapshot.open("rb") as source:

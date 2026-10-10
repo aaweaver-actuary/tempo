@@ -211,6 +211,8 @@ def compare(production_order: Sequence[OpeningRankingCandidate], alternatives: S
                     or (row.score is not None and (type(row.score) not in (int, float) or not isfinite(row.score)))
                     or (row.alternative_rank is not None and type(row.alternative_rank) is not int)):
                 raise OpeningRankingError("invalid_order", "Alternative scores and ranks must have matching scored status.")
+            if row.score is None and (not isinstance(row.reason, str) or not row.reason.strip()):
+                raise OpeningRankingError("invalid_unscorable_result", "Every missing score requires an explicit unscorable reason.")
         scored = sorted((row for row in alternative.rows if row.alternative_rank is not None),
                         key=lambda row: row.alternative_rank)
         if [row.alternative_rank for row in scored] != list(range(1, len(scored) + 1)):

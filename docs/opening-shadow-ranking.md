@@ -14,6 +14,10 @@ PostgreSQL configuration (`TEMPO_DATABASE_WRITE_URL`) and the product's Redis
 admission configuration (`TEMPO_REDIS_URL`). The primary connection uses a
 PostgreSQL-enforced read-only transaction even when the configured role can write.
 Do not change database roles or point disposable tests at the live study stack.
+Match the deployed Tempo timezone with `TZ` or `--production-timezone`; the
+default is `America/New_York`, matching Compose. Capture derives the study day
+from the database transaction timestamp in that timezone, independent of the
+CLI computer's local date, and records the timezone/basis in source provenance.
 
 ```sh
 backend/.venv/bin/python scripts/evaluate_opening_rankings.py capture --output snapshot.json

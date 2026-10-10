@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 import uuid
+from zoneinfo import ZoneInfo
 
 import chess
 import psycopg
@@ -483,6 +484,10 @@ def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
         assert first["evaluations"][0]["top_k"]["1"]["overlap"] == 1
         assert evaluation.compare(candidates, [evaluation.rank(candidates, context, CheckedScorer())]) == first
         assert opened_connections == 1, "Offline replay contacted PostgreSQL"
+        timezone_document = snapshot.capture_snapshot(repertoire_ids=(repertoire_id,), production_timezone="Pacific/Kiritimati")
+        expected_day = datetime.fromisoformat(timezone_document["as_of"]).astimezone(ZoneInfo("Pacific/Kiritimati")).date().isoformat()
+        assert timezone_document["study_day"] == expected_day
+        assert timezone_document["source_versions"]["production_timezone"] == "Pacific/Kiritimati"
         assert domain_rows() == before, "Shadow capture or comparison mutated production tables"
     finally:
         postgres_store.connection = original_connection

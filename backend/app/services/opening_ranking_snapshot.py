@@ -1,9 +1,11 @@
 """Opt-in authoritative read-only capture; never called by product queue reads."""
 from __future__ import annotations
 
-from datetime import date, timezone
+from datetime import datetime, timezone
 import json
+import os
 from time import monotonic
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
 from psycopg_pool import PoolTimeout
@@ -45,10 +47,15 @@ def _check_capture_available(deadline):
         raise OpeningRankingError("evaluation_busy", "Study work is active or the capture deadline expired; retry when study is idle.")
 
 
-def capture_snapshot(*, study_day: str | None = None, repertoire_ids=()) -> dict:
+def capture_snapshot(*, study_day: str | None = None, repertoire_ids=(),
+                     production_timezone: str | None = None) -> dict:
     """Capture one current MVCC boundary, then calculate with no open connection."""
-    current_day = date.today().isoformat()  # Same server-local day used by production queue planning.
-    if study_day is not None and study_day != current_day:
+    timezone_name = production_timezone if production_timezone is not None else os.getenv("TZ") or "America/New_York"
+    try:
+        deployment_zone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError, TypeError) as error:
+        raise OpeningRankingError("invalid_production_timezone", "Provide the deployed Tempo TZ as a valid IANA timezone.") from error
+    if study_day is not None and study_day != datetime.now(deployment_zone).date().isoformat():
         raise OpeningRankingError("historical_capture_unavailable", "Capture supports only the current production study day; replay a saved snapshot for an earlier boundary.")
     if not postgres_store.configured():
         raise OpeningRankingError("unsupported_backend", "Capture requires authoritative PostgreSQL configuration; file replay needs no database.")
@@ -71,10 +78,10 @@ def capture_snapshot(*, study_day: str | None = None, repertoire_ids=()) -> dict
         "COALESCE(published.completion_mass,legacy.completion_mass) AS completion_mass,"
         "COALESCE(published.frontier_reach,legacy.frontier_reach) AS frontier_reach,",
     )
-    parameters = (MISS_REASON, current_day, current_day, current_day, current_day)
+    selection_parameters = ()
     if repertoire_ids:
         candidate_query += " AND linked.id=ANY(%s::text[])"
-        parameters += (list(sorted(set(repertoire_ids))),)
+        selection_parameters = (list(sorted(set(repertoire_ids))),)
     candidate_query += " ORDER BY linked.id,c.id"
     eligible_cards = f"SELECT DISTINCT id FROM ({candidate_query}) eligible"
     eligible_repertoires = f"SELECT DISTINCT repertoire_id FROM ({candidate_query}) eligible"
@@ -86,7 +93,14 @@ def capture_snapshot(*, study_day: str | None = None, repertoire_ids=()) -> dict
             _check_capture_available(deadline)
             with postgres_store.connection(read_only=True, authoritative=True, background=True,
                                            repeatable_read=True, pool_timeout_seconds=0.1) as database:
-                captured_at = database.execute_native("SELECT transaction_timestamp() AS as_of").fetchone()["as_of"]
+                captured_boundary = database.execute_native(
+                    "SELECT transaction_timestamp() AS as_of, "
+                    "(transaction_timestamp() AT TIME ZONE %s)::date::text AS study_day", (timezone_name,),
+                ).fetchone()
+                captured_at, current_day = captured_boundary["as_of"], captured_boundary["study_day"]
+                if study_day is not None and study_day != current_day:
+                    raise OpeningRankingError("historical_capture_unavailable", "The production day changed or the database clock differs; retry capture for the current production study day.")
+                parameters = (MISS_REASON, current_day, current_day, current_day, current_day, *selection_parameters)
                 queries = (
                     ("candidates", candidate_query, parameters, MAX_ROUTE_ROWS),
                     ("routes", "SELECT step.* FROM opening_graph_steps step JOIN opening_graph_publications publication "
@@ -121,7 +135,8 @@ def capture_snapshot(*, study_day: str | None = None, repertoire_ids=()) -> dict
     decoded = {name: [json.loads(raw) for raw in rows] for name, rows in raw_groups.items()}
     if len({row["id"] for row in decoded["candidates"]}) > MAX_CANDIDATES:
         raise OpeningRankingError("limit_exceeded", "Capture exceeds 10,000 physical candidates; narrow the repertoire selection.")
-    return _project_snapshot(decoded, captured_at, current_day, tuple(sorted(set(repertoire_ids))))
+    return _project_snapshot(decoded, captured_at, current_day, tuple(sorted(set(repertoire_ids))),
+                             production_timezone=timezone_name)
 
 
 def _decoded_evidence(raw, expected_type, label, unavailable):
@@ -138,7 +153,7 @@ def _decoded_evidence(raw, expected_type, label, unavailable):
         return None
 
 
-def _project_snapshot(decoded, captured_at, study_day, repertoire_ids):
+def _project_snapshot(decoded, captured_at, study_day, repertoire_ids, *, production_timezone="America/New_York"):
     from ..main import _plan_prioritized_opening_admissions
     rows = decoded["candidates"]
     counts = {row["repertoire_id"]: row["count"] for row in decoded["introductions"]}
@@ -188,6 +203,8 @@ def _project_snapshot(decoded, captured_at, study_day, repertoire_ids):
     source_versions = {"postgres_schema_version": POSTGRES_SCHEMA_VERSION,
                        "priority_global_source": decoded["global_source"], "repertoires": decoded["repertoires"],
                        "introduction_counts": counts, "repertoire_selection": list(repertoire_ids),
+                       "production_timezone": production_timezone,
+                       "study_day_basis": "transaction_timestamp_in_declared_deployment_timezone",
                        "capture_boundary": "authoritative_repeatable_read_transaction"}
     context = OpeningRankingContext(captured_at.astimezone(timezone.utc).isoformat(), study_day, "",
                                     canonical_json(source_versions))

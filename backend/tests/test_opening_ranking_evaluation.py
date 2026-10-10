@@ -213,7 +213,9 @@ def test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closu
         def execute_native(self, query, parameters=()):
             assert state["open"] and query.startswith("SELECT")
             if query.startswith("SELECT transaction_timestamp"):
-                return Cursor([{"as_of": datetime.now(timezone.utc)}])
+                from zoneinfo import ZoneInfo
+                instant = datetime.now(timezone.utc)
+                return Cursor([{"as_of": instant, "study_day": instant.astimezone(ZoneInfo(parameters[0])).date().isoformat()}])
             if "SELECT step.*" in query: group = "routes"
             elif "SELECT repertoire.id" in query: group = "repertoires"
             elif "AS count" in query: group = "introductions"
@@ -398,3 +400,55 @@ def test_shadow_capture_pool_failure_is_actionable_and_releases_background_reser
     assert raised.value.code == "capture_unavailable"
     assert "secret" not in str(raised.value)
     assert snapshot.activity_gate.active_background_sections == before
+
+
+def test_shadow_capture_as_of_boundary_uses_deployment_timezone_not_cli_date(monkeypatch):
+    from app.services import opening_ranking_snapshot as snapshot
+    captured = raw_capture_fixture()
+    # At this instant a UTC CLI says Oct 10, while deployed New York Tempo says Oct 9.
+    class UtcCliDate(date):
+        @classmethod
+        def today(cls): return date(2026, 10, 10)
+    monkeypatch.setattr(snapshot, "date", UtcCliDate, raising=False)
+    monkeypatch.delenv("TZ", raising=False)
+    monkeypatch.setattr(snapshot.postgres_store, "configured", lambda: True)
+    class Database:
+        def execute_native(self, query, parameters=()):
+            assert query.startswith("SELECT transaction_timestamp")
+            return self
+        def fetchone(self):
+            return {"as_of": datetime(2026, 10, 10, 3, tzinfo=timezone.utc), "study_day": "2026-10-09"}
+    @contextmanager
+    def connection(**options): yield Database()
+    monkeypatch.setattr(snapshot.postgres_store, "connection", connection)
+    def raw_rows(database, query, parameters, **options):
+        if "SELECT step.*" in query: group = "routes"
+        elif "SELECT repertoire.id" in query: group = "repertoires"
+        elif "AS count" in query: group = "introductions"
+        elif "SELECT version FROM priority_source_epoch" in query: group = "global_source"
+        else:
+            group = "candidates"
+            assert parameters[1:] == ("2026-10-09",) * 4
+        rows = tuple(evaluation.canonical_json(row) for row in captured[group])
+        return rows, sum(len(row.encode()) for row in rows)
+    monkeypatch.setattr(snapshot, "_raw_rows", raw_rows)
+    document = snapshot.capture_snapshot()
+    assert document["study_day"] == "2026-10-09"
+    assert document["source_versions"]["production_timezone"] == "America/New_York"
+
+
+def test_shadow_external_unscorable_result_without_reason_is_rejected():
+    ranked = evaluation.rank(candidates(), context(), FixtureScorer())
+    missing = replace(ranked.rows[0], score=None, alternative_rank=None, reason=None)
+    with pytest.raises(evaluation.OpeningRankingError, match="unscorable reason"):
+        evaluation.compare(candidates(), [replace(ranked, rows=(missing, *ranked.rows[1:]))])
+
+
+def test_shadow_invalid_deployment_timezone_is_rejected_before_sql(monkeypatch):
+    from app.services import opening_ranking_snapshot as snapshot
+    monkeypatch.setattr(snapshot.postgres_store, "configured", lambda: True)
+    def prohibited(**options): raise AssertionError("Timezone validation opened SQL")
+    monkeypatch.setattr(snapshot.postgres_store, "connection", prohibited)
+    with pytest.raises(evaluation.OpeningRankingError) as raised:
+        snapshot.capture_snapshot(production_timezone="not/a-timezone")
+    assert raised.value.code == "invalid_production_timezone"
