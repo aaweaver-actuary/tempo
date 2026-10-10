@@ -3796,3 +3796,29 @@ Regular `backend/tests/test_opening_ranking_evaluation.py` coverage:
 - `test_shadow_selected_capture_binds_policy_to_sql_and_offline_cli` verifies the selected repertoire SQL filter and CLI replay provenance.
 
 Current-main requalification omits PR #155's checkpoint/admission fixture replacements. Main's bounded shared recovery, #168 owned restart namespace propagation and replay regressions, and next-opponent proof ownership remain unchanged. The shadow-specific PostgreSQL proof remains in priority recovery; no production admission behavior is changed.
+
+
+## Explicit CLI update CI policy (2026-10-10)
+
+User-reported defect: head-only waiting prevented updates to intermediate,
+CI-qualified main revisions; implicit waiting/fallback also obscured which
+revision a normal command would deploy.
+
+Regular owner: `tests/unit/tempo-cli-regressions.test.ts`; Node cases in
+`tests/runner/tempo-cli.test.mjs` and disposable lifecycle rehearsal through
+`scripts/check-tempo-cli.mjs`.
+
+- `CLI automatic policy default pending exits with explicit flags and preserves the deployment` reproduced the old implicit wait (failing baseline: 1 failed, 5.19s).
+- `CLI automatic policy default failed and missing evidence exit unchanged for every update command` protects start/restart/migrate source, receipt, services and journal.
+- `CLI automatic policy flags reject conflicts and unrelated commands before target inspection` protects mutually exclusive explicit policy flags.
+- `source update backward search chooses newest exact-main success through merge and squash first parents` excludes branch-only commits and prefers newest qualified proof.
+- `source update backward search stops at checkout and rejects missing incomplete or foreign evidence` protects source history and exact-main qualification.
+- `source update backward search preserves paginated earlier success and fails closed on unavailable history` retains pagination, same-SHA success and access failure behavior.
+- `CLI automatic policy no-wait start deploys the newest qualified revision through pinned relaunch`, and the restart/migrate existing-checkout cases, exercise actual CLI source advancement, selected-revision images and deployment receipts.
+- `CLI automatic policy wait failure never substitutes an available older qualified revision` protects explicit latest-main intent.
+- Updated `CLI automatic start timeout validates no fallback is started and deployment remains unchanged` and the existing wait/cancellation/advancing-main/relaunch cases now require `--wait`. Existing recorded-fallback and real PostgreSQL lifecycle cases explicitly use `--no-wait`; image/schema/history safety assertions remain required.
+
+- `source update selected revision must remain first-parent and cannot downgrade source or deployment` protects the locked selector independently of API traversal.
+- `source update backward search cancellation and malformed history never become successful proof` covers cancellation and invalid history.
+- `CLI automatic start relaunch keeps its no-wait selected revision after remote main advances` prevents a newly qualified head from replacing the selected candidate during handoff.
+- `CLI automatic policy legacy continuation upgrades from the installed CLI without losing its source fence` preserves the pre-change CLI's valid source/deadline handoff. `CLI automatic policy flags reject incomplete or conflicting continuation selections` rejects partial new fields, mismatched revisions and policy changes.

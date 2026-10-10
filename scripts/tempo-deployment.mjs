@@ -298,22 +298,24 @@ async function githubJson(path, { signal } = {}) {
   return response.json();
 }
 
+async function requestVerificationJson(path, fetchJson, signal) {
+  signal?.throwIfAborted();
+  if (!signal) return fetchJson(path);
+  let abortRequest;
+  const aborted = new Promise((_, reject) => {
+    abortRequest = () => reject(signal.reason);
+    signal.addEventListener("abort", abortRequest, { once: true });
+  });
+  try { return await Promise.race([fetchJson(path, { signal }), aborted]); }
+  finally { signal.removeEventListener("abort", abortRequest); }
+}
+
 export async function assessMainVerification(revision, fetchJson = githubJson, { signal } = {}) {
   let firstAssessment, unavailableAssessment;
   const unavailable = error => ({ status: "unavailable", revision,
     message: error.message.startsWith("GitHub verification unavailable") ? error.message : `GitHub verification unavailable: ${error.message}` });
   // Racing the signal also bounds injected clients which ignore cancellation.
-  const requestJson = async path => {
-    signal?.throwIfAborted();
-    if (!signal) return fetchJson(path);
-    let abortRequest;
-    const aborted = new Promise((_, reject) => {
-      abortRequest = () => reject(signal.reason);
-      signal.addEventListener("abort", abortRequest, { once: true });
-    });
-    try { return await Promise.race([fetchJson(path, { signal }), aborted]); }
-    finally { signal.removeEventListener("abort", abortRequest); }
-  };
+  const requestJson = path => requestVerificationJson(path, fetchJson, signal);
   // Any complete successful allowed run for this exact main revision is proof.
   // A later pending/failed rerun does not invalidate immutable successful proof.
   for (let runPage = 1; ; runPage += 1) {
@@ -418,7 +420,40 @@ export async function inspectCandidateSource(target, run, { signal } = {}) {
   return { branch, head, changes, origin, problem, failures };
 }
 
-export async function assessCandidate(target, run, fetchJson, { signal, expectedSource } = {}) {
+// Traverse only main's first parents. A successful PR run or a second-parent
+// commit cannot establish the exact-main deployment evidence required here.
+export async function assessNewestVerifiedMain(mainRevision, minimumRevision, fetchJson = githubJson, { signal, headVerification } = {}) {
+  let revision = mainRevision;
+  let verification = headVerification;
+  const visitedRevisions = new Set();
+  while (revision) {
+    signal?.throwIfAborted();
+    if (visitedRevisions.has(revision)) return { mainRevision, revision: mainRevision,
+      verification: { status: "unavailable", message: "GitHub returned cyclic main history." } };
+    visitedRevisions.add(revision);
+    verification ??= await assessMainVerification(revision, fetchJson, {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+    });
+    if (["verified", "unavailable"].includes(verification.status)) return { mainRevision, revision, verification };
+    if (revision === minimumRevision) break;
+    try {
+      const historySignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000);
+      const commit = await requestVerificationJson(`commits/${revision}`, fetchJson, historySignal);
+      if (commit?.sha !== revision || !Array.isArray(commit.parents)
+        || commit.parents.some(parent => !/^[a-f0-9]{40}$/.test(parent?.sha ?? "")))
+        throw new Error("GitHub returned invalid main history.");
+      revision = commit.parents[0]?.sha;
+      verification = undefined;
+    } catch (error) {
+      signal?.throwIfAborted();
+      return { mainRevision, revision: mainRevision, verification: { status: "unavailable", message: `Main history could not be read: ${error.message}` } };
+    }
+  }
+  return { mainRevision, revision: mainRevision, verification: { status: "missing",
+    message: "No CI-qualified main revision at or after the registered checkout is available." } };
+}
+
+export async function assessCandidate(target, run, fetchJson, { signal, expectedSource, searchHistory = false } = {}) {
   const source = await inspectCandidateSource(target, run, { signal });
   if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.",
@@ -442,10 +477,12 @@ export async function assessCandidate(target, run, fetchJson, { signal, expected
     && (await run("git", ["merge-base", "--is-ancestor", source.head, revision], { allowFailure: true, timeout: 5000 })).code === 1)
     throw new TempoProblem("source_diverged", "Local main has diverged; Tempo will not reset or merge your work.",
       { action: `Next: preserve and reconcile ${target.root} with remote main without discarding local commits.` });
-  return { source, revision, verification: await assessMainVerification(revision, fetchJson, { signal: requestSignal }) };
+  const verification = await assessMainVerification(revision, fetchJson, { signal: requestSignal });
+  return searchHistory ? { source, ...await assessNewestVerifiedMain(revision, source.head, fetchJson, { signal, headVerification: verification }) }
+    : { source, revision, mainRevision: revision, verification };
 }
 
-export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal } = {}) {
+export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedMainRevision = expectedRevision, expectedSource, minimumDeploymentRevision, signal } = {}) {
   signal?.throwIfAborted();
   if (!target.root) throw new Error("Tempo checkout is not registered.");
   const source = await inspectCandidateSource(target, run, { signal });
@@ -453,19 +490,25 @@ export async function selectCandidate(target, run, fetchJson = githubJson, { exp
   if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
   await run("git", ["fetch", "origin", "main"], { timeout: 60_000, signal });
-  const revision = (await run("git", ["rev-parse", "FETCH_HEAD"])).stdout.trim();
+  const mainRevision = (await run("git", ["rev-parse", "FETCH_HEAD"])).stdout.trim();
+  const revision = expectedRevision ?? mainRevision;
   const current = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
-  if (expectedRevision && revision !== expectedRevision)
+  if (expectedMainRevision && mainRevision !== expectedMainRevision)
     throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
   if (current !== source.head)
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
   if ((await run("git", ["merge-base", "--is-ancestor", current, revision], { allowFailure: true })).code !== 0)
     throw new TempoProblem("source_diverged", "Local main has diverged; Tempo will not reset or merge your work.");
+  if (revision !== mainRevision && !(await run("git", ["rev-list", "--first-parent", mainRevision])).stdout.trim().split("\n").includes(revision))
+    throw new TempoProblem("source_diverged", "The selected revision is not on remote main's first-parent history.");
+  if (minimumDeploymentRevision && minimumDeploymentRevision !== revision
+    && (await run("git", ["merge-base", "--is-ancestor", minimumDeploymentRevision, revision], { allowFailure: true })).code !== 0)
+    throw new TempoProblem("source_diverged", "The selected revision cannot advance the recorded deployment; Tempo will not downgrade it.");
   const evidence = await verifiedMainEvidence(revision, fetchJson, signal);
   signal?.throwIfAborted();
-  if (expectedRevision) {
+  if (expectedMainRevision) {
     const latest = (await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { timeout: 15_000, signal })).stdout.trim().split(/\s+/)[0];
-    if (latest !== revision) throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
+    if (latest !== mainRevision) throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
   }
   if (revision !== current) {
     const checkedSource = await inspectCandidateSource(target, run, { signal });

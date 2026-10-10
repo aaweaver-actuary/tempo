@@ -79,7 +79,12 @@ async function fixtureNetwork() {
       if (fixture.diagnostics?.githubStatus) return new Response("access denied", { status: fixture.diagnostics.githubStatus,
         headers: fixture.diagnostics.githubRateLimit ? { "x-ratelimit-remaining": "0" } : {} });
     }
-    if (String(url).includes("/actions/workflows/")) return Response.json({ workflow_runs: fixture.diagnostics?.runs ?? [
+    if (String(url).includes("/commits/")) {
+      const revision = String(url).split("/commits/")[1];
+      const history = fixture.diagnostics?.history ?? { [fixture.revision]: [] };
+      return Response.json({ sha: revision, parents: (history[revision] ?? []).map(sha => ({ sha })) });
+    }
+    if (String(url).includes("/actions/workflows/")) return Response.json({ workflow_runs: fixture.diagnostics?.runsByRevision?.[new URL(url).searchParams.get("head_sha")] ?? fixture.diagnostics?.runs ?? [
       { id: 12, head_sha: fixture.revision, head_branch: "main", event: "push", status: "completed", html_url: "https://github.com/fixture/ci" },
     ] });
     if (String(url).includes("/actions/runs/")) {
@@ -97,7 +102,7 @@ async function fixtureNetwork() {
         fs.writeFileSync(machinePath, JSON.stringify(machine));
         if (fixture.mode === "race-dirty") fs.writeFileSync(fixture.root + "/personal-work", "preserved study notes");
       }
-      return Response.json({ jobs: fixture.diagnostics?.jobs ?? ["plan", "frontend / verify", "backend / verify", "build / verify",
+      return Response.json({ jobs: fixture.diagnostics?.jobsByRun?.[String(url).split("/actions/runs/")[1].split("/")[0]] ?? fixture.diagnostics?.jobs ?? ["plan", "frontend / verify", "backend / verify", "build / verify",
         "postgres / verify", "lifecycle / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed",
           conclusion: fixture.mode === "ci-fail" && name === "quality" ? "failure" : "success" })) });
     }
@@ -129,7 +134,12 @@ async function fakeCommand() {
     else if (args[0] === "status") output(machine.sourceChanges ?? (fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : ""));
     else if (args[0] === "remote") output(machine.remote ?? "https://github.com/aaweaver-actuary/tempo");
     else if (args[0] === "cat-file") process.exit(machine.remoteObjectMissing ? 1 : 0);
-    else if (args[0] === "merge-base") process.exit(machine.ancestryCode ?? 0);
+    else if (args[0] === "merge-base") process.exit(machine.ancestryByPair?.[args.slice(-2).join(":")] ?? machine.ancestryCode ?? 0);
+    else if (args[0] === "rev-list") {
+      const revisions = []; let revision = fixture.revision;
+      while (revision && !revisions.includes(revision)) { revisions.push(revision); revision = fixture.diagnostics?.history?.[revision]?.[0]; }
+      output(revisions.join("\n"));
+    }
     else if (args[0] === "rev-parse") output(args[1] === "HEAD" ? machine.head : fixture.revision);
     else if (args[0] === "merge") { machine.head = args.at(-1); save(); }
     else if (args[0] === "ls-remote") {
@@ -191,6 +201,15 @@ async function fakeCommand() {
     process.exit(0);
   }
   if (args.includes("build") && fixture.mode === "build-fail") { console.error("build unavailable"); process.exit(13); }
+  if (args.includes("build")) {
+    machine.imageRevisions ??= {};
+    for (const [name, service] of Object.entries(resolvedConfig().services)) if (args.includes(name) && service.build?.labels?.["org.opencontainers.image.revision"]) {
+      const builtRevision = service.build.labels["org.opencontainers.image.revision"];
+      machine.imageRevisions[service.image] = builtRevision;
+      machine.imageRevisions[`sha256:${service.image}`] = builtRevision;
+    }
+    save();
+  }
   if (args.includes("build") && fixture.mode === "edited-during-build") { machine.sourceEdited = true; save(); }
   if (args.includes("ps")) { for (const Service of machine.running) output({ Service, State: "running" }); process.exit(0); }
   if (args.includes("stop")) { machine.running = machine.running.filter(name => !args.includes(name)); save(); process.exit(0); }

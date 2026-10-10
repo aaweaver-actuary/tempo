@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 // safety cases grow. Prefixes are disjoint and cover every actual CLI case.
 const regressionGroups = [
   { name: "contracts", pattern: "^(?:restart|CLI(?! automatic)|blocked updates|release evidence|complete release evidence|target maintenance|deployment records|start after merge|changed dependency|dependency recreation|repeated compatible|failed|source update)" },
-  ...["start waits", "start timeout preserves", "start timeout validates", "migrate timeout", "start cancels", "start relaunch"].map(name => ({ name: `automatic ${name}`, pattern: `^CLI automatic ${name}` })),
+  ...["start waits", "start timeout preserves", "start timeout validates", "migrate timeout", "start cancels", "start relaunch", "policy default pending", "policy default failed", "policy flags", "policy legacy", "policy no-wait start", "policy no-wait restart", "policy no-wait migrate", "policy wait"].map(name => ({ name: `automatic ${name}`, pattern: `^CLI automatic ${name}` })),
   ...["migration guard partial", "migration guard completed", "migration guard newer", "migration guard interrupted",
     "migration diagnostics applying", "migration diagnostics failed", "migration diagnostics invalid", "migration diagnostics verified",
     "migration diagnostics pending", "migration diagnostics retry", "migration diagnostics normal",

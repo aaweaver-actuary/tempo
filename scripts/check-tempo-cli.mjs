@@ -185,7 +185,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     // This checkout is a task branch, so start must explicitly retain the
     // already recorded disposable deployment rather than fetching product main.
     const fallbackReceiptBytes = readFileSync(join(stateDirectory, "deployment.json"), "utf8");
-    const child = childProcess("cli_fallback", process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
+    const child = childProcess("cli_fallback", process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-wait", "--no-open", "--config", registration], {
       encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000,
     });
     assert.equal(child.status, 0, child.stdout + child.stderr);
@@ -248,7 +248,7 @@ await executeLifecycle({ recreate: false }, runtime);
     await recovery.inspectTarget();
     assert.deepEqual(await recovery.ensureImages(), { dependenciesMayChange: false });
     assert.equal(await recovery.recordedApplicationsMatch(), false, "actual candidate config hashes differ from the saved receipt");
-    const failedFallback = childProcess("cli_fallback", process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
+    const failedFallback = childProcess("cli_fallback", process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-wait", "--no-open", "--config", registration], {
       encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000,
     });
     output.push(redact(failedFallback.stdout + failedFallback.stderr, secretValues));

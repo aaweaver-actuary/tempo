@@ -14,7 +14,7 @@ export class TempoProblem extends Error {
   }
 }
 
-export function verificationProblem(verification) {
+export function verificationProblem(verification, { command = "start" } = {}) {
   const { status, job, conclusion, message, run } = verification;
   const unfinishedConclusions = { cancelled: "was cancelled", timed_out: "timed out", skipped: "was skipped", action_required: "requires action", neutral: "did not report success" };
   const failedDescription = unfinishedConclusions[conclusion]
@@ -28,11 +28,11 @@ export function verificationProblem(verification) {
   };
   return new TempoProblem(`verification_${status}`, descriptions[status] ?? message, {
     verification,
-    action: status === "pending" ? "Run: tempo start\nTempo will wait up to 30 minutes, then update automatically; study may pause during maintenance."
+    action: status === "pending" ? `Run: tempo ${command} --wait to wait up to 30 minutes for latest main, or tempo ${command} --no-wait to select the newest already-qualified main revision. No update has been applied.`
       : status === "unavailable" ? /rate limit/i.test(message ?? "")
         ? "Next: wait for the reported GitHub rate limit to clear, then run tempo start."
         : "Next: restore GitHub connectivity/access, then run tempo start."
-      : `Next: ${status === "missing" ? "complete or restore the required release workflow" : conclusion === "cancelled" ? "rerun the cancelled release workflow" : "repair or complete the required release workflow"}: ${run?.html_url ?? "https://github.com/aaweaver-actuary/tempo/actions/workflows/pages.yml"}`,
+      : `Next: ${status === "missing" ? "complete or restore the required release workflow" : conclusion === "cancelled" ? "rerun the cancelled release workflow" : "repair or complete the required release workflow"}: ${run?.html_url ?? "https://github.com/aaweaver-actuary/tempo/actions/workflows/pages.yml"}; or run tempo ${command} --no-wait to select the newest already-qualified main revision.`,
   });
 }
 

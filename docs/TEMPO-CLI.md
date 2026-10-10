@@ -7,8 +7,18 @@ tempo start
 ```
 
 Tempo checks the latest main revision and its complete GitHub quality gate, including the required `lifecycle / verify` deployment rehearsal. If
-checks are still running, it waits up to 30 minutes and continues automatically.
-It leaves existing services untouched while waiting; Ctrl-C cancels that wait.
+checks are still running, fail, or lack qualifying evidence, the default command
+exits without changing source or services. Choose the policy explicitly:
+
+| Policy | Behavior |
+| --- | --- |
+| No flag | Install latest main only when its complete CI evidence passes; otherwise exit with guidance. |
+| `--wait` | Wait up to 30 minutes for latest main. Failure or timeout exits without updating or starting an older version. |
+| `--no-wait` | Search backward immediately and install the newest CI-qualified main revision that can advance this checkout and deployment. |
+
+These flags apply to start, restart, and migrate, in terminals and scripts.
+They cannot be combined. No interactive prompt is shown. Waiting leaves existing
+services untouched; Ctrl-C cancels it.
 Once eligible, it prepares one coherent image set, checks the existing database, and performs
 verified maintenance when migrations are needed. It opens the browser after
 readiness passes and keeps running in the background. Closing the terminal
@@ -46,7 +56,8 @@ and unrelated commands are not overwritten.
 | `tempo doctor` | Short read-only answer: current service availability, primary blocker, and one next action |
 | `tempo doctor --verbose` | Full technical evidence, current Redis probe, and historical failure details |
 | `tempo start --verbose` | Normal startup with underlying command output |
-| `tempo start --no-wait` | Assess release checks once; attempt the checked recorded fallback when blocked |
+| `tempo start --wait` | Wait for latest main only; exit unchanged on CI failure or timeout |
+| `tempo start --no-wait` | Install the newest already-qualified main revision, even if head is not qualified |
 | `tempo logs [service] [--follow]` | Inspect recent or live service logs |
 | `tempo backup` | Stop writers, take and restore-verify a backup, then restore service state |
 | `tempo migrate` | Explicitly run the checked update path without opening the browser |
@@ -59,7 +70,8 @@ need to decide whether a merge requires a rebuild or a migration.
 
 
 Normally, **run `tempo start`**. You do not need to watch GitHub or apply migrations
-separately. The command tells you when it is waiting, preparing images, pausing
+separately. If latest main is not qualified, choose `--wait` or `--no-wait` from
+the guidance. The command tells you when it is waiting, preparing images, pausing
 study, verifying a backup, applying migrations, and checking readiness. Finish
 your current study session before invoking an automatic update: it can proceed
 when verification finishes, without another confirmation.
@@ -72,9 +84,9 @@ full evidence below; ordinary output is not a machine-readable API.
 
 | What Tempo reports | What happens / what to do |
 | --- | --- |
-| Release checks pending | Run `tempo start`; it waits once per minute for at most 30 minutes, then continues if eligible. |
-| Release checks still pending after the wait | Run `tempo start` later. Start/restart can attempt the recorded version only after checking its images, schema and readiness; migrate cannot substitute it. |
-| Required checks failed or evidence missing | The CLI names the job/evidence and workflow link. Release repair is needed; local resets or repeated starts cannot fix failed tests. |
+| Release checks pending | Default commands exit unchanged. Use `tempo start --wait` for latest main, or `tempo start --no-wait` for the newest already-qualified main revision. |
+| Release checks still pending after the wait | `--wait` exits unchanged. Run it later, or explicitly choose `--no-wait` to allow an older qualified revision. |
+| Required checks failed or evidence missing | The CLI names the job/evidence and workflow link. Use `--no-wait` to select an older qualified revision, or repair the release workflow; local resets or repeated starts cannot fix failed tests. |
 | GitHub unavailable | Restore network/access or wait for the reported rate limit, then run `tempo start`. This is not a failed test. |
 | Local work, wrong branch or divergence | Preserve the named checkout's work in an isolated development checkout; reconcile it to clean main without resetting away commits. |
 | Pending migrations or unknown running images | Normal `tempo start` prepares coherent images, verifies a backup and applies migrations. These are CLI work, not manual repair instructions. |
@@ -98,7 +110,8 @@ Waiting uses one deadline even when main advances or the CLI reloads updated
 source. It holds no maintenance lock and creates no deployment journal. A
 concurrent `tempo stop`, deployment, source edit, registration change or migration
 recovery change cancels the waiting start rather than letting it restart Tempo
-later. `--no-wait` opts out of waiting on start/restart/migrate; all existing
+later. Only `--wait` enables waiting. `--no-wait` explicitly permits a qualified
+revision behind head on start/restart/migrate; all existing
 compatibility and data-preservation checks still apply. Ctrl-C while waiting
 returns exit code 130. Diagnostics retain zero exit status for reported blockers;
 operational failures remain nonzero.
@@ -135,8 +148,9 @@ rechecks current-main evidence, source safety, target isolation and readiness.
 
 If no deployment receipt exists and verification is pending, the update is
 waiting for that exact SHA. There is no verified fallback, and the blocked
-attempt has not applied the update. Run `tempo start` to wait automatically; the workflow link is supporting evidence.
-After a 30-minute timeout, run it later to wait again. A successful run for
+attempt has not applied the update. Run `tempo start --wait` to wait for latest
+main, or `tempo start --no-wait` to search older main revisions; the workflow link
+is supporting evidence. After a 30-minute timeout, `--wait` exits unchanged. A successful run for
 an older main SHA does not verify a newer one. Earlier acceptable successful
 evidence for the **same** SHA remains acceptable despite a later pending/failed
 run. GitHub Pages publication is not an additional local deployment requirement.
@@ -189,8 +203,8 @@ docker --context desktop-linux compose --project-directory /Users/andy/tempo \
   api background-worker background-scheduler postgres
 ```
 
-Pending verification makes a first deployment wait automatically, bounded by
-the original 30-minute deadline. Failed, missing or unavailable verification
+Pending verification makes a first deployment exit with explicit policy guidance.
+With `--wait`, waiting is bounded by the original 30-minute deadline. Failed, missing or unavailable verification
 blocks it with a specific cause and next action. Failed backup/history verification, a missing volume, mixed
 target identity, unresolved migration guard or readiness failure requires
 inspection and a compatible fix forward. Preserve backups/guards/receipts and
@@ -204,6 +218,14 @@ checkout from the verified Tempo repository. It accepts a complete successful
 allowed main CI run for that exact revision, even if a later rerun is pending
 or failed. Immediately before fast-forwarding, it rechecks the branch, exact
 HEAD, and cleanliness; concurrent edits or source movement block the update.
+With `--no-wait`, it traverses only main's first-parent history: merge and squash
+commits qualify, but commits reachable only through another parent do not.
+It stops at the registered checkout and never downgrades source or the recorded
+deployment. Each candidate needs its own complete exact-SHA main CI proof;
+a newer qualified revision wins over older ones. The selected revision and
+policy survive the updated CLI relaunch, even if remote main advances. The
+previous CLI's valid source/deadline handoff remains compatible when this
+version first loads after an update.
 It loads the updated CLI before deployment. Images are built
 before stopping services. Before maintenance, resolved Compose configuration
 must pin the API to its PostgreSQL reader and both Celery workers to
@@ -252,8 +274,10 @@ workers, PostgreSQL API health, the web endpoint, and service state must pass
 before success is recorded. Database volumes, Redis state, and engine journals
 remain intact.
 
-If GitHub is unavailable or the candidate has failed checks, `start` can use
-the last recorded, verified image set with its saved Compose definitions. It
+Only with `--no-wait`, if no eligible revision can be selected, `start` and
+`restart` can use the last recorded, verified image set with its saved Compose
+definitions. `migrate` never substitutes that recorded deployment. GitHub access
+failures retain their actual cause and never permit unverified deployment. It
 clearly reports the blocked update and running revision. Fallback requires
 the images to exist and the database schema to match; it never rebuilds old
 code from newer source. Before using the no-recreate path, it inspects existing
