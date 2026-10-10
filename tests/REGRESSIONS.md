@@ -3456,3 +3456,5 @@ The exact-once regression first failed against main `1e0ca502` because the plan 
 `Docker capability probe requests the server version and rejects unavailable or empty daemons` in the same regular browser-shard runner wrapper first failed against `a0c24a7`. Fresh CI observed two pre-test Docker `/info` timeouts (visual and shard 3). The capability probe now requests the equivalent server version endpoint without collecting storage/daemon inventory; the five-second deadline, bind-mount proof and failure on inaccessible/empty daemons remain. No product timeout or retry policy changes.
 
 The aggregation CLI regression creates its own temporary workspace, including when CI begins without local diagnostic directories; the first fresh frontend job exposed and rejected the initial fixture assumption.
+
+`pinned browser preflight detects an inaccessible checkout mount before tests` retains its missing-bind-mount assertion with the fake daemon updated for the server-version endpoint. The fresh current-base frontend gate identified this existing mock as a required consumer of the capability probe.
