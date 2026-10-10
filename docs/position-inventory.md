@@ -83,3 +83,8 @@ Named Python and real PostgreSQL cases are registered in `tests/REGRESSIONS.md`.
 `scripts/check_postgres_position_inventory.py` owns isolated databases and runs
 through the regular `background_workloads` durability stage. Current main's
 historical migration rehearsals and complete qualification remain required.
+
+The PostgreSQL proof uses real Redis admission under a proof-owned namespace.
+Its restart worker inherits that namespace; unrelated stack reservations remain
+intact, and the owned foreground-contention case still requires denial and
+resumption. Only the owning parent cleans its admission keys.
