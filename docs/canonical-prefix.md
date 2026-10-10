@@ -276,3 +276,16 @@ the orphaned presentation before removing its generated owner link. Its card row
 provenance and reviews remain stored; it cannot reappear as an authored source.
 An unlinked authored owner in another repertoire remains active. Integrity cleanup
 uses the same ordering.
+
+### Preview retention
+
+Background retention keeps the newest eight previews and any older active
+certificate. One admitted slice cleans at most four obsolete previews and 64
+cleanup rows, including task retirement and preview invalidation. Results,
+positions and task events are deleted in bounded pages before their parents;
+foreign-key cascades cannot turn a page into an unbounded deletion. Retirement,
+cleanup and the durable checkpoint commit together under the existing background
+transaction and lock budgets. The repertoire lock rechecks active/newest
+protection, while task generation and lease fencing reject stale deliveries.
+Partial cleanup resumes from persisted rows after restart; foreground requests
+only admit previews and never perform retention.
