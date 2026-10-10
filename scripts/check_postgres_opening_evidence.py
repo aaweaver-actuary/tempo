@@ -426,19 +426,42 @@ def _crash_worker_after_checkpoint_preparation():
         assert len(prepared.observations) == 20 and prepared.result['contiguous_sequence'] == 256
         print('Prepared 256 events / 20 decisions; exiting before publication', flush=True)
         os._exit(73)
-    command_gateway._preparers['opening_evidence.checkpoint'] = crash_after_prepare
-    admitted_checkpoint_delivery(supplied['operation_id'], 'opening_evidence.checkpoint', supplied['payload'])
+    from check_postgres_graph_retention import owned_admission_scope
+    # A subprocess does not inherit the parent's patched admission keys. The
+    # private driver envelope carries ownership, never checkpoint payload data.
+    with owned_admission_scope(supplied['admission_namespace']), \
+            patch.dict(command_gateway._preparers, {'opening_evidence.checkpoint': crash_after_prepare}):
+        admitted_checkpoint_delivery(supplied['operation_id'], 'opening_evidence.checkpoint', supplied['payload'])
     raise AssertionError('Crash worker unexpectedly reached publication')
 
 
 def test_postgres_opening_checkpoint_restart_recomputes_original_receipt():
+    from check_postgres_graph_retention import owned_admission_scope
+    from app.services import redis_admission_gate
+    server = redis_admission_gate.client()
+    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    parent_activity_token = uuid.uuid4().hex
+    admission_namespace = 'checkpoint-restart-' + uuid.uuid4().hex
+    # Restart/identity is the invariant; unrelated API health/study activity
+    # remains present without determining fixture setup or exact replay.
+    server.zadd(parent_foreground_key, {parent_activity_token: float('inf')})
+    try:
+        with owned_admission_scope(admission_namespace):
+            _prove_opening_checkpoint_restart_recomputes_original_receipt(admission_namespace)
+            assert server.zscore(parent_foreground_key, parent_activity_token) == float('inf')
+    finally:
+        server.zrem(parent_foreground_key, parent_activity_token)
+
+
+def _prove_opening_checkpoint_restart_recomputes_original_receipt(admission_namespace):
     from app import command_gateway
     fixture, payload = _large_checkpoint_fixture()
     operation_id = fixture['card_id']+'-restart'
     with postgres_store.connection(read_only=True) as database:
         scheduling = _fixture_scheduling(database, fixture)
     child = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--crash-after-prepare'],
-                           input=json.dumps({'operation_id':operation_id, 'payload':payload}), text=True,
+                           input=json.dumps({'operation_id':operation_id, 'payload':payload,
+                                             'admission_namespace':admission_namespace}), text=True,
                            capture_output=True, timeout=20)
     assert child.returncode == 73 and 'Prepared 256 events' in child.stdout, child.stdout+child.stderr
     receipt = _checkpoint_operation_receipt(operation_id)
