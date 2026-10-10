@@ -1,0 +1,153 @@
+name: Browser verification
+on:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        required: true
+        type: string
+      diagnostic_retry:
+        default: false
+        type: boolean
+permissions:
+  contents: read
+  actions: read
+jobs:
+  reuse:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      reused: ${{ steps.evidence.outputs.reused }}
+      shards: ${{ steps.assignment.outputs.shards }}
+      count: ${{ steps.assignment.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+          path: test-results/ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+      - name: Read captured browser assignment
+        id: assignment
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { planHash } from './scripts/ci-verification-plan.mjs';
+          import { validateBrowserShardPlan } from './scripts/ci-browser-shards.mjs';
+          const plan = JSON.parse(readFileSync('test-results/ci/plan.json'));
+          if (plan.hash !== planHash(plan) || plan.commit !== process.env.CANDIDATE_SHA) throw new Error('Captured browser plan mismatch');
+          validateBrowserShardPlan(plan);
+          const ids = plan.browserShards?.shards.map(shard => shard.id) ?? [1];
+          appendFileSync(process.env.GITHUB_OUTPUT, `shards=${JSON.stringify(ids)}\ncount=${ids.length}\n`);
+          JS
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      - name: Verify reusable original suite evidence
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-evidence.mjs browser
+      - uses: actions/upload-artifact@v4
+        if: steps.evidence.outputs.reused == 'true'
+        with:
+          name: ci-browser-reuse
+          path: test-results/ci/browser.json
+          if-no-files-found: error
+          overwrite: true
+  shard:
+    name: shard-${{ matrix.shard }}
+    needs: reuse
+    if: needs.reuse.outputs.reused != 'true' && needs.reuse.outputs.count != '1'
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: ${{ fromJSON(needs.reuse.outputs.shards) }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+          path: test-results/ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - run: npm ci
+      - name: Browser prerequisites
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run isolated browser shard
+        env:
+          TEMPO_BROWSER_SHARD: ${{ matrix.shard }}
+          TEMPO_DIAGNOSTIC_RETRY: ${{ inputs.diagnostic_retry }}
+        run: |
+          mkdir -p "test-results/ci/browser-shards/$TEMPO_BROWSER_SHARD"
+          set -o pipefail
+          node scripts/ci-run-layer.mjs browser --shard "$TEMPO_BROWSER_SHARD" 2>&1 | tee "test-results/ci/browser-shards/$TEMPO_BROWSER_SHARD/runner.log"
+      - name: Retain shard results and diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-browser-shard-${{ matrix.shard }}
+          path: test-results/
+          if-no-files-found: error
+          overwrite: true
+  verify:
+    needs: [reuse, shard]
+    if: always()
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Require captured assignment and reuse decision
+        env:
+          REUSE_RESULT: ${{ needs.reuse.result }}
+        run: test "$REUSE_RESULT" = success
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+          path: test-results/ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - uses: actions/download-artifact@v4
+        if: needs.reuse.outputs.reused == 'true'
+        with:
+          name: ci-browser-reuse
+          path: test-results/ci
+      - uses: actions/download-artifact@v4
+        if: needs.reuse.outputs.reused != 'true' && needs.reuse.outputs.count != '1'
+        with:
+          pattern: ci-browser-shard-*
+          path: test-results/browser-shards
+          merge-multiple: false
+      - run: npm ci
+        if: needs.reuse.outputs.reused != 'true' && needs.reuse.outputs.count == '1'
+      - name: Browser prerequisites
+        if: needs.reuse.outputs.reused != 'true' && needs.reuse.outputs.count == '1'
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run isolated verification layer
+        if: always() && needs.reuse.result == 'success' && needs.reuse.outputs.reused != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEMPO_BROWSER_SHARD_RESULT: ${{ needs.shard.result }}
+          TEMPO_DIAGNOSTIC_RETRY: ${{ inputs.diagnostic_retry && needs.reuse.outputs.count == '1' }}
+        run: |
+          mkdir -p test-results/ci
+          set -o pipefail
+          node scripts/ci-run-layer.mjs browser 2>&1 | tee test-results/ci/browser.log
+      - name: Retain layer results and diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-result-browser
+          path: test-results/
+          if-no-files-found: error
+          overwrite: true
