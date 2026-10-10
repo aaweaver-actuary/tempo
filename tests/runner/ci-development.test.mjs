@@ -1,10 +1,15 @@
 import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { verificationPlan, inventory } from '../../scripts/ci-verification-plan.mjs';
 import { evaluateQuality, layerFailures } from '../../scripts/ci-quality.mjs';
+function temporaryContractDirectory(prefix, parent = join(process.cwd(),'test-results')) {
+  mkdirSync(parent,{recursive:true});
+  return mkdtempSync(join(parent,prefix));
+}
 const files = Object.values(inventory.families).flat();
 const cases = inventory.critical.map((item, index) => ({ ...item, id: `case-${index}`, fullTitle: item.title, project: 'chromium' }));
 function draft(paths, extra = {}) {
@@ -347,7 +352,7 @@ test('PR132 core inventories retain nested identities and JUnit parameter escapi
   const actual = frontendResults({testResults:[{name:file,assertionResults:[{ancestorTitles:['parent'],title:'example',location:{line:2,column:3},status:'passed'}]}]});
   assert.equal(actual[0].id,expected[0].id);
   assert.throws(()=>frontendInventory([{file,name:'missing location'}]),/locations/);
-  const directory = mkdtempSync(join(process.cwd(),'test-results','junit-contract-'));
+  const directory = temporaryContractDirectory('junit-contract-');
   try {
     const path=join(directory,'tests.xml');
     writeFileSync(path,'<testsuites><testsuite><testcase classname="backend.tests.test_example.TestCase" name="test_value[a&amp;b]"/><testcase classname="backend.tests.test_example" name="test_skipped"><skipped/></testcase></testsuite></testsuites>');
@@ -358,7 +363,7 @@ test('PR132 core inventories retain nested identities and JUnit parameter escapi
 });
 
 test('PR132 pytest collection matches actual class and parameter identities', () => {
-  const directory = mkdtempSync(join(process.cwd(),'test-results','pytest-inventory-contract-'));
+  const directory = temporaryContractDirectory('pytest-inventory-contract-');
   try {
     const file = join(directory,'test_identities.py'), inventoryPath = join(directory,'inventory.json'), xmlPath = join(directory,'results.xml');
     writeFileSync(file,'import pytest\nclass TestIdentity:\n    @pytest.mark.parametrize("value", ["a::b&c", "second"], ids=str)\n    def test_value(self, value):\n        assert value\n');
@@ -399,7 +404,7 @@ test('PR132 fresh execution cannot silently substitute another workflow run', ()
 
 test('PR132 evidence CLI completes imports and falls back when no reusable run exists', () => {
   const planned = captured({...pr,draft:false});
-  const directory = mkdtempSync(join(process.cwd(),'test-results','evidence-cli-contract-'));
+  const directory = temporaryContractDirectory('evidence-cli-contract-');
   try {
     mkdirSync(join(directory,'test-results','ci'),{recursive:true});
     writeFileSync(join(directory,'test-results','ci','plan.json'),JSON.stringify(planned));
@@ -410,4 +415,15 @@ test('PR132 evidence CLI completes imports and falls back when no reusable run e
     assert.equal(result.status,0,result.stdout+result.stderr);
     assert.equal(readFileSync(output,'utf8'),'reused=false\n');
   } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test('PR132 focused contract temporary outputs create an absent parent', () => {
+  const fixture = mkdtempSync(join(tmpdir(),'tempo-contract-parent-'));
+  try {
+    const parent = join(fixture,'absent-test-results');
+    assert.equal(existsSync(parent),false);
+    const output = temporaryContractDirectory('proof-',parent);
+    assert(existsSync(output));
+    assert(output.startsWith(join(parent,'proof-')));
+  } finally {rmSync(fixture,{recursive:true,force:true});}
 });

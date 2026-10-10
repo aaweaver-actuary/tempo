@@ -3378,5 +3378,6 @@ Additional named PR132 safeguards in the same regular wrapper:
 - `PR132 workflow skips setup and execution only after validated reuse` protects the fresh current verification layer and complete non-PR execution boundaries.
 - `PR132 fresh execution cannot silently substitute another workflow run` requires current-run provenance while retaining successful same-run jobs during GitHub's failed-job rerun. It failed before the guard.
 - `PR132 evidence CLI completes imports and falls back when no reusable run exists` reproduces the draft job's circular top-level import failure before the CLI repair, using a local API stub and the actual executable entry point.
+- `PR132 focused contract temporary outputs create an absent parent` protects fresh-checkout native execution; the helper creates its parent before all three temporary report fixtures. It failed before the fix raised during review.
 
 The first four implementation regressions failed on the reconciled baseline: provider leaves selected full backend/durability, filtered core execution was accepted, identity remained version 2, and the reuse helper was absent. The baseline's 111 native contracts passed before those additions. No application, browser-fixture reset, admission proof or durability assertion was changed to obtain these passes.
