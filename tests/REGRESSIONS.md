@@ -3385,3 +3385,5 @@ The first four implementation regressions failed on the reconciled baseline: pro
 - `PR132 successful reuse survives draft or sibling aggregation failure without receipt chains` preserves a passing suite when draft eligibility or another layer makes the workflow fail. It first failed under the overly broad workflow-conclusion rejection; a newer failed suite still blocks reuse and the retained source remains an original execution.
 
 - `PR132 frontend runtime inventory expands parameterized execution identities` uses the actual collection command and a regular parameterized suite to compare collected/executed identities. It failed with default static listing before `--no-static-parse`; static placeholders cannot prove complete execution.
+
+- `PR132 explicit development exclusions preserve prior exact-suite qualification for ready transitions` ignores an explicitly inapplicable draft suite when finding the original passing execution. Exclusion itself is never evidence; an applicable missing result still prevents older-pass fallback. It first failed before the exclusion check.

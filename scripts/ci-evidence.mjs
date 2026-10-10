@@ -108,6 +108,9 @@ export function findReusableEvidence(plan, layer, commands, runs, readRun, valid
       || !run.pull_requests?.some(pr => pr.number === plan.pullRequest)) continue;
     const candidate = readRun(run, layer);
     if (!candidate || candidate.plan?.version !== 3) return null; // Ambiguous/expired evidence cannot authorize an older pass.
+    if (candidate.plan.hash !== planHash(candidate.plan) || !candidate.plan.jobs?.[layer]) return null;
+    // An explicitly excluded draft suite produced no execution; it cannot invalidate or replace the original.
+    if (candidate.plan.jobs[layer].applicable === false && candidate.plan.jobs[layer].required === false) continue;
     if (suiteFingerprint(candidate.plan, layer, commands) !== suiteFingerprint(plan, layer, commands)) continue;
     if (run.status !== "completed" || !["success", "failure"].includes(run.conclusion)) return null;
     const original = candidate.report;

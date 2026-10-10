@@ -273,16 +273,16 @@ test('PR132 suite reuse fingerprint ignores orchestration but rejects candidate 
   assert.notEqual(suiteFingerprint(selected,'frontend',[...commands,['extra','node',[]]]),key);
 });
 
-function reusableFixture() {
+function reusableFixture(layer = 'frontend') {
   const planned = captured({...pr,draft:false}, ['docs/testing.md']);
-  const original = results(planned).reports.frontend;
+  const original = results(planned).reports[layer];
   const run = {id:100,status:'completed',conclusion:'success',event:'pull_request',path:'.github/workflows/pages.yml',
     repository:{id:planned.repositoryId,full_name:planned.repository},head_sha:planned.head,pull_requests:[{number:132}]};
-  const job = {id:200,run_id:100,run_attempt:1,name:'frontend / verify',status:'completed',conclusion:'success',labels:[planned.runtime.runner],
+  const job = {id:200,run_id:100,run_attempt:1,name:`${layer} / verify`,status:'completed',conclusion:'success',labels:[planned.runtime.runner],
     steps:[{name:'Run isolated verification layer',status:'completed',conclusion:'success'}]};
-  const artifact = {id:300,name:'ci-result-frontend',expired:false,digest:`sha256:${'a'.repeat(64)}`,
+  const artifact = {id:300,name:`ci-result-${layer}`,expired:false,digest:`sha256:${'a'.repeat(64)}`,
     workflow_run:{id:100,repository_id:planned.repositoryId,head_sha:planned.head}};
-  const receipt = {version:2,layer:'frontend',planHash:planned.hash,commit:planned.commit,status:'success',completed:true,
+  const receipt = {version:2,layer,planHash:planned.hash,commit:planned.commit,status:'success',completed:true,
     executionKey:original.executionKey,execution:{kind:'reused'},source:{plan:planned,report:original,runId:100,jobId:200,artifactId:300,digest:artifact.digest}};
   return {planned,receipt,metadata:{run,job,artifact,latestJobId:job.id}};
 }
@@ -349,6 +349,23 @@ test('PR132 successful reuse survives draft or sibling aggregation failure witho
   assert.equal(recovered.source.report.execution.kind,'executed');
   reused.job.conclusion='failure';
   assert.equal(findReusableEvidence(planned,'frontend',commands,[newer,metadata.run],readRun,layerFailures),null);
+});
+
+test('PR132 explicit development exclusions preserve prior exact-suite qualification for ready transitions', async () => {
+  const {findReusableEvidence} = await import('../../scripts/ci-evidence.mjs');
+  const {planned,receipt,metadata}=reusableFixture('postgres');
+  const commands=layerCommands('postgres',planned);
+  const development=captured(pr,['docs/testing.md']);
+  assert.equal(development.jobs.postgres.applicable,false);
+  const newer={...metadata.run,id:101,conclusion:'failure'};
+  const unselected={plan:development,report:null,job:{status:'completed',conclusion:'skipped'}};
+  const original={plan:planned,report:receipt.source.report,job:metadata.job,artifact:metadata.artifact};
+  const evidence=findReusableEvidence(planned,'postgres',commands,[newer,metadata.run],run=>run.id===101 ? unselected : original,layerFailures);
+  assert(evidence);
+  assert.equal(evidence.source.runId,100);
+  // A missing result from an applicable suite still blocks fallback to the older pass.
+  unselected.plan=planned;
+  assert.equal(findReusableEvidence(planned,'postgres',commands,[newer,metadata.run],run=>run.id===101 ? unselected : original,layerFailures),null);
 });
 
 test('PR132 repository PR number and runtime changes invalidate quality', () => {
