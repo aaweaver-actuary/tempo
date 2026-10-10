@@ -174,13 +174,20 @@ export default function RepertoireView({
       );
       setLoaded(true);
       setError("");
-      const pending = pendingRepertoireDeletion();
-      if (pending) {
-        setPendingDeletePolicy(pending.learnedCards);
-        setDeleteTarget(current => current ?? {
-          id: asRepertoireId(pending.repertoireId), title: body.repertoires.find(item => item.id === pending.repertoireId)?.name ?? "Pending repertoire",
-          side: "white", detail: "", sourceName: "", progress: 0, due: 0, backend: true,
+      try {
+        const pending = pendingRepertoireDeletion();
+        if (pending) {
+          setPendingDeletePolicy(pending.learnedCards);
+          setDeleteTarget(current => current ?? {
+            id: asRepertoireId(pending.repertoireId), title: body.repertoires.find(item => item.id === pending.repertoireId)?.name ?? "Pending repertoire",
+            side: "white", detail: "", sourceName: "", progress: 0, due: 0, backend: true,
+          });
+        }
+      } catch (failure) {
+        reportDebugError(failure, {
+          kind: "ui", source: "repertoire-delete-recovery", operation: "load pending repertoire deletion",
         });
+        setError(`Pending repertoire deletion unavailable: ${failure instanceof Error ? failure.message : "recovery record unreadable"}. Check browser recovery data before retrying deletion.`);
       }
       return true;
     } catch (failure) {

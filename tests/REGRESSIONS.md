@@ -1836,6 +1836,8 @@ Backend names run in the existing contracts, preparation and transport pytest fi
 
 `tests/unit/canonical-prefix-parent-regressions.test.tsx` renders the real RepertoireView/CanonicalPrefixDialog composition. `confirmed canonical prefix and repertoire reload dismiss while queue publication remains pending` and `confirmed canonical prefix dismisses and retains separate training queue error reporting` prove one mutation and dismissal independently of queue readiness. `confirmed canonical prefix with failed repertoire reload keeps committed recovery without resubmitting` preserves truthful metadata confirmation and disables stale resubmission. All three failed on unchanged e9788df8; the existing dialog recovery regression and 390px canonical-prefix browser workflow remain required.
 
+`confirmed canonical prefix reload remains successful with an unreadable deletion recovery journal` failed on the first fix fd7da76e (automated review). It preserves the unrelated malformed journal and its visible diagnostic while confirming successfully reloaded prefix metadata and starting the independent queue refresh.
+
 ## Canonical prefix derived freshness (PR #66 follow-up)
 
 | Regression | Regular coverage | Failure prevented |

@@ -77,3 +77,14 @@ it("confirmed canonical prefix with failed repertoire reload keeps committed rec
   expect(mutationIdentities).toHaveLength(1);
   expect(queueRefresh).not.toHaveBeenCalled();
 });
+
+it("confirmed canonical prefix reload remains successful with an unreadable deletion recovery journal", async () => {
+  localStorage.setItem("tempo-pending-repertoire-delete-v1", "unreadable");
+  const queueRefresh = vi.fn(async () => {});
+  const mutationIdentities = await openParent(queueRefresh);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(queueRefresh).toHaveBeenCalledOnce();
+  expect(mutationIdentities).toHaveLength(1);
+  expect(screen.getByRole("alert").textContent).toContain("Pending repertoire deletion unavailable");
+  expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBe("unreadable");
+});
