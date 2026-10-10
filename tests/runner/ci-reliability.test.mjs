@@ -1,3 +1,4 @@
+import { attachPassingBrowserShards } from "./ci-browser-shard-fixture.mjs";
 import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -56,6 +57,7 @@ function successfulResults(planned) {
     report.execution = {kind:"executed",runId:100,attempt:1};
     report.environment = {node:`v${planned.runtime.node}`,platform:planned.runtime.platform,architecture:planned.runtime.architecture,
       python:`Python ${planned.runtime.python}`,rust:`rustc ${planned.runtime.rust} (fixture)`,wasmPack:`wasm-pack ${planned.runtime.wasmPack}`};
+    if (layer === "browser") attachPassingBrowserShards(planned, report);
     if (["frontend","backend"].includes(layer)) {
       const requiredFiles = [...new Set([...(Array.isArray(planned.core[layer]) ? planned.core[layer] : []), ...(planned.regressionFiles[layer] ?? [])])];
       const files = requiredFiles.length ? requiredFiles : [layer === "frontend" ? "tests/unit/example.test.ts" : "backend/tests/test_example.py"];
@@ -369,7 +371,7 @@ test("deployment requires complete verification and scheduled or verification-on
   const workflow = readFileSync(".github/workflows/pages.yml", "utf8");
   assert(workflow.includes("cron: '0 7 * * *'")); assert(workflow.includes("if: always()\n    needs: [plan,"));
   assert.equal(workflow.split("inputs.verification_only == false").length - 1, 2);
-  for (const layer of mandatoryLayers) assert(workflow.includes(`  ${layer}:\n    needs: plan\n    if: needs.plan.outputs.${layer} == 'true'\n    uses: ./.github/workflows/verify-layer.yml`));
+  for (const layer of mandatoryLayers) assert(workflow.includes(`  ${layer}:\n    needs: plan\n    if: needs.plan.outputs.${layer} == 'true'\n    uses: ./.github/workflows/${layer === "browser" ? "verify-browser" : "verify-layer"}.yml`));
   assert(workflow.includes("lifecycle: ${{ steps.inventory.outputs.lifecycle }}"));
   assert(workflow.includes("  lifecycle:\n    needs: plan\n    if: needs.plan.outputs.lifecycle == 'true'\n    uses: ./.github/workflows/verify-layer.yml"));
   assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]"));

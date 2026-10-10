@@ -1,3 +1,4 @@
+import { validateBrowserShardJobs } from "./ci-browser-shards.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -14,6 +15,7 @@ export function suiteFingerprint(plan, layer, commands) {
     core: plan.core?.[layer], regressions: plan.regressionFiles?.[layer],
     tests: layer === "browser" ? plan.collection.filter(test => test.selected).map(test => test.id).sort()
       : layer === "visual" ? plan.pinnedCollection.map(test => test.id).sort() : null,
+    ...(layer === "browser" ? { browserShards: plan.browserShards ?? null } : {}),
     stages: plan.jobs[layer]?.planned_stages });
 }
 
@@ -56,6 +58,7 @@ export function validateReuseEvidence(plan, layer, receipt, commands, metadata, 
     || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest ?? "") || artifact.digest !== source.digest
     || artifact.workflow_run?.id !== run.id || artifact.workflow_run.repository_id !== plan.repositoryId
     || artifact.workflow_run.head_sha !== plan.head) throw new Error(`${layer}: original GitHub job or artifact is not trustworthy passing evidence`);
+  if (layer === "browser" && sourcePlan.browserShards?.count > 1) validateBrowserShardJobs(sourcePlan, original.shards, metadata.shardJobs);
   const failures = validateOriginal(sourcePlan, layer, "success", original);
   if (failures.length) throw new Error(`${layer}: original execution failed validation: ${failures.join("; ")}`);
   return true;
@@ -95,9 +98,9 @@ export function sourceMetadata(repository, source) {
     || [source?.runId, source?.jobId, source?.artifactId].some(id => !Number.isSafeInteger(id) || id < 1)) throw new Error("Invalid source provenance identifiers");
   const prefix = `repos/${repository}/actions`;
   const job = githubApi(`${prefix}/jobs/${source.jobId}`);
-  const matchingJobs = boundedRunJobs(`${prefix}/runs/${source.runId}`)
-    .filter(candidate => candidate.name === job.name).sort((left, right) => right.run_attempt - left.run_attempt);
-  return { run: githubApi(`${prefix}/runs/${source.runId}`), job, latestJobId: matchingJobs[0]?.id,
+  const allJobs = boundedRunJobs(`${prefix}/runs/${source.runId}`);
+  const matchingJobs = allJobs.filter(candidate => candidate.name === job.name).sort((left, right) => right.run_attempt - left.run_attempt);
+  return { shardJobs: allJobs, run: githubApi(`${prefix}/runs/${source.runId}`), job, latestJobId: matchingJobs[0]?.id,
     artifact: githubApi(`${prefix}/artifacts/${source.artifactId}`) };
 }
 
@@ -128,7 +131,7 @@ export function findReusableEvidence(plan, layer, commands, runs, readRun, valid
       executionKey: original.executionKey, execution: { kind: "reused" },
       source: { plan: candidate.plan, report: original, runId: run.id, jobId: candidate.job.id,
         artifactId: candidate.artifact.id, digest: candidate.artifact.digest } };
-    validateReuseEvidence(plan, layer, receipt, commands, { run, job: candidate.job, artifact: candidate.artifact, latestJobId: candidate.job.id }, validateOriginal);
+    validateReuseEvidence(plan, layer, receipt, commands, { run, job: candidate.job, artifact: candidate.artifact, latestJobId: candidate.job.id, shardJobs: candidate.shardJobs }, validateOriginal);
     return receipt;
   }
   return null;
@@ -154,10 +157,11 @@ async function runEvidenceCli() {
         if (plans.length !== 1) return null;
         const sourcePlan = artifactJson(plan.repository, plans[0], "plan.json");
         if (sourcePlan.version !== 3) return null;
-        const jobs = boundedRunJobs(prefix).filter(job => job.name === `${layer} / verify` || job.name === layer)
+        const allJobs = boundedRunJobs(prefix);
+        const jobs = allJobs.filter(job => job.name === `${layer} / verify` || job.name === layer)
           .sort((left, right) => right.run_attempt - left.run_attempt);
         return { plan: sourcePlan, report: reports.length === 1 ? artifactJson(plan.repository, reports[0], `ci/${layer}.json`) : null,
-          job: jobs[0], artifact: reports.length === 1 ? reports[0] : null };
+          shardJobs: allJobs, job: jobs[0], artifact: reports.length === 1 ? reports[0] : null };
       }, layerFailures);
     }
   } catch (error) { console.log(`Reuse unavailable for ${layer}: ${error.message}; execute the suite.`); }

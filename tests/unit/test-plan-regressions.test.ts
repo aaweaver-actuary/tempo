@@ -66,7 +66,7 @@ it("pinned browser preflight detects an inaccessible checkout mount before tests
     const fakeDockerPath = join(fakeCommandDirectory, "docker");
     writeFileSync(fakeDockerPath, [
       "#!/bin/sh",
-      "if [ \"$1\" = info ]; then echo 28.0; exit 0; fi",
+      "if [ \"$1\" = version ]; then echo 28.0; exit 0; fi",
       "if [ \"$1\" = run ]; then echo 'package-lock.json missing from bind mount' >&2; exit 1; fi",
       "exit 1",
       "",

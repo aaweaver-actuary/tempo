@@ -3427,3 +3427,44 @@ The first four implementation regressions failed on the reconciled baseline: pro
 - `test_decision_readiness_other_review_sources_do_not_establish_owned_memory` and `test_decision_readiness_studied_card_without_scheduler_state_is_unavailable` keep ownership proof and missing memory explicit.
 - `test_decision_readiness_boolean_scheduler_parameters_are_unavailable` first failed in all four cases against `40e1f20`: FSRS silently accepted boolean identity/state/stability/difficulty and the adapter reported full same-day readiness. The adapter rejects that corrupt serialized state before FSRS coercion.
 - `test_decision_readiness_assistance_only_checkpoint_cannot_clear_failure` and `test_decision_readiness_unattributed_invalidation_cannot_hide_observed_failure` first failed in all seven cases against `c156604`. Hint/reveal checkpoints without a submitted response still prevent linked aggregate clean recovery; foreign, non-study, stale-revision, future and timezone-naive invalidations cannot suppress an otherwise valid observed failure.
+
+
+## Fresh browser qualification critical path (#29, #45)
+
+`tests/runner/ci-browser-shards.test.mjs`, executed by `four isolated browser shards retain exact qualification and reuse regressions` in the regular `tests/unit/ci-reliability-regressions.test.ts` suite, covers:
+
+- `four complete browser shards partition required identities exactly once`
+- `browser shard assignment is deterministic across collection order and tied runtimes`
+- `uneven browser timings and new identities remain exactly once within whole specs`
+- `baseline timing profile retains measured identities and bounds balanced shard load`
+- `actual Playwright shard selectors collect the exact immutable partition`
+- `failed missing cancelled skipped and incomplete shards fail browser qualification`
+- `duplicate extra missing and retried shard identities cannot qualify`
+- `wrong candidate plan assignment runtime commands and workflow shard reports are rejected`
+- `latest shard attempts reject stale success while retaining untouched successful siblings`
+- `browser aggregate contains exactly planned identities and cannot substitute its own results`
+- `modified shard assignment invalidates immutable planning and whole-browser reuse`
+- `whole-browser evidence reuse verifies every original latest shard and rejects incompatible candidates`
+- `targeted development and partial qualification retain single browser execution`
+- `shard diagnostic success preserves the original failed qualification`
+- `separate shard resources artifacts and cleanup retain isolated runner ownership`
+- `browser aggregation CLI rejects extra artifacts and unsuccessful matrix results`
+- `fixture and polling timing unions avoid counting nested spans twice`
+
+The exact-once regression first failed against main `1e0ca502` because the plan had no captured shard assignment. Browser coverage, assertions, deadlines, zero retries, and disposable PostgreSQL/Redis cleanup remain required. Shards keep every spec and its browser projects together; complete qualification validates every shard and the exact aggregate inventory. Timing spans are diagnostic and nested, never additional suite wall time.
+
+`Docker capability probe requests the server version and rejects unavailable or empty daemons` in the same regular browser-shard runner wrapper first failed against `a0c24a7`. Fresh CI observed two pre-test Docker `/info` timeouts (visual and shard 3). The capability probe now requests the equivalent server version endpoint without collecting storage/daemon inventory; the five-second deadline, bind-mount proof and failure on inaccessible/empty daemons remain. No product timeout or retry policy changes.
+
+The aggregation CLI regression creates its own temporary workspace, including when CI begins without local diagnostic directories; the first fresh frontend job exposed and rejected the initial fixture assumption.
+
+`pinned browser preflight detects an inaccessible checkout mount before tests` retains its missing-bind-mount assertion with the fake daemon updated for the server-version endpoint. The fresh current-base frontend gate identified this existing mock as a required consumer of the capability probe.
+
+`layout fixture starts with an empty disposable queue regardless of preceding specs` in the regular `layout.spec.ts` suite first failed after the real `Builder right-click annotation saves the exact clicked square` case: two opening cards remained. Layout now uses the existing disposable product fixture, establishing its previously implicit empty-queue precondition before every case. The original 1px geometry comparisons and disabled-hover assertion remain unchanged. This directly protects whole-spec shard independence and adds one required browser identity (267 → 268).
+
+`repertoire limits update today's queue, persist after reload, and reset to default` reproduced the fresh qualification's failed 2 → 1 queue assertion on a clean disposable stack. The initial two cards were incrementally admitted while their queue generation was still refreshing. The fixture now waits for that initial publication to be `ready` with `refresh_pending: 0` before changing allowance. The focused case then passed, retaining its identity, exact 2 → 1 → 2 counts, save-failure recovery, reload persistence, and original 20-second correctness deadlines. The new precondition also has a bounded 20-second deadline; no application behavior changes.
+
+The subsequent complete run `38049669747` failed this case's final 1 → 2 reset despite a ready preceding generation. Passive fixture queue-publication reads now use the existing background work-class header, retaining the real PostgreSQL/Redis boundary and foreground UI saves. Runtime validation of this follow-up remains pending: the local 53-case shard could not pass Docker capability preflight. This failure is not closed by static checks or the earlier focused pass; all original assertions and deadlines remain required in current-candidate CI.
+
+Run `38051758485` subsequently passed that complete 53-case shard with zero retries/skips, including the daily-limit case in 18.916 seconds. It does not qualify the rebased integration candidate or establish performance acceptance: the desktop PD-82 case failed and main advanced during execution.
+
+`PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence 1280` failed its real import-success button assertion in run `38051758485`. The trace shows the prior fixture's empty queue still refreshing before import. Both existing PD-82 widths now wait for ready/zero-pending/empty publication after fixture cleanup/settings and before the actual UI import. Original import-success, read-only, unknown-evidence and queue-equality assertions and the 60-second test deadline remain required. The new bounded 30-second fixture precondition observes the real PostgreSQL/Redis API with background-classified diagnostic reads; runtime validation remains pending.
