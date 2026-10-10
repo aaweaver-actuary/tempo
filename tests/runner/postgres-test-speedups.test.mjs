@@ -595,3 +595,12 @@ test("pr102 background restoration preserves readiness rejection before engine s
   }), error => error === readinessFailure);
   assert.deepEqual(events, [["background-worker", "background-scheduler"]]);
 });
+
+
+test("issue107 process restart and foreground profile proof runs in regular durability upgrade stage", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  priority_recovery: async () => {"));
+  assert(upgradeAction.includes("check_postgres_next_opponent.py"));
+  for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
+  assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
+});

@@ -2,7 +2,7 @@
 KINDS = frozenset((
     "daily_queue", "defensive_rubric_audit", "defensive_admission", "repertoire_game_refresh",
     "defensive_threat_report_audit", "defensive_threat_scan", "defensive_threat_backfill",
-    "defensive_threat_validate", "priority_retention", "game_sync_record",
+    "defensive_threat_validate", "priority_retention", "next_opponent_profile", "game_sync_record",
     "game_derivation_positions", "game_derivation_compare", "game_derivation_findings",
     "game_derivation_misses", "game_derivation_events", "game_derivation_features",
     "game_derivation_priorities", "repertoire_priority", "daily_statistics", "game_sync_window",
