@@ -284,6 +284,7 @@ def proof_background_wakes():
             execute_pending(recovered_token)
             aborted_token = uuid.uuid4().hex
             server.eval(background_wakes._RESERVE, 2, ownership_key, publication_key, aborted_token)
+            assert publish(headers={'queue_refresh_wake': True}) == aborted_token
             assert server.eval(background_wakes._ABORT, 2, ownership_key, publication_key, aborted_token)
             publish(task_id=aborted_token, headers={background_wakes.WAKE_HEADER: aborted_token,
                                                    background_wakes._PUBLICATION_HEADER: True})
@@ -292,6 +293,7 @@ def proof_background_wakes():
             assert server.get(ownership_key) == following_token
             assert not deliver(recovered_token)
             execute_pending(following_token)
+            assert effective_headers[-1]['queue_refresh_wake'] is True
             assert len(useful_executions) == len(set(useful_executions))
         print(json.dumps({'test': 'test_real_broker_wakes_coalesce_restart_and_fence_delivery',
                           'concurrent_requests': 1000, 'serial_expired_requests': 100,

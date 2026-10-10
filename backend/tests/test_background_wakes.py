@@ -31,7 +31,7 @@ def wake_broker(monkeypatch):
             metadata = self.metadata.get(metadata_key, {})
             if script.startswith('-- reserve'):
                 requirement = arguments[1] if len(arguments) > 1 else '0'
-                if metadata.get('phase') in ('reserved', 'published') and metadata.get('queue_refresh_wake') == '1':
+                if metadata.get('phase') in ('reserved', 'published', 'aborted') and metadata.get('queue_refresh_wake') == '1':
                     requirement = '1'
                 if key in values:
                     if metadata.get('token') == values[key] and requirement == '1':
@@ -487,3 +487,26 @@ def test_upgraded_poll_foreground_denial_retains_only_bounded_marked_opportunity
     assert 0 < (delayed['eta'] - datetime.now(timezone.utc)).total_seconds() <= 1
     assert celery_app.send_task(task.name).id == delayed['task_id']
     assert len(published) == 2
+
+
+def test_coalesced_marked_requirement_survives_reserved_publisher_abort(wake_broker, monkeypatch):
+    from kombu.exceptions import OperationalError
+
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    original_publish = Celery.send_task
+
+    def upgrade_then_fail(app, name, args=None, kwargs=None, **options):
+        assert celery_app.send_task(name, headers={'queue_refresh_wake': True}).id == options['task_id']
+        raise OperationalError('reserved generic publisher failed after marked upgrade')
+
+    monkeypatch.setattr(Celery, 'send_task', upgrade_then_fail)
+    with pytest.raises(OperationalError, match='after marked upgrade'):
+        celery_app.send_task(task_name)
+    assert published == [] and values == {}
+    monkeypatch.setattr(Celery, 'send_task', original_publish)
+    recovered = celery_app.send_task(task_name)
+    assert len(published) == len(values) == 1
+    request_headers = {}
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, recovered.id, request_headers)
+    assert request_headers['queue_refresh_wake'] is True

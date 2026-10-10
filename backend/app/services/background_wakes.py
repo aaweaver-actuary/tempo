@@ -25,10 +25,10 @@ _KEY_PREFIX = 'tempo:wake:'
 _RESERVE = """-- reserve
 local existing = redis.call('GET', KEYS[1])
 -- Join requirements without rewriting a queued/unacked envelope. Transfer
--- outstanding intent on crash recovery, but never revive consumed requirements.
+-- outstanding intent on crash/abort recovery; consumption alone fulfills it.
 local requirement = ARGV[2] or '0'
 local previous_phase = redis.call('HGET', KEYS[2], 'phase')
-if (previous_phase == 'reserved' or previous_phase == 'published') and
+if (previous_phase == 'reserved' or previous_phase == 'published' or previous_phase == 'aborted') and
    redis.call('HGET', KEYS[2], 'queue_refresh_wake') == '1' then
     requirement = '1'
 end
