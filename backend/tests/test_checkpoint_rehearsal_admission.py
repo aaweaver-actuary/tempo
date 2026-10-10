@@ -1,13 +1,21 @@
 """Recovery proof waits only for legitimate foreground admission deferrals."""
 
 from contextlib import nullcontext
+import importlib.util
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from app import command_gateway, tasks
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred
-from scripts import check_postgres_opening_evidence as rehearsal
+
+rehearsal_specification = importlib.util.spec_from_file_location(
+    "checkpoint_admission_rehearsal",
+    Path(__file__).resolve().parents[2] / "scripts/check_postgres_opening_evidence.py",
+)
+rehearsal = importlib.util.module_from_spec(rehearsal_specification)
+rehearsal_specification.loader.exec_module(rehearsal)
 
 
 def prepare_recovery(monkeypatch, claim):
