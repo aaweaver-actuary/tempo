@@ -22,6 +22,17 @@ test("Issue135 foreground queue commit wakes an idle worker without periodic pol
   ], { encoding: "utf8", timeout: 5_000, maxBuffer: 32 * 1024 });
   const settings = await (await request.get(`${api}/settings`)).json();
   try {
+    const fixtureSetupDeadline = performance.now() + 20_000;
+    // Finish the fixture's earlier generation before testing a new committed
+    // wake. The observer must not reserve foreground admission during setup.
+    const fixtureProjection = async () => {
+      const response = await request.get(`${api}/queue/prepared`, { headers: { "X-Tempo-Work-Class": "background" } });
+      expect(response.ok(), await response.text()).toBe(true);
+      return (await response.json()).projection;
+    };
+    await expect.poll(fixtureProjection, { timeout: 20_000, message: "Fixture queue is published before stopping periodic polling" })
+      .toMatchObject({ state: "ready", refresh_pending: 0, last_error: null });
+    const initialGeneration = (await fixtureProjection()).generation;
     docker("stop", "--timeout=1", "background-scheduler");
     // Drain earlier poll deliveries before creating the new queue generation.
     // Inspect real worker capacity; no database/task/broker state is discarded.
@@ -30,12 +41,12 @@ test("Issue135 foreground queue commit wakes an idle worker without periodic pol
       "from app.celery_app import celery_app",
       "from redis import Redis",
       "inspect = celery_app.control.inspect(destination=['celery@'+socket.gethostname()], timeout=1)",
-      "active = inspect.active(); reserved = inspect.reserved()",
+      "active = inspect.active(); reserved = inspect.reserved(); scheduled = inspect.scheduled()",
       "broker = Redis.from_url(celery_app.conf.broker_url, socket_timeout=1)",
       "queued = sum(broker.llen('background' + ('\\x06\\x16'+str(priority) if priority else '')) for priority in (0,3,6,9))",
-      "print(json.dumps({'queued':queued,'active':sum(len(items) for items in (active or {}).values()),'reserved':sum(len(items) for items in (reserved or {}).values()),'worker_present':bool(active) and bool(reserved)}))",
-    ].join("; "))), { timeout: 20_000, message: "Earlier wakes are drained and the background worker is idle" })
-      .toEqual({ queued: 0, active: 0, reserved: 0, worker_present: true });
+      "print(json.dumps({'queued':queued,'active':sum(len(items) for items in (active or {}).values()),'reserved':sum(len(items) for items in (reserved or {}).values()),'scheduled':sum(len(items) for items in (scheduled or {}).values()),'worker_present':bool(active) and bool(reserved) and bool(scheduled)}))",
+    ].join("; "))), { timeout: Math.max(1, fixtureSetupDeadline - performance.now()), message: "Earlier wakes are drained and the background worker is idle" })
+      .toEqual({ queued: 0, active: 0, reserved: 0, scheduled: 0, worker_present: true });
     const saveKey = `issue135-queue-wakeup-${randomUUID()}`;
     const changed = { ...settings, new_cards_per_day: settings.new_cards_per_day === 2 ? 3 : 2 };
     const save = await request.put(`${api}/settings`, { data: changed, headers: { "Idempotency-Key": saveKey } });
@@ -43,6 +54,8 @@ test("Issue135 foreground queue commit wakes an idle worker without periodic pol
     await expect.poll(async () => (await (await request.get(`${api}/queue/prepared`)).json()).projection,
       { timeout: 30_000, message: "Committed queue refresh publishes while periodic polling is stopped" })
       .toMatchObject({ state: "ready", refresh_pending: 0, last_error: null });
+    expect((await (await request.get(`${api}/queue/prepared`)).json()).projection.generation)
+      .toBeGreaterThan(initialGeneration);
     const replay = await request.put(`${api}/settings`, { data: changed, headers: { "Idempotency-Key": saveKey } });
     expect(replay.ok(), await replay.text()).toBe(true);
     expect((await (await request.get(`${api}/queue/prepared`)).json()).projection)
