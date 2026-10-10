@@ -849,6 +849,9 @@ const actions = {
       "config", "--format", "json"], { encoding: "utf8", env: environment });
     assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
     const defaultStack = JSON.parse(defaultConfig.stdout);
+    for (const resolvedStack of [stack, defaultStack])
+      for (const worker of ["defense-engine", "maia-worker"])
+        assert.equal(resolvedStack.services[worker].init, true, `${worker} must forward stop signals through Docker init`);
     assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
     assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
     assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);

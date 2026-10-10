@@ -79,6 +79,8 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     ])).stdout);
     validateTarget(productConfig, { root, project: "tempo", ports: portsFromConfig(productConfig),
       volumes: productVolumes, postgresVolumeKey: "tempo-postgres-data" });
+    for (const worker of ["defense-engine", "maia-worker"])
+      assert.equal(productConfig.services[worker].init, true, "Product workers must match qualification shutdown behavior");
     console.log("PASS current product Compose persistent-volume and API/worker PostgreSQL, passfile/secret, Redis contracts (read-only configuration)");
   } finally { rmSync(productSecrets, { recursive: true, force: true }); }
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,

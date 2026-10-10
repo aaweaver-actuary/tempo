@@ -157,6 +157,7 @@ services:
       api: {condition: service_healthy}
 
   defense-engine:
+    init: true
     build:
       context: .
       dockerfile: Dockerfile.engine
@@ -170,6 +171,7 @@ services:
     cpus: 1
 
   maia-worker:
+    init: true
     build:
       context: .
       dockerfile: Dockerfile.maia

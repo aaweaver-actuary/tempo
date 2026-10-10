@@ -5,6 +5,28 @@ import { join } from "node:path";
 import { atomicJson } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 
+// Observe the existing lifecycle stop boundary; do not add a restart or alter its deadline.
+export async function stopApplicationsAndVerifyWorkerSignals({ runtime, compose, docker }) {
+  const workerServices = ["defense-engine", "maia-worker"];
+  const inspectWorkers = async () => {
+    const ids = (await compose(["ps", "-aq", ...workerServices])).stdout.trim().split(/\s+/).filter(Boolean);
+    assert.equal(ids.length, workerServices.length, "Both real workers must exist at the lifecycle stop boundary");
+    const containers = JSON.parse((await docker(["inspect", ...ids])).stdout);
+    assert.deepEqual(containers.map(container => container.Config.Labels["com.docker.compose.service"]).sort(), [...workerServices].sort());
+    return containers;
+  };
+  for (const container of await inspectWorkers()) {
+    assert.equal(container.HostConfig.Init, true, "Real workers must use Docker init");
+    assert.equal(container.State.Running, true, "Signal proof requires a running worker");
+  }
+  await runtime.stopApplications();
+  for (const container of await inspectWorkers()) {
+    assert.equal(container.State.Running, false, "Lifecycle stop must finish before Redis recreation");
+    assert.equal(container.State.ExitCode, 143, `${container.Config.Labels["com.docker.compose.service"]} must exit through SIGTERM, without forced-kill exit 137`);
+  }
+  console.log("PASS test_postgres_lifecycle_real_workers_stop_through_sigterm_without_forced_kill");
+}
+
 async function waitForFixtureCondition(description, probe, measure) {
   const deadline = performance.now() + 30_000;
   let observation;
@@ -27,7 +49,7 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
     { timeout: 5000, ...options });
   const persistence = async () => Object.fromEntries((await redis(["INFO", "persistence"])).stdout.trim().split(/\r?\n/)
     .filter(line => line.includes(":")).map(line => line.split(":")));
-  await runtime.stopApplications();
+  await stopApplicationsAndVerifyWorkerSignals({ runtime, compose, docker });
   // RDB AOF bases process events while loading even with a small fixture.
   // Per-key delay keeps LOADING observable; CONFIG SET releases it immediately
   // after the assertions, rather than waiting for a fixed sleep or large data.
