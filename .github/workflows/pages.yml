@@ -124,10 +124,9 @@ jobs:
   browser:
     needs: plan
     if: needs.plan.outputs.browser == 'true'
-    uses: ./.github/workflows/verify-layer.yml
+    uses: ./.github/workflows/verify-browser.yml
     with:
       candidate_sha: ${{ needs.plan.outputs.commit }}
-      layer: browser
       diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
   visual:
     needs: plan

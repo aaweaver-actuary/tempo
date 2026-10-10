@@ -8,7 +8,7 @@ const postgresTestTimezone = "America/New_York";
 process.env.TZ = postgresTestTimezone;
 export default defineConfig({
   retries: 0,
-  reporter: process.env.TEMPO_CI_REPORT ? [["line"], ["json", { outputFile: process.env.TEMPO_CI_REPORT }]] : undefined,
+  reporter: process.env.TEMPO_CI_REPORT ? [["line"], ["json", { outputFile: process.env.TEMPO_CI_REPORT }], ["./scripts/browser-timing-reporter.mjs"]] : undefined,
   outputDir: process.env.TEMPO_TEST_OUTPUT_DIR ?? "test-results/browser",
   testDir: "tests/browser",
   testIgnore: ["visual.spec.ts", "performance.spec.ts"],
