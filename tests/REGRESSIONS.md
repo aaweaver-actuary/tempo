@@ -3690,3 +3690,7 @@ fixture above. The route/adoption/session implementation is unchanged.
 PR #150 required timing publication (October 10, 2026):
 
 - `tests/runner/tempo-cli.test.mjs::CLI Redis readiness and application readiness propagate required timing publication failure at redis/application` first failed in both cases after reconciliation: Redis replaced the original publication error, and application readiness retried it. Both now preserve the original required measurement failure immediately. The existing regular CLI Redis readiness group collects both cases; deadlines and ordinary startup retries are unchanged.
+
+PR #150 qualification follow-up — repeated prefix inspection refusals (October 10, 2026):
+
+- `tests/browser/prefix-diagnostics.spec.ts::PD-82 repeated database refusals require explicit read-only inspection retries` injects two consecutive database-section refusals, requires both visible errors and explicit GET/background user retries, then runs the existing real PostgreSQL evidence, unknown/no-observation, unchanged queue and read-only assertions. It first failed at the same missing three Unknown labels as candidate CI shard 4. The proof driver now shares the existing five-second success budget across explicit retries; unexpected statuses/payloads still fail immediately. Product behavior, server budgets and all original assertions remain unchanged.

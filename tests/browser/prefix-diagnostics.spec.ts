@@ -1,6 +1,11 @@
 import { test, expect, api, nav } from "./product-fixtures";
 
-for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence ${width}`, async ({ page, request }) => {
+for (const { width, forcedDatabaseRefusals, title } of [
+  ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0,
+    title: `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence ${width}` })),
+  { width: 1280, forcedDatabaseRefusals: 2,
+    title: "PD-82 repeated database refusals require explicit read-only inspection retries" },
+]) test(title, async ({ page, request }) => {
   const settings = await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`, { data: { ...settings, initial_depth: 3 } });
   // Deleting the preceding fixture and changing settings schedule publication.
@@ -55,31 +60,53 @@ for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay 
   const inspectButton = page.getByRole("button", { name: /^Inspect prefix/ });
   await expect(inspectButton).toBeVisible();
   await expect(inspectButton).toBeEnabled();
+  let injectedDatabaseRefusals = 0;
+  if (forcedDatabaseRefusals) await page.route("**/prefix-diagnostics/*", async route => {
+    if (injectedDatabaseRefusals < forcedDatabaseRefusals) {
+      injectedDatabaseRefusals += 1;
+      await route.fulfill({ status: 503, headers: { "Retry-After": "1" },
+        contentType: "application/json", body: JSON.stringify({ detail: "Waiting for a database section" }) });
+    } else await route.continue();
+  });
   const [initialDetailResponse] = await Promise.all([
     page.waitForResponse(response => response.url().includes("/prefix-diagnostics/") && response.request().method() === "GET", { timeout: 5_000 }),
     inspectButton.click(),
   ]);
-  if (initialDetailResponse.status() === 503) {
-    expect(initialDetailResponse.headers()["retry-after"]).toBe("1");
-    const body = await initialDetailResponse.json();
+  // Repeated database refusals still require explicit user retries. Share the
+  // existing five-second evidence budget rather than extending any deadline.
+  const inspectionDeadline = Date.now() + 5_000;
+  const remainingInspectionMilliseconds = () => {
+    const remaining = inspectionDeadline - Date.now();
+    expect(remaining, "Prefix inspection succeeds within its existing five-second budget").toBeGreaterThan(0);
+    return remaining;
+  };
+  let detailResponse = initialDetailResponse;
+  while (detailResponse.status() === 503) {
+    expect(detailResponse.headers()["retry-after"]).toBe("1");
+    const body = await detailResponse.json();
     if (body.detail === "Waiting for foreground activity") {
       // The same inspection retries admission automatically after release.
       // A database refusal remains a visible error with explicit user retry.
       expect(body).toEqual({ detail: "Waiting for foreground activity" });
       await expect(page.getByRole("status")).toContainText("Loading evidence");
       await expect(page.getByRole("alert")).toHaveCount(0);
+      break;
     } else {
       const temporaryMessage = "Prefix difficulty is temporarily unavailable. Retry after study work settles.";
       expect([temporaryMessage, "Waiting for a database section"]).toContain(body.detail);
       expect(body).toEqual({ detail: body.detail });
-      await expect(page.getByRole("alert")).toContainText(body.detail);
+      await expect(page.getByRole("alert")).toContainText(body.detail, { timeout: remainingInspectionMilliseconds() });
       await expect(page.getByText("Unknown", { exact: true })).toHaveCount(0);
-      await inspectButton.click();
+      [detailResponse] = await Promise.all([
+        page.waitForResponse(response => response.url() === initialDetailResponse.url()
+          && response.request().method() === "GET", { timeout: remainingInspectionMilliseconds() }),
+        inspectButton.click({ timeout: remainingInspectionMilliseconds() }),
+      ]);
     }
-  } else {
-    expect(initialDetailResponse.status()).toBe(200);
   }
-  await expect(page.getByText("Unknown", { exact: true })).toHaveCount(3);
+  if (detailResponse.status() !== 503) expect(detailResponse.status()).toBe(200);
+  if (forcedDatabaseRefusals) expect(injectedDatabaseRefusals).toBe(2);
+  await expect(page.getByText("Unknown", { exact: true })).toHaveCount(3, { timeout: remainingInspectionMilliseconds() });
   await expect(page.getByText("No observations for this decision.", { exact: true })).toHaveCount(3);
   await expect(page.getByText(/Latest 0 of up to 100 attempts/)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
