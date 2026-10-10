@@ -1,5 +1,6 @@
 """Issue #107: populated upgrade, real task restart, source races and foreground proof."""
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -16,13 +17,33 @@ from psycopg import sql
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from scripts.apply_postgres_migrations import MIGRATIONS, apply_migrations
-from app import postgres_store
+from app import postgres_store, tasks
+from app.schema_version import POSTGRES_SCHEMA_VERSION
 from app.services import durable_tasks
 from app.services import postgres_next_opponent as service
-from app.services.redis_admission_gate import foreground_lease
+from app.services import redis_admission_gate
+from app.services.redis_admission_gate import foreground_lease, BackgroundAdmissionDeferred
 
 ADMIN_DSN = os.getenv("TEMPO_PROFILE_REHEARSAL_ADMIN_DSN", "postgresql://postgres@postgres:5432/postgres")
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+
+@contextmanager
+def _owned_profile_admission():
+    """Share only this helper's admission keys with its restart subprocesses."""
+    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
+        raise RuntimeError("Profile admission isolation requires a disposable instance")
+    inherited_namespace = os.getenv("TEMPO_PROFILE_PROOF_ADMISSION_ID")
+    namespace = inherited_namespace or "tempo:test:profile:" + uuid.uuid4().hex
+    owned_keys = namespace + ":foreground", namespace + ":background"
+    try:
+        with patch.dict(os.environ, {"TEMPO_PROFILE_PROOF_ADMISSION_ID": namespace}), \
+                patch.object(redis_admission_gate, "_FOREGROUND_KEY", owned_keys[0]), \
+                patch.object(redis_admission_gate, "_BACKGROUND_KEY", owned_keys[1]):
+            yield
+    finally:
+        if inherited_namespace is None:
+            redis_admission_gate.client().delete(*owned_keys)
 
 
 def child(mode):
@@ -46,7 +67,22 @@ def read():
         return service.read_profile(database)
 
 
-def test_pr116_migration041_malformed_historical_timestamps_upgrade_idempotently(dsn):
+def seed_historical_timestamps(database):
+    for identifier, timestamp in (
+        ('offset', '2026-01-01T00:00:00-05:00'),
+        ('naive', '2026-01-01T00:00:00'),
+        ('malformed', 'not-a-timestamp'),
+        ('calendar', '2026-02-30T00:00:00Z'),
+        ('displacement', '2026-01-01T00:00:00+99:00'),
+    ):
+        database.execute(
+            "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,"
+            "start_fen,moves_json,player_rating,opponent_rating) "
+            "VALUES(%s,'lichess','historical',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500)",
+            (f'historical-{identifier}', timestamp, FEN))
+
+
+def test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently(dsn):
     with psycopg.connect(dsn) as database:
         source_before = database.execute("SELECT * FROM imported_games ORDER BY id").fetchall()
     apply_migrations(dsn)
@@ -69,13 +105,13 @@ def test_pr116_migration041_malformed_historical_timestamps_upgrade_idempotently
         assert len(indexes) == 2 and all(valid and ready for _, valid, ready in indexes)
         assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == source_before
         assert [row[0] for row in database.execute(
-            "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 42))
+            "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
     apply_migrations(dsn)
     with psycopg.connect(dsn) as database:
         assert [row[0] for row in database.execute(
-            "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 42))
+            "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
         assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == source_before
-    print("PASS test_pr116_migration041_malformed_historical_timestamps_upgrade_idempotently")
+    print("PASS test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently")
 
 
 def test_issue107_postgres_profile_upgrade_restart_concurrency_and_replay(dsn):
@@ -138,34 +174,42 @@ def test_issue107_postgres_foreground_contends_without_compute_transaction(dsn, 
         database.execute("UPDATE imported_games SET rating_change=110 WHERE id='profile-game'")
     request()
     claimed = durable_tasks.claim_task(kind=service.TASK_KIND)
-    admission_started = threading.Event()
+    # A raced foreground arrival releases the lease promptly without computing
+    # or consuming a failure attempt. Resume through the normal durable reader.
+    with foreground_lease():
+        assert not tasks._execute_claimed_background_slice(claimed, None)
+        assert read().profile == shifted
+        with psycopg.connect(dsn) as database:
+            deferred = database.execute(
+                "SELECT state,attempt_count,lease_token,payload_json FROM background_tasks WHERE id=%s",
+                (claimed['id'],)).fetchone()
+            assert deferred[:3] == ('retrying', 0, None)
+            assert json.loads(deferred[3]) == claimed['payload']
+    with psycopg.connect(dsn) as database:
+        # Drive the existing one-second retry boundary with explicit persisted
+        # fixture time rather than introducing wall-clock sleeps.
+        database.execute("UPDATE background_tasks SET next_attempt_at='2000-01-01T00:00:00+00:00' WHERE id=%s",
+                         (claimed['id'],))
+    resumed_claim = durable_tasks.claim_task(kind=service.TASK_KIND)
+    assert resumed_claim['id'] == claimed['id'] and resumed_claim['generation'] == claimed['generation']
+    assert resumed_claim['lease_token'] != claimed['lease_token']
     compute_started = threading.Event()
     resume = threading.Event()
     result = []
     errors = []
-    actual_lease = service.background_lease
     actual_build = service.build_profile
-    @contextmanager
-    def observed_admission():
-        admission_started.set()
-        with actual_lease():
-            yield
     def paused_compute(*args, **kwargs):
         compute_started.set()
         assert resume.wait(10)
         return actual_build(*args, **kwargs)
     def run():
         try:
-            result.append(service.execute_profile_slice(claimed))
+            result.append(service.execute_profile_slice(resumed_claim))
         except BaseException as error:
             errors.append(error)
-    with patch.object(service, "background_lease", observed_admission), patch.object(service, "build_profile", paused_compute):
-        with foreground_lease():
-            worker = threading.Thread(target=run)
-            worker.start()
-            assert admission_started.wait(5)
-            assert not compute_started.is_set()
-            assert read().profile == shifted
+    with patch.object(service, "build_profile", paused_compute):
+        worker = threading.Thread(target=run)
+        worker.start()
         try:
             assert compute_started.wait(5)
             with foreground_lease(), psycopg.connect(dsn) as database:
@@ -237,12 +281,26 @@ def test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_sourc
 
     with psycopg.connect(dsn) as database:
         database.execute("UPDATE settings SET lichess_username='future' WHERE id=1")
-        for identifier, played_at in [('future-first', first_eligible), ('future-second', second_eligible)]:
+        for identifier, played_at, speed in [('future-second', second_eligible, 'rapid'),
+                                              ('future-first', first_eligible, 'bullet')]:
             database.execute(
                 "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,"
                 "moves_json,player_rating,opponent_rating,rating_change) "
-                "VALUES(%s,'lichess','future',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500,0)",
-                (identifier, played_at.isoformat(), FEN))
+                "VALUES(%s,'lichess','future',%s,%s,1,'white','1-0',%s,'[]',1450,1500,0)",
+                (identifier, played_at.isoformat(), speed, FEN))
+        earlier = (cutoff + timedelta(hours=1)).isoformat()
+        for identifier, provider, account, rated, excluded, timestamp in [
+            ('future-casual', 'lichess', 'future', 0, 0, earlier),
+            ('future-excluded', 'lichess', 'future', 1, 1, earlier),
+            ('future-other-account', 'lichess', 'other', 1, 0, earlier),
+            ('future-other-provider', 'chess.com', 'future', 1, 0, earlier),
+            ('future-malformed', 'lichess', 'future', 1, 0, '2026-02-30T00:00:00Z'),
+        ]:
+            database.execute(
+                "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,adaptive_excluded,"
+                "color,result,start_fen,moves_json,player_rating,opponent_rating) "
+                "VALUES(%s,%s,%s,%s,'rapid',%s,%s,'white','1-0',%s,'[]',1450,1500)",
+                (identifier, provider, account, timestamp, rated, excluded, FEN))
     source_generation = account_state()['input_generation']
     # Freeze only the profile cutoff; durable delivery keeps its normal lease clock.
     clock = {'now': cutoff}
@@ -279,7 +337,9 @@ def test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_sourc
             assert not service.execute_profile_slice(claimed)
             published = read()
             assert published.profile.game_count == expected_count
-            assert published.profile.cohorts[1].latest_game_at == eligible_at.isoformat()
+            assert published.profile.evidence_watermark == eligible_at.isoformat()
+            assert published.profile.unsupported_speed_mass > 0
+            assert published.availability == ('unsupported' if expected_count == 1 else 'available')
             assert account_state()['input_generation'] == source_generation
             assert account_state()['next_evidence_at'] == (second_eligible if expected_count == 1 else None)
             completed = task_state()
@@ -323,7 +383,116 @@ def test_pr116_far_future_timestamp_does_not_break_profile_deadline_publication(
     print("PASS test_pr116_far_future_timestamp_does_not_break_profile_deadline_publication")
 
 
-def main():
+def test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sources():
+    database_name = "tempo_profile_upgrade_" + uuid.uuid4().hex[:12]
+    dsn = psycopg.conninfo.make_conninfo(ADMIN_DSN, dbname=database_name)
+    with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
+        administrator.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
+    try:
+        with psycopg.connect(dsn) as database:
+            for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
+                if int(migration.name[:3]) == POSTGRES_SCHEMA_VERSION:
+                    break
+                database.execute(migration.read_text(), prepare=False)
+                database.commit()
+            database.execute("INSERT INTO settings(id,lichess_username) VALUES(1,'historical')")
+            seed_historical_timestamps(database)
+            assert [row[0] for row in database.execute(
+                "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION))
+            assert database.execute("SELECT to_regclass('next_opponent_accounts')").fetchone()[0] is None
+            settings_before = database.execute("SELECT * FROM settings").fetchall()
+            turns_before = database.execute("SELECT * FROM background_scheduling_turns").fetchall()
+        test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently(dsn)
+        with psycopg.connect(dsn) as database:
+            assert database.execute("SELECT * FROM settings").fetchall() == settings_before
+            assert database.execute("SELECT * FROM background_scheduling_turns").fetchall() == turns_before
+        print("PASS test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sources")
+    finally:
+        with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
+            administrator.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(database_name)))
+
+
+def test_pr116_concurrent_profile_refresh_requests_share_task_identity_and_generation(dsn):
+    with psycopg.connect(dsn) as database:
+        database.execute("UPDATE settings SET lichess_username='concurrent' WHERE id=1")
+        database.execute("INSERT INTO next_opponent_accounts(account) VALUES('concurrent')")
+    ready = threading.Barrier(2)
+    def concurrent_request():
+        with psycopg.connect(dsn, row_factory=postgres_store.tempo_row_factory) as database:
+            database.execute("SET LOCAL lock_timeout='2s'")
+            ready.wait(timeout=5)
+            return service.request_profile_refresh(postgres_store.PostgresConnection(database))
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        futures = [workers.submit(concurrent_request) for _ in range(2)]
+        assert sorted(future.result(timeout=10) for future in futures) == [False, True]
+    with psycopg.connect(dsn) as database:
+        singleton = database.execute("SELECT id,generation,state FROM background_tasks "
+            "WHERE kind=%s AND deduplication_key='concurrent'", (service.TASK_KIND,)).fetchall()
+        assert len(singleton) == 1 and singleton[0][1:] == (1, 'queued')
+        assert database.execute("SELECT COUNT(*) FROM background_task_events WHERE task_id=%s AND event='enqueued'",
+                                (singleton[0][0],)).fetchone()[0] == 1
+    claimed = durable_tasks.claim_task(allowed_kinds=(service.TASK_KIND,))
+    assert claimed['id'] == singleton[0][0]
+    assert service.execute_profile_slice(claimed)
+    assert read().profile.source_account == 'concurrent'
+    assert not request()
+    print("PASS test_pr116_concurrent_profile_refresh_requests_share_task_identity_and_generation")
+
+
+def test_pr116_older_cutoff_cannot_replace_newer_snapshot_or_future_deadline(dsn):
+    cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    with psycopg.connect(dsn) as database:
+        database.execute("UPDATE settings SET lichess_username='cutoff-replay' WHERE id=1")
+        for index in (1, 2):
+            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,"
+                "start_fen,moves_json,player_rating,opponent_rating) "
+                "VALUES(%s,'lichess','cutoff-replay',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500)",
+                (f'cutoff-game-{index}', (cutoff + timedelta(days=index)).isoformat(), FEN))
+    with patch.object(service, '_current_utc_time', lambda: cutoff):
+        assert request()
+        older_task = durable_tasks.claim_task(kind=service.TASK_KIND)
+        generation, records, ratings, deadline = service._load_inputs('cutoff-replay', cutoff)
+        older_profile = service.build_profile('cutoff-replay', records, as_of=cutoff, rating_records=ratings)
+        assert deadline is not None and older_profile.game_count == 0
+    with psycopg.connect(dsn) as database:
+        database.execute("UPDATE background_tasks SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=%s",
+                         (older_task['id'],))
+    with patch.object(service, '_current_utc_time', lambda: cutoff + timedelta(days=3)):
+        newer_task = durable_tasks.claim_task(kind=service.TASK_KIND)
+        assert newer_task['generation'] == older_task['generation']
+        assert newer_task['lease_token'] != older_task['lease_token']
+        assert service.execute_profile_slice(newer_task)
+        authoritative = read()
+        assert authoritative.profile.game_count == 2
+        with service.background_lease(), postgres_store.connection(background=True) as database:
+            assert not service._publish(database, older_task, generation, older_profile, deadline)
+        assert read() == authoritative
+        with psycopg.connect(dsn) as database:
+            assert database.execute("SELECT next_evidence_at FROM next_opponent_accounts "
+                                    "WHERE account='cutoff-replay'").fetchone()[0] is None
+            assert database.execute("SELECT COUNT(*) FROM next_opponent_snapshots "
+                                    "WHERE account='cutoff-replay'").fetchone()[0] == 1
+    print("PASS test_pr116_older_cutoff_cannot_replace_newer_snapshot_or_future_deadline")
+
+
+def test_pr116_postgres_ancient_and_out_of_range_utc_dates_publish_without_crashing(dsn):
+    with psycopg.connect(dsn) as database:
+        database.execute("UPDATE settings SET lichess_username='ancient' WHERE id=1")
+        for index, timestamp in enumerate(('0001-01-01T00:00:00+01:00', '0001-01-01T00:00:00Z')):
+            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,"
+                "start_fen,moves_json,player_rating,opponent_rating) "
+                "VALUES(%s,'lichess','ancient',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500)",
+                (f'ancient-game-{index}', timestamp, FEN))
+    assert request()
+    assert service.execute_profile_slice(durable_tasks.claim_task(kind=service.TASK_KIND))
+    response = read()
+    assert response.profile.game_count == 1
+    assert response.profile.evidence_watermark == '0001-01-01T00:00:00+00:00'
+    assert response.stale and not request()
+    print("PASS test_pr116_postgres_ancient_and_out_of_range_utc_dates_publish_without_crashing")
+
+
+def _run_profile_proof():
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Next-opponent proof requires a disposable PostgreSQL instance")
     # The maintenance container intentionally lacks application broker wiring.
@@ -347,24 +516,13 @@ def main():
             database.execute("INSERT INTO settings(id,lichess_username) VALUES(1,'Alice')")
             database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,player_rating,opponent_rating,rating_change) VALUES('profile-game','lichess','Alice',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500,0)", (now, FEN))
             database.execute("INSERT INTO game_sync_state(provider,username,status,last_success_at) VALUES('lichess','Alice','idle',%s)", (now,))
-            for identifier, timestamp in (
-                ('offset', '2026-01-01T00:00:00-05:00'),
-                ('naive', '2026-01-01T00:00:00'),
-                ('malformed', 'not-a-timestamp'),
-                ('calendar', '2026-02-30T00:00:00Z'),
-                ('displacement', '2026-01-01T00:00:00+99:00'),
-            ):
-                database.execute(
-                    "INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,"
-                    "start_fen,moves_json,player_rating,opponent_rating) "
-                    "VALUES(%s,'lichess','historical',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500)",
-                    (f'historical-{identifier}', timestamp, FEN))
+            seed_historical_timestamps(database)
         with psycopg.connect(dsn) as database:
             assert [row[0] for row in database.execute(
                 "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 40))
             source_before = database.execute("SELECT * FROM imported_games ORDER BY id").fetchall()
             settings_before = database.execute("SELECT * FROM settings ORDER BY id").fetchall()
-        test_pr116_migration041_malformed_historical_timestamps_upgrade_idempotently(dsn)
+        test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently(dsn)
         with psycopg.connect(dsn) as database:
             assert [row[0] for row in database.execute(
                 "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
@@ -379,6 +537,7 @@ def main():
                 "AND column_name IN ('transaction_timeout_count','transaction_timeout_checkpoint')",
             )} == {'transaction_timeout_count', 'transaction_timeout_checkpoint'}
         print('PASS test_pr116_schema39_upgrade_preserves_sources_and_contiguous_queue_profile_history')
+        test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sources()
         with patch.dict(os.environ, {"TEMPO_DATABASE_WRITE_URL": dsn, "TEMPO_DATABASE_READ_URL": dsn}):
             original = test_issue107_postgres_profile_upgrade_restart_concurrency_and_replay(dsn)
             shifted = test_issue107_postgres_source_race_retains_last_complete_snapshot(dsn, original)
@@ -386,10 +545,21 @@ def main():
             test_issue107_postgres_profile_reads_preserve_queue_and_exclusions(dsn)
             test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_source_mutation(dsn)
             test_pr116_far_future_timestamp_does_not_break_profile_deadline_publication(dsn)
+            test_pr116_concurrent_profile_refresh_requests_share_task_identity_and_generation(dsn)
+            test_pr116_older_cutoff_cannot_replace_newer_snapshot_or_future_deadline(dsn)
+            test_pr116_postgres_ancient_and_out_of_range_utc_dates_publish_without_crashing(dsn)
     finally:
         postgres_store.close_pools()
         with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
             administrator.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(database_name)))
+
+
+def main():
+    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
+        raise RuntimeError("Next-opponent proof requires a disposable PostgreSQL instance")
+    os.environ.setdefault("TEMPO_REDIS_URL", "redis://redis:6379/0")
+    with _owned_profile_admission():
+        _run_profile_proof()
 
 
 if __name__ == "__main__":

@@ -83,3 +83,21 @@ require `node --test tests/runner/postgres-test-speedups.test.mjs` and lint.
 The settled candidate requires elevated `make docker-durability`. CI owns the
 complete required current-head/current-base candidate, including migration
 lifecycle coverage. No local visual suite or overlapping full gate is needed.
+
+## Current-main compatibility
+
+Migration `044_next_opponent_profiles.sql` follows published migrations 001–043;
+readiness is schema 44. The regular proof upgrades populated schema 43 and
+historical schema 39 with the normal strict migration driver and idempotent replay.
+Published migration files are unchanged.
+
+UTC normalization safely excludes timestamps that overflow Python's datetime
+range. A valid near-year-1 anchor retains its evidence by saturating the 90-day
+window at UTC datetime minimum. PostgreSQL-only future deadlines remain text at
+the Python boundary. Normal profile semantics and `next-opponent-v1` are unchanged.
+
+Foreground denial uses the existing durable deferral and retry boundary without
+holding a worker in a polling loop. The profile kind receives bounded persisted
+turns through the scheduler's existing supported-handler extension path. The
+isolated proof owns its Redis admission keys and shares them with restart
+subprocesses; parent application health/read leases remain intact.

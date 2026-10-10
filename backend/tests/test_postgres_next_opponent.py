@@ -12,6 +12,7 @@ import pytest
 from app import main
 from app.services import postgres_next_opponent as service
 from app.services.next_opponent_profile import METHOD_VERSION, build_profile
+from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 from test_next_opponent_profile import CUTOFF, game
 
 
@@ -122,9 +123,11 @@ def test_issue107_stale_source_account_and_delivery_cannot_replace_snapshot(monk
         claimed["payload"]["method_version"] = "retired"
     monkeypatch.setattr(service, "lock_current_slice", lambda *_: change != "delivery")
     monkeypatch.setattr(service, "complete_task_slice_in_transaction", lambda *_: True)
+    database.state["next_evidence_at"] = CUTOFF + timedelta(days=1)
+    authoritative_state = dict(database.state)
     service._publish(database, claimed, 2 if change == "loaded_newer" else 1, profile, CUTOFF.isoformat())
     assert not any(statement.startswith("INSERT INTO next_opponent_snapshots") for statement in database.statements)
-    assert database.state["next_evidence_at"] is None
+    assert database.state == authoritative_state
 
 
 def test_issue107_computation_closes_database_and_interruption_replays_without_partial_publication(monkeypatch):
@@ -158,36 +161,23 @@ def test_issue107_computation_closes_database_and_interruption_replays_without_p
 
 
 def test_issue107_foreground_contention_prevents_profile_database_reads(monkeypatch):
-    foreground_active = threading.Event()
-    admitted = threading.Event()
-    read = threading.Event()
-    errors = []
+    opened_connections = []
     @contextmanager
-    def admission():
-        foreground_active.set()
-        assert admitted.wait(2)
+    def denied_admission():
+        raise BackgroundAdmissionDeferred("Controlled foreground contention")
         yield
     @contextmanager
     def connection(**options):
-        read.set()
+        opened_connections.append(options)
         yield Database()
-    monkeypatch.setattr(service, "background_lease", admission)
     monkeypatch.setattr(service, "connection", connection)
-    def run():
-        try:
-            service._load_inputs("alice", CUTOFF)
-        except Exception as error:
-            errors.append(error)
-    worker = threading.Thread(target=run)
-    worker.start()
-    try:
-        assert foreground_active.wait(2)
-        assert not read.is_set()
-    finally:
-        admitted.set()
-        worker.join(2)
-    assert read.is_set()
-    assert errors == []
+    monkeypatch.setattr(service, "background_lease", denied_admission)
+    with pytest.raises(BackgroundAdmissionDeferred, match="Controlled foreground contention"):
+        service._load_inputs("alice", CUTOFF)
+    assert opened_connections == []
+    monkeypatch.setattr(service, "background_lease", nullcontext)
+    assert service._load_inputs("alice", CUTOFF) is not None
+    assert opened_connections == [{"read_only": True, "background": True}]
 
 
 def test_issue107_api_fixed_speed_and_freshness_do_not_mutate_snapshot_or_queue(monkeypatch):
@@ -258,8 +248,8 @@ def test_issue107_regular_worker_dispatch_completes_profile_receipt_once(monkeyp
     assert service.TASK_KIND in tasks._SUPPORTED_BACKGROUND_KINDS
     monkeypatch.setattr(tasks, "current_delivery", lambda *_: True)
     monkeypatch.setattr(tasks, "defer_paused_defensive_task", lambda *_: False)
-    monkeypatch.setattr(tasks, "measure_handler", lambda *_: nullcontext())
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_: nullcontext())
+    monkeypatch.setattr(tasks, "measure_handler", lambda *_, **_options: nullcontext())
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_, **_options: nullcontext())
     monkeypatch.setattr(tasks, "execute_profile_slice", lambda saved: calls.append(saved) or False)
     monkeypatch.setattr(tasks, "complete_task", lambda *_args, **_kwargs: pytest.fail("handler already owns atomic receipt"))
     assert not tasks._execute_claimed_background_slice(claimed, None)
@@ -299,6 +289,7 @@ def test_issue107_maintenance_profile_proof_configures_disposable_redis(monkeypa
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
     monkeypatch.setattr(proof.sys, "argv", ["proof", "--resume"])
     observed = []
+    monkeypatch.setattr(proof, "_owned_profile_admission", nullcontext)
     monkeypatch.setattr(proof, "child", lambda mode: observed.append((mode, proof.os.environ["TEMPO_REDIS_URL"])))
     from unittest.mock import patch
     with patch.dict(proof.os.environ):
