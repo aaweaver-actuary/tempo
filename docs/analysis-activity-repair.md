@@ -20,6 +20,13 @@ errors, historical coverage failures, and misleading activity status.
    stale-lease replay. Start with named SQLite turn/dispatcher regressions; then
    native PostgreSQL claim, restart, foreground contention and durability. CI owns
    final required candidate validation. Wake and input coalescing follow separately.
+   Wake coalescing scope: no-argument maintenance signals only. Broker ownership
+   is atomic, consumed before execution, and fenced by delivery identity; command
+   payloads and accepted callbacks remain independent. Prove one pending signal
+   under beat/continuation pressure, publication failure recovery, legacy/stale
+   delivery, restart and useful checkpoint replay with unit dispatch tests and a
+   real Redis broker proof in regular PostgreSQL durability. CI owns the final
+   complete candidate gate; no rendered product behavior changes in this slice.
 3. Integrity/segmentation: large generation publication, conservative eligibility,
    restart/replay and authoritative trained-color provenance.
 4. Coverage: safe session status, unchanged-credential recovery, partial-source
@@ -42,6 +49,100 @@ checkout; teardown: `docker rm -v tempo-analysis-unlock-proof` after stopping it
 No persistent host volume or live study data is used.
 
 ### Scheduling candidate evidence
+
+### Wake coalescing candidate evidence
+
+Base scheduling head 2bd79d5, branch codex/analysis-wake-coalescing. The named
+baseline case failed in 0.16 seconds with 1,000 broker deliveries. On the dirty
+candidate, `PYTHONPATH=backend backend/.venv/bin/python -m pytest
+backend/tests/test_background_wakes.py backend/tests/test_daily_study_dispatch.py
+backend/tests/test_postgres_background_timeouts.py
+backend/tests/test_command_transport_errors.py -q --rootdir=.` passed 56 cases
+in 1.81 seconds. `TEMPO_TEST_INSTANCE=disposable
+TEMPO_REDIS_URL=redis://127.0.0.1:49502/0 PYTHONPATH=backend:scripts
+backend/.venv/bin/python scripts/check_redis_background_wakes.py` passed the
+real 1,000-request broker/concurrent producer/restart/fenced replay proof.
+The existing task-owned ephemeral Redis fixture was reused, with only uniquely
+named proof queue/owner keys removed. No study queues were touched. Fast-worker
+consumption preserves the next owner. Publication failure cannot lose durable
+intent; queued ownership and broker messages are preserved together. No product
+rendering changes. Complete PostgreSQL durability/current-head CI remains
+pending; focused Redis evidence is not a full gate pass.
+
+### PR #122 slow-publication verification
+
+The original five-second reservation was a crash-recovery lease, not a safe
+publication lock. At head `82899c21b30ef0a3e7bf93031550cc7ebcb23148`, a controlled
+A-expiry/B-publish/A-complete ordering queued B and A. The consumer rejected A
+without deleting B, and only B executed. However, 100 serial publications that
+outlasted their reservations queued 100 obsolete messages without any surviving
+owner; none could execute. A documentation-only correction was insufficient.
+
+The wake-specific Redis enqueue now atomically fences the latest token, queues
+its serialized envelope, and creates persistent ownership. Expired reservations
+may complete only while still the latest eligible token. One fixed metadata hash
+per maintenance task retains that token after consumption, preventing a late
+publisher from reviving after a successor ran. Failure cleanup cancels only an
+unpublished reservation, including when the broker committed but its response
+was lost. Ordinary commands, callbacks, payload-bearing invocations, and unmarked
+legacy messages retain standard transport behavior.
+
+The contract is one authoritative owned wake, not a universal guarantee about
+physical redelivery counts. Obsolete in-flight deliveries may exist during
+recovery, but cannot execute or remove newer ownership. Consumption precedes
+maintenance work and permits one following wake during execution. Same-token
+ownership-outage retry and Kombu restoration retain their delivery identity and
+update the exact envelope locator atomically with the existing restoration
+transaction. Slow publication does not generate an accumulating stale backlog.
+
+Persistent ownership suppresses requests only while its tracked serialized
+message remains in its exact priority list or its delivery tag remains in
+Kombu's unacknowledged hash. The next beat/continuation request atomically
+replaces an owner whose delivery is absent from both. Presence checks use one
+known queue and one known unacknowledged field; no Redis key scan or global
+cleanup is performed. Queue lookup uses Redis LPOS and therefore depends on the
+length of that exact list; it is not a constant-time queue index.
+
+At this PR's deployment configuration, Celery broker, result backend and wake
+ownership use `TEMPO_REDIS_URL=redis://redis:6379/0`. Redis uses one external
+`tempo-redis-data` volume with `--appendonly yes --appendfsync everysec`; no
+message/key eviction policy is configured beyond Redis's noeviction defaults.
+AOF records the atomic enqueue and ownership together. Everysec is not a
+zero-loss power-failure guarantee. The disposable real restart proof verifies
+that an intact queued envelope and persistent owner survive graceful restart.
+Wake envelopes have no `expires`; queued lists and owners have no TTL after
+publication. `result_expires=86400` applies to results, not broker deliveries.
+See [Redis persistence](https://redis.io/docs/latest/management/persistence/).
+
+Shared Redis persistence alone does not prevent stranding. Kombu 5.6.2 removes
+a queue entry through RPOP/BRPOP before QoS.append writes its unacknowledged
+record. Interruption in that gap can persist a missing delivery while its owner
+survives. Celery can also acknowledge revoked/expired messages before the task
+wrapper runs. Redis visibility recovery applies to registered unacknowledged
+deliveries, not absent records. The disposable AOF proof reproduces the pop gap,
+restarts Redis, and requires recovery on the next request without touching an
+intact neighboring wake. See [Celery Redis recovery](https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/redis.html).
+
+This is an unreleased stacked PR; deployment upgrades all Celery producers and
+workers together. Tokenless legacy invocation remains compatible. Persistent
+owners from the earlier experimental PR implementation lack a delivery locator
+and remain fenced until their original delivery consumes them; do not deploy a
+mixed old/new wake protocol or discard experimental broker messages separately
+from their owners.
+
+Validation scope is the wake/dispatch/deadline/transport-error Python files plus
+real Redis publication, retry/restoration and AOF restart proofs. CI owns the
+complete current-candidate gate after #121 and the dependency stack are rebased.
+No #123+ feature changes or deployment topology changes are included.
+
+Focused validation on the dirty verification candidate based on `82899c21`:
+macOS ARM64, Python 3.14.8, Celery 5.6.3, Kombu 5.6.2 and task-owned Redis 7.4.11.
+The five new baseline cases failed in 6.82 seconds. The requested four-file
+pytest scope passed 65 cases in 3.36 seconds (4.14 seconds including startup).
+The real broker proof and AOF restart/pop-gap proof passed; exact commands,
+durations, revision provenance and resource teardown records are retained under
+root `test-results/pr122-wake-verification-2026-10-09`. `git diff --check` passed.
+These focused results are not complete gate or merge-readiness evidence.
 
 Mixed-kind scheduling replaces numerical-priority dominance with persisted
 interleaved turns (graph/game/graph/game/priority/coverage/sync). One promotion

@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import os
 
-from celery import Celery
+from .services.background_wakes import CoalescingCelery
 
 
 broker_url = os.environ.get("TEMPO_REDIS_URL", "redis://localhost:6379/0")
-celery_app = Celery("tempo", broker=broker_url, backend=broker_url, include=["app.tasks"])
+celery_app = CoalescingCelery("tempo", broker=broker_url, backend=broker_url, include=["app.tasks"])
 celery_app.conf.update(
+    broker_transport="app.services.background_wakes:WakeRedisTransport",
     # A reachable Redis peer can stop replying. Bound individual socket I/O so
     # periodic publication and result bookkeeping can fail and recover.
     broker_transport_options={"socket_timeout": 5, "socket_connect_timeout": 5},
