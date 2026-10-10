@@ -4,7 +4,7 @@ import { posix } from "node:path";
 import { execFileSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
-import { backgroundDiagnosticsSchema, engineAttemptDiagnosticsSchema } from "../../app/domain/schemas/background-diagnostics";
+import { backgroundDiagnosticsSchema, backgroundKindSchema, engineAttemptDiagnosticsSchema } from "../../app/domain/schemas/background-diagnostics";
 import { backgroundDiagnosticsSnapshot, setBackgroundDiagnostics } from "../../app/lib/service-status";
 import { startEngineAttempt } from "../../scripts/engine-attempt-diagnostics.mjs";
 
@@ -15,6 +15,30 @@ from app.services.background_runtime import RuntimeSnapshot
 print(BackgroundDiagnostics(generated_at='2026-10-02T12:00:00+00:00',window_start='2026-10-01T12:05:00+00:00',window_end='2026-10-02T12:00:00+00:00',query_duration_seconds=0.002,available=True,runtime=RuntimeSnapshot(),queues=[QueueDiagnostic(queue='durable',state='retrying',count=1,oldest_pending_age_seconds=600)],counters=[KindCounts(kind='engine_game',counts=MetricCounts(engine_preemptions=2,engine_preempted_seconds=3.5),useful_completion_unit='accepted_position')]).model_dump_json())
 `], { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
 }
+
+it("pr116 diagnostic schemas accept every supported counter and runtime kind with finite bounds", () => {
+  const supportedKinds: string[] = JSON.parse(execFileSync(resolvePython(), ["-c", `
+import json
+from app.services.background_metric_kinds import KINDS
+print(json.dumps(sorted(KINDS)))
+`], { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
+  expect(backgroundKindSchema.options.toSorted()).toEqual(supportedKinds);
+  const raw = fixture();
+  raw.counters = supportedKinds.map(kind => ({ ...structuredClone(raw.counters[0]), kind }));
+  expect(backgroundDiagnosticsSchema.parse(raw)).toEqual(raw);
+  for (const kind of supportedKinds) {
+    raw.runtime.workers = [{ kind, stage: "execution", observed_at: raw.generated_at,
+      process_started_at: raw.generated_at, admission_wait_seconds: 0, handler_elapsed_seconds: 0,
+      execution_seconds: 0, dispatch_wait_seconds: null }];
+    expect(backgroundDiagnosticsSchema.parse(raw)).toEqual(raw);
+  }
+  expect(backgroundDiagnosticsSchema.safeParse({ ...raw,
+    counters: [...raw.counters, raw.counters[0]] }).success).toBe(false);
+  expect(backgroundDiagnosticsSchema.safeParse({ ...raw,
+    counters: [{ ...raw.counters[0], kind: "unsupported-kind" }] }).success).toBe(false);
+  expect(backgroundDiagnosticsSchema.safeParse({ ...raw,
+    runtime: { ...raw.runtime, workers: [{ ...raw.runtime.workers[0], kind: "unsupported-kind" }] } }).success).toBe(false);
+});
 
 it("background diagnostics Python and TypeScript schemas preserve missing counters and reject unsafe public fields", () => {
   const raw = fixture();

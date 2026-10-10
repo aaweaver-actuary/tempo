@@ -33,6 +33,8 @@ def update_game_accounts(
             )
         else:
             database.execute("DELETE FROM game_accounts WHERE provider=?", (provider,))
+    from .services.postgres_next_opponent import request_profile_refresh
+    request_profile_refresh(database)
     return {
         "lichess_username": lichess_username,
         "chesscom_username": chesscom_username,

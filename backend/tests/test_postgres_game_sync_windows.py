@@ -127,7 +127,10 @@ def test_game_sync_window_replay_dispatches_each_staged_record_once(monkeypatch)
     )]
 
 
-def test_game_sync_completion_waits_for_every_window_and_record_receipt():
+def test_game_sync_completion_waits_for_every_window_and_record_receipt(monkeypatch):
+    from app.services import postgres_next_opponent
+    profile_intents = []
+    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     statements = []
     unfinished = {"window": True, "record": True}
 
@@ -157,8 +160,10 @@ def test_game_sync_completion_waits_for_every_window_and_record_receipt():
     assert not finish_game_sync_if_complete(database, "job")
     unfinished["window"] = False
     assert not finish_game_sync_if_complete(database, "job")
+    assert profile_intents == []
     unfinished["record"] = False
     assert finish_game_sync_if_complete(database, "job")
+    assert profile_intents == [database]
     assert sum("UPDATE game_sync_jobs SET status='complete'" in statement
                for statement in statements) == 1
 

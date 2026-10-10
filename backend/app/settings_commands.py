@@ -60,6 +60,8 @@ def update_settings(database: PostgresConnection, payload: dict[str, Any]) -> di
             )
         else:
             database.execute("DELETE FROM game_accounts WHERE provider=?", (provider,))
+    from .services.postgres_next_opponent import request_profile_refresh
+    request_profile_refresh(database)
     request_queue_refresh_in_transaction(database, date.today().isoformat())
     return {**values, "include_defensive_cards_in_daily_stack": bool(
         values["include_defensive_cards_in_daily_stack"]
