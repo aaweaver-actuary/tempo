@@ -470,8 +470,28 @@ def _assert_owned_admission_cleanup():
     assert not unreleased, f'Admission proof leaked {len(unreleased)} owned leases'
 
 
+def test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease():
+    from app.services import redis_admission_gate
+    # Model a deployed health/study request while this local HTTP/worker proof
+    # uses its own synthetic fixture and creates its own foreground contention.
+    server = redis_admission_gate.client()
+    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    with redis_admission_gate.foreground_lease():
+        parent_tokens = set(server.zrange(parent_foreground_key, 0, -1))
+        assert parent_tokens
+        test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+        assert parent_tokens <= set(server.zrange(parent_foreground_key, 0, -1))
+    print('PASS test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease')
+
+
 @_assert_owned_admission_cleanup()
 def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay():
+    from check_postgres_graph_retention import owned_admission_scope
+    with owned_admission_scope('checkpoint-http-' + uuid.uuid4().hex):
+        _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+
+
+def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     from app import main, command_dispatch, command_gateway, database as database_module, tasks
     from app.services import redis_admission_gate
     fixture = _create_color_fixture('white')
@@ -1167,7 +1187,7 @@ if __name__=='__main__':
         assert os.getenv('TEMPO_REDIS_URL'), 'Opening evidence admission proof requires runner-owned Redis'
         from check_postgres_prefix_diagnostics import test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission
         test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission()
-        test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+        test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease()
         test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics()
         test_postgres_checkpoint_driver_retries_only_foreground_deferral()
         test_postgres_opening_checkpoint_reduction_yields_to_foreground_review()
