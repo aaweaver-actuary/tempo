@@ -256,7 +256,7 @@ def proof_deferred_capacity_wakes(identifier):
     from kombu.exceptions import EncodeError, OperationalError
     from app import command_gateway
     from app.celery_app import celery_app
-    from app.services import queue_refresh_wakeup
+    from app.services import queue_refresh_wakeup, background_wakes
 
     queue_date = '2099-10-08'
     observed_clock = [datetime.now(timezone.utc)]
@@ -265,7 +265,9 @@ def proof_deferred_capacity_wakes(identifier):
     broker_queue = Queue(identifier + '-eta', Exchange(identifier + '-eta', type='direct'),
                          routing_key=identifier + '-eta')
     deliveries, publications, executions, polls, operation_ids = [], [], [], [], []
-    delivery_headers = []
+    delivery_messages = []
+    effective_delivery_headers = []
+    ownership_prefix = identifier + ':capacity-owner:'
     fail_next_slice = [True]
     original_send = celery_app.send_task
     original_claim = durable_tasks.claim_task
@@ -318,21 +320,30 @@ def proof_deferred_capacity_wakes(identifier):
                     assert options['retry'] is False and options['ignore_result'] is True
             # Only the transport queue is isolated; the production task name,
             # serializer and ETA envelope pass through real Celery and Redis.
-            original_send(name, **{**options, 'queue': broker_queue})
-            message = capacity_messages.get(block=False)
+            result = original_send(name, **{**options, 'queue': broker_queue})
+            publications.append((options.get('eta', observed_clock[0]), dict(options)))
+            ownership_key, publication_key = background_wakes.ownership_keys(name)
+            server = background_wakes.client(celery_app.conf.broker_url)
+            assert server.get(ownership_key) == result.id
+            assert server.hget(publication_key, 'phase') == 'published'
+            # A coalesced request need not produce a new ready-queue message.
             try:
-                assert message.headers['task'] == name
-                assert message.payload[0] == [] and message.payload[1] == {}
-                delivery_at = (datetime.fromisoformat(message.headers['eta'])
-                    if message.headers.get('eta') else observed_clock[0])
-                assert delivery_at == options.get('eta', observed_clock[0])
-                publications.append((delivery_at, dict(options)))
-                received_headers = {'queue_refresh_wake': message.headers.get('queue_refresh_wake')}
-                assert received_headers == options.get('headers', {'queue_refresh_wake': None})
-                delivery_headers.append(received_headers)
-                heapq.heappush(deliveries, (delivery_at, len(publications)))
-            finally:
-                message.ack()
+                message = capacity_messages.get(block=False)
+            except capacity_messages.Empty:
+                assert any(item.headers[background_wakes.WAKE_HEADER] == result.id
+                           for item in delivery_messages)
+                return result
+            assert message.headers['task'] == name
+            assert message.payload[0] == [] and message.payload[1] == {}
+            delivery_at = (datetime.fromisoformat(message.headers['eta'])
+                if message.headers.get('eta') else observed_clock[0])
+            assert delivery_at == options.get('eta', observed_clock[0])
+            # Celery's ETA timer retains the reserved delivery in Kombu's
+            # unacked ledger. Acknowledgement happens only after execution.
+            assert server.hexists('unacked', message.delivery_tag)
+            delivery_messages.append(message)
+            heapq.heappush(deliveries, (delivery_at, len(delivery_messages)))
+            return result
 
         def claim_owned(**options):
             claimed = original_claim('daily_queue')
@@ -352,16 +363,22 @@ def proof_deferred_capacity_wakes(identifier):
                 if not deliveries or deliveries[0][0] > observed_clock[0]:
                     return
                 delivery_at, publication_number = heapq.heappop(deliveries)
-                tasks.poll_background_tasks.push_request(headers=delivery_headers[publication_number - 1])
+                message = delivery_messages[publication_number - 1]
+                tasks.poll_background_tasks.push_request(
+                    id=message.headers['id'], headers=dict(message.headers))
                 try:
-                    polls.append((delivery_at, tasks.poll_background_tasks.run()))
+                    polls.append((delivery_at, tasks.poll_background_tasks()))
+                    effective_delivery_headers.append(dict(tasks.poll_background_tasks.request.headers))
                 finally:
                     tasks.poll_background_tasks.pop_request()
+                    if not message.acknowledged:
+                        message.ack()
             raise AssertionError('Unbounded capacity delivery loop')
 
         command_gateway.register_command(proof_command, enqueue_from_command)
         try:
-            with patch.object(durable_tasks, '_now', lambda: observed_clock[0]), \
+            with patch.object(background_wakes, '_KEY_PREFIX', ownership_prefix), \
+                    patch.object(durable_tasks, '_now', lambda: observed_clock[0]), \
                     patch.object(queue_refresh_wakeup, 'datetime', WakeClock), \
                     patch.object(celery_app, 'send_task', publish_capacity), \
                     patch.object(tasks, 'claim_task', claim_owned), \
@@ -379,6 +396,7 @@ def proof_deferred_capacity_wakes(identifier):
                         finished.set()
 
                 with tasks.activity_gate.foreground():
+                    celery_app.send_task('app.tasks.poll_background_tasks', queue='background')
                     accepted = command('foreground-denied')
                     before = saved_state()
                     worker = Thread(target=consume_committed_wake)
@@ -389,6 +407,7 @@ def proof_deferred_capacity_wakes(identifier):
                     assert saved_state() == before and executions == []
                     assert before[0]['attempt_count'] == 0 and before[0]['lease_token'] is None
                     assert before[0]['lease_expires_at'] is None and before[0]['last_error'] is None
+                    assert effective_delivery_headers[-1]['queue_refresh_wake'] is True
                     assert len(deliveries) == 1
                     assert deliveries[0][0] == observed_clock[0] + timedelta(seconds=1)
                     for _denial_number in range(2):
@@ -424,7 +443,7 @@ def proof_deferred_capacity_wakes(identifier):
                     assert eligibility == observed_clock[0] + timedelta(seconds=1)
                     assert saved_task['state'] == 'retrying' and saved_task['generation'] == accepted['generation']
                     assert projection['state'] == 'refreshing' and projection['last_error'] is not None
-                    assert polls[first_poll:] == [(observed_clock[0], True), (observed_clock[0], False)]
+                    assert polls[first_poll:] == [(observed_clock[0], True)]
                     assert len(deliveries) == 1 and deliveries[0][0] == eligibility
                     current_generation = accepted['generation']
                     if scenario != 'recover':
@@ -439,7 +458,9 @@ def proof_deferred_capacity_wakes(identifier):
                         assert current_generation == accepted['generation'] + 1
                     observed_clock[0] = eligibility - timedelta(microseconds=1)
                     deliver_due()
-                    assert len(executions) == first_execution + (2 if scenario == 'earlier_progress' else 1)
+                    assert len(executions) == first_execution + 1
+                    # A newer request joins the already-reserved bounded ETA
+                    # opportunity instead of creating an independent early poll.
                     observed_clock[0] = eligibility
                     heapq.heappush(deliveries, deliveries[0])  # duplicate broker delivery
                     deliver_due()
@@ -466,6 +487,12 @@ def proof_deferred_capacity_wakes(identifier):
                 print('PASS test_issue135_postgres_advisory_broker_errors_preserve_committed_receipts')
         finally:
             command_gateway._handlers.pop(proof_command)
+            for message in delivery_messages:
+                if not message.acknowledged:
+                    message.ack()
+            background_wakes.client(celery_app.conf.broker_url).delete(
+                *(ownership_prefix + name + suffix for name in background_wakes.WAKE_TASK_NAMES
+                  for suffix in ('', ':publication')))
             capacity_messages.close()
             broker_queue(broker).delete()
             postgres_store.close_pools()
@@ -766,6 +793,8 @@ def test_issue135_postgres_first_ensure_calls_preserve_singleton_creation():
 def proof():
     from check_redis_socket_deadlines import test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery
     test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery()
+    from check_redis_background_wakes import proof_background_wakes
+    proof_background_wakes()
     from check_postgres_scheduling_turns import proof_scheduling_turns
     proof_scheduling_turns(DSN)
     from check_postgres_queue_unlock_scale import proof_graph_scale
