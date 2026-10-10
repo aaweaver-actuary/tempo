@@ -149,3 +149,17 @@ publication to be ready, with no refresh pending, made the focused case pass.
 This bounded precondition retains the case identity, exact 2 → 1 → 2 counts,
 save/recovery/reload assertions and original correctness deadlines. No application
 behavior changes; final CI measurements include this preparation.
+
+That focused initial-publication pass did not certify the final candidate. Complete
+run `38049669747` subsequently failed the same case's reset from one card to two:
+the preceding generation was ready, but the reset's publication remained pending.
+Passive fixture reads now use the existing background work-class header so their
+observation does not acquire foreground admission against the worker being
+observed. User saves remain real foreground UI operations, and all counts,
+recovery assertions and deadlines remain. Real shard validation of this follow-up
+is pending; the attempted local 53-case shard stopped at Docker capability preflight
+without creating resources. Failed runs are excluded from performance acceptance.
+
+The same complete run independently failed the existing PostgreSQL bounded-preview
+retention assertion. Related production work is tracked in PR #152 and is outside
+this browser execution change; complete qualification remains required.
