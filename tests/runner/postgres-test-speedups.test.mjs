@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
-import { backgroundWorkloadConsumers, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
+import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -31,6 +31,54 @@ function temporaryDirectory(testContext) {
   testContext.after(() => rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
+
+test("preview retention timing succeeds promptly and reports scoped checkpoints at the unchanged deadline", async () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  const retentionDeadline =");
+  const finish = source.indexOf('  console.log("PASS PostgreSQL deleted-route', start);
+  const retention = source.slice(start, finish);
+  for (const pending of [false, true]) {
+    let elapsed = 0, polls = 0, waits = 0;
+    const queries = [];
+    const context = {
+      assert, performance: { now: () => elapsed },
+      repertoireId: "a1111111-1111-1111-1111-111111111111",
+      requestedPreviewIds: new Set(["b2222222-2222-2222-2222-222222222222"]),
+      measureScenario: {
+        detail: async (label, category, action) => {
+          assert.equal(label, "preview_retention"); assert.equal(category, "readiness"); return action();
+        },
+        poll: () => { polls += 1; },
+        wait: async interval => { assert.equal(interval, 100); elapsed += interval; waits += 1; },
+      },
+      readScopedPostgresRows: statement => {
+        queries.push(statement);
+        if (statement.includes("json_build_object")) return {
+          preview_ids: ["active"], active_preview_id: "active", pending,
+        };
+        return [{ state: "retrying", phase: "retention", event_count: 42 }];
+      },
+    };
+    const result = runInNewContext(`(async () => {${retention}})()`, context);
+    if (pending) {
+      await assert.rejects(result, error => {
+        assert.match(error.message, /"preview_count":1,"pending":true/);
+        assert.match(error.message, /"state":"retrying","phase":"retention","event_count":42/);
+        return true;
+      });
+      assert.equal(elapsed, 30_000); assert.equal(waits, 300); assert.equal(polls, 301);
+      assert.match(queries.at(-1), /LIMIT 12/);
+      assert.doesNotMatch(queries.at(-1), /payload_json|last_error/);
+    } else {
+      await result; assert.equal(waits, 0); assert.equal(polls, 1); assert.equal(queries.length, 1);
+    }
+    for (const statement of queries) {
+      assert.match(statement, /SET default_transaction_read_only=on/);
+      assert.match(statement, /SET statement_timeout='250ms'/);
+      assert.match(statement, /repertoire_id='a1111111-1111-1111-1111-111111111111'/);
+    }
+  }
+});
 
 test("default PostgreSQL gate retains every recovery check and one unfiltered browser matrix", () => {
   const options = parse([]);
@@ -126,6 +174,45 @@ test("standalone lifecycle propagates missing dependency acquisition failures wi
   const actions = runInNewContext(`({${runnerSource.slice(imageBuildStartIndex, maintenanceCliStartIndex)}})`, imagePreparationContext);
   await assert.rejects(actions.image_build(), error => error === acquisitionFailure);
   assert(imagePreparationContext.resourcesCreated, "Acquisition failure must leave owned image cleanup armed");
+});
+
+test("maintenance image cleanup is armed before build timing publication can fail", async () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  maintenance_cli: async () => {");
+  const end = source.indexOf("  startup: async () => {", start);
+  const publicationFailure = new Error("Timing publication failed after the image was built");
+  const context = { maintenanceImageCleanupRequired: false,
+    candidateRevision: "candidate", maintenanceImage: "owned-maintenance", run: () => { throw publicationFailure; } };
+  const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
+  await assert.rejects(actions.maintenance_cli(), error => error === publicationFailure);
+  assert.equal(context.maintenanceImageCleanupRequired, true, "The image must remain owned by teardown after successful build / failed recording");
+});
+
+test("maintenance cleanup accepts only an absent owned image and preserves other removal failures", async () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const helperStart = source.indexOf("function isMissingMaintenanceImage(result) {");
+  const helperEnd = source.indexOf("\nfunction run(", helperStart);
+  const isMissingMaintenanceImage = runInNewContext(`(${source.slice(helperStart, helperEnd)})`, { maintenanceImage: "owned-maintenance" });
+  const start = source.indexOf("  cleanup: async () =>");
+  const end = source.indexOf("\n};", start);
+  for (const [removal, accepted] of [
+    [{ status: 0 }, true],
+    [{ status: 1, stderr: "Error response from daemon: No such image: owned-maintenance\n" }, true],
+    [{ status: 1, stderr: "Error response from daemon: No such image: owned-maintenance:latest\n" }, true],
+    [{ status: 1, stderr: "Error response from daemon: No such image: another-owner\n" }, false],
+    [{ status: 1, stderr: "Permission denied" }, false],
+    [{ error: new Error("Docker unavailable"), status: null }, false],
+  ]) {
+    const calls = [];
+    const context = { executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
+      maintenanceImage: "owned-maintenance", environment: {}, secretsDirectory: "owned-secrets", process: { env: {} },
+      spawnSync: (command, args) => { calls.push([command, Array.from(args)]); return removal; },
+      rmSync: path => calls.push(["secrets", path]) };
+    const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
+    if (accepted) await actions.cleanup();
+    else await assert.rejects(actions.cleanup(), /resource cleanup failed/);
+    assert.deepEqual(calls, [["docker", ["image", "rm", "owned-maintenance"]], ["secrets", "owned-secrets"]]);
+  }
 });
 
 test("lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent", async () => {
