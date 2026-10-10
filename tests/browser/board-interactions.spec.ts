@@ -9,6 +9,20 @@ import {
   move,
   clickSquare,
 } from "./product-fixtures";
+import type { APIRequestContext } from "@playwright/test";
+
+async function waitForPriorFixturePublication(request: APIRequestContext) {
+  // Prior fixture deletion schedules queue publication. Let that empty
+  // generation settle before the UI import's own publication begins.
+  await expect.poll(async () => {
+    const response = await request.get(`${api}/queue/today`, { headers: { "X-Tempo-Work-Class": "background" } });
+    if (response.status() === 503 && response.headers()["retry-after"]) return null;
+    expect(response.ok()).toBe(true);
+    const queue = await response.json();
+    return { state: queue.projection.state, pending: queue.projection.refresh_pending, count: queue.cards.length };
+  }, { timeout: 30_000, message: "Previous fixture publication settles empty before Black UI import" })
+    .toEqual({ state: "ready", pending: 0, count: 0 });
+}
 
 test("delayed startup audio never replays earlier board moves and the next move sounds normally", async ({ page }) => {
   let releaseSoundRequests: (() => void) | undefined;
@@ -170,7 +184,9 @@ test("checked king gets a persistent translucent red cue that clears when the po
 
 test("local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh", async ({
   page,
+  request,
 }) => {
+  await waitForPriorFixturePublication(request);
   await page.goto("/");
   await nav(page, "Repertoire");
   await page.getByRole("button", { name: "＋ Import PGN" }).click();
@@ -234,16 +250,7 @@ test("Black Train prompt remains playable with a fully visible narrow board", as
   page,
   request,
 }) => {
-  // Prior fixture deletion schedules queue publication. Let that empty
-  // generation settle before the UI import's own publication begins.
-  await expect.poll(async () => {
-    const response = await request.get(`${api}/queue/today`, { headers: { "X-Tempo-Work-Class": "background" } });
-    if (response.status() === 503 && response.headers()["retry-after"]) return null;
-    expect(response.ok()).toBe(true);
-    const queue = await response.json();
-    return { state: queue.projection.state, pending: queue.projection.refresh_pending, count: queue.cards.length };
-  }, { timeout: 30_000, message: "Previous fixture publication settles empty before Black UI import" })
-    .toEqual({ state: "ready", pending: 0, count: 0 });
+  await waitForPriorFixturePublication(request);
   await page.goto("/");
   await nav(page, "Repertoire");
   await page.getByRole("button", { name: "＋ Import PGN" }).click();
