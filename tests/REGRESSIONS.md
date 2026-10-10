@@ -3361,3 +3361,29 @@ PR #120 / #140 queue-wake compatibility (October 9, 2026; relates to #39 and #13
 - The unchanged real browser proof `Issue135 foreground queue commit wakes an idle worker without periodic polling` remains required with the scheduler stopped and its original 30-second ready-projection deadline. Only marked queue-refresh capacity deliveries retain a delayed opportunity on admission denial; no task claim, discretionary computation, failure budget or control exemption is introduced.
 - Required PostgreSQL CI and the local durability runner both exposed direct native queue preparation inheriting the parent API's foreground lease at `scripts/check_postgres_queue_attempt_recovery.py:445`. The real-game obligation proof now owns UUID-qualified Redis admission keys, like existing native helper proofs; actual API issuance, PostgreSQL contention, priorities, stale publication, restart and review assertions are unchanged. `test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foreground_denial` in `backend/tests/test_admission_proof_ownership.py` covers completion/failure cleanup, preserved parent leases, restored keys and real admission rejection within the owned namespace. Only fixture-local admission signals are isolated; production admission is unchanged.
 - The existing `test_postgres_cutover_rubric_audit_yields_and_discards_stale_replay`, `test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_replay`, and `test_postgres_cutover_threat_report_audit_yields_and_replays_once` first fail with the new optional `queue_refresh_wake` dispatch argument. Their three dispatch stubs now accept that argument; real handler, prompt-yield, checkpoint, direct dispatch and stale-delivery assertions remain unchanged.
+
+
+## PR132 development validation and merge qualification
+
+`tests/runner/ci-development.test.mjs`, owned by the regular `tests/unit/ci-reliability-regressions.test.ts` wrapper, covers draft defaults, ready/draft transitions, current head/base/integration identity, full boundaries and explicit requests, changed-regression execution, rejected missing/failed/cancelled/skipped/filtered/zero results, original diagnostic failures, migration inventory agreement, and same-PR cancellation. Current-main fixture and admission regressions remain unchanged.
+
+
+Additional named PR132 safeguards in the same regular wrapper:
+
+- `PR132 reviewed provider clients select consumer tests without persistence work` unions the audited network leaves with conservative persistence coverage.
+- `PR132 collected core inventory rejects filtered successful results` rejects partial successful execution; `PR132 core inventories retain nested identities and JUnit parameter escaping` and `PR132 pytest collection matches actual class and parameter identities` prove real reporter identity handling.
+- `PR132 plan records repository PR inventory and runtime identity`; `PR132 repository PR number and runtime changes invalidate quality` prevent candidate/repository/runtime confusion.
+- `PR132 suite reuse fingerprint ignores orchestration but rejects candidate suite and runtime changes` keeps exact execution independent of draft/ready metadata.
+- `PR132 reuse binds successful execution jobs artifacts and current aggregation`; `PR132 artifact downloads reject expired or altered bytes`; `PR132 latest matching failure or missing execution cannot reuse an older pass` preserve original execution, artifact provenance, latest-attempt/failure rejection and unavailable-reuse fallback.
+- `PR132 workflow skips setup and execution only after validated reuse` protects the fresh current verification layer and complete non-PR execution boundaries.
+- `PR132 fresh execution cannot silently substitute another workflow run` requires current-run provenance while retaining successful same-run jobs during GitHub's failed-job rerun. It failed before the guard.
+- `PR132 evidence CLI completes imports and falls back when no reusable run exists` reproduces the draft job's circular top-level import failure before the CLI repair, using a local API stub and the actual executable entry point.
+- `PR132 focused contract temporary outputs create an absent parent` protects fresh-checkout native execution; the helper creates its parent before all three temporary report fixtures. It failed before the fix raised during review.
+
+The first four implementation regressions failed on the reconciled baseline: provider leaves selected full backend/durability, filtered core execution was accepted, identity remained version 2, and the reuse helper was absent. The baseline's 111 native contracts passed before those additions. No application, browser-fixture reset, admission proof or durability assertion was changed to obtain these passes.
+
+- `PR132 successful reuse survives draft or sibling aggregation failure without receipt chains` preserves a passing suite when draft eligibility or another layer makes the workflow fail. It first failed under the overly broad workflow-conclusion rejection; a newer failed suite still blocks reuse and the retained source remains an original execution.
+
+- `PR132 frontend runtime inventory expands parameterized execution identities` uses the actual collection command and a regular parameterized suite to compare collected/executed identities. It failed with default static listing before `--no-static-parse`; static placeholders cannot prove complete execution.
+
+- `PR132 explicit development exclusions preserve prior exact-suite qualification for ready transitions` ignores an explicitly inapplicable draft suite when finding the original passing execution. Exclusion itself is never evidence; an applicable missing result still prevents older-pass fallback. It first failed before the exclusion check.

@@ -3,12 +3,75 @@ import { postgresTestStages } from "./postgres-test-plan.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
+import { validateMigrationInventory } from "./check-migration-inventory.mjs";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const mandatoryLayers = ["frontend", "backend", "build", "postgres", "browser"];
+export const runtime = Object.freeze({ runner: "ubuntu-24.04-arm", platform: "linux", architecture: "arm64",
+  node: "22.23.3", python: "3.12.14", rust: "1.99.0", wasmPack: "0.15.0" });
 export const allLayers = [...mandatoryLayers, "lifecycle", "visual", "quarantine"];
 export const inventory = JSON.parse(readFileSync(new URL("./ci-verification-inventory.json", import.meta.url), "utf8"));
 export const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Tier controls qualification; scope controls coverage. They are independent.
+export function verificationContext(eventName, event = {}, complete = false, commit = "", ref = null) {
+  const pullRequest = eventName === "pull_request" ? event.pull_request : null;
+  if (eventName === "pull_request" && (!pullRequest || typeof pullRequest.draft !== "boolean" || !pullRequest.head?.sha || !pullRequest.base?.sha)) throw new Error("Missing PR verification context");
+  const requested = complete || pullRequest?.labels?.some(label => label.name === "ci:full");
+  const repository = event.repository ?? pullRequest?.base?.repo;
+  if (eventName === "pull_request" && (!repository?.full_name || !Number.isInteger(repository.id) || !Number.isInteger(pullRequest.number))) throw new Error("Missing repository or PR identity");
+  return { tier: pullRequest?.draft && !requested ? "development" : "qualification",
+    repository: repository?.full_name ?? null, repositoryId: repository?.id ?? null, pullRequest: pullRequest?.number ?? null,
+    draft: pullRequest?.draft ?? false, head: pullRequest?.head.sha ?? commit,
+    base: pullRequest?.base.sha ?? event.merge_group?.base_sha ?? null, commit, ref, event: eventName,
+    complete: !!requested || !pullRequest };
+}
+
+export function planHash(plan) {
+  const { hash: omittedHash, ...content } = plan;
+  void omittedHash;
+  return createHash("sha256").update(JSON.stringify(content)).digest("hex");
+}
+
+function developmentSelection(paths, comparisonAvailable, sourceInventory) {
+  const selected = new Set(), frontend = new Set(), backend = new Set();
+  let allFrontend = false, allBackend = false, broadBrowser = false;
+  const expand = () => { allLayers.filter(layer => layer !== "quarantine").forEach(layer => selected.add(layer)); allFrontend = allBackend = broadBrowser = true; };
+  if (!comparisonAvailable) expand();
+  for (const path of paths) {
+    const prose = (path.startsWith("docs/") && path.endsWith(".md")) || /(?:^|\/)README\.md$/.test(path) || sourceInventory.prosePaths?.includes(path);
+    if (prose) continue;
+    if (/^tests\/unit\/.*\.test\.tsx?$/.test(path)) {
+      selected.add("frontend"); if (existsSync(path)) frontend.add(path); else allFrontend = true;
+    } else if (/^backend\/tests\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path)) {
+      selected.add("backend"); if (existsSync(path)) backend.add(path); else allBackend = true;
+    } else if (sourceInventory.development?.harnessPaths.includes(path)) {
+      selected.add("frontend"); sourceInventory.development.harnessTests.forEach(file => frontend.add(file));
+    } else if (sourceInventory.development?.postgresFixturePaths.includes(path)) {
+      ["frontend", "postgres"].forEach(layer => selected.add(layer));
+      sourceInventory.development.harnessTests.forEach(file => frontend.add(file));
+    } else if (sourceInventory.development?.nonPersistenceBackend?.some(mapping => mapping.paths.includes(path))) {
+      const mapping = sourceInventory.development.nonPersistenceBackend.find(mapping => mapping.paths.includes(path));
+      if (!existsSync(path) || !mapping.tests?.length || mapping.tests.some(file => !existsSync(file))) expand();
+      else { ["backend", "browser"].forEach(layer => selected.add(layer)); mapping.tests.forEach(file => backend.add(file)); }
+    } else if (path.startsWith("app/")) {
+      if (!sourceInventory.sources.some(mapping => mapping.paths.includes(path))) {
+        broadBrowser = true;
+        selected.add("visual");
+      }
+      allFrontend = true; ["frontend", "build", "browser"].forEach(layer => selected.add(layer));
+      if (/\.(tsx|css|scss|svg|png|jpe?g|webp)$/.test(path)) selected.add("visual");
+    } else if (path.startsWith("backend/app/") || path.startsWith("backend/migrations/")) {
+      if (!path.startsWith("backend/app/services/") || /(?:database|background_runtime|database_executor|redis_admission_gate)\.py$/.test(path)) broadBrowser = true;
+      allBackend = true; ["backend", "postgres", "browser"].forEach(layer => selected.add(layer));
+      if (lifecycleApplicability({ paths: [path], comparisonAvailable: true, complete: false, sourceInventory }).applicable) selected.add("lifecycle");
+    } else if (/^tests\/browser\/.*\.spec\.ts$/.test(path)) {
+      selected.add(/(?:visual|performance)\.spec\.ts$/.test(path) ? "visual" : "browser");
+    } else expand();
+  }
+  return { selected, broadBrowser, core: { frontend: allFrontend ? "all" : [...frontend].sort(), backend: allBackend ? "all" : [...backend].sort() } };
+}
 
 export function lifecycleApplicability({ paths, comparisonAvailable, complete, sourceInventory = inventory }) {
   const lifecycleRules = sourceInventory.lifecycle;
@@ -60,6 +123,16 @@ export function validateInventory(files, sourceInventory = inventory) {
     }
   }
   const classified = Object.values(sourceInventory.families).flat();
+  const backendPaths = new Set();
+  for (const mapping of sourceInventory.development?.nonPersistenceBackend ?? []) {
+    if (!mapping.paths?.length || !mapping.tests?.length || !mapping.families?.length
+      || mapping.tests.some(file => !/^backend\/tests\/(?:.*\/)?test_[^/]+\.py$/.test(file))
+      || mapping.families.some(family => family === "pinned" || !Object.hasOwn(sourceInventory.families, family))) throw new Error("Invalid non-persistence backend mapping");
+    for (const path of mapping.paths) {
+      if (!/^backend\/app\/services\/[^/]+\.py$/.test(path) || backendPaths.has(path)) throw new Error("Invalid non-persistence backend source ownership");
+      backendPaths.add(path);
+    }
+  }
   if (new Set(classified).size !== classified.length) throw new Error("A browser spec belongs to multiple inventory families");
   for (const file of files) if (!classified.includes(file.startsWith("tests/browser/") ? file.slice("tests/browser/".length) : file)) throw new Error(`Unclassified browser spec: ${file}. Register its complete family before planning.`);
 }
@@ -84,7 +157,8 @@ export function collectCases(report) {
   return cases.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-export function verificationPlan({ paths, comparisonAvailable = true, complete = false, files, cases, pinnedCases = [], quarantine = [], sourceInventory = inventory }) {
+export function verificationPlan({ paths, comparisonAvailable = true, complete = false, files, cases, pinnedCases = [], quarantine = [], sourceInventory = inventory, tier = "qualification", draft = false, head = null, base = null, commit = null, event = "local", ref = null, repository = null, repositoryId = null, pullRequest = null }) {
+  if (!["development", "qualification"].includes(tier)) throw new Error("Unknown verification tier");
   validateInventory([...files, ...cases.map(item => item.file), ...pinnedCases.map(item => item.file)], sourceInventory);
   const reasons = [];
   const families = new Set();
@@ -100,12 +174,12 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     const rendering = /\.(css|scss|svg|png|jpe?g|webp)$/.test(path) || /(?:layout|chessboard|board-|visual|theme|pieces)/i.test(path);
     if (rendering || (path.startsWith("app/") && path.endsWith(".tsx"))) visual = true;
     const ordinaryProse = (path.startsWith("docs/") && path.endsWith(".md")) || /(?:^|\/)README\.md$/.test(path) || sourceInventory.prosePaths?.includes(path);
-    const standaloneCoreTest = /^tests\/unit\/[^/]+\.test\.tsx?$/.test(path) || /^backend\/tests\/test_[^/]+\.py$/.test(path);
+    const standaloneCoreTest = /^tests\/unit\/.*\.test\.tsx?$/.test(path) || /^backend\/tests\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path);
     if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: reviewed consumer families; ${mapping.reason}`); }
     else if (specFamily && specFamily !== "pinned") { families.add(specFamily); reasons.push(`${path}: complete ${specFamily} browser family`); }
     else if (specFamily === "pinned") { visual = true; reasons.push(`${path}: pinned rendering verification`); }
-    else if (ordinaryProse) reasons.push(`${path}: prose; core and critical verification still required`);
-    else if (standaloneCoreTest) reasons.push(`${path}: standalone test; complete core and critical verification still required`);
+    else if (ordinaryProse) reasons.push(`${path}: reviewed prose; qualification retains core and critical coverage`);
+    else if (standaloneCoreTest) reasons.push(`${path}: standalone regression; direct development execution and full qualification core`);
     else { broad = true; reasons.push(`${path}: shared or unclassified path; broad verification`); }
   }
   if (broad) { Object.keys(sourceInventory.families).filter(family => family !== "pinned").forEach(family => families.add(family)); visual = true; }
@@ -123,10 +197,8 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
   const collection = cases.map(item => ({ ...item, critical: critical.has(item.id), quarantined: quarantined.has(item.id),
     selected: !quarantined.has(item.id) && (critical.has(item.id) || selectedSpecs.has(item.file) || replacementCoverage.has(item.id)),
     nightly: true, release: true }));
-  const selected = collection.filter(item => item.selected);
   // Partial selection binds project/file/title and permits only collected tags
   // at suite/test boundaries. Complete selection runs the unfiltered inventory.
-  const browserGrep = selected.map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|");
   const lifecycle = lifecycleApplicability({ paths, comparisonAvailable, complete, sourceInventory });
   const jobs = Object.fromEntries(allLayers.map(layer => [layer,
       { required: layer !== "quarantine" && (layer !== "visual" || visual), applicable: layer === "quarantine" ? quarantine.length > 0 : layer !== "visual" || visual,
@@ -136,11 +208,50 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     jobs[layer].mode = mode;
     jobs[layer].planned_stages = postgresTestStages({ mode });
   }
-  const plan = { version: 1, scope: broad && lifecycle.applicable ? "complete" : "targeted", comparisonAvailable, paths, reasons,
+  const regressionFiles = { frontend: [], backend: [] };
+  for (const path of paths.filter(path => existsSync(path))) {
+    if (/^tests\/unit\/.*\.test\.tsx?$/.test(path)) regressionFiles.frontend.push(path);
+    else if (/^tests\/unit\/.*\.test\./.test(path)) throw new Error(`Regression file is outside the regular Vitest collection: ${path}`);
+    else if (/^backend\/tests\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path)) regressionFiles.backend.push(path);
+    else if (/^tests\/runner\/.*\.test\.mjs$/.test(path)) {
+      const owners = sourceInventory.development?.runnerOwners?.[path];
+      if (!owners?.length || owners.some(owner => !existsSync(owner))) throw new Error(`Register regular-suite ownership for runner regression: ${path}`);
+      regressionFiles.frontend.push(...owners);
+    } else if (/^(?:tests|backend\/tests)\/.*\.(?:test|spec)\./.test(path)
+      || /^(?:tests|backend\/tests)\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path)) {
+      if (/^tests\/browser\/[^/]+\.spec\.ts$/.test(path) && files.includes(path.slice("tests/browser/".length))) continue;
+      throw new Error(`Regression file is outside the regular test collection: ${path}`);
+    }
+  }
+  for (const layer of ["frontend", "backend"]) regressionFiles[layer] = [...new Set(regressionFiles[layer])].sort();
+  let core = { frontend: "all", backend: "all" };
+  if (tier === "development") {
+    const development = developmentSelection(paths, comparisonAvailable, sourceInventory);
+    core = development.core;
+    if (!development.broadBrowser) {
+      families.clear();
+      for (const path of paths) {
+        sourceInventory.sources.find(mapping => mapping.paths.includes(path))?.families.forEach(family => families.add(family));
+        sourceInventory.development?.nonPersistenceBackend?.find(mapping => mapping.paths.includes(path))?.families.forEach(family => families.add(family));
+        const family = Object.entries(sourceInventory.families).find(([, specs]) => path.startsWith("tests/browser/") && specs.includes(path.slice("tests/browser/".length)))?.[0];
+        if (family && family !== "pinned") families.add(family);
+      }
+    }
+    const developmentSpecs = new Set([...families].flatMap(family => sourceInventory.families[family]));
+    collection.forEach(item => { item.selected = !item.quarantined && (item.critical || developmentSpecs.has(item.file) || replacementCoverage.has(item.id)); });
+    for (const layer of allLayers) {
+      const applicable = layer === "quarantine" ? development.selected.has("browser") && quarantine.length > 0 : development.selected.has(layer);
+      jobs[layer] = { ...jobs[layer], applicable, required: applicable && layer !== "quarantine",
+        reason: applicable ? "Affected development boundary" : "Development: runtime layer explicitly inapplicable" };
+    }
+    collection.forEach(item => { if (!jobs.browser.applicable) item.selected = false; });
+  }
+  const inventoryRevision = planHash({ inventory: sourceInventory, cases, pinnedCases, quarantine });
+  const plan = { version: 3, repository, repositoryId, pullRequest, inventoryRevision, runtime, tier, draft, head, base, commit, event, ref, core, regressionFiles, scope: (tier === "development" ? mandatoryLayers.every(layer => jobs[layer].required) && jobs.lifecycle.required && jobs.visual.required && collection.every(item => item.selected || item.quarantined) && core.frontend === "all" && core.backend === "all" : broad && lifecycle.applicable) ? "complete" : "targeted", comparisonAvailable, paths, reasons,
     families: [...families].sort(), jobs,
-    browserGrep, collection, quarantine,
-    pinnedCollection: pinnedCases.map(item => ({ ...item, selected: visual, nightly: true, release: true })) };
-  return { ...plan, hash: createHash("sha256").update(JSON.stringify(plan)).digest("hex") };
+    browserGrep: collection.filter(item => item.selected).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|"), collection, quarantine,
+    pinnedCollection: pinnedCases.map(item => ({ ...item, selected: jobs.visual.applicable, nightly: true, release: true })) };
+  return { ...plan, hash: planHash(plan) };
 }
 
 export function validateQuarantine(entries, cases, now = new Date()) {
@@ -158,7 +269,8 @@ function git(args) {
   return result.stdout.trimEnd();
 }
 
-export function createPlan({ base, complete = false } = {}) {
+export function createPlan({ base, complete = false, context = {} } = {}) {
+  validateMigrationInventory(readdirSync("backend/migrations"), readFileSync("backend/app/schema_version.py", "utf8"));
   protectRegressionSuite("tests"); protectRegressionSuite("backend/tests");
   let paths = [], comparisonAvailable = false;
   if (base) {
@@ -177,16 +289,20 @@ export function createPlan({ base, complete = false } = {}) {
   if (pinned.status !== 0) throw new Error(`Pinned collection failed: ${pinned.stderr}\n${pinned.stdout}`);
   const pinnedCases = collectCases(JSON.parse(pinned.stdout));
   const quarantine = JSON.parse(readFileSync("scripts/ci-quarantine.json", "utf8"));
-  return { ...verificationPlan({ paths, comparisonAvailable, complete, files, cases, pinnedCases, quarantine }), commit: git(["rev-parse", "HEAD"]) };
+  const commit = git(["rev-parse", "HEAD"]);
+  if (context.commit && context.commit !== commit) throw new Error("Planner checkout differs from captured integration revision");
+  return verificationPlan({ paths, comparisonAvailable, complete, files, cases, pinnedCases, quarantine, ...context, commit });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.some(argument => !["--complete", "--base"].includes(argument) && argument !== args[args.indexOf("--base") + 1])) throw new Error("Unknown planning argument");
-  const plan = createPlan({ base: args.includes("--base") ? args[args.indexOf("--base") + 1] : undefined, complete: args.includes("--complete") });
+  const context = process.env.GITHUB_EVENT_PATH ? verificationContext(process.env.GITHUB_EVENT_NAME,
+    JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")), args.includes("--complete"), process.env.GITHUB_SHA, process.env.GITHUB_REF) : {};
+  const plan = createPlan({ context, base: context.base ?? (args.includes("--base") ? args[args.indexOf("--base") + 1] : undefined), complete: context.complete ?? args.includes("--complete") });
   mkdirSync("test-results/ci", { recursive: true });
   writeFileSync("test-results/ci/plan.json", JSON.stringify(plan, null, 2));
-  writeFileSync("test-results/ci/collection.json", JSON.stringify({ browser: plan.collection, pinned: plan.pinnedCollection, core: "All frontend/backend unit tests, engine smoke and Rust/build checks run on every PR" }, null, 2));
+  writeFileSync("test-results/ci/collection.json", JSON.stringify({ browser: plan.collection, pinned: plan.pinnedCollection, core: plan.core }, null, 2));
   console.log(`${plan.scope}: ${plan.collection.filter(item => item.selected).length}/${plan.collection.length} regular browser cases; ${plan.collection.filter(item => item.critical).length} global critical; visual=${plan.jobs.visual.applicable}; lifecycle=${plan.jobs.lifecycle.applicable}`);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `visual=${plan.jobs.visual.applicable}\nlifecycle=${plan.jobs.lifecycle.applicable}\nquarantine=${plan.jobs.quarantine.applicable}\nscope=${plan.scope}\n`);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `commit=${plan.commit}\ntier=${plan.tier}\n${["frontend", "backend", "build", "postgres", "browser"].map(layer => `${layer}=${plan.jobs[layer].applicable}`).join("\n")}\nvisual=${plan.jobs.visual.applicable}\nlifecycle=${plan.jobs.lifecycle.applicable}\nquarantine=${plan.jobs.quarantine.applicable}\nscope=${plan.scope}\n`);
 }

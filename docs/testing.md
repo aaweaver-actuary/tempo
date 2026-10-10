@@ -145,11 +145,46 @@ ARM64, Node 26.3.0, Python 3.14.5). `make plan` retains its 13-stage inventory.
 This is inventory proof, not a completed runtime gate; final candidate CI owns
 complete verification. Selection changes follow in a separate commit.
 
+## Development evidence and merge qualification
+
+Draft PRs default to `development`, independently of coverage `scope`. The version-3 immutable hashed plan records repository name/ID, PR number, tier, draft state, head SHA, base SHA, tested integration SHA, inventory revision and required runner/tool versions. All verification and aggregation checkouts use that integration SHA. `development` reports the selected evidence; `quality` always runs and fails for development or any draft, including a draft requesting complete execution. Never require `development` as a merge gate or treat a skipped/neutral check as qualification.
+
+New test-named files must belong to the regular collection or have explicit runner ownership. The planner rejects misplaced tests; unrelated passing suites cannot prove that a new regression executed.
+
+| Draft change | Selected development evidence |
+| --- | --- |
+| Reviewed prose | Conflict-artifact and migration-inventory guards; runtime explicitly inapplicable |
+| Standalone regression files | Changed Vitest/pytest files and declared regular-suite runner wrappers; frontend lint/typecheck when applicable |
+| Product frontend | Whole frontend plus build, critical browser cases and reviewed families; unknown interaction sources expand browser coverage |
+| Reviewed network-only backend leaves | Chess.com/Lichess clients: `test_game_sync.py`, `test_postgres_game_sync_windows.py`, critical browsers and complete games/defense families |
+| Other backend/persistence/concurrency | Whole backend plus complete durability, critical browser cases and reviewed families; shared storage/API boundaries expand browser/lifecycle |
+| CI policy harness | Actual planner, quality and PostgreSQL runner regression wrappers plus lint/typecheck |
+| PostgreSQL fixture | Harness evidence plus complete durability |
+| Unknown/shared runner or infrastructure | Broad subsystem/boundary coverage, including affected real runtime modes |
+
+Changed regressions join selected subsystem coverage, and every changed file must report nonzero execution even when the whole subsystem runs. Native runner regressions declare their regular-suite wrapper owners in the inventory; missing ownership fails planning. Deleted/unavailable test files expand to the full subsystem. Missing comparison history expands every layer. A new unclassified browser spec fails planning until ownership is registered. Persistence is never proven by mocks alone. Migration guards reject duplicate/gapped versions and disagreement with `POSTGRES_SCHEMA_VERSION`; they do not rewrite applied history.
+
+Ready PRs run all frontend/backend/build and durability layers, six critical browser cases plus source-selected complete families, and applicable lifecycle/pinned checks. `ready_for_review`, `converted_to_draft`, `synchronize`, `edited` (including base changes), reopened and label changes are explicitly subscribed. Title/body or unrelated label edits recapture qualification; identical completed suites can use the bounded evidence rule below. `ci:full` requests complete execution on a draft. Manual verification, main, merge-group, nightly and published release events retain complete coverage. Manual execution on a feature branch reports execution evidence and cannot qualify a PR; promote the PR to qualify its actual integration revision. Current PR metadata is checked again during aggregation; changed head/base/draft/integration state invalidates the plan. A new integration candidate needs fresh qualification.
+
+Main protection must require **quality from GitHub Actions**, branches up to date, administrator enforcement, and prohibit force pushes/deletion. Existing stacked feature-base branches can retain their old workflow: freeze them, then create each consolidation candidate from updated main. Do not update every downstream head to distribute this policy.
+
+The complete gate remains mandatory at the merge/release boundary. Locally run the smallest defect regression, affected files after edits, and the subsystem when coherent. Let CI own complete qualification; do not launch an equivalent local full gate concurrently. Diagnose the failed stage before expanding again. Dependency and build caches are reusable; test results from another revision are not. Frontend and backend runners collect test identities before execution, then require the exact collected identities and passing statuses in their execution reports. Vitest collection uses `--no-static-parse` to expand parameterized/dynamic cases; static source listing cannot establish complete runtime inventory. Nonzero counts, changed-file counts, collection, capability checks and successful diagnostics cannot replace those results.
+
+
+### Bounded same-PR suite evidence
+
+Version-2 layer reports separate the current qualification plan hash from a suite execution fingerprint. The fingerprint includes repository/PR, head/base/integration SHAs, inventory revision, exact command arguments, selected tests/scenarios and pinned runtime requirements. Draft/ready state or orchestration metadata alone does not invalidate an identical suite; selective commands cannot match complete commands.
+
+Before expensive setup, `scripts/ci-evidence.mjs` inspects at most 20 recent same-PR workflow runs through the GitHub jobs and artifacts APIs. It requires an original completed passing execution job, the actual execution step, the expected runner, matching report/runtime/inventory/arguments and an unexpired artifact whose downloaded ZIP matches its published SHA-256 digest. A newer matching failure or ambiguous/missing execution prevents fallback to an older pass. Unavailable or invalid reuse executes the suite normally. Receipts retain the original report and plan without rewriting their evidence or creating receipt chains.
+
+The current layer must successfully validate reuse. Aggregation independently validates the original report and refreshes its job, latest attempt and artifact metadata, as well as current PR identity/state/head/base/integration. Missing, cancelled, skipped, filtered, retried, failed, expired or diagnostic-only evidence blocks qualification. Main, merge groups, releases, nightly and manual full requests always execute freshly. No reuse crosses a changed candidate or bypasses migration/schema guards.
+
+
 ## CI verification tiers and reliability evidence
 
 The CI workflow preserves local `make full` and uses separate frontend,
 backend/engine, Rust/WASM/build, PostgreSQL durability, source-selected deployment lifecycle, browser, and pinned
-visual/performance jobs. Every PR runs all units and build checks, all
+visual/performance jobs. Every ready-for-review PR runs all units and build checks, all
 ordinary PostgreSQL durability scenarios, deployment lifecycle when selected,
 and the global browser smoke below. Each
 PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
@@ -199,7 +234,7 @@ record these consumers; missing families and duplicate/ambiguous paths fail
 planning. New executable paths do not inherit coverage from a directory prefix.
 
 Ordinary Markdown under `docs/`, repository README files, explicitly listed
-root prose and `tests/REGRESSIONS.md` retain mandatory core/durability checks
+root prose and `tests/REGRESSIONS.md` in qualification retain mandatory core/durability checks
 and the global smoke. Standalone `tests/unit/*.test.ts(x)` and
 `backend/tests/test_*.py` likewise retain the always-complete core tests without
 adding browser families. Consequently, adding a feature's regression and

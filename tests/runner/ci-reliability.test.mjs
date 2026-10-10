@@ -1,3 +1,4 @@
+import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -35,18 +36,33 @@ const cases = files.filter(file => !inventory.families.pinned.includes(file)).fl
   { id: `${file}:ordinary`, file, title: "ordinary case", fullTitle: `chromium ${file} ordinary case`, project: "chromium" },
   ...inventory.critical.filter(item => item.file === file).map(item => ({ id: `${file}:${item.title}`, file, title: item.title, fullTitle: `chromium ${file} ${item.title}`, project: "chromium" })),
 ]);
-function plan(options = {}) { return { ...verificationPlan({ paths: ["docs/testing.md"], files, cases, pinnedCases: [{ id: "visual", file: "visual.spec.ts", title: "visual" }], ...options }), commit: "revision" }; }
+function plan(options = {}) { return { ...verificationPlan({ commit: "revision", paths: ["docs/testing.md"], files, cases, pinnedCases: [{ id: "visual", file: "visual.spec.ts", title: "visual" }], ...options }), commit: "revision" }; }
 function successfulResults(planned) {
   const needs = { plan: { result: "success" } }, reports = {};
   for (const layer of allLayers) {
     needs[layer] = { result: planned.jobs[layer].applicable ? "success" : "skipped" };
     if (!planned.jobs[layer].applicable) continue;
     reports[layer] = { layer, commit: planned.commit, planHash: planned.hash, completed: true, status: "success", test_count: 123,
-      commands: layerCommands(layer, planned).map(([name]) => ({ name, exit_code: 0 })),
+      files: Object.fromEntries((planned.regressionFiles[layer] ?? []).map(file => [file, 1])),
+      commands: layerCommands(layer, planned).map(([name, command, args]) => ({ name, command, args, exit_code: 0 })),
       tests: (layer === "visual" ? [{ id: "visual" }] : planned.collection.filter(item => layer === "quarantine" ? item.quarantined : item.selected)).map(item => ({ id: item.id, status: "passed", retries: 0 })),
       scenarios: { runner: "postgres", mode: layer === "lifecycle" ? "lifecycle" : "durability", commit: planned.commit, plan_hash: planned.hash,
         planned_stages: planned.jobs[layer].planned_stages ?? postgresTestStages({ mode: "durability" }),
         stages: Object.fromEntries((planned.jobs[layer].planned_stages ?? postgresTestStages({ mode: "durability" })).map(name => [name, { exit_code: 0 }])) } };
+  }
+  for (const [layer, report] of Object.entries(reports)) {
+    report.version = 2;
+    report.executionKey = suiteFingerprint(planned, layer, layerCommands(layer, planned));
+    report.execution = {kind:"executed",runId:100,attempt:1};
+    report.environment = {node:`v${planned.runtime.node}`,platform:planned.runtime.platform,architecture:planned.runtime.architecture,
+      python:`Python ${planned.runtime.python}`,rust:`rustc ${planned.runtime.rust} (fixture)`,wasmPack:`wasm-pack ${planned.runtime.wasmPack}`};
+    if (["frontend","backend"].includes(layer)) {
+      const requiredFiles = [...new Set([...(Array.isArray(planned.core[layer]) ? planned.core[layer] : []), ...(planned.regressionFiles[layer] ?? [])])];
+      const files = requiredFiles.length ? requiredFiles : [layer === "frontend" ? "tests/unit/example.test.ts" : "backend/tests/test_example.py"];
+      report.expectedTests = Array.from({length:10},(_,index)=>({id:`${files[index % files.length]}::case-${index}`,file:files[index % files.length]}));
+      report.tests = report.expectedTests.map(test=>({...test,status:"passed",retries:0}));
+      report.test_count = report.tests.length;
+    }
   }
   return { needs, reports };
 }
@@ -353,7 +369,7 @@ test("deployment requires complete verification and scheduled or verification-on
   const workflow = readFileSync(".github/workflows/pages.yml", "utf8");
   assert(workflow.includes("cron: '0 7 * * *'")); assert(workflow.includes("if: always()\n    needs: [plan,"));
   assert.equal(workflow.split("inputs.verification_only == false").length - 1, 2);
-  for (const layer of mandatoryLayers) assert(workflow.includes(`  ${layer}:\n    needs: plan\n    uses: ./.github/workflows/verify-layer.yml`));
+  for (const layer of mandatoryLayers) assert(workflow.includes(`  ${layer}:\n    needs: plan\n    if: needs.plan.outputs.${layer} == 'true'\n    uses: ./.github/workflows/verify-layer.yml`));
   assert(workflow.includes("lifecycle: ${{ steps.inventory.outputs.lifecycle }}"));
   assert(workflow.includes("  lifecycle:\n    needs: plan\n    if: needs.plan.outputs.lifecycle == 'true'\n    uses: ./.github/workflows/verify-layer.yml"));
   assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]"));

@@ -161,5 +161,52 @@
     {"file": "studies.spec.ts", "title": "FEN-only study square exercise is authored enrolled and reviewed through the real workspace", "covers": "Study grading"},
     {"file": "training-queue-contention.spec.ts", "title": "discovery preview backlog leaves a prompt foreground training queue refresh", "covers": "foreground contention"},
     {"file": "held-drag-preservation.spec.ts", "title": "held training drag survives sync, service, notification and parent updates and drops once", "covers": "held drag preservation"}
-  ]
+  ],
+  "development": {
+    "runnerOwners": {
+      "tests/runner/ci-development.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
+      "tests/runner/ci-reliability.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
+      "tests/runner/merge-conflict-guard.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
+      "tests/runner/postgres-test-speedups.test.mjs": ["tests/unit/postgres-test-speedups-regressions.test.ts"],
+      "tests/runner/tempo-cli.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"]
+    },
+    "postgresFixturePaths": ["scripts/check_postgres_opening_evidence.py"],
+    "harnessPaths": [
+      ".github/workflows/pages.yml",
+      ".github/workflows/verify-layer.yml",
+      "scripts/ci-verification-plan.mjs",
+      "scripts/ci-quality.mjs",
+      "scripts/ci-run-layer.mjs",
+      "scripts/ci-evidence.mjs",
+      "scripts/ci-collect-backend.py",
+      "scripts/check-migration-inventory.mjs",
+      "scripts/ci-verification-inventory.json",
+      "scripts/ci-quarantine.json",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/runner/ci-development.test.mjs",
+      "tests/runner/merge-conflict-guard.test.mjs",
+      "tests/runner/postgres-test-speedups.test.mjs"
+    ],
+    "harnessTests": [
+      "tests/unit/ci-reliability-regressions.test.ts",
+      "tests/unit/postgres-test-speedups-regressions.test.ts"
+    ],
+    "nonPersistenceBackend": [
+      {
+        "paths": [
+          "backend/app/services/chesscom_client.py",
+          "backend/app/services/lichess_client.py"
+        ],
+        "tests": [
+          "backend/tests/test_game_sync.py",
+          "backend/tests/test_postgres_game_sync_windows.py"
+        ],
+        "families": [
+          "defense",
+          "games"
+        ],
+        "reason": "Network-only clients; consumer contracts cover normalized records, bounded windows and provider errors. No database, worker or checkpoint implementation is narrowed."
+      }
+    ]
+  }
 }
