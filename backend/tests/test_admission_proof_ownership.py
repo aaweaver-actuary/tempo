@@ -69,11 +69,15 @@ def test_admission_proof_cleanup_preserves_original_assertion(admission_proof):
             raise AssertionError("Original admission assertion")
 
 
+@pytest.mark.parametrize("proof_script,scope_name", [
+    ("check_postgres_queue_attempt_recovery.py", "_owned_queue_refresh_admission"),
+    ("check_postgres_next_opponent.py", "_owned_profile_admission"),
+])
 @pytest.mark.parametrize("fail_proof", [False, True], ids=["complete", "failure-cleanup"])
 def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foreground_denial(
-    monkeypatch, fail_proof,
+    monkeypatch, fail_proof, proof_script, scope_name,
 ):
-    script_path = Path(__file__).resolve().parents[2] / "scripts/check_postgres_queue_attempt_recovery.py"
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / proof_script
     specification = importlib.util.spec_from_file_location("queue_attempt_proof", script_path)
     proof = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(proof)
@@ -106,7 +110,7 @@ def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foregro
     monkeypatch.setattr(redis_admission_gate, "client", lambda: server)
     expected_error = pytest.raises(RuntimeError, match="Controlled proof failure") if fail_proof else nullcontext()
     with expected_error:
-        with proof._owned_queue_refresh_admission():
+        with getattr(proof, scope_name)():
             owned_keys = redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY
             assert all(key not in parent_keys for key in owned_keys)
             with redis_admission_gate.background_lease():
