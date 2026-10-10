@@ -1,7 +1,7 @@
 import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { verificationPlan, inventory } from '../../scripts/ci-verification-plan.mjs';
 import { evaluateQuality, layerFailures } from '../../scripts/ci-quality.mjs';
@@ -395,4 +395,19 @@ test('PR132 fresh execution cannot silently substitute another workflow run', ()
   assert(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:ready,currentRun:{id:100,attempt:2}}).success);
   evidence.reports.frontend.execution.attempt=3;
   assert.equal(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:ready,currentRun:{id:100,attempt:2}}).success,false);
+});
+
+test('PR132 evidence CLI completes imports and falls back when no reusable run exists', () => {
+  const planned = captured({...pr,draft:false});
+  const directory = mkdtempSync(join(process.cwd(),'test-results','evidence-cli-contract-'));
+  try {
+    mkdirSync(join(directory,'test-results','ci'),{recursive:true});
+    writeFileSync(join(directory,'test-results','ci','plan.json'),JSON.stringify(planned));
+    const gh = join(directory,'gh'), output = join(directory,'outputs');
+    writeFileSync(gh,"#!/bin/sh\nprintf '%s' '{\"workflow_runs\":[]}'\n"); chmodSync(gh,0o755);
+    const result = spawnSync(process.execPath,[join(process.cwd(),'scripts','ci-evidence.mjs'),'frontend'],{
+      cwd:directory,encoding:'utf8',env:{...process.env,PATH:`${directory}:${process.env.PATH}`,GITHUB_REPOSITORY:planned.repository,GITHUB_OUTPUT:output}});
+    assert.equal(result.status,0,result.stdout+result.stderr);
+    assert.equal(readFileSync(output,'utf8'),'reused=false\n');
+  } finally {rmSync(directory,{recursive:true,force:true});}
 });

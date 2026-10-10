@@ -126,7 +126,8 @@ export function findReusableEvidence(plan, layer, commands, runs, readRun, valid
   return null;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Finish this module before importing its consumers; their shared validators import us.
+async function runEvidenceCli() {
   const layer = process.argv[2], plan = JSON.parse(readFileSync("test-results/ci/plan.json", "utf8"));
   let receipt = null;
   try {
@@ -157,4 +158,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log(`${layer}: verified passing original job ${receipt.source.jobId} from run ${receipt.source.runId}`);
   }
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `reused=${!!receipt}\n`);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  runEvidenceCli().catch(error => { console.error(error); process.exitCode = 1; });
 }
