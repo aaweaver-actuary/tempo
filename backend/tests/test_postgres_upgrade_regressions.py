@@ -158,3 +158,41 @@ def test_postgres_cli_history_rejects_identity_result_and_provenance_changes(cli
     before = verification.study_fingerprints(None)
     records[table][column] = "unexpected mutation"
     assert verification.study_fingerprints(None, before) != before
+
+
+@pytest.mark.parametrize('current_readiness', [45, 46])
+def test_pr117_profile_upgrade_rehearsal_starts_at_schema43_after_readiness_advances(tmp_path, monkeypatch, current_readiness):
+    from types import SimpleNamespace
+    from scripts import check_postgres_next_opponent as proof
+    for version in range(1, current_readiness+1):
+        (tmp_path/f'{version:03d}_fixture.sql').write_text(f'MIGRATION {version}')
+    applied_versions = []
+    upgrade_inputs = []
+    class Database:
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+        def commit(self):
+            pass
+        def execute(self, statement, *args, **kwargs):
+            statement = str(statement)
+            if statement.startswith('MIGRATION '):
+                applied_versions.append(int(statement.split()[1]))
+            rows = [(version,) for version in applied_versions] if 'SELECT version FROM' in statement else []
+            value = 'next_opponent_accounts' if 44 in applied_versions else None
+            if 'SELECT version FROM' in statement:
+                return rows
+            return SimpleNamespace(fetchall=lambda: rows, fetchone=lambda: (value,))
+    def upgrade(_dsn):
+        upgrade_inputs.append(tuple(applied_versions))
+        assert applied_versions == list(range(1,44))
+        applied_versions.extend(range(44,current_readiness+1))
+    monkeypatch.setattr(proof, 'MIGRATIONS', tmp_path)
+    monkeypatch.setattr(proof, 'POSTGRES_SCHEMA_VERSION', current_readiness)
+    monkeypatch.setattr(proof.psycopg, 'connect', lambda *args, **kwargs: Database())
+    monkeypatch.setattr(proof, 'seed_historical_timestamps', lambda *_: None)
+    monkeypatch.setattr(proof, 'test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently', upgrade)
+    proof.test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sources()
+    assert upgrade_inputs == [tuple(range(1,44))]
+    assert applied_versions == list(range(1,current_readiness+1))
