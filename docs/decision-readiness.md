@@ -106,8 +106,10 @@ Unverified responses cannot prove clean recall or an incorrect recall judgment.
 A later nonguided successful whole-card study review clears aggregate failure.
 A clean unassisted response to the same occurrence, or a later proven clean
 whole-card pass covering it, clears direct decision failure. Assistance before
-response, reveal/correction after an incorrect response and guided completion
-do not constitute clean recovery. Linked invalidated review observations are
+response, including a hint/reveal checkpoint with no submitted response,
+reveal/correction after an incorrect response and guided completion do not
+constitute clean recovery. An invalidation must itself be a valid study review
+for this card/revision at or before `as_of` before its linked observations are
 excluded. Equal cross-source timestamps retain failure; timestamps are compared
 as UTC instants, not calendar dates or lexicographic strings.
 

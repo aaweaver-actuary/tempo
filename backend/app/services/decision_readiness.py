@@ -165,8 +165,30 @@ def _fsrs_memory_estimate(snapshot: ReadinessSnapshot, as_of: datetime) -> tuple
 def _validated_recall_facts(snapshot: ReadinessSnapshot, occurrences: tuple[dict, ...], as_of: datetime) -> tuple[list[_RecallFact], set[str]]:
     facts: list[_RecallFact] = []
     reasons: set[str] = set()
-    invalidated_attempts = {review.attempt_id for review in snapshot.reviews
-                            if review.invalidated and review.attempt_id is not None}
+    valid_reviews: list[tuple[StudyReviewEvidence, datetime]] = []
+    invalidated_attempts: set[str] = set()
+    for review in snapshot.reviews:
+        if review.source_kind != "study" or review.card_id != snapshot.presentation.card_id:
+            continue
+        if review.card_revision not in (None, snapshot.presentation.card_revision):
+            reasons.add("excluded_review_revision")
+            continue
+        try:
+            reviewed_at = _utc(review.reviewed_at)
+            if review.outcome not in {"correct", "again"}:
+                raise ValueError("Unknown review outcome")
+        except (ValueError, TypeError, AttributeError):
+            reasons.add("invalid_review")
+            continue
+        if reviewed_at > as_of:
+            if not review.invalidated:
+                reasons.add("scheduler_state_after_as_of")
+            continue
+        if review.invalidated:
+            if review.attempt_id is not None:
+                invalidated_attempts.add(review.attempt_id)
+            continue
+        valid_reviews.append((review, reviewed_at))
     assisted_attempts: set[str] = set()
     for observation in snapshot.observations:
         if observation.attempt_id in invalidated_attempts:
@@ -201,28 +223,13 @@ def _validated_recall_facts(snapshot: ReadinessSnapshot, occurrences: tuple[dict
         failed = (observation.manual_failure or (observation.first_response_uci is not None
                   and observation.first_response_uci != occurrence["expected_uci"]
                   and observation.disposition != "unverified"))
-        if responded and not clean:
+        if observation.assistance_before_response or (responded and not clean):
             assisted_attempts.add(observation.attempt_id)
         facts.append(_RecallFact(response_at or observed_at, "decision_observation",
                      f"observation:{observation.attempt_id}:{observation.decision_index}",
                      (observation.decision_index,), clean, failed))
 
-    for review in snapshot.reviews:
-        if review.invalidated or review.source_kind != "study" or review.card_id != snapshot.presentation.card_id:
-            continue
-        if review.card_revision not in (None, snapshot.presentation.card_revision):
-            reasons.add("excluded_review_revision")
-            continue
-        try:
-            reviewed_at = _utc(review.reviewed_at)
-            if review.outcome not in {"correct", "again"}:
-                raise ValueError("Unknown review outcome")
-        except (ValueError, TypeError, AttributeError):
-            reasons.add("invalid_review")
-            continue
-        if reviewed_at > as_of:
-            reasons.add("scheduler_state_after_as_of")
-            continue
+    for review, reviewed_at in valid_reviews:
         current_review = review.card_revision == snapshot.presentation.card_revision
         clean = review.outcome == "correct" and not review.guided and review.attempt_id not in assisted_attempts
         facts.append(_RecallFact(reviewed_at, "study_review", f"review:{review.review_id}",

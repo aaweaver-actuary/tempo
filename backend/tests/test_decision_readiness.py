@@ -425,3 +425,32 @@ def test_decision_readiness_boolean_scheduler_parameters_are_unavailable(field):
     estimate = decision_readiness(replace(current, fsrs_card_json=json.dumps(serialized)), REVIEW_TIME)
     assert estimate.readiness_score is None
     assert estimate.availability == "unavailable" and "invalid_scheduler_state" in estimate.reasons
+
+
+@pytest.mark.parametrize("assistance", ["hint", "revealed"])
+def test_decision_readiness_assistance_only_checkpoint_cannot_clear_failure(assistance):
+    current = reviewed("again")
+    checkpoint = replace(observation(current, at=REVIEW_TIME + timedelta(hours=1)),
+        first_response_uci=None, response_at=None, assistance_before_response=(assistance,))
+    aggregate = StudyReviewEvidence(2, "card", REVIEW_TIME + timedelta(hours=2), "correct",
+                                  card_revision=1, attempt_id=checkpoint.attempt_id)
+    current = replace(current, reviews=current.reviews + (aggregate,), observations=(checkpoint,))
+    estimate = decision_readiness(current, REVIEW_TIME + timedelta(hours=3), decision_index=0)
+    assert estimate.readiness_score == estimate.card_estimate.readiness_score == 0
+    assert estimate.latest_observation_outcome == "unproven"
+
+
+@pytest.mark.parametrize("change", [
+    {"card_id": "foreign"}, {"source_kind": "game"}, {"card_revision": 2},
+    {"reviewed_at": REVIEW_TIME + timedelta(days=1)},
+    {"reviewed_at": REVIEW_TIME.replace(tzinfo=None)},
+])
+def test_decision_readiness_unattributed_invalidation_cannot_hide_observed_failure(change):
+    current = reviewed()
+    failure = observation(current, at=REVIEW_TIME + timedelta(hours=1), response="a2a3")
+    invalidation = replace(StudyReviewEvidence(2, "card", REVIEW_TIME + timedelta(hours=2), "again",
+        card_revision=1, invalidated=True, attempt_id=failure.attempt_id), **change)
+    estimate = decision_readiness(replace(current, reviews=current.reviews + (invalidation,), observations=(failure,)),
+                                  REVIEW_TIME + timedelta(hours=3), decision_index=0)
+    assert estimate.readiness_score == estimate.card_estimate.readiness_score == 0
+    assert estimate.latest_observation_outcome == "failed"
