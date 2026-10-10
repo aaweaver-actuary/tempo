@@ -163,3 +163,15 @@ without creating resources. Failed runs are excluded from performance acceptance
 The same complete run independently failed the existing PostgreSQL bounded-preview
 retention assertion. Related production work is tracked in PR #152 and is outside
 this browser execution change; complete qualification remains required.
+
+Run `38051758485` passed all 53 cases in the Settings shard, including the unchanged
+reset assertion, but failed desktop PD-82 import preparation. Its trace begins with
+the previous fixture's empty queue still refreshing (generation 12, pending 1).
+The new import graph became ready while queue publication remained pending, and
+the real UI displayed its existing preparation error instead of its success button.
+PD-82 now establishes a ready, empty generation after fixture deletion/settings
+and before the actual UI import. The import success button, original 60-second test
+deadline, read-only/unknown-evidence assertions and queue equality remain required.
+Real validation of this additional fixture precondition is pending; this failed
+run is excluded from performance acceptance. Main advanced through PR #153 during
+that run, so a rebased current-integration qualification is also required.
