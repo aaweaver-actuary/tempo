@@ -62,4 +62,4 @@ BEGIN
 END $$;
 CREATE TRIGGER next_opponent_input_change AFTER INSERT OR UPDATE OR DELETE ON imported_games
 FOR EACH ROW EXECUTE FUNCTION invalidate_next_opponent_inputs();
-INSERT INTO tempo_schema_migrations(version) VALUES(40);
+INSERT INTO tempo_schema_migrations(version) VALUES(44);
