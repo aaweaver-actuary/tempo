@@ -8,10 +8,12 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
-import { backgroundWorkloadConsumers, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
+import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
-import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
+import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
+import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
+import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redis-readiness.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
@@ -29,6 +31,54 @@ function temporaryDirectory(testContext) {
   testContext.after(() => rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
+
+test("preview retention timing succeeds promptly and reports scoped checkpoints at the unchanged deadline", async () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  const retentionDeadline =");
+  const finish = source.indexOf('  console.log("PASS PostgreSQL deleted-route', start);
+  const retention = source.slice(start, finish);
+  for (const pending of [false, true]) {
+    let elapsed = 0, polls = 0, waits = 0;
+    const queries = [];
+    const context = {
+      assert, performance: { now: () => elapsed },
+      repertoireId: "a1111111-1111-1111-1111-111111111111",
+      requestedPreviewIds: new Set(["b2222222-2222-2222-2222-222222222222"]),
+      measureScenario: {
+        detail: async (label, category, action) => {
+          assert.equal(label, "preview_retention"); assert.equal(category, "readiness"); return action();
+        },
+        poll: () => { polls += 1; },
+        wait: async interval => { assert.equal(interval, 100); elapsed += interval; waits += 1; },
+      },
+      readScopedPostgresRows: statement => {
+        queries.push(statement);
+        if (statement.includes("json_build_object")) return {
+          preview_ids: ["active"], active_preview_id: "active", pending,
+        };
+        return [{ state: "retrying", phase: "retention", event_count: 42 }];
+      },
+    };
+    const result = runInNewContext(`(async () => {${retention}})()`, context);
+    if (pending) {
+      await assert.rejects(result, error => {
+        assert.match(error.message, /"preview_count":1,"pending":true/);
+        assert.match(error.message, /"state":"retrying","phase":"retention","event_count":42/);
+        return true;
+      });
+      assert.equal(elapsed, 30_000); assert.equal(waits, 300); assert.equal(polls, 301);
+      assert.match(queries.at(-1), /LIMIT 12/);
+      assert.doesNotMatch(queries.at(-1), /payload_json|last_error/);
+    } else {
+      await result; assert.equal(waits, 0); assert.equal(polls, 1); assert.equal(queries.length, 1);
+    }
+    for (const statement of queries) {
+      assert.match(statement, /SET default_transaction_read_only=on/);
+      assert.match(statement, /SET statement_timeout='250ms'/);
+      assert.match(statement, /repertoire_id='a1111111-1111-1111-1111-111111111111'/);
+    }
+  }
+});
 
 test("default PostgreSQL gate retains every recovery check and one unfiltered browser matrix", () => {
   const options = parse([]);
@@ -126,6 +176,45 @@ test("standalone lifecycle propagates missing dependency acquisition failures wi
   assert(imagePreparationContext.resourcesCreated, "Acquisition failure must leave owned image cleanup armed");
 });
 
+test("maintenance image cleanup is armed before build timing publication can fail", async () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  maintenance_cli: async () => {");
+  const end = source.indexOf("  startup: async () => {", start);
+  const publicationFailure = new Error("Timing publication failed after the image was built");
+  const context = { maintenanceImageCleanupRequired: false,
+    candidateRevision: "candidate", maintenanceImage: "owned-maintenance", run: () => { throw publicationFailure; } };
+  const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
+  await assert.rejects(actions.maintenance_cli(), error => error === publicationFailure);
+  assert.equal(context.maintenanceImageCleanupRequired, true, "The image must remain owned by teardown after successful build / failed recording");
+});
+
+test("maintenance cleanup accepts only an absent owned image and preserves other removal failures", async () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const helperStart = source.indexOf("function isMissingMaintenanceImage(result) {");
+  const helperEnd = source.indexOf("\nfunction run(", helperStart);
+  const isMissingMaintenanceImage = runInNewContext(`(${source.slice(helperStart, helperEnd)})`, { maintenanceImage: "owned-maintenance" });
+  const start = source.indexOf("  cleanup: async () =>");
+  const end = source.indexOf("\n};", start);
+  for (const [removal, accepted] of [
+    [{ status: 0 }, true],
+    [{ status: 1, stderr: "Error response from daemon: No such image: owned-maintenance\n" }, true],
+    [{ status: 1, stderr: "Error response from daemon: No such image: owned-maintenance:latest\n" }, true],
+    [{ status: 1, stderr: "Error response from daemon: No such image: another-owner\n" }, false],
+    [{ status: 1, stderr: "Permission denied" }, false],
+    [{ error: new Error("Docker unavailable"), status: null }, false],
+  ]) {
+    const calls = [];
+    const context = { executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
+      maintenanceImage: "owned-maintenance", environment: {}, secretsDirectory: "owned-secrets", process: { env: {} },
+      spawnSync: (command, args) => { calls.push([command, Array.from(args)]); return removal; },
+      rmSync: path => calls.push(["secrets", path]) };
+    const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
+    if (accepted) await actions.cleanup();
+    else await assert.rejects(actions.cleanup(), /resource cleanup failed/);
+    assert.deepEqual(calls, [["docker", ["image", "rm", "owned-maintenance"]], ["secrets", "owned-secrets"]]);
+  }
+});
+
 test("lifecycle rehearsal restores full-mode applications after failure and never starts the standalone parent", async () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf("  deployment_lifecycle: async () => {");
@@ -135,6 +224,7 @@ test("lifecycle rehearsal restores full-mode applications after failure and neve
     const calls = [];
     const rehearsalFailure = new Error("rehearsal failed");
     const context = { options: { mode }, project: "fixture", environment: {}, candidateRevision: "revision",
+      measureScenario: directMeasurement,
       buildLabels: "labels", compose: ["compose"], join, process: { cwd: () => root },
       verifyTempoCliLifecycle: async () => { calls.push("rehearsal"); if (shouldFail) throw rehearsalFailure; },
       run: (_command, args) => calls.push(args.includes("stop") ? "stop" : "restore"),
@@ -192,6 +282,7 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
   let backupVerified = false;
   let overrideReplayed = false;
   const context = {
+    measureScenario: { poll() {}, wait: async () => {} },
     assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
     workloadConsumers: ['background-worker','background-scheduler','defense-engine'],
     runPrefixApplicationProof: () => {},
@@ -367,6 +458,137 @@ test("timings retain successful, failed, and cleanup durations without recording
   await assert.rejects(measure("startup", () => {}), /Duplicate/);
 });
 
+test("nested PostgreSQL timings preserve start order, parent identity, process outcomes and secret exclusion", async context => {
+  const outputPath = join(temporaryDirectory(context), "timings.json");
+  let now = 1000;
+  const measure = createScenarioTimer(outputPath, { planned_stages: ["deployment_lifecycle"] }, () => now);
+  await measure("deployment_lifecycle", async () => {
+    assert.equal(await measure.detail("rehearsal", "scenario", async () => {
+      now += 100;
+      assert.equal(measure.syncDetail("compose_shutdown", "restart", () => {
+        now += 200;
+        measure.processResult({ status: 143, stdout: "secret-canary", args: ["secret-canary"] });
+        return 42;
+      }), 42);
+      await assert.rejects(measure.detail("migration_rejected", "migration", () => {
+        now += 50;
+        throw new Error("secret-canary");
+      }), /secret-canary/);
+      return "verified";
+    }), "verified");
+  });
+  const serialized = readFileSync(outputPath, "utf8");
+  const report = JSON.parse(serialized);
+  assert.deepEqual(report.details.map(({ id, parent_id, label, exit_code, completed }) =>
+    ({ id, parent_id, label, exit_code, completed })), [
+    { id: 0, parent_id: null, label: "rehearsal", exit_code: 0, completed: true },
+    { id: 1, parent_id: 0, label: "compose_shutdown", exit_code: 0, completed: true },
+    { id: 2, parent_id: 0, label: "migration_rejected", exit_code: 1, completed: true },
+  ]);
+  assert.deepEqual(report.details.map(entry => entry.start_seconds), [0, 0.1, 0.3]);
+  assert.deepEqual(report.details.map(entry => entry.duration_seconds), [0.35, 0.2, 0.05]);
+  assert.equal(report.details[1].process_exit_code, 143);
+  assert.deepEqual(Object.keys(report.stages), ["deployment_lifecycle"]);
+  assert.equal(report.stages.deployment_lifecycle.exit_code, 0, "Expected rejection is still asserted by the scenario");
+  assert(!serialized.includes("secret-canary"));
+});
+
+test("nested PostgreSQL timers keep concurrent Redis observation and deployment ownership separate", async context => {
+  const outputPath = join(temporaryDirectory(context), "timings.json");
+  const measure = createScenarioTimer(outputPath, {});
+  let releaseDeployment;
+  await measure("deployment_lifecycle", async () => {
+    const deployment = measure.detail("redis_loading", "scenario", async () => {
+      await new Promise(resolveDeployment => { releaseDeployment = resolveDeployment; });
+      await measure.detail("redis_probe", "readiness", () => { measure.poll(); });
+    });
+    await measure.detail("loading_observation", "readiness", () => { measure.poll(); });
+    releaseDeployment();
+    await deployment;
+  });
+  const { details } = JSON.parse(readFileSync(outputPath, "utf8"));
+  assert.deepEqual(details.map(entry => entry.parent_id), [null, null, 0]);
+  assert.deepEqual(details.map(entry => entry.poll_count ?? 0), [0, 1, 1]);
+});
+
+test("nested PostgreSQL waiting records elapsed time and polls without changing the requested interval", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const outputPath = join(temporaryDirectory(context), "timings.json");
+  let now = 0;
+  const measure = createScenarioTimer(outputPath, {}, () => now);
+  const execution = measure("startup", () => measure.detail("api_ready", "readiness", async () => {
+    measure.poll();
+    await measure.wait(1000);
+    measure.poll();
+  }));
+  now = 1000;
+  context.mock.timers.tick(1000);
+  await execution;
+  const { details } = JSON.parse(readFileSync(outputPath, "utf8"));
+  assert.equal(details[0].waiting_seconds, 1);
+  assert.equal(details[0].poll_count, 2);
+  assert.equal(details[0].duration_seconds, 1);
+});
+
+test("nested timing write failures propagate and cleanup executes even when its measurement also fails", async context => {
+  const directory = temporaryDirectory(context);
+  const blockedPath = join(directory, "file");
+  writeFileSync(blockedPath, "blocked");
+  const measure = createScenarioTimer(join(blockedPath, "timings.json"), {});
+  const failure = new Error("migration failed");
+  let cleaned = false;
+  await assert.rejects(executePostgresTestPlan(["schema_migrations", "cleanup"], {
+    schema_migrations: () => measure.detail("schema_check", "migration", () => { throw failure; }),
+    cleanup: () => measure.syncDetail("compose_teardown", "cleanup", () => { cleaned = true; }),
+  }, measure), error => {
+    assert(error instanceof AggregateError);
+    assert.equal(error.errors[0].errors[0].errors[0], failure);
+    return true;
+  });
+  assert(cleaned);
+});
+
+test("PostgreSQL command timings classify fixed operations without retaining arguments or credentials", () => {
+  for (const [args, expected] of [
+    [["compose", "build", "secret-canary"], { label: "image_build", category: "build" }],
+    [["compose", "stop", "defense-engine"], { label: "compose_shutdown", category: "restart" }],
+    [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
+    [["compose", "up", "--no-recreate", "--wait", "--wait-timeout", "180", "postgres"],
+      { label: "postgres_ready", category: "readiness" }],
+    [["run", "migration", "scripts/apply_postgres_migrations.py", "--writer-passfile", "secret-canary"],
+      { label: "apply_postgres_migrations", category: "migration" }],
+    [["run", "schema", "/source/scripts/check_postgres_deletion.py"],
+      { label: "check_postgres_deletion", category: "scenario" }],
+    [["exec", "sh", "pg_dump --password=secret-canary"], { label: "backup_restore", category: "backup" }],
+    [["inspect", "secret-canary"], { label: "resource_inspection", category: "inspection" }],
+  ]) {
+    assert.deepEqual(postgresCommandTiming(args), expected);
+    assert(!JSON.stringify(postgresCommandTiming(args)).includes("secret-canary"));
+  }
+});
+
+test("nested timing cannot qualify failed, missing or stale durability and lifecycle inventories", () => {
+  for (const [layer, mode] of [["postgres", "durability"], ["lifecycle", "lifecycle"]]) {
+    const planned_stages = postgresTestStages({ mode });
+    const plan = { commit: "candidate", hash: "immutable-plan", jobs: { [layer]: { mode, planned_stages } } };
+    const report = { runner: "postgres", mode, commit: plan.commit, plan_hash: plan.hash, planned_stages,
+      stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
+      details: [{ label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
+    assert.doesNotThrow(() => validatePostgresScenarios(layer, plan, report));
+    for (const modify of [
+      candidate => { candidate.stages[planned_stages[0]].exit_code = 1; },
+      candidate => { delete candidate.stages[planned_stages[0]]; },
+      candidate => { candidate.commit = "stale"; },
+      candidate => { candidate.plan_hash = "stale"; },
+      candidate => { candidate.planned_stages = candidate.planned_stages.slice(1); },
+    ]) {
+      const invalid = structuredClone(report);
+      modify(invalid);
+      assert.throws(() => validatePostgresScenarios(layer, plan, invalid), /missing, failed or mismatched/);
+    }
+  }
+});
+
 test("completed invalid study fixtures fail immediately instead of polling for impossible admission", () => {
   assert.throws(() => assertNoCompletedFixtureConflict({
     scan_status: "idle", status: "needs_repair", issues: [{ kind: "conflicting_move" }],
@@ -430,6 +652,38 @@ test("disposable PostgreSQL backup handles INT and TERM while waiting on its sle
   const syntaxCheck = spawnSync("sh", ["-n", "-c", backupCommand], { encoding: "utf8", timeout: 5_000 });
   assert.ifError(syntaxCheck.error);
   assert.equal(syntaxCheck.status, 0, syntaxCheck.stderr);
+});
+
+test("both PostgreSQL product definitions and the disposable definition enable init for both workers", () => {
+  for (const file of ["docker-compose.yml", "docker-compose.postgres.yml", "docker-compose.postgres.test.yml"]) {
+    const source = readFileSync(join(root, file), "utf8");
+    for (const worker of ["defense-engine", "maia-worker"]) {
+      const service = source.match(new RegExp(`^  ${worker}:\\r?\\n([\\s\\S]*?)(?=^  \\S|^\\S)`, "m"))?.[1];
+      assert(service, `${file} must define ${worker}`);
+      assert.match(service, /^    init: true$/m, `${file}: ${worker} must forward shutdown signals`);
+    }
+  }
+});
+
+test("real worker signal verification retains the existing stop boundary and rejects forced kill or missing workers", async () => {
+  for (const fault of [null, "forced_kill", "missing", "already_stopped", "no_init"]) {
+    let stopped = false;
+    let stops = 0;
+    const containers = ["defense-engine", "maia-worker"].map(service => ({
+      Config: { Labels: { "com.docker.compose.service": service } }, HostConfig: { Init: fault !== "no_init" },
+      State: { Running: true, ExitCode: 0 },
+    }));
+    const proof = stopApplicationsAndVerifyWorkerSignals({
+      runtime: { stopApplications: async () => { stopped = true; stops += 1; } },
+      compose: async () => ({ stdout: fault === "missing" ? "engine\n" : "engine\nmaia\n" }),
+      docker: async () => ({ stdout: JSON.stringify(containers.map(container => ({ ...container,
+        State: { Running: !stopped && fault !== "already_stopped", ExitCode: stopped ? fault === "forced_kill" ? 137 : 143 : 0 },
+      }))) }),
+    });
+    if (fault) await assert.rejects(proof, /must|requires/);
+    else await proof;
+    assert.equal(stops, [null, "forced_kill"].includes(fault) ? 1 : 0);
+  }
 });
 
 test("scenario dispatch builds once and all startup paths forbid implicit rebuilds", () => {

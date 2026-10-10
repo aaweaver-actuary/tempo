@@ -11,7 +11,7 @@ import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./po
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
-import { createScenarioTimer } from "./test-scenario-timings.mjs";
+import { createScenarioTimer, postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
 import { atomicJson, redact } from "./tempo-deployment.mjs";
 
@@ -64,7 +64,7 @@ const environment = createIsolatedTestEnvironment(process.env, {
 });
 const origin = `http://127.0.0.1:${testPort}`;
 let resourcesCreated = false;
-let maintenanceImageCreated = false;
+let maintenanceImageCleanupRequired = false;
 const timingPath = join(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance",
   `postgres-scenarios-${options.mode}-${project}.json`);
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
@@ -105,10 +105,20 @@ function verifyProjectIsUnused() {
   }
 }
 
+function isMissingMaintenanceImage(result) {
+  return !result.error && result.status === 1
+    && [maintenanceImage, `${maintenanceImage}:latest`].some(tag =>
+      result.stderr?.trim() === `Error response from daemon: No such image: ${tag}`);
+}
+
 function run(command, argumentsList, options = {}) {
-  const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
-  if (result.error || result.status !== 0)
-    throw new Error(`${command} ${argumentsList.join(" ")} failed`);
+  const { label, category } = postgresCommandTiming(argumentsList);
+  return measureScenario.syncDetail(label, category, () => {
+    const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
+    measureScenario.processResult(result);
+    if (result.error || result.status !== 0) throw new Error(`${command} ${argumentsList.join(" ")} failed`);
+    return result;
+  });
 }
 
 const workloadConsumers = backgroundWorkloadConsumers;
@@ -128,8 +138,13 @@ function verifyWorkloadConsumers(expectedState) {
     assert.equal(states.get(service), expectedState, `${service} must be ${expectedState} for the workload benchmark`);
 }
 
-async function waitForReady({ requireContainerHealthy = false } = {}) {
+async function waitForReady(...argumentsList) {
+  return measureScenario.detail("api_ready", "readiness", () => pollForReady(...argumentsList));
+}
+
+async function pollForReady({ requireContainerHealthy = false } = {}) {
   for (let attempt = 0; attempt < 180; attempt += 1) {
+    measureScenario.poll();
     try {
       const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(3_000) });
       if (response.ok) {
@@ -142,14 +157,14 @@ async function waitForReady({ requireContainerHealthy = false } = {}) {
           assert.equal(status.status, 0, "Could not inspect API container readiness");
           const containers = status.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
           if (!containers.some(container => container.Service === "api" && container.Health === "healthy")) {
-            await new Promise(resolve => setTimeout(resolve, 1_000));
+            await measureScenario.wait(1_000);
             continue;
           }
         }
         return;
       }
     } catch { /* stack startup */ }
-    await new Promise(resolve => setTimeout(resolve, 1_000));
+    await measureScenario.wait(1_000);
   }
   throw new Error("Disposable PostgreSQL Tempo did not become ready");
 }
@@ -168,7 +183,11 @@ async function postCommand(path, payload, { method = "POST", operationId, label 
   }, label));
 }
 
-async function confirm(response) {
+async function confirm(...argumentsList) {
+  return measureScenario.detail("operation_receipt", "readiness", () => pollForConfirmation(...argumentsList));
+}
+
+async function pollForConfirmation(response) {
   if (response.status !== 202) {
     if (!response.ok) throw new Error(`command HTTP ${response.status} ${await response.text()}`);
     return response.json();
@@ -176,17 +195,23 @@ async function confirm(response) {
   const pending = await response.json();
   assert(pending.operation_id, "202 command must return an operation ID");
   for (let attempt = 0; attempt < 120; attempt += 1) {
+    measureScenario.poll();
     const receipt = await get(`operations/${encodeURIComponent(pending.operation_id)}`);
     if (receipt.state === "complete") return receipt.response;
     if (receipt.state === "failed") throw new Error(`PostgreSQL command failed: ${JSON.stringify(receipt.error)}`);
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   throw new Error(`PostgreSQL operation ${pending.operation_id} remains pending`);
 }
 
-async function waitForStudyableImport(repertoireId) {
+async function waitForStudyableImport(...argumentsList) {
+  return measureScenario.detail("import_publication", "readiness", () => pollForStudyableImport(...argumentsList));
+}
+
+async function pollForStudyableImport(repertoireId) {
   let settledSamples = 0;
   for (let attempt = 0; attempt < 180; attempt += 1) {
+    measureScenario.poll();
     const [system, integrity, queue] = await Promise.all([
       get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }), get("queue/today", { background: true }),
     ]);
@@ -205,7 +230,7 @@ async function waitForStudyableImport(repertoireId) {
     } else {
       settledSamples = 0;
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   throw new Error(`PostgreSQL graph, integrity, and queue work did not settle for ${repertoireId}`);
 }
@@ -261,7 +286,11 @@ function stableStudyState(snapshot, repertoireId) {
   };
 }
 
-async function importFixture(sourceName, pgn, operationId) {
+async function importFixture(...argumentsList) {
+  return measureScenario.detail("pgn_fixture", "fixture", () => submitPgnFixture(...argumentsList));
+}
+
+async function submitPgnFixture(sourceName, pgn, operationId) {
   const form = new FormData();
   form.set("file", new Blob([pgn], { type: "application/x-chess-pgn" }), sourceName);
   form.set("trained_color", "white");
@@ -303,7 +332,11 @@ async function verifyPgnImportReplayWithoutDuplicates(operationId, originalResul
   console.log(`PASS verifyPgnImportReplayWithoutDuplicates ${phase}: one receipt/result and unchanged lines/cards`);
 }
 
-async function waitForStudyQueue(repertoireId, minimumCardCount) {
+async function waitForStudyQueue(...argumentsList) {
+  return measureScenario.detail("study_queue", "readiness", () => pollForStudyQueue(...argumentsList));
+}
+
+async function pollForStudyQueue(repertoireId, minimumCardCount) {
   const initialSnapshot = await get("migration/snapshot");
   const repertoireCardIds = new Set((initialSnapshot.tables.repertoire_cards ?? [])
     .filter((row) => row.repertoire_id === repertoireId)
@@ -312,6 +345,7 @@ async function waitForStudyQueue(repertoireId, minimumCardCount) {
     if (card.repertoire_id === repertoireId) repertoireCardIds.add(card.id);
   }
   for (let attempt = 0; attempt < 240; attempt += 1) {
+    measureScenario.poll();
     const [queue, integrity] = await Promise.all([
       get("queue/today"), get(`repertoires/${repertoireId}/integrity`),
     ]);
@@ -320,7 +354,7 @@ async function waitForStudyQueue(repertoireId, minimumCardCount) {
     if (cards.length >= minimumCardCount) return { queue, snapshot: initialSnapshot, cards };
     if (queue.projection?.state === "failed")
       throw new Error(queue.projection.last_error ?? "PostgreSQL study queue projection failed");
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   const queue = await get("queue/today");
   throw new Error(`PostgreSQL study queue did not admit ${minimumCardCount} entries for ${repertoireId}; `
@@ -543,7 +577,7 @@ async function verifyForegroundAndStudyDurability() {
     if (compatibility.state === "ready") break;
     assert.equal(compatibility.state, "checking", JSON.stringify(compatibility));
     assert(performance.now() < prefixDeadline, "Prefix compatibility completes after worker restart");
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await measureScenario.wait(100);
   } while (true);
   const prefixBody = { preview_id: prefixPreview.preview_id, expected_revision: 0 };
   const prefixOperationId = `pg-study-prefix-save-${randomBytes(10).toString("hex")}`;
@@ -662,7 +696,7 @@ async function verifyStudyBurialRetainsQuota() {
       refreshedQueue = queue;
       break;
     }
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   assert(refreshedQueue, "Study burial quota refresh publishes a new generation before its deadline");
   assert.deepEqual(refreshedQueue.cards.map(card => card.queue_entry_id), unrelatedOrder,
@@ -687,7 +721,7 @@ async function verifyBlockedBurialRecovery() {
       before = queue;
       break;
     }
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   assert(before, "Queue settings restoration settles before blocked burial recovery");
   const selected = before.cards[0];
@@ -736,7 +770,7 @@ async function verifyCurrentCanonicalRouteAdmission() {
       if (preview.state === "ready") return preview;
       assert.equal(preview.state, "checking", JSON.stringify(preview));
       assert(performance.now() < deadline, "Current-source compatibility finishes");
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await measureScenario.wait(100);
     }
   };
   const preview = await checkCurrentPrefix();
@@ -769,29 +803,45 @@ async function verifyCurrentCanonicalRouteAdmission() {
     requestedPreviewIds.add(admitted.preview_id);
   }
   const retentionDeadline = performance.now() + 30_000;
-  while (true) {
-    // This is a passive idle-work measurement. Whole-product HTTP exports
-    // create foreground leases and preempt the very slices being measured.
-    // Use the exclusively runner-owned database, bounded read-only SQL and
-    // exactly the same scoped publication/task conditions and deadline.
-    assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
-    for (const previewId of requestedPreviewIds) assert.match(previewId, /^[0-9a-f-]{36}$/i);
-    const summary = readScopedPostgresRows(`SET default_transaction_read_only=on;
-      SET statement_timeout='250ms';
-      SELECT json_build_object(
-        'preview_ids', (SELECT COALESCE(json_agg(id),'[]'::json) FROM canonical_prefix_previews WHERE repertoire_id='${repertoireId}'),
-        'active_preview_id', (SELECT canonical_prefix_preview_id FROM repertoires WHERE id='${repertoireId}'),
-        'pending', EXISTS(SELECT 1 FROM background_tasks WHERE kind='canonical_prefix_preview'
-          AND deduplication_key IN ('${[...requestedPreviewIds].join("','")}')
-          AND state IN ('queued','leased','retrying')))`);
-    if (summary.preview_ids.length <= 9 && !summary.pending) {
-      assert(summary.preview_ids.includes(summary.active_preview_id),
-        "Retention preserves the active current certificate");
-      break;
+  await measureScenario.detail("preview_retention", "readiness", async () => {
+    while (true) {
+      measureScenario.poll();
+      // This is a passive idle-work measurement. Whole-product HTTP exports
+      // create foreground leases and preempt the very slices being measured.
+      // Use the exclusively runner-owned database, bounded read-only SQL and
+      // exactly the same scoped publication/task conditions and deadline.
+      assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
+      for (const previewId of requestedPreviewIds) assert.match(previewId, /^[0-9a-f-]{36}$/i);
+      const summary = readScopedPostgresRows(`SET default_transaction_read_only=on;
+        SET statement_timeout='250ms';
+        SELECT json_build_object(
+          'preview_ids', (SELECT COALESCE(json_agg(id),'[]'::json) FROM canonical_prefix_previews WHERE repertoire_id='${repertoireId}'),
+          'active_preview_id', (SELECT canonical_prefix_preview_id FROM repertoires WHERE id='${repertoireId}'),
+          'pending', EXISTS(SELECT 1 FROM background_tasks WHERE kind='canonical_prefix_preview'
+            AND deduplication_key IN ('${[...requestedPreviewIds].join("','")}')
+            AND state IN ('queued','leased','retrying')))`);
+      if (summary.preview_ids.length <= 9 && !summary.pending) {
+        assert(summary.preview_ids.includes(summary.active_preview_id),
+          "Retention preserves the active current certificate");
+        break;
+      }
+      if (performance.now() >= retentionDeadline) {
+        const tasks = readScopedPostgresRows(`SET default_transaction_read_only=on;
+          SET statement_timeout='250ms';
+          SELECT COALESCE(json_agg(checkpoint),'[]'::json) FROM (
+            SELECT task.state,task.phase,task.attempt_count,task.transaction_timeout_count,
+              task.next_attempt_at,task.lease_expires_at,preview.state AS preview_state,
+              (SELECT COUNT(*) FROM background_task_events WHERE task_id=task.id) AS event_count
+            FROM background_tasks task JOIN canonical_prefix_previews preview
+              ON preview.id=task.deduplication_key
+            WHERE task.kind='canonical_prefix_preview' AND preview.repertoire_id='${repertoireId}'
+            ORDER BY preview.created_at,preview.id LIMIT 12) checkpoint`);
+        assert.fail("Bounded preview retention finishes and removes abandoned scans; "
+          + JSON.stringify({ preview_count: summary.preview_ids.length, pending: summary.pending, tasks }));
+      }
+      await measureScenario.wait(100);
     }
-    assert(performance.now() < retentionDeadline, "Bounded preview retention finishes and removes abandoned scans");
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
+  });
   console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
   console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
   console.log("PASS test_postgres_canonical_retention_scoped_readonly_poll_preserves_idle_worker_admission");
@@ -825,6 +875,9 @@ const actions = {
       "config", "--format", "json"], { encoding: "utf8", env: environment });
     assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
     const defaultStack = JSON.parse(defaultConfig.stdout);
+    for (const resolvedStack of [stack, defaultStack])
+      for (const worker of ["defense-engine", "maia-worker"])
+        assert.equal(resolvedStack.services[worker].init, true, `${worker} must forward stop signals through Docker init`);
     assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
     assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
     assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
@@ -846,8 +899,8 @@ const actions = {
     if (options.mode === "lifecycle") run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
   },
   maintenance_cli: async () => {
+    maintenanceImageCleanupRequired = true;
     run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]);
-    maintenanceImageCreated = true;
     for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
       run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
     }
@@ -891,7 +944,7 @@ const actions = {
   },
   deployment_lifecycle: async () => {
     const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
-      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels], measure: measureScenario });
     if (options.mode === "lifecycle") {
       await verifyLifecycle();
       return;
@@ -997,11 +1050,12 @@ const actions = {
     await uncertainResponse.body?.cancel();
     let settingsCommitted = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
+      measureScenario.poll();
       if ((await get("settings")).new_cards_per_day === updatedSettings.new_cards_per_day) {
         settingsCommitted = true;
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await measureScenario.wait(100);
     }
     assert(settingsCommitted, "Settings business effect commits after its response is discarded");
     run("docker", [...compose, "stop", ...workloadConsumers, "foreground-worker"]);
@@ -1075,10 +1129,10 @@ const actions = {
       "Fresh durability database starts without browser queue entries");
   },
   study_durability: async () => {
-    await verifyForegroundAndStudyDurability();
-    await verifyCurrentCanonicalRouteAdmission();
-    await verifyStudyBurialRetainsQuota();
-    await verifyBlockedBurialRecovery();
+    await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);
+    await measureScenario.detail("canonical_route_admission", "scenario", verifyCurrentCanonicalRouteAdmission);
+    await measureScenario.detail("study_burial_quota", "scenario", verifyStudyBurialRetainsQuota);
+    await measureScenario.detail("blocked_burial_recovery", "scenario", verifyBlockedBurialRecovery);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_stalemate_swindles.py"]);
   },
@@ -1086,6 +1140,8 @@ const actions = {
     if (resourcesCreated) {
       const inspect = (args) => {
         const result = spawnSync("docker", args, { encoding: "utf8", env: environment });
+        if (args[0] === "image" && args[1] === "inspect" && args[2] === maintenanceImage
+          && isMissingMaintenanceImage(result)) return "[]";
         assert.equal(result.status, 0, "Could not record disposable Docker ownership");
         return result.stdout.trim();
       };
@@ -1097,7 +1153,7 @@ const actions = {
       })) : [];
       atomicJson(`test-results/tempo-cli/${project}/ownership.json`, { checkout: process.cwd(), revision: candidateRevision,
         project, context: inspect(["context", "show"]), containers,
-        maintenance_image: maintenanceImageCreated ? JSON.parse(inspect(["image", "inspect", maintenanceImage])).map(image => ({ id: image.Id, created: image.Created, tag: maintenanceImage })) : [],
+        maintenance_image: maintenanceImageCleanupRequired ? JSON.parse(inspect(["image", "inspect", maintenanceImage])).map(image => ({ id: image.Id, created: image.Created, tag: maintenanceImage })) : [],
         teardown: ["docker", ...compose, "down", "--rmi", "local", "-v"],
         maintenance_teardown: ["docker", "image", "rm", maintenanceImage] });
     }
@@ -1120,10 +1176,11 @@ const actions = {
           if (remaining.status !== 0 || remaining.stdout.trim()) cleanupErrors.push(new Error(`Disposable PostgreSQL ${resource} cleanup left resources`));
         }
       }
-      if (maintenanceImageCreated) {
+      if (maintenanceImageCleanupRequired) {
         const removedMaintenanceImage = spawnSync("docker", ["image", "rm", maintenanceImage],
-          { stdio: "ignore", env: environment });
-        if (removedMaintenanceImage.error || removedMaintenanceImage.status !== 0)
+          { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", env: environment });
+        const ownedImageAbsent = isMissingMaintenanceImage(removedMaintenanceImage);
+        if (removedMaintenanceImage.error || (removedMaintenanceImage.status !== 0 && !ownedImageAbsent))
           cleanupErrors.push(new Error("Disposable maintenance image cleanup failed"));
       }
     } finally {

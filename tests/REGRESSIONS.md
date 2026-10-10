@@ -1,3 +1,21 @@
+Checkpoint proof admission coordination (October 10, 2026):
+
+- `backend/tests/test_admission_proof_ownership.py`: `test_checkpoint_recovery_driver_waits_for_admission_without_spending_prior_attempts` fails the original recovery driver returning `None` after a legitimate denial; it proves exact retained payload delivery, unchanged prior attempts, and receipt control ending before preparation/publication. `test_checkpoint_delivery_never_retries_errors_or_spent_attempts` rejects SQL errors, spent attempts and blocked receipts. `test_completed_checkpoint_replay_waits_only_for_explicit_admission_deferral`, `test_completed_checkpoint_replay_has_bounded_diagnostics_and_propagates_other_failures`, and `test_completed_checkpoint_replay_rejects_receipt_changes_after_denial` preserve the completed receipt, exact replay and the existing ten-second admission budget. The real 256-event/20-decision foreground-contention and process-exit-73 restart proofs retain every publication, scheduling, digest and attempt-count assertion in regular PostgreSQL durability.
+
+Maintenance image cleanup after timing publication failure (October 10, 2026):
+
+- `tests/runner/postgres-test-speedups.test.mjs`, through the regular runner wrapper: `maintenance image cleanup is armed before build timing publication can fail` reproduces the marker gap after a successful image build and failed record write; `maintenance cleanup accepts only an absent owned image and preserves other removal failures` proves exact owned-tag removal, failed-build absence handling, error propagation and secret-directory cleanup.
+
+Worker shutdown forwarding (October 10, 2026):
+
+- `tests/runner/postgres-test-speedups.test.mjs`, through the regular PostgreSQL runner wrapper: `both PostgreSQL product definitions and the disposable definition enable init for both workers` reproduces the missing init on main; `real worker signal verification retains the existing stop boundary and rejects forced kill or missing workers` covers the assertion harness. The real `test_postgres_lifecycle_real_workers_stop_through_sigterm_without_forced_kill` runs at the existing persisted Redis lifecycle stop, requiring both workers running with init before stop and exit 143 afterward. Deadlines and restart boundaries are unchanged.
+- `tests/runner/tempo-cli.test.mjs`, through the regular CLI contracts group: `deployment records invalidate configuration identity when either worker init changes` prevents stale deployment configuration identity while retaining separate image identity.
+
+PostgreSQL/lifecycle nested CI measurements (October 10, 2026):
+
+- `preview retention timing succeeds promptly and reports scoped checkpoints at the unchanged deadline` executes the runner's real polling body with a controlled clock: immediate success, the original 30-second deadline and 100ms interval, passive scoped read-only queries, and bounded state/phase/event diagnostics without payloads or error text.
+- `tests/runner/postgres-test-speedups.test.mjs`, through `postgres-test-speedups-regressions.test.ts`: `nested PostgreSQL timings preserve start order, parent identity, process outcomes and secret exclusion`; `nested PostgreSQL timers keep concurrent Redis observation and deployment ownership separate`; `nested PostgreSQL waiting records elapsed time and polls without changing the requested interval`; `nested timing write failures propagate and cleanup executes even when its measurement also fails`; `PostgreSQL command timings classify fixed operations without retaining arguments or credentials`; `nested timing cannot qualify failed, missing or stale durability and lifecycle inventories`. These protect additive timing details, expected-fault observations, immutable stage qualification and cleanup after recording failures.
+
 PR #92 cross-tab completion wakeup (October 8, 2026):
 
 - `opening-evidence-cross-tab-signals.test.ts`: `opening acknowledgment publishes only after atomic evidence removal and never leaks journal content`; `aborted acknowledgment preserves saved evidence and emits no completion`; retained/rejected acknowledgment, native transport fallback/failure, malformed/self/duplicate signals, first/last subscription cleanup, unavailable BroadcastChannel, and atomic checkpoint confirmation regressions.

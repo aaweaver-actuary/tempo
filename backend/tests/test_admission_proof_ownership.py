@@ -3,10 +3,119 @@
 import importlib.util
 from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.services import redis_admission_gate
+
+
+def test_checkpoint_recovery_driver_waits_for_admission_without_spending_prior_attempts(admission_proof, monkeypatch):
+    from app import command_gateway, tasks
+    from app.services.activity_gate import activity_gate, _control_section
+    proof, _server = admission_proof
+    payload = {"checkpoint": {"attempt_id": "original-checkpoint"}}
+    recovered = {"operation_id": "owned-recovery", "background": True,
+                 "command_name": "opening_evidence.checkpoint", "payload": payload}
+    result = {"persisted": True}
+    calls, waits = [], []
+    outcomes = iter([None, result])
+    monkeypatch.setattr(proof.postgres_store, "connection", lambda **_options: nullcontext(
+        SimpleNamespace(execute_native=lambda *_arguments: None)))
+    monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
+    monkeypatch.setattr(redis_admission_gate, "foreground_present", lambda: True)
+    def claim_receipt():
+        assert _control_section.get()
+        activity_gate.check_background_admission()
+        return recovered
+    monkeypatch.setattr(command_gateway, "claim_recoverable_operation", claim_receipt)
+    monkeypatch.setattr(proof, "_checkpoint_operation_receipt", lambda _identifier: {
+        "state": "retrying", "attempt_count": 2, "last_error_json": None})
+    def deliver(*arguments):
+        assert not _control_section.get(), "Preparation/publication must retain ordinary admission"
+        calls.append(arguments)
+        return next(outcomes)
+    monkeypatch.setattr(tasks.execute_background_command, "run", deliver)
+    monkeypatch.setattr(proof, "time", SimpleNamespace(monotonic=lambda: 0, sleep=waits.append))
+    assert proof._recover_checkpoint_operation("owned-recovery") == result
+    assert calls == [("owned-recovery", "opening_evidence.checkpoint", payload)] * 2
+    assert all(call[2] is payload for call in calls)
+    assert waits == [0.01]
+
+
+@pytest.mark.parametrize("receipt", [
+    {"state": "retrying", "attempt_count": 3, "last_error_json": None},
+    {"state": "retrying", "attempt_count": 2, "last_error_json": '{"error":"SQL timeout"}'},
+    {"state": "blocked", "attempt_count": 2, "last_error_json": None},
+])
+def test_checkpoint_delivery_never_retries_errors_or_spent_attempts(admission_proof, monkeypatch, receipt):
+    from app import tasks
+    proof, _server = admission_proof
+    monkeypatch.setattr(tasks.execute_background_command, "run", lambda *_arguments: None)
+    monkeypatch.setattr(proof, "_checkpoint_operation_receipt", lambda _identifier: receipt)
+    monkeypatch.setattr(proof, "time", SimpleNamespace(monotonic=lambda: 0,
+        sleep=lambda _interval: pytest.fail("A real failure must not be retried")))
+    assert proof.admitted_checkpoint_delivery("owned", "opening_evidence.checkpoint", {}, prior_attempt_count=2) is None
+
+
+@pytest.mark.parametrize("deny_first", [False, True], ids=["already-admitted", "admitted-after-denial"])
+def test_completed_checkpoint_replay_waits_only_for_explicit_admission_deferral(admission_proof, monkeypatch, deny_first):
+    from app import command_gateway
+    proof, _server = admission_proof
+    payload = {"checkpoint": {"attempt_id": "immutable-replay"}}
+    completed = {"state": "complete", "attempt_count": 2, "payload_json": "original"}
+    result = {"persisted": True}
+    calls, waits = [], []
+    def replay(identifier, command, supplied, **options):
+        calls.append((identifier, command, supplied, options))
+        if deny_first and len(calls) == 1:
+            raise redis_admission_gate.BackgroundAdmissionDeferred("Waiting for foreground activity")
+        return result
+    monkeypatch.setattr(command_gateway, "execute_command", replay)
+    monkeypatch.setattr(proof, "_checkpoint_operation_receipt", lambda _identifier: completed.copy())
+    monkeypatch.setattr(proof, "time", SimpleNamespace(monotonic=lambda: 0, sleep=waits.append))
+    assert proof.admitted_checkpoint_replay("owned", payload) is result
+    assert calls == [("owned", "opening_evidence.checkpoint", payload, {"background": True})] * (2 if deny_first else 1)
+    assert all(call[2] is payload for call in calls)
+    assert waits == ([0.01] if deny_first else [])
+
+
+def test_completed_checkpoint_replay_has_bounded_diagnostics_and_propagates_other_failures(admission_proof, monkeypatch):
+    from app import command_gateway
+    proof, _server = admission_proof
+    completed = {"state": "complete", "attempt_count": 2}
+    elapsed, calls = [0], []
+    def deny(*arguments, **_options):
+        calls.append(arguments)
+        raise redis_admission_gate.BackgroundAdmissionDeferred("Waiting for foreground activity")
+    def advance(interval):
+        assert interval == 0.01
+        elapsed[0] += 1
+    monkeypatch.setattr(command_gateway, "execute_command", deny)
+    monkeypatch.setattr(proof, "_checkpoint_operation_receipt", lambda _identifier: completed.copy())
+    monkeypatch.setattr(proof, "time", SimpleNamespace(monotonic=lambda: elapsed[0], sleep=advance))
+    with pytest.raises(AssertionError, match="Checkpoint replay never obtained foreground-idle admission within 10 seconds"):
+        proof.admitted_checkpoint_replay("owned", {})
+    assert elapsed[0] == 10 and len(calls) == 11
+    failure = RuntimeError("Real SQL/publication failure")
+    def fail(*_arguments, **_options):
+        raise failure
+    monkeypatch.setattr(command_gateway, "execute_command", fail)
+    with pytest.raises(RuntimeError) as observed:
+        proof.admitted_checkpoint_replay("owned", {})
+    assert observed.value is failure
+
+
+def test_completed_checkpoint_replay_rejects_receipt_changes_after_denial(admission_proof, monkeypatch):
+    from app import command_gateway
+    proof, _server = admission_proof
+    receipts = iter([{"state": "complete", "attempt_count": 2}, {"state": "complete", "attempt_count": 3}])
+    monkeypatch.setattr(proof, "_checkpoint_operation_receipt", lambda _identifier: next(receipts))
+    def deny(*_arguments, **_options):
+        raise redis_admission_gate.BackgroundAdmissionDeferred("Waiting for foreground activity")
+    monkeypatch.setattr(command_gateway, "execute_command", deny)
+    with pytest.raises(AssertionError, match="Denied checkpoint replay changed the completed receipt"):
+        proof.admitted_checkpoint_replay("owned", {})
 
 
 @pytest.fixture
