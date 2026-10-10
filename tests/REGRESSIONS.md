@@ -1779,6 +1779,10 @@ Reader-only deployment proof: `scripts/check_postgres_opening_segmentation.py::t
 
 Backend names run in the existing contracts, preparation and transport pytest files; the client names remain in `tests/unit/opening-evidence-background-admission.test.ts`. Real PostgreSQL names run in the existing disposable evidence rehearsal through the regular durability runner, with its runner-owned Redis enabled. Existing preparation/stale-source/restart/review atomicity, quota, recovery and recreation/backup proofs remain required.
 
+## Authoritative settings hydration — #162
+
+`settings hydration blocks premature editing then persists independent defensive toggles` in `tests/unit/settings-loading-regressions.test.tsx` defers the authoritative read, proves controls/updates cannot edit or save early, then verifies the independent [true,false] request and subsequent persisted read. It failed on unchanged e9788df8 because the toggle remained enabled while Save was disabled. `defensive analysis pause persists independently of defensive cards` retains the real persistence/reload proof and now waits for enabled Save before edits.
+
 ## Independent defensive analysis pause — related #14, #43
 
 - `test_disabled_defensive_analysis_does_not_claim_exercise_search` reproduces a defensive request being leased with analysis disabled; the original claim failed this regression before the gate.

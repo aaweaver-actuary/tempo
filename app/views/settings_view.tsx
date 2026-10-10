@@ -196,6 +196,7 @@ export default function SettingsView({
     key: K,
     value: SettingsValues[K],
   ) {
+    if (!settingsLoaded) return;
     setValues((current) => ({ ...current, [key]: value }));
     setDirty(true);
   }
@@ -388,7 +389,7 @@ export default function SettingsView({
             <span>
               Default initial prefix length<small>Learner moves grouped when importing new routes</small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="2"
               max="20"
@@ -405,7 +406,7 @@ export default function SettingsView({
                 Reviews are always shown; unused new-card allowance does not carry over
               </small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="0"
               max="100"
@@ -418,7 +419,7 @@ export default function SettingsView({
           <RepertoireDailyLimits defaultLimit={savedDailyLimit} enabled={settingsLoaded} local={usesLocalApi()} />
           <label>
             <span>New study exercises per day<small>Independent of opening cards; due study reviews still appear</small></span>
-            <TextInput type="number" min="0" max="100" value={values.study_new_per_day}
+            <TextInput disabled={!settingsLoaded} type="number" min="0" max="100" value={values.study_new_per_day}
               onChange={(event) => update("study_new_per_day", Number(event.target.value))} />
           </label>
           <label>
@@ -429,7 +430,7 @@ export default function SettingsView({
                 are additional
               </small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="0"
               max="100"
@@ -441,25 +442,25 @@ export default function SettingsView({
           </label>
           <label>
             <span>Defensive analysis<small>Generate defensive exercises in the background. Turning off preserves your work; game analysis and repertoire recommendations continue.</small></span>
-            <TextInput type="checkbox"
+            <TextInput disabled={!settingsLoaded} type="checkbox"
               checked={values.defensive_analysis_enabled}
               onChange={(event) => update("defensive_analysis_enabled", event.target.checked)} />
           </label>
           <label>
             <span>New defensive exercises per day<small>Verified threats and false alarms; due reviews are additional</small></span>
-            <TextInput type="number" min="0" max="100"
+            <TextInput disabled={!settingsLoaded} type="number" min="0" max="100"
               value={values.defense_new_cards_per_day}
               onChange={(event) => update("defense_new_cards_per_day", Number(event.target.value))} />
           </label>
           <label>
             <span>Defensive cards in daily stack<small>Turn off to hide them now; your cards and review history are kept</small></span>
-            <TextInput type="checkbox"
+            <TextInput disabled={!settingsLoaded} type="checkbox"
               checked={values.include_defensive_cards_in_daily_stack}
               onChange={(event) => update("include_defensive_cards_in_daily_stack", event.target.checked)} />
           </label>
           <label>
             <span>Discovery evidence window<small>How far back Tempo counts analyzed games</small></span>
-            <SelectInput value={values.discovery_window_days}
+            <SelectInput disabled={!settingsLoaded} value={values.discovery_window_days}
               onChange={(event) => update("discovery_window_days", Number(event.target.value) as 30 | 90)}>
               <option value={30}>30 days</option><option value={90}>90 days</option>
             </SelectInput>
@@ -469,7 +470,7 @@ export default function SettingsView({
               Light first interval
               <small>Days after a clean tactics discovery</small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="1"
               max="90"
@@ -484,7 +485,7 @@ export default function SettingsView({
               Draw hold length
               <small>User moves required in endgame studies</small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="5"
               max="100"
@@ -503,7 +504,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Board colors</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.board_theme}
               onChange={(event) =>
                 update("board_theme", event.target.value as BoardTheme)
@@ -516,7 +517,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Piece set</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.piece_set}
               onChange={(event) =>
                 update("piece_set", event.target.value as PieceSet)
@@ -532,6 +533,7 @@ export default function SettingsView({
               <small>Lichess standard move and capture recordings</small>
             </span>
             <Button
+              disabled={!settingsLoaded}
               className={`setting-switch${values.sound ? " on" : ""}`}
               onClick={() => update("sound", !values.sound)}
             >
@@ -540,7 +542,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Sound volume</span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="range"
               min="0"
               max="1"
@@ -556,7 +558,7 @@ export default function SettingsView({
           <h2>Builder</h2>
           <label>
             <span>Coverage target</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.coverage_target}
               onChange={(event) =>
                 update("coverage_target", Number(event.target.value))
@@ -572,7 +574,7 @@ export default function SettingsView({
               Required reply threshold
               <small>Cover opponent moves occurring at least this often</small>
             </span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.coverage_reply_denominator}
               onChange={(event) =>
                 update("coverage_reply_denominator", Number(event.target.value))
@@ -585,7 +587,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Cumulative reply coverage</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.coverage_cumulative_target}
               onChange={(event) =>
                 update("coverage_cumulative_target", Number(event.target.value))
@@ -598,7 +600,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Coverage horizon<small>Full move number</small></span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="4"
               max="40"
@@ -610,7 +612,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Candidate colors</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.arrow_metric}
               onChange={(event) =>
                 update(
@@ -628,7 +630,7 @@ export default function SettingsView({
             <span>
               Engine move window<small>Centipawns from the best move</small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="0"
               max="300"
@@ -640,7 +642,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Maia strength</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.maia_elo}
               onChange={(event) => update("maia_elo", event.target.value)}
             >
@@ -653,7 +655,7 @@ export default function SettingsView({
             <span>
               Transposition search<small>Maia lookahead plies</small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="2"
               max="8"
@@ -665,7 +667,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Explorer games</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.explorer_speeds}
               onChange={(event) =>
                 update("explorer_speeds", event.target.value)
@@ -680,7 +682,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Explorer ratings</span>
-            <SelectInput
+            <SelectInput disabled={!settingsLoaded}
               value={values.explorer_ratings}
               onChange={(event) =>
                 update("explorer_ratings", event.target.value)
@@ -697,7 +699,7 @@ export default function SettingsView({
           <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
           <label>
             <span>Lichess username</span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               value={values.lichess_username}
               onChange={(event) =>
                 update("lichess_username", event.target.value)
@@ -707,7 +709,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Chess.com username</span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               value={values.chesscom_username}
               onChange={(event) =>
                 update("chesscom_username", event.target.value)
@@ -719,7 +721,7 @@ export default function SettingsView({
             <span>
               Automatic sync<small>Minutes while Tempo is open</small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="2"
               max="60"
@@ -733,7 +735,7 @@ export default function SettingsView({
             <span>
               Major mistake threshold<small>Centipawn loss</small>
             </span>
-            <TextInput
+            <TextInput disabled={!settingsLoaded}
               type="number"
               min="25"
               max="1000"
