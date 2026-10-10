@@ -1833,6 +1833,12 @@ Backend names run in the existing contracts, preparation and transport pytest fi
 - Existing `phone 225-card offline queue reconciles to the desktop 241-card count and next card after reconnect` now asserts the compact phone count (225 → 241) while retaining the desktop count and card-identity assertions. Required CI reproduced its outdated large-counter selector with the correct 225-card value visible on the new screen.
 
 - **Phone opening study preserves the accessible training page heading** — `tests/unit/phone-opening-study-regressions.test.tsx`: exactly one centralized H1 through normal, service-error/retry, empty/offline, and phone/tablet transitions; no stale repertoire or visible counter wrapper. `tests/browser/phone-opening-study.spec.ts` asserts the accessible H1 and repertoire H2 through 767 → 768 → 767px with the same shared board instance.
+## Canonical prefix confirmation independent of queue publication — #163
+
+`tests/unit/canonical-prefix-parent-regressions.test.tsx` renders the real RepertoireView/CanonicalPrefixDialog composition. `confirmed canonical prefix and repertoire reload dismiss while queue publication remains pending` and `confirmed canonical prefix dismisses and retains separate training queue error reporting` prove one mutation and dismissal independently of queue readiness. `confirmed canonical prefix with failed repertoire reload keeps committed recovery without resubmitting` preserves truthful metadata confirmation and disables stale resubmission. All three failed on unchanged e9788df8; the existing dialog recovery regression and 390px canonical-prefix browser workflow remain required.
+
+`confirmed canonical prefix reload remains successful with an unreadable deletion recovery journal` failed on the first fix fd7da76e (automated review). It preserves the unrelated malformed journal and its visible diagnostic while confirming successfully reloaded prefix metadata and starting the independent queue refresh.
+
 ## Canonical prefix derived freshness (PR #66 follow-up)
 
 | Regression | Regular coverage | Failure prevented |
