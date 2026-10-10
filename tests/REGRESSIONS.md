@@ -1,3 +1,33 @@
+Explicit policy-conditioned reach — #169 / related #156 (October 10, 2026):
+
+All named cases below live in `backend/tests/test_opening_policy_reach.py` and run in the regular backend gate. This new pure-library capability has no prior reach-propagation implementation for a failing baseline. No production admission changes.
+
+- `test_policy_reach_italian_ruy_add_remove_duplicate_isolation`
+- `test_policy_reach_opponent_factors_feed_actual_preparedness_and_marginal_kernel`
+- `test_policy_reach_learner_choices_never_dilute_selected_action`
+- `test_policy_reach_opponent_deviation_is_not_conditioned_away`
+- `test_policy_reach_retains_covered_outside_and_unassigned_mass`
+- `test_policy_reach_bounded_unknown_allocations_multiply_conservatively`
+- `test_policy_reach_missing_opponent_evidence_stays_incomplete`
+- `test_policy_reach_missing_learner_action_refuses_downstream_kernel_export`
+- `test_policy_reach_transposition_and_duplicate_routes_count_unique_decision_once`
+- `test_policy_reach_revisit_is_absorbed_at_first_position_and_decision`
+- `test_policy_reach_foreign_policy_rejected_before_route_validation`
+- `test_policy_reach_permutation_preserves_diagnostics_kernel_scores_and_ranking`
+- `test_policy_reach_detaches_source_metadata_and_retains_provenance`
+- `test_policy_reach_rejects_invalid_sensitivity_evidence`
+- `test_policy_reach_black_policy_retains_white_opponent_probability`
+- `test_policy_reach_rejects_conflicting_actions_routes_evidence_and_context`
+- `test_policy_reach_ambiguous_learner_paths_never_export_a_summed_union`
+- `test_policy_reach_accepts_fused_context_and_retains_unavailable_reason`
+- `test_policy_reach_explicit_custom_root_and_bounded_root_mass`
+- `test_policy_reach_unknown_reply_is_bounded_by_retained_unassigned_mass`
+- `test_policy_reach_same_physical_decision_keeps_policy_identity_separate`
+- `test_policy_reach_terminal_position_does_not_report_a_required_learner_action`
+- `test_policy_reach_result_retains_explicit_selected_opponent_context`
+
+The last two cases failed on initial propagation commit `a52179b8` (2 failed, 27 deselected, pytest .35s): terminal checkmate incorrectly reported a missing action, and result metadata omitted the explicit selected opponent context. They pass after the diagnostic correction.
+
 Read-only sequence-aware opening frontier — related #118/#106 (October 10, 2026):
 
 All cases below live in `backend/tests/test_opening_frontier.py` and are collected
