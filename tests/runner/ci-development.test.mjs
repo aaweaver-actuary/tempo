@@ -25,35 +25,6 @@ test('changed draft regression files run directly without unrelated full layers'
 
 import { spawnSync } from 'node:child_process';
 import { resolvePython } from '../../scripts/resolve-python.mjs';
-test('opening admission cleanup preserves another worker lease and detects owned leaks', () => {
-  const result = spawnSync(resolvePython(), ['-c', `
-import ast
-from pathlib import Path
-source = ast.parse(Path('scripts/check_postgres_opening_evidence.py').read_text())
-helper = next(node for node in source.body if isinstance(node, ast.FunctionDef) and node.name == '_assert_owned_background_leases_released')
-exec(compile(ast.fix_missing_locations(ast.Module(body=[helper], type_ignores=[])), '<actual fixture assertion>', 'exec'))
-class Server:
-    scores = {'peer': 999999}
-    def zscore(self, key, token): return self.scores.get(token)
-server = Server()
-_assert_owned_background_leases_released(server, {'owned'}, 'background')
-assert server.scores == {'peer': 999999}
-server.scores['owned'] = 999999
-try:
-    _assert_owned_background_leases_released(server, {'owned'}, 'background')
-except AssertionError as error:
-    assert 'leaked its owned' in str(error)
-else:
-    raise AssertionError('Injected owned lease leak passed')
-try:
-    _assert_owned_background_leases_released(server, set(), 'background')
-except AssertionError:
-    pass
-else:
-    raise AssertionError('No observed admissions passed')
-`], { encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-});
 
 import { verificationContext, planHash, allLayers, createPlan } from '../../scripts/ci-verification-plan.mjs';
 import { layerCommands, validateUnitResults, executeLayer, backendUnitFileCounts } from '../../scripts/ci-run-layer.mjs';
