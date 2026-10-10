@@ -23,6 +23,21 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unresolved authoritative head cannot issue a filtered successor (advance=%s)", async advance => {
+  const activeAttempt = useTrainingStore.getState().attempt;
+  rememberConfirmedQueueEntry(cards[0]);
+  enqueuePendingReview({ backendId: "c", queueEntryId: 503, attemptId: "independent-pending", outcome: "correct", guided: false });
+  // C was promoted ahead of prepared B. The server issued C, while its saved
+  // local review remains unconfirmed; filtering C cannot confer issuance on B.
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ cards: [queue[2], queue[1]], count: 2, local_date: localDayKey() })));
+  await expect(fetchAndInitializeQueue(advance, { replaySavedReviews: false })).rejects.toThrow("authoritative queue head");
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+  expect(useTrainingStore.getState().attempt).toEqual(activeAttempt);
+  expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
+  expect(useTrainingStore.getState().pendingReviewError).toContain("confirmation");
+  expect(pendingReviews().map(review => review.attemptId)).toEqual(["independent-pending"]);
+});
+
 it.each(["revision", "cycle", "day", "generation", "pending", "window", "readiness", "database"])(
   "prepared_continuation_requires_current_head_and_matching_identity: local %s invalidation", invalidation => {
     const candidate = capturePreparedNext()!;
