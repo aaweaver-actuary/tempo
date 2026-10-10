@@ -241,6 +241,26 @@ test("target maintenance lock prevents concurrent commands and recovers a dead o
   releaseRecovered();
 });
 
+test("deployment records invalidate configuration identity when either worker init changes", () => {
+  const configuration = { services: {
+    "defense-engine": { init: true, image: "sha256:engine", build: { labels: { "org.opencontainers.image.revision": "candidate" } } },
+    "maia-worker": { init: true, image: "sha256:maia" },
+  } };
+  const fingerprint = configurationFingerprint(configuration);
+  for (const worker of ["defense-engine", "maia-worker"]) {
+    for (const enabled of [false, undefined]) {
+      const changed = structuredClone(configuration);
+      if (enabled === undefined) delete changed.services[worker].init;
+      else changed.services[worker].init = enabled;
+      assert.notEqual(configurationFingerprint(changed), fingerprint, `${worker} init remains candidate-significant`);
+    }
+  }
+  const imageOnlyChange = structuredClone(configuration);
+  imageOnlyChange.services["defense-engine"].image = "sha256:other";
+  imageOnlyChange.services["defense-engine"].build.labels["org.opencontainers.image.revision"] = "other";
+  assert.equal(configurationFingerprint(imageOnlyChange), fingerprint, "Separate immutable image identity remains independent of config identity");
+});
+
 test("deployment records are atomically replaced rather than appended or partially published", t => {
   const path = join(directory(t), "deployment.json");
   atomicJson(path, { revision: "old" }); atomicJson(path, { revision: "verified" });

@@ -13,6 +13,7 @@ import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
 import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
+import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redis-readiness.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
@@ -562,6 +563,38 @@ test("disposable PostgreSQL backup handles INT and TERM while waiting on its sle
   const syntaxCheck = spawnSync("sh", ["-n", "-c", backupCommand], { encoding: "utf8", timeout: 5_000 });
   assert.ifError(syntaxCheck.error);
   assert.equal(syntaxCheck.status, 0, syntaxCheck.stderr);
+});
+
+test("both PostgreSQL product definitions and the disposable definition enable init for both workers", () => {
+  for (const file of ["docker-compose.yml", "docker-compose.postgres.yml", "docker-compose.postgres.test.yml"]) {
+    const source = readFileSync(join(root, file), "utf8");
+    for (const worker of ["defense-engine", "maia-worker"]) {
+      const service = source.match(new RegExp(`^  ${worker}:\\r?\\n([\\s\\S]*?)(?=^  \\S|^\\S)`, "m"))?.[1];
+      assert(service, `${file} must define ${worker}`);
+      assert.match(service, /^    init: true$/m, `${file}: ${worker} must forward shutdown signals`);
+    }
+  }
+});
+
+test("real worker signal verification retains the existing stop boundary and rejects forced kill or missing workers", async () => {
+  for (const fault of [null, "forced_kill", "missing", "already_stopped", "no_init"]) {
+    let stopped = false;
+    let stops = 0;
+    const containers = ["defense-engine", "maia-worker"].map(service => ({
+      Config: { Labels: { "com.docker.compose.service": service } }, HostConfig: { Init: fault !== "no_init" },
+      State: { Running: true, ExitCode: 0 },
+    }));
+    const proof = stopApplicationsAndVerifyWorkerSignals({
+      runtime: { stopApplications: async () => { stopped = true; stops += 1; } },
+      compose: async () => ({ stdout: fault === "missing" ? "engine\n" : "engine\nmaia\n" }),
+      docker: async () => ({ stdout: JSON.stringify(containers.map(container => ({ ...container,
+        State: { Running: !stopped && fault !== "already_stopped", ExitCode: stopped ? fault === "forced_kill" ? 137 : 143 : 0 },
+      }))) }),
+    });
+    if (fault) await assert.rejects(proof, /must|requires/);
+    else await proof;
+    assert.equal(stops, [null, "forced_kill"].includes(fault) ? 1 : 0);
+  }
 });
 
 test("scenario dispatch builds once and all startup paths forbid implicit rebuilds", () => {

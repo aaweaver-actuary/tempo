@@ -121,6 +121,7 @@ services:
     restart: unless-stopped
 
   defense-engine:
+    init: true
     build:
       context: .
       dockerfile: Dockerfile.engine
@@ -136,6 +137,7 @@ services:
     restart: unless-stopped
 
   maia-worker:
+    init: true
     build:
       context: .
       dockerfile: Dockerfile.maia
