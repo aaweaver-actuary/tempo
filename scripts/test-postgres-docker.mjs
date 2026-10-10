@@ -64,7 +64,7 @@ const environment = createIsolatedTestEnvironment(process.env, {
 });
 const origin = `http://127.0.0.1:${testPort}`;
 let resourcesCreated = false;
-let maintenanceImageCreated = false;
+let maintenanceImageCleanupRequired = false;
 const timingPath = join(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance",
   `postgres-scenarios-${options.mode}-${project}.json`);
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
@@ -103,6 +103,12 @@ function verifyProjectIsUnused() {
     assert.equal(result.status, 0, `Could not verify test ${resourceName} isolation`);
     assert.equal(result.stdout.trim(), "", `Refusing to reuse pre-existing test ${resourceName}s`);
   }
+}
+
+function isMissingMaintenanceImage(result) {
+  return !result.error && result.status === 1
+    && [maintenanceImage, `${maintenanceImage}:latest`].some(tag =>
+      result.stderr?.trim() === `Error response from daemon: No such image: ${tag}`);
 }
 
 function run(command, argumentsList, options = {}) {
@@ -797,29 +803,45 @@ async function verifyCurrentCanonicalRouteAdmission() {
     requestedPreviewIds.add(admitted.preview_id);
   }
   const retentionDeadline = performance.now() + 30_000;
-  while (true) {
-    // This is a passive idle-work measurement. Whole-product HTTP exports
-    // create foreground leases and preempt the very slices being measured.
-    // Use the exclusively runner-owned database, bounded read-only SQL and
-    // exactly the same scoped publication/task conditions and deadline.
-    assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
-    for (const previewId of requestedPreviewIds) assert.match(previewId, /^[0-9a-f-]{36}$/i);
-    const summary = readScopedPostgresRows(`SET default_transaction_read_only=on;
-      SET statement_timeout='250ms';
-      SELECT json_build_object(
-        'preview_ids', (SELECT COALESCE(json_agg(id),'[]'::json) FROM canonical_prefix_previews WHERE repertoire_id='${repertoireId}'),
-        'active_preview_id', (SELECT canonical_prefix_preview_id FROM repertoires WHERE id='${repertoireId}'),
-        'pending', EXISTS(SELECT 1 FROM background_tasks WHERE kind='canonical_prefix_preview'
-          AND deduplication_key IN ('${[...requestedPreviewIds].join("','")}')
-          AND state IN ('queued','leased','retrying')))`);
-    if (summary.preview_ids.length <= 9 && !summary.pending) {
-      assert(summary.preview_ids.includes(summary.active_preview_id),
-        "Retention preserves the active current certificate");
-      break;
+  await measureScenario.detail("preview_retention", "readiness", async () => {
+    while (true) {
+      measureScenario.poll();
+      // This is a passive idle-work measurement. Whole-product HTTP exports
+      // create foreground leases and preempt the very slices being measured.
+      // Use the exclusively runner-owned database, bounded read-only SQL and
+      // exactly the same scoped publication/task conditions and deadline.
+      assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
+      for (const previewId of requestedPreviewIds) assert.match(previewId, /^[0-9a-f-]{36}$/i);
+      const summary = readScopedPostgresRows(`SET default_transaction_read_only=on;
+        SET statement_timeout='250ms';
+        SELECT json_build_object(
+          'preview_ids', (SELECT COALESCE(json_agg(id),'[]'::json) FROM canonical_prefix_previews WHERE repertoire_id='${repertoireId}'),
+          'active_preview_id', (SELECT canonical_prefix_preview_id FROM repertoires WHERE id='${repertoireId}'),
+          'pending', EXISTS(SELECT 1 FROM background_tasks WHERE kind='canonical_prefix_preview'
+            AND deduplication_key IN ('${[...requestedPreviewIds].join("','")}')
+            AND state IN ('queued','leased','retrying')))`);
+      if (summary.preview_ids.length <= 9 && !summary.pending) {
+        assert(summary.preview_ids.includes(summary.active_preview_id),
+          "Retention preserves the active current certificate");
+        break;
+      }
+      if (performance.now() >= retentionDeadline) {
+        const tasks = readScopedPostgresRows(`SET default_transaction_read_only=on;
+          SET statement_timeout='250ms';
+          SELECT COALESCE(json_agg(checkpoint),'[]'::json) FROM (
+            SELECT task.state,task.phase,task.attempt_count,task.transaction_timeout_count,
+              task.next_attempt_at,task.lease_expires_at,preview.state AS preview_state,
+              (SELECT COUNT(*) FROM background_task_events WHERE task_id=task.id) AS event_count
+            FROM background_tasks task JOIN canonical_prefix_previews preview
+              ON preview.id=task.deduplication_key
+            WHERE task.kind='canonical_prefix_preview' AND preview.repertoire_id='${repertoireId}'
+            ORDER BY preview.created_at,preview.id LIMIT 12) checkpoint`);
+        assert.fail("Bounded preview retention finishes and removes abandoned scans; "
+          + JSON.stringify({ preview_count: summary.preview_ids.length, pending: summary.pending, tasks }));
+      }
+      await measureScenario.wait(100);
     }
-    assert(performance.now() < retentionDeadline, "Bounded preview retention finishes and removes abandoned scans");
-    await measureScenario.wait(100);
-  }
+  });
   console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
   console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
   console.log("PASS test_postgres_canonical_retention_scoped_readonly_poll_preserves_idle_worker_admission");
@@ -877,8 +899,8 @@ const actions = {
     if (options.mode === "lifecycle") run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
   },
   maintenance_cli: async () => {
+    maintenanceImageCleanupRequired = true;
     run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]);
-    maintenanceImageCreated = true;
     for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
       run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
     }
@@ -1118,6 +1140,8 @@ const actions = {
     if (resourcesCreated) {
       const inspect = (args) => {
         const result = spawnSync("docker", args, { encoding: "utf8", env: environment });
+        if (args[0] === "image" && args[1] === "inspect" && args[2] === maintenanceImage
+          && isMissingMaintenanceImage(result)) return "[]";
         assert.equal(result.status, 0, "Could not record disposable Docker ownership");
         return result.stdout.trim();
       };
@@ -1129,7 +1153,7 @@ const actions = {
       })) : [];
       atomicJson(`test-results/tempo-cli/${project}/ownership.json`, { checkout: process.cwd(), revision: candidateRevision,
         project, context: inspect(["context", "show"]), containers,
-        maintenance_image: maintenanceImageCreated ? JSON.parse(inspect(["image", "inspect", maintenanceImage])).map(image => ({ id: image.Id, created: image.Created, tag: maintenanceImage })) : [],
+        maintenance_image: maintenanceImageCleanupRequired ? JSON.parse(inspect(["image", "inspect", maintenanceImage])).map(image => ({ id: image.Id, created: image.Created, tag: maintenanceImage })) : [],
         teardown: ["docker", ...compose, "down", "--rmi", "local", "-v"],
         maintenance_teardown: ["docker", "image", "rm", maintenanceImage] });
     }
@@ -1152,10 +1176,11 @@ const actions = {
           if (remaining.status !== 0 || remaining.stdout.trim()) cleanupErrors.push(new Error(`Disposable PostgreSQL ${resource} cleanup left resources`));
         }
       }
-      if (maintenanceImageCreated) {
+      if (maintenanceImageCleanupRequired) {
         const removedMaintenanceImage = spawnSync("docker", ["image", "rm", maintenanceImage],
-          { stdio: "ignore", env: environment });
-        if (removedMaintenanceImage.error || removedMaintenanceImage.status !== 0)
+          { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", env: environment });
+        const ownedImageAbsent = isMissingMaintenanceImage(removedMaintenanceImage);
+        if (removedMaintenanceImage.error || (removedMaintenanceImage.status !== 0 && !ownedImageAbsent))
           cleanupErrors.push(new Error("Disposable maintenance image cleanup failed"));
       }
     } finally {
