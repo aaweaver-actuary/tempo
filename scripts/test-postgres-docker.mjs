@@ -11,7 +11,7 @@ import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./po
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
-import { createScenarioTimer } from "./test-scenario-timings.mjs";
+import { createScenarioTimer, postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
 import { atomicJson, redact } from "./tempo-deployment.mjs";
 
@@ -106,9 +106,13 @@ function verifyProjectIsUnused() {
 }
 
 function run(command, argumentsList, options = {}) {
-  const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
-  if (result.error || result.status !== 0)
-    throw new Error(`${command} ${argumentsList.join(" ")} failed`);
+  const { label, category } = postgresCommandTiming(argumentsList);
+  return measureScenario.syncDetail(label, category, () => {
+    const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
+    measureScenario.processResult(result);
+    if (result.error || result.status !== 0) throw new Error(`${command} ${argumentsList.join(" ")} failed`);
+    return result;
+  });
 }
 
 const workloadConsumers = backgroundWorkloadConsumers;
@@ -128,8 +132,13 @@ function verifyWorkloadConsumers(expectedState) {
     assert.equal(states.get(service), expectedState, `${service} must be ${expectedState} for the workload benchmark`);
 }
 
-async function waitForReady({ requireContainerHealthy = false } = {}) {
+async function waitForReady(...argumentsList) {
+  return measureScenario.detail("api_ready", "readiness", () => pollForReady(...argumentsList));
+}
+
+async function pollForReady({ requireContainerHealthy = false } = {}) {
   for (let attempt = 0; attempt < 180; attempt += 1) {
+    measureScenario.poll();
     try {
       const response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(3_000) });
       if (response.ok) {
@@ -142,14 +151,14 @@ async function waitForReady({ requireContainerHealthy = false } = {}) {
           assert.equal(status.status, 0, "Could not inspect API container readiness");
           const containers = status.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
           if (!containers.some(container => container.Service === "api" && container.Health === "healthy")) {
-            await new Promise(resolve => setTimeout(resolve, 1_000));
+            await measureScenario.wait(1_000);
             continue;
           }
         }
         return;
       }
     } catch { /* stack startup */ }
-    await new Promise(resolve => setTimeout(resolve, 1_000));
+    await measureScenario.wait(1_000);
   }
   throw new Error("Disposable PostgreSQL Tempo did not become ready");
 }
@@ -168,7 +177,11 @@ async function postCommand(path, payload, { method = "POST", operationId, label 
   }, label));
 }
 
-async function confirm(response) {
+async function confirm(...argumentsList) {
+  return measureScenario.detail("operation_receipt", "readiness", () => pollForConfirmation(...argumentsList));
+}
+
+async function pollForConfirmation(response) {
   if (response.status !== 202) {
     if (!response.ok) throw new Error(`command HTTP ${response.status} ${await response.text()}`);
     return response.json();
@@ -176,17 +189,23 @@ async function confirm(response) {
   const pending = await response.json();
   assert(pending.operation_id, "202 command must return an operation ID");
   for (let attempt = 0; attempt < 120; attempt += 1) {
+    measureScenario.poll();
     const receipt = await get(`operations/${encodeURIComponent(pending.operation_id)}`);
     if (receipt.state === "complete") return receipt.response;
     if (receipt.state === "failed") throw new Error(`PostgreSQL command failed: ${JSON.stringify(receipt.error)}`);
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   throw new Error(`PostgreSQL operation ${pending.operation_id} remains pending`);
 }
 
-async function waitForStudyableImport(repertoireId) {
+async function waitForStudyableImport(...argumentsList) {
+  return measureScenario.detail("import_publication", "readiness", () => pollForStudyableImport(...argumentsList));
+}
+
+async function pollForStudyableImport(repertoireId) {
   let settledSamples = 0;
   for (let attempt = 0; attempt < 180; attempt += 1) {
+    measureScenario.poll();
     const [system, integrity, queue] = await Promise.all([
       get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }), get("queue/today", { background: true }),
     ]);
@@ -205,7 +224,7 @@ async function waitForStudyableImport(repertoireId) {
     } else {
       settledSamples = 0;
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   throw new Error(`PostgreSQL graph, integrity, and queue work did not settle for ${repertoireId}`);
 }
@@ -303,7 +322,11 @@ async function verifyPgnImportReplayWithoutDuplicates(operationId, originalResul
   console.log(`PASS verifyPgnImportReplayWithoutDuplicates ${phase}: one receipt/result and unchanged lines/cards`);
 }
 
-async function waitForStudyQueue(repertoireId, minimumCardCount) {
+async function waitForStudyQueue(...argumentsList) {
+  return measureScenario.detail("study_queue", "readiness", () => pollForStudyQueue(...argumentsList));
+}
+
+async function pollForStudyQueue(repertoireId, minimumCardCount) {
   const initialSnapshot = await get("migration/snapshot");
   const repertoireCardIds = new Set((initialSnapshot.tables.repertoire_cards ?? [])
     .filter((row) => row.repertoire_id === repertoireId)
@@ -312,6 +335,7 @@ async function waitForStudyQueue(repertoireId, minimumCardCount) {
     if (card.repertoire_id === repertoireId) repertoireCardIds.add(card.id);
   }
   for (let attempt = 0; attempt < 240; attempt += 1) {
+    measureScenario.poll();
     const [queue, integrity] = await Promise.all([
       get("queue/today"), get(`repertoires/${repertoireId}/integrity`),
     ]);
@@ -320,7 +344,7 @@ async function waitForStudyQueue(repertoireId, minimumCardCount) {
     if (cards.length >= minimumCardCount) return { queue, snapshot: initialSnapshot, cards };
     if (queue.projection?.state === "failed")
       throw new Error(queue.projection.last_error ?? "PostgreSQL study queue projection failed");
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   const queue = await get("queue/today");
   throw new Error(`PostgreSQL study queue did not admit ${minimumCardCount} entries for ${repertoireId}; `
@@ -543,7 +567,7 @@ async function verifyForegroundAndStudyDurability() {
     if (compatibility.state === "ready") break;
     assert.equal(compatibility.state, "checking", JSON.stringify(compatibility));
     assert(performance.now() < prefixDeadline, "Prefix compatibility completes after worker restart");
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await measureScenario.wait(100);
   } while (true);
   const prefixBody = { preview_id: prefixPreview.preview_id, expected_revision: 0 };
   const prefixOperationId = `pg-study-prefix-save-${randomBytes(10).toString("hex")}`;
@@ -662,7 +686,7 @@ async function verifyStudyBurialRetainsQuota() {
       refreshedQueue = queue;
       break;
     }
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   assert(refreshedQueue, "Study burial quota refresh publishes a new generation before its deadline");
   assert.deepEqual(refreshedQueue.cards.map(card => card.queue_entry_id), unrelatedOrder,
@@ -687,7 +711,7 @@ async function verifyBlockedBurialRecovery() {
       before = queue;
       break;
     }
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await measureScenario.wait(250);
   }
   assert(before, "Queue settings restoration settles before blocked burial recovery");
   const selected = before.cards[0];
@@ -736,7 +760,7 @@ async function verifyCurrentCanonicalRouteAdmission() {
       if (preview.state === "ready") return preview;
       assert.equal(preview.state, "checking", JSON.stringify(preview));
       assert(performance.now() < deadline, "Current-source compatibility finishes");
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await measureScenario.wait(100);
     }
   };
   const preview = await checkCurrentPrefix();
@@ -790,7 +814,7 @@ async function verifyCurrentCanonicalRouteAdmission() {
       break;
     }
     assert(performance.now() < retentionDeadline, "Bounded preview retention finishes and removes abandoned scans");
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await measureScenario.wait(100);
   }
   console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
   console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
@@ -891,7 +915,7 @@ const actions = {
   },
   deployment_lifecycle: async () => {
     const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
-      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels], measure: measureScenario });
     if (options.mode === "lifecycle") {
       await verifyLifecycle();
       return;
@@ -997,11 +1021,12 @@ const actions = {
     await uncertainResponse.body?.cancel();
     let settingsCommitted = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
+      measureScenario.poll();
       if ((await get("settings")).new_cards_per_day === updatedSettings.new_cards_per_day) {
         settingsCommitted = true;
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await measureScenario.wait(100);
     }
     assert(settingsCommitted, "Settings business effect commits after its response is discarded");
     run("docker", [...compose, "stop", ...workloadConsumers, "foreground-worker"]);
@@ -1075,10 +1100,10 @@ const actions = {
       "Fresh durability database starts without browser queue entries");
   },
   study_durability: async () => {
-    await verifyForegroundAndStudyDurability();
-    await verifyCurrentCanonicalRouteAdmission();
-    await verifyStudyBurialRetainsQuota();
-    await verifyBlockedBurialRecovery();
+    await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);
+    await measureScenario.detail("canonical_route_admission", "scenario", verifyCurrentCanonicalRouteAdmission);
+    await measureScenario.detail("study_burial_quota", "scenario", verifyStudyBurialRetainsQuota);
+    await measureScenario.detail("blocked_burial_recovery", "scenario", verifyBlockedBurialRecovery);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_stalemate_swindles.py"]);
   },

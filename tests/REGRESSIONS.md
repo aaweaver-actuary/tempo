@@ -1,3 +1,7 @@
+PostgreSQL/lifecycle nested CI measurements (October 10, 2026):
+
+- `tests/runner/postgres-test-speedups.test.mjs`, through `postgres-test-speedups-regressions.test.ts`: `nested PostgreSQL timings preserve start order, parent identity, process outcomes and secret exclusion`; `nested PostgreSQL timers keep concurrent Redis observation and deployment ownership separate`; `nested PostgreSQL waiting records elapsed time and polls without changing the requested interval`; `nested timing write failures propagate and cleanup executes even when its measurement also fails`; `PostgreSQL command timings classify fixed operations without retaining arguments or credentials`; `nested timing cannot qualify failed, missing or stale durability and lifecycle inventories`. These protect additive timing details, expected-fault observations, immutable stage qualification and cleanup after recording failures.
+
 PR #92 cross-tab completion wakeup (October 8, 2026):
 
 - `opening-evidence-cross-tab-signals.test.ts`: `opening acknowledgment publishes only after atomic evidence removal and never leaks journal content`; `aborted acknowledgment preserves saved evidence and emits no completion`; retained/rejected acknowledgment, native transport fallback/failure, malformed/self/duplicate signals, first/last subscription cleanup, unavailable BroadcastChannel, and atomic checkpoint confirmation regressions.
