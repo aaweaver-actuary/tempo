@@ -5,6 +5,7 @@ import { fetchAndInitializeQueue, rememberConfirmedQueueEntry } from "../../app/
 import { useTrainingStore } from "../../app/state/training-store";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
 import { localDayKey } from "../../app/utils/local";
+import { enqueueTrainingFailure } from "../../app/lib/training-failure-outbox";
 
 vi.mock("../../app/lib/background-study", async () => {
   const { createStudyPositionStore } = await import("../../app/lib/study-position-store");
@@ -38,14 +39,16 @@ it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unres
   expect(pendingReviews().map(review => review.attemptId)).toEqual(["independent-pending"]);
 });
 
-it.each(["revision", "cycle", "day", "generation", "pending", "conflict", "window", "readiness", "database"])(
+it.each(["revision", "cycle", "day", "generation", "pending", "conflict", "guided_pending", "guided_flag", "window", "readiness", "database"])(
   "prepared_continuation_requires_current_head_and_matching_identity: local %s invalidation", invalidation => {
-    const candidate = capturePreparedNext()!;
+    const candidate = { ...capturePreparedNext()!, attempt_failed: false };
     const { attempt } = useTrainingStore.getState();
     if (invalidation === "revision") candidate.revision++;
     if (invalidation === "cycle") candidate.cycle++;
     if (invalidation === "day") candidate.local_date = "1999-01-01";
     if (invalidation === "pending") enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
+    if (invalidation === "guided_pending") enqueueTrainingFailure(502, "b", 1);
+    if (invalidation === "guided_flag") useTrainingStore.setState({ practiceCards: [cards[0], { ...cards[1], attemptFailed: true }, cards[2]] });
     if (invalidation === "conflict") {
       enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
       const stored = JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!);
@@ -58,6 +61,14 @@ it.each(["revision", "cycle", "day", "generation", "pending", "conflict", "windo
     expect(advancePreparedContinuation(candidate, attempt.attemptId!, attempt.generation + (invalidation === "generation" ? 1 : 0))).toBe(false);
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
   });
+
+it("prepared_continuation_requires_current_head_and_matching_identity: confirmed guided successor retains guidance", () => {
+  const continuation = { ...capturePreparedNext()!, attempt_failed: true };
+  const attempt = useTrainingStore.getState().attempt;
+  expect(advancePreparedContinuation(continuation, attempt.attemptId!, attempt.generation)).toBe(true);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(502);
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
+});
 
 it("async_reconciliation_preserves_active_attempt_and_excludes_completed_entries", async () => {
   const initialAttempt = useTrainingStore.getState().attempt;
