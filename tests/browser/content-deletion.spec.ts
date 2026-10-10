@@ -95,7 +95,12 @@ test("permanently deleting the active training card clears its attempt and survi
   } }), request);
   expect(reimported.cards_created).toBe(0);
   await expect.poll(async () => {
-    const repertoires = (await (await request.get(`${api}/repertoires`)).json()).repertoires;
+    // This observes derived graph publication and must not reserve foreground admission.
+    const graphResponse = await request.get(`${api}/repertoires`, {
+      headers: { "X-Tempo-Work-Class": "background" },
+    });
+    expect(graphResponse.ok(), await graphResponse.text()).toBe(true);
+    const repertoires = (await graphResponse.json()).repertoires;
     const target = repertoires.find((item: { id: string }) => item.id === (deletesFirstImport ? imported.repertoire_id : nextImported.repertoire_id));
     return target?.graph_state === "ready" && target?.graph_generation > 1;
   }, { timeout: 20_000 }).toBe(true);
