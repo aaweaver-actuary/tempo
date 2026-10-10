@@ -3598,3 +3598,36 @@ Run `38051758485` subsequently passed that complete 53-case shard with zero retr
 - Shared `opening_probability_rejects_invalid_standard_board_structure` cases now reject all four missing-rook castling rights, a king off its home square, and a wrong-color rook. Automated PR review identified chess.js's nonexistent castle for a missing rook; all six Python helper cases failed before repair (0.34s pytest/1.14s wall), and the TypeScript boundary case failed too (1.60s wall). Both boundaries reject those inputs before key derivation without introducing a competing canonicalization rule.
 - `tests/browser/board-interactions.spec.ts::Black Train prompt remains playable with a fully visible narrow board` failed in current-base run `38055901534` (shard 3). Trace recorded the preceding fixture's empty queue as `refreshing`/`refresh_pending: 1` before UI import, then showed the actionable queue-preparing alert instead of import success. The case now establishes `ready`/zero-pending/empty publication with bounded, background-classified API reads before import. Its original two-card import-success, Black-turn/input-enabled, board geometry and legal-move assertions remain unchanged. This is a test precondition, not a production queue change.
 - Local reproduction passed the repaired narrow-board case but exposed the same unsettled-publication precondition in `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`. Both existing import cases now share that bounded pre-import wait. The first local run is retained as a partial failure, not a pass or timing benchmark; neither original import-success assertion was weakened.
+
+## Builder repertoire response ordering after PR #133 (2026-10-09)
+
+Only the latest applicable initial/refresh repertoire-lines request may publish
+Builder lines, readiness or error; unmount invalidates outstanding requests.
+The current UI blocks retry while initial loading is pending, so a test-scoped
+state initializer exposes that boundary for controlled overlap. These failures
+demonstrate the publication invariant, not a reachable current-UI race.
+
+- `obsolete initial repertoire lines cannot replace a successfully recovered training route` failed on main `24a2272c`: late initial data changed the restored active repertoire to `obsolete-repertoire`.
+- `obsolete initial repertoire failure cannot interrupt a newer training-route lookup` failed on that main: the obsolete error displayed Retry and cancelled the newer lookup.
+- `obsolete initial repertoire failure cannot replace successful training recovery` preserves the restored root, full history, cursor, branch anchor, selection, board and write permissions after a late failure; it already passed before the guard.
+- `late training route lookup cannot overwrite a newer retry in the same Builder session` ignores cancellation deliberately, then releases an old result after newer adoption; the existing worker guards already passed. The replacement-session regression remains unchanged.
+
+All four tests are in `training-builder-context-regressions.test.tsx`, use deferred
+fetch/worker promises, and await processing before assertions. Initial loads and
+refreshes share a request-generation guard; route matching and adoption are unchanged.
+
+### PR #141 current-main requalification (2026-10-10)
+
+Current main `e9788df8` still reproduces obsolete success selection overwrite and
+obsolete failure cancellation/error publication with the controlled overlap
+fixture above. The route/adoption/session implementation is unchanged.
+
+- `obsolete initial repertoire conversion cannot publish after newer recovery`
+  fails on that main: conversion starts before the refresh and finishes after
+  recovery, replacing `najdorf` with `obsolete-repertoire`. Deferred conversion
+  proves publication must be fenced after computation, not only after fetch.
+- `current repertoire refresh failure reports its error and preserves recovery until a successful retry`
+  passes before and after the guard: a current failure reports its actual error,
+  preserves pending history/board/anchor, blocks writes and allows a successful
+  later retry. This case uses the real error-to-retry UI without initial-state
+  exposure. Both cases live in `training-builder-context-regressions.test.tsx`.
