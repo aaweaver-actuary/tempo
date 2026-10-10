@@ -679,3 +679,13 @@ navigation, alignment and horizontal bounds remain consistent. Only these four
 Settings images change; the independent 1920 header correction is the preceding
 commit. The complete pinned visual/performance gate and required current-candidate
 CI remain separate validation requirements, reported in the PR description.
+
+Complete browser qualification uses four isolated ARM runners when the captured
+selection includes every required regular browser identity. Whole specs are balanced
+by the checked-in historical timing profile; the immutable plan captures the exact
+assignment before execution. `browser / verify` requires every expected latest shard
+execution and the exact aggregate inventory, with zero skips/retries. Targeted
+selections and local browser commands retain one runner. Whole-browser evidence reuse
+includes the shard assignment and original shard provenance. See
+[browser CI performance](browser-ci-performance.md) for baseline decomposition,
+isolation, tradeoffs, and nested diagnostic timing accounting.
