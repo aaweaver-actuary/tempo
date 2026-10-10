@@ -36,7 +36,8 @@ export function advancePreparedContinuation(continuation: PreparedContinuation |
   if (!continuation) return false;
   const state = useTrainingStore.getState();
   const next = state.practiceCards[state.activeCardIndex + 1];
-  if (!next || state.isOfflineQueueActive || state.serviceError || state.attempt.attemptId !== attemptId ||
+  if (!next || !state.isDatabaseQueueActive || state.queueReadiness !== "ready" || state.isOfflineQueueActive ||
+      state.serviceError || state.attempt.attemptId !== attemptId ||
       state.attempt.generation !== generation || state.queueLocalDate !== continuation.local_date ||
       continuation.local_date !== localDayKey() || !matchesIdentity(next, continuation) || !nextIsLocallyEligible(continuation)) return false;
   if (continuation.attempt_failed !== undefined && next.attemptFailed !== continuation.attempt_failed) {

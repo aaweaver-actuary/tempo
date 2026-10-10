@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-it.each(["revision", "cycle", "day", "generation", "pending", "window"])(
+it.each(["revision", "cycle", "day", "generation", "pending", "window", "readiness", "database"])(
   "prepared_continuation_requires_current_head_and_matching_identity: local %s invalidation", invalidation => {
     const candidate = capturePreparedNext()!;
     const { attempt } = useTrainingStore.getState();
@@ -32,6 +32,8 @@ it.each(["revision", "cycle", "day", "generation", "pending", "window"])(
     if (invalidation === "day") candidate.local_date = "1999-01-01";
     if (invalidation === "pending") enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
     if (invalidation === "window") useTrainingStore.setState({ practiceCards: [cards[0]] });
+    if (invalidation === "readiness") useTrainingStore.setState({ queueReadiness: "loading" });
+    if (invalidation === "database") useTrainingStore.setState({ isDatabaseQueueActive: false });
     expect(advancePreparedContinuation(candidate, attempt.attemptId!, attempt.generation + (invalidation === "generation" ? 1 : 0))).toBe(false);
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
   });
