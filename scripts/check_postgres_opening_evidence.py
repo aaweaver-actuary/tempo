@@ -194,7 +194,7 @@ def _checkpoint_operation_receipt(operation_id):
         return dict(database.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone())
 
 
-def admitted_checkpoint_delivery(operation_id, command_name, payload):
+def admitted_checkpoint_delivery(operation_id, command_name, payload, *, prior_attempt_count=0):
     """Wait in the proof driver only for explicit admission deferrals.
 
     A refused command retains its source receipt and spends no attempt. SQL
@@ -207,20 +207,42 @@ def admitted_checkpoint_delivery(operation_id, command_name, payload):
         if result is not None:
             return result
         receipt = _checkpoint_operation_receipt(operation_id)
-        if receipt['state'] != 'retrying' or receipt['last_error_json'] is not None or receipt['attempt_count'] != 0:
+        if receipt['state'] != 'retrying' or receipt['last_error_json'] is not None or receipt['attempt_count'] != prior_attempt_count:
             return None
         assert time.monotonic() < admission_deadline, 'Checkpoint never obtained foreground-idle admission within 10 seconds'
         time.sleep(0.01)
 
 
+def admitted_checkpoint_replay(operation_id, payload):
+    """Exercise the completed command path after observable idle admission."""
+    from app import command_gateway
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    completed_receipt = _checkpoint_operation_receipt(operation_id)
+    assert completed_receipt['state'] == 'complete', 'Checkpoint replay requires a completed receipt'
+    admission_deadline = time.monotonic() + 10
+    while True:
+        try:
+            return command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True)
+        except BackgroundAdmissionDeferred:
+            assert _checkpoint_operation_receipt(operation_id) == completed_receipt, 'Denied checkpoint replay changed the completed receipt'
+            assert time.monotonic() < admission_deadline, 'Checkpoint replay never obtained foreground-idle admission within 10 seconds'
+            time.sleep(0.01)
+
+
 def _recover_checkpoint_operation(operation_id):
-    from app import command_gateway, tasks
+    from app import command_gateway
+    from app.services.activity_gate import activity_gate
+    prior_attempt_count = _checkpoint_operation_receipt(operation_id)['attempt_count']
     with postgres_store.connection() as database:
         database.execute_native("UPDATE operation_receipts SET next_retry_at=NOW()-INTERVAL '1 minute',"
                                 "lease_expires_at=NOW()-INTERVAL '1 minute',updated_at='1970-01-01' WHERE operation_id=%s", (operation_id,))
-    recovered = command_gateway.claim_recoverable_operation()
+    # Match the worker's short receipt-bookkeeping boundary. The actual
+    # preparation/publication below still requires normal idle admission.
+    with activity_gate.background_control():
+        recovered = command_gateway.claim_recoverable_operation()
     assert recovered and recovered['operation_id'] == operation_id and recovered['background'] is True
-    return tasks.execute_background_command.run(operation_id, recovered['command_name'], recovered['payload'])
+    return admitted_checkpoint_delivery(operation_id, recovered['command_name'], recovered['payload'],
+                                        prior_attempt_count=prior_attempt_count)
 
 
 def test_postgres_checkpoint_driver_retries_only_foreground_deferral():
@@ -376,7 +398,7 @@ def _assert_paused_checkpoint_review(*, complete_same_attempt):
         assert _fixture_scheduling(database, fixture) == scheduling, 'Checkpoint publication changed scheduling'
         digest = shadow_digest(database, fixture['repertoire_id'])
     # Same receipt and a distinct delivery key both preserve events, counters and days.
-    assert command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True) == checkpoint_result
+    assert admitted_checkpoint_replay(operation_id, payload) == checkpoint_result
     assert admitted_checkpoint_delivery(operation_id+'-replay', 'opening_evidence.checkpoint', payload) == checkpoint_result
     with postgres_store.connection(read_only=True) as database:
         assert shadow_digest(database, fixture['repertoire_id']) == digest and _fixture_scheduling(database, fixture) == scheduling
@@ -437,7 +459,7 @@ def test_postgres_opening_checkpoint_restart_recomputes_original_receipt():
         _assert_large_checkpoint(database, payload)
         assert _fixture_scheduling(database, fixture) == scheduling
         digest = shadow_digest(database, fixture['repertoire_id'])
-    assert command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True) == result
+    assert admitted_checkpoint_replay(operation_id, payload) == result
     with postgres_store.connection(read_only=True) as database:
         assert shadow_digest(database, fixture['repertoire_id']) == digest
     assert _checkpoint_operation_receipt(operation_id)['attempt_count'] == 2
