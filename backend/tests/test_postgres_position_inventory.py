@@ -149,3 +149,27 @@ def test_issue108_missing_route_checkpoint_revalidates_delivery_before_reporting
     else:
         assert inventory.execute_inventory_slice(task) is False
     assert fenced == [True]
+
+
+@pytest.mark.parametrize('inherited_namespace', [None, 'tempo:test:inventory:parent'])
+def test_pr117_inventory_proof_owns_admission_keys_and_preserves_restart_namespace(monkeypatch, inherited_namespace):
+    from scripts import check_postgres_position_inventory as proof
+    from app.services import redis_admission_gate
+    monkeypatch.setenv('TEMPO_TEST_INSTANCE', 'disposable')
+    monkeypatch.delenv('TEMPO_INVENTORY_PROOF_ADMISSION_ID', raising=False)
+    if inherited_namespace:
+        monkeypatch.setenv('TEMPO_INVENTORY_PROOF_ADMISSION_ID', inherited_namespace)
+    original_keys = redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY
+    deleted_keys = []
+    monkeypatch.setattr(redis_admission_gate, 'client', lambda: SimpleNamespace(delete=lambda *keys: deleted_keys.append(keys)))
+    with proof._owned_inventory_admission():
+        import os
+        namespace = os.environ['TEMPO_INVENTORY_PROOF_ADMISSION_ID']
+        assert namespace.startswith('tempo:test:inventory:')
+        if inherited_namespace:
+            assert namespace == inherited_namespace
+        assert (redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY) == (
+            namespace + ':foreground', namespace + ':background')
+        assert redis_admission_gate._FOREGROUND_KEY != original_keys[0]
+    assert (redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY) == original_keys
+    assert deleted_keys == ([] if inherited_namespace else [(namespace + ':foreground', namespace + ':background')])

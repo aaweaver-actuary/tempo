@@ -10,6 +10,7 @@ import time
 import threading
 import subprocess
 import uuid
+from unittest.mock import patch
 
 import chess
 import psycopg
@@ -22,10 +23,29 @@ from app import postgres_store
 from app.services import postgres_position_inventory as inventory
 from app.services.opening_graph import GraphInput, build_graph
 from app.services.activity_gate import activity_gate
+from app.services import redis_admission_gate
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 from app.services.postgres_opening_graph import stage_graph_steps, publish_graph_generation
 
 NOW = '2026-10-09T00:00:00+00:00'
+
+
+@contextmanager
+def _owned_inventory_admission():
+    """Use real admission with keys owned by this proof and its restart worker."""
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Inventory admission isolation requires a disposable instance')
+    inherited_namespace = os.getenv('TEMPO_INVENTORY_PROOF_ADMISSION_ID')
+    namespace = inherited_namespace or 'tempo:test:inventory:' + uuid.uuid4().hex
+    owned_keys = namespace + ':foreground', namespace + ':background'
+    try:
+        with patch.dict(os.environ, {'TEMPO_INVENTORY_PROOF_ADMISSION_ID': namespace}), \
+                patch.object(redis_admission_gate, '_FOREGROUND_KEY', owned_keys[0]), \
+                patch.object(redis_admission_gate, '_BACKGROUND_KEY', owned_keys[1]):
+            yield
+    finally:
+        if inherited_namespace is None:
+            redis_admission_gate.client().delete(*owned_keys)
 
 
 def seed(database, repertoire_id, lines):
@@ -179,12 +199,15 @@ def verify_issue108_upgrade_restart_replay_and_coverage(dsn):
     # Restart after a committed cursor closes every pooled connection; the next
     # claim reconstructs progress solely from PostgreSQL.
     postgres_store.close_pools()
-    child = subprocess.run([sys.executable, '-c',
-        "from scripts.check_postgres_position_inventory import postgres_store,claim,inventory; "
-        "with_database = postgres_store.connection(); db = with_database.__enter__(); "
-        "task = claim(db,'a'); with_database.__exit__(None,None,None); "
-        "assert task is not None; inventory.execute_inventory_slice(task); postgres_store.close_pools()"],
-        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
+    child = subprocess.run([sys.executable, '-c', """
+from scripts.check_postgres_position_inventory import postgres_store, claim, inventory, _owned_inventory_admission
+with _owned_inventory_admission():
+    with postgres_store.connection() as database:
+        task = claim(database, 'a')
+    assert task is not None
+    inventory.execute_inventory_slice(task)
+    postgres_store.close_pools()
+"""], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
     assert child.returncode == 0, f'Recreated worker failed: {child.stderr}'
     a_slices, a_durations = run_to_completion('a')
     b_slices, b_durations = run_to_completion('b')
@@ -349,7 +372,7 @@ def verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn):
             admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
 
 
-def main():
+def _run_inventory_proof():
     from scripts import check_postgres_inventory_recovery as recovery
     repair_cases = {name: getattr(recovery, name) for name in (
         'test_pr117_foreground_mutation_and_graph_publication_have_no_lock_cycle',
@@ -391,6 +414,11 @@ def main():
         with psycopg.connect(admin_dsn,autocommit=True) as admin:
             admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
         print('PASS issue108 owned database cleanup', flush=True)
+
+def main():
+    with _owned_inventory_admission():
+        _run_inventory_proof()
+
 
 if __name__ == '__main__':
     main()

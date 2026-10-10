@@ -3949,3 +3949,5 @@ The cross-repertoire proof also runs after other transposition fixtures in the c
 The computed-stale-output proof uses a distinct legal authored route and explicitly requires a traversal checkpoint before its compute/publication hook. The combined checker initially reused a completed route from earlier fixtures, correctly bypassing computation; the fixture now preserves that reuse behavior while exercising the intended race.
 
 - `test_pr117_profile_upgrade_rehearsal_starts_at_schema43_after_readiness_advances[45/46]`: preserves #116's historical schema-43 starting point as readiness advances. Both cases failed before the fixture ceiling was pinned; published migration files and the normal upgrade driver are unchanged.
+
+- `test_pr117_inventory_proof_owns_admission_keys_and_preserves_restart_namespace`: the durability run reproduced admission interference from its API stack. The proof uses real Redis admission with owned keys, shares them with its restart worker, restores global keys and cleans only owner-created keys. The existing real foreground-contention proof still requires admission denial/resume.
