@@ -476,11 +476,15 @@ def test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_leas
     # uses its own synthetic fixture and creates its own foreground contention.
     server = redis_admission_gate.client()
     parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
-    with redis_admission_gate.foreground_lease():
-        parent_tokens = set(server.zrange(parent_foreground_key, 0, -1))
-        assert parent_tokens
+    unrelated_token = uuid.uuid4().hex
+    # Another process retains its original key even while this process changes
+    # its test namespace. Track only this owned token, not transient API probes.
+    server.zadd(parent_foreground_key, {unrelated_token: int(time.time() * 1000) + redis_admission_gate._FOREGROUND_LEASE_MS})
+    try:
         test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
-        assert parent_tokens <= set(server.zrange(parent_foreground_key, 0, -1))
+        assert server.zscore(parent_foreground_key, unrelated_token) is not None
+    finally:
+        server.zrem(parent_foreground_key, unrelated_token)
     print('PASS test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease')
 
 
