@@ -48,6 +48,20 @@ def test_checkpoint_recovery_driver_preserves_nonadmission_errors(monkeypatch):
     delivery.assert_not_called()
 
 
+def test_checkpoint_receipt_fixture_waits_for_foreground_admission_without_altering_payload(monkeypatch):
+    historical_payload = {"checkpoint": {"saved": True}, "prepared_manifest": {"obsolete": True}}
+    receipt = Mock(side_effect=[BackgroundAdmissionDeferred("Waiting for foreground activity"),
+                               (True, historical_payload, None, None)])
+    monkeypatch.setattr(rehearsal.time, "sleep", lambda _: None)
+    assert rehearsal._wait_for_checkpoint_admission(
+        lambda: receipt("owned", "opening_evidence.checkpoint", historical_payload, background=True)
+    ) == (True, historical_payload, None, None)
+    assert receipt.call_count == 2
+    for invocation in receipt.call_args_list:
+        assert invocation.args == ("owned", "opening_evidence.checkpoint", historical_payload)
+        assert invocation.kwargs == {"background": True}
+
+
 def test_checkpoint_recovery_driver_has_bounded_admission_deadline(monkeypatch):
     claim = Mock(side_effect=BackgroundAdmissionDeferred("Waiting for foreground activity"))
     _, delivery = prepare_recovery(monkeypatch, claim)
