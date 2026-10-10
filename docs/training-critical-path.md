@@ -23,6 +23,11 @@ captured at main `8fff21ac87f9021b17197e0c3d21085e3b054478`, with measurement-on
 commit `a5bb21dbece6b5210dd3511ad0826c49bc76c8a8`. That auxiliary branch adds the
 same telemetry and fixture, without continuation, request-schema, outbox or
 queue-state changes. Its patch and provenance are retained locally.
+The baseline browser harness differs by the later explicit seeded-head readiness
+read before loading the UI. This extra candidate setup query is outside all
+warm-up/measured transitions; source fixtures and measured harness are identical.
+It is another reason to retain the controlled refresh comparison and avoid
+attributing serial cohort differences exclusively to the implementation.
 
 The six fresh-stack condition runs used clean candidate
 `ee3b3589555dbdd90e2d21c46bb1187a55ed1c06`. Subsequent fallback protection and
@@ -91,7 +96,7 @@ Missing, busy, promoted, stale, deleted, archived, buried or incompatible B
 produces a successful A review without continuation. No queue reconstruction is
 added to the review transaction. The fallback retains authoritative refresh and
 actionable errors. A connected read whose issued head is filtered by local
-pending/conflicted/completed reviews retains the active attempt instead of
+pending/locally completed reviews retains the active attempt instead of
 enabling an unissued successor. Existing phone preparation/replay authorization
 and offline filtering remain intact.
 
@@ -193,11 +198,11 @@ from the native grade click (three separate transitions, not a sum of percentile
 | Observation | Main | Prepared | Refresh |
 | --- | ---: | ---: | ---: |
 | Submission | 19.000 | 33.000 | 31.000 |
-| Successful writer commit completion | 55.602 | 94.128 | 134.844 |
+| Successful writer commit completion | 58.094 | 97.014 | 143.235 |
 | Receipt observed | 64.070 | 106.815 | 152.735 |
 | Fresh enabled board | 127.550 | 111.780 | 299.500 |
 
-The commit row is offset-corrected; its uncertainty is the corresponding cohort
+The commit row uses `host commit = worker commit - (server minus host offset)`; its uncertainty is the corresponding cohort
 bracket above. Server spans remain in their own monotonic durations. Receipt
 observation is a distinct event, and input processing is measured after readiness.
 
@@ -317,6 +322,18 @@ study stack and uncertain other-task resources were retained. Local diagnostics,
 raw timings, traces and tested-revision provenance are preserved outside the
 clone under `test-results/training-critical-path-2026-10-10/`. The task checkout
 and measurement-only baseline branch remain available pending review/merge.
+
+Initial draft CI on head `94413f0` reproduced two repair needs: the legacy
+payload test derived its oracle from the expanded current model, and the new
+fallback guard blocked existing terminal-conflict independent-card recovery.
+The legacy test now pins the literal historical payload and SHA-256 fingerprint;
+the fallback guard is restricted to unconfirmed deliveries and locally completed
+heads. Prepared continuation still rejects conflicted B. Focused repair validation passed 50 backend cases in 2.22 s and 110 unit cases
+in 22.42 s, including attempt lifecycle, desktop queue, confirmation, recovery
+and CI runtime-inventory consumers. Typecheck/lint passed (zero errors, ten
+existing warnings). The conflict case also failed locally on the original guard
+before the repair. New candidate qualification remains required; earlier layer passes are not reused across
+changed source revisions.
 
 PR and current-head/current-base CI qualification are pending. Focused local
 passes and old measurements do not establish merge readiness for a newer SHA.
