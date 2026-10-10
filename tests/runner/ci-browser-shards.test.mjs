@@ -25,6 +25,8 @@ test("four complete browser shards partition required identities exactly once", 
 });
 
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { randomBytes } from "node:crypto";
 import { createBrowserShardPlan, browserTimingProfile, aggregateBrowserShards, browserShardReportPath,
@@ -220,7 +222,7 @@ test("fixture and polling timing unions avoid counting nested spans twice", () =
 
 
 test("browser aggregation CLI rejects extra artifacts and unsuccessful matrix results", () => {
-  const directory = mkdtempSync(`${process.cwd()}/test-results/browser-sharding/aggregation-`);
+  const directory = mkdtempSync(join(tmpdir(), "tempo-ci-browser-aggregation-"));
   const plan = completePlan(); plan.repository = "owner/tempo"; plan.hash = planHash(plan);
   const reports = passingBrowserShards(plan), jobs = passingBrowserJobs(plan, reports);
   const script = new URL("../../scripts/ci-aggregate-browser.mjs", import.meta.url).pathname;
@@ -243,5 +245,21 @@ test("browser aggregation CLI rejects extra artifacts and unsuccessful matrix re
     }
     mkdirSync(`${directory}/test-results/browser-shards/ci-browser-shard-5`);
     const extra = run(); assert.notEqual(extra.status, 0); assert.match(extra.stderr, /extra browser shard artifacts/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("Docker capability probe requests the server version and rejects unavailable or empty daemons", () => {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-ci-browser-daemon-"));
+  const script = new URL("../../scripts/check-test-capabilities.mjs", import.meta.url).pathname;
+  const run = () => spawnSync(process.execPath, [script, "--docker"], { encoding: "utf8", env: { ...process.env, PATH: `${directory}:${process.env.PATH}` } });
+  const fakeDocker = body => { writeFileSync(`${directory}/docker`, `#!/bin/sh\n${body}\n`); chmodSync(`${directory}/docker`, 0o755); };
+  try {
+    fakeDocker('test "$1" = version && test "$2" = --format && test "$3" = "{{.Server.Version}}" || exit 69\nprintf "29.0.0"');
+    const available = run(); assert.equal(available.status, 0, available.stderr);
+    fakeDocker('printf "daemon unavailable" >&2\nexit 1');
+    const unavailable = run(); assert.notEqual(unavailable.status, 0); assert.match(unavailable.stderr, /daemon unavailable/);
+    fakeDocker('exit 0');
+    const empty = run(); assert.notEqual(empty.status, 0); assert.match(empty.stderr, /server version/);
+    assert.match(readFileSync(script, "utf8"), /timeout: 5_000/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

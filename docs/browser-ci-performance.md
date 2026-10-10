@@ -119,3 +119,11 @@ and 14.33s preparing maintenance; lifecycle (706.74s) spends 105.92s and 12.77s
 respectively. Investigate safely cached/distributed immutable image preparation
 separately with full input invalidation; mutable databases and lifecycle recovery
 must remain isolated. Those layers are unchanged here.
+
+
+The initial sharding candidate encountered two pre-test Docker `info` timeouts
+on separate hosted runners. That capability probe only consumed the server version.
+It now requests `docker version --format '{{.Server.Version}}'`, avoiding full daemon
+inventory while retaining the five-second deadline, inaccessible/empty-daemon failure,
+and real workspace bind-mount check. The failed candidate is excluded from successful
+wall-time evidence; the repaired candidate requires fresh qualification.

@@ -12,11 +12,11 @@ const checkLoopback = requestedChecks.length === 0 || requestedChecks.includes("
 const failures = [];
 
 if (checkDocker) {
-  const dockerResult = spawnSync("docker", ["info", "--format", "{{.ServerVersion}}"], {
+  const dockerResult = spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], {
     encoding: "utf8", timeout: 5_000,
   });
-  if (dockerResult.error || dockerResult.status !== 0) {
-    const detail = dockerResult.error?.message || dockerResult.stderr.trim() || "unknown error";
+  if (dockerResult.error || dockerResult.status !== 0 || !dockerResult.stdout?.trim()) {
+    const detail = dockerResult.error?.message || dockerResult.stderr.trim() || "missing Docker server version";
     failures.push(`Docker daemon access failed: ${detail}`);
   } else if (checkWorkspaceMount) {
     const mountResult = spawnSync("docker", [

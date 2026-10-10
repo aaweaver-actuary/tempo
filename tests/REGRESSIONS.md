@@ -3452,3 +3452,7 @@ The first four implementation regressions failed on the reconciled baseline: pro
 - `fixture and polling timing unions avoid counting nested spans twice`
 
 The exact-once regression first failed against main `1e0ca502` because the plan had no captured shard assignment. Browser coverage, assertions, deadlines, zero retries, and disposable PostgreSQL/Redis cleanup remain required. Shards keep every spec and its browser projects together; complete qualification validates every shard and the exact aggregate inventory. Timing spans are diagnostic and nested, never additional suite wall time.
+
+`Docker capability probe requests the server version and rejects unavailable or empty daemons` in the same regular browser-shard runner wrapper first failed against `a0c24a7`. Fresh CI observed two pre-test Docker `/info` timeouts (visual and shard 3). The capability probe now requests the equivalent server version endpoint without collecting storage/daemon inventory; the five-second deadline, bind-mount proof and failure on inaccessible/empty daemons remain. No product timeout or retry policy changes.
+
+The aggregation CLI regression creates its own temporary workspace, including when CI begins without local diagnostic directories; the first fresh frontend job exposed and rejected the initial fixture assumption.
