@@ -3,6 +3,16 @@ import { test, expect, api, nav } from "./product-fixtures";
 for (const width of [390, 1280]) test(`PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence ${width}`, async ({ page, request }) => {
   const settings = await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`, { data: { ...settings, initial_depth: 3 } });
+  // Deleting the preceding fixture and changing settings schedule publication.
+  // Establish an empty settled workspace before timing the actual UI import.
+  await expect.poll(async () => {
+    const response = await request.get(`${api}/queue/today`, { headers: { "X-Tempo-Work-Class": "background" } });
+    if (response.status() === 503 && response.headers()["retry-after"]) return null;
+    expect(response.ok()).toBe(true);
+    const queue = await response.json();
+    return { state: queue.projection.state, pending: queue.projection.refresh_pending, count: queue.cards.length };
+  }, { timeout: 30_000, message: "Previous fixture publication settles empty before UI import" })
+    .toEqual({ state: "ready", pending: 0, count: 0 });
   // Enter the empty library before importing: visiting Train after import can
   // legitimately capture teaching assistance and asynchronously admit cards.
   await page.setViewportSize({ width, height: 844 });

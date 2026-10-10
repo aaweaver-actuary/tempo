@@ -164,6 +164,7 @@
   ],
   "development": {
     "runnerOwners": {
+      "tests/runner/ci-browser-shards.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/ci-development.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/ci-reliability.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/merge-conflict-guard.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
@@ -172,6 +173,13 @@
     },
     "postgresFixturePaths": ["scripts/check_postgres_opening_evidence.py"],
     "harnessPaths": [
+      ".github/workflows/verify-browser.yml",
+      "scripts/ci-browser-shards.mjs",
+      "scripts/ci-aggregate-browser.mjs",
+      "scripts/ci-browser-timings.json",
+      "scripts/browser-timing-reporter.mjs",
+      "tests/runner/ci-browser-shards.test.mjs",
+      "tests/runner/ci-browser-shard-fixture.mjs",
       ".github/workflows/pages.yml",
       ".github/workflows/verify-layer.yml",
       "scripts/ci-verification-plan.mjs",

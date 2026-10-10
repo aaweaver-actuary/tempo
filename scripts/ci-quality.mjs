@@ -1,3 +1,4 @@
+import { aggregateBrowserShards, validateBrowserShardJobs } from "./ci-browser-shards.mjs";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +27,13 @@ export function layerFailures(plan, layer, result, report) {
   }
   if (["postgres", "lifecycle"].includes(layer)) {
     try { validatePostgresScenarios(layer, plan, report.scenarios); } catch (error) { failures.push(error.message); }
+  }
+  if (layer === "browser" && plan.browserShards?.count > 1) {
+    try {
+      const tests = aggregateBrowserShards(plan, report.shards ?? [], report.execution);
+      validateBrowserShardJobs(plan, report.shards, report.shardJobs);
+      if (JSON.stringify(tests) !== JSON.stringify(report.tests)) throw new Error("Browser aggregate differs from shard identities");
+    } catch (error) { failures.push(error.message); }
   }
   if (["browser", "visual"].includes(layer)) {
     const expected = (layer === "visual" ? plan.pinnedCollection : plan.collection.filter(item => item.selected)).map(item => item.id).sort();
@@ -99,6 +107,16 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const currentPullRequest = existsSync(currentPath) ? JSON.parse(readFileSync(currentPath, "utf8")) : undefined;
   const revision = (await import("node:child_process")).spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).stdout?.trim();
   const currentRun = process.env.GITHUB_RUN_ID ? { id: Number(process.env.GITHUB_RUN_ID), attempt: Number(process.env.GITHUB_RUN_ATTEMPT) } : undefined;
+  if (plan?.browserShards?.count > 1 && reports.browser?.execution?.kind === "executed" && currentRun) {
+    try {
+      const { spawnSync } = await import("node:child_process");
+      const response = spawnSync("gh", ["api", `repos/${plan.repository}/actions/runs/${currentRun.id}/jobs?filter=all&per_page=100`], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+      if (response.status !== 0) throw new Error("Current browser job provenance unavailable");
+      const metadata = JSON.parse(response.stdout);
+      if (metadata.total_count > 100) throw new Error("Current browser job history exceeds bounded validation");
+      validateBrowserShardJobs(plan, reports.browser.shards, metadata.jobs);
+    } catch (error) { provenanceFailures.push(error.message); }
+  }
   const verdict = evaluateQuality(plan, JSON.parse(process.env.TEMPO_CI_NEEDS ?? "{}"), reports, { development, currentPullRequest, currentRun, verifiedReuse });
   if (revision !== plan?.commit) verdict.failures.push("Aggregation checkout differs from captured integration revision");
   if (process.env.GITHUB_REPOSITORY && plan?.repository !== process.env.GITHUB_REPOSITORY) verdict.failures.push("Aggregation repository differs from captured repository");
@@ -109,9 +127,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const { appendFileSync } = await import("node:fs");
     const rows = Object.entries(reports).map(([layer, report]) => {
       const original = report.source?.report ?? report;
-      return `| ${layer} | ${report.status} | ${report.execution?.kind} | ${original.test_count ?? original.tests?.length ?? "—"} | ${(original.commands ?? []).reduce((seconds, command) => seconds + (command.duration_seconds ?? 0), 0).toFixed(2)} |`;
+      return `| ${layer} | ${report.status} | ${report.execution?.kind} | ${original.test_count ?? original.tests?.length ?? "—"} | ${(original.slowestRunnerSeconds ?? (original.commands ?? []).reduce((seconds, command) => seconds + (command.duration_seconds ?? 0), 0)).toFixed(2)} |`;
     }).join("\n");
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n| Layer | Result | Evidence | Cases | Original command seconds |\n| --- | --- | --- | --- | --- |\n${rows}\n\nSource: ${plan?.commit ?? "missing"}; scope: ${plan?.scope ?? "missing"}. Reused durations describe the original execution.\n`);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n| Layer | Result | Evidence | Cases | Original command seconds / slowest shard |\n| --- | --- | --- | --- | --- |\n${rows}\n\nSource: ${plan?.commit ?? "missing"}; scope: ${plan?.scope ?? "missing"}. Reused durations describe the original execution.\n`);
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${development ? "Development evidence" : "Quality"}: **${verdict.success ? "passed" : "failed"}**\n\n${[...verdict.failures, ...verdict.nonblocking].map(item => `- ${item}`).join("\n")}\n\nExplicit inapplicability: ${Object.entries(plan?.jobs ?? {}).filter(([, job]) => !job.applicable).map(([name, job]) => `${name} (${job.reason})`).join("; ")}\n`);
   }
   process.exitCode = verdict.success ? 0 : 1;

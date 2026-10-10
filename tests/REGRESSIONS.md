@@ -1,3 +1,14 @@
+Opening move probability evidence contract v1 (October 10, 2026; foundation for #109/#110/#111, integrating future PR #116/#117):
+
+- `backend/tests/test_opening_move_probability_contracts.py`: `test_opening_probability_shared_source_fixtures_round_trip`; `test_opening_probability_rejects_nonfinite_negative_and_non_numeric_estimates`; `test_opening_probability_mass_tolerance_and_sparse_residual_are_explicit`; `test_opening_probability_missing_counts_differ_from_observed_zero_and_predictions`; `test_opening_probability_empty_samples_and_zero_weights_do_not_fabricate_distribution`; `test_opening_probability_normalization_preserves_raw_evidence_and_provenance`. These protect finite/nonnegative normalized mass, tolerance, raw-only uncertainty, reported zero versus omission, exact counts, explicit normalization/residual, distinct derived IDs, and preservation of original snapshots.
+- The same file: `test_opening_probability_reuses_canonical_position_and_legal_uci_inventory`; `test_opening_probability_rejects_illegal_unknown_and_noncanonical_moves`; `test_opening_probability_rejects_terminal_positions_and_noncanonical_keys`; `test_opening_probability_sources_and_cohorts_coexist_without_overwriting`; `test_opening_probability_serialization_orders_sets_but_preserves_context_sequences`; `test_opening_probability_coverage_retains_uncovered_and_unknown_mass`; `test_opening_probability_fusion_fences_inputs_and_preserves_contributing_lineage`; `test_opening_probability_freshness_is_explicit_and_resolves_microsecond_deadlines`; `test_opening_probability_rejects_extra_fields_versions_and_inexact_counts`.
+- `tests/unit/opening-move-probability-contract-regressions.test.ts`: `opening_probability_python_typescript_share_valid_and_invalid_contract_corpus`; `opening_probability_missing_counts_observed_zero_and_raw_only_mass_remain_distinct`; `opening_probability_normalization_keeps_raw_provenance_and_explicit_residual`; `opening_probability_canonical_identity_covers_en_passant_castling_promotion_and_terminal_rejection`; `opening_probability_sources_coexist_and_set_order_is_deterministic`; `opening_probability_fusion_preserves_sources_lineage_and_rejects_foreign_contributions`; `opening_probability_coverage_keeps_known_uncovered_mass_and_unknown_mass`.
+- Both regular suites use synthetic Explorer-like/Maia-like/profile/inventory fixtures. The Node parity case invokes the selected Python interpreter and compares accepted/rejected envelopes and normalized values. No external provider, storage, production caller, queue ordering, or UI behavior changes. This is a new contract rather than a repair of an existing reported defect; there is no pre-existing implementation to reproduce as a failing baseline.
+- `test_opening_probability_raw_helpers_reject_duplicate_observations` and `opening_probability_raw_helpers_reject_duplicate_observations` reject repeated count/score observations at the raw-helper boundary, before any frequency map can overwrite them. The named Python case failed on initial contract head `d6e02c0` (0.26s), which already rejected duplicates at the whole-source boundary; the repair closes the standalone raw-helper gap.
+- `test_opening_probability_serialization_keeps_opaque_context_and_orders_provenance` failed on the initial serializer (0.43s): an opaque ordered context array named `provenance` was incorrectly reordered. Canonical ordering now belongs to typed fields only; ordered extension arrays retain their meaning. The shared parity corpus also covers multiple provenance records, Unicode flag ordering and Unicode identifier length.
+- `test_opening_probability_rejects_invalid_standard_board_structure` and `opening_probability_rejects_invalid_standard_board_structure` reject missing/duplicate kings and back-rank pawns at both the FEN helper and supplied-universe boundaries. All four Python cases failed on `2e972d5` (0.27s pytest / 1.22s wall), which accepted these structurally invalid boards despite TypeScript's existing rejection. The shared acceptance/rejection corpus retains the same invalid legal inventories.
+- `test_opening_probability_timestamp_calendar_and_offset_rejection_matches_typescript` and `opening_probability_timestamp_calendar_and_offset_rejection_matches_python` retain the same valid calendar/offset domain. Before repair, Python accepted `+00:60` (named case failed, 0.23s pytest / 1.05s wall), while TypeScript accepted year zero. The shared corpus reproduces the invalid-offset disagreement; neither validator normalizes malformed source timestamps.
+
 PR #92 cross-tab completion wakeup (October 8, 2026):
 
 - `opening-evidence-cross-tab-signals.test.ts`: `opening acknowledgment publishes only after atomic evidence removal and never leaks journal content`; `aborted acknowledgment preserves saved evidence and emits no completion`; retained/rejected acknowledgment, native transport fallback/failure, malformed/self/duplicate signals, first/last subscription cleanup, unavailable BroadcastChannel, and atomic checkpoint confirmation regressions.
@@ -3451,3 +3462,122 @@ remain partially retired after one batch. The Docker `study_durability` assertio
 `Bounded preview retention finishes and removes abandoned scans` keeps its original
 30-second deadline and survivor/task conditions; additive evidence records actual
 convergence and foreground preview request latency.
+# Read-only opening decision readiness (version 1, related #112)
+
+- `backend/tests/test_decision_readiness.py::test_decision_readiness_recent_failure_overrides_same_day_fsrs` retains raw FSRS while unresolved failure immediately yields a conservative zero score.
+- `test_decision_readiness_clean_practice_restores_fsrs_estimate` and `test_decision_readiness_overdue_decay_uses_explicit_as_of_without_due_penalty` prove existing scheduler success/failure semantics and unmodified time decay.
+- `test_decision_readiness_never_studied_is_unknown_despite_admission_or_maturity` and `test_decision_readiness_new_clean_practice_has_limited_reinforcement_confidence` keep introduction, exposure and maturity separate from recall.
+- `test_decision_readiness_real_game_miss_requires_clean_study_recovery` and `test_decision_readiness_real_game_miss_without_memory_is_observed_zero` retain eligible real-game failures without synthetic scheduler reviews.
+- `test_decision_readiness_prefix_evidence_is_not_independent`, `test_decision_readiness_prefix_clean_aggregate_does_not_create_move_observations`, `test_decision_readiness_partial_decision_recovery_does_not_clear_whole_card_failure` and `test_decision_readiness_repeated_occurrences_keep_separate_observations` preserve cumulative-card granularity, direct failures and unreached uncertainty. The first regression failed against the initial adapter because aggregate failure incorrectly affected every prefix decision, then passed after removing that attribution.
+- `test_decision_readiness_assisted_or_corrected_response_does_not_clear_failure`, `test_decision_readiness_assisted_checkpoint_prevents_linked_aggregate_clean_recovery` and `test_decision_readiness_invalidated_reviews_and_linked_observations_are_excluded` protect evidence validity and clean recovery.
+- `test_decision_readiness_inherited_seed_is_coarse_until_current_card_practice` and `test_decision_readiness_legacy_unattributed_review_is_card_memory_only` prevent copied state or legacy aggregate history from appearing independently observed.
+- `test_decision_readiness_corrupt_scheduler_state_is_explicit`, `test_decision_readiness_missing_state_retains_reliable_failure`, `test_decision_readiness_rejects_historical_evaluation_of_newer_scheduler_state`, `test_decision_readiness_clamped_memory_reference_and_actual_freshness_remain_distinct`, `test_decision_readiness_stale_observation_identity_cannot_lower_readiness`, `test_decision_readiness_excluded_or_mismatched_game_evidence_is_not_used`, `test_decision_readiness_invalid_target_is_unavailable` and `test_decision_readiness_requires_timezone_aware_as_of` cover attribution, unavailable memory and temporal boundaries.
+- `test_decision_readiness_timestamp_ties_do_not_clear_failure_and_offsets_normalize`, `test_decision_readiness_fixed_as_of_is_stable_read_only_and_order_independent` and `test_decision_readiness_uses_no_implicit_clock` prove deterministic UTC calculations, immutable evidence and shared provenance.
+- `test_decision_readiness_invalid_presentation_cannot_inherit_valid_memory`, `test_decision_readiness_black_decision_and_canonical_game_attribution`, `test_decision_readiness_future_optional_observations_do_not_change_current_estimate`, `test_decision_readiness_seed_created_after_as_of_is_not_historical_memory`, `test_decision_readiness_transposed_game_miss_matches_current_canonical_decision` and `test_decision_readiness_historical_decision_availability_is_explicit` protect presentation validity, learner color, canonical transpositions and coherent temporal snapshots.
+- `test_decision_readiness_other_review_sources_do_not_establish_owned_memory` and `test_decision_readiness_studied_card_without_scheduler_state_is_unavailable` keep ownership proof and missing memory explicit.
+- `test_decision_readiness_boolean_scheduler_parameters_are_unavailable` first failed in all four cases against `40e1f20`: FSRS silently accepted boolean identity/state/stability/difficulty and the adapter reported full same-day readiness. The adapter rejects that corrupt serialized state before FSRS coercion.
+- `test_decision_readiness_assistance_only_checkpoint_cannot_clear_failure` and `test_decision_readiness_unattributed_invalidation_cannot_hide_observed_failure` first failed in all seven cases against `c156604`. Hint/reveal checkpoints without a submitted response still prevent linked aggregate clean recovery; foreign, non-study, stale-revision, future and timezone-naive invalidations cannot suppress an otherwise valid observed failure.
+
+# Probability-based opening-card priority contract
+
+Related #106/#112/#113/#118; source integration points #116/#117. This is a
+disconnected pure computational foundation, not completion of those roadmaps.
+`backend/tests/test_opening_preparedness.py` is collected by the regular backend
+suite. Named cases:
+
+- `test_probability_priority_hand_calculated_route_preparedness_and_marginal_gain`
+  and `test_probability_priority_frequent_deeper_decision_outranks_rare_shallow_decision`:
+  interpretable arithmetic and recall-weighted frequent/rare ranking.
+- `test_probability_priority_increasing_reach_cannot_reduce_marginal_value`,
+  `test_probability_priority_increasing_readiness_cannot_increase_remaining_benefit`,
+  and `test_probability_priority_zero_reach_and_unchanged_readiness_have_zero_gain`:
+  parameterized monotonicity and benefit bounds.
+- `test_probability_priority_rejects_invalid_probability_values`,
+  `test_probability_priority_rejects_invalid_probability_evidence`,
+  `test_probability_priority_rejects_impossible_distribution_mass`, and
+  `test_probability_priority_conflicting_duplicates_and_invalid_references_fail`:
+  invalid data fails explicitly, with no normalization/fallback.
+- `test_probability_priority_retains_authored_outside_and_unassigned_mass_without_normalization`
+  and `test_probability_priority_unknown_reply_evidence_is_not_a_genuine_zero`:
+  uncovered/unassigned/unknown mass remains visible.
+- `test_probability_priority_duplicate_routes_and_shared_trunks_are_counted_once`,
+  `test_probability_priority_distinct_transposed_opponent_paths_share_one_decision`,
+  `test_probability_priority_overlapping_revisits_do_not_double_count_decision_reach`,
+  and `test_probability_priority_disjoint_context_weights_and_union_bounds_remain_bounded`:
+  shared knowledge receives the union of incoming event probabilities exactly once.
+- `test_probability_priority_interval_bounds_contain_all_feasible_non_regressive_changes`
+  and `test_probability_priority_unknown_readiness_has_no_fabricated_score_even_at_zero_reach`:
+  conservative bounds, reasons and separate incomplete rankings.
+- `test_probability_priority_totals_can_exceed_one_but_each_probability_is_bounded`,
+  `test_probability_priority_input_permutations_and_ties_are_deterministic`, and
+  `test_probability_priority_existing_identity_maps_short_prefixes_and_trained_colors`:
+  expected-decision units, deterministic ties and reuse of existing identities.
+- `test_probability_priority_inputs_and_results_are_immutable` and
+  `test_probability_priority_fresh_import_and_scoring_need_no_database_network_chess_or_fsrs`:
+  copied/frozen inputs and actual fresh-process dependency-free computation.
+
+
+## Issue #156: explicit learner-policy conditioning in PR #149
+
+The regular `backend/tests/test_opening_preparedness.py` suite now requires a
+selected policy throughout the reach/scoring boundary. This is a pure contract
+hardening; Redis, production admission/queue/scheduler, FSRS/readiness estimation,
+persistence and UI are unchanged. #156 remains open for broader integrations.
+
+- `test_probability_priority_policy_identity_is_required_and_nonempty` and `test_probability_priority_evaluation_requires_explicit_selected_policy` reject omitted/invalid identities on routes, readiness, effects and evaluation entry points.
+- `test_probability_priority_one_policy_generators_preserve_scores_and_provenance` and `test_probability_priority_empty_evaluations_still_require_and_retain_one_policy` preserve single-policy arithmetic and result/ranking identity, including one-shot iterables and empty inputs.
+- `test_probability_priority_mixed_policy_readiness_is_rejected` covers preparedness, marginal value and ranking, including equal decision IDs. The original named regression failed against reviewed head `b5cea185f33f63eaf34947f93825a7ffe4df2110`: Italian/Ruy readiness silently combined instead of raising `ValueError` (1 failed, 0.15s pytest). It now rejects foreign policies before deduplication/scoring.
+- `test_probability_priority_mixed_policy_routes_are_rejected_before_deduplication` and `test_probability_priority_foreign_policy_effects_are_rejected_before_projection_lookup` fence route union/readiness construction and card interventions, including identical prefixes/card IDs and empty projections.
+- `test_probability_priority_italian_is_unchanged_when_ruy_is_added_expanded_or_removed` and `test_probability_priority_ruy_is_unchanged_when_italian_is_added_expanded_or_removed` compare complete reach, preparedness contributions, marginal values and rankings by exact equality through adding, duplicating and removing the independent policy. The real shared trunk is `e4 e5 Nf3 Nc6`, with `Bc4`/`Bb5` learner choices.
+- `test_probability_priority_policy_conditioning_does_not_force_opponent_cooperation` retains `0.42`, then `0.42 * 0.5`, then a later opponent `0.25` factor; `test_probability_priority_learner_policy_moves_have_no_inferred_branch_probability` gives either defining learner action the same opponent-only product.
+- `test_probability_priority_identical_transposed_positions_have_independent_policy_mass` uses real shared canonical positions and deliberately equal decision/card IDs: within-policy duplicates/revisits collapse and disjoint transpositions add to 0.50/0.25 separately, while a mixed evaluation fails. `test_probability_priority_same_context_different_roots_are_disjoint_within_policy` protects the policy/context/root overlap comparison.
+- `test_probability_priority_policy_selection_preserves_outside_unassigned_and_unknown_mass` preserves 0.80 authored, 0.10 outside, 0.10 unassigned mass and unknown-reply bounds for either policy. Existing arithmetic, ranking, monotonicity, exact/bounded/unknown evidence, transposition, revisit and dependency-free regressions supply explicit fixture policy identity and retain their assertions.
+
+## Fresh browser qualification critical path (#29, #45)
+
+`tests/runner/ci-browser-shards.test.mjs`, executed by `four isolated browser shards retain exact qualification and reuse regressions` in the regular `tests/unit/ci-reliability-regressions.test.ts` suite, covers:
+
+- `four complete browser shards partition required identities exactly once`
+- `browser shard assignment is deterministic across collection order and tied runtimes`
+- `uneven browser timings and new identities remain exactly once within whole specs`
+- `baseline timing profile retains measured identities and bounds balanced shard load`
+- `actual Playwright shard selectors collect the exact immutable partition`
+- `failed missing cancelled skipped and incomplete shards fail browser qualification`
+- `duplicate extra missing and retried shard identities cannot qualify`
+- `wrong candidate plan assignment runtime commands and workflow shard reports are rejected`
+- `latest shard attempts reject stale success while retaining untouched successful siblings`
+- `browser aggregate contains exactly planned identities and cannot substitute its own results`
+- `modified shard assignment invalidates immutable planning and whole-browser reuse`
+- `whole-browser evidence reuse verifies every original latest shard and rejects incompatible candidates`
+- `targeted development and partial qualification retain single browser execution`
+- `shard diagnostic success preserves the original failed qualification`
+- `separate shard resources artifacts and cleanup retain isolated runner ownership`
+- `browser aggregation CLI rejects extra artifacts and unsuccessful matrix results`
+- `fixture and polling timing unions avoid counting nested spans twice`
+
+The exact-once regression first failed against main `1e0ca502` because the plan had no captured shard assignment. Browser coverage, assertions, deadlines, zero retries, and disposable PostgreSQL/Redis cleanup remain required. Shards keep every spec and its browser projects together; complete qualification validates every shard and the exact aggregate inventory. Timing spans are diagnostic and nested, never additional suite wall time.
+
+`Docker capability probe requests the server version and rejects unavailable or empty daemons` in the same regular browser-shard runner wrapper first failed against `a0c24a7`. Fresh CI observed two pre-test Docker `/info` timeouts (visual and shard 3). The capability probe now requests the equivalent server version endpoint without collecting storage/daemon inventory; the five-second deadline, bind-mount proof and failure on inaccessible/empty daemons remain. No product timeout or retry policy changes.
+
+The aggregation CLI regression creates its own temporary workspace, including when CI begins without local diagnostic directories; the first fresh frontend job exposed and rejected the initial fixture assumption.
+
+`pinned browser preflight detects an inaccessible checkout mount before tests` retains its missing-bind-mount assertion with the fake daemon updated for the server-version endpoint. The fresh current-base frontend gate identified this existing mock as a required consumer of the capability probe.
+
+`layout fixture starts with an empty disposable queue regardless of preceding specs` in the regular `layout.spec.ts` suite first failed after the real `Builder right-click annotation saves the exact clicked square` case: two opening cards remained. Layout now uses the existing disposable product fixture, establishing its previously implicit empty-queue precondition before every case. The original 1px geometry comparisons and disabled-hover assertion remain unchanged. This directly protects whole-spec shard independence and adds one required browser identity (267 → 268).
+
+`repertoire limits update today's queue, persist after reload, and reset to default` reproduced the fresh qualification's failed 2 → 1 queue assertion on a clean disposable stack. The initial two cards were incrementally admitted while their queue generation was still refreshing. The fixture now waits for that initial publication to be `ready` with `refresh_pending: 0` before changing allowance. The focused case then passed, retaining its identity, exact 2 → 1 → 2 counts, save-failure recovery, reload persistence, and original 20-second correctness deadlines. The new precondition also has a bounded 20-second deadline; no application behavior changes.
+
+The subsequent complete run `38049669747` failed this case's final 1 → 2 reset despite a ready preceding generation. Passive fixture queue-publication reads now use the existing background work-class header, retaining the real PostgreSQL/Redis boundary and foreground UI saves. Runtime validation of this follow-up remains pending: the local 53-case shard could not pass Docker capability preflight. This failure is not closed by static checks or the earlier focused pass; all original assertions and deadlines remain required in current-candidate CI.
+
+Run `38051758485` subsequently passed that complete 53-case shard with zero retries/skips, including the daily-limit case in 18.916 seconds. It does not qualify the rebased integration candidate or establish performance acceptance: the desktop PD-82 case failed and main advanced during execution.
+
+`PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence 1280` failed its real import-success button assertion in run `38051758485`. The trace shows the prior fixture's empty queue still refreshing before import. Both existing PD-82 widths now wait for ready/zero-pending/empty publication after fixture cleanup/settings and before the actual UI import. Original import-success, read-only, unknown-evidence and queue-equality assertions and the 60-second test deadline remain required. The new bounded 30-second fixture precondition observes the real PostgreSQL/Redis API with background-classified diagnostic reads; runtime validation remains pending.
+### Checkpoint recovery rehearsal foreground admission
+
+- `backend/tests/test_checkpoint_rehearsal_admission.py::test_checkpoint_recovery_driver_waits_for_foreground_admission` protects the PostgreSQL proof driver's replay after a legitimate shared foreground lease defers recovery. Its first run failed on `035248c` with `BackgroundAdmissionDeferred`, matching CI run `38052586442` in `test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay`.
+- `test_checkpoint_recovery_driver_preserves_nonadmission_errors` keeps database failures visible without retries or delivery, and `test_checkpoint_recovery_driver_has_bounded_admission_deadline` proves admission cannot wait indefinitely (also failed before the driver repair).
+- The driver waits only for explicit admission deferrals within ten seconds; production workers, scheduling, queue ordering and other callers' leases are unchanged. The existing PostgreSQL replay proof remains in regular durability coverage.
+- `test_checkpoint_receipt_fixture_waits_for_foreground_admission_without_altering_payload` protects queued/retrying fixture creation after HTTP replay. Current-base CI `38055901534` failed the same real checkpoint proof at `record_operation_attempt`, before recovery could claim it. Fixture setup now uses the same bounded admission-only proof driver; historical payload, background classification, nonadmission errors and the ten-second deadline remain unchanged.
+- Shared `opening_probability_rejects_invalid_standard_board_structure` cases now reject all four missing-rook castling rights, a king off its home square, and a wrong-color rook. Automated PR review identified chess.js's nonexistent castle for a missing rook; all six Python helper cases failed before repair (0.34s pytest/1.14s wall), and the TypeScript boundary case failed too (1.60s wall). Both boundaries reject those inputs before key derivation without introducing a competing canonicalization rule.
+- `tests/browser/board-interactions.spec.ts::Black Train prompt remains playable with a fully visible narrow board` failed in current-base run `38055901534` (shard 3). Trace recorded the preceding fixture's empty queue as `refreshing`/`refresh_pending: 1` before UI import, then showed the actionable queue-preparing alert instead of import success. The case now establishes `ready`/zero-pending/empty publication with bounded, background-classified API reads before import. Its original two-card import-success, Black-turn/input-enabled, board geometry and legal-move assertions remain unchanged. This is a test precondition, not a production queue change.
+- Local reproduction passed the repaired narrow-board case but exposed the same unsettled-publication precondition in `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`. Both existing import cases now share that bounded pre-import wait. The first local run is retained as a partial failure, not a pass or timing benchmark; neither original import-success assertion was weakened.

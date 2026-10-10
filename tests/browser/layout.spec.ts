@@ -1,5 +1,4 @@
 import {
-  test,
   expect,
   viewports,
   boardWorkspaces,
@@ -8,6 +7,18 @@ import {
   boardBounds,
   noPageOverflow,
 } from "./ui-fixtures";
+
+// Layout assertions require the same empty product state on every shard.
+import { test, api } from "./product-fixtures";
+
+test("layout fixture starts with an empty disposable queue regardless of preceding specs", async ({ page, request }) => {
+  const queue = await request.get(`${api}/queue/today`);
+  expect(queue.ok()).toBe(true);
+  expect((await queue.json()).cards).toEqual([]);
+  await prepareUI(page);
+  await navigate(page, "Train");
+  await expect(page.locator('.board-tools button[aria-label="Flip board"]')).toBeDisabled();
+});
 
 for (const viewport of viewports) {
   test(`board bounds remain identical across workspace navigation ${viewport.width}x${viewport.height}`, async ({
