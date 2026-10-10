@@ -176,12 +176,20 @@ def _route_slice(task):
 def _traverse_slice(task):
     payload = task['payload']
     with background_read_connection() as database:
-        route = dict(database.execute_native(
+        route_row = database.execute_native(
             'SELECT id,trained_color,scope_start_ply,absolute_ply_offset,completed_plies,checkpoint_fen,complete,'
             'jsonb_array_length(moves_json::jsonb) AS move_count,'
             'jsonb_path_query_array(moves_json::jsonb,format(\'$[%%s to %%s]\','
             'completed_plies,completed_plies+%s-1)::jsonpath) AS moves '
-            'FROM inventory_routes WHERE id=%s', (SEGMENT_PLIES, payload['route_id'])).fetchone())
+            'FROM inventory_routes WHERE id=%s', (SEGMENT_PLIES, payload['route_id'])).fetchone()
+    if route_row is None:
+        # Cleanup may retire an old route after dispatch checked this delivery.
+        # Fence the missing artifact before classifying it as current corruption.
+        with background_lease(), connection(background=True) as database:
+            if not _current(database, task):
+                return False
+            raise ValueError('Inventory route checkpoint is missing; request a fresh inventory generation')
+    route = dict(route_row)
     occurrences, ending_fen = inventory_segment(
         route['checkpoint_fen'], route['moves'], route['trained_color'],
         route['completed_plies']+route['absolute_ply_offset'],

@@ -121,3 +121,31 @@ def test_issue108_current_worker_defers_inventory_without_resetting_checkpoint(m
     monkeypatch.setattr(tasks, 'fail_task', lambda *_: pytest.fail('Admission consumed failure budget'))
     assert tasks._execute_claimed_background_slice(task, None) is False
     assert deferred == [task]
+
+
+@pytest.mark.parametrize('delivery_current', [False, True], ids=['stale-replay', 'current-corruption'])
+def test_issue108_missing_route_checkpoint_revalidates_delivery_before_reporting_corruption(monkeypatch, delivery_current):
+    database = SimpleNamespace(execute_native=lambda *args: SimpleNamespace(fetchone=lambda: None))
+    @contextmanager
+    def reader():
+        yield database
+    @contextmanager
+    def writer(**kwargs):
+        assert kwargs == {'background': True}
+        yield database
+    @contextmanager
+    def lease():
+        yield
+    fenced = []
+    monkeypatch.setattr(inventory, 'background_read_connection', reader)
+    monkeypatch.setattr(inventory, 'connection', writer)
+    monkeypatch.setattr(inventory, 'background_lease', lease)
+    monkeypatch.setattr(inventory, '_current', lambda *_: fenced.append(True) or delivery_current)
+    monkeypatch.setattr(inventory, 'inventory_segment', lambda *_args, **_kwargs: pytest.fail('Missing checkpoint computed chess'))
+    task = {'payload': {'phase': 'traverse', 'route_id': 'removed-route'}}
+    if delivery_current:
+        with pytest.raises(ValueError, match='checkpoint is missing'):
+            inventory.execute_inventory_slice(task)
+    else:
+        assert inventory.execute_inventory_slice(task) is False
+    assert fenced == [True]

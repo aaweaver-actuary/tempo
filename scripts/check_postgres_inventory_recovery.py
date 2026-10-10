@@ -453,7 +453,15 @@ def test_issue108_cross_repertoire_transposition_policy_independence_and_deletio
 
 
 def test_issue108_profile_changes_do_not_rebuild_inventory(dsn):
+    from app.services.next_opponent_profile import build_profile
     from scripts.check_postgres_position_inventory import seed, publish_graph, run_to_completion
+    profiles = [build_profile('inventory-fixture', [dict(
+        id='profile-game', provider='lichess', username='inventory-fixture', rated=1,
+        played_at='2026-10-08T12:00:00+00:00', speed=speed, player_rating=rating,
+        opponent_rating=rating+100, rating_change=0, time_control='180+0')],
+        as_of=datetime(2026,10,9,tzinfo=timezone.utc))
+        for speed, rating in [('blitz',1400), ('rapid',2000)]]
+    assert profiles[0].version != profiles[1].version
     with postgres_store.connection() as database:
         seed(database.raw, 'profile-independent', [('profile-independent-line', ['e2e4'], 'white', chess.STARTING_FEN)])
         publish_graph(database, 'profile-independent')
@@ -463,13 +471,14 @@ def test_issue108_profile_changes_do_not_rebuild_inventory(dsn):
         task_before = dict(database.execute_native('SELECT * FROM background_tasks WHERE kind=%s AND deduplication_key=%s',
                                                    (inventory.TASK_KIND, 'profile-independent')).fetchone())
         positions_before = inventory.published_positions(database, 'profile-independent')
-        database.execute_native("INSERT INTO next_opponent_snapshots(version,account,method_version,profile_json,published_at) "
-                                "VALUES('inventory-profile-v1','inventory-fixture','fixture','{}',%s),"
-                                "('inventory-profile-v2','inventory-fixture','fixture','{}',%s)", (datetime.now(timezone.utc).isoformat(),)*2)
+        for profile in profiles:
+            database.execute_native('INSERT INTO next_opponent_snapshots(version,account,method_version,profile_json,published_at) '
+                                    'VALUES(%s,%s,%s,%s,%s)', (profile.version, profile.source_account,
+                                    profile.method_version, profile.model_dump_json(), datetime.now(timezone.utc).isoformat()))
         database.execute_native("INSERT INTO next_opponent_accounts(account,input_generation,published_generation,profile_version) "
-                                "VALUES('inventory-fixture',1,1,'inventory-profile-v1')")
-        database.execute_native("UPDATE next_opponent_accounts SET input_generation=2,published_generation=2,profile_version='inventory-profile-v2' "
-                                "WHERE account='inventory-fixture'")
+                                "VALUES('inventory-fixture',1,1,%s)", (profiles[0].version,))
+        database.execute_native("UPDATE next_opponent_accounts SET input_generation=2,published_generation=2,profile_version=%s "
+                                "WHERE account='inventory-fixture'", (profiles[1].version,))
         assert inventory.request_inventory_in_transaction(database, 'profile-independent') == publication['publication_id']
         assert inventory.published_positions(database, 'profile-independent') == positions_before
         assert dict(database.execute_native('SELECT * FROM background_tasks WHERE kind=%s AND deduplication_key=%s',

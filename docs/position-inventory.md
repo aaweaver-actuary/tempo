@@ -42,7 +42,9 @@ chess computation. Fenced short background writes commit results and checkpoint
 advancement together using current durable-task primitives and admission.
 
 Publication requires all registered routes complete. Repertoire/task locks and
-source identity are revalidated before accepting output. Graph publication takes
+source identity are revalidated before accepting output. A stale delivery whose
+route has already been collected revalidates its task fence and returns without
+mutation; a current missing checkpoint reports an actionable error. Graph publication takes
 the repertoire lock before its task lock where the inventory handoff requires
 it. Inventory requests/slices use repertoire then inventory task ordering;
 terminal failure locks the task before updating generation state. Deterministic
