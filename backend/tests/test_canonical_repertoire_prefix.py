@@ -711,6 +711,10 @@ def test_canonical_prefix_retired_preview_cannot_save_during_bounded_cleanup(pre
     add_line(route)
     old = prepare_prefix()
     with database.connection() as connection:
+        # Keep a partially retired certificate observable after a 64-row batch.
+        for ordinal in range(70):
+            connection.execute("INSERT INTO canonical_prefix_results(preview_id,item_id,name,status) VALUES(?,?,?,'valid')",
+                               (old['preview_id'], f'line:retention-{ordinal}', f'Retention line {ordinal}'))
         for length in range(len(route) + 1):
             if length != len(ITALIAN):
                 request_preview(connection, 'italian', route[:length])

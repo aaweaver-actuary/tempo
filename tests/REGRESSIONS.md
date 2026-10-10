@@ -1,3 +1,31 @@
+Read-only sequence-aware opening frontier — related #118/#106 (October 10, 2026):
+
+All cases below live in `backend/tests/test_opening_frontier.py` and are collected
+by the regular backend gate. This standalone model changes no production admissions.
+
+- `test_relaxed_frontier_saved_practice_never_requires_parent_maturity` (correct/failed/guided and locked/new/learning/mature metadata); `test_relaxed_frontier_admission_maturity_and_invalid_evidence_do_not_expose_parents`; `test_relaxed_frontier_requires_every_prerequisite_on_one_complete_route` — saved exposure without arbitrary readiness thresholds, introduction-only rejection, and no speculative multilevel unlock.
+- `test_relaxed_frontier_handles_short_and_cumulative_prefixes_for_both_colors`; `test_relaxed_frontier_accepts_an_explicit_custom_position_root_and_clock_only_transitions`; `test_relaxed_frontier_unpracticed_sibling_does_not_block_an_exposed_branch` — explicit roots, prefix boundaries, trained color, canonical continuity and independent branches. Qualifying routes preserve publication, line, trained color, segment index and the first/last learner decision indices for a scorer's future input.
+- `test_relaxed_frontier_one_exposed_transposed_route_suffices_without_duplicate_candidates`; `test_relaxed_frontier_never_splices_exposure_from_different_transposed_routes`; `test_relaxed_frontier_shared_card_exposure_is_reused_but_unrelated_repertoire_evidence_is_not`; `test_relaxed_frontier_finite_repeated_positions_do_not_require_a_card_identity_dag` — one valid whole path, scoped shared evidence, nonduplication and finite occurrence traversal through repeated identities.
+- `test_relaxed_frontier_structurally_impossible_descendants_are_ineligible` (13 malformed-route cases, including a descendant mislabeled as another prefix; that added case failed before the guard); `test_relaxed_frontier_stale_publication_and_scope_cannot_unlock_cards`; `test_relaxed_frontier_reimport_reuses_real_exposure_but_resegmentation_does_not_invent_it`; `test_relaxed_frontier_conflicting_or_missing_occurrences_never_manufacture_a_path` — legal content, link/index/FEN validation, publication freshness and no manufactured topology/evidence.
+- `test_relaxed_frontier_lifecycle_exclusions_override_candidates_and_introduction`; `test_relaxed_frontier_unavailable_ancestors_block_only_their_route`; `test_relaxed_frontier_integrity_blocks_are_scoped_to_each_repertoire`; `test_relaxed_frontier_introduced_descendant_survives_parent_failure_and_invalidated_exposure` — lifecycle/safety exclusions, alternative safe routes and preserved introduction history.
+- `test_relaxed_frontier_game_obligations_are_annotations_not_prerequisite_exposure`; `test_relaxed_frontier_is_immutable_pure_idempotent_and_deterministic_under_shuffling`; `test_relaxed_frontier_rejects_conflicting_snapshot_records`; `test_relaxed_frontier_equivalent_route_copies_collapse_even_when_occurrences_are_reordered`; `test_relaxed_frontier_empty_snapshot_and_fixture_diagnostic_are_explicit` — separate obligation provenance, stable immutable results, no I/O/clock access, explicit snapshot errors and a runnable diagnostic/consumer contract.
+
+Candidate CI follow-up: `tests/browser/settings-repertoire-limits.spec.ts::repertoire limits update today's queue, persist after reload, and reset to default` failed in run `38048686427` with two queued cards after saving a limit of one. Its trace showed both its initial two-card queue and later observations in the same unfinished `refreshing` generation. The test now observes publication as background work and requires `ready` with `refresh_pending=0` alongside the existing 2→1→2 counts. Save failure/retry, reload, and default-reset assertions and timeouts remain unchanged. This is a test-boundary repair; production queue/admission behavior is unchanged. Local Docker inspection timed out, so the required candidate CI owns the real PostgreSQL/browser proof.
+
+`tests/browser/studies.spec.ts::Issue135 foreground queue commit wakes an idle worker without periodic polling` failed in run `38051747505` after stopping its scheduler while fixture generation 44 was still refreshing. Setup now requires the real ready publication before stopping polling, includes scheduled ETA deliveries in the existing worker-idle proof, and requires the committed save to publish a newer generation. The foreground save and observation, idempotent replay, stopped-scheduler proof, and original 30-second post-commit deadline remain intact; no broker/database state is discarded and no production wake or admission policy changes. The repertoire-limit repair passed in this run.
+
+Both repaired browser cases passed in complete run `38054773275` (267/267). Its aggregation refused stale-base qualification after PR #147/#149 merged. Latest-main integration preserves the initial ready-publication precondition and strengthens every queue-count transition to require ready/pending-zero together. The combined two-case real PostgreSQL proof passed on clean `c97951b` (41.2 s browser / 84.47 s wall); original assertions and deadlines remain. Current-base CI qualification remains required.
+Opening move probability evidence contract v1 (October 10, 2026; foundation for #109/#110/#111, integrating future PR #116/#117):
+
+- `backend/tests/test_opening_move_probability_contracts.py`: `test_opening_probability_shared_source_fixtures_round_trip`; `test_opening_probability_rejects_nonfinite_negative_and_non_numeric_estimates`; `test_opening_probability_mass_tolerance_and_sparse_residual_are_explicit`; `test_opening_probability_missing_counts_differ_from_observed_zero_and_predictions`; `test_opening_probability_empty_samples_and_zero_weights_do_not_fabricate_distribution`; `test_opening_probability_normalization_preserves_raw_evidence_and_provenance`. These protect finite/nonnegative normalized mass, tolerance, raw-only uncertainty, reported zero versus omission, exact counts, explicit normalization/residual, distinct derived IDs, and preservation of original snapshots.
+- The same file: `test_opening_probability_reuses_canonical_position_and_legal_uci_inventory`; `test_opening_probability_rejects_illegal_unknown_and_noncanonical_moves`; `test_opening_probability_rejects_terminal_positions_and_noncanonical_keys`; `test_opening_probability_sources_and_cohorts_coexist_without_overwriting`; `test_opening_probability_serialization_orders_sets_but_preserves_context_sequences`; `test_opening_probability_coverage_retains_uncovered_and_unknown_mass`; `test_opening_probability_fusion_fences_inputs_and_preserves_contributing_lineage`; `test_opening_probability_freshness_is_explicit_and_resolves_microsecond_deadlines`; `test_opening_probability_rejects_extra_fields_versions_and_inexact_counts`.
+- `tests/unit/opening-move-probability-contract-regressions.test.ts`: `opening_probability_python_typescript_share_valid_and_invalid_contract_corpus`; `opening_probability_missing_counts_observed_zero_and_raw_only_mass_remain_distinct`; `opening_probability_normalization_keeps_raw_provenance_and_explicit_residual`; `opening_probability_canonical_identity_covers_en_passant_castling_promotion_and_terminal_rejection`; `opening_probability_sources_coexist_and_set_order_is_deterministic`; `opening_probability_fusion_preserves_sources_lineage_and_rejects_foreign_contributions`; `opening_probability_coverage_keeps_known_uncovered_mass_and_unknown_mass`.
+- Both regular suites use synthetic Explorer-like/Maia-like/profile/inventory fixtures. The Node parity case invokes the selected Python interpreter and compares accepted/rejected envelopes and normalized values. No external provider, storage, production caller, queue ordering, or UI behavior changes. This is a new contract rather than a repair of an existing reported defect; there is no pre-existing implementation to reproduce as a failing baseline.
+- `test_opening_probability_raw_helpers_reject_duplicate_observations` and `opening_probability_raw_helpers_reject_duplicate_observations` reject repeated count/score observations at the raw-helper boundary, before any frequency map can overwrite them. The named Python case failed on initial contract head `d6e02c0` (0.26s), which already rejected duplicates at the whole-source boundary; the repair closes the standalone raw-helper gap.
+- `test_opening_probability_serialization_keeps_opaque_context_and_orders_provenance` failed on the initial serializer (0.43s): an opaque ordered context array named `provenance` was incorrectly reordered. Canonical ordering now belongs to typed fields only; ordered extension arrays retain their meaning. The shared parity corpus also covers multiple provenance records, Unicode flag ordering and Unicode identifier length.
+- `test_opening_probability_rejects_invalid_standard_board_structure` and `opening_probability_rejects_invalid_standard_board_structure` reject missing/duplicate kings and back-rank pawns at both the FEN helper and supplied-universe boundaries. All four Python cases failed on `2e972d5` (0.27s pytest / 1.22s wall), which accepted these structurally invalid boards despite TypeScript's existing rejection. The shared acceptance/rejection corpus retains the same invalid legal inventories.
+- `test_opening_probability_timestamp_calendar_and_offset_rejection_matches_typescript` and `opening_probability_timestamp_calendar_and_offset_rejection_matches_python` retain the same valid calendar/offset domain. Before repair, Python accepted `+00:60` (named case failed, 0.23s pytest / 1.05s wall), while TypeScript accepted year zero. The shared corpus reproduces the invalid-offset disagreement; neither validator normalizes malformed source timestamps.
+
 PR #92 cross-tab completion wakeup (October 8, 2026):
 
 - `opening-evidence-cross-tab-signals.test.ts`: `opening acknowledgment publishes only after atomic evidence removal and never leaks journal content`; `aborted acknowledgment preserves saved evidence and emits no completion`; retained/rejected acknowledgment, native transport fallback/failure, malformed/self/duplicate signals, first/last subscription cleanup, unavailable BroadcastChannel, and atomic checkpoint confirmation regressions.
@@ -3432,6 +3460,45 @@ The first four implementation regressions failed on the reconciled baseline: pro
 - `test_priority_recovery_shadow_proof_scopes_real_redis_configuration` covers configured/default runner-owned Redis and success/failure restoration. CI run 38053945450 exposed the priority scenario's schema container lacking Redis configuration; the new proof alone now binds the existing disposable Redis service, preserving the earlier priority phases' admission environment. The framework still refuses missing production admission configuration.
 
 
+## Canonical-prefix retention bounded convergence (PR #116 blocker)
+
+`backend/tests/test_canonical_prefix_retention.py` covers the independent retention
+defect without changing next-opponent behavior:
+
+- `test_canonical_prefix_retention_converges_within_three_admitted_slices` failed
+  against unchanged main at the three-slice limit. Twelve populated previews
+  require 115 old retention slices / 120 cleanup row mutations; bounded batches
+  preserve the active certificate and newest eight within three admitted slices,
+  with at most 64 cleanup rows and no hidden child cascades.
+- `test_canonical_prefix_retention_rechecks_creation_activation_and_source_changes`
+  checks real preview creation, save/activation and source changes after preparation.
+- `test_canonical_prefix_retention_handles_retired_tasks_and_partial_children`
+  covers queued, leased, already-superseded and missing tasks with incomplete children.
+- `test_canonical_prefix_retention_fences_leased_victim_before_partial_child_cleanup`
+  verifies generation retirement, cleared lease, stale certificate and rejected old
+  delivery while obsolete children still exist.
+- `test_canonical_prefix_retention_rejects_replaced_generation_lease_or_owner`
+  proves obsolete ownership cannot mutate any cleanup state.
+- `test_canonical_prefix_retention_partial_batch_restart_and_stale_replay_are_idempotent`
+  and `test_canonical_prefix_retention_rolls_back_cleanup_with_its_checkpoint`
+  preserve committed progress, recovery identity and atomic rollback.
+- `test_canonical_prefix_retention_limits_victims_even_when_children_are_empty`
+  independently protects the four-victim cap.
+
+`scripts/check_postgres_canonical_retention.py` runs from the regular
+canonical-freshness PostgreSQL rehearsal. Its named native proofs cover bounded
+slice convergence, process/pool restart, foreground preview latency with a verified
+row-lock dependency, foreground admission and lock contention, checkpoint rollback, stale replay,
+activation after preparation, and concurrent retention claims. They retain actual
+250 ms transaction / 25 ms lock settings. Measurements separate cleanup rows from
+task checkpoints, diagnostic writes, and SQLite's age-origin trigger bookkeeping.
+
+The existing `test_canonical_prefix_retired_preview_cannot_save_during_bounded_cleanup`
+keeps its stale-certificate/save-rejection assertion with enough child rows to
+remain partially retired after one batch. The Docker `study_durability` assertion
+`Bounded preview retention finishes and removes abandoned scans` keeps its original
+30-second deadline and survivor/task conditions; additive evidence records actual
+convergence and foreground preview request latency.
 # Read-only opening decision readiness (version 1, related #112)
 
 - `backend/tests/test_decision_readiness.py::test_decision_readiness_recent_failure_overrides_same_day_fsrs` retains raw FSRS while unresolved failure immediately yields a conservative zero score.
@@ -3542,3 +3609,12 @@ The subsequent complete run `38049669747` failed this case's final 1 → 2 reset
 Run `38051758485` subsequently passed that complete 53-case shard with zero retries/skips, including the daily-limit case in 18.916 seconds. It does not qualify the rebased integration candidate or establish performance acceptance: the desktop PD-82 case failed and main advanced during execution.
 
 `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence 1280` failed its real import-success button assertion in run `38051758485`. The trace shows the prior fixture's empty queue still refreshing before import. Both existing PD-82 widths now wait for ready/zero-pending/empty publication after fixture cleanup/settings and before the actual UI import. Original import-success, read-only, unknown-evidence and queue-equality assertions and the 60-second test deadline remain required. The new bounded 30-second fixture precondition observes the real PostgreSQL/Redis API with background-classified diagnostic reads; runtime validation remains pending.
+### Checkpoint recovery rehearsal foreground admission
+
+- `backend/tests/test_checkpoint_rehearsal_admission.py::test_checkpoint_recovery_driver_waits_for_foreground_admission` protects the PostgreSQL proof driver's replay after a legitimate shared foreground lease defers recovery. Its first run failed on `035248c` with `BackgroundAdmissionDeferred`, matching CI run `38052586442` in `test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay`.
+- `test_checkpoint_recovery_driver_preserves_nonadmission_errors` keeps database failures visible without retries or delivery, and `test_checkpoint_recovery_driver_has_bounded_admission_deadline` proves admission cannot wait indefinitely (also failed before the driver repair).
+- The driver waits only for explicit admission deferrals within ten seconds; production workers, scheduling, queue ordering and other callers' leases are unchanged. The existing PostgreSQL replay proof remains in regular durability coverage.
+- `test_checkpoint_receipt_fixture_waits_for_foreground_admission_without_altering_payload` protects queued/retrying fixture creation after HTTP replay. Current-base CI `38055901534` failed the same real checkpoint proof at `record_operation_attempt`, before recovery could claim it. Fixture setup now uses the same bounded admission-only proof driver; historical payload, background classification, nonadmission errors and the ten-second deadline remain unchanged.
+- Shared `opening_probability_rejects_invalid_standard_board_structure` cases now reject all four missing-rook castling rights, a king off its home square, and a wrong-color rook. Automated PR review identified chess.js's nonexistent castle for a missing rook; all six Python helper cases failed before repair (0.34s pytest/1.14s wall), and the TypeScript boundary case failed too (1.60s wall). Both boundaries reject those inputs before key derivation without introducing a competing canonicalization rule.
+- `tests/browser/board-interactions.spec.ts::Black Train prompt remains playable with a fully visible narrow board` failed in current-base run `38055901534` (shard 3). Trace recorded the preceding fixture's empty queue as `refreshing`/`refresh_pending: 1` before UI import, then showed the actionable queue-preparing alert instead of import success. The case now establishes `ready`/zero-pending/empty publication with bounded, background-classified API reads before import. Its original two-card import-success, Black-turn/input-enabled, board geometry and legal-move assertions remain unchanged. This is a test precondition, not a production queue change.
+- Local reproduction passed the repaired narrow-board case but exposed the same unsettled-publication precondition in `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`. Both existing import cases now share that bounded pre-import wait. The first local run is retained as a partial failure, not a pass or timing benchmark; neither original import-success assertion was weakened.

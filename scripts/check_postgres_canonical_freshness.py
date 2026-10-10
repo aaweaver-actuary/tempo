@@ -1175,6 +1175,8 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
         prove_selected_batch_canonical_routes()
         prove_deterministic_route_certification()
         prove_canonical_scope_lifecycle()
+        from check_postgres_canonical_retention import prove_canonical_retention
+        prove_canonical_retention()
         from check_postgres_opportunity_freshness import prove_opportunity_dismissal_and_source_freshness
         prove_opportunity_dismissal_and_source_freshness(run_bounded_task_slices)
     finally:
