@@ -23,7 +23,7 @@ def utc_time(value: str | None) -> datetime | None:
         if parsed is None:
             return None
         return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
@@ -67,7 +67,10 @@ def build_profile(account: str, records: list[dict], *, as_of: datetime,
         for speed in SUPPORTED_SPEEDS
     }
     anchor = utc_time(eligible[0]["played_at"]) if eligible else None
-    recent = [row for row in eligible if utc_time(row["played_at"]) >= anchor - timedelta(days=WINDOW_DAYS)]
+    earliest_datetime = datetime.min.replace(tzinfo=timezone.utc)
+    window_start = (max(anchor, earliest_datetime + timedelta(days=WINDOW_DAYS))
+                    - timedelta(days=WINDOW_DAYS)) if anchor else earliest_datetime
+    recent = [row for row in eligible if utc_time(row["played_at"]) >= window_start]
     truncated = len(recent) > SAMPLE_LIMIT
     recent = recent[:SAMPLE_LIMIT]
     quality_flags = []
