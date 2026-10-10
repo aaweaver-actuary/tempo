@@ -43,7 +43,7 @@ export function layerCommands(layer, plan) {
     if (layer === "frontend") {
       commands = commands.map(([name, command, args]) => [name, command, name === "unit" ? [...args, "--includeTaskLocation"] : args]);
       const files = Array.isArray(plan.core.frontend) ? plan.core.frontend : [];
-      commands.unshift(["unit_inventory", "npx", ["vitest", "list", ...files, "--json=test-results/ci/frontend-inventory.json"]]);
+      commands.unshift(["unit_inventory", "npx", ["vitest", "list", ...files, "--no-static-parse", "--includeTaskLocation", "--json=test-results/ci/frontend-inventory.json"]]);
     } else if (layer === "backend") {
       const backendArguments = commands.find(([name]) => name === "backend")[2].filter(argument => !argument.startsWith("--junitxml="));
       commands.unshift(["backend_inventory", resolvePython(), ["scripts/ci-collect-backend.py", "test-results/ci/backend-inventory.json", ...backendArguments.slice(2)]]);

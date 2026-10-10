@@ -33,7 +33,7 @@ import { spawnSync } from 'node:child_process';
 import { resolvePython } from '../../scripts/resolve-python.mjs';
 
 import { verificationContext, planHash, allLayers, createPlan } from '../../scripts/ci-verification-plan.mjs';
-import { layerCommands, validateUnitResults, executeLayer, backendUnitFileCounts } from '../../scripts/ci-run-layer.mjs';
+import { layerCommands, validateUnitResults, executeLayer, backendUnitFileCounts, frontendInventory, frontendResults } from '../../scripts/ci-run-layer.mjs';
 import { validateMigrationInventory } from '../../scripts/check-migration-inventory.mjs';
 const pr = {number:132, draft: true, state: 'open', head: {sha: 'head'}, base: {sha: 'base',repo:{id:1371942142,full_name:'aaweaver-actuary/tempo'}}, labels: [], merge_commit_sha: 'integration' };
 function captured(pullRequest = pr, paths = ['docs/testing.md']) {
@@ -442,4 +442,22 @@ test('PR132 focused contract temporary outputs create an absent parent', () => {
     assert(existsSync(output));
     assert(output.startsWith(join(parent,'proof-')));
   } finally {rmSync(fixture,{recursive:true,force:true});}
+});
+
+test('PR132 frontend runtime inventory expands parameterized execution identities', () => {
+  const file='tests/unit/attempt-lifecycle-regressions.test.ts', planned=draft([file]);
+  const directory=temporaryContractDirectory('frontend-parameter-contract-');
+  try {
+    const inventoryPath=join(directory,'inventory.json'), resultPath=join(directory,'results.json');
+    const [,command,args]=layerCommands('frontend',planned).find(([name])=>name==='unit_inventory');
+    const collected=spawnSync(command,args.map(argument=>argument.startsWith('--json=') ? `--json=${inventoryPath}` : argument),{encoding:'utf8'});
+    assert.equal(collected.status,0,collected.stdout+collected.stderr);
+    const executed=spawnSync('npx',['vitest','run',file,'--includeTaskLocation','--reporter=json',`--outputFile=${resultPath}`],{encoding:'utf8'});
+    assert.equal(executed.status,0,executed.stdout+executed.stderr);
+    const unit=JSON.parse(readFileSync(resultPath,'utf8'));
+    const expectedTests=frontendInventory(JSON.parse(readFileSync(inventoryPath,'utf8')));
+    const observed=frontendResults(unit);
+    assert(expectedTests.some(item=>item.id.includes('opponentReplyPending')));
+    validateUnitResults('frontend',planned,{test_count:unit.numTotalTests,expectedTests,tests:observed,files:{[file]:unit.numTotalTests}});
+  } finally {rmSync(directory,{recursive:true,force:true});}
 });

@@ -3383,3 +3383,5 @@ Additional named PR132 safeguards in the same regular wrapper:
 The first four implementation regressions failed on the reconciled baseline: provider leaves selected full backend/durability, filtered core execution was accepted, identity remained version 2, and the reuse helper was absent. The baseline's 111 native contracts passed before those additions. No application, browser-fixture reset, admission proof or durability assertion was changed to obtain these passes.
 
 - `PR132 successful reuse survives draft or sibling aggregation failure without receipt chains` preserves a passing suite when draft eligibility or another layer makes the workflow fail. It first failed under the overly broad workflow-conclusion rejection; a newer failed suite still blocks reuse and the retained source remains an original execution.
+
+- `PR132 frontend runtime inventory expands parameterized execution identities` uses the actual collection command and a regular parameterized suite to compare collected/executed identities. It failed with default static listing before `--no-static-parse`; static placeholders cannot prove complete execution.
