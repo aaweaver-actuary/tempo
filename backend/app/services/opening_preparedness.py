@@ -1,12 +1,13 @@
 """Pure expected-correct-decision math; deliberately disconnected from scheduling.
 
-Reach assumes the caller's intended learner responses. Recall is independent
-input evidence, not an FSRS state or another factor in route reach. See
+Reach is conditioned on one explicitly selected learner policy. Learner moves
+are policy actions; opponent moves retain their modeled probabilities. Recall
+is independent input evidence, not an FSRS state or another factor in reach. See
 docs/opening-preparedness-contract.md for the event-partition assumptions.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import fsum, isfinite, prod
 from typing import Iterable, Literal
 
@@ -68,6 +69,16 @@ def _unique(entries: Iterable, key) -> tuple:
     return tuple(by_identity[identity] for identity in sorted(by_identity))
 
 
+def _for_policy(entries: Iterable, policy_id: str) -> tuple:
+    """Validate all supplied identities before deduplication or calculation."""
+    _identifier(policy_id)
+    policy_entries = tuple(entries)
+    for entry in policy_entries:
+        if entry.policy_id != policy_id:
+            raise ValueError(f"Policy mismatch: selected {policy_id!r}, received {entry.policy_id!r}")
+    return policy_entries
+
+
 def _derived_probability(lower: float, upper: float,
                          inputs: tuple[ProbabilityEvidence, ...]) -> ProbabilityEvidence:
     reasons = sorted({evidence.reason for evidence in inputs if evidence.status != "exact"})
@@ -127,7 +138,13 @@ class OpponentReplyDistribution:
 
 def route_probability(root_probability: ProbabilityEvidence,
                       opponent_replies: Iterable[ProbabilityEvidence]) -> ProbabilityEvidence:
-    """Multiply conditional reply probabilities; no normalization or path floor."""
+    """Multiply policy-conditioned root mass and conditional opponent evidence.
+
+    Learner policy moves supply no stochastic factor. Root/context mass must
+    exclude any implicit policy-selection weight or learner PGN frequency.
+    Selecting a policy never conditions away opponent deviations, outside mass,
+    or unassigned mass. No normalization or path floor is applied.
+    """
     probabilities = (root_probability, *opponent_replies)
     return _derived_probability(prod(item.lower for item in probabilities),
                                 prod(item.upper for item in probabilities), probabilities)
@@ -135,10 +152,12 @@ def route_probability(root_probability: ProbabilityEvidence,
 
 @dataclass(frozen=True, slots=True)
 class RouteReach:
-    """Absolute mass of an incoming prefix, including its root/context weight.
+    """Incoming prefix mass conditional on following the explicit learner policy.
 
-    Context/root pairs must denote disjoint scenarios. Within each scenario,
-    divergent prefixes must be mutually exclusive under one intended response.
+    Within a policy, context/root pairs must denote disjoint scenarios. Learner
+    moves follow that policy; divergent incoming prefixes must be mutually exclusive
+    opponent continuations. Only opponent branches are stochastic. Context
+    weights cannot encode inferred repertoire-selection probabilities.
     Positions and moves are canonicalized/validated by the existing caller.
     """
 
@@ -146,8 +165,10 @@ class RouteReach:
     root_key: str
     move_prefix: tuple[str, ...]
     probability: ProbabilityEvidence
+    policy_id: str = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        _identifier(self.policy_id)
         _identifier(self.context_id)
         _identifier(self.root_key)
         object.__setattr__(self, "move_prefix", tuple(self.move_prefix))
@@ -155,17 +176,17 @@ class RouteReach:
             _identifier(move)
 
     @property
-    def identity(self) -> tuple[str, str, tuple[str, ...]]:
-        return self.context_id, self.root_key, self.move_prefix
+    def identity(self) -> tuple[str, str, str, tuple[str, ...]]:
+        return self.policy_id, self.context_id, self.root_key, self.move_prefix
 
 
-def decision_reach(routes: Iterable[RouteReach]) -> ProbabilityEvidence:
-    """Union incoming events once, absorbing overlapping later revisits."""
-    unique_routes = _unique(routes, lambda route: route.identity)
+def decision_reach(routes: Iterable[RouteReach], *, policy_id: str) -> ProbabilityEvidence:
+    """Union events within one selected policy, absorbing later revisits."""
+    unique_routes = _unique(_for_policy(routes, policy_id), lambda route: route.identity)
     selected_routes: list[RouteReach] = []
     for route in sorted(unique_routes, key=lambda item: (len(item.move_prefix), item.identity)):
         ancestor = next((selected for selected in selected_routes
-                         if selected.identity[:2] == route.identity[:2] and
+                         if selected.identity[:3] == route.identity[:3] and
                          route.move_prefix[:len(selected.move_prefix)] == selected.move_prefix), None)
         if ancestor is not None:
             if route.probability.lower > ancestor.probability.upper + _MASS_TOLERANCE:
@@ -177,23 +198,30 @@ def decision_reach(routes: Iterable[RouteReach]) -> ProbabilityEvidence:
 
 @dataclass(frozen=True, slots=True)
 class DecisionReadiness:
+    """Recall evidence paired with incoming events for exactly one policy."""
+
     decision_id: str
     routes: tuple[RouteReach, ...]
     recall: ProbabilityEvidence
+    policy_id: str = field(kw_only=True)
 
     def __post_init__(self) -> None:
         _identifier(self.decision_id)
-        object.__setattr__(self, "routes", _unique(self.routes, lambda route: route.identity))
+        object.__setattr__(self, "routes", _unique(_for_policy(self.routes, self.policy_id), lambda route: route.identity))
         if not self.routes:
             raise ValueError("A decision needs reach evidence; use unknown rather than an absent route")
 
 
 @dataclass(frozen=True, slots=True)
 class CardLearningEffect:
+    """One hypothetical intervention evaluated within an explicit policy."""
+
     card_id: str
     projected_readiness: tuple[tuple[str, ProbabilityEvidence], ...]
+    policy_id: str = field(kw_only=True)
 
     def __post_init__(self) -> None:
+        _identifier(self.policy_id)
         _identifier(self.card_id)
         projections = tuple((decision_id, probability) for decision_id, probability in self.projected_readiness)
         for decision_id, _ in projections:
@@ -218,6 +246,7 @@ class PreparednessResult:
     contributions: tuple[DecisionContribution, ...]
     diagnostics: tuple[str, ...]
     model_version: str = MODEL_VERSION
+    policy_id: str = field(kw_only=True)
 
     @property
     def value(self) -> float | None:
@@ -233,10 +262,11 @@ class CardValueResult(PreparednessResult):
 class CardValueRanking:
     ranked: tuple[CardValueResult, ...]
     incomplete: tuple[CardValueResult, ...]
+    policy_id: str = field(kw_only=True)
 
 
-def _decisions(readiness: Iterable[DecisionReadiness]) -> tuple[DecisionReadiness, ...]:
-    decisions = _unique(readiness, lambda decision: decision.decision_id)
+def _decisions(readiness: Iterable[DecisionReadiness], *, policy_id: str) -> tuple[DecisionReadiness, ...]:
+    decisions = _unique(_for_policy(readiness, policy_id), lambda decision: decision.decision_id)
     responses_by_event = {}
     for decision in decisions:
         for route in decision.routes:
@@ -256,19 +286,26 @@ def _diagnostics(contributions: tuple[DecisionContribution, ...]) -> tuple[str, 
     return tuple(sorted(diagnostics))
 
 
-def preparedness(readiness: Iterable[DecisionReadiness]) -> PreparednessResult:
-    """Expected correctly recalled unique decisions; no independence assumption."""
+def preparedness(readiness: Iterable[DecisionReadiness], *, policy_id: str) -> PreparednessResult:
+    """Expected correctly recalled unique learner decisions within one policy.
+
+    Counts can exceed one; this is not whole-horizon survival probability.
+    """
     contributions = tuple(DecisionContribution(
         decision.decision_id, reach, decision.recall, None,
         reach.lower * decision.recall.lower, reach.upper * decision.recall.upper,
-    ) for decision in _decisions(readiness) for reach in (decision_reach(decision.routes),))
+    ) for decision in _decisions(readiness, policy_id=policy_id)
+      for reach in (decision_reach(decision.routes, policy_id=policy_id),))
     return PreparednessResult(fsum(item.lower for item in contributions),
-                              fsum(item.upper for item in contributions), contributions, _diagnostics(contributions))
+                              fsum(item.upper for item in contributions), contributions,
+                              _diagnostics(contributions), policy_id=policy_id)
 
 
-def marginal_card_value(readiness: Iterable[DecisionReadiness], effect: CardLearningEffect) -> CardValueResult:
+def marginal_card_value(readiness: Iterable[DecisionReadiness], effect: CardLearningEffect,
+                        *, policy_id: str) -> CardValueResult:
     """Bound an explicitly non-regressive projected change in preparedness."""
-    decisions = {decision.decision_id: decision for decision in _decisions(readiness)}
+    _for_policy((effect,), policy_id)
+    decisions = {decision.decision_id: decision for decision in _decisions(readiness, policy_id=policy_id)}
     contributions = []
     for decision_id, projected_recall in effect.projected_readiness:
         if decision_id not in decisions:
@@ -276,7 +313,7 @@ def marginal_card_value(readiness: Iterable[DecisionReadiness], effect: CardLear
         decision = decisions[decision_id]
         if projected_recall.upper < decision.recall.lower:
             raise ValueError("Projected recall cannot permit only a decrease")
-        reach = decision_reach(decision.routes)
+        reach = decision_reach(decision.routes, policy_id=policy_id)
         improvement_lower = max(0.0, projected_recall.lower - decision.recall.upper)
         improvement_upper = projected_recall.upper - decision.recall.lower
         contributions.append(DecisionContribution(
@@ -286,17 +323,18 @@ def marginal_card_value(readiness: Iterable[DecisionReadiness], effect: CardLear
     contributions = tuple(contributions)
     return CardValueResult(fsum(item.lower for item in contributions),
                            fsum(item.upper for item in contributions), contributions,
-                           _diagnostics(contributions), card_id=effect.card_id)
+                           _diagnostics(contributions), card_id=effect.card_id, policy_id=policy_id)
 
 
 def rank_card_values(readiness: Iterable[DecisionReadiness],
-                     effects: Iterable[CardLearningEffect]) -> CardValueRanking:
+                     effects: Iterable[CardLearningEffect], *, policy_id: str) -> CardValueRanking:
     """Hypothetical ranks only; incomplete evidence has no numeric fallback."""
-    decisions = _decisions(readiness)
-    values = tuple(marginal_card_value(decisions, effect)
-                   for effect in _unique(effects, lambda effect: effect.card_id))
+    decisions = _decisions(readiness, policy_id=policy_id)
+    values = tuple(marginal_card_value(decisions, effect, policy_id=policy_id)
+                   for effect in _unique(_for_policy(effects, policy_id), lambda effect: effect.card_id))
     return CardValueRanking(
         tuple(sorted((value for value in values if value.value is not None),
                      key=lambda value: (-value.value, value.card_id))),
         tuple(value for value in values if value.value is None),
+        policy_id=policy_id,
     )

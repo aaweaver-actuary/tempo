@@ -3450,3 +3450,20 @@ suite. Named cases:
 - `test_probability_priority_inputs_and_results_are_immutable` and
   `test_probability_priority_fresh_import_and_scoring_need_no_database_network_chess_or_fsrs`:
   copied/frozen inputs and actual fresh-process dependency-free computation.
+
+
+## Issue #156: explicit learner-policy conditioning in PR #149
+
+The regular `backend/tests/test_opening_preparedness.py` suite now requires a
+selected policy throughout the reach/scoring boundary. This is a pure contract
+hardening; Redis, production admission/queue/scheduler, FSRS/readiness estimation,
+persistence and UI are unchanged. #156 remains open for broader integrations.
+
+- `test_probability_priority_policy_identity_is_required_and_nonempty` and `test_probability_priority_evaluation_requires_explicit_selected_policy` reject omitted/invalid identities on routes, readiness, effects and evaluation entry points.
+- `test_probability_priority_one_policy_generators_preserve_scores_and_provenance` and `test_probability_priority_empty_evaluations_still_require_and_retain_one_policy` preserve single-policy arithmetic and result/ranking identity, including one-shot iterables and empty inputs.
+- `test_probability_priority_mixed_policy_readiness_is_rejected` covers preparedness, marginal value and ranking, including equal decision IDs. The original named regression failed against reviewed head `b5cea185f33f63eaf34947f93825a7ffe4df2110`: Italian/Ruy readiness silently combined instead of raising `ValueError` (1 failed, 0.15s pytest). It now rejects foreign policies before deduplication/scoring.
+- `test_probability_priority_mixed_policy_routes_are_rejected_before_deduplication` and `test_probability_priority_foreign_policy_effects_are_rejected_before_projection_lookup` fence route union/readiness construction and card interventions, including identical prefixes/card IDs and empty projections.
+- `test_probability_priority_italian_is_unchanged_when_ruy_is_added_expanded_or_removed` and `test_probability_priority_ruy_is_unchanged_when_italian_is_added_expanded_or_removed` compare complete reach, preparedness contributions, marginal values and rankings by exact equality through adding, duplicating and removing the independent policy. The real shared trunk is `e4 e5 Nf3 Nc6`, with `Bc4`/`Bb5` learner choices.
+- `test_probability_priority_policy_conditioning_does_not_force_opponent_cooperation` retains `0.42`, then `0.42 * 0.5`, then a later opponent `0.25` factor; `test_probability_priority_learner_policy_moves_have_no_inferred_branch_probability` gives either defining learner action the same opponent-only product.
+- `test_probability_priority_identical_transposed_positions_have_independent_policy_mass` uses real shared canonical positions and deliberately equal decision/card IDs: within-policy duplicates/revisits collapse and disjoint transpositions add to 0.50/0.25 separately, while a mixed evaluation fails. `test_probability_priority_same_context_different_roots_are_disjoint_within_policy` protects the policy/context/root overlap comparison.
+- `test_probability_priority_policy_selection_preserves_outside_unassigned_and_unknown_mass` preserves 0.80 authored, 0.10 outside, 0.10 unassigned mass and unknown-reply bounds for either policy. Existing arithmetic, ranking, monotonicity, exact/bounded/unknown evidence, transposition, revisit and dependency-free regressions supply explicit fixture policy identity and retain their assertions.

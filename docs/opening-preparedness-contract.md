@@ -8,8 +8,8 @@ It does not change queue admission/order, FSRS, graph eligibility, or the UI.
 It has no database, clock, source provider, chess, or scheduler dependency.
 
 For a unique learner decision `d`, let `w[d]` be the probability of reaching it
-under the caller's selected intended learner responses, and `r[d]` the estimated
-probability of recalling its expected move. For card `c`, the caller supplies
+conditioned on following the explicitly selected learner `policy_id`, and `r[d]`
+the estimated probability of recalling its expected move. For card `c`, the caller supplies
 projected recall `r_after[c,d]` for the decisions that studying it changes:
 
 ```text
@@ -18,14 +18,14 @@ MarginalValue(c) = sum_d_in_card w[d] * (r_after[c,d] - r[d])
 RouteProbability = root_context_probability * product(conditional_opponent_replies)
 ```
 
-Units are **expected correctly recalled unique decisions**. Totals can exceed
-one when a game tests several decisions. Reach, recall and individual reply
+Units are **expected correctly recalled unique learner decisions**. Totals can
+exceed one when a game tests several decisions. Reach, recall and individual reply
 probabilities remain in `[0,1]`. The corresponding readiness of a card is its
 set of decision estimates; the module does not invent an aggregate probability
 of passing the whole card or multiply marginal recall estimates as if independent.
 Linearity of expectation needs no independence between learner recalls.
 
-Reach is conditional on following the intended learner responses. It excludes
+Reach is `P(reach decision d | learner follows policy R)`. It excludes
 the learner's probability of deviating earlier, formal maturity, exposure gates,
 depth bonuses, and learning cost. Thus a useful descendant can have positive
 prospective gain before a parent becomes mature. Eligibility and actual gameplay
@@ -46,19 +46,20 @@ of PGNs or the repertoire graph, and never update their inputs.
 | `.bounded(lower, upper, reason)` / `.unknown(reason)` | Explicit sensitivity interval / unknown `[0,1]`; reason required |
 | `OpponentReply` | Move key, absolute conditional probability evidence, explicit `in_repertoire` membership |
 | `OpponentReplyDistribution` | Listed replies plus explicit `unassigned_mass`; bounds must permit total mass one |
-| `RouteReach` | Context, canonical root key, complete incoming move prefix, absolute probability evidence |
-| `DecisionReadiness` | Existing decision ID, its incoming route events, current recall evidence |
-| `CardLearningEffect` | Existing card ID and `(decision_id, projected_recall)` pairs; unspecified decisions stay unchanged |
+| `RouteReach` | Required keyword `policy_id`, context, canonical root key, complete incoming move prefix, policy-conditioned absolute probability evidence |
+| `DecisionReadiness` | Required keyword `policy_id`, decision ID, incoming routes all belonging to that policy, current recall evidence |
+| `CardLearningEffect` | Required keyword `policy_id`, card ID and `(decision_id, projected_recall)` pairs; unspecified decisions stay unchanged |
 | `route_probability(root_probability, opponent_replies)` | Multiply sequential conditional evidence without a floor or normalization |
-| `decision_reach(routes)` | Union distinct incoming prefixes; deduplicate repeats and absorb later revisits |
-| `preparedness(readiness)` | Total bounds, sorted decision contributions and evidence diagnostics |
-| `marginal_card_value(readiness, effect)` | Gain bounds computed directly from changed decisions, with current/projected evidence |
-| `rank_card_values(readiness, effects)` | Exact-input scores descending, card ID for equal computed scores; incomplete results separately by ID |
+| `decision_reach(routes, *, policy_id)` | Union distinct incoming prefixes; deduplicate repeats and absorb later revisits |
+| `preparedness(readiness, *, policy_id)` | Total bounds, sorted decision contributions and evidence diagnostics |
+| `marginal_card_value(readiness, effect, *, policy_id)` | Gain bounds computed directly from changed decisions, with current/projected evidence |
+| `rank_card_values(readiness, effects, *, policy_id)` | Exact-input scores descending, card ID for equal computed scores; incomplete results separately by ID |
 
 `PreparednessResult` and `CardValueResult` expose `lower`, `upper`, `contributions`,
-`diagnostics`, `model_version`, and `value`. `value` is `None` when relevant evidence
-is incomplete, even when the numerical interval collapses to zero. Card results
-also include `card_id`. Ranking returns `CardValueRanking.ranked` and `.incomplete`.
+`diagnostics`, `model_version`, `policy_id`, and `value`. `value` is `None` when
+relevant evidence is incomplete, even when the numerical interval collapses to zero. Card results
+also include `card_id`. Ranking returns `CardValueRanking.ranked`, `.incomplete`,
+and the selected `.policy_id`.
 No incomplete card is silently assigned a numeric zero or put last in one ranking.
 Ranks compare independent one-card interventions against the same baseline;
 they are not a budget allocator or a greedy multi-card plan.
@@ -67,7 +68,51 @@ Duplicate identities with identical evidence collapse; conflicting evidence
 raises `ValueError`. Missing decision references, absent reach events, invalid
 probabilities, impossible mass totals and impossible non-regressive projections
 also raise. Represent absent reach evidence as an explicit unknown route rather
-than an empty route list. Empty decision snapshots/effects have zero value.
+than an empty route list. Empty decision snapshots/effects have zero value but
+still require an explicit selected policy.
+
+## Explicit learner-policy boundary
+
+`policy_id` is a nonempty opaque identity for a persisted repertoire, hypothetical
+policy, or shadow experiment. It requires no database lookup. There is no optional
+policy-less mode. Every reach, preparedness, marginal-value, and ranking call
+selects exactly one policy through its required keyword argument. All supplied
+routes, readiness snapshots and card effects must match it. A foreign identity
+raises `ValueError` before deduplication, scoring or projection lookup, even for
+empty projections or rankings. Iterables are materialized once before validation.
+Results retain the selected identity; decision IDs alone cannot establish policy
+isolation. Route identity is `(policy_id, context_id, root_key, move_prefix)`.
+
+At learner nodes, the prescribed move is an intended policy action. Its reach
+factor is not inferred from repertoire counts, imported PGN frequencies, card
+counts, repertoire size, or alternative learner moves. Root/context evidence
+must already be conditioned on following this policy and must not contain an
+implicit repertoire-selection weight. Scenario weights describe disjoint
+opponent/profile contexts within the selected policy.
+
+At opponent nodes, replies retain their modeled conditional probabilities.
+Selecting Italian `e4 e5 Nf3 Nc6 Bc4` does not force `1...e5`: if its probability
+is `0.42` and `2...Nc6` has conditional probability `0.5`, reach of the defining
+learner decision is `0.42 * 0.5`, with root mass one. A later opponent reply adds
+its own factor. Selecting Ruy `Bb5` instead, or storing both policies, introduces
+no additional learner-branch factor. Repertoire conditioning is not opponent
+conditioning.
+
+Adding, removing or duplicating another policy leaves the selected policy's
+reach, preparedness contributions, marginal values and ranking unchanged.
+Identical canonical positions can appear in different policies with independent
+route mass, including when decision/card IDs coincide. Within each policy,
+duplicate prefixes, transpositions and overlapping revisits retain existing
+unique-decision behavior. Learner recall evidence may eventually be intentionally
+shared by another layer; sharing that evidence does not merge policy reach mass.
+
+Cross-policy weighting is deferred. A future optimizer could explicitly compute
+`sum_R P(R) * preparedness(R)` outside this within-policy kernel. Selection
+weights must be explicit user/configured/learned inputs, never inferred from
+imported lines, cards, repertoire size or the existence of other repertoires.
+This version does not implement `P(R)`. The v1 count metric is not
+`P(fully prepared for the game/opening horizon)`; a whole-horizon probability
+would be a separate future metric.
 
 ## Routes, sharing and current Tempo concepts
 
@@ -84,7 +129,7 @@ than an empty route list. Empty decision snapshots/effects have zero value.
 - The incoming prefix is from the **common scenario root to the decision**, not
   from an arbitrary card boundary and not the whole terminal line. Repeating an
   authored line or splitting a card therefore cannot add another reach event.
-- Within one context/root, caller-provided prefixes must follow one selected
+- Within one policy/context/root, caller-provided prefixes must follow one selected
   learner response per position; divergent opponent continuations are mutually
   exclusive. Distinct root/context pairs must represent disjoint weighted scenarios,
   with weights already included in absolute reach. Never use overlapping card
@@ -106,8 +151,8 @@ than an empty route list. Empty decision snapshots/effects have zero value.
 ## Missing mass and uncertainty
 
 An example distribution has authored `e5=0.60`, authored `c5=0.20`, known outside
-`e6=0.10`, and unassigned `0.10`. Authored mass stays `0.80`; `e5` does **not** become
-`0.75`. The unassigned bucket's size is known here but its allocation is unknown:
+`e6=0.10`, and unassigned `0.10`. Policy selection preserves all three buckets.
+Authored mass stays `0.80`; `e5` does **not** become `0.75`. The unassigned bucket's size is known here but its allocation is unknown:
 it is neither proven outside coverage nor an authored move. No source data can
 be represented by no listed replies and unassigned mass one. Uncertain individual
 replies retain their own intervals. No Explorer/Maia fetch or blend occurs.
@@ -152,11 +197,12 @@ is no hidden score rounding or cost/depth normalization.
 
 ## Future integrations and remaining questions
 
-Related [#106](https://github.com/aaweaver-actuary/tempo/issues/106),
+Related [#156](https://github.com/aaweaver-actuary/tempo/issues/156),
+[#106](https://github.com/aaweaver-actuary/tempo/issues/106),
 [#112](https://github.com/aaweaver-actuary/tempo/issues/112),
 [#113](https://github.com/aaweaver-actuary/tempo/issues/113), and
 [#118](https://github.com/aaweaver-actuary/tempo/issues/118) remain broader work.
-This PR closes none of them.
+This PR closes none of them; #156 also covers future shadow and production integration.
 
 - [#116](https://github.com/aaweaver-actuary/tempo/pull/116) can later supply profile
   context/weights, immutable version IDs, freshness and unsupported-context
@@ -183,7 +229,9 @@ Named regressions live in `backend/tests/test_opening_preparedness.py` and are
 registered in `tests/REGRESSIONS.md`. They cover hand arithmetic, monotonicity,
 zero reach, bounded/invalid probabilities, missing mass, sharing/transpositions,
 revisits, incomplete ranking, deterministic permutations, identity mapping and
-immutable/dependency-free computation. Existing identity, introduction and
+immutable/dependency-free computation, required policy identities, mixed-policy
+rejection, bidirectional Italian/Ruy isolation, opponent noncooperation and
+independent cross-policy transposition mass. Existing identity, introduction and
 queue-order suites protect neighboring contracts. Run from the isolated root:
 
 ```sh
