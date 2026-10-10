@@ -391,14 +391,15 @@ def test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sourc
     try:
         with psycopg.connect(dsn) as database:
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
-                if int(migration.name[:3]) == POSTGRES_SCHEMA_VERSION:
+                # This historical boundary stays 43 when new migrations are added.
+                if int(migration.name[:3]) > 43:
                     break
                 database.execute(migration.read_text(), prepare=False)
                 database.commit()
             database.execute("INSERT INTO settings(id,lichess_username) VALUES(1,'historical')")
             seed_historical_timestamps(database)
             assert [row[0] for row in database.execute(
-                "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION))
+                "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 44))
             assert database.execute("SELECT to_regclass('next_opponent_accounts')").fetchone()[0] is None
             settings_before = database.execute("SELECT * FROM settings").fetchall()
             turns_before = database.execute("SELECT * FROM background_scheduling_turns").fetchall()
