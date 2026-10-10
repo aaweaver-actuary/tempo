@@ -8,9 +8,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
+import { postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { verifyPersistedRedisReadiness } from "./check-redis-readiness.mjs";
 
-export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision }) {
+export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision, measure = null }) {
   const root = process.cwd();
   const childProject = `${project}-cli`;
   const directory = join(root, "test-results", "tempo-cli", childProject);
@@ -26,7 +27,39 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const output = [];
   const execute = commandExecutor({ root, environment: childEnvironment, secretValues,
     output: message => { output.push(message); console.log(message); } });
-  const run = (command, args, options) => { commandLog.push({ command, args }); return execute(command, args, options); };
+  const measured = (label, category, action) => measure ? measure.detail(label, category, action) : action();
+  const run = (command, args, options) => {
+    commandLog.push({ command, args });
+    const { label, category } = postgresCommandTiming(args);
+    return measured(label, category, async () => {
+      const result = await execute(command, args, options);
+      measure?.processResult(result);
+      return result;
+    });
+  };
+  const makeRuntime = (runtimeTarget, options) => {
+    const runtime = createRuntime(runtimeTarget, { ...options,
+      redisReadinessOptions: measure ? { wait: measure.wait, poll: measure.poll } : {},
+      readinessOptions: measure ? { wait: measure.wait, poll: measure.poll } : {} });
+    const categories = { inspectTarget: "inspection", ensureImages: "build", stopApplications: "restart",
+      ensureDatabase: "readiness", checkSchema: "migration", backup: "backup", migrate: "migration",
+      startServices: "startup", verifyReady: "readiness", commitDeployment: "inspection" };
+    for (const [method, category] of Object.entries(categories)) {
+      const original = runtime[method];
+      const label = method.replace(/[A-Z]/g, character => `_${character.toLowerCase()}`);
+      runtime[method] = (...args) => measured(label, category, () => original(...args));
+    }
+    return runtime;
+  };
+  const lifecycle = (label, plan, runtime) => measured(label, "scenario", () => executeLifecycle(plan, runtime));
+  const childProcess = (label, ...args) => {
+    const action = () => {
+      const result = spawnSync(...args);
+      measure?.processResult(result);
+      return result;
+    };
+    return measure ? measure.syncDetail(label, "scenario", action) : action();
+  };
   const context = (await run("docker", ["context", "show"])).stdout.trim();
   const docker = (args, options) => run("docker", ["--context", context, ...args], options);
   const productSecrets = mkdtempSync(join(tmpdir(), "tempo-compose-contract-"));
@@ -46,6 +79,8 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     ])).stdout);
     validateTarget(productConfig, { root, project: "tempo", ports: portsFromConfig(productConfig),
       volumes: productVolumes, postgresVolumeKey: "tempo-postgres-data" });
+    for (const worker of ["defense-engine", "maia-worker"])
+      assert.equal(productConfig.services[worker].init, true, "Product workers must match qualification shutdown behavior");
     console.log("PASS current product Compose persistent-volume and API/worker PostgreSQL, passfile/secret, Redis contracts (read-only configuration)");
   } finally { rmSync(productSecrets, { recursive: true, force: true }); }
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,
@@ -106,24 +141,24 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
           "UPDATE reviews SET rating='incorrect' WHERE card_id='cli-history'"]);
       return result;
     };
-    const runtime = createRuntime(target, { run: mutatingRun, stateDirectory, revision, evidence, preparedImages });
+    const runtime = makeRuntime(target, { run: mutatingRun, stateDirectory, revision, evidence, preparedImages });
     await runtime.inspectTarget();
-    await assert.rejects(executeLifecycle({ recreate: true }, runtime), /Original migration history verification failed/);
+    await assert.rejects(lifecycle("history_mutation_rejected", { recreate: true }, runtime), /Original migration history verification failed/);
     const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
     assert.equal(originalGuard.state, "pending");
     const failedReceipt = await compose(["exec", "-T", "postgres", "psql", "-tA", "-U", "postgres", "-d", "tempo", "-c", "SELECT MAX(version) FROM tempo_schema_migrations"]);
     assert.equal(Number(failedReceipt.stdout.trim()), schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
-    const retryRuntime = () => createRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+    const retryRuntime = () => makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
     const failedRetry = retryRuntime(); await failedRetry.inspectTarget();
     const retryStart = commandLog.length;
-    await assert.rejects(executeLifecycle({ recreate: false }, failedRetry), /Original migration history verification failed/);
+    await assert.rejects(lifecycle("history_retry_rejected", { recreate: false }, failedRetry), /Original migration history verification failed/);
     assert(!commandLog.slice(retryStart).some(call => call.args.includes("scripts/verify_postgres_cli_state.py") && !call.args.includes("--expected")));
     assert(!commandLog.slice(retryStart).some(call => call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check")));
     assert.deepEqual(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).study_invariants, originalGuard.study_invariants);
     assert(!(await failedRetry.runningServices()).includes("api"));
     await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c", "UPDATE reviews SET rating='correct' WHERE card_id='cli-history'"]);
     const repairedRetry = retryRuntime(); await repairedRetry.inspectTarget();
-    await executeLifecycle({ recreate: false }, repairedRetry);
+    await lifecycle("history_repaired_retry", { recreate: false }, repairedRetry);
     assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
     const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
     assert.equal(record.schema, schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
@@ -133,24 +168,24 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       "migration 025 normalizes the same card/queue row and preserves its historical identity");
     assert.deepEqual(await readHistory(), expected, "upgrade preserves original study history while workers may add unrelated receipts");
 
-    const repeat = createRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
+    const repeat = makeRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
     await repeat.inspectTarget();
     const repeatStart = commandLog.length;
-    await executeLifecycle({ recreate: false }, repeat);
+    await lifecycle("compatible_repeat", { recreate: false }, repeat);
     assert(!commandLog.slice(repeatStart).some(call => call.args.includes("build") || call.args.includes("stop")
       || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))));
     assert(commandLog.slice(repeatStart).filter(call => call.args.includes("up") && call.args.includes("postgres"))
       .every(call => call.args.includes("--no-recreate")));
 
     await verifyPersistedRedisReadiness({ target, runtime: repeat, run, compose, docker, directory, revision,
-      images, readHistory, expectedHistory: expected, expectedSchema: record.schema, commandLog });
-    await executeLifecycle({ recreate: false }, repeat);
+      images, readHistory, expectedHistory: expected, expectedSchema: record.schema, commandLog, measure });
+    await lifecycle("after_redis_repeat", { recreate: false }, repeat);
 
     // Exercise the actual installed-command entry point against PostgreSQL.
     // This checkout is a task branch, so start must explicitly retain the
     // already recorded disposable deployment rather than fetching product main.
     const fallbackReceiptBytes = readFileSync(join(stateDirectory, "deployment.json"), "utf8");
-    const child = spawnSync(process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
+    const child = childProcess("cli_fallback", process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
       encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000,
     });
     assert.equal(child.status, 0, child.stdout + child.stderr);
@@ -200,7 +235,7 @@ const runtime = createRuntime(target, { run, stateDirectory, revision: preparedI
 await runtime.inspectTarget();
 await executeLifecycle({ recreate: false }, runtime);
 `, { mode: 0o600 });
-    const interruptedChild = spawnSync(process.execPath, [interruptedLifecycle, registration, stateDirectory, candidateOverride, preparedCandidate], {
+    const interruptedChild = childProcess("interrupted_rollout", process.execPath, [interruptedLifecycle, registration, stateDirectory, candidateOverride, preparedCandidate], {
       encoding: "utf8", env: childEnvironment, timeout: 180_000,
     });
     output.push(redact(interruptedChild.stdout + interruptedChild.stderr, secretValues));
@@ -209,11 +244,11 @@ await executeLifecycle({ recreate: false }, runtime);
     const uncommittedRunning = await repeat.runningServices();
     assert(["api", "foreground-worker", "background-worker"].every(name => uncommittedRunning.includes(name)));
     assert(!uncommittedRunning.includes("web"), "interruption occurs before the second application startup group");
-    const recovery = createRuntime(target, { run, stateDirectory, revision: historicalReceipt.revision, previous: historicalReceipt, fallback: true });
+    const recovery = makeRuntime(target, { run, stateDirectory, revision: historicalReceipt.revision, previous: historicalReceipt, fallback: true });
     await recovery.inspectTarget();
     assert.deepEqual(await recovery.ensureImages(), { dependenciesMayChange: false });
     assert.equal(await recovery.recordedApplicationsMatch(), false, "actual candidate config hashes differ from the saved receipt");
-    const failedFallback = spawnSync(process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
+    const failedFallback = childProcess("cli_fallback", process.execPath, ["scripts/tempo-cli.mjs", "start", "--no-open", "--config", registration], {
       encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000,
     });
     output.push(redact(failedFallback.stdout + failedFallback.stderr, secretValues));
@@ -238,7 +273,7 @@ await executeLifecycle({ recreate: false }, runtime);
     // Restore only the test's legitimate current receipt; fix forward restarts
     // the compatible application without touching PostgreSQL or migration H0.
     writeFileSync(receiptPath, committedReceipt, { mode: 0o600 });
-    await executeLifecycle({ recreate: false }, repeat);
+    await lifecycle("fix_forward", { recreate: false }, repeat);
 
     // Simulate uncommitted candidate dependencies on these disposable volumes:
     // Redis has a different command/configuration, and PostgreSQL is absent.
@@ -248,10 +283,10 @@ await executeLifecycle({ recreate: false }, runtime);
     atomicJson(failedCandidateOverride, { services: { redis: { command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"] } } });
     await docker([...composeArguments, "-f", failedCandidateOverride, "up", "-d", "--no-build", "--no-deps", "--force-recreate", "--wait", "redis"]);
     await compose(["rm", "-s", "-f", "postgres"]);
-    const correctedFallback = createRuntime(target, { run, stateDirectory, revision, previous: record, fallback: true });
+    const correctedFallback = makeRuntime(target, { run, stateDirectory, revision, previous: record, fallback: true });
     await correctedFallback.inspectTarget();
     const correctionStart = commandLog.length;
-    await executeLifecycle({ recreate: false }, correctedFallback);
+    await lifecycle("dependency_fallback", { recreate: false }, correctedFallback);
     const correctionCalls = commandLog.slice(correctionStart);
     const correctionShutdown = correctionCalls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
     const correctionStartup = correctionCalls.findIndex(call => call.args.includes("up") && call.args.includes("postgres"));
@@ -262,7 +297,7 @@ await executeLifecycle({ recreate: false }, runtime);
 
     const beforeRestart = (await repeat.compose(["ps", "-q", "api"])).stdout.trim();
     const restartStart = commandLog.length;
-    await executeLifecycle({ recreate: true }, repeat);
+    await lifecycle("explicit_restart", { recreate: true }, repeat);
     const restartCalls = commandLog.slice(restartStart);
     const writerShutdown = restartCalls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
     const dependencyStartup = restartCalls.findIndex(call => call.args.includes("up") && call.args.includes("postgres"));
@@ -278,9 +313,9 @@ await executeLifecycle({ recreate: false }, runtime);
     await repeat.stopApplications();
     await repeat.compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
       `DELETE FROM tempo_schema_migrations WHERE version>=40`]);
-    const rejected = createRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
+    const rejected = makeRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
     await rejected.inspectTarget();
-    await assert.rejects(executeLifecycle({ recreate: true }, rejected), /already exists/);
+    await assert.rejects(lifecycle("migration_rejected", { recreate: true }, rejected), /already exists/);
     const running = await rejected.runningServices();
     assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web", "defense-engine", "maia-worker"].includes(name)));
     assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");

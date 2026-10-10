@@ -6,6 +6,8 @@ import { basename, join } from "node:path";
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
 import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
 
+import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
+
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
 
@@ -105,7 +107,7 @@ export async function executeLifecycle(plan, actions) {
 
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
   fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
-  redisReadinessOptions = {} }) {
+  redisReadinessOptions = {}, readinessOptions = {} }) {
   let composeFiles = fallback ? previous.composeFiles : target.composeFiles;
   let imageOverride = fallback ? previous.imageOverride : null;
   let configuration;
@@ -363,7 +365,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function waitForRedisReady() {
     stage("checking_redis");
     const { timeoutMilliseconds = 180_000, now = () => performance.now(),
-      wait = milliseconds => new Promise(resolveWait => setTimeout(resolveWait, milliseconds)) } = redisReadinessOptions;
+      wait = milliseconds => new Promise(resolveWait => setTimeout(resolveWait, milliseconds)), poll = () => {} } = redisReadinessOptions;
     const started = now();
     const deadline = started + timeoutMilliseconds;
     let reason = "No Redis readiness reply was received";
@@ -372,6 +374,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       throw new Error(`Redis is not ready after ${((now() - started) / 1000).toFixed(1)} seconds (checking_redis): ${reason}. Inspect tempo logs redis, then retry tempo start.`);
     };
     while (now() < deadline) {
+      poll();
       let interrupted = false;
       try {
         const response = await compose(["exec", "-T", "redis", "redis-cli", "-e", "--raw", "ping"],
@@ -380,6 +383,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         reason = redact(response.stdout.trim() || response.stderr.trim() || "Redis readiness probe was interrupted or timed out", secretValues).slice(-4000);
         interrupted = response.code === null;
       } catch (error) {
+        if (isTimingPublicationFailure(error)) throw error;
         reason = redact(error.message, secretValues).slice(-4000);
       }
       // Saved deployments can contain the old healthcheck, which accepts
@@ -527,7 +531,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     stage("checking_readiness");
     const deadline = Date.now() + readinessMilliseconds;
     let reason = "Services have not answered yet.";
+    const { poll = () => {}, wait = milliseconds => new Promise(resolveWait => setTimeout(resolveWait, milliseconds)) } = readinessOptions;
     while (Date.now() < deadline) {
+      poll();
       try {
         const response = await fetcher(`${target.webUrl}/api/health`, { signal: AbortSignal.timeout(5000) });
         const text = await response.text();
@@ -541,8 +547,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         const required = [...applicationServices, "postgres", "redis", "postgres-backup"].filter(name => configuration.services[name]);
         if (required.some(name => !running.includes(name))) throw new Error(`Required services unavailable: ${required.filter(name => !running.includes(name)).join(", ")}`);
         return;
-      } catch (error) { reason = redact(error.message, secretValues); }
-      await new Promise(resolveWait => setTimeout(resolveWait, 1000));
+      } catch (error) {
+        if (isTimingPublicationFailure(error)) throw error;
+        reason = redact(error.message, secretValues);
+      }
+      await wait(1000);
     }
     throw new Error(`Tempo did not become ready: ${reason}`);
   }

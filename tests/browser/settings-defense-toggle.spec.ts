@@ -42,6 +42,7 @@ test("defensive analysis pause persists independently of defensive cards", async
     const analysisToggle = page.getByRole("checkbox", { name: /^Defensive analysis/ });
     const cardsToggle = page.getByRole("checkbox", { name: /Defensive cards in daily stack/ });
     const saveButton = page.getByRole("button", { name: "Save settings" });
+    await expect(saveButton).toBeEnabled();
     await expect(analysisToggle).not.toBeChecked();
     await analysisToggle.check();
     await cardsToggle.uncheck();
@@ -52,6 +53,7 @@ test("defensive analysis pause persists independently of defensive cards", async
     }).toEqual([true, false]);
     await page.reload();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await expect(saveButton).toBeEnabled();
     await expect(analysisToggle).toBeChecked();
     await expect(cardsToggle).not.toBeChecked();
     await analysisToggle.uncheck();
