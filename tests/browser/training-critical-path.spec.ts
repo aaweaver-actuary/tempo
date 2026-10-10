@@ -16,6 +16,9 @@ if (conditions.some(condition => !["prepared", "refresh", "recovery-held", "work
 for (const condition of conditions) {
 test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}`, async ({ page, request }, testInfo) => {
   test.setTimeout(240_000);
+  const warmup = process.env.TEMPO_TRAINING_TIMINGS === "1" ? 3 : 0;
+  const measuredCount = process.env.TEMPO_TRAINING_TIMINGS === "1" ? 50 : 3;
+  const transitionCount = warmup + measuredCount;
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("An owning disposable runner is required");
   const identifier = `training-transition-${randomUUID()}`;
@@ -134,7 +137,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4P3/);
     };
     await playPreparedMove();
-    for (let index = 0; index < 53; index++) {
+    for (let index = 0; index < transitionCount; index++) {
       await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
       const previousEntry = await page.locator("#train").getAttribute("data-queue-entry-id");
       queueNetworkMs = []; network = []; reviewResponseEpochMs = 0;
@@ -165,7 +168,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
         const marks = performance.getEntriesByName("tempo.review.confirmed");
         return marks.length ? performance.timeOrigin + marks.at(-1)!.startTime : 0;
       });
-      if (index >= 3) samples.push({ clickEpochMs, submissionEpochMs, responseEpochMs: reviewResponseEpochMs, interactiveEpochMs, operationId,
+      if (index >= warmup) samples.push({ clickEpochMs, submissionEpochMs, responseEpochMs: reviewResponseEpochMs, interactiveEpochMs, operationId,
         receiptObservationEpochMs, nextInputAcceptedEpochMs, queueNetworkMs: [...queueNetworkMs], queueProcessingMs, network: [...network] });
     }
     // Stop current UI timers/requests before service restart and fixture teardown.
@@ -191,17 +194,17 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     });
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
-      fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup: 3, samples: 50 },
+      fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup, samples: measuredCount },
       clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges bracket host/VM offset after subtracting observed server span duration; smallest uncertainty retained. Native-input time includes test-driver scheduling.", ...clock }, measured, recoveryRequests,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
     mkdirSync(output, { recursive: true }); writeFileSync(join(output, `training-transition-${condition}.json`), JSON.stringify(report, null, 2));
     await testInfo.attach("training-transition", { body: JSON.stringify(report), contentType: "application/json" });
-    expect(report.persisted.reviews).toBe(53);
-    expect(report.persisted.complete_evidence).toBe(53);
+    expect(report.persisted.reviews).toBe(transitionCount);
+    expect(report.persisted.complete_evidence).toBe(transitionCount);
     const expectedEvents = [...submittedEvidenceEvents.values()].reduce((total, count) => total + count, 0);
-    expect(submittedEvidenceEvents.size).toBe(53);
-    expect(expectedEvents).toBeGreaterThanOrEqual(53);
+    expect(submittedEvidenceEvents.size).toBe(transitionCount);
+    expect(expectedEvents).toBeGreaterThanOrEqual(transitionCount);
     expect(report.persisted.completion_events).toBe(expectedEvents);
     if (process.env.TEMPO_TRAINING_TIMINGS === "1" && condition !== "refresh") {
       expect(measured.every(sample => sample.commitToInteractiveMs !== null && sample.commitToInteractiveMs >= 0)).toBe(true);
@@ -219,7 +222,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
         "Content-Type": "application/json" }, data: firstReview!.body });
       expect(replay.ok()).toBe(true);
       expect((await replay.json()).prepared_continuation?.card_id).toContain("-prepared-001");
-      expect(JSON.parse(fixture("verify"))).toMatchObject({ reviews: 53, complete_evidence: 53, completion_events: expectedEvents });
+      expect(JSON.parse(fixture("verify"))).toMatchObject({ reviews: transitionCount, complete_evidence: transitionCount, completion_events: expectedEvents });
     }
   } finally {
     await page.evaluate(() => (Reflect.get(window, "releaseMeasuredRecovery") as (() => void) | undefined)?.()).catch(() => undefined);
