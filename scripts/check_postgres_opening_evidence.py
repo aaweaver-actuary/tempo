@@ -472,6 +472,23 @@ def _assert_owned_admission_cleanup():
 
 @_assert_owned_admission_cleanup()
 def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay():
+    from check_postgres_graph_retention import owned_admission_scope
+    from app.services import redis_admission_gate
+    server = redis_admission_gate.client()
+    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    parent_activity_token = uuid.uuid4().hex
+    # Persistent unrelated activity makes accidental parent admission fail at
+    # setup or recovery, independent of health-probe/lease-expiry timing.
+    server.zadd(parent_foreground_key, {parent_activity_token: float('inf')})
+    try:
+        with owned_admission_scope('checkpoint-http-' + uuid.uuid4().hex):
+            _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+            assert server.zscore(parent_foreground_key, parent_activity_token) == float('inf')
+    finally:
+        server.zrem(parent_foreground_key, parent_activity_token)
+
+
+def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     from app import main, command_dispatch, command_gateway, database as database_module, tasks
     from app.services import redis_admission_gate
     fixture = _create_color_fixture('white')
