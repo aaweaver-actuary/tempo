@@ -235,6 +235,8 @@ def project_opening_frontier(snapshot: OpeningFrontierSnapshot) -> OpeningFronti
                 if step.parent_card_id is not None or step.first_decision_index != 0 or step.segment_kind != "prefix":
                     prefix_reasons.add("missing_root")
             else:
+                if step.segment_kind != "decision":
+                    prefix_reasons.add("invalid_segment_kind")
                 if step.parent_card_id != previous_step.card_id:
                     prefix_reasons.add("parent_link_mismatch")
                 if step.first_decision_index != previous_step.last_decision_index + 1:

@@ -158,15 +158,17 @@ CPython 3.14.8, Node 26.10.0; pinned Python environment installed once):
 
 | Command | Result | Observed wall time |
 | --- | --- | --- |
-| `make python-file FILE=backend/tests/test_opening_frontier.py` | 61 passed; 0.48 s pytest | 1.07 s |
+| `make python-file FILE=backend/tests/test_opening_frontier.py` | 62 passed; 1.03 s pytest | 1.85 s |
 | `make python-file FILE=backend/tests/test_opening_graph.py` | 24 passed; 23.34 s pytest | 24.92 s |
 | `make python-file FILE=backend/tests/test_opening_progression.py` | 15 passed; 3.03 s pytest | 6.84 s |
 | `backend/.venv/bin/python scripts/show_opening_frontier.py` | Valid deterministic JSON; four unique eligible card IDs, ten classified cards, one obligation annotation | Not separately timed |
 
 The final frontier run includes assertions preserving trained color and learner
-decision ranges in qualifying route output. The graph/progression source and its
+decision ranges in qualifying route output. The new descendant-prefix malformed
+occurrence case first failed (eligible instead of structurally unreachable); the
+model now requires each non-root occurrence to be a one-decision segment. The graph/progression source and its
 existing fixtures did not change. Those runs retain existing library deprecation warnings. These
-are 100 focused cases, not a full gate or performance measurement. The tests ran
+are 101 focused cases, not a full gate or performance measurement. The tests ran
 on the dirty implementation before its commit; model/test/diagnostic SHA-256
 provenance and raw logs are preserved outside the clone in
 `test-results/2026-10-10-opening-frontier/`. Subsequent prose/registry updates do
@@ -186,10 +188,30 @@ CI owns real PostgreSQL/browser proof for the repaired candidate. Static repair
 checks passed: `npm run lint` (28.64 s, zero errors and ten existing warnings),
 `npm run typecheck` (17.09 s), `npm run check:conflicts`, and `git diff --check`.
 
+A second full candidate run, `38051747505`, passed the repertoire-limit case
+and 266 of 267 browser cases, but the existing Issue135 idle-worker proof stopped
+periodic polling before fixture generation 44 had finished. A second test-only
+repair establishes initial publication, includes scheduled ETA deliveries in the
+existing idle check, and proves a newer committed generation. It retains the
+foreground save/read, idempotent replay, stopped scheduler, and original
+30-second post-commit deadline. Setup shares its original 20-second budget.
+`npm run lint` passed (57.44 s; zero errors, ten existing warnings), and
+`npm run typecheck` passed (41.13 s).
+
+Once Docker was responsive, the unique focused case ran with
+`make view 'VIEW=Issue135 foreground queue commit wakes an idle worker without periodic polling'`:
+one passed (15.3 s browser execution; 93.02 s command wall time), using real
+isolated PostgreSQL on macOS arm64, Node 26.10.0, Docker 29.8.1, Chromium 1243.
+Its tested revision was `a9f7a2f` plus the exact test-only dirty patch; source
+hashes and raw logs are retained in the dated evidence directory. This was a
+focused fixture repair proof, not a full local gate. CI owns the final candidate.
+
 Node dependencies were added only for the browser-test repair's static checks.
-No development stack or local Docker test resources were created. The initial
-inventory retained other tasks' checkouts/resources because
-release/deletion eligibility was not established. The owned checkout and its
-Python/cache environment remain for PR review and are eligible for cleanup only
-after merge and the documented preservation/activity checks. Live study state
-was not changed.
+Disposable project `tempo-pg-regressions-92456-86d6ee1b` was owned by that focused
+run. Runner teardown passed (8.55 s); exact project container/image/volume
+inventories were empty afterward. Timings, resource names, ownership and teardown
+provenance are preserved outside the clone. The initial inventory retained other
+tasks' checkouts/resources because release/deletion eligibility was not
+established. The owned checkout and Python/Node caches remain for PR review,
+with cleanup after merge and preservation/activity checks. Live study state was
+not changed.

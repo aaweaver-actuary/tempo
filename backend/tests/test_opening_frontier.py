@@ -181,6 +181,7 @@ def test_relaxed_frontier_shared_card_exposure_is_reused_but_unrelated_repertoir
     ("illegal", "illegal_move"), ("identity", "card_identity_mismatch"),
     ("metadata", "decision_metadata_mismatch"), ("color", "trained_color_mismatch"),
     ("context", "route_context_mismatch"), ("kind", "invalid_segment_kind"),
+    ("descendant_prefix", "invalid_segment_kind"),
     ("invalid_fen", "invalid_segment"), ("board", "board_discontinuity"),
 ])
 def test_relaxed_frontier_structurally_impossible_descendants_are_ineligible(defect, reason):
@@ -195,6 +196,7 @@ def test_relaxed_frontier_structurally_impossible_descendants_are_ineligible(def
             "illegal": {"moves": ("e2e5",)}, "identity": {"card_id": "invented-card"},
             "metadata": {"decision_fen_key": "wrong-position"}, "color": {"trained_color": "black"},
             "context": {"line_id": "other-line"}, "kind": {"segment_kind": "unknown"},
+            "descendant_prefix": {"segment_kind": "prefix"},
             "invalid_fen": {"starting_fen": "not a fen"},
             "board": {"starting_fen": chess.STARTING_FEN, "moves": ("g1f3",),
                       "card_id": card_id(chess.STARTING_FEN, ("g1f3",))},
