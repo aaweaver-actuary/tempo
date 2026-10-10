@@ -466,6 +466,8 @@ test("PostgreSQL command timings classify fixed operations without retaining arg
     [["compose", "build", "secret-canary"], { label: "image_build", category: "build" }],
     [["compose", "stop", "defense-engine"], { label: "compose_shutdown", category: "restart" }],
     [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
+    [["compose", "up", "--no-recreate", "--wait", "--wait-timeout", "180", "postgres"],
+      { label: "postgres_ready", category: "readiness" }],
     [["run", "migration", "scripts/apply_postgres_migrations.py", "--writer-passfile", "secret-canary"],
       { label: "apply_postgres_migrations", category: "migration" }],
     [["run", "schema", "/source/scripts/check_postgres_deletion.py"],
