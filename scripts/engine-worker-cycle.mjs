@@ -11,13 +11,15 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
   try {
     const recovered = await recoverNextEngineJob(durableRequest, defenseClaimRequest);
     ({ job, jobKind } = recovered);
-    let { defenseClaimUnresolved } = recovered;
+    let { defenseClaimUnresolved, preferredGameId } = recovered;
     if (!job) {
       const available = await request("/api/system/foreground-active");
       if (available.active) { engineWaitingStage("engine", "foreground_admission"); await sleep(2_000); return; }
       if (!defenseClaimUnresolved) {
         try {
-          job = (await request("/api/defensive-threats/analysis/claim", { method: "POST" })).job;
+          const selection = await request("/api/defensive-threats/analysis/claim", { method: "POST" });
+          job = selection.job;
+          preferredGameId = selection.preferred_game_id;
         } catch (error) {
           if (!error.operationId) throw error;
           defenseClaimUnresolved = true;
@@ -28,7 +30,9 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
       else {
         await request("/api/games/analysis/repair-timeout", { method: "POST" });
         await request("/api/games/analysis/repair-provenance", { method: "POST" });
-        job = (await request("/api/games/analysis/position/claim", { method: "POST" })).job;
+        job = (await request("/api/games/analysis/position/claim", { method: "POST",
+          ...(preferredGameId ? { body: JSON.stringify({ preferred_game_id: preferredGameId }) } : {}),
+        })).job;
         jobKind = "game";
       }
     }

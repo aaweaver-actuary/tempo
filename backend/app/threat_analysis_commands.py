@@ -18,37 +18,17 @@ from .services.threat_pipeline import (
     _request_from_json, report_from_json, validate_analysis_report,
 )
 
-from .services.defensive_analysis import search_admission_sql, recommendation_request_ids_sql
+from .services.defensive_analysis import recommendation_request_ids_sql
+from .services.engine_scheduling import (
+    ELIGIBLE_THREAT_REQUEST_SQL as _ELIGIBLE_THREAT_REQUEST,
+    lock_engine_scheduling_state, reserved_ordinary_game, record_automated_selection,
+)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-_ELIGIBLE_THREAT_REQUEST = (
-    "SELECT request.id,request.request_json FROM threat_analysis_requests request "
-    "LEFT JOIN background_activity control ON control.source='threat_analysis' "
-    "AND control.work_id=request.id "
-    "WHERE request.state='queued' AND COALESCE(control.paused,0)=0 "
-    "AND " + search_admission_sql("request.id") + " "
-    "AND (EXISTS(SELECT 1 FROM threat_candidate_requests relation "
-    "JOIN threat_training_candidates candidate ON candidate.id=relation.candidate_id "
-    "JOIN imported_games game ON game.id=candidate.game_id "
-    "WHERE relation.request_id=request.id AND candidate.superseded_at IS NULL "
-    "AND candidate.analysis_version=game.analysis_version "
-    # OFFSET 0 keeps these as indexed per-request probes. Flattening the view
-    # into a global semi-join scanned the entire restored backlog per claim.
-    "AND (candidate.validation_state='needs_analysis' OR relation.role='attempt') "
-    "LIMIT 1 OFFSET 0) "
-    "OR EXISTS(SELECT 1 FROM discovery_recommendation_requests recommendation "
-    "JOIN current_repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
-    "WHERE recommendation.request_id=request.id AND opportunity.status='active' "
-    "AND opportunity.card_id IS NULL LIMIT 1 OFFSET 0) "
-    "OR EXISTS(SELECT 1 FROM coverage_discovery_recommendation_requests recommendation "
-    "JOIN current_repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
-    "WHERE recommendation.request_id=request.id AND opportunity.status='active' "
-    "AND opportunity.card_id IS NULL LIMIT 1 OFFSET 0)) "
-)
 
 
 def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]) -> dict:
@@ -73,7 +53,8 @@ def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]
     # legacy promotion values in their existing priority order. The common
     # case can stop at the first eligible request in created order.
     row = None
-    for priority_filter, ordering in (
+    automated_selection = False
+    for priority_index, (priority_filter, ordering) in enumerate((
         ("AND request.id IN (SELECT request_id FROM threat_candidate_requests "
          "WHERE role='attempt') ",
          "COALESCE(control.promoted,0) DESC,request.created_at,request.id"),
@@ -82,7 +63,15 @@ def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]
         ("AND COALESCE(control.promoted,0)=0 ", "request.created_at,request.id"),
         ("AND control.promoted<0 ",
          "control.promoted DESC,request.created_at,request.id"),
-    ):
+    )):
+        if priority_index == 1:
+            automated_streak = lock_engine_scheduling_state(database)
+            if automated_streak is None:
+                return {"job": None}
+            preferred_game_id = reserved_ordinary_game(database, automated_streak, now)
+            if preferred_game_id is not None:
+                return {"job": None, "preferred_game_id": preferred_game_id}
+            automated_selection = True
         if priority_filter.startswith("AND COALESCE(control.promoted,0)>0") and not database.execute_native(
             "SELECT 1 FROM background_activity WHERE source='threat_analysis' "
             "AND promoted>0 AND paused=0 LIMIT 1",
@@ -97,12 +86,16 @@ def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]
     if row is None:
         return {"job": None}
     lease_id = str(uuid.uuid4())
-    database.execute_native(
+    accepted = database.execute_native(
         "UPDATE threat_analysis_requests SET state='leased',lease_id=%s,"
-        "lease_expires_at=%s,attempts=attempts+1,updated_at=%s WHERE id=%s",
+        "lease_expires_at=%s,attempts=attempts+1,updated_at=%s WHERE id=%s AND state='queued'",
         (lease_id, (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
          now, row["id"]),
     )
+    if accepted.rowcount != 1:
+        return {"job": None}
+    if automated_selection:
+        record_automated_selection(database)
     increment(database, "engine_defense", row["id"], claims=1)
     return {"job": {"id": row["id"], "request": json.loads(row["request_json"]),
                     "lease_id": lease_id}}

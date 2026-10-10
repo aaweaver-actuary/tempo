@@ -346,3 +346,40 @@ it('fatal cancellation bounds delivery and recovers the unchanged release before
     expect(vi.getTimerCount()).toBe(0);
   } finally { rmSync(harness.directory, { recursive: true, force: true }); }
 });
+
+it.each([false, true])("engine fairness forwards a resolved preferred game through the production cycle (recovered=%s)", async recovered => {
+  const reservation = { job: null, preferred_game_id: 'available-game' };
+  const request = vi.fn(async (path: string) => {
+    if (path === '/api/system/foreground-active') return { active: false };
+    if (path === '/api/defensive-threats/analysis/claim') return reservation;
+    if (path === '/api/games/analysis/position/claim') return { job: { kind: 'finalize', game_id: 'available-game', lease_id: 'game-lease' } };
+    return { status: 'queued' };
+  });
+  const searches = { fatalEngineError: false, evaluate: vi.fn() };
+  await runEngineWorkerCycle({ searches, request,
+    durableRequest: { recover: vi.fn().mockResolvedValue(null) },
+    defenseClaimRequest: { recover: vi.fn().mockResolvedValue(recovered
+      ? { path: '/api/defensive-threats/analysis/claim', result: reservation } : null) },
+    sleep: vi.fn(), shutdown: vi.fn(), logError: vi.fn() });
+  expect(request).toHaveBeenCalledWith('/api/games/analysis/position/claim', {
+    method: 'POST', body: JSON.stringify({ preferred_game_id: 'available-game' }),
+  });
+  expect(request).toHaveBeenCalledWith('/api/games/analysis/position/finalize', {
+    method: 'POST', body: JSON.stringify({ lease_id: 'game-lease' }),
+  });
+  expect(searches.evaluate).not.toHaveBeenCalled();
+});
+
+it("engine fairness never replaces a recovered game lease with a fresh reservation", async () => {
+  const request = vi.fn().mockResolvedValue({ status: 'queued' });
+  const defenseRecovery = vi.fn();
+  await runEngineWorkerCycle({ searches: { fatalEngineError: false, evaluate: vi.fn() }, request,
+    durableRequest: { recover: vi.fn().mockResolvedValue({ path: '/api/games/analysis/position/claim',
+      result: { job: { kind: 'finalize', game_id: 'already-owned', lease_id: 'recovered-lease' } } }) },
+    defenseClaimRequest: { recover: defenseRecovery }, sleep: vi.fn(), shutdown: vi.fn(), logError: vi.fn() });
+  expect(defenseRecovery).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(request).toHaveBeenCalledWith('/api/games/analysis/position/finalize', {
+    method: 'POST', body: JSON.stringify({ lease_id: 'recovered-lease' }),
+  });
+});
