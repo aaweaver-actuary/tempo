@@ -95,6 +95,7 @@
       "backend/app/services/postgres_integrity.py",
       "backend/app/services/postgres_opening_evidence.py",
       "backend/app/services/postgres_opening_graph.py",
+      "backend/app/services/position_inventory.py", "backend/app/services/postgres_position_inventory.py",
       "backend/app/services/postgres_opening_segmentation.py",
       "backend/app/services/postgres_priority.py",
       "backend/app/services/postgres_queue_refresh.py",

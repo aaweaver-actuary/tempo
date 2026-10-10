@@ -858,3 +858,12 @@ test("issue107 process restart and foreground profile proof runs in regular dura
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
 });
+
+
+test("issue108 complete inventory proofs run in regular durability background workloads", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const workloadAction = source.slice(source.indexOf("  background_workloads: async () => {"), source.indexOf("  threat_candidate_upsert: async () => {"));
+  assert(workloadAction.includes("check_postgres_position_inventory.py"));
+  for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("background_workloads"));
+  assert(!postgresTestStages({ mode: "browser" }).includes("background_workloads"));
+});

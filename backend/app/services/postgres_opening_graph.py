@@ -272,17 +272,27 @@ def publish_graph_generation(database, repertoire_id, generation):
         (repertoire_id, generation, datetime.now(timezone.utc).isoformat()),
     )
 
+    if postgres_store.configured():
+        from .postgres_position_inventory import request_inventory_in_transaction
+        request_inventory_in_transaction(database, repertoire_id)
+
 
 def publish_graph_in_transaction(
     database: postgres_store.PostgresConnection, task: dict[str, Any],
 ) -> bool:
     """Change the visible generation only after every staged card is linked."""
 
-    if not lock_current_slice(database, task):
-        return False
     payload = dict(task["payload"])
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
+    # Source mutations lock this row before requesting the graph task. Acquire
+    # it first, then fence the delivery again: a foreground writer may have
+    # replaced this task while publication waited for the repertoire.
+    database.execute_native(
+        "SELECT id FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),
+    ).fetchone()
+    if not lock_current_slice(database, task):
+        return False
     publish_graph_generation(database, repertoire_id, generation)
     return advance_task_slice_in_transaction(
         database, task, next_phase="classify",

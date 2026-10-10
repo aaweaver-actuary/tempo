@@ -220,7 +220,8 @@ def test_postgres_graph_publication_rejects_missing_links_and_checks_generation(
         assert "unlinked" in str(error)
     else:
         raise AssertionError("Graph with missing links was published")
-    assert len(statements) == 1
+    assert statements[0] == "SELECT id FROM repertoires WHERE id=%s FOR UPDATE"
+    assert len(statements) == 2
     assert postgres_opening_graph.publish_graph_in_transaction(Database(False), task)
     assert transitions[-1][0] == "classify"
     assert transitions[-1][1]["after_card_id"] == ""

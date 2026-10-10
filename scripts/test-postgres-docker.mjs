@@ -1000,6 +1000,8 @@ const actions = {
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_canonical_freshness.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/scripts/check_postgres_position_inventory.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_prefix_transition_application.py"]);
       },
       restoreConsumers: () => restoreBackgroundWorkloadConsumers({
