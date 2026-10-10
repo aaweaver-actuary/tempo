@@ -140,3 +140,12 @@ new timing uses the captured median fallback. The captured 268-case assignment
 has 96/88/53/31 identities and modeled loads 214.570/213.433/214.680/214.572s.
 Per-case reset cost is included in
 the measured final shard execution, and may make the shard containing layout the longest.
+
+Fresh qualification exposed a second fixture precondition: the daily-limit Settings
+case changed allowance while its import's queue generation was still refreshing,
+despite already exposing two incrementally admitted cards. The exact two-to-one
+assertion failed in a focused clean-stack reproduction. Waiting for that initial
+publication to be ready, with no refresh pending, made the focused case pass.
+This bounded precondition retains the case identity, exact 2 → 1 → 2 counts,
+save/recovery/reload assertions and original correctness deadlines. No application
+behavior changes; final CI measurements include this preparation.

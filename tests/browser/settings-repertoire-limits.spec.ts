@@ -24,6 +24,10 @@ test("repertoire limits update today's queue, persist after reload, and reset to
     const repertoire = (await (await request.get(`${api}/repertoires`)).json()).repertoires.find((item: { id: string }) => item.id === repertoireId);
     const queueCount = async () => (await (await request.get(`${api}/queue/today`)).json()).cards.filter((card: { repertoire_id: string }) => card.repertoire_id === repertoireId).length;
     await expect.poll(queueCount, { timeout: 20_000 }).toBe(2);
+    // Two incrementally admitted cards do not mean their queue generation has
+    // finished. Edit unused allowance only after the import's publication settles.
+    await expect.poll(async () => (await (await request.get(`${api}/queue/today`)).json()).projection,
+      { timeout: 20_000 }).toMatchObject({ state: "ready", refresh_pending: 0 });
     await page.goto("/"); await navigate(page, "Settings");
     const row = page.getByRole("group", { name: `${repertoire.name} daily limit`, exact: true });
     await expect(row).toContainText("Current limit: 2/day");
