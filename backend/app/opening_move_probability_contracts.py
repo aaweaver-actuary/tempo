@@ -23,7 +23,7 @@ JsonObject = dict[StrictStr, JsonValue]
 
 
 def _timestamp(value: str) -> str:
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})", value):
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)", value):
         raise ValueError("Expected an ISO timestamp with timezone and seconds")
     datetime.fromisoformat(value)
     return value
@@ -73,6 +73,11 @@ class PositionMoveUniverse(ContractModel):
         if len(self.fen_key.split()) != 4 or position_key(self.fen_key) != self.fen_key:
             raise ValueError("Expected Tempo's canonical four-field FEN key")
         board = chess.Board(self.fen_key)
+        # Match chess.js's board boundary without changing Tempo's position key.
+        if (len(board.pieces(chess.KING, chess.WHITE)) != 1
+                or len(board.pieces(chess.KING, chess.BLACK)) != 1
+                or board.pawns & (chess.BB_RANK_1 | chess.BB_RANK_8)):
+            raise ValueError("Invalid standard board structure: kings or back-rank pawns")
         expected_moves = sorted(move.uci() for move in board.legal_moves)
         if not expected_moves:
             raise ValueError("Position has no legal opponent moves")

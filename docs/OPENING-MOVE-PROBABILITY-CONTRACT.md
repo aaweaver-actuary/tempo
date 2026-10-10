@@ -22,8 +22,11 @@ four fields. No competing key/hash or chess-variant normalization is introduced.
 Move identity is lowercase UCI, including the promotion suffix. SAN, null moves,
 malformed moves and legal-looking moves illegal at this position are rejected.
 Standard chess is the supported universe. The distribution describes choices by
-the side to move; target context must select an opponent-turn position. Terminal
-positions have no probability distribution and require an upstream terminal state.
+the side to move. Both boundaries require exactly one king of each color and no
+pawns on the first/eighth ranks, matching the existing TypeScript board validator;
+this does not infer historical reachability. Target context must select an
+opponent-turn position. Terminal positions have no probability distribution and
+require an upstream terminal state.
 
 ## Wire models
 
@@ -32,8 +35,9 @@ default to v1; other versions and extra envelope fields are rejected. Extension
 objects contain JSON values, not arbitrary runtime objects. Numeric values must
 be finite, and integer-valued numbers must be exactly representable in JavaScript
 (absolute value at most `2^53 - 1`). Counts are nonnegative integers, never booleans
-or numeric strings. Timestamps include seconds, a timezone, and at most six
-fractional digits. Optional values are explicit `null`.
+or numeric strings. Timestamps use calendar years 1–9999, include seconds, a valid
+timezone offset (or `Z`), and at most six fractional digits. Optional values are
+explicit `null`.
 
 | Model | Responsibility |
 | --- | --- |

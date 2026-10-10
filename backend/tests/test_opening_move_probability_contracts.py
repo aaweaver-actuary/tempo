@@ -143,6 +143,14 @@ def test_opening_probability_rejects_terminal_positions_and_noncanonical_keys():
         PositionMoveUniverse.model_validate(position)
 
 
+@pytest.mark.parametrize("case", EXAMPLES["invalid_position_cases"], ids=lambda case: case["name"])
+def test_opening_probability_rejects_invalid_standard_board_structure(case):
+    with pytest.raises(ValueError):
+        move_universe(case["position"]["fen_key"])
+    with pytest.raises(ValueError):
+        PositionMoveUniverse.model_validate(case["position"])
+
+
 def test_opening_probability_sources_and_cohorts_coexist_without_overwriting():
     bundle = OpeningMoveEvidenceBundle.model_validate(EXAMPLES["bundle"])
     assert [source.evidence_id for source in bundle.sources] == ["explorer-1600", "explorer-1800", "maia-dense"]
@@ -224,6 +232,14 @@ def test_opening_probability_freshness_is_explicit_and_resolves_microsecond_dead
     EvidenceFreshness(as_of="2026-10-10T12:00:00Z", valid_until=None, state="unknown")
     with pytest.raises(ValueError):
         EvidenceFreshness(as_of="2026-10-10T12:00:00Z", valid_until=None, state="fresh")
+
+
+@pytest.mark.parametrize("timestamp", ["2026-10-10T12:00:00+00:60", "0000-01-01T00:00:00Z"])
+def test_opening_probability_timestamp_calendar_and_offset_rejection_matches_typescript(timestamp):
+    payload = deepcopy(EXAMPLES["explorer"])
+    payload["captured_at"] = timestamp
+    with pytest.raises(ValueError):
+        OpeningMoveEvidence.model_validate(payload)
 
 
 def test_opening_probability_rejects_extra_fields_versions_and_inexact_counts():

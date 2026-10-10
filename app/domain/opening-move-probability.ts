@@ -10,7 +10,7 @@ const nonnegative = z.number().nonnegative().refine(value => !Number.isInteger(v
   "JSON integers must be exactly representable");
 const timestamp = z.iso.datetime({ offset: true }).regex(
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/,
-);
+).refine(value => !value.startsWith("0000-"), "Calendar year must be between 1 and 9999");
 const flags = z.array(identifier).transform(values => [...new Set(values)].sort(compare));
 const jsonObject = z.record(z.string(), z.json()).superRefine((value, context) => {
   function check(item: unknown) {

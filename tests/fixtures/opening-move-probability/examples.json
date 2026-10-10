@@ -1567,5 +1567,65 @@
       "trained_color": "white"
     },
     "unavailable_reason": "no_applicable_source"
-  }
+  },
+  "invalid_position_cases": [
+    {
+      "name": "missing_black_king",
+      "position": {
+        "fen_key": "8/8/8/8/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    },
+    {
+      "name": "missing_white_king",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/8 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    },
+    {
+      "name": "multiple_white_kings",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/4K3/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1f1",
+          "e1f2",
+          "e2d1",
+          "e2d2",
+          "e2d3",
+          "e2e3",
+          "e2f1",
+          "e2f2",
+          "e2f3"
+        ]
+      }
+    },
+    {
+      "name": "pawn_on_back_rank",
+      "position": {
+        "fen_key": "P3k3/8/8/8/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    }
+  ]
 }

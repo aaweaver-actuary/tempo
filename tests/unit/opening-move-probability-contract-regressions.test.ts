@@ -51,6 +51,8 @@ it("opening_probability_python_typescript_share_valid_and_invalid_contract_corpu
   sourceCase("inexact_context_integer", fixtures.explorer, ["cohort", "inexact"], 2 ** 53);
   sourceCase("bad_timestamp", fixtures.explorer, ["captured_at"], "yesterday");
   sourceCase("no_timezone", fixtures.explorer, ["captured_at"], "2026-10-10T12:00:00");
+  sourceCase("invalid_timezone_minutes", fixtures.explorer, ["captured_at"], "2026-10-10T12:00:00+00:60");
+  sourceCase("invalid_calendar_year", fixtures.explorer, ["captured_at"], "0000-01-01T00:00:00Z");
   sourceCase("freshness_mismatch", fixtures.explorer, ["freshness", "state"], "stale");
   sourceCase("microseconds_fresh", fixtures.explorer, ["freshness"], {
     as_of: "2026-10-10T12:00:00.000001Z", valid_until: "2026-10-10T12:00:00.000002Z", state: "fresh" }, true);
@@ -71,6 +73,7 @@ it("opening_probability_python_typescript_share_valid_and_invalid_contract_corpu
   cases.push({ name: "unavailable_with_distribution", schema: "fused", valid: false,
     payload: change(fixtures.unavailable, ["distribution"], fixtures.maia_dense.distribution) });
   for (const position of fixtures.identity_cases) cases.push({ name: position.name, schema: "position", payload: position.position, valid: true });
+  for (const position of fixtures.invalid_position_cases) cases.push({ name: position.name, schema: "position", payload: position.position, valid: false });
   const python = JSON.parse(execFileSync(resolvePython(), ["tests/fixtures/opening-move-probability/validate.py"], {
     input: JSON.stringify(cases), encoding: "utf8", env: { ...process.env, PYTHONPATH: "backend" },
   })) as { valid: boolean; normalized?: unknown; serialized?: string }[];
@@ -128,6 +131,18 @@ it("opening_probability_canonical_identity_covers_en_passant_castling_promotion_
   expect(castling.legal_moves).toEqual(expect.arrayContaining(["e1g1", "e1c1"]));
   const promotion = moveUniverse(fixtures.identity_cases.find(item => item.name === "promotion")!.fen);
   expect(promotion.legal_moves).toEqual(expect.arrayContaining(["a7a8q", "a7a8r", "a7a8b", "a7a8n"]));
+});
+
+it("opening_probability_rejects_invalid_standard_board_structure", () => {
+  for (const invalid of fixtures.invalid_position_cases) {
+    expect(positionMoveUniverseSchema.safeParse(invalid.position).success, invalid.name).toBe(false);
+    expect(() => moveUniverse(invalid.position.fen_key), invalid.name).toThrow();
+  }
+});
+
+it("opening_probability_timestamp_calendar_and_offset_rejection_matches_python", () => {
+  for (const timestamp of ["0000-01-01T00:00:00Z", "2026-10-10T12:00:00+00:60"])
+    expect(openingMoveEvidenceSchema.safeParse({ ...fixtures.explorer, captured_at: timestamp }).success, timestamp).toBe(false);
 });
 
 it("opening_probability_sources_coexist_and_set_order_is_deterministic", () => {
