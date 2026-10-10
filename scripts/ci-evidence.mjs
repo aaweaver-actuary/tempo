@@ -110,7 +110,11 @@ export function findReusableEvidence(plan, layer, commands, runs, readRun, valid
     if (!candidate || candidate.plan?.version !== 3) return null; // Ambiguous/expired evidence cannot authorize an older pass.
     if (candidate.plan.hash !== planHash(candidate.plan) || !candidate.plan.jobs?.[layer]) return null;
     // An explicitly excluded draft suite produced no execution; it cannot invalidate or replace the original.
-    if (candidate.plan.jobs[layer].applicable === false && candidate.plan.jobs[layer].required === false) continue;
+    if (candidate.plan.jobs[layer].applicable === false && candidate.plan.jobs[layer].required === false) {
+      if (candidate.report || candidate.job?.name !== layer || candidate.job.run_id !== run.id
+        || candidate.job.status !== "completed" || candidate.job.conclusion !== "skipped") return null;
+      continue;
+    }
     if (suiteFingerprint(candidate.plan, layer, commands) !== suiteFingerprint(plan, layer, commands)) continue;
     if (run.status !== "completed" || !["success", "failure"].includes(run.conclusion)) return null;
     const original = candidate.report;
@@ -150,7 +154,7 @@ async function runEvidenceCli() {
         if (plans.length !== 1) return null;
         const sourcePlan = artifactJson(plan.repository, plans[0], "plan.json");
         if (sourcePlan.version !== 3) return null;
-        const jobs = boundedRunJobs(prefix).filter(job => job.name === `${layer} / verify`)
+        const jobs = boundedRunJobs(prefix).filter(job => job.name === `${layer} / verify` || job.name === layer)
           .sort((left, right) => right.run_attempt - left.run_attempt);
         return { plan: sourcePlan, report: reports.length === 1 ? artifactJson(plan.repository, reports[0], `ci/${layer}.json`) : null,
           job: jobs[0], artifact: reports.length === 1 ? reports[0] : null };

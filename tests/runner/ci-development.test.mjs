@@ -358,11 +358,14 @@ test('PR132 explicit development exclusions preserve prior exact-suite qualifica
   const development=captured(pr,['docs/testing.md']);
   assert.equal(development.jobs.postgres.applicable,false);
   const newer={...metadata.run,id:101,conclusion:'failure'};
-  const unselected={plan:development,report:null,job:{status:'completed',conclusion:'skipped'}};
+  const unselected={plan:development,report:null,job:{name:'postgres',run_id:101,status:'completed',conclusion:'skipped'}};
   const original={plan:planned,report:receipt.source.report,job:metadata.job,artifact:metadata.artifact};
   const evidence=findReusableEvidence(planned,'postgres',commands,[newer,metadata.run],run=>run.id===101 ? unselected : original,layerFailures);
   assert(evidence);
   assert.equal(evidence.source.runId,100);
+  unselected.job.conclusion='failure';
+  assert.equal(findReusableEvidence(planned,'postgres',commands,[newer,metadata.run],run=>run.id===101 ? unselected : original,layerFailures),null);
+  unselected.job.conclusion='skipped';
   // A missing result from an applicable suite still blocks fallback to the older pass.
   unselected.plan=planned;
   assert.equal(findReusableEvidence(planned,'postgres',commands,[newer,metadata.run],run=>run.id===101 ? unselected : original,layerFailures),null);
