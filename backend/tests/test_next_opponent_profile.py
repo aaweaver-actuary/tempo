@@ -95,6 +95,38 @@ def test_issue107_timezones_invalid_dates_and_invalid_ratings_are_explicit():
     assert "missing_player_rating" in profile.cohorts[0].quality_flags
 
 
+@pytest.mark.parametrize("timestamp", [
+    "9999-12-31T23:59:59-01:00", "0001-01-01T00:00:00+01:00",
+    "10000-01-01T00:00:00Z", "2026-02-30T00:00:00Z",
+])
+def test_pr116_extreme_and_malformed_utc_timestamps_are_excluded_without_crashing(timestamp):
+    original = build_profile("alice", [game()], as_of=CUTOFF)
+    assert build_profile("alice", [game(), game("extreme", played_at=timestamp)], as_of=CUTOFF) == original
+
+
+def test_pr116_evidence_window_near_datetime_minimum_preserves_valid_games():
+    profile = build_profile("alice", [
+        game("first", played_at="0001-01-01T00:00:00Z"),
+        game("later", played_at="0001-01-02T12:00:00Z"),
+    ], as_of=CUTOFF)
+    assert profile.game_count == 2
+    assert profile.cohorts[1].rating_pair_count == 2
+    assert profile.evidence_watermark == "0001-01-02T12:00:00+00:00"
+
+
+def test_pr116_three_populated_speed_cohorts_keep_distinct_rating_differences_and_mixture():
+    profile = build_profile("alice", [game("b", "blitz", 1200, 1100),
+        game("r", "rapid", 1450, 1500), game("c", "classical", 1700, 1900)], as_of=CUTOFF)
+    assert {item.speed: item.weight for item in profile.speed_mixture} == pytest.approx(
+        {"blitz": 1 / 3, "rapid": 1 / 3, "classical": 1 / 3})
+    assert [(cohort.speed, cohort.player_rating, cohort.rating_pair_count)
+            for cohort in profile.cohorts] == [("blitz", 1200, 1), ("rapid", 1450, 1), ("classical", 1700, 1)]
+    assert {item.rating: item.weight for item in profile.cohorts[2].opponent_ratings}[1900] == pytest.approx(1 / 11)
+    empty = build_profile("alice", [], as_of=CUTOFF)
+    assert {"no_rated_games", "speed_mixture_fallback"} <= set(empty.quality_flags)
+    assert all(cohort.player_rating is None and not cohort.opponent_ratings for cohort in empty.cohorts)
+
+
 def test_issue107_naive_historical_cutoff_is_utc_in_every_host_timezone():
     """Separate processes exercise real TZ handling without leaking global clocks."""
     import json
