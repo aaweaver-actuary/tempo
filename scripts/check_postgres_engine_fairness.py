@@ -229,30 +229,48 @@ class EngineFairnessProof:
         finally:
             self.sql('DROP FUNCTION reject_game_write()')
 
+    def test_postgres_engine_committed_selection_survives_real_failure_and_release(self):
+        self.reset()
+        for command, expected in [('threat.analysis.release', 'queued'), ('threat.analysis.failure', 'retrying')]:
+            selected = self.automated()['job']
+            streak_before_callback = self.streak()
+            payload = {'request_id': selected['id'], 'lease_id': selected['lease_id'], 'error': 'Synthetic search failure'}
+            assert self.operation(command, payload)['status'] == expected
+            assert self.streak() == streak_before_callback
+        self.sql('UPDATE engine_scheduling_state SET automated_streak=3')
+        ordinary = self.ordinary()['job']
+        assert self.streak() == 0
+        assert self.operation('games.analysis.position.release',
+            {'report_id': ordinary['id'], 'lease_id': ordinary['lease_id']})['status'] == 'queued'
+        assert self.streak() == 0
+
     def test_postgres_engine_concurrent_claims_cannot_spend_same_reserved_turn(self):
         self.reset(3)
         plan = game_analysis_commands.prepare_position_claim(self.game_id)
         owner_accepted = Event()
         contender_finished = Event()
-        def owner_claim():
-            with self.transaction() as database:
-                result = game_analysis_commands.claim_game_analysis_position(database, plan)
-                assert result['job']
-                owner_accepted.set()
-                assert contender_finished.wait(0.15), 'Concurrent contender did not yield within the transaction budget'
-                return result
-        def contender_claim():
-            assert owner_accepted.wait(2)
-            try:
-                with self.transaction() as database:
-                    return game_analysis_commands.claim_game_analysis_position(database, plan)
-            finally:
-                contender_finished.set()
-        with ThreadPoolExecutor(max_workers=2) as workers:
-            first = workers.submit(owner_claim)
-            second = workers.submit(contender_claim)
-            assert second.result(timeout=3) == {'job': None}
-            assert first.result(timeout=3)['job']
+        # Open both clients before starting either bounded transaction.
+        with psycopg.connect(self.database_url, autocommit=True, row_factory=postgres_store.tempo_row_factory) as owner_connection, \
+             psycopg.connect(self.database_url, autocommit=True, row_factory=postgres_store.tempo_row_factory) as contender_connection:
+            def owner_claim():
+                with self.transaction(owner_connection) as database:
+                    result = game_analysis_commands.claim_game_analysis_position(database, plan)
+                    assert result['job']
+                    owner_accepted.set()
+                    assert contender_finished.wait(0.15), 'Concurrent contender did not yield within the transaction budget'
+                    return result
+            def contender_claim():
+                assert owner_accepted.wait(2)
+                try:
+                    with self.transaction(contender_connection) as database:
+                        return game_analysis_commands.claim_game_analysis_position(database, plan)
+                finally:
+                    contender_finished.set()
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                first = workers.submit(owner_claim)
+                second = workers.submit(contender_claim)
+                assert second.result(timeout=3) == {'job': None}
+                assert first.result(timeout=3)['job']
         assert self.streak() == 0
         assert self.sql('SELECT attempts FROM game_analysis_jobs')[0][0] == 1
         self.reset(2)
