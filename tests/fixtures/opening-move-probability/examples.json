@@ -58,7 +58,7 @@
               "e8f8"
             ]
           },
-          "unknown_mass": 1.0
+          "unknown_mass": 1
         },
         "evidence_id": "explorer-1600",
         "freshness": {
@@ -151,7 +151,7 @@
               "e8f8"
             ]
           },
-          "unknown_mass": 1.0
+          "unknown_mass": 1
         },
         "evidence_id": "explorer-1800",
         "freshness": {
@@ -223,7 +223,7 @@
             },
             {
               "move_uci": "e8f8",
-              "probability": 0.0
+              "probability": 0
             }
           ],
           "position": {
@@ -236,7 +236,7 @@
               "e8f8"
             ]
           },
-          "unknown_mass": 0.0
+          "unknown_mass": 0
         },
         "evidence_id": "maia-dense",
         "freshness": {
@@ -290,7 +290,7 @@
             },
             {
               "move_uci": "e8f8",
-              "value": 0.0
+              "value": 0
             }
           ]
         },
@@ -427,7 +427,7 @@
           "e8f8"
         ]
       },
-      "unknown_mass": 1.0
+      "unknown_mass": 1
     },
     "evidence_id": "explorer-1600",
     "freshness": {
@@ -520,7 +520,7 @@
           "e8f8"
         ]
       },
-      "unknown_mass": 1.0
+      "unknown_mass": 1
     },
     "evidence_id": "explorer-1800",
     "freshness": {
@@ -569,7 +569,7 @@
       {
         "effective_sample_size": null,
         "evidence_id": "maia-dense",
-        "weight": 1.0
+        "weight": 1
       }
     ],
     "distribution": {
@@ -593,7 +593,7 @@
         },
         {
           "move_uci": "e8f8",
-          "probability": 0.0
+          "probability": 0
         }
       ],
       "position": {
@@ -606,7 +606,7 @@
           "e8f8"
         ]
       },
-      "unknown_mass": 0.0
+      "unknown_mass": 0
     },
     "freshness": {
       "as_of": "2026-10-10T12:00:00Z",
@@ -793,7 +793,7 @@
                 "e8f8"
               ]
             },
-            "unknown_mass": 1.0
+            "unknown_mass": 1
           },
           "evidence_id": "explorer-1600",
           "freshness": {
@@ -886,7 +886,7 @@
                 "e8f8"
               ]
             },
-            "unknown_mass": 1.0
+            "unknown_mass": 1
           },
           "evidence_id": "explorer-1800",
           "freshness": {
@@ -958,7 +958,7 @@
               },
               {
                 "move_uci": "e8f8",
-                "probability": 0.0
+                "probability": 0
               }
             ],
             "position": {
@@ -971,7 +971,7 @@
                 "e8f8"
               ]
             },
-            "unknown_mass": 0.0
+            "unknown_mass": 0
           },
           "evidence_id": "maia-dense",
           "freshness": {
@@ -1025,7 +1025,7 @@
               },
               {
                 "move_uci": "e8f8",
-                "value": 0.0
+                "value": 0
               }
             ]
           },
@@ -1282,7 +1282,7 @@
         },
         {
           "move_uci": "e8f8",
-          "probability": 0.0
+          "probability": 0
         }
       ],
       "position": {
@@ -1295,7 +1295,7 @@
           "e8f8"
         ]
       },
-      "unknown_mass": 0.0
+      "unknown_mass": 0
     },
     "evidence_id": "maia-dense",
     "freshness": {
@@ -1349,7 +1349,7 @@
         },
         {
           "move_uci": "e8f8",
-          "value": 0.0
+          "value": 0
         }
       ]
     },
@@ -1623,6 +1623,117 @@
           "e1d2",
           "e1e2",
           "e1f1",
+          "e1f2"
+        ]
+      }
+    },
+    {
+      "name": "white_kingside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 w K -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e1g1"
+        ]
+      }
+    },
+    {
+      "name": "white_queenside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 w Q -",
+        "legal_moves": [
+          "e1c1",
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    },
+    {
+      "name": "black_kingside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b k -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8",
+          "e8g8"
+        ]
+      }
+    },
+    {
+      "name": "black_queenside_missing_rook",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b q -",
+        "legal_moves": [
+          "e8c8",
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    },
+    {
+      "name": "castling_king_off_home_square",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/4K3/R6R w KQ -",
+        "legal_moves": [
+          "a1a2",
+          "a1a3",
+          "a1a4",
+          "a1a5",
+          "a1a6",
+          "a1a7",
+          "a1a8",
+          "a1b1",
+          "a1c1",
+          "a1d1",
+          "a1e1",
+          "a1f1",
+          "a1g1",
+          "e2c2",
+          "e2d1",
+          "e2d2",
+          "e2d3",
+          "e2e1",
+          "e2e3",
+          "e2f1",
+          "e2f2",
+          "e2f3",
+          "e2g2",
+          "h1b1",
+          "h1c1",
+          "h1d1",
+          "h1e1",
+          "h1f1",
+          "h1g1",
+          "h1h2",
+          "h1h3",
+          "h1h4",
+          "h1h5",
+          "h1h6",
+          "h1h7",
+          "h1h8"
+        ]
+      }
+    },
+    {
+      "name": "castling_rook_wrong_color",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K2r w K -",
+        "legal_moves": [
+          "e1d2",
+          "e1e2",
           "e1f2"
         ]
       }

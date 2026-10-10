@@ -88,6 +88,11 @@ class PositionMoveUniverse(ContractModel):
 
 
 def move_universe(fen: str) -> PositionMoveUniverse:
+    board = chess.Board(fen)
+    # Reject invalid rights before position_key can remove them. This mirrors
+    # the chess.js boundary and prevents nonexistent castles entering fixtures.
+    if set(fen.split()[2]) != set(board.castling_xfen()):
+        raise ValueError("Invalid standard castling rights: king and rook must occupy their home squares")
     canonical_key = position_key(fen)
     return PositionMoveUniverse(fen_key=canonical_key,
                                 legal_moves=tuple(move.uci() for move in chess.Board(canonical_key).legal_moves))

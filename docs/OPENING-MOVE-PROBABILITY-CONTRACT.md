@@ -24,6 +24,9 @@ malformed moves and legal-looking moves illegal at this position are rejected.
 Standard chess is the supported universe. The distribution describes choices by
 the side to move. Both boundaries require exactly one king of each color and no
 pawns on the first/eighth ranks, matching the existing TypeScript board validator;
+advertised castling rights also require the correctly colored king and rook on
+their standard home squares. Inconsistent rights are rejected before canonical
+key derivation, rather than letting either chess library silently repair them.
 this does not infer historical reachability. Target context must select an
 opponent-turn position. Terminal positions have no probability distribution and
 require an upstream terminal state.

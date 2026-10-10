@@ -22,12 +22,25 @@ const jsonObject = z.record(z.string(), z.json()).superRefine((value, context) =
   check(value);
 });
 
+function validateStandardCastlingRights(board: Chess): void {
+  const castlingRights = board.fen().split(" ")[2];
+  for (const [right, color, kingSquare, rookSquare] of [
+    ["K", "w", "e1", "h1"], ["Q", "w", "e1", "a1"],
+    ["k", "b", "e8", "h8"], ["q", "b", "e8", "a8"],
+  ] as const) {
+    if (!castlingRights.includes(right)) continue;
+    const king = board.get(kingSquare), rook = board.get(rookSquare);
+    if (king?.type !== "k" || king.color !== color || rook?.type !== "r" || rook.color !== color)
+      throw new Error("Invalid standard castling rights: king and rook must occupy their home squares");
+  }
+}
+
 export const positionMoveUniverseSchema = z.strictObject({
   fen_key: z.string().refine(value => value === value.trim()).pipe(fenKeySchema),
   legal_moves: z.array(uci),
 }).superRefine((position, context) => {
   let board: Chess;
-  try { board = new Chess(`${position.fen_key} 0 1`); }
+  try { board = new Chess(`${position.fen_key} 0 1`); validateStandardCastlingRights(board); }
   catch { context.addIssue({ code: "custom", message: "Invalid position FEN" }); return; }
   if (canonicalFenKey(board.fen()) !== position.fen_key)
     context.addIssue({ code: "custom", message: "Expected Tempo's canonical four-field FEN key" });
@@ -41,6 +54,7 @@ export type PositionMoveUniverse = z.infer<typeof positionMoveUniverseSchema>;
 
 export function moveUniverse(fen: string): PositionMoveUniverse {
   const board = new Chess(fen.split(/\s+/).length === 4 ? `${fen} 0 1` : fen);
+  validateStandardCastlingRights(board);
   return positionMoveUniverseSchema.parse({ fen_key: canonicalFenKey(board.fen()),
     legal_moves: board.moves({ verbose: true }).map(move => `${move.from}${move.to}${move.promotion ?? ""}`) });
 }
