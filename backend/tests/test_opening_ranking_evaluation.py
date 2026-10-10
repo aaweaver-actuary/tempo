@@ -2,7 +2,7 @@
 from dataclasses import FrozenInstanceError, replace
 import json
 import os
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import date, datetime, timezone
 from pathlib import Path
 import subprocess
@@ -469,3 +469,20 @@ def test_shadow_capture_requires_shared_foreground_admission_before_sql(monkeypa
     with pytest.raises(evaluation.OpeningRankingError) as raised:
         snapshot.capture_snapshot()
     assert raised.value.code == "admission_unavailable"
+
+
+@pytest.mark.parametrize("original_url", [None, "redis://owned-example:6379/2"])
+@pytest.mark.parametrize("failure", [False, True])
+def test_priority_recovery_shadow_proof_scopes_real_redis_configuration(monkeypatch, original_url, failure):
+    from scripts.check_postgres_priority_recovery import shadow_proof_admission_configuration
+    if original_url is None:
+        monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
+    else:
+        monkeypatch.setenv("TEMPO_REDIS_URL", original_url)
+    expected_error = pytest.raises(RuntimeError, match="proof failure") if failure else nullcontext()
+    with expected_error:
+        with shadow_proof_admission_configuration():
+            assert os.getenv("TEMPO_REDIS_URL") == (original_url or "redis://redis:6379/0")
+            if failure:
+                raise RuntimeError("proof failure")
+    assert os.getenv("TEMPO_REDIS_URL") == original_url

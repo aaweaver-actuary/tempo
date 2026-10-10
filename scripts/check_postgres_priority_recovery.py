@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 import uuid
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import chess
@@ -400,6 +401,13 @@ def priority_position_publication_invalidates_prepared_generation(
     ).fetchone()[0] == legacy_visible_epoch + 2
 
 
+@contextmanager
+def shadow_proof_admission_configuration():
+    """Bind the disposable network's Redis only for the new cross-process proof."""
+    with patch.dict(os.environ, {"TEMPO_REDIS_URL": os.getenv("TEMPO_REDIS_URL") or "redis://redis:6379/0"}):
+        yield
+
+
 def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
     """Real SQL enforcement, domain nonmutation, foreground denial and offline replay."""
     from app import main as product, postgres_store
@@ -749,7 +757,8 @@ def main() -> None:
                 durable_tasks, postgres_priority, introduction_priorities,
                 postgres_game_derivation, observer,
             )
-            test_postgres_shadow_opening_ranking_is_read_only(observer)
+            with shadow_proof_admission_configuration():
+                test_postgres_shadow_opening_ranking_is_read_only(observer)
         print("PASS schema 20/21 priority recovery across queued, retrying, expired, "
               "and old-ordering work; repeated migration and stale delivery are inert")
         print("PASS PostgreSQL second-batch crash, reconstructed task claim, shuffled retry, "

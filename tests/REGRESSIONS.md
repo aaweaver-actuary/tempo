@@ -3429,6 +3429,8 @@ The first four implementation regressions failed on the reconciled baseline: pro
 
 - `test_shadow_capture_requires_shared_foreground_admission_before_sql` failed before the capture boundary rejected missing Redis admission configuration: a standalone CLI could otherwise open PostgreSQL while its local-only gate knew nothing about deployed study activity. Missing configuration now reports `admission_unavailable` before SQL. The regular real PostgreSQL no-write proof also removes/restores admission configuration and asserts zero capture connections before proceeding to genuine foreground contention and normal capture.
 
+- `test_priority_recovery_shadow_proof_scopes_real_redis_configuration` covers configured/default runner-owned Redis and success/failure restoration. CI run 38053945450 exposed the priority scenario's schema container lacking Redis configuration; the new proof alone now binds the existing disposable Redis service, preserving the earlier priority phases' admission environment. The framework still refuses missing production admission configuration.
+
 
 # Read-only opening decision readiness (version 1, related #112)
 
