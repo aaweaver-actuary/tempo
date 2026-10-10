@@ -1,0 +1,91 @@
+{
+  "actual_admission_plan": [],
+  "actual_admission_plan_basis": "caller_supplied_not_observed_queue_delivery",
+  "as_of": "2026-10-10T12:00:00+00:00",
+  "candidates": [
+    {
+      "card_id": "a",
+      "metadata": {
+        "memberships": [
+          {
+            "frontier_ply": 2,
+            "repertoire_id": "white"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3"
+        ],
+        "routes": [
+          {
+            "generation": 1,
+            "line_id": "e4-e5",
+            "repertoire_id": "white"
+          }
+        ]
+      },
+      "production_rank": 1
+    },
+    {
+      "card_id": "b",
+      "metadata": {
+        "memberships": [
+          {
+            "frontier_ply": 0,
+            "repertoire_id": "white"
+          }
+        ],
+        "moves": [
+          "d2d4"
+        ],
+        "routes": [
+          {
+            "generation": 1,
+            "line_id": "d4",
+            "repertoire_id": "white"
+          }
+        ]
+      },
+      "production_rank": 2
+    },
+    {
+      "card_id": "c",
+      "metadata": {
+        "memberships": [
+          {
+            "frontier_ply": 1,
+            "repertoire_id": "english"
+          }
+        ],
+        "moves": [
+          "c2c4",
+          "e7e5"
+        ],
+        "routes": [
+          {
+            "generation": 1,
+            "line_id": "english",
+            "repertoire_id": "english"
+          }
+        ]
+      },
+      "production_rank": 3
+    }
+  ],
+  "historical_counterfactual_supported": false,
+  "limitations": [
+    "Exact replay covers captured ranking inputs only, not learning gains or actual queue delivery.",
+    "Historical eligibility, introduction state, quota consumption and deleted routes cannot be reconstructed from current rows.",
+    "Retained priority generations alone do not establish historical counterfactual accuracy.",
+    "Historical probability/profile evidence is not captured by this infrastructure."
+  ],
+  "production_order_basis": "supplied_complete_order",
+  "schema_version": 1,
+  "scorer_configuration": {},
+  "snapshot_id": "587df8fa556a6afb4adac65e36c4213648e92928105adedf003dd1c0c2166cca",
+  "source_versions": {
+    "evidence_kind": "illustrative_fixture_not_production_data"
+  },
+  "study_day": "2026-10-10"
+}
