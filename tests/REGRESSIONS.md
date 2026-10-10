@@ -3796,6 +3796,7 @@ Regular `backend/tests/test_opening_ranking_evaluation.py` coverage:
 - `test_shadow_selected_capture_binds_policy_to_sql_and_offline_cli` verifies the selected repertoire SQL filter and CLI replay provenance.
 
 Current-main requalification omits PR #155's checkpoint/admission fixture replacements. Main's bounded shared recovery, #168 owned restart namespace propagation and replay regressions, and next-opponent proof ownership remain unchanged. The shadow-specific PostgreSQL proof remains in priority recovery; no production admission behavior is changed.
+
 PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2026):
 
 - The named starvation case `test_engine_reserves_ordinary_game_after_three_automated_selections` failed on unchanged main `8fff21ac` in the implementation checkout (17.63 s): the fourth automated request received a lease despite available ordinary game work.
