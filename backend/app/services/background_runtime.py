@@ -20,6 +20,16 @@ import time
 _training_timing: ContextVar[dict | None] = ContextVar("training_timing", default=None)
 
 
+@lru_cache(maxsize=1)
+def _training_latency_logger():
+    logger = logging.getLogger("tempo.foreground_latency")
+    logger.setLevel(logging.INFO)
+    if not logger.hasHandlers():
+        # Uvicorn configures its own loggers rather than the root logger.
+        logger.addHandler(logging.StreamHandler())
+    return logger
+
+
 @contextmanager
 def measure_training_timing(label: str, identity: str = ""):
     if os.getenv("TEMPO_TRAINING_TIMINGS") != "1":
@@ -35,7 +45,7 @@ def measure_training_timing(label: str, identity: str = ""):
     finally:
         measurement["duration_ms"] = (time.perf_counter() - started) * 1000
         _training_timing.reset(token)
-        logging.getLogger("tempo.foreground_latency").info("training_timing %s", json.dumps(measurement))
+        _training_latency_logger().info("training_timing %s", json.dumps(measurement))
 
 
 @contextmanager

@@ -128,15 +128,19 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       }
       window.dispatchEvent(new Event("online"));
     }, condition === "recovery-held");
-    const clockRequests: { trace: string; sent: number; received: number }[] = [];
-    for (let index = 0; index < 5; index++) {
+    const clockReads: { offsetMs: number; uncertaintyMs: number }[] = [];
+    for (let index = 0; process.env.TEMPO_TRAINING_TIMINGS === "1" && index < 5; index++) {
       const clockIdentity = randomUUID();
       const sent = Date.now();
       const response = await request.get(`${api}/queue/window?limit=20`, { headers: { "Idempotency-Key": clockIdentity } });
       expect(response.ok()).toBe(true);
       await response.body();
       const received = Date.now();
-      clockRequests.push({ trace: createHash("sha256").update(clockIdentity).digest("hex").slice(0, 16), sent, received });
+      const serverStarted = Number(response.headers()["x-tempo-clock-started-ms"]);
+      const serverFinished = Number(response.headers()["x-tempo-clock-finished-ms"]);
+      expect(Number.isFinite(serverStarted) && Number.isFinite(serverFinished)).toBe(true);
+      clockReads.push({ offsetMs: (serverStarted + serverFinished - sent - received) / 2,
+        uncertaintyMs: Math.max(0, received - sent - (serverFinished - serverStarted)) / 2 + 1 });
     }
     for (let index = 0; index < transitionCount; index++) {
       await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
@@ -177,18 +181,14 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     const workerLog = docker("logs", "--no-color", "foreground-worker");
     const spans: CommandSpan[] = workerLog.split("\n").filter(line => line.includes("training_timing ")).map(line => JSON.parse(line.slice(line.indexOf("training_timing ") + 16)));
     const apiSpans: CommandSpan[] = docker("logs", "--no-color", "api").split("\n").filter(line => line.includes("training_timing ")).map(line => JSON.parse(line.slice(line.indexOf("training_timing ") + 16)));
-    const clockReads = clockRequests.flatMap(clockRequest => {
-      const server = apiSpans.find(span => span.label === "queue-window" && span.trace === clockRequest.trace);
-      return server ? [{ offsetMs: server.started_epoch_ms + server.duration_ms / 2 - (clockRequest.sent + clockRequest.received) / 2,
-        uncertaintyMs: Math.max(0, clockRequest.received - clockRequest.sent - server.duration_ms) / 2 + 1 }] : [];
-    }).sort((left, right) => left.uncertaintyMs - right.uncertaintyMs);
+    clockReads.sort((left, right) => left.uncertaintyMs - right.uncertaintyMs);
     if (process.env.TEMPO_TRAINING_TIMINGS === "1") expect(clockReads).toHaveLength(5);
     const clock = clockReads[0] ?? { offsetMs: 0, uncertaintyMs: 0 };
     const measured = samples.map(sample => {
       const trace = createHash("sha256").update(sample.operationId).digest("hex").slice(0, 16);
       const span = spans.find(span => span.label === "cards.review" && span.trace === trace);
       const commit = span?.connections.filter(connection => !connection.read_only && connection.committed).at(-1)?.commit_epoch_ms;
-      return { ...sample, command: span, commitEpochMs: commit ?? null,
+      return { ...sample, command: span, apiRequest: apiSpans.find(span => span.label === "review-request" && span.trace === trace), commitEpochMs: commit ?? null,
         commitToInteractiveMs: commit ? sample.interactiveEpochMs - (commit - clock.offsetMs) : null,
         commitToInputAcceptedMs: commit ? sample.nextInputAcceptedEpochMs! - (commit - clock.offsetMs) : null,
         clickToInteractiveMs: sample.interactiveEpochMs - sample.clickEpochMs };

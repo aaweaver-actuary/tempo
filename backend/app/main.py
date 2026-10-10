@@ -785,6 +785,8 @@ async def measure_training_request(request: Request, call_next):
     with measure_training_timing(label, request.headers.get("Idempotency-Key", "")) as measurement:
         response = await call_next(request)
         if measurement is not None:
+            response.headers["X-Tempo-Clock-Started-Ms"] = str(measurement["started_epoch_ms"])
+            response.headers["X-Tempo-Clock-Finished-Ms"] = str(time.time() * 1000)
             response.headers["X-Tempo-Sql-Count"] = str(measurement["sql_count"])
             response.headers["X-Tempo-Transaction-Count"] = str(sum(connection["committed"] for connection in measurement["connections"]))
             response.headers["Server-Timing"] = ", ".join([
