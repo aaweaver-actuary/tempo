@@ -44,7 +44,7 @@ _TASK_UPSERT_SQL = """INSERT INTO background_tasks(
                    transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
                    max_attempts=excluded.max_attempts,next_attempt_at=excluded.next_attempt_at,
                    lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
-                   completed_at=NULL,updated_at=excluded.updated_at"""
+                   completed_at=NULL,updated_at=excluded.updated_at RETURNING id"""
 _TASK_BY_ID_SQL = "SELECT * FROM background_tasks WHERE id=?"
 _COMPLETE_SLICE_SQL = """UPDATE background_tasks SET state='complete',phase='published',
                lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
@@ -168,17 +168,17 @@ def enqueue_task_in_transaction(
             (kind, deduplication_key),
     ).fetchone()
     now = _now()
-    task_id = existing["id"] if existing else str(uuid.uuid4())
+    proposed_task_id = existing["id"] if existing else str(uuid.uuid4())
     generation = max(
         int(existing["generation"]) + 1 if existing else 1,
         minimum_generation + 1,
     )
     next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
     created_at = existing["created_at"] if existing else _iso(now)
-    database.execute(
+    authoritative_task_id = database.execute(
             _TASK_UPSERT_SQL,
             (
-                task_id,
+                proposed_task_id,
                 kind,
                 deduplication_key,
                 generation,
@@ -189,11 +189,11 @@ def enqueue_task_in_transaction(
                 created_at,
                 _iso(now),
             ),
-    )
-    _record_event(database, task_id, generation, "enqueued", "queued", kind=kind)
-    queued_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
+    ).fetchone()["id"]
+    _record_event(database, authoritative_task_id, generation, "enqueued", "queued", kind=kind)
+    queued_row = database.execute(_TASK_BY_ID_SQL, (authoritative_task_id,)).fetchone()
     if queued_row["replaced_pending_generation"]:
-        _record_event(database, task_id, generation, "generation_replaced", "queued", kind=kind)
+        _record_event(database, authoritative_task_id, generation, "generation_replaced", "queued", kind=kind)
     if kind == "daily_queue":
         mark_queue_refresh_requested()
     return dict(queued_row)
