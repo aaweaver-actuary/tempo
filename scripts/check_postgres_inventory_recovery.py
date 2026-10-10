@@ -492,12 +492,13 @@ def test_issue108_newer_graph_publication_fences_computed_inventory_output(dsn):
     from scripts.check_postgres_position_inventory import seed, publish_graph, claim, run_to_completion
     repertoire_id = 'inventory-stale-compute'
     with postgres_store.connection() as database:
-        seed(database.raw, repertoire_id, [('stale-compute-line', ['e2e4', 'e7e5', 'g1f3'], 'white', chess.STARTING_FEN)])
+        seed(database.raw, repertoire_id, [('stale-compute-line', ['b2b3', 'e7e5', 'c1b2'], 'white', chess.STARTING_FEN)])
         publish_graph(database, repertoire_id)
         registering = claim(database, repertoire_id)
     assert inventory.execute_inventory_slice(registering)
     with postgres_store.connection() as database:
         stale_task = claim(database, repertoire_id)
+    assert stale_task['payload']['phase'] == 'traverse', 'Fixture reused an already complete route'
     original_segment = inventory.inventory_segment
     computed = threading.Event()
     def replace_generation_after_computation(*args, **kwargs):
@@ -505,7 +506,7 @@ def test_issue108_newer_graph_publication_fences_computed_inventory_output(dsn):
         # Computation has completed and the source reader is closed. A newer
         # published graph/task wins before the old result enters its writer.
         with postgres_store.connection() as database:
-            database.execute_native("UPDATE repertoire_lines SET moves_json='[\"d2d4\",\"d7d5\",\"c2c4\"]' WHERE id='stale-compute-line'")
+            database.execute_native("UPDATE repertoire_lines SET moves_json='[\"b2b3\",\"d7d5\",\"c1b2\"]' WHERE id='stale-compute-line'")
             publish_graph(database, repertoire_id, 2)
         computed.set()
         return result
