@@ -136,6 +136,9 @@ publication, trained color, segment/learner decision indices, prerequisite
 identities and review witnesses. Cumulative-prefix depth remains explicit in the
 route's first/last learner decision indices.
 It independently computes probability/marginal value and soft prerequisite recall.
+Scoring must retain the selected learner repertoire-choice policy: shared card
+identity does not imply a shared choice denominator or cross-repertoire weight.
+This eligibility projection supplies scoped routes and never infers those weights.
 This module has no score/probability fields, ranking inputs or dependencies on
 PR #116/#117. A future live adapter must load a bounded coherent snapshot, close
 its connection before computation, and separately enforce admissions/quota/attempt
@@ -158,7 +161,7 @@ CPython 3.14.8, Node 26.10.0; pinned Python environment installed once):
 
 | Command | Result | Observed wall time |
 | --- | --- | --- |
-| `make python-file FILE=backend/tests/test_opening_frontier.py` | 62 passed; 1.03 s pytest | 1.85 s |
+| `make python-file FILE=backend/tests/test_opening_frontier.py` | 62 passed; 0.48 s pytest | 1.01 s |
 | `make python-file FILE=backend/tests/test_opening_graph.py` | 24 passed; 23.34 s pytest | 24.92 s |
 | `make python-file FILE=backend/tests/test_opening_progression.py` | 15 passed; 3.03 s pytest | 6.84 s |
 | `backend/.venv/bin/python scripts/show_opening_frontier.py` | Valid deterministic JSON; four unique eligible card IDs, ten classified cards, one obligation annotation | Not separately timed |
@@ -215,3 +218,27 @@ tasks' checkouts/resources because release/deletion eligibility was not
 established. The owned checkout and Python/Node caches remain for PR review,
 with cleanup after merge and preservation/activity checks. Live study state was
 not changed.
+
+Latest-main reconciliation: run `38054773275` executed all seven mandatory layers
+successfully on head `3243a2e`, base `d046a21`, merge `638ac46`: 1,951 backend
+cases (all 62 frontier), 1,428 frontend, 267 browser and 66 pinned cases, plus
+Rust/build, durability and lifecycle. Aggregation refused qualification when main
+advanced through PR #147 (browser CI) and #149 (pure preparedness). These are
+historical runtime passes, not a current-base qualification claim.
+
+Merge `c97951b` integrates main `cbc77ec`; only the overlapping queue-fixture
+helper conflicted. The resolved file retains ready/pending-zero and count
+assertions together at each transition, preserving the main branch's initial
+publication precondition. Frontier/graph/progression executable inputs are
+unchanged. On that clean merge revision, the frontier reran (62 passed, 0.48 s
+pytest / 1.01 s wall), `node --test tests/runner/ci-browser-shards.test.mjs`
+passed 18 cases (11.11 s wall), lint passed (32.20 s; ten existing warnings), and
+typecheck passed (18.57 s). The post-merge `make plan` was inspected.
+
+The combined unique-title `make view` filter for the queue-limit and Issue135
+idle-worker cases passed 2/2 (41.2 s browser execution; 84.47 s command wall time)
+against the updated disposable runner. Its exact command and source hashes are
+in `latest-main-two-browser-source.json` in the dated evidence directory.
+Project `tempo-pg-regressions-22026-e76dfa0a` teardown passed (7.35 s), and exact
+container/image/volume inventories were empty. New current-head/current-base CI
+must qualify this integration; no broad local gate or performance claim is made.
