@@ -20,3 +20,10 @@ it("draft development and merge qualification regressions execute nonzero cases"
   expect(result.stdout).toContain("draft ready and converted-to-draft transitions separate execution from qualification");
   expect(result.stdout).toMatch(/(?:#|ℹ) tests [1-9][0-9]*/);
 }, 30_000);
+
+it("four isolated browser shards retain exact qualification and reuse regressions", () => {
+  const result = spawnSync(process.execPath, ["--test", "tests/runner/ci-browser-shards.test.mjs"], { encoding: "utf8" });
+  expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+  expect(result.stdout).toContain("actual Playwright shard selectors collect the exact immutable partition");
+  expect(result.stdout).toMatch(/(?:#|ℹ) tests [1-9][0-9]*/);
+}, 30_000);

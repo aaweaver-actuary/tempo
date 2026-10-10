@@ -1,3 +1,4 @@
+import { createBrowserShardPlan } from "./ci-browser-shards.mjs";
 import { protectRegressionSuite } from "./verification-stages.mjs";
 import { postgresTestStages } from "./postgres-test-plan.mjs";
 import { spawnSync } from "node:child_process";
@@ -251,6 +252,9 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     families: [...families].sort(), jobs,
     browserGrep: collection.filter(item => item.selected).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|"), collection, quarantine,
     pinnedCollection: pinnedCases.map(item => ({ ...item, selected: jobs.visual.applicable, nightly: true, release: true })) };
+  if (tier === "qualification" && jobs.browser.applicable && collection.every(item => item.selected || item.quarantined)) {
+    plan.browserShards = createBrowserShardPlan(collection);
+  }
   return { ...plan, hash: planHash(plan) };
 }
 

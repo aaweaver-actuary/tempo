@@ -1,3 +1,4 @@
+import { attachPassingBrowserShards } from "./ci-browser-shard-fixture.mjs";
 import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -57,6 +58,7 @@ function results(planned) {
     report.execution = {kind:"executed",runId:100,attempt:1};
     report.environment = {node:`v${planned.runtime.node}`,platform:planned.runtime.platform,architecture:planned.runtime.architecture,
       python:`Python ${planned.runtime.python}`,rust:`rustc ${planned.runtime.rust} (fixture)`,wasmPack:`wasm-pack ${planned.runtime.wasmPack}`};
+    if (layer === "browser") attachPassingBrowserShards(planned, report);
     if (["frontend","backend"].includes(layer)) {
       const requiredFiles = [...new Set([...(Array.isArray(planned.core[layer]) ? planned.core[layer] : []), ...(planned.regressionFiles[layer] ?? [])])];
       const files = requiredFiles.length ? requiredFiles : [layer === "frontend" ? "tests/unit/example.test.ts" : "backend/tests/test_example.py"];
@@ -178,8 +180,8 @@ test('qualification rejects a rehashed reduced plan instead of accepting develop
   for (const modify of [plan=>{plan.jobs.postgres={...plan.jobs.postgres,applicable:false,required:false};},
     plan=>{plan.core.frontend=['tests/unit/ci-reliability-regressions.test.ts'];},
     plan=>{plan.collection[0].selected=false;}]) {
-    const planned=captured(ready); modify(planned); planned.hash=planHash(planned);
-    assert.equal(verdict(planned,results(planned),ready).success,false);
+    const planned=captured(ready), evidence=results(planned); modify(planned); planned.hash=planHash(planned);
+    assert.equal(verdict(planned,evidence,ready).success,false);
   }
 });
 test('manual feature-branch full execution cannot qualify a draft via a head-only status', () => {

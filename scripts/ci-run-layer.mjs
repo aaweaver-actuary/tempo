@@ -6,6 +6,9 @@ import { protectRegressionSuite, verificationStages } from "./verification-stage
 import { escapeRegex, allLayers, planHash } from "./ci-verification-plan.mjs";
 import { resolvePython } from "./resolve-python.mjs";
 import { postgresTestStages } from "./postgres-test-plan.mjs";
+import { dirname } from "node:path";
+import { cpus, totalmem } from "node:os";
+import { aggregateBrowserShards, browserShard, browserShardFingerprint, browserShardReportPath, validateBrowserShardPlan } from "./ci-browser-shards.mjs";
 import { suiteFingerprint } from "./ci-evidence.mjs";
 
 function postgresVerification(layer, plan) {
@@ -28,8 +31,13 @@ export function validatePostgresScenarios(layer, plan, scenarios) {
   }
 }
 
-export function layerCommands(layer, plan) {
+export function layerCommands(layer, plan, shardId) {
   if (!allLayers.includes(layer) || !plan.jobs[layer]?.applicable) throw new Error(`Layer ${layer} is not applicable in the captured plan`);
+  if (layer === "browser") {
+    validateBrowserShardPlan(plan);
+    if (shardId !== undefined) return browserShard(plan, shardId).commands;
+    if (plan.browserShards?.count > 1) return [["browser_aggregate", "node", ["scripts/ci-aggregate-browser.mjs"]]];
+  }
   const tier = `ci-${layer}`;
   const { stages, stagesByTier } = verificationStages({ python: resolvePython(), tier, outputDirectory: "test-results/performance" });
   if (stagesByTier[tier]) {
@@ -137,33 +145,49 @@ export function executeLayer(commands, run, diagnosticRetry = false) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const layer = process.argv[2];
+  const shardArgument = process.argv.indexOf("--shard");
+  const shardId = shardArgument < 0 ? undefined : Number(process.argv[shardArgument + 1]);
+  if (shardId !== undefined && layer !== "browser") throw new Error("Only browser qualification can execute shards");
   const plan = JSON.parse(readFileSync("test-results/ci/plan.json", "utf8"));
   mkdirSync("test-results/ci", { recursive: true }); mkdirSync("test-results/performance", { recursive: true });
+  const reportPath = shardId === undefined ? `test-results/ci/${layer}.json` : browserShardReportPath(shardId);
+  mkdirSync(dirname(reportPath), { recursive: true });
   const report = { version: 2, layer, planHash: plan.hash, commit: plan.commit,
-    executionKey: suiteFingerprint(plan, layer, layerCommands(layer, plan)),
+    executionKey: shardId === undefined ? suiteFingerprint(plan, layer, layerCommands(layer, plan)) : browserShardFingerprint(plan, shardId),
+    ...(shardId === undefined ? {} : { shardId, assignmentHash: plan.browserShards.hash }),
     execution: { kind: "executed", runId: Number(process.env.GITHUB_RUN_ID ?? 0), attempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 0) },
     completed: false, status: "failed", commands: [], tests: [],
     timestamp: new Date().toISOString(), environment: { node: process.version, platform: process.platform, architecture: process.arch,
       python: spawnSync(resolvePython(), ["--version"], { encoding: "utf8" }).stdout?.trim() ?? null,
       rust: spawnSync("rustc", ["--version"], { encoding: "utf8" }).stdout?.trim() ?? null,
+      cpuCount: cpus().length, memoryBytes: totalmem(),
       wasmPack: spawnSync("wasm-pack", ["--version"], { encoding: "utf8" }).stdout?.trim() ?? null } };
   try {
     const revision = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
     if (plan.hash !== planHash(plan)) throw new Error("Immutable plan hash mismatch");
     if (revision.stdout.trim() !== plan.commit) throw new Error("Layer checkout differs from the immutable plan revision");
     protectRegressionSuite("tests"); protectRegressionSuite("backend/tests");
-    const commands = layerCommands(layer, plan);
-    const env = { ...process.env, PYTHONPATH: "backend", TEMPO_CI_PLAN_HASH: plan.hash, TEMPO_CI_REPORT: `test-results/ci/${layer}-tests.json` };
+    const commands = layerCommands(layer, plan, shardId);
+    const testReportPath = shardId === undefined ? `test-results/ci/${layer}-tests.json` : `${dirname(reportPath)}/tests.json`;
+    const env = { ...process.env, PYTHONPATH: "backend", TEMPO_CI_PLAN_HASH: plan.hash, TEMPO_CI_REPORT: testReportPath };
     Object.assign(report, executeLayer(commands, (command, args, diagnostic) => {
       if (diagnostic) for (const path of [env.TEMPO_CI_REPORT, "test-results/ci/backend-tests.xml", "test-results/performance/unit-files-ci-frontend.json", "test-results/ci/frontend-inventory.json", "test-results/ci/backend-inventory.json"]) {
         if (existsSync(path)) copyFileSync(path, `${path}.first-failure`);
       }
-      return spawnSync(command, args, { stdio: "inherit", env: diagnostic ? { ...env, TEMPO_CI_REPORT: `test-results/ci/${layer}-diagnostic-tests.json` } : env });
+      return spawnSync(command, args, { stdio: "inherit", env: diagnostic ? { ...env, TEMPO_CI_REPORT: `${testReportPath}.diagnostic` } : env });
     }, process.env.TEMPO_DIAGNOSTIC_RETRY === "true"));
     if (["browser", "visual", "quarantine"].includes(layer)) {
-      report.tests = browserResults(JSON.parse(readFileSync(env.TEMPO_CI_REPORT, "utf8")));
+      if (layer === "browser" && shardId === undefined && plan.browserShards?.count > 1) {
+        const aggregate = JSON.parse(readFileSync("test-results/ci/browser-aggregate.json", "utf8"));
+        report.shards = aggregate.shards; report.shardJobs = aggregate.shardJobs;
+        report.slowestRunnerSeconds = aggregate.slowestRunnerSeconds;
+        report.tests = aggregateBrowserShards(plan, report.shards, report.execution);
+      } else {
+        const original = existsSync(`${testReportPath}.first-failure`) ? `${testReportPath}.first-failure` : testReportPath;
+        report.tests = browserResults(JSON.parse(readFileSync(original, "utf8")));
+      }
       if (layer === "browser") {
-        const expected = plan.collection.filter(item => item.selected).map(item => item.id).sort();
+        const expected = shardId === undefined ? plan.collection.filter(item => item.selected).map(item => item.id).sort() : browserShard(plan, shardId).testIds;
         if (JSON.stringify(expected) !== JSON.stringify(report.tests.map(item => item.id).sort()) || !expected.length) throw new Error("Executed browser collection differs from plan");
       }
       if (!report.tests.length || report.tests.some(test => test.status !== "passed" || test.retries)) report.status = "failed";
@@ -200,6 +224,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
     report.completed = true;
   } catch (error) { report.error = error.message; report.status = "failed"; console.error(error); }
-  finally { writeFileSync(`test-results/ci/${layer}.json`, JSON.stringify(report, null, 2)); }
+  finally { writeFileSync(reportPath, JSON.stringify(report, null, 2)); }
   process.exitCode = report.status === "success" ? 0 : 1;
 }
