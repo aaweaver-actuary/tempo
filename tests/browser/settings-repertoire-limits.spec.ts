@@ -22,8 +22,19 @@ test("repertoire limits update today's queue, persist after reload, and reset to
     repertoireId = (await imported.json()).repertoire_id;
     await expect.poll(async () => (await (await request.get(`${api}/repertoires/${repertoireId}/integrity`, { headers: { "X-Tempo-Work-Class": "background" } })).json()).status, { timeout: 20_000 }).toBe("clean");
     const repertoire = (await (await request.get(`${api}/repertoires`)).json()).repertoires.find((item: { id: string }) => item.id === repertoireId);
-    const queueCount = async () => (await (await request.get(`${api}/queue/today`)).json()).cards.filter((card: { repertoire_id: string }) => card.repertoire_id === repertoireId).length;
-    await expect.poll(queueCount, { timeout: 20_000 }).toBe(2);
+    const queuePublication = async () => {
+      // Observe derived work without repeatedly reserving foreground admission.
+      // A partial refreshing queue can already contain the expected card count.
+      const response = await request.get(`${api}/queue/today`, { headers: { "X-Tempo-Work-Class": "background" } });
+      expect(response.ok(), await response.text()).toBe(true);
+      const queue = await response.json();
+      return {
+        state: queue.projection.state,
+        refreshPending: queue.projection.refresh_pending,
+        count: queue.cards.filter((card: { repertoire_id: string }) => card.repertoire_id === repertoireId).length,
+      };
+    };
+    await expect.poll(queuePublication, { timeout: 20_000 }).toEqual({ state: "ready", refreshPending: 0, count: 2 });
     await page.goto("/"); await navigate(page, "Settings");
     const row = page.getByRole("group", { name: `${repertoire.name} daily limit`, exact: true });
     await expect(row).toContainText("Current limit: 2/day");
@@ -40,7 +51,7 @@ test("repertoire limits update today's queue, persist after reload, and reset to
       if (await checkSave.isVisible() && await checkSave.isEnabled()) await checkSave.click();
       return await row.textContent();
     }, { timeout: 20_000 }).toContain("Current limit: 1/day");
-    await expect.poll(queueCount, { timeout: 20_000 }).toBe(1);
+    await expect.poll(queuePublication, { timeout: 20_000 }).toEqual({ state: "ready", refreshPending: 0, count: 1 });
     await page.reload(); await navigate(page, "Settings");
     await expect(row.getByLabel(`${repertoire.name} new cards per day`)).toHaveValue("1");
     await row.getByLabel(`${repertoire.name} allowance`).selectOption("default");
@@ -49,7 +60,7 @@ test("repertoire limits update today's queue, persist after reload, and reset to
       if (await checkSave.isVisible() && await checkSave.isEnabled()) await checkSave.click();
       return await row.textContent();
     }, { timeout: 20_000 }).toContain("Current limit: 2/day");
-    await expect.poll(queueCount, { timeout: 20_000 }).toBe(2);
+    await expect.poll(queuePublication, { timeout: 20_000 }).toEqual({ state: "ready", refreshPending: 0, count: 2 });
   } finally {
     if (repertoireId) await request.delete(`${api}/repertoires/${repertoireId}`);
     await request.put(`${api}/settings`, { data: originalSettings });

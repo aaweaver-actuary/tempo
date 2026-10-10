@@ -170,8 +170,21 @@ not change those tested executable inputs. `make plan`/`make plan TIER=python`
 were inspected. Diff/conflict checks and current-candidate CI are recorded in the
 PR delivery evidence; required qualification is still pending at draft creation.
 
-No Node dependencies, development stack or local Docker test resources were
-created. The initial inventory retained other tasks' checkouts/resources because
+Candidate CI follow-up: run `38048686427` passed frontend/backend/build,
+PostgreSQL durability, lifecycle and pinned visual/performance verification, but
+the existing repertoire-limit browser test saw two cards after saving a limit of
+one. The trace showed an unfinished initial queue publication and the same
+`refreshing` generation throughout its observations. A separate test-only repair
+marks those observations as background work and requires the real ready
+publication alongside every existing count assertion. It changes no product
+code, count assertions or deadlines. Local Docker inspection timed out; final required
+CI owns real PostgreSQL/browser proof for the repaired candidate. Static repair
+checks passed: `npm run lint` (28.64 s, zero errors and ten existing warnings),
+`npm run typecheck` (17.09 s), `npm run check:conflicts`, and `git diff --check`.
+
+Node dependencies were added only for the browser-test repair's static checks.
+No development stack or local Docker test resources were created. The initial
+inventory retained other tasks' checkouts/resources because
 release/deletion eligibility was not established. The owned checkout and its
 Python/cache environment remain for PR review and are eligible for cleanup only
 after merge and the documented preservation/activity checks. Live study state
