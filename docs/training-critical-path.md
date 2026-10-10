@@ -335,5 +335,35 @@ existing warnings). The conflict case also failed locally on the original guard
 before the repair. New candidate qualification remains required; earlier layer passes are not reused across
 changed source revisions.
 
-PR and current-head/current-base CI qualification are pending. Focused local
+The same initial CI browser run passed 271/274 cases in 18.0 minutes and
+exposed three boundary failures. A queue service error blocked the displayed
+terminal review's explicit Retry save; a named Home regression reproduced it
+before the retry-only exception. Independent recovery's mock returned the
+unresolved original head despite reporting its retirement; it now returns the
+independent authoritative head, with a separate real-browser assertion that
+filtering an unresolved issued head never enables the successor. The shared
+browser database retained an earlier priority entry ahead of the measurement
+fixture; owned fixture rows now precede existing entries without modifying them.
+Fresh-stack measurement positions and the recorded earlier source snapshots are
+unchanged. Complete browser/transaction qualification is required on the repair.
+
+Two more named local invalidation cases reproduced an unconfirmed modern guided
+marker and a known local failed flag being ignored by a frozen continuation.
+Both now decline the fast path; confirmed server guidance still advances B as
+guided. Six affected files passed 112 cases in 21.32 s before the positive guided
+case; the complete prepared-continuation file then passed 19 cases in 1.01 s.
+The browser repair's four affected files passed 91 cases in 9.63 s. The final
+minimal retry guard passed its named case in 11.14 s (6.69 s transform); typecheck,
+full lint and final selected lint passed, with ten existing full-lint warnings.
+Exact commands:
+
+```sh
+npm run test:unit -- tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/attempt-lifecycle-regressions.test.ts tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/desktop-queue-regressions.test.ts tests/unit/pending-review-recovery-regressions.test.tsx tests/unit/ci-reliability-regressions.test.ts
+npm run test:unit -- tests/unit/prepared-review-continuation-regressions.test.ts
+npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/attempt-lifecycle-regressions.test.ts tests/unit/desktop-queue-regressions.test.ts tests/unit/pending-review-recovery-regressions.test.tsx
+PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_opening_evidence_contracts.py backend/tests/test_prepared_review_continuation.py
+```
+
+Draft [PR #172](https://github.com/aaweaver-actuary/tempo/pull/172) is open.
+Current-head/current-base repair qualification remains pending. Focused local
 passes and old measurements do not establish merge readiness for a newer SHA.
