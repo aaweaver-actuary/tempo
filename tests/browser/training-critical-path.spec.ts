@@ -104,12 +104,13 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const body = route.request().postDataJSON(); delete body.prepared_next;
       await route.continue({ postData: JSON.stringify(body) });
     });
-    await page.evaluate(async holdRecovery => {
+    await page.evaluate(async ({ holdRecovery, expectedCard }) => {
       const opening = indexedDB.open("tempo-offline-training", 2);
       const database = await new Promise<IDBDatabase>(resolve => { opening.onsuccess = () => resolve(opening.result); });
       const read = database.transaction("opening_attempts").objectStore("opening_attempts").getAll();
-      const attempts = await new Promise<{ manifest: { decisions: { decision_index: number; decision_id: string; expected_uci: string }[] } }[]>(resolve => { read.onsuccess = () => resolve(read.result); });
-      const header = attempts[0];
+      const attempts = await new Promise<{ manifest: { card_id: string; decisions: { decision_index: number; decision_id: string; expected_uci: string }[] } }[]>(resolve => { read.onsuccess = () => resolve(read.result); });
+      const header = attempts.find(attempt => attempt.manifest.card_id === expectedCard);
+      if (!header) throw new Error("The real first prepared card must own the historical fixture manifest");
       const decision = header.manifest.decisions[0];
       const attemptIds = Array.from({ length: 100 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`);
       // Orphaned open journals require ownership checks. Already-partial journals
@@ -126,7 +127,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
       for (const attemptId of attemptIds) {
         transaction.objectStore("opening_attempts").put({ ...header, attempt_id: attemptId, owner_session_id: "orphaned-training-fixture-session",
-          final_sequence: 1, delivery_state: "pending", terminal: null });
+          final_sequence: 1, delivery_state: "pending", terminal: null, delivery: undefined, rejection: undefined, local_capture_gap: undefined });
         transaction.objectStore("opening_events").put({ attempt_id: attemptId, sequence: 1, decision_index: decision.decision_index,
           decision_id: decision.decision_id, expected_uci: decision.expected_uci, kind: "assistance", observed_at: new Date().toISOString(),
           response_uci: null, assistance: "hint", disposition: null });
@@ -134,7 +135,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); });
       database.close();
       window.dispatchEvent(new Event("online"));
-    }, condition === "recovery-held");
+    }, { holdRecovery: condition === "recovery-held", expectedCard: `${identifier}-prepared-000` });
     const readClockBracket = async () => {
       const clockReads: { offsetMs: number; uncertaintyMs: number }[] = [];
       for (let index = 0; process.env.TEMPO_TRAINING_TIMINGS === "1" && index < 5; index++) {
@@ -208,6 +209,15 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       if (index >= warmup) samples.push({ clickEpochMs, submissionEpochMs, responseEpochMs: reviewResponseEpochMs, interactiveEpochMs, operationId,
         receiptObservationEpochMs, nextInputAcceptedEpochMs, ...nativeInput, queueNetworkMs: [...queueNetworkMs], queueProcessingMs, network: [...network] });
     }
+    const historicalJournalState = await page.evaluate(async () => {
+      const opening = indexedDB.open("tempo-offline-training", 2);
+      const database = await new Promise<IDBDatabase>(resolve => { opening.onsuccess = () => resolve(opening.result); });
+      const read = database.transaction("opening_attempts").objectStore("opening_attempts").getAll();
+      const attempts = await new Promise<{ attempt_id: string; delivery_state: string; rejection?: string }[]>(resolve => { read.onsuccess = () => resolve(read.result); });
+      database.close();
+      const historical = attempts.filter(attempt => attempt.attempt_id.startsWith("00000000-0000-4000-8000-"));
+      return { remaining: historical.length, rejected: historical.filter(attempt => attempt.delivery_state === "rejected").map(attempt => attempt.rejection) };
+    });
     // Stop current UI timers/requests before service restart and fixture teardown.
     await page.close();
     const endingClock = await readClockBracket();
@@ -231,7 +241,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
       fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup, samples: measuredCount, snapshot },
-      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Commit-to-input time includes test-driver scheduling; nativeInputProcessingMs uses browser event/mutation clocks.", ...clock }, measured, recoveryRequests, historicalRecoveryRequests,
+      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Commit-to-input time includes test-driver scheduling; nativeInputProcessingMs uses browser event/mutation clocks.", ...clock }, measured, recoveryRequests, historicalRecoveryRequests, historicalJournalState,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
     mkdirSync(output, { recursive: true }); writeFileSync(join(output, `training-transition-${condition}.json`), JSON.stringify(report, null, 2));
@@ -242,6 +252,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     expect(submittedEvidenceEvents.size).toBe(transitionCount);
     expect(expectedEvents).toBeGreaterThanOrEqual(transitionCount);
     expect(report.persisted.completion_events).toBe(expectedEvents);
+    expect(historicalJournalState.rejected).toEqual([]);
     if (condition === "recovery-held") expect(historicalRecoveryRequests).toBe(0);
     if (condition === "prepared") expect(historicalRecoveryRequests).toBeGreaterThan(0);
     if (process.env.TEMPO_TRAINING_TIMINGS === "1" && condition !== "refresh") {
