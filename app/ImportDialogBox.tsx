@@ -21,6 +21,34 @@ import { readJsonResponse } from "./lib/validated-data";
 import { reportDebugError } from "./lib/debug-reporting";
 import { savePgnImportCommand, readPendingPgnImport, discardPendingPgnImport } from "./lib/pgn-import-command";
 import { PendingOperationError } from "./lib/operation-status";
+import { backgroundReadWhenAdmitted } from "./lib/background-fetch";
+import type { z } from "zod";
+
+// Bound each read, including its body, independently of the publication lifetime.
+async function readImportPublication<T>(url: string, schema: z.ZodType<T>, source: string, ownerSignal: AbortSignal): Promise<T> {
+  ownerSignal.throwIfAborted();
+  const deadlineController = new AbortController();
+  const requestSignal = AbortSignal.any([ownerSignal, deadlineController.signal]);
+  const deadlineTimer = window.setTimeout(() => deadlineController.abort(
+    new Error("Import publication request timed out after 15 seconds. Check publication when the service is available."),
+  ), 15_000);
+  let rejectCancellation!: (reason: unknown) => void;
+  const cancellation = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
+  const cancelRead = () => rejectCancellation(requestSignal.reason);
+  requestSignal.addEventListener("abort", cancelRead, { once: true });
+  const read = async () => {
+    const response = await backgroundReadWhenAdmitted(url, requestSignal);
+    requestSignal.throwIfAborted();
+    const result = await readJsonResponse(response, schema, source);
+    requestSignal.throwIfAborted();
+    return result;
+  };
+  try { return await Promise.race([read(), cancellation]); }
+  finally {
+    window.clearTimeout(deadlineTimer);
+    requestSignal.removeEventListener("abort", cancelRead);
+  }
+}
 
 export function ImportDialogBox({
   onClose,
@@ -99,22 +127,22 @@ export function ImportDialogBox({
   ): Promise<number> {
     while (true) {
       signal.throwIfAborted();
-      const response = await fetch(`${API_URL}/api/repertoires`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
-      const result = await readJsonResponse(response, repertoiresResponseSchema, "imported repertoire admission");
+      const result = await readImportPublication(`${API_URL}/api/repertoires`, repertoiresResponseSchema, "imported repertoire admission", signal);
+      signal.throwIfAborted();
       const repertoire = result.repertoires.find(candidate => candidate.id === repertoireId);
       if (!repertoire) throw new Error("Imported repertoire unavailable. Reload Repertoire or check Settings → Service status.");
       if (repertoire.graph_state === "failed") throw new Error("Repertoire graph failed after import. Retry the failed task in Settings → Service status.");
       if (repertoire.integrity_scan_status === "failed")
         throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
       if (repertoire.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
-        const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
-        const queue = await readJsonResponse(queueResponse, queueEnvelopeSchema, "imported repertoire queue");
+        const queue = await readImportPublication(`${API_URL}/api/queue/window?limit=1`, queueEnvelopeSchema, "imported repertoire queue", signal);
+        signal.throwIfAborted();
         const projection = queue.projection;
         if (projection?.state === "failed") throw new Error("Daily queue failed after import. Retry the failed task in Settings → Service status.");
         if (projection?.state === "ready" && !projection.refresh_pending && projection.updated_at &&
             Date.parse(projection.updated_at) >= Date.parse(repertoire.graph_updated_at)) {
-          const refreshedResponse = await fetch(`${API_URL}/api/repertoires`, { signal, headers: { "X-Tempo-Work-Class": "background" } });
-          const refreshed = await readJsonResponse(refreshedResponse, repertoiresResponseSchema, "published repertoire admission");
+          const refreshed = await readImportPublication(`${API_URL}/api/repertoires`, repertoiresResponseSchema, "published repertoire admission", signal);
+          signal.throwIfAborted();
           const refreshedRepertoire = refreshed.repertoires.find(candidate => candidate.id === repertoireId);
           if (!refreshedRepertoire) throw new Error("Imported repertoire unavailable. Reload Repertoire or check Settings → Service status.");
           return refreshedRepertoire.due_count;
@@ -148,6 +176,7 @@ export function ImportDialogBox({
         trainedColor,
         initialDepth,
       );
+      controller.signal.throwIfAborted();
       let backend = false;
       let admitted = 0;
       let lines = parsed.cards.length;
@@ -211,7 +240,7 @@ export function ImportDialogBox({
           : "Tempo could not read this PGN.",
       );
     } finally {
-      importController.current = null;
+      if (importController.current === controller) importController.current = null;
       if (!controller.signal.aborted) {
         setWorking(false);
         setPendingImport(current => current ?? rememberedPendingImport());
@@ -240,7 +269,7 @@ export function ImportDialogBox({
         setError(failure instanceof Error ? failure.message : "Discard confirmation unavailable. Check again.");
       }
     } finally {
-      importController.current = null;
+      if (importController.current === controller) importController.current = null;
       if (!controller.signal.aborted) { setWorking(false); setDiscarding(false); }
     }
   }
