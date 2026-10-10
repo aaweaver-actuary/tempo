@@ -484,14 +484,15 @@ def test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_leas
     print('PASS test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease')
 
 
-@_assert_owned_admission_cleanup()
 def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     from check_postgres_graph_retention import owned_admission_scope
     with owned_admission_scope('checkpoint-http-' + uuid.uuid4().hex):
         _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay()
 
 
+@_assert_owned_admission_cleanup()
 def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
+    # Assert lease release before the surrounding scope removes its owned keys.
     from app import main, command_dispatch, command_gateway, database as database_module, tasks
     from app.services import redis_admission_gate
     fixture = _create_color_fixture('white')
