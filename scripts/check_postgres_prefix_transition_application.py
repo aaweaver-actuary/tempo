@@ -703,6 +703,12 @@ def historical_transition_database():
         postgres_store.close_pools()
         with patch.dict(os.environ, {'TEMPO_DATABASE_WRITE_URL': historical_dsn, 'TEMPO_DATABASE_READ_URL': historical_dsn}):
             try:
+                # Current fixture writers require the current durable-task and
+                # scheduling schema. The upgrade proof below reconstructs the
+                # immutable 038 guards only after seeding real application data;
+                # its atomic 039 replay retains every later migration receipt.
+                from scripts.apply_postgres_migrations import apply_migrations
+                apply_migrations(historical_dsn)
                 yield
             finally:
                 postgres_store.close_pools()
