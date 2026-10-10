@@ -1,5 +1,6 @@
 """Periodic and continuation signals cannot accumulate behind one worker."""
 from contextlib import nullcontext
+from copy import deepcopy
 from types import SimpleNamespace
 
 from celery import Celery
@@ -103,6 +104,98 @@ def test_periodic_and_continuation_wakes_share_one_pending_delivery(wake_broker)
                for _ in range(1000)]
     assert len(published) == 1
     assert len({result.id for result in results}) == 1
+
+
+@pytest.mark.parametrize('pending_marked', [False, True], ids=['generic-pending', 'marked-pending'])
+@pytest.mark.parametrize('canvas_option', [
+    'link', 'link_list', 'link_error', 'link_error_list', 'chord', 'chain',
+    'group_id', 'group_index', 'replaced_task_nesting',
+])
+def test_canvas_wakes_publish_independently_without_changing_pending_ownership(
+        wake_broker, monkeypatch, pending_marked, canvas_option):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    pending = celery_app.send_task(task_name, headers={background_wakes.QUEUE_REFRESH_HEADER: pending_marked})
+    server = background_wakes.client(celery_app.conf.broker_url)
+    pending_state = deepcopy((values, server.metadata))
+    ownership_calls = []
+    original_eval = server.eval
+
+    def record_ownership_call(*arguments):
+        ownership_calls.append(arguments)
+        return original_eval(*arguments)
+
+    monkeypatch.setattr(server, 'eval', record_ownership_call)
+    callback = celery_app.signature('app.tasks.result_callback')
+    canvas_options = {
+        'link': {'link': callback},
+        'link_list': {'link': [callback]},
+        'link_error': {'link_error': callback},
+        'link_error_list': {'link_error': [callback]},
+        'chord': {'chord': callback},
+        'chain': {'chain': [callback]},
+        'group_id': {'group_id': 'canvas-group'},
+        'group_index': {'group_index': 0},
+        'replaced_task_nesting': {'replaced_task_nesting': 1},
+    }
+    invocation_options = {
+        'task_id': 'independent-canvas-invocation', 'queue': 'background',
+        'headers': {background_wakes.QUEUE_REFRESH_HEADER: not pending_marked},
+        **canvas_options[canvas_option],
+    }
+    result = celery_app.send_task(task_name, **invocation_options)
+
+    assert len(published) == 2
+    assert result.id == invocation_options['task_id'] and result.id != pending.id
+    assert published[-1] == (task_name, None, None, invocation_options)
+    assert background_wakes.WAKE_HEADER not in published[-1][3]['headers']
+    assert background_wakes._PUBLICATION_HEADER not in published[-1][3]['headers']
+    assert (values, server.metadata) == pending_state
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, None)
+    assert (values, server.metadata) == pending_state
+    assert ownership_calls == []
+
+
+@pytest.mark.parametrize('canvas_defaults', [
+    {},
+    {'link': None, 'link_error': None, 'chord': None, 'chain': None,
+     'group_id': None, 'group_index': None, 'replaced_task_nesting': 0},
+    {'link': [], 'link_error': [], 'chord': None, 'chain': [],
+     'group_id': '', 'group_index': None, 'replaced_task_nesting': 0},
+], ids=['omitted', 'explicit-defaults', 'empty-continuations'])
+def test_standalone_wakes_with_default_canvas_options_still_coalesce(wake_broker, canvas_defaults):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    first = celery_app.send_task(task_name, queue='background')
+    second = celery_app.send_task(task_name, queue='background')
+    with_defaults = celery_app.send_task(task_name, args=[], kwargs={}, queue='background', **canvas_defaults)
+    assert first.id == second.id == with_defaults.id
+    assert len(published) == len(values) == 1
+
+
+@pytest.mark.parametrize('pending_marked', [False, True], ids=['generic-pending', 'marked-pending'])
+@pytest.mark.parametrize('payload', [{'args': ['legacy-payload']}, {'kwargs': {'legacy': 'payload'}}],
+                         ids=['positional-payload', 'keyword-payload'])
+def test_payload_wakes_leave_pending_ownership_unchanged(wake_broker, pending_marked, payload):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    pending = celery_app.send_task(task_name, headers={background_wakes.QUEUE_REFRESH_HEADER: pending_marked})
+    server = background_wakes.client(celery_app.conf.broker_url)
+    pending_state = deepcopy((values, server.metadata))
+    invocation_options = {
+        'task_id': 'independent-payload-invocation',
+        'headers': {background_wakes.QUEUE_REFRESH_HEADER: not pending_marked},
+    }
+    result = celery_app.send_task(task_name, **payload, **invocation_options)
+
+    assert len(published) == 2
+    assert result.id == invocation_options['task_id'] and result.id != pending.id
+    assert published[-1] == (task_name, payload.get('args'), payload.get('kwargs'), invocation_options)
+    assert background_wakes.WAKE_HEADER not in published[-1][3]['headers']
+    assert background_wakes._PUBLICATION_HEADER not in published[-1][3]['headers']
+    assert (values, server.metadata) == pending_state
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, None)
+    assert (values, server.metadata) == pending_state
 
 
 def test_wake_delivery_releases_one_slot_and_rejects_obsolete_replay(wake_broker):

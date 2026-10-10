@@ -172,7 +172,11 @@ class WakeRedisTransport(RedisTransport):
 class CoalescingCelery(Celery):
     def send_task(self, name, args=None, kwargs=None, **options):
         headers = options.get('headers') or {}
-        if name not in WAKE_TASK_NAMES or args or kwargs or headers.get(WAKE_HEADER):
+        # Canvas continuations and membership require their own publication.
+        if (name not in WAKE_TASK_NAMES or args or kwargs or headers.get(WAKE_HEADER)
+                or any(options.get(canvas_option_name) for canvas_option_name in (
+                    'link', 'link_error', 'chord', 'chain', 'group_id', 'replaced_task_nesting',
+                )) or options.get('group_index') is not None):
             return super().send_task(name, args=args, kwargs=kwargs, **options)
         ownership_token = options.get('task_id') or uuid.uuid4().hex
         server = client(self.conf.broker_url)
