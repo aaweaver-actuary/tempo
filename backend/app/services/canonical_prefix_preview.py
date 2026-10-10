@@ -8,6 +8,7 @@ import uuid
 
 import chess
 
+from .. import postgres_store
 from ..database import background_read_connection, connection
 from .canonical_prefix import (
     line_origin, position_key, prefix_projection, read_prefix, store_positions,
@@ -15,7 +16,7 @@ from .canonical_prefix import (
 )
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    enqueue_task_in_transaction, lock_current_slice,
+    enqueue_task_in_transaction, lock_current_slice, warm_completion_sql,
 )
 
 
@@ -37,61 +38,116 @@ TABLE_DEFINITIONS = (
 )
 
 RETAINED_PREVIEWS = 8
+RETENTION_ROW_BUDGET = 64
+RETENTION_VICTIM_BUDGET = 4
+_EXPIRED_PREVIEW_ERROR = 'This compatibility preview expired. Check the prefix again before saving.'
+_RETENTION_VICTIMS_SQL = (
+    'SELECT id,state FROM canonical_prefix_previews WHERE repertoire_id=? AND id<>? '
+    'AND id NOT IN (SELECT id FROM canonical_prefix_previews WHERE repertoire_id=? '
+    'ORDER BY created_at DESC,id DESC LIMIT ?) '
+    "AND id<>COALESCE((SELECT canonical_prefix_preview_id FROM repertoires WHERE id=?),'') "
+    'ORDER BY created_at,id LIMIT ?'
+)
+_RETENTION_TASK_SQL = "SELECT id,state FROM background_tasks WHERE kind='canonical_prefix_preview' AND deduplication_key=?"
+_RETIRE_TASK_SQL = (
+    "UPDATE background_tasks SET state='superseded',generation=generation+1,"
+    "lease_token=NULL,lease_expires_at=NULL WHERE id=? AND state<>'superseded'"
+)
+_INVALIDATE_PREVIEW_SQL = "UPDATE canonical_prefix_previews SET state='stale',last_error=? WHERE id=? AND state<>'stale'"
+_DELETE_RESULTS_SQL = (
+    'DELETE FROM canonical_prefix_results WHERE preview_id=? AND item_id IN '
+    '(SELECT item_id FROM canonical_prefix_results WHERE preview_id=? ORDER BY item_id LIMIT ?)'
+)
+_DELETE_POSITIONS_SQL = (
+    'DELETE FROM canonical_prefix_positions WHERE preview_id=? AND (fen_key,in_scope) IN '
+    '(SELECT fen_key,in_scope FROM canonical_prefix_positions WHERE preview_id=? ORDER BY fen_key,in_scope LIMIT ?)'
+)
+_DELETE_EVENTS_SQL = (
+    'DELETE FROM background_task_events WHERE task_id=? AND id IN '
+    '(SELECT id FROM background_task_events WHERE task_id=? ORDER BY id LIMIT ?)'
+)
+_DELETE_RETIRED_TASK_SQL = (
+    "DELETE FROM background_tasks WHERE id=? AND state='superseded' "
+    'AND NOT EXISTS(SELECT 1 FROM background_task_events WHERE task_id=background_tasks.id)'
+)
+_DELETE_EMPTY_PREVIEW_SQL = (
+    "DELETE FROM canonical_prefix_previews WHERE id=? AND state='stale' "
+    'AND NOT EXISTS(SELECT 1 FROM canonical_prefix_results WHERE preview_id=canonical_prefix_previews.id) '
+    'AND NOT EXISTS(SELECT 1 FROM canonical_prefix_positions WHERE preview_id=canonical_prefix_previews.id) '
+    "AND NOT EXISTS(SELECT 1 FROM background_tasks WHERE kind='canonical_prefix_preview' "
+    'AND deduplication_key=canonical_prefix_previews.id)'
+)
+
+
+def _warm_retention_sql() -> None:
+    if postgres_store.configured():
+        for statement in (_RETENTION_VICTIMS_SQL, _RETENTION_TASK_SQL + ' FOR UPDATE',
+                          _RETIRE_TASK_SQL, _INVALIDATE_PREVIEW_SQL, _DELETE_RESULTS_SQL,
+                          _DELETE_POSITIONS_SQL, _DELETE_EVENTS_SQL,
+                          _DELETE_RETIRED_TASK_SQL, _DELETE_EMPTY_PREVIEW_SQL):
+            postgres_store.postgres_sql(statement)
+        warm_completion_sql()
+
+
+def _cleanup_retention_victim(database, victim: dict, remaining_rows: int) -> int:
+    """Spend this slice's shared row budget; parent cascades must be empty."""
+    preview_id = victim['id']
+    task_lock = ' FOR UPDATE' if hasattr(database, 'execute_native') else ''
+    old_task = database.execute(_RETENTION_TASK_SQL + task_lock, (preview_id,)).fetchone()
+    if old_task and old_task['state'] != 'superseded':
+        # Retirement and certificate invalidation cannot be split across commits.
+        if remaining_rows < 2:
+            return remaining_rows
+        remaining_rows -= database.execute(_RETIRE_TASK_SQL, (old_task['id'],)).rowcount
+    if victim['state'] != 'stale':
+        if not remaining_rows:
+            return remaining_rows
+        remaining_rows -= database.execute(_INVALIDATE_PREVIEW_SQL, (_EXPIRED_PREVIEW_ERROR, preview_id)).rowcount
+    for statement, parent_id in ((_DELETE_RESULTS_SQL, preview_id),
+                                  (_DELETE_POSITIONS_SQL, preview_id),
+                                  (_DELETE_EVENTS_SQL, old_task['id'] if old_task else None)):
+        if not remaining_rows:
+            return remaining_rows
+        if parent_id is not None:
+            remaining_rows -= database.execute(statement, (parent_id, parent_id, remaining_rows)).rowcount
+    if old_task and remaining_rows:
+        deleted = database.execute(_DELETE_RETIRED_TASK_SQL, (old_task['id'],)).rowcount
+        remaining_rows -= deleted
+        if not deleted:
+            return remaining_rows
+    if remaining_rows:
+        remaining_rows -= database.execute(_DELETE_EMPTY_PREVIEW_SQL, (preview_id,)).rowcount
+    return remaining_rows
 
 
 def _execute_retention_slice(task: dict) -> bool:
-    """Retire one obsolete scan or delete one retained child row, then yield."""
+    """Clean at most four victims / 64 rows, checkpoint atomically, then yield."""
     payload = task["payload"]
     repertoire_id = payload["repertoire_id"]
-    with background_read_connection() as database:
-        victim = database.execute(
-            "SELECT id FROM canonical_prefix_previews WHERE repertoire_id=? AND id<>? "
-            "AND id NOT IN (SELECT id FROM canonical_prefix_previews WHERE repertoire_id=? "
-            "ORDER BY created_at DESC,id DESC LIMIT ?) "
-            "AND id<>COALESCE((SELECT canonical_prefix_preview_id FROM repertoires WHERE id=?),'') "
-            "ORDER BY created_at,id LIMIT 1",
-            (repertoire_id, payload["preview_id"], repertoire_id, RETAINED_PREVIEWS, repertoire_id),
-        ).fetchone()
-        deletion = None
-        if victim:
-            preview_id = victim["id"]
-            old_task = database.execute("SELECT id,state FROM background_tasks WHERE kind='canonical_prefix_preview' AND deduplication_key=?", (preview_id,)).fetchone()
-            if old_task and old_task["state"] != 'superseded':
-                deletion = ("retire", old_task["id"])
-            else:
-                for table, columns, parameters in (
-                    ('canonical_prefix_results', ('preview_id', 'item_id'), (preview_id,)),
-                    ('canonical_prefix_positions', ('preview_id', 'fen_key', 'in_scope'), (preview_id,)),
-                    ('background_task_events', ('id',), (old_task["id"],) if old_task else (None,)),
-                ):
-                    predicate = 'task_id=?' if table == 'background_task_events' else 'preview_id=?'
-                    child = database.execute(f"SELECT {','.join(columns)} FROM {table} WHERE {predicate} ORDER BY 1 LIMIT 1", parameters).fetchone()
-                    if child:
-                        deletion = (table, columns, tuple(child))
-                        break
-                if deletion is None:
-                    deletion = ("preview", preview_id)
+    retention_parameters = (repertoire_id, payload['preview_id'], repertoire_id, RETAINED_PREVIEWS, repertoire_id)
+    _warm_retention_sql()
+    with background_read_connection(authoritative=True) as database:
+        prepared_ids = {row['id'] for row in database.execute(
+            _RETENTION_VICTIMS_SQL, (*retention_parameters, RETENTION_VICTIM_BUDGET)).fetchall()}
     with connection(background=True) as database:
-        current = read_prefix(database, repertoire_id, lock=True)
+        read_prefix(database, repertoire_id, lock=True)
         lease_current = lock_current_slice(database, task) if hasattr(database, 'execute_native') else database.execute(
             "SELECT 1 FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'",
             (task['id'], task['generation'], task['lease_token']),
         ).fetchone()
         if not lease_current:
             return False
-        if not victim:
+        remaining_rows = RETENTION_ROW_BUDGET
+        # Creation, activation, and source writes use this same repertoire lock.
+        # A prepared victim may now be protected; never trust the earlier page.
+        victims = database.execute(_RETENTION_VICTIMS_SQL, (*retention_parameters, RETENTION_VICTIM_BUDGET)).fetchall()
+        for victim in victims:
+            if not remaining_rows:
+                break
+            if victim['id'] in prepared_ids:
+                remaining_rows = _cleanup_retention_victim(database, victim, remaining_rows)
+        if not database.execute(_RETENTION_VICTIMS_SQL, (*retention_parameters, 1)).fetchone():
             return complete_task_slice_in_transaction(database, task)
-        if victim['id'] != current['preview_id']:
-            if deletion[0] == 'retire':
-                database.execute("UPDATE background_tasks SET state='superseded',generation=generation+1,lease_token=NULL,lease_expires_at=NULL WHERE id=? AND state<>'superseded'", (deletion[1],))
-                database.execute("UPDATE canonical_prefix_previews SET state='stale',last_error=? WHERE id=?",
-                                 ('This compatibility preview expired. Check the prefix again before saving.', victim['id']))
-            elif deletion[0] == 'preview':
-                database.execute("DELETE FROM background_tasks WHERE kind='canonical_prefix_preview' AND deduplication_key=?", (deletion[1],))
-                database.execute("DELETE FROM canonical_prefix_previews WHERE id=?", (deletion[1],))
-            else:
-                table, columns, values = deletion
-                database.execute(f"DELETE FROM {table} WHERE " + ' AND '.join(f'{column}=?' for column in columns), values)
         return advance_task_slice_in_transaction(database, task, next_phase='retention', next_payload=payload)
 
 
