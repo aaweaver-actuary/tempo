@@ -485,8 +485,33 @@ def _assert_owned_admission_cleanup():
     assert not unreleased, f'Admission proof leaked {len(unreleased)} owned leases'
 
 
-@_assert_owned_admission_cleanup()
+def test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease():
+    from app.services import redis_admission_gate
+    # Model a deployed health/study request while this local HTTP/worker proof
+    # uses its own synthetic fixture and creates its own foreground contention.
+    server = redis_admission_gate.client()
+    parent_foreground_key = redis_admission_gate._FOREGROUND_KEY
+    unrelated_token = uuid.uuid4().hex
+    # Another process retains its original key even while this process changes
+    # its test namespace. Track only this owned token, not transient API probes.
+    server.zadd(parent_foreground_key, {unrelated_token: int(time.time() * 1000) + redis_admission_gate._FOREGROUND_LEASE_MS})
+    try:
+        test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+        assert server.zscore(parent_foreground_key, unrelated_token) is not None
+    finally:
+        server.zrem(parent_foreground_key, unrelated_token)
+    print('PASS test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease')
+
+
 def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay():
+    from check_postgres_graph_retention import owned_admission_scope
+    with owned_admission_scope('checkpoint-http-' + uuid.uuid4().hex):
+        _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+
+
+@_assert_owned_admission_cleanup()
+def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
+    # Assert lease release before the surrounding scope removes its owned keys.
     from app import main, command_dispatch, command_gateway, database as database_module, tasks
     from app.services import redis_admission_gate
     fixture = _create_color_fixture('white')
@@ -1184,7 +1209,7 @@ if __name__=='__main__':
         assert os.getenv('TEMPO_REDIS_URL'), 'Opening evidence admission proof requires runner-owned Redis'
         from check_postgres_prefix_diagnostics import test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission
         test_postgres_prefix_diagnostics_reducer_scope_bounds_and_foreground_admission()
-        test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+        test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease()
         test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics()
         test_postgres_checkpoint_driver_retries_only_foreground_deferral()
         test_postgres_opening_checkpoint_reduction_yields_to_foreground_review()

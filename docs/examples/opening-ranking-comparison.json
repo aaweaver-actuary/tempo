@@ -1,0 +1,400 @@
+{
+  "actual_admission_plan": [],
+  "actual_admission_plan_basis": "caller_supplied_not_observed_queue_delivery",
+  "as_of": "2026-10-10T12:00:00+00:00",
+  "comparison_basis": "rankings_only_not_queue_admission",
+  "evaluations": [
+    {
+      "alternative": "production-order@1",
+      "candidate_count": 3,
+      "candidate_coverage": 1.0,
+      "coverage_undefined_reason": null,
+      "displacement_undefined_reason": null,
+      "maximum_absolute_displacement": 0,
+      "mean_absolute_displacement": 0.0,
+      "rows": [
+        {
+          "alternative_rank": 1,
+          "card_id": "a",
+          "metadata": {
+            "memberships": [
+              {
+                "frontier_ply": 2,
+                "repertoire_id": "white"
+              }
+            ],
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3"
+            ],
+            "routes": [
+              {
+                "generation": 1,
+                "line_id": "e4-e5",
+                "repertoire_id": "white"
+              }
+            ]
+          },
+          "production_rank": 1,
+          "rank_delta": 0,
+          "reason": null,
+          "score": -1,
+          "scoring_status": "scored"
+        },
+        {
+          "alternative_rank": 2,
+          "card_id": "b",
+          "metadata": {
+            "memberships": [
+              {
+                "frontier_ply": 0,
+                "repertoire_id": "white"
+              }
+            ],
+            "moves": [
+              "d2d4"
+            ],
+            "routes": [
+              {
+                "generation": 1,
+                "line_id": "d4",
+                "repertoire_id": "white"
+              }
+            ]
+          },
+          "production_rank": 2,
+          "rank_delta": 0,
+          "reason": null,
+          "score": -2,
+          "scoring_status": "scored"
+        },
+        {
+          "alternative_rank": 3,
+          "card_id": "c",
+          "metadata": {
+            "memberships": [
+              {
+                "frontier_ply": 1,
+                "repertoire_id": "english"
+              }
+            ],
+            "moves": [
+              "c2c4",
+              "e7e5"
+            ],
+            "routes": [
+              {
+                "generation": 1,
+                "line_id": "english",
+                "repertoire_id": "english"
+              }
+            ]
+          },
+          "production_rank": 3,
+          "rank_delta": 0,
+          "reason": null,
+          "score": -3,
+          "scoring_status": "scored"
+        }
+      ],
+      "scored_count": 3,
+      "spearman": 1.0,
+      "spearman_common_count": 3,
+      "spearman_undefined_reason": null,
+      "status": "complete",
+      "top_k": {
+        "2": {
+          "alternative_concentration": {
+            "frontier_ply": {
+              "card_mass": {
+                "0": 1.0,
+                "2": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "0": 0.5,
+                "2": 0.5
+              },
+              "undefined_reason": null
+            },
+            "repertoires": {
+              "card_mass": {
+                "white": 2.0
+              },
+              "concentration": 1.0,
+              "shares": {
+                "white": 1.0
+              },
+              "undefined_reason": null
+            },
+            "routes": {
+              "card_mass": {
+                "[\"white\",1,\"d4\"]": 1.0,
+                "[\"white\",1,\"e4-e5\"]": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "[\"white\",1,\"d4\"]": 0.5,
+                "[\"white\",1,\"e4-e5\"]": 0.5
+              },
+              "undefined_reason": null
+            }
+          },
+          "alternative_only": [],
+          "alternative_selected_count": 2,
+          "effective_k": 2,
+          "intersection_count": 2,
+          "overlap": 1.0,
+          "production_concentration": {
+            "frontier_ply": {
+              "card_mass": {
+                "0": 1.0,
+                "2": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "0": 0.5,
+                "2": 0.5
+              },
+              "undefined_reason": null
+            },
+            "repertoires": {
+              "card_mass": {
+                "white": 2.0
+              },
+              "concentration": 1.0,
+              "shares": {
+                "white": 1.0
+              },
+              "undefined_reason": null
+            },
+            "routes": {
+              "card_mass": {
+                "[\"white\",1,\"d4\"]": 1.0,
+                "[\"white\",1,\"e4-e5\"]": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "[\"white\",1,\"d4\"]": 0.5,
+                "[\"white\",1,\"e4-e5\"]": 0.5
+              },
+              "undefined_reason": null
+            }
+          },
+          "production_only": [],
+          "undefined_reason": null,
+          "weighted_overlap": 1.0
+        }
+      },
+      "unscorable_count": 0,
+      "unscorable_percentage": 0.0
+    },
+    {
+      "alternative": "shorter-card-test@1",
+      "candidate_count": 3,
+      "candidate_coverage": 1.0,
+      "coverage_undefined_reason": null,
+      "displacement_undefined_reason": null,
+      "maximum_absolute_displacement": 2,
+      "mean_absolute_displacement": 1.3333333333333333,
+      "rows": [
+        {
+          "alternative_rank": 3,
+          "card_id": "a",
+          "metadata": {
+            "memberships": [
+              {
+                "frontier_ply": 2,
+                "repertoire_id": "white"
+              }
+            ],
+            "moves": [
+              "e2e4",
+              "e7e5",
+              "g1f3"
+            ],
+            "routes": [
+              {
+                "generation": 1,
+                "line_id": "e4-e5",
+                "repertoire_id": "white"
+              }
+            ]
+          },
+          "production_rank": 1,
+          "rank_delta": -2,
+          "reason": null,
+          "score": -3,
+          "scoring_status": "scored"
+        },
+        {
+          "alternative_rank": 1,
+          "card_id": "b",
+          "metadata": {
+            "memberships": [
+              {
+                "frontier_ply": 0,
+                "repertoire_id": "white"
+              }
+            ],
+            "moves": [
+              "d2d4"
+            ],
+            "routes": [
+              {
+                "generation": 1,
+                "line_id": "d4",
+                "repertoire_id": "white"
+              }
+            ]
+          },
+          "production_rank": 2,
+          "rank_delta": 1,
+          "reason": null,
+          "score": -1,
+          "scoring_status": "scored"
+        },
+        {
+          "alternative_rank": 2,
+          "card_id": "c",
+          "metadata": {
+            "memberships": [
+              {
+                "frontier_ply": 1,
+                "repertoire_id": "english"
+              }
+            ],
+            "moves": [
+              "c2c4",
+              "e7e5"
+            ],
+            "routes": [
+              {
+                "generation": 1,
+                "line_id": "english",
+                "repertoire_id": "english"
+              }
+            ]
+          },
+          "production_rank": 3,
+          "rank_delta": 1,
+          "reason": null,
+          "score": -2,
+          "scoring_status": "scored"
+        }
+      ],
+      "scored_count": 3,
+      "spearman": -0.5,
+      "spearman_common_count": 3,
+      "spearman_undefined_reason": null,
+      "status": "complete",
+      "top_k": {
+        "2": {
+          "alternative_concentration": {
+            "frontier_ply": {
+              "card_mass": {
+                "0": 1.0,
+                "1": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "0": 0.5,
+                "1": 0.5
+              },
+              "undefined_reason": null
+            },
+            "repertoires": {
+              "card_mass": {
+                "english": 1.0,
+                "white": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "english": 0.5,
+                "white": 0.5
+              },
+              "undefined_reason": null
+            },
+            "routes": {
+              "card_mass": {
+                "[\"english\",1,\"english\"]": 1.0,
+                "[\"white\",1,\"d4\"]": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "[\"english\",1,\"english\"]": 0.5,
+                "[\"white\",1,\"d4\"]": 0.5
+              },
+              "undefined_reason": null
+            }
+          },
+          "alternative_only": [
+            "c"
+          ],
+          "alternative_selected_count": 2,
+          "effective_k": 2,
+          "intersection_count": 1,
+          "overlap": 0.5,
+          "production_concentration": {
+            "frontier_ply": {
+              "card_mass": {
+                "0": 1.0,
+                "2": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "0": 0.5,
+                "2": 0.5
+              },
+              "undefined_reason": null
+            },
+            "repertoires": {
+              "card_mass": {
+                "white": 2.0
+              },
+              "concentration": 1.0,
+              "shares": {
+                "white": 1.0
+              },
+              "undefined_reason": null
+            },
+            "routes": {
+              "card_mass": {
+                "[\"white\",1,\"d4\"]": 1.0,
+                "[\"white\",1,\"e4-e5\"]": 1.0
+              },
+              "concentration": 0.5,
+              "shares": {
+                "[\"white\",1,\"d4\"]": 0.5,
+                "[\"white\",1,\"e4-e5\"]": 0.5
+              },
+              "undefined_reason": null
+            }
+          },
+          "production_only": [
+            "a"
+          ],
+          "undefined_reason": null,
+          "weighted_overlap": 0.2
+        }
+      },
+      "unscorable_count": 0,
+      "unscorable_percentage": 0.0
+    }
+  ],
+  "historical_counterfactual_supported": false,
+  "limitations": [
+    "Exact replay covers captured ranking inputs only, not learning gains or actual queue delivery.",
+    "Historical eligibility, introduction state, quota consumption and deleted routes cannot be reconstructed from current rows.",
+    "Retained priority generations alone do not establish historical counterfactual accuracy.",
+    "Historical probability/profile evidence is not captured by this infrastructure."
+  ],
+  "production_order_basis": "supplied_complete_order",
+  "schema_version": 1,
+  "snapshot_id": "587df8fa556a6afb4adac65e36c4213648e92928105adedf003dd1c0c2166cca",
+  "source_versions": {
+    "evidence_kind": "illustrative_fixture_not_production_data"
+  },
+  "study_day": "2026-10-10"
+}

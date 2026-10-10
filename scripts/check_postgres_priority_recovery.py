@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 import sys
 import uuid
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import chess
 import psycopg
@@ -399,6 +401,121 @@ def priority_position_publication_invalidates_prepared_generation(
     ).fetchone()[0] == legacy_visible_epoch + 2
 
 
+@contextmanager
+def shadow_proof_admission_configuration():
+    """Bind the disposable network's Redis only for the new cross-process proof."""
+    with patch.dict(os.environ, {"TEMPO_REDIS_URL": os.getenv("TEMPO_REDIS_URL") or "redis://redis:6379/0"}):
+        yield
+
+
+def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
+    """Real SQL enforcement, domain nonmutation, foreground denial and offline replay."""
+    from app import main as product, postgres_store
+    from app.services import opening_ranking_evaluation as evaluation
+    from app.services import opening_ranking_snapshot as snapshot
+    from app.services import redis_admission_gate
+
+    repertoire_id = "shadow-ranking-proof"
+    seed_repertoire(observer, repertoire_id, 2, legacy_state="queued")
+    observer.execute("UPDATE repertoires SET new_cards_per_day=1 WHERE id=%s", (repertoire_id,))
+    observer.execute("UPDATE cards SET content_type='opening',state='new',moves_json='[\"e2e4\"]' "
+                     "WHERE repertoire_id=%s", (repertoire_id,))
+    observer.commit()
+
+    def domain_rows():
+        tables = observer.execute("SELECT table_name FROM information_schema.tables "
+                                  "WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name").fetchall()
+        captured = {table: observer.execute(sql.SQL("SELECT row_to_json(record)::text FROM {} record "
+                                                    "ORDER BY row_to_json(record)::text COLLATE \"C\"")
+                                            .format(sql.Identifier(table))).fetchall() for (table,) in tables}
+        observer.commit()
+        return captured
+
+    original_connection = postgres_store.connection
+    original_planner = product._plan_prioritized_opening_admissions
+    original_keys = (redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY)
+    proof_key = f"tempo:shadow-ranking-proof:{uuid.uuid4().hex}"
+    redis_admission_gate._FOREGROUND_KEY = proof_key + ":foreground"
+    redis_admission_gate._BACKGROUND_KEY = proof_key + ":background"
+    active_connection = False
+    opened_connections = 0
+
+    @contextmanager
+    def checked_connection(**options):
+        nonlocal active_connection, opened_connections
+        assert options == {"read_only": True, "authoritative": True, "background": True,
+                           "repeatable_read": True, "pool_timeout_seconds": 0.1}
+        with original_connection(**options) as database:
+            assert database.execute_native("SHOW transaction_read_only").fetchone()[0] == "on"
+            assert database.execute_native("SHOW transaction_isolation").fetchone()[0] == "repeatable read"
+            opened_connections += 1
+            active_connection = True
+            try:
+                yield database
+            finally:
+                active_connection = False
+
+    def checked_planner(*arguments):
+        assert not active_connection, "Production planning retained the capture connection"
+        return original_planner(*arguments)
+
+    class CheckedScorer(evaluation.ProductionOrderScorer):
+        def score(self, candidate, context):
+            assert not active_connection, "Scorer retained the capture connection"
+            return super().score(candidate, context)
+
+    try:
+        before = domain_rows()
+        with original_connection(read_only=True, authoritative=True) as database:
+            try:
+                database.execute_native("UPDATE cards SET state='learning' WHERE repertoire_id=%s", (repertoire_id,))
+            except psycopg.errors.ReadOnlySqlTransaction:
+                database.rollback()
+            else:
+                raise AssertionError("PostgreSQL allowed a write in the read-only boundary")
+        postgres_store.connection = checked_connection
+        product._plan_prioritized_opening_admissions = checked_planner
+        deployed_redis_url = os.environ.pop("TEMPO_REDIS_URL")
+        try:
+            try:
+                snapshot.capture_snapshot(repertoire_ids=(repertoire_id,))
+            except evaluation.OpeningRankingError as error:
+                assert error.code == "admission_unavailable"
+            else:
+                raise AssertionError("Capture accepted missing cross-process foreground admission")
+        finally:
+            os.environ["TEMPO_REDIS_URL"] = deployed_redis_url
+        assert opened_connections == 0
+        with snapshot.activity_gate.foreground():
+            try:
+                snapshot.capture_snapshot(repertoire_ids=(repertoire_id,))
+            except evaluation.OpeningRankingError as error:
+                assert error.code == "evaluation_busy"
+            else:
+                raise AssertionError("Foreground work did not defer capture")
+        assert opened_connections == 0
+        document = snapshot.capture_snapshot(repertoire_ids=(repertoire_id,))
+        assert opened_connections == 1
+        candidates, context = evaluation.load_snapshot(document)
+        assert len(candidates) == 2 and len(document["actual_admission_plan"]) == 1
+        first = evaluation.compare(candidates, [evaluation.rank(candidates, context, CheckedScorer())])
+        assert first["evaluations"][0]["candidate_coverage"] == 1
+        assert first["evaluations"][0]["top_k"]["1"]["overlap"] == 1
+        assert evaluation.compare(candidates, [evaluation.rank(candidates, context, CheckedScorer())]) == first
+        assert opened_connections == 1, "Offline replay contacted PostgreSQL"
+        timezone_document = snapshot.capture_snapshot(repertoire_ids=(repertoire_id,), production_timezone="Pacific/Kiritimati")
+        expected_day = datetime.fromisoformat(timezone_document["as_of"]).astimezone(ZoneInfo("Pacific/Kiritimati")).date().isoformat()
+        assert timezone_document["study_day"] == expected_day
+        assert timezone_document["source_versions"]["production_timezone"] == "Pacific/Kiritimati"
+        assert domain_rows() == before, "Shadow capture or comparison mutated production tables"
+    finally:
+        postgres_store.connection = original_connection
+        product._plan_prioritized_opening_admissions = original_planner
+        if redis_admission_gate.configured():
+            redis_admission_gate.client().delete(proof_key + ":foreground", proof_key + ":background")
+        redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY = original_keys
+
+
 def main() -> None:
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Priority recovery rehearsal requires a disposable PostgreSQL instance")
@@ -640,6 +757,8 @@ def main() -> None:
                 durable_tasks, postgres_priority, introduction_priorities,
                 postgres_game_derivation, observer,
             )
+            with shadow_proof_admission_configuration():
+                test_postgres_shadow_opening_ranking_is_read_only(observer)
         print("PASS schema 20/21 priority recovery across queued, retrying, expired, "
               "and old-ordering work; repeated migration and stale delivery are inert")
         print("PASS PostgreSQL second-batch crash, reconstructed task claim, shuffled retry, "
@@ -647,6 +766,7 @@ def main() -> None:
         print("PASS PostgreSQL source/scoring invalidation retains old publication "
               "and publishes a current follow-up generation")
         print("PASS priority_position_publication_invalidates_prepared_generation")
+        print("PASS test_postgres_shadow_opening_ranking_is_read_only")
     finally:
         with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
             administrator.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
