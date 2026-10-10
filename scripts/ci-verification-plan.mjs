@@ -8,6 +8,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const mandatoryLayers = ["frontend", "backend", "build", "postgres", "browser"];
+export const runtime = Object.freeze({ runner: "ubuntu-24.04-arm", platform: "linux", architecture: "arm64",
+  node: "22.23.3", python: "3.12.14", rust: "1.99.0", wasmPack: "0.15.0" });
 export const allLayers = [...mandatoryLayers, "lifecycle", "visual", "quarantine"];
 export const inventory = JSON.parse(readFileSync(new URL("./ci-verification-inventory.json", import.meta.url), "utf8"));
 export const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -17,9 +19,12 @@ export function verificationContext(eventName, event = {}, complete = false, com
   const pullRequest = eventName === "pull_request" ? event.pull_request : null;
   if (eventName === "pull_request" && (!pullRequest || typeof pullRequest.draft !== "boolean" || !pullRequest.head?.sha || !pullRequest.base?.sha)) throw new Error("Missing PR verification context");
   const requested = complete || pullRequest?.labels?.some(label => label.name === "ci:full");
+  const repository = event.repository ?? pullRequest?.base?.repo;
+  if (eventName === "pull_request" && (!repository?.full_name || !Number.isInteger(repository.id) || !Number.isInteger(pullRequest.number))) throw new Error("Missing repository or PR identity");
   return { tier: pullRequest?.draft && !requested ? "development" : "qualification",
+    repository: repository?.full_name ?? null, repositoryId: repository?.id ?? null, pullRequest: pullRequest?.number ?? null,
     draft: pullRequest?.draft ?? false, head: pullRequest?.head.sha ?? commit,
-    base: pullRequest?.base.sha ?? null, commit, ref, event: eventName,
+    base: pullRequest?.base.sha ?? event.merge_group?.base_sha ?? null, commit, ref, event: eventName,
     complete: !!requested || !pullRequest };
 }
 
@@ -46,6 +51,10 @@ function developmentSelection(paths, comparisonAvailable, sourceInventory) {
     } else if (sourceInventory.development?.postgresFixturePaths.includes(path)) {
       ["frontend", "postgres"].forEach(layer => selected.add(layer));
       sourceInventory.development.harnessTests.forEach(file => frontend.add(file));
+    } else if (sourceInventory.development?.nonPersistenceBackend?.some(mapping => mapping.paths.includes(path))) {
+      const mapping = sourceInventory.development.nonPersistenceBackend.find(mapping => mapping.paths.includes(path));
+      if (!existsSync(path) || !mapping.tests?.length || mapping.tests.some(file => !existsSync(file))) expand();
+      else { ["backend", "browser"].forEach(layer => selected.add(layer)); mapping.tests.forEach(file => backend.add(file)); }
     } else if (path.startsWith("app/")) {
       if (!sourceInventory.sources.some(mapping => mapping.paths.includes(path))) {
         broadBrowser = true;
@@ -114,6 +123,16 @@ export function validateInventory(files, sourceInventory = inventory) {
     }
   }
   const classified = Object.values(sourceInventory.families).flat();
+  const backendPaths = new Set();
+  for (const mapping of sourceInventory.development?.nonPersistenceBackend ?? []) {
+    if (!mapping.paths?.length || !mapping.tests?.length || !mapping.families?.length
+      || mapping.tests.some(file => !/^backend\/tests\/(?:.*\/)?test_[^/]+\.py$/.test(file))
+      || mapping.families.some(family => family === "pinned" || !Object.hasOwn(sourceInventory.families, family))) throw new Error("Invalid non-persistence backend mapping");
+    for (const path of mapping.paths) {
+      if (!/^backend\/app\/services\/[^/]+\.py$/.test(path) || backendPaths.has(path)) throw new Error("Invalid non-persistence backend source ownership");
+      backendPaths.add(path);
+    }
+  }
   if (new Set(classified).size !== classified.length) throw new Error("A browser spec belongs to multiple inventory families");
   for (const file of files) if (!classified.includes(file.startsWith("tests/browser/") ? file.slice("tests/browser/".length) : file)) throw new Error(`Unclassified browser spec: ${file}. Register its complete family before planning.`);
 }
@@ -138,7 +157,7 @@ export function collectCases(report) {
   return cases.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-export function verificationPlan({ paths, comparisonAvailable = true, complete = false, files, cases, pinnedCases = [], quarantine = [], sourceInventory = inventory, tier = "qualification", draft = false, head = null, base = null, commit = null, event = "local", ref = null }) {
+export function verificationPlan({ paths, comparisonAvailable = true, complete = false, files, cases, pinnedCases = [], quarantine = [], sourceInventory = inventory, tier = "qualification", draft = false, head = null, base = null, commit = null, event = "local", ref = null, repository = null, repositoryId = null, pullRequest = null }) {
   if (!["development", "qualification"].includes(tier)) throw new Error("Unknown verification tier");
   validateInventory([...files, ...cases.map(item => item.file), ...pinnedCases.map(item => item.file)], sourceInventory);
   const reasons = [];
@@ -213,6 +232,7 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
       families.clear();
       for (const path of paths) {
         sourceInventory.sources.find(mapping => mapping.paths.includes(path))?.families.forEach(family => families.add(family));
+        sourceInventory.development?.nonPersistenceBackend?.find(mapping => mapping.paths.includes(path))?.families.forEach(family => families.add(family));
         const family = Object.entries(sourceInventory.families).find(([, specs]) => path.startsWith("tests/browser/") && specs.includes(path.slice("tests/browser/".length)))?.[0];
         if (family && family !== "pinned") families.add(family);
       }
@@ -226,7 +246,8 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     }
     collection.forEach(item => { if (!jobs.browser.applicable) item.selected = false; });
   }
-  const plan = { version: 2, tier, draft, head, base, commit, event, ref, core, regressionFiles, scope: (tier === "development" ? mandatoryLayers.every(layer => jobs[layer].required) && jobs.lifecycle.required && jobs.visual.required && collection.every(item => item.selected || item.quarantined) && core.frontend === "all" && core.backend === "all" : broad && lifecycle.applicable) ? "complete" : "targeted", comparisonAvailable, paths, reasons,
+  const inventoryRevision = planHash({ inventory: sourceInventory, cases, pinnedCases, quarantine });
+  const plan = { version: 3, repository, repositoryId, pullRequest, inventoryRevision, runtime, tier, draft, head, base, commit, event, ref, core, regressionFiles, scope: (tier === "development" ? mandatoryLayers.every(layer => jobs[layer].required) && jobs.lifecycle.required && jobs.visual.required && collection.every(item => item.selected || item.quarantined) && core.frontend === "all" && core.backend === "all" : broad && lifecycle.applicable) ? "complete" : "targeted", comparisonAvailable, paths, reasons,
     families: [...families].sort(), jobs,
     browserGrep: collection.filter(item => item.selected).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|"), collection, quarantine,
     pinnedCollection: pinnedCases.map(item => ({ ...item, selected: jobs.visual.applicable, nightly: true, release: true })) };

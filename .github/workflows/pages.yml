@@ -180,6 +180,7 @@ jobs:
         if: always()
         env:
           TEMPO_CI_NEEDS: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-quality.mjs --development
   quality:
     if: always()
@@ -217,6 +218,7 @@ jobs:
         if: always()
         env:
           TEMPO_CI_NEEDS: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-quality.mjs
       - name: Download latest successful main performance reference
         if: always() && github.event_name == 'pull_request' && needs.plan.outputs.visual == 'true'

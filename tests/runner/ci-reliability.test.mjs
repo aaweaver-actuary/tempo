@@ -1,3 +1,4 @@
+import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -48,6 +49,20 @@ function successfulResults(planned) {
       scenarios: { runner: "postgres", mode: layer === "lifecycle" ? "lifecycle" : "durability", commit: planned.commit, plan_hash: planned.hash,
         planned_stages: planned.jobs[layer].planned_stages ?? postgresTestStages({ mode: "durability" }),
         stages: Object.fromEntries((planned.jobs[layer].planned_stages ?? postgresTestStages({ mode: "durability" })).map(name => [name, { exit_code: 0 }])) } };
+  }
+  for (const [layer, report] of Object.entries(reports)) {
+    report.version = 2;
+    report.executionKey = suiteFingerprint(planned, layer, layerCommands(layer, planned));
+    report.execution = {kind:"executed",runId:100,attempt:1};
+    report.environment = {node:`v${planned.runtime.node}`,platform:planned.runtime.platform,architecture:planned.runtime.architecture,
+      python:`Python ${planned.runtime.python}`,rust:`rustc ${planned.runtime.rust} (fixture)`,wasmPack:`wasm-pack ${planned.runtime.wasmPack}`};
+    if (["frontend","backend"].includes(layer)) {
+      const requiredFiles = [...new Set([...(Array.isArray(planned.core[layer]) ? planned.core[layer] : []), ...(planned.regressionFiles[layer] ?? [])])];
+      const files = requiredFiles.length ? requiredFiles : [layer === "frontend" ? "tests/unit/example.test.ts" : "backend/tests/test_example.py"];
+      report.expectedTests = Array.from({length:10},(_,index)=>({id:`${files[index % files.length]}::case-${index}`,file:files[index % files.length]}));
+      report.tests = report.expectedTests.map(test=>({...test,status:"passed",retries:0}));
+      report.test_count = report.tests.length;
+    }
   }
   return { needs, reports };
 }

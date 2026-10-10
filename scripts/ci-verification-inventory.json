@@ -177,6 +177,8 @@
       "scripts/ci-verification-plan.mjs",
       "scripts/ci-quality.mjs",
       "scripts/ci-run-layer.mjs",
+      "scripts/ci-evidence.mjs",
+      "scripts/ci-collect-backend.py",
       "scripts/check-migration-inventory.mjs",
       "scripts/ci-verification-inventory.json",
       "scripts/ci-quarantine.json",
@@ -188,6 +190,23 @@
     "harnessTests": [
       "tests/unit/ci-reliability-regressions.test.ts",
       "tests/unit/postgres-test-speedups-regressions.test.ts"
+    ],
+    "nonPersistenceBackend": [
+      {
+        "paths": [
+          "backend/app/services/chesscom_client.py",
+          "backend/app/services/lichess_client.py"
+        ],
+        "tests": [
+          "backend/tests/test_game_sync.py",
+          "backend/tests/test_postgres_game_sync_windows.py"
+        ],
+        "families": [
+          "defense",
+          "games"
+        ],
+        "reason": "Network-only clients; consumer contracts cover normalized records, bounded windows and provider errors. No database, worker or checkpoint implementation is narrowed."
+      }
     ]
   }
 }

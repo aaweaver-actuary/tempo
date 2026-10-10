@@ -1,9 +1,10 @@
+import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { verificationPlan, inventory } from '../../scripts/ci-verification-plan.mjs';
-import { evaluateQuality } from '../../scripts/ci-quality.mjs';
+import { evaluateQuality, layerFailures } from '../../scripts/ci-quality.mjs';
 const files = Object.values(inventory.families).flat();
 const cases = inventory.critical.map((item, index) => ({ ...item, id: `case-${index}`, fullTitle: item.title, project: 'chromium' }));
 function draft(paths, extra = {}) {
@@ -29,7 +30,7 @@ import { resolvePython } from '../../scripts/resolve-python.mjs';
 import { verificationContext, planHash, allLayers, createPlan } from '../../scripts/ci-verification-plan.mjs';
 import { layerCommands, validateUnitResults, executeLayer, backendUnitFileCounts } from '../../scripts/ci-run-layer.mjs';
 import { validateMigrationInventory } from '../../scripts/check-migration-inventory.mjs';
-const pr = { draft: true, state: 'open', head: {sha: 'head'}, base: {sha: 'base'}, labels: [], merge_commit_sha: 'integration' };
+const pr = {number:132, draft: true, state: 'open', head: {sha: 'head'}, base: {sha: 'base',repo:{id:1371942142,full_name:'aaweaver-actuary/tempo'}}, labels: [], merge_commit_sha: 'integration' };
 function captured(pullRequest = pr, paths = ['docs/testing.md']) {
   return draft(paths, verificationContext('pull_request', {pull_request: pullRequest}, false, 'integration'));
 }
@@ -44,6 +45,19 @@ function results(planned) {
       tests: (layer === 'visual' ? planned.pinnedCollection : planned.collection.filter(item => item.selected)).map(item => ({id:item.id, status:'passed', retries:0})),
       scenarios: {runner:'postgres', mode:planned.jobs[layer].mode, commit:planned.commit, plan_hash:planned.hash,
         planned_stages:planned.jobs[layer].planned_stages, stages:Object.fromEntries((planned.jobs[layer].planned_stages ?? []).map(stage => [stage, {exit_code:0}]))}};
+  }
+  for (const [layer, report] of Object.entries(reports)) {
+    report.version = 2;
+    report.executionKey = suiteFingerprint(planned, layer, layerCommands(layer, planned));
+    report.execution = {kind:"executed",runId:100,attempt:1};
+    report.environment = {node:`v${planned.runtime.node}`,platform:planned.runtime.platform,architecture:planned.runtime.architecture,
+      python:`Python ${planned.runtime.python}`,rust:`rustc ${planned.runtime.rust} (fixture)`,wasmPack:`wasm-pack ${planned.runtime.wasmPack}`};
+    if (["frontend","backend"].includes(layer)) {
+      const requiredFiles = [...new Set([...(Array.isArray(planned.core[layer]) ? planned.core[layer] : []), ...(planned.regressionFiles[layer] ?? [])])];
+      const files = requiredFiles.length ? requiredFiles : [layer === "frontend" ? "tests/unit/example.test.ts" : "backend/tests/test_example.py"];
+      report.expectedTests = Array.from({length:10},(_,index)=>({id:`${files[index % files.length]}::case-${index}`,file:files[index % files.length]}));
+      report.tests = report.expectedTests.map(test=>({...test,status:"passed",retries:0}));
+    }
   }
   return {needs, reports};
 }
@@ -124,7 +138,7 @@ test('changed frontend and Python regressions must execute and zero filtered ski
     for (const state of ['failure','cancelled','skipped',undefined]) {
       const broken=results(planned); broken.needs[layer].result=state; assert.equal(verdict(planned,broken,pr,true).success,false);
     }
-    assert.throws(() => validateUnitResults(layer,planned,{test_count:1,files:{}}),/did not execute/);
+    assert.throws(() => validateUnitResults(layer,planned,{...evidence.reports[layer],files:{}}),/did not execute/);
     delete evidence.reports[layer]; assert.equal(verdict(planned,evidence,pr,true).success,false);
   }
 });
@@ -196,7 +210,7 @@ test('Python regression evidence distinguishes exact modules from similarly name
     '<testcase classname="backend.tests.test_studies.TestStudy" name="method"/></testsuite>';
   assert.deepEqual(backendUnitFileCounts(xml, [file]), {[file]: 2});
   const unrelated = '<testcase classname="backend.tests.test_studies_extra" name="unrelated"/>';
-  const report = {test_count: 1, files: backendUnitFileCounts(unrelated, [file])};
+  const report = {test_count: 1, files: backendUnitFileCounts(unrelated, [file]), expectedTests:[{id:'unrelated'}],tests:[{id:'unrelated',status:'passed',retries:0}]};
   assert.throws(() => validateUnitResults('backend', {core: {backend: 'all'}, regressionFiles: {backend: [file]}}, report), /did not execute/);
 });
 
@@ -210,4 +224,166 @@ test('unregistered regression files cannot qualify through unrelated whole-suite
         assert.throws(()=>captured(state,[file]),/outside the regular test collection/);
     }
   } finally { rmSync(directory,{recursive:true,force:true}); }
+});
+
+test('PR132 reviewed provider clients select consumer tests without persistence work', () => {
+  for (const path of ['backend/app/services/chesscom_client.py', 'backend/app/services/lichess_client.py']) {
+    const selected = captured(pr, [path]);
+    assert.deepEqual(selected.core.backend, ['backend/tests/test_game_sync.py', 'backend/tests/test_postgres_game_sync_windows.py']);
+    assert.equal(selected.jobs.postgres.applicable, false);
+    assert.equal(selected.jobs.frontend.applicable, false);
+    assert.deepEqual(selected.families, ['defense', 'games']);
+    assert(selected.jobs.browser.required);
+    const mixed = captured(pr, [path, 'backend/app/services/postgres_game_sync_windows.py']);
+    assert(mixed.jobs.postgres.required);
+    assert.equal(mixed.core.backend, 'all');
+  }
+});
+
+test('PR132 collected core inventory rejects filtered successful results', () => {
+  const report = {test_count:1, files:{'tests/unit/example.test.ts':1},
+    expectedTests:[{id:'one',file:'tests/unit/example.test.ts'},{id:'two',file:'tests/unit/example.test.ts'}],
+    tests:[{id:'one',file:'tests/unit/example.test.ts',status:'passed',retries:0}]};
+  assert.throws(() => validateUnitResults('frontend', {core:{frontend:'all'}}, report), /inventory/);
+});
+
+test('PR132 plan records repository PR inventory and runtime identity', () => {
+  const selected = draft(['docs/testing.md'], {repository:'aaweaver-actuary/tempo',repositoryId:1371942142,pullRequest:132});
+  assert.equal(selected.version,3);
+  assert.equal(selected.repository,'aaweaver-actuary/tempo');
+  assert.equal(selected.pullRequest,132);
+  assert.match(selected.inventoryRevision,/^[a-f0-9]{64}$/);
+  assert.equal(selected.runtime.runner,'ubuntu-24.04-arm');
+});
+
+test('PR132 suite reuse fingerprint ignores orchestration but rejects candidate suite and runtime changes', async () => {
+  const {suiteFingerprint} = await import('../../scripts/ci-evidence.mjs');
+  const selected = captured({...pr,draft:false}, ['docs/testing.md']);
+  const commands = layerCommands('frontend', selected);
+  const key = suiteFingerprint(selected,'frontend',commands);
+  assert.equal(suiteFingerprint({...selected,draft:true,event:'pull_request'},'frontend',commands),key);
+  for (const change of [{head:'other'}, {base:'other'}, {commit:'other'}, {repository:'other/repository'},
+    {pullRequest:133}, {inventoryRevision:'other'}, {runtime:{...selected.runtime,node:'other'}}])
+    assert.notEqual(suiteFingerprint({...selected,...change},'frontend',commands),key);
+  assert.notEqual(suiteFingerprint(selected,'frontend',[...commands,['extra','node',[]]]),key);
+});
+
+function reusableFixture() {
+  const planned = captured({...pr,draft:false}, ['docs/testing.md']);
+  const original = results(planned).reports.frontend;
+  const run = {id:100,status:'completed',conclusion:'success',event:'pull_request',path:'.github/workflows/pages.yml',
+    repository:{id:planned.repositoryId,full_name:planned.repository},head_sha:planned.head,pull_requests:[{number:132}]};
+  const job = {id:200,run_id:100,run_attempt:1,name:'frontend / verify',status:'completed',conclusion:'success',labels:[planned.runtime.runner],
+    steps:[{name:'Run isolated verification layer',status:'completed',conclusion:'success'}]};
+  const artifact = {id:300,name:'ci-result-frontend',expired:false,digest:`sha256:${'a'.repeat(64)}`,
+    workflow_run:{id:100,repository_id:planned.repositoryId,head_sha:planned.head}};
+  const receipt = {version:2,layer:'frontend',planHash:planned.hash,commit:planned.commit,status:'success',completed:true,
+    executionKey:original.executionKey,execution:{kind:'reused'},source:{plan:planned,report:original,runId:100,jobId:200,artifactId:300,digest:artifact.digest}};
+  return {planned,receipt,metadata:{run,job,artifact,latestJobId:job.id}};
+}
+
+test('PR132 reuse binds successful execution jobs artifacts and current aggregation', async () => {
+  const {validateReuseEvidence} = await import('../../scripts/ci-evidence.mjs');
+  const {planned,receipt,metadata} = reusableFixture();
+  const commands = layerCommands('frontend',planned);
+  assert(validateReuseEvidence(planned,'frontend',receipt,commands,metadata,layerFailures));
+  const evidence = results(planned); evidence.reports.frontend = receipt;
+  assert.equal(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:{...pr,draft:false}}).success,false);
+  assert(evaluateQuality(planned,evidence.needs,evidence.reports,{currentPullRequest:{...pr,draft:false},verifiedReuse:{frontend:metadata}}).success);
+  for (const modify of [value=>{value.job.conclusion='failure';},value=>{value.job.conclusion='skipped';},value=>{value.job.conclusion='cancelled';},
+    value=>{value.job.name='plan';},value=>{value.job.run_attempt=2;},value=>{value.run.status='in_progress';},value=>{value.run.conclusion='cancelled';},
+    value=>{value.run.head_sha='previous';},value=>{value.run.repository.id=999;},value=>{value.artifact.expired=true;},value=>{value.artifact.digest='other';},
+    value=>{value.job.steps[0].name='Test selection';},value=>{value.latestJobId=201;}]) {
+    const invalid = structuredClone(metadata); modify(invalid);
+    assert.throws(()=>validateReuseEvidence(planned,'frontend',receipt,commands,invalid,layerFailures));
+  }
+  for (const modify of [value=>{value.source.report.commands[0].exit_code=1;},value=>{value.source.report.tests.pop();},
+    value=>{value.source.report.execution.kind='diagnostic';},value=>{value.source.plan.base='previous';},value=>{value.source.report.completed=false;}]) {
+    const invalid = structuredClone(receipt); modify(invalid);
+    assert.throws(()=>validateReuseEvidence(planned,'frontend',invalid,commands,metadata,layerFailures));
+  }
+});
+
+test('PR132 artifact downloads reject expired or altered bytes', async () => {
+  const {verifiedArtifactBytes} = await import('../../scripts/ci-evidence.mjs');
+  const {createHash} = await import('node:crypto');
+  const bytes = Buffer.from('immutable original report');
+  const artifact = {digest:`sha256:${createHash('sha256').update(bytes).digest('hex')}`,expired:false};
+  assert.equal(verifiedArtifactBytes(bytes,artifact),bytes);
+  assert.throws(()=>verifiedArtifactBytes(Buffer.from('changed'),artifact),/digest/);
+  assert.throws(()=>verifiedArtifactBytes(bytes,{...artifact,expired:true}),/expired/);
+});
+
+test('PR132 latest matching failure or missing execution cannot reuse an older pass', async () => {
+  const {findReusableEvidence} = await import('../../scripts/ci-evidence.mjs');
+  const {planned,receipt,metadata} = reusableFixture();
+  const commands = layerCommands('frontend',planned);
+  const source = {plan:planned,report:receipt.source.report,job:metadata.job,artifact:metadata.artifact};
+  assert(findReusableEvidence(planned,'frontend',commands,[metadata.run],()=>source,layerFailures));
+  for (const report of [{...source.report,status:'failed'},null]) {
+    const newer = {...metadata.run,id:101,conclusion:'failure'};
+    assert.equal(findReusableEvidence(planned,'frontend',commands,[newer,metadata.run],run=>run.id===101 ? {...source,report} : source,layerFailures),null);
+  }
+  assert.equal(findReusableEvidence(planned,'frontend',commands,[],()=>{throw new Error('Unexpected lookup');},layerFailures),null);
+  assert.equal(findReusableEvidence(planned,'frontend',commands,[metadata.run],()=>null,layerFailures),null);
+  const cancelled = {...metadata.run,conclusion:'cancelled'};
+  assert.equal(findReusableEvidence(planned,'frontend',commands,[cancelled,metadata.run],()=>source,layerFailures),null);
+});
+
+test('PR132 repository PR number and runtime changes invalidate quality', () => {
+  const ready = {...pr,draft:false}, planned = captured(ready), evidence = results(planned);
+  for (const change of [{number:133},{base:{...ready.base,repo:{id:7,full_name:'another/repo'}}}])
+    assert.equal(verdict(planned,evidence,{...ready,...change}).success,false);
+  for (const modify of [report=>{report.environment.node='v20.0.0';},report=>{report.execution.runId=0;},report=>{report.executionKey='previous';}]) {
+    const invalid=results(planned); modify(invalid.reports.frontend);
+    assert.equal(verdict(planned,invalid,ready).success,false);
+  }
+});
+
+test('PR132 core inventories retain nested identities and JUnit parameter escaping', async () => {
+  const {frontendInventory,frontendResults} = await import('../../scripts/ci-run-layer.mjs');
+  const file = join(process.cwd(),'tests/unit/example.test.ts');
+  const expected = frontendInventory([{file,name:'parent > example',location:{line:2,column:3}}]);
+  const actual = frontendResults({testResults:[{name:file,assertionResults:[{ancestorTitles:['parent'],title:'example',location:{line:2,column:3},status:'passed'}]}]});
+  assert.equal(actual[0].id,expected[0].id);
+  assert.throws(()=>frontendInventory([{file,name:'missing location'}]),/locations/);
+  const directory = mkdtempSync(join(process.cwd(),'test-results','junit-contract-'));
+  try {
+    const path=join(directory,'tests.xml');
+    writeFileSync(path,'<testsuites><testsuite><testcase classname="backend.tests.test_example.TestCase" name="test_value[a&amp;b]"/><testcase classname="backend.tests.test_example" name="test_skipped"><skipped/></testcase></testsuite></testsuites>');
+    const parsed=spawnSync(resolvePython(),['scripts/ci-collect-backend.py','--results',path],{encoding:'utf8'});
+    assert.equal(parsed.status,0,parsed.stderr);
+    assert.deepEqual(JSON.parse(parsed.stdout).map(item=>[item.id,item.status]),[['backend.tests.test_example.TestCase::test_value[a&b]','passed'],['backend.tests.test_example::test_skipped','skipped']]);
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test('PR132 pytest collection matches actual class and parameter identities', () => {
+  const directory = mkdtempSync(join(process.cwd(),'test-results','pytest-inventory-contract-'));
+  try {
+    const file = join(directory,'test_identities.py'), inventoryPath = join(directory,'inventory.json'), xmlPath = join(directory,'results.xml');
+    writeFileSync(file,'import pytest\nclass TestIdentity:\n    @pytest.mark.parametrize("value", ["a::b&c", "second"], ids=str)\n    def test_value(self, value):\n        assert value\n');
+    const argumentsForPytest = [file,'-q','--rootdir=.'];
+    const collected = spawnSync(resolvePython(),['scripts/ci-collect-backend.py',inventoryPath,...argumentsForPytest],{encoding:'utf8'});
+    assert.equal(collected.status,0,collected.stdout+collected.stderr);
+    const executed = spawnSync(resolvePython(),['-m','pytest',...argumentsForPytest,`--junitxml=${xmlPath}`],{encoding:'utf8'});
+    assert.equal(executed.status,0,executed.stdout+executed.stderr);
+    const parsed = spawnSync(resolvePython(),['scripts/ci-collect-backend.py','--results',xmlPath],{encoding:'utf8'});
+    assert.equal(parsed.status,0,parsed.stderr);
+    const report = {test_count:2,expectedTests:JSON.parse(readFileSync(inventoryPath,'utf8')),tests:JSON.parse(parsed.stdout)};
+    validateUnitResults('backend',{core:{backend:'all'}},report);
+    assert(report.tests.some(item=>item.id.endsWith('TestIdentity::test_value[a::b&c]')));
+  } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test('PR132 workflow skips setup and execution only after validated reuse', () => {
+  const workflow = readFileSync('.github/workflows/verify-layer.yml','utf8');
+  assert(workflow.indexOf('id: evidence') < workflow.indexOf('actions/setup-python'));
+  for (const setup of ['actions/setup-python','dtolnay/rust-toolchain','Swatinem/rust-cache','taiki-e/install-action','Browser prerequisites','Run isolated verification layer']) {
+    const step = workflow.slice(workflow.indexOf(setup)).split(/\n      - /)[0];
+    assert(step.includes("steps.evidence.outputs.reused != 'true'"),setup);
+  }
+  assert.match(workflow,/actions: read/);
+  const source = readFileSync('scripts/ci-evidence.mjs','utf8');
+  assert(source.includes('if (plan.event === "pull_request")'));
+  assert(source.includes('per_page=20'));
 });

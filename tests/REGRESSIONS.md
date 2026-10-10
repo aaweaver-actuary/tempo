@@ -3366,3 +3366,15 @@ PR #120 / #140 queue-wake compatibility (October 9, 2026; relates to #39 and #13
 ## PR132 development validation and merge qualification
 
 `tests/runner/ci-development.test.mjs`, owned by the regular `tests/unit/ci-reliability-regressions.test.ts` wrapper, covers draft defaults, ready/draft transitions, current head/base/integration identity, full boundaries and explicit requests, changed-regression execution, rejected missing/failed/cancelled/skipped/filtered/zero results, original diagnostic failures, migration inventory agreement, and same-PR cancellation. Current-main fixture and admission regressions remain unchanged.
+
+
+Additional named PR132 safeguards in the same regular wrapper:
+
+- `PR132 reviewed provider clients select consumer tests without persistence work` unions the audited network leaves with conservative persistence coverage.
+- `PR132 collected core inventory rejects filtered successful results` rejects partial successful execution; `PR132 core inventories retain nested identities and JUnit parameter escaping` and `PR132 pytest collection matches actual class and parameter identities` prove real reporter identity handling.
+- `PR132 plan records repository PR inventory and runtime identity`; `PR132 repository PR number and runtime changes invalidate quality` prevent candidate/repository/runtime confusion.
+- `PR132 suite reuse fingerprint ignores orchestration but rejects candidate suite and runtime changes` keeps exact execution independent of draft/ready metadata.
+- `PR132 reuse binds successful execution jobs artifacts and current aggregation`; `PR132 artifact downloads reject expired or altered bytes`; `PR132 latest matching failure or missing execution cannot reuse an older pass` preserve original execution, artifact provenance, latest-attempt/failure rejection and unavailable-reuse fallback.
+- `PR132 workflow skips setup and execution only after validated reuse` protects the fresh current verification layer and complete non-PR execution boundaries.
+
+The first four implementation regressions failed on the reconciled baseline: provider leaves selected full backend/durability, filtered core execution was accepted, identity remained version 2, and the reuse helper was absent. The baseline's 111 native contracts passed before those additions. No application, browser-fixture reset, admission proof or durability assertion was changed to obtain these passes.
