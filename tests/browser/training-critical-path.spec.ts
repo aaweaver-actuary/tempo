@@ -128,20 +128,26 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       }
       window.dispatchEvent(new Event("online"));
     }, condition === "recovery-held");
-    const clockReads: { offsetMs: number; uncertaintyMs: number }[] = [];
-    for (let index = 0; process.env.TEMPO_TRAINING_TIMINGS === "1" && index < 5; index++) {
-      const clockIdentity = randomUUID();
-      const sent = Date.now();
-      const response = await request.get(`${api}/queue/window?limit=20`, { headers: { "Idempotency-Key": clockIdentity } });
-      expect(response.ok()).toBe(true);
-      await response.body();
-      const received = Date.now();
-      const serverStarted = Number(response.headers()["x-tempo-clock-started-ms"]);
-      const serverFinished = Number(response.headers()["x-tempo-clock-finished-ms"]);
-      expect(Number.isFinite(serverStarted) && Number.isFinite(serverFinished)).toBe(true);
-      clockReads.push({ offsetMs: (serverStarted + serverFinished - sent - received) / 2,
-        uncertaintyMs: Math.max(0, received - sent - (serverFinished - serverStarted)) / 2 + 1 });
-    }
+    const readClockBracket = async () => {
+      const clockReads: { offsetMs: number; uncertaintyMs: number }[] = [];
+      for (let index = 0; process.env.TEMPO_TRAINING_TIMINGS === "1" && index < 5; index++) {
+        const clockIdentity = randomUUID();
+        const sent = Date.now();
+        const response = await request.get(`${api}/queue/window?limit=20`, { headers: { "Idempotency-Key": clockIdentity } });
+        expect(response.ok()).toBe(true);
+        await response.body();
+        const received = Date.now();
+        const serverStarted = Number(response.headers()["x-tempo-clock-started-ms"]);
+        const serverFinished = Number(response.headers()["x-tempo-clock-finished-ms"]);
+        expect(Number.isFinite(serverStarted) && Number.isFinite(serverFinished)).toBe(true);
+        clockReads.push({ offsetMs: (serverStarted + serverFinished - sent - received) / 2,
+          uncertaintyMs: Math.max(0, received - sent - (serverFinished - serverStarted)) / 2 + 1 });
+      }
+      clockReads.sort((left, right) => left.uncertaintyMs - right.uncertaintyMs);
+      if (process.env.TEMPO_TRAINING_TIMINGS === "1") expect(clockReads).toHaveLength(5);
+      return clockReads[0] ?? { offsetMs: 0, uncertaintyMs: 0 };
+    };
+    const startingClock = await readClockBracket();
     for (let index = 0; index < transitionCount; index++) {
       await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
       const previousEntry = await page.locator("#train").getAttribute("data-queue-entry-id");
@@ -178,12 +184,14 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     }
     // Stop current UI timers/requests before service restart and fixture teardown.
     await page.close();
+    const endingClock = await readClockBracket();
     const workerLog = docker("logs", "--no-color", "foreground-worker");
     const spans: CommandSpan[] = workerLog.split("\n").filter(line => line.includes("training_timing ")).map(line => JSON.parse(line.slice(line.indexOf("training_timing ") + 16)));
     const apiSpans: CommandSpan[] = docker("logs", "--no-color", "api").split("\n").filter(line => line.includes("training_timing ")).map(line => JSON.parse(line.slice(line.indexOf("training_timing ") + 16)));
-    clockReads.sort((left, right) => left.uncertaintyMs - right.uncertaintyMs);
-    if (process.env.TEMPO_TRAINING_TIMINGS === "1") expect(clockReads).toHaveLength(5);
-    const clock = clockReads[0] ?? { offsetMs: 0, uncertaintyMs: 0 };
+    const driftMs = endingClock.offsetMs - startingClock.offsetMs;
+    const clock = { offsetMs: (startingClock.offsetMs + endingClock.offsetMs) / 2,
+      uncertaintyMs: Math.max(startingClock.uncertaintyMs, endingClock.uncertaintyMs) + Math.abs(driftMs) / 2,
+      starting: startingClock, ending: endingClock, driftMs };
     const measured = samples.map(sample => {
       const trace = createHash("sha256").update(sample.operationId).digest("hex").slice(0, 16);
       const span = spans.find(span => span.label === "cards.review" && span.trace === trace);
@@ -196,7 +204,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
       fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup, samples: measuredCount },
-      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges bracket host/VM offset after subtracting observed server span duration; smallest uncertainty retained. Native-input time includes test-driver scheduling.", ...clock }, measured, recoveryRequests,
+      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Native-input time includes test-driver scheduling.", ...clock }, measured, recoveryRequests,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
     mkdirSync(output, { recursive: true }); writeFileSync(join(output, `training-transition-${condition}.json`), JSON.stringify(report, null, 2));

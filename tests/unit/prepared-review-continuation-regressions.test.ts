@@ -104,6 +104,30 @@ it("foreground review confirmation yields before unrelated later outbox delivery
   await existingFlush;
 });
 
+it("prepared_continuation_replay_preserves_exactly_once_scheduling: confirmed frozen receipt", async () => {
+  const candidate = capturePreparedNext()!;
+  const attempt = useTrainingStore.getState().attempt;
+  enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: attempt.attemptId!,
+    outcome: "correct", guided: false, expectedRevision: 1, preparedNext: candidate });
+  let confirmed = false;
+  let submissions = 0;
+  vi.stubGlobal("fetch", vi.fn(async input => {
+    if (String(input).includes("/api/operations/")) return Response.json(confirmed
+      ? { state: "complete", response: { persisted: true, prepared_continuation: candidate } }
+      : { state: "queued" });
+    submissions++;
+    return Response.json({ operation_id: `review-attempt:${attempt.attemptId}` }, { status: 202 });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow("Save is still pending");
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+  confirmed = true;
+  const result = await flushPendingReviews(Infinity, true, attempt.attemptId, undefined, attempt.attemptId);
+  expect(result.preparedContinuations?.[attempt.attemptId!]).toEqual(candidate);
+  expect(advancePreparedContinuation(result.preparedContinuations?.[attempt.attemptId!], attempt.attemptId!, attempt.generation)).toBe(true);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(502);
+  expect(submissions).toBe(1);
+});
+
 it("foreground review submission waits only for its same-card predecessors", async () => {
   const original = { backendId: "a", queueEntryId: 500, attemptId: "earlier", outcome: "again" as const, guided: false };
   enqueuePendingReview({ ...original, backendId: "unrelated", attemptId: "independent", queueEntryId: 900 });

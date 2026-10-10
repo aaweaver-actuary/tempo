@@ -393,7 +393,7 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
       clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
       result.persistedAttemptIds.push(attemptId);
       performance.mark("tempo.review.confirmed", { detail: { attemptId } });
-      if (!verifyReceiptFirst && persisted.prepared_continuation && typeof persisted.prepared_continuation === "object" && review.preparedNext &&
+      if (persisted.prepared_continuation && typeof persisted.prepared_continuation === "object" && review.preparedNext &&
           (persisted.prepared_continuation.attempt_failed === undefined || typeof persisted.prepared_continuation.attempt_failed === "boolean") &&
           Object.entries(review.preparedNext).every(([key, value]) => Reflect.get(persisted.prepared_continuation!, key) === value))
         (result.preparedContinuations ??= {})[attemptId] = persisted.prepared_continuation;
