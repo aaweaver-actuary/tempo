@@ -110,6 +110,8 @@ export function postgresCommandTiming(argumentsList) {
   if (argumentsList.includes("pull")) return { label: "dependency_images", category: "build" };
   if (argumentsList.includes("down")) return { label: "compose_teardown", category: "cleanup" };
   if (argumentsList.includes("stop")) return { label: "compose_shutdown", category: "restart" };
+  if (argumentsList.includes("up") && argumentsList.includes("--wait")
+    && argumentsList.at(-1) === "postgres") return { label: "postgres_ready", category: "readiness" };
   if (argumentsList.includes("up") || argumentsList.includes("start")) return {
     label: argumentsList.includes("--force-recreate") ? "compose_recreation" : "compose_startup", category: "startup" };
   if (argumentsList.includes("redis-cli")) return { label: "redis_probe", category: "readiness" };

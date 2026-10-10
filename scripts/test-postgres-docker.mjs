@@ -280,7 +280,11 @@ function stableStudyState(snapshot, repertoireId) {
   };
 }
 
-async function importFixture(sourceName, pgn, operationId) {
+async function importFixture(...argumentsList) {
+  return measureScenario.detail("pgn_fixture", "fixture", () => submitPgnFixture(...argumentsList));
+}
+
+async function submitPgnFixture(sourceName, pgn, operationId) {
   const form = new FormData();
   form.set("file", new Blob([pgn], { type: "application/x-chess-pgn" }), sourceName);
   form.set("trained_color", "white");
