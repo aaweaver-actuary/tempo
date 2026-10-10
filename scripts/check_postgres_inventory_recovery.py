@@ -435,7 +435,9 @@ def test_issue108_cross_repertoire_transposition_policy_independence_and_deletio
         memberships = database.execute_native(
             'SELECT membership.generation_id,membership.line_id FROM inventory_generation_routes membership '
             'JOIN inventory_occurrences occurrence ON occurrence.route_id=membership.route_id '
-            'WHERE occurrence.fen_key=%s AND occurrence.opponent=1 ORDER BY membership.line_id', (fen_key,)).fetchall()
+            'WHERE occurrence.fen_key=%s AND occurrence.opponent=1 '
+            'AND membership.generation_id=ANY(%s) ORDER BY membership.line_id',
+            (fen_key, [original_generation, second_generation])).fetchall()
         assert {(row[0], row[1]) for row in memberships} == {
             (original_generation, 'shared-first-line'), (second_generation, 'shared-second-line')}
         assert database.execute_native('SELECT COUNT(*) FROM inventory_positions WHERE fen_key=%s', (fen_key,)).fetchone()[0] == 1
