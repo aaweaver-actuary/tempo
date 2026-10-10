@@ -112,7 +112,8 @@ export function findReusableEvidence(plan, layer, commands, runs, readRun, valid
     if (run.status !== "completed" || !["success", "failure"].includes(run.conclusion)) return null;
     const original = candidate.report;
     if (original?.execution?.kind === "reused") {
-      if (run.conclusion !== "success" || candidate.job?.conclusion !== "success" || original.status !== "success" || !original.completed) return null;
+      if (candidate.job?.status !== "completed" || candidate.job.conclusion !== "success" || original.status !== "success" || !original.completed
+        || original.planHash !== candidate.plan.hash || original.executionKey !== suiteFingerprint(plan, layer, commands)) return null;
       continue; // Always retain a direct original execution, never a receipt chain.
     }
     if (!original || original.status !== "success" || candidate.job?.conclusion !== "success") return null;

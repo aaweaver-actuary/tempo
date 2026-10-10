@@ -3381,3 +3381,5 @@ Additional named PR132 safeguards in the same regular wrapper:
 - `PR132 focused contract temporary outputs create an absent parent` protects fresh-checkout native execution; the helper creates its parent before all three temporary report fixtures. It failed before the fix raised during review.
 
 The first four implementation regressions failed on the reconciled baseline: provider leaves selected full backend/durability, filtered core execution was accepted, identity remained version 2, and the reuse helper was absent. The baseline's 111 native contracts passed before those additions. No application, browser-fixture reset, admission proof or durability assertion was changed to obtain these passes.
+
+- `PR132 successful reuse survives draft or sibling aggregation failure without receipt chains` preserves a passing suite when draft eligibility or another layer makes the workflow fail. It first failed under the overly broad workflow-conclusion rejection; a newer failed suite still blocks reuse and the retained source remains an original execution.

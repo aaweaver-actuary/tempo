@@ -335,6 +335,22 @@ test('PR132 latest matching failure or missing execution cannot reuse an older p
   assert.equal(findReusableEvidence(planned,'frontend',commands,[cancelled,metadata.run],()=>source,layerFailures),null);
 });
 
+test('PR132 successful reuse survives draft or sibling aggregation failure without receipt chains', async () => {
+  const {findReusableEvidence} = await import('../../scripts/ci-evidence.mjs');
+  const {planned,receipt,metadata} = reusableFixture();
+  const commands = layerCommands('frontend',planned);
+  const newer = {...metadata.run,id:101,conclusion:'failure'};
+  const original = {plan:planned,report:receipt.source.report,job:metadata.job,artifact:metadata.artifact};
+  const reused = {plan:planned,report:receipt,job:{...metadata.job,id:201,run_id:101},artifact:{...metadata.artifact,id:301}};
+  const readRun = run => run.id === newer.id ? reused : original;
+  const recovered = findReusableEvidence(planned,'frontend',commands,[newer,metadata.run],readRun,layerFailures);
+  assert(recovered);
+  assert.equal(recovered.source.runId,100);
+  assert.equal(recovered.source.report.execution.kind,'executed');
+  reused.job.conclusion='failure';
+  assert.equal(findReusableEvidence(planned,'frontend',commands,[newer,metadata.run],readRun,layerFailures),null);
+});
+
 test('PR132 repository PR number and runtime changes invalidate quality', () => {
   const ready = {...pr,draft:false}, planned = captured(ready), evidence = results(planned);
   for (const change of [{number:133},{base:{...ready.base,repo:{id:7,full_name:'another/repo'}}}])
