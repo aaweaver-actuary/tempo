@@ -76,7 +76,9 @@ test("intentional training failure is saved once and reload resumes it without a
   expect(failureRequests).toBe(1);
 });
 
-test("unresolved guided review keeps its card paused while other training opens", async ({ page }) => {
+for (const unresolvedHead of [false, true]) {
+test(unresolvedHead ? "unconfirmed_review_does_not_advance_prepared_card: filtering an issued unresolved head does not enable its successor"
+  : "unresolved guided review keeps its card paused while other training opens", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/queue/entries/1974/fail", (route) => route.fulfill({
     status: 409, json: { detail: "This queue attempt is no longer active" },
@@ -85,10 +87,13 @@ test("unresolved guided review keeps its card paused while other training opens"
     status: 409, json: { detail: "This queue attempt is no longer available" },
   }));
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
-    count: 2, cards: [
-      { id: "pending-card", queue_entry_id: 1974, start_fen: startFen,
+    // The retained original entry is no longer available (the 409 above).
+    // The authoritative read must issue the independent head itself; filtering
+    // an unresolved issued head cannot authorize a prefetched successor.
+    count: unresolvedHead ? 2 : 1, cards: [
+      ...(unresolvedHead ? [{ id: "pending-card", queue_entry_id: 1974, start_fen: startFen,
         moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending review",
-        repertoire_source: "PGN", trained_color: "white" },
+        repertoire_source: "PGN", trained_color: "white" }] : []),
       { id: "available-card", queue_entry_id: 1975, start_fen: startFen,
         moves: ["d2d4"], content_type: "opening", repertoire_name: "Available review",
         repertoire_source: "PGN", trained_color: "white" },
@@ -102,12 +107,21 @@ test("unresolved guided review keeps its card paused while other training opens"
   });
   await page.reload();
 
+  if (unresolvedHead) {
+    await expect(page.getByRole("heading", { name: "Local service unavailable" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Available review" })).toHaveCount(0);
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "false");
+    await expect(page.getByRole("button", { name: "Check saved reviews" })).toBeVisible();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toHaveLength(1);
+    return;
+  }
   await expect(page.getByRole("heading", { name: "Available review" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pending review" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Check saved reviews" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Correct" })).toBeEnabled();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toHaveLength(1);
 });
+}
 
 test("legacy discovery timeout reopens as an unconfirmed save and retries the same choice", async ({ page }) => {
   await prepareVisualUI(page);

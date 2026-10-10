@@ -1040,7 +1040,9 @@ export default function Home() {
     outcome: "again" | "correct",
     options: { recordedAtCompletion?: boolean; retryPending?: boolean } = {},
   ) {
-    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
+    // Queue recovery can fail while this exact completed result is retained.
+    // Retrying its frozen delivery must remain possible without enabling grading.
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue && !options.retryPending)) return;
     const entryKey = String(card.queueEntryId ?? card.id);
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];

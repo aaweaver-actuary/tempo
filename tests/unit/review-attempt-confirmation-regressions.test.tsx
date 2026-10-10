@@ -147,6 +147,24 @@ it.each(["pending", "network timeout", "failed"])("unconfirmed_review_does_not_a
   expect(pendingReviews()).toEqual([]);
 });
 
+it("unconfirmed_review_does_not_advance_prepared_card: explicit retry remains available after queue head recovery fails", async () => {
+  reviewResponse = async () => Response.json({ detail: "Invalid result", retryable: false }, { status: 422 });
+  await readyHome();
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  const original = pendingReviews()[0];
+  act(() => useTrainingStore.setState({ serviceError: "The authoritative queue head has unresolved local results.", queueReadiness: "unavailable" }));
+  reviewResponse = async url => url.includes("/api/operations/")
+    ? new Response(null, { status: 404 }) : Response.json({ persisted: true });
+  queue = [queueCard("card-b", 13)];
+  await act(async () => { await trainingProps.retryReviewSave!(); });
+  expect(pendingReviews()).toEqual([]);
+  expect(reviewPosts()).toHaveLength(2);
+  expect(reviewPosts()[1][1]?.body).toEqual(reviewPosts()[0][1]?.body);
+  expect(reviewPosts()[1][1]?.headers).toMatchObject({ "Idempotency-Key": `review-attempt:${original.attemptId}` });
+  vi.useRealTimers();
+  await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
+});
+
 it("PR105 displayed idle conflict releases pending confirmation and retains the original completed result", async () => {
   pendingThenConflict(); await readyHome();
   await act(async () => { await trainingProps.rateCard("correct"); });
