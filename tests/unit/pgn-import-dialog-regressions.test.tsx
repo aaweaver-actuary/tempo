@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ImportDialogBox } from "../../app/ImportDialogBox";
 import { savePgnImportCommand, discardPendingPgnImport } from "../../app/lib/pgn-import-command";
@@ -14,7 +14,7 @@ vi.mock("../../app/lib/pgn-import-command", async importOriginal => ({
 vi.mock("../../app/lib/debug-reporting", () => ({ reportDebugError: vi.fn() }));
 const settings = { initial_depth: 6, timezone: "local", new_cards_per_day: 2, lichess_username: "", chesscom_username: "", auto_sync_minutes: 3, engine_line_window_cp: 30, major_mistake_cp: 100, light_first_interval_days: 7, draw_hold_user_moves: 20 };
 const result = importResultSchema.parse({ repertoire_id: "rep", source_name: "opening.pgn", games_found: 1, unique_lines: 1, cards_created: 1, duplicates_merged: 0, cards_admitted_today: 0 });
-afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.mocked(savePgnImportCommand).mockReset(); vi.mocked(discardPendingPgnImport).mockReset(); });
+afterEach(() => { vi.useRealTimers(); localStorage.clear(); vi.unstubAllGlobals(); vi.mocked(savePgnImportCommand).mockReset(); vi.mocked(discardPendingPgnImport).mockReset(); });
 
 it("discarding an unknown PGN import permits a different file after reload", async () => {
   localStorage.setItem("tempo-pending-pgn-import-v1", JSON.stringify({ operationId: "original-import", fingerprint: "old.pgn:white:6:digest" }));
@@ -164,4 +164,74 @@ it("PGN admission polling yields foreground capacity while graph and queue publi
   expect(polls.length).toBe(3);
   for (const [, options] of polls)
     expect(new Headers(options?.headers).get("X-Tempo-Work-Class")).toBe("background");
+});
+
+it("acknowledged PGN import observes publication beyond 200 reads without another mutation", async () => {
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  const dialog = await openDialog();
+  const readyFetch = vi.mocked(fetch).getMockImplementation()!;
+  let publicationReady = false;
+  vi.mocked(fetch).mockImplementation(async (input, options) => {
+    if (String(input).includes("/queue/window") && !publicationReady)
+      return Response.json({ cards: [], projection: { state: "refreshing", generation: 1, updated_at: null, refresh_pending: true, last_error: null } });
+    return readyFetch(input, options);
+  });
+  vi.useFakeTimers();
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_500); });
+  const publicationReads = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("/queue/window"));
+  expect(publicationReads.length).toBeGreaterThan(200);
+  expect(screen.getByRole("status").textContent).toContain("Repertoire imported. Preparing today's queue");
+  expect(screen.getByText("Import confirmed")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(savePgnImportCommand).toHaveBeenCalledOnce();
+  publicationReady = true;
+  await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+  expect(screen.getByRole("heading", { name: "Imported" })).toBeTruthy();
+  expect(dialog.databaseUpdated).toHaveBeenCalledOnce();
+  expect(savePgnImportCommand).toHaveBeenCalledOnce();
+  for (const [, options] of vi.mocked(fetch).mock.calls.filter(([url]) => !String(url).endsWith("/settings")))
+    expect(new Headers(options?.headers).get("X-Tempo-Work-Class")).toBe("background");
+});
+
+it("closing acknowledged PGN publication cancels its scheduled read without reporting failure", async () => {
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  const dialog = await openDialog();
+  vi.mocked(fetch).mockResolvedValue(Response.json({ repertoires: [{ id: "rep", name: "Opening", source_name: "opening.pgn", line_count: 1, card_count: 1, due_count: 0, graph_state: "refreshing" }] }));
+  vi.useFakeTimers();
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  const publicationSignal = vi.mocked(fetch).mock.calls.at(-1)![1]!.signal!;
+  fireEvent.click(screen.getByRole("button", { name: "Close import dialog" }));
+  expect(publicationSignal.aborted).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+  const readCountAtClose = vi.mocked(fetch).mock.calls.length;
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(fetch).toHaveBeenCalledTimes(readCountAtClose);
+  expect(reportDebugError).not.toHaveBeenCalled();
+  expect(dialog.databaseUpdated).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["graph", "Repertoire graph failed", { graph_state: "failed" }, undefined],
+  ["integrity", "Repertoire integrity scan failed", { integrity_scan_status: "failed", integrity_scan_error: "Worker stopped" }, undefined],
+  ["queue", "Daily queue failed", {}, { state: "failed", refresh_pending: false }],
+  ["read", "Publication service unavailable", {}, undefined],
+] as const)("acknowledged PGN %s failure is actionable and checking publication never resends", async (stage, diagnostic, repertoireChanges, projection) => {
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  await openDialog();
+  const readyFetch = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, options) => {
+    if (stage === "read") return Response.json({ detail: diagnostic }, { status: 503 });
+    const response = await readyFetch(input, options);
+    const body = await response.json() as { repertoires: Record<string, unknown>[]; projection: Record<string, unknown> };
+    if (String(input).endsWith("/repertoires")) Object.assign(body.repertoires[0], repertoireChanges);
+    if (projection && String(input).includes("/queue/window")) Object.assign(body.projection, projection);
+    return Response.json(body);
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(diagnostic);
+  fireEvent.click(screen.getByRole("button", { name: "Check publication" }));
+  await screen.findByRole("button", { name: "Check publication" });
+  expect(savePgnImportCommand).toHaveBeenCalledOnce();
 });
