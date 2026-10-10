@@ -88,7 +88,8 @@ import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import DemoBanner from "../components/DemoBanner";
 import TrainingView from "./training_view";
 import StudiesView from "./studies_view";
-import { loadEligibleOfflineQueue, fetchAndInitializeQueue, invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
+import { loadEligibleOfflineQueue, fetchAndInitializeQueue, invalidateTrainingQueueCache, rememberConfirmedQueueEntry } from "./fetchAndInitializeQueue";
+import { capturePreparedNext, advancePreparedContinuation } from "../lib/prepared-review-continuation";
 import {
   enqueuePendingReview,
   flushPendingReviews,
@@ -1055,6 +1056,7 @@ export default function Home() {
     const retryAttemptId = retryReview ? logicalAttemptId(retryReview)
       : reviewPersistenceIdentity && logicalAttemptId(reviewPersistenceIdentity);
     const transitionGeneration = ++reviewTransitionGeneration.current;
+    const displayedAttemptGeneration = useTrainingStore.getState().attempt.generation;
     const { recordedAtCompletion = false, retryPending = false } = options;
     clearTimeout(completionTimer.current);
     setReviewPersistenceState("saving");
@@ -1123,6 +1125,7 @@ export default function Home() {
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
               expectedRevision: card.revision,
+              preparedNext: capturePreparedNext(),
               outcome,
               guided:
                 attemptFailed ||
@@ -1135,8 +1138,7 @@ export default function Home() {
           reviewSaveDiagnosticIdentity.current = undefined;
           setReviewPersistenceIdentity(submittedAttemptId ? { backendId: card.backendId,
             queueEntryId: card.queueEntryId, attemptId: submittedAttemptId } : undefined);
-          // Connected completion waits for the authoritative queue before starting
-          // another attempt; gameplay may have promoted work since this snapshot.
+          // Advancement still requires authoritative, transaction-bound next-head issuance.
           setReviewed((count) => count + 1);
         }
         if (retryPending) {
@@ -1155,7 +1157,7 @@ export default function Home() {
             const receipt = await readOperationResponse(`review-attempt:${submittedAttemptId}`);
             const receiptPayload = await receipt.json() as { persisted?: boolean };
             flushResult = { persistedAttemptIds: receiptPayload.persisted === true ? [submittedAttemptId] : [], conflictedAttemptIds: [] };
-          } else flushResult = await flushPendingReviews(Infinity, retryPending, retryPending ? submittedAttemptId : undefined);
+          } else flushResult = await flushPendingReviews(Infinity, retryPending, retryPending ? submittedAttemptId : undefined, undefined, submittedAttemptId);
           finishReviewPersistence();
         }
         catch (error) {
@@ -1179,6 +1181,17 @@ export default function Home() {
         setQueueNotice("");
         reviewPendingEntries.current.delete(entryKey);
         const advanceDisplayedAttempt = useTrainingStore.getState().attempt.attemptId === submittedAttemptId;
+        if (resultPersisted && advanceDisplayedAttempt) rememberConfirmedQueueEntry(card);
+        if (resultPersisted && transitionGeneration === reviewTransitionGeneration.current &&
+            advancePreparedContinuation(flushResult.preparedContinuations?.[submittedAttemptId], submittedAttemptId, displayedAttemptGeneration)) {
+          setReviewPersistenceState("idle");
+          setSafeBreakCounter(count => count + 1);
+          invalidateWorkspaceData();
+          void fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true })
+            .catch(() => showTrainingNotice("Result saved. Queue reconciliation is waiting; you can finish the prepared card.", "warning"));
+          void checkPendingIntegrity();
+          return;
+        }
         if (
           transitionGeneration === reviewTransitionGeneration.current &&
           advanceDisplayedAttempt
@@ -1304,6 +1317,7 @@ export default function Home() {
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
           expectedRevision: card.revision,
+          preparedNext: capturePreparedNext(),
           outcome,
           guided:
             useTrainingStore.getState().isAttemptFailed ||

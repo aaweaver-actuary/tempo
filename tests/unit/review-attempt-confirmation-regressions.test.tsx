@@ -53,7 +53,7 @@ beforeEach(() => {
   reviewResponse = async () => Response.json({ persisted: true });
   fetcher = vi.fn<typeof fetch>(async (input, options) => {
     const url = String(input);
-    if (url.includes("/api/queue/window")) return Response.json({ cards: queue, count: queue.length });
+    if (url.includes("/api/queue/window")) return Response.json({ cards: queue, count: queue.length, local_date: new Date().toLocaleDateString("en-CA") });
     if (url.includes("/api/operations/") || url.endsWith("/review") || url.endsWith("/review/reconcile"))
       return reviewResponse(url, options);
     return Response.json({ providers: [], states: [], lines: [], repertoires: [], discoveries: [] });
@@ -93,6 +93,59 @@ function pendingThenConflict() {
     return Response.json({ detail: "Response uncertain", retryable: true }, { status: 503 });
   };
 }
+
+it("prepared_next_card_advances_after_durable_review_without_queue_refresh", async () => {
+  queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
+  await readyHome();
+  vi.useRealTimers();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  let releaseQueue: (() => void) | undefined;
+  const queueHeld = new Promise<void>(resolve => { releaseQueue = resolve; });
+  fetcher.mockImplementation(async (input, options) => {
+    if (String(input).includes("/api/queue/window")) {
+      await queueHeld;
+      return Response.json({ cards: queue.slice(1), count: 2 });
+    }
+    return originalFetcher(input, options);
+  });
+  reviewResponse = async () => Response.json({ persisted: true, prepared_continuation: {
+    card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0,
+    local_date: new Date().toLocaleDateString("en-CA"),
+  } });
+  try {
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+    expect(trainingProps.reviewPersistenceState).toBe("idle");
+    expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");
+    expect(pendingReviews()).toHaveLength(0);
+  } finally {
+    releaseQueue?.();
+    await act(async () => { await queueHeld; });
+  }
+});
+
+it.each(["pending", "network timeout", "failed"])("unconfirmed_review_does_not_advance_prepared_card: %s then successful retry", async failure => {
+  queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
+  await readyHome();
+  const attemptedIdentity = useTrainingStore.getState().attempt.attemptId;
+  reviewResponse = async url => {
+    if (failure === "pending") return url.endsWith("/review")
+      ? Response.json({ operation_id: `review-attempt:${attemptedIdentity}` }, { status: 202 })
+      : Response.json({ state: "queued" });
+    if (failure === "network timeout") throw new DOMException("Review request timed out", "TimeoutError");
+    return Response.json({ detail: "Review was rejected", retryable: false }, { status: 422 });
+  };
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
+  expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
+  expect(pendingReviews()[0].attemptId).toBe(attemptedIdentity);
+  queue = queue.slice(1);
+  reviewResponse = async () => Response.json({ state: "complete", response: { persisted: true } });
+  await act(async () => { await trainingProps.retryReviewSave!(); });
+  vi.useRealTimers();
+  await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
+  expect(pendingReviews()).toEqual([]);
+});
 
 it("PR105 displayed idle conflict releases pending confirmation and retains the original completed result", async () => {
   pendingThenConflict(); await readyHome();
@@ -147,22 +200,21 @@ it.each([false, true])("PR105 successful flush cannot credit or advance a suppre
     attemptId: "other-persisted", outcome: "correct", guided: false }));
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
   await act(async () => { await trainingProps.rateCard("correct"); });
-  expect(pendingReviews()).toHaveLength(2);
+  expect(pendingReviews()).toHaveLength(independent ? 3 : 2);
   expect(pendingReviews()[0]).toMatchObject(suppressedReview);
-  expect(pendingReviews()[1]).toMatchObject({ attemptId: submittedAttemptId, queueEntryId: 12, outcome: "correct" });
+  expect(pendingReviews().at(-1)).toMatchObject({ attemptId: submittedAttemptId, queueEntryId: 12, outcome: "correct" });
   expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
   expect(screen.getByText("An earlier result for this card needs attention. Use Check saved reviews to resolve it first.")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Check saved reviews" })).toBeTruthy();
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
   expect(useTrainingStore.getState().attempt.attemptId).toBe(submittedAttemptId);
   expect(notifications().some(record => record.details?.attemptId === submittedAttemptId && record.message.includes("Result saved"))).toBe(false);
-  expect(reviewPosts()).toHaveLength(independent ? 1 : 0);
-  if (independent) expect(reviewPosts()[0][1]?.headers).toMatchObject({ "Idempotency-Key": "review-attempt:other-persisted" });
-  const retainedSuccessor = pendingReviews()[1];
+  expect(reviewPosts()).toHaveLength(0);
+  const retainedSuccessor = pendingReviews().at(-1)!;
   await act(async () => { trainingProps.retryReviewSave!(); });
   expect(screen.getByText("An earlier result for this card needs attention. Use Check saved reviews to resolve it first.")).toBeTruthy();
-  expect(pendingReviews()[1]).toEqual(retainedSuccessor);
-  expect(reviewPosts()).toHaveLength(independent ? 1 : 0);
+  expect(pendingReviews().at(-1)).toEqual(retainedSuccessor);
+  expect(reviewPosts()).toHaveLength(0);
   reviewResponse = async url => url.includes("/api/operations/") ? new Response(null, { status: 404 }) : Response.json({ persisted: true });
   queue = [queueCard("card-b", 13)];
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Check saved reviews" })); });
@@ -269,7 +321,10 @@ it("PR105 a later independent flush failure cannot erase the submitted persisted
   vi.useRealTimers();
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(14));
   expect(trainingProps.reviewPersistenceIdentity?.attemptId).toBe(submittedAttemptId);
+  expect(pendingReviews()).toMatchObject([{ attemptId: "later-independent-failed" }]);
+  await act(async () => { await expect(flushPendingReviews(1)).rejects.toThrow("Other result invalid"); });
   expect(pendingReviews()).toMatchObject([{ attemptId: "later-independent-failed", automaticRecoverySuppressed: "failed" }]);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(14);
   expect(screen.queryByRole("button", { name: "Check save" })).toBeNull();
 });
 

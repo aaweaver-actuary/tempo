@@ -8,6 +8,37 @@ import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
 // API route interception must remain deterministic after the app registers its shell worker.
 test.use({ serviceWorkers: "block" });
 
+test("prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines", async ({ page }) => {
+  const cards = ["Prepared A", "Prepared B", "Prepared C"].map((name, index) => ({ id: `prepared-${index}`,
+    queue_entry_id: 9101 + index, revision: 1, cycle: 0, content_type: "opening", repertoire_name: name, repertoire_source: "synthetic",
+    start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", moves: ["e2e4", "e7e5", "g1f3"] }));
+  let releaseAncillary!: () => void;
+  const held = new Promise<void>(resolve => { releaseAncillary = resolve; });
+  let queueReads = 0;
+  const today = new Date().toLocaleDateString("en-CA");
+  await page.route("**/api/queue/window**", async route => {
+    if (++queueReads > 1) await held;
+    await route.fulfill({ json: { cards, count: 3, local_date: today } });
+  });
+  await page.route("**/api/cards/*/review", route => route.fulfill({ json: { persisted: true, prepared_continuation: {
+    queue_entry_id: 9102, card_id: "prepared-1", revision: 1, cycle: 0, local_date: today,
+  } } }));
+  await page.route("**/api/repertoire/lines", async route => { await held; await route.fulfill({ json: { lines: [] } }); });
+  try {
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Prepared A", exact: true })).toBeVisible();
+    await playMove(page, page.locator(".board-frame").first(), "e2", "e4");
+    await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Correct", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Prepared B", exact: true })).toBeVisible();
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+    await expect.poll(() => renderedPieces(page.locator(".board-frame").first())).toEqual(expectedPieces(cards[1].start_fen));
+    await playMove(page, page.locator(".board-frame").first(), "e2", "e4");
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4P3/);
+    expect(queueReads).toBeGreaterThan(1);
+  } finally { releaseAncillary(); }
+});
+
 test("critical navigation, board input, split and dialogs work across browser engines", async ({
   page,
 }) => {

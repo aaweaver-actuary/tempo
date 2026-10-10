@@ -2969,8 +2969,7 @@ def review(identifier: str, request: ReviewRequest,
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         # Preserve the exact legacy dispatch shape and existing durable receipt hash.
-        review_payload = request.model_dump(mode="json", exclude={"opening_evidence_completion"}
-                                            if request.opening_evidence_completion is None else set())
+        review_payload = request.durable_payload()
         command_payload = {"card_id": identifier, "review": review_payload}
         if request.opening_evidence_completion:
             from .services.postgres_opening_evidence import prepare_checkpoint
@@ -2995,8 +2994,7 @@ def reconcile_review(identifier: str, request: ReviewRequest,
         raise HTTPException(422, "Reconciliation requires the original attempt and queue entry IDs")
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        review_payload = request.model_dump(mode="json", exclude={"opening_evidence_completion"}
-                                            if request.opening_evidence_completion is None else set())
+        review_payload = request.durable_payload()
         command_payload = {"card_id": identifier, "review": review_payload}
         if request.opening_evidence_completion:
             from .services.postgres_opening_evidence import prepare_checkpoint
@@ -3043,8 +3041,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
             raise HTTPException(422, "Review timestamp must include a timezone and cannot be in the future")
         now = recorded_at.astimezone(timezone.utc)
     day = date.today().isoformat()
-    original_payload = request.model_dump(mode="json", exclude={"opening_evidence_completion"}
-                                              if request.opening_evidence_completion is None else set())
+    original_payload = request.durable_payload()
     if request.recorded_at:
         original_payload["recorded_at"] = now.isoformat()
     request_json = json.dumps(original_payload, sort_keys=True)
