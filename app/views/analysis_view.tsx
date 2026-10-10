@@ -281,6 +281,7 @@ export default function BuilderView({
   const [backendLines, setBackendLines] = useState<AnalysisLine[]>([]);
   const [backendLinesState, setBackendLinesState] = useState<"loading" | "ready" | "error">("loading");
   const [backendLinesError, setBackendLinesError] = useState("");
+  const backendLinesRequestGeneration = useRef(0);
   const [trainingRouteToResolve, setTrainingRouteToResolve] = useState(initialSession?.trainingRouteToResolve);
   const [completedTrainingRouteLookup, setCompletedTrainingRouteLookup] = useState<{
     request: TrainingRouteLookup;
@@ -457,13 +458,17 @@ export default function BuilderView({
 
   const refreshBackendLines = useCallback(async () => {
     if (!usesLocalApi()) return;
+    const requestGeneration = ++backendLinesRequestGeneration.current;
     setBackendLinesState("loading");
     try {
       const value = await readWorkspaceData(`${API_URL}/api/repertoire/lines`);
-      setBackendLines(await runStudyTask<AnalysisLine[]>({ kind: "transportLines", payload: value }));
+      const lines = await runStudyTask<AnalysisLine[]>({ kind: "transportLines", payload: value });
+      if (requestGeneration !== backendLinesRequestGeneration.current) return;
+      setBackendLines(lines);
       setBackendLinesState("ready");
       setBackendLinesError("");
     } catch (error) {
+      if (requestGeneration !== backendLinesRequestGeneration.current) return;
       setBackendLinesState("error");
       setBackendLinesError(error instanceof Error ? error.message : "Could not load repertoire lines.");
       throw error;
@@ -508,6 +513,7 @@ export default function BuilderView({
 
   useEffect(() => {
     if (!usesLocalApi()) return;
+    const requestGeneration = ++backendLinesRequestGeneration.current;
     let active = true;
     void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
       .then(async (value) => {
@@ -516,12 +522,16 @@ export default function BuilderView({
             kind: "transportLines",
             payload: value,
           });
-        if (active) { setBackendLines(lines); setBackendLinesState("ready"); }
+        if (active && requestGeneration === backendLinesRequestGeneration.current) {
+          setBackendLines(lines); setBackendLinesState("ready"); setBackendLinesError("");
+        }
       })
       .catch(error => {
-        if (active) { setBackendLinesState("error"); setBackendLinesError(error instanceof Error ? error.message : "Could not load repertoire lines."); }
+        if (active && requestGeneration === backendLinesRequestGeneration.current) {
+          setBackendLinesState("error"); setBackendLinesError(error instanceof Error ? error.message : "Could not load repertoire lines.");
+        }
       });
-    return () => { active = false; };
+    return () => { active = false; backendLinesRequestGeneration.current += 1; };
   }, []);
 
   useEffect(() => {

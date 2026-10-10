@@ -672,12 +672,61 @@ def test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier():
     print('PASS test_issue80_deletion_exclusion_races_use_the_bounded_reservation_barrier')
 
 
+@contextmanager
+def historical_transition_database():
+    """Rehearse 038->current without punching a hole in the current ledger.
+
+    Migration 039 is reconstructed only inside this fresh database, so later
+    migrations can run normally and the parent workload keeps all its evidence.
+    """
+    from unittest.mock import patch
+    from psycopg import sql
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Historical transition proof requires a disposable database')
+    source_dsn = os.environ['TEMPO_DATABASE_WRITE_URL']
+    with postgres_store.connection(read_only=True) as database:
+        current_ledger = [row[0] for row in database.execute_native('SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()]
+        source_settings = database.execute_native('SELECT row_to_json(settings)::text FROM settings WHERE id=1').fetchone()[0]
+    administrator_dsn = psycopg.conninfo.make_conninfo(source_dsn, dbname='postgres')
+    database_name = 'tempo_transition_upgrade_' + uuid.uuid4().hex[:12]
+    historical_dsn = psycopg.conninfo.make_conninfo(source_dsn, dbname=database_name)
+    with psycopg.connect(administrator_dsn, autocommit=True) as administrator:
+        administrator.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
+    try:
+        with psycopg.connect(historical_dsn) as database:
+            for migration in sorted((Path(__file__).resolve().parents[1] / 'backend/migrations').glob('[0-9][0-9][0-9]_*.sql')):
+                if int(migration.name[:3]) > 39:
+                    break
+                database.execute(migration.read_text(), prepare=False)
+                database.commit()
+            database.execute('INSERT INTO settings SELECT * FROM json_populate_record(NULL::settings,%s::json)', (source_settings,))
+        postgres_store.close_pools()
+        with patch.dict(os.environ, {'TEMPO_DATABASE_WRITE_URL': historical_dsn, 'TEMPO_DATABASE_READ_URL': historical_dsn}):
+            try:
+                # Current fixture writers require the current durable-task and
+                # scheduling schema. The upgrade proof below reconstructs the
+                # immutable 038 guards only after seeding real application data;
+                # its atomic 039 replay retains every later migration receipt.
+                from scripts.apply_postgres_migrations import apply_migrations
+                apply_migrations(historical_dsn)
+                yield
+            finally:
+                postgres_store.close_pools()
+    finally:
+        with psycopg.connect(administrator_dsn, autocommit=True) as administrator:
+            administrator.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
+    with postgres_store.connection(read_only=True) as database:
+        assert [row[0] for row in database.execute_native('SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()] == current_ledger
+    print('PASS test_issue107_historical_transition_rehearsal_preserves_current_migration_ledger')
+
+
 def test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity():
     from app.snapshot_reads import snapshot_rows
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root))
     from scripts.apply_postgres_migrations import apply_migrations
-    with fixture('upgrade-reservation') as (rep, other, lines, steps):
+    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    with historical_transition_database(), fixture('upgrade-reservation') as (rep, other, lines, steps):
         plan, payload = ready_plan(rep, lines)
         assert execute(payload) == {'status': 'pending'}
         # All workload consumers are stopped by the owning disposable runner.
@@ -1490,6 +1539,9 @@ def main():
     os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_PREFIX_APPLICATION_PROOF_URL','postgresql://postgres@postgres:5432/tempo')
     os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
     test_postgres_transition_driver_waits_only_for_foreground_admission()
+    if '--schema-upgrade-only' in sys.argv:
+        test_issue80_schema38_transition_upgrade_preserves_original_recovery_identity()
+        return
     if '--activation-scaling' in sys.argv:
         with isolate_unrelated_publication_tasks():
             test_pr102_activation_sql_statement_count_is_independent_of_transition_size()
