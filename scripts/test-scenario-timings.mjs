@@ -3,16 +3,28 @@ import { dirname } from "node:path";
 import { performance } from "node:perf_hooks";
 import { AsyncLocalStorage } from "node:async_hooks";
 
+const timingPublicationFailures = new WeakSet();
+
+export function isTimingPublicationFailure(error) {
+  return error instanceof Error && (timingPublicationFailures.has(error)
+    || (error instanceof AggregateError && error.errors.some(isTimingPublicationFailure)));
+}
+
 export function createScenarioTimer(outputPath, metadata, clock = () => performance.now()) {
   const report = { ...metadata, schema_version: 2, timestamp: new Date().toISOString(), stages: {}, details: [] };
   const contexts = new AsyncLocalStorage();
   const origin = clock();
   const seconds = milliseconds => Math.round(milliseconds / 10) / 100;
   const persist = () => {
-    mkdirSync(dirname(outputPath), { recursive: true });
-    const temporaryPath = `${outputPath}.tmp`;
-    writeFileSync(temporaryPath, `${JSON.stringify(report, null, 2)}\n`);
-    renameSync(temporaryPath, outputPath);
+    try {
+      mkdirSync(dirname(outputPath), { recursive: true });
+      const temporaryPath = `${outputPath}.tmp`;
+      writeFileSync(temporaryPath, `${JSON.stringify(report, null, 2)}\n`);
+      renameSync(temporaryPath, outputPath);
+    } catch (error) {
+      timingPublicationFailures.add(error);
+      throw error;
+    }
   };
   function complete(entry, startedAt, failure) {
     entry.duration_seconds = seconds(clock() - startedAt);

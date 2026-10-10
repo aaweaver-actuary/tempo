@@ -11,7 +11,7 @@ import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./po
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
-import { createScenarioTimer, postgresCommandTiming } from "./test-scenario-timings.mjs";
+import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
 import { atomicJson, redact } from "./tempo-deployment.mjs";
 
@@ -163,7 +163,10 @@ async function pollForReady({ requireContainerHealthy = false } = {}) {
         }
         return;
       }
-    } catch { /* stack startup */ }
+    } catch (error) {
+      if (isTimingPublicationFailure(error)) throw error;
+      // Ordinary connection failures remain bounded startup retries.
+    }
     await measureScenario.wait(1_000);
   }
   throw new Error("Disposable PostgreSQL Tempo did not become ready");

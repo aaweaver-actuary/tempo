@@ -6,6 +6,8 @@ import { basename, join } from "node:path";
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
 import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
 
+import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
+
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
 
@@ -381,6 +383,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         reason = redact(response.stdout.trim() || response.stderr.trim() || "Redis readiness probe was interrupted or timed out", secretValues).slice(-4000);
         interrupted = response.code === null;
       } catch (error) {
+        if (isTimingPublicationFailure(error)) throw error;
         reason = redact(error.message, secretValues).slice(-4000);
       }
       // Saved deployments can contain the old healthcheck, which accepts
@@ -544,7 +547,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         const required = [...applicationServices, "postgres", "redis", "postgres-backup"].filter(name => configuration.services[name]);
         if (required.some(name => !running.includes(name))) throw new Error(`Required services unavailable: ${required.filter(name => !running.includes(name)).join(", ")}`);
         return;
-      } catch (error) { reason = redact(error.message, secretValues); }
+      } catch (error) {
+        if (isTimingPublicationFailure(error)) throw error;
+        reason = redact(error.message, secretValues);
+      }
       await wait(1000);
     }
     throw new Error(`Tempo did not become ready: ${reason}`);

@@ -10,6 +10,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
 test("actual CLI diagnostics explain current blocker before historical Redis failure", t => {
@@ -2415,4 +2416,24 @@ test("CLI verification failure guidance distinguishes cancelled and timed-out jo
   const failed = verificationProblem({ status: "failed", job: "postgres / verify", conclusion: "failure" });
   assert.match(failed.message, /software or release workflow/);
   assert(!failed.message.includes("Software repair is required"));
+});
+
+for (const boundary of ["redis", "application"]) test(`CLI Redis readiness and application readiness propagate required timing publication failure at ${boundary}`, async t => {
+  const blockedPath = join(directory(t), "blocked");
+  writeFileSync(blockedPath, "file");
+  const measure = createScenarioTimer(join(blockedPath, "report.json"), {});
+  let publicationFailure;
+  try { await measure("startup", () => {}); } catch (error) { publicationFailure = error; }
+  assert(publicationFailure);
+  const fixture = boundary === "redis"
+    ? redisRuntimeFixture(t, [publicationFailure], 8000)
+    : imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+      if (args.includes("ps")) throw publicationFailure;
+    }, { fetcher: async () => ({ ok: true, text: async () => JSON.stringify({ status: "ok", storage: "postgresql", test_instance: false }) }),
+      readinessOptions: { wait: async () => { throw new Error("Timing failure was incorrectly retried"); } } });
+  await fixture.runtime.config();
+  await fixture.runtime.ensureImages();
+  await assert.rejects(boundary === "redis" ? fixture.runtime.ensureDatabase() : fixture.runtime.verifyReady(),
+    error => error === publicationFailure);
+  if (boundary === "redis") { assert.equal(fixture.probes.length, 1); assert.deepEqual(fixture.waits, []); }
 });
