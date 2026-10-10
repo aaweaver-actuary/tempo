@@ -79,6 +79,14 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     docker("stop", "background-worker", "background-scheduler");
     const snapshot = JSON.parse(fixture("seed", today));
     if (condition !== "workers-held") docker("start", "background-worker", "background-scheduler");
+    // Seeding is not proof that the authoritative reader, head issuance and
+    // immutable manifests are ready. Establish that boundary before loading UI.
+    await expect.poll(async () => {
+      const response = await request.get(`${api}/queue/window?limit=20`);
+      if (!response.ok()) return `HTTP ${response.status()}`;
+      const prepared = await response.json();
+      return prepared.cards?.[0]?.id ?? "No authoritative prepared head";
+    }, { timeout: 60_000, message: "The seeded authoritative prepared head must be readable before timing training" }).toBe(`${identifier}-prepared-000`);
     if (condition === "lines-held") await page.route("**/api/repertoire/lines", () => new Promise(() => {}));
     await prepareUI(page);
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", /\d+/);
