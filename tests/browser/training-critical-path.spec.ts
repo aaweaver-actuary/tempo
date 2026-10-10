@@ -22,7 +22,14 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
   const docker = (...args: string[]) => execFileSync("docker", [...compose, ...args], { encoding: "utf8", timeout: 60_000 });
   const fixture = (action: string, ...args: string[]) => docker("run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_training_transition.py", action, identifier, ...args);
-  const today = (await (await request.get(`${api}/queue/window?limit=20`)).json()).local_date as string;
+  await expect.poll(async () => {
+    const health = await request.get(`${api}/health`);
+    return health.ok() ? "ready" : await health.text();
+  }, { timeout: 60_000, message: "The restored API and proxy must be ready before a new condition" }).toBe("ready");
+  const todayResponse = await request.get(`${api}/queue/window?limit=20`);
+  expect(todayResponse.ok()).toBe(true);
+  const today = (await todayResponse.json()).local_date as string;
+  const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   type Sample = { clickEpochMs: number; submissionEpochMs: number; responseEpochMs: number; interactiveEpochMs: number;
     operationId: string; receiptObservationEpochMs: number; queueNetworkMs: number[]; queueProcessingMs: number[];
     nextInputAcceptedEpochMs?: number;
@@ -119,8 +126,9 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const received = Date.now();
       clockRequests.push({ trace: createHash("sha256").update(clockIdentity).digest("hex").slice(0, 16), sent, received });
     }
-    const board = await boardBounds(page);
     const playPreparedMove = async () => {
+      await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", startingFen);
+      const board = await boardBounds(page);
       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4P3/);
@@ -183,7 +191,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     });
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
-      fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], competingJobs: 3000, lockedCards: 15000, journals: 100, warmup: 3, samples: 50 },
+      fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup: 3, samples: 50 },
       clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges bracket host/VM offset after subtracting observed server span duration; smallest uncertainty retained. Native-input time includes test-driver scheduling.", ...clock }, measured, recoveryRequests,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
