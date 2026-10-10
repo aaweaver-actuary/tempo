@@ -772,6 +772,28 @@ async def prioritize_foreground_requests(request: Request, call_next):
             request_scope.__exit__(None, None, None)
 
 
+@app.middleware("http")
+async def measure_training_request(request: Request, call_next):
+    from .services.background_runtime import measure_training_timing
+    path = request.url.path
+    label = ("queue-window" if path == "/api/queue/window" else
+             "opening-checkpoint" if path == "/api/opening-evidence/checkpoints" else
+             "review-request" if path.endswith("/review") else
+             "repertoire-lines" if path == "/api/repertoire/lines" else None)
+    if label is None:
+        return await call_next(request)
+    with measure_training_timing(label, request.headers.get("Idempotency-Key", "")) as measurement:
+        response = await call_next(request)
+        if measurement is not None:
+            response.headers["X-Tempo-Sql-Count"] = str(measurement["sql_count"])
+            response.headers["X-Tempo-Transaction-Count"] = str(sum(connection["committed"] for connection in measurement["connections"]))
+            response.headers["Server-Timing"] = ", ".join([
+                f"tempo;dur={(time.time() * 1000 - measurement['started_epoch_ms']):.3f}",
+                *(f"{stage};dur={duration:.3f}" for stage, duration in measurement["stages_ms"].items()),
+            ])
+        return response
+
+
 @app.exception_handler(BackgroundAdmissionDeferred)
 async def background_waiting(_request: Request, error: BackgroundAdmissionDeferred):
     return JSONResponse(status_code=503, content={'detail': str(error)},
@@ -2952,7 +2974,9 @@ def review(identifier: str, request: ReviewRequest,
         command_payload = {"card_id": identifier, "review": review_payload}
         if request.opening_evidence_completion:
             from .services.postgres_opening_evidence import prepare_checkpoint
-            command_payload["prepared_manifest"] = prepare_checkpoint(request.opening_evidence_completion)
+            from .services.background_runtime import training_timing_stage
+            with training_timing_stage("checkpoint_preparation"):
+                command_payload["prepared_manifest"] = prepare_checkpoint(request.opening_evidence_completion)
         return dispatch_command(
             "cards.review", command_payload,
             idempotency_key=idempotency_key,

@@ -89,10 +89,12 @@ def foreground_lease() -> Iterator[None]:
             except redis.RedisError:
                 _LOGGER.exception("Could not renew foreground admission lease")
 
-    client().eval(
-        _REGISTER_FOREGROUND, 1, _FOREGROUND_KEY,
-        int(time.time() * 1000), token, _FOREGROUND_LEASE_MS,
-    )
+    from .background_runtime import training_timing_stage
+    with training_timing_stage("foreground_admission"):
+        client().eval(
+            _REGISTER_FOREGROUND, 1, _FOREGROUND_KEY,
+            int(time.time() * 1000), token, _FOREGROUND_LEASE_MS,
+        )
     renewal = threading.Thread(target=renew, name="tempo-foreground-lease", daemon=True)
     renewal.start()
     try:

@@ -230,7 +230,9 @@ def execute_command(
     # return None after rollback; their transient enqueue must never emit a wake.
     if result is not None and (queue_request.requested or
             (command_name == "queue.ensure_current" and result.get("refresh_pending"))):
-        wake_queue_refresh()
+        from .services.background_runtime import training_timing_stage
+        with training_timing_stage("post_commit_wake"):
+            wake_queue_refresh()
     return result
 
 

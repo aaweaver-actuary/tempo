@@ -24,6 +24,32 @@ from psycopg.rows import RowMaker
 from psycopg_pool import ConnectionPool
 import sqlglot
 
+from .services.background_runtime import current_training_timing
+
+
+class _TimingCursor(psycopg.Cursor):
+    def execute(self, *args, **kwargs):
+        measurement = current_training_timing()
+        if measurement is None:
+            return super().execute(*args, **kwargs)
+        started = time.perf_counter()
+        try:
+            return super().execute(*args, **kwargs)
+        finally:
+            measurement["sql_count"] += 1
+            measurement["sql_ms"] += (time.perf_counter() - started) * 1000
+
+
+class _TimingConnection(psycopg.Connection):
+    def commit(self):
+        if current_training_timing() is None:
+            return super().commit()
+        started = time.perf_counter()
+        result = super().commit()
+        self.training_commit = {"commit_epoch_ms": time.time() * 1000,
+                                "commit_ms": (time.perf_counter() - started) * 1000}
+        return result
+
 
 class TempoRow:
     """Match the key and positional lookup used by existing sqlite3.Row code."""
@@ -207,10 +233,11 @@ def _pool(read_only: bool) -> ConnectionPool:
         pool = _pools.get(pool_key)
         if pool is None:
             pool = ConnectionPool(
+                connection_class=_TimingConnection,
                 conninfo=database_url,
                 min_size=1,
                 max_size=int(os.getenv("TEMPO_POSTGRES_POOL_SIZE", "8")),
-                kwargs={"row_factory": tempo_row_factory},
+                kwargs={"row_factory": tempo_row_factory, "cursor_factory": _TimingCursor},
                 open=True,
             )
             _pools[pool_key] = pool
@@ -222,10 +249,13 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                repeatable_read: bool = False, pool_timeout_seconds: float | None = None) -> Iterator[PostgresConnection]:
     started_at = time.perf_counter()
     acquired_at = configured_at = handled_at = None
+    committed = False
     try:
         pool_options = {} if pool_timeout_seconds is None else {"timeout": pool_timeout_seconds}
         with _pool(read_only and not authoritative).connection(**pool_options) as database:
             acquired_at = time.perf_counter()
+            if current_training_timing() is not None:
+                database.training_commit = {}
             if repeatable_read:
                 # Isolation must be selected before the background timeout SELECTs.
                 database.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
@@ -251,7 +281,19 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                 connection.flush_background_metrics()
             finally:
                 handled_at = time.perf_counter()
+        committed = True
     finally:
+        finished_at = time.perf_counter()
+        measurement = current_training_timing()
+        if measurement is not None and acquired_at is not None and len(measurement["connections"]) < 64:
+            measurement["connections"].append({
+                "read_only": read_only, "background": background, "committed": committed,
+                "acquisition_ms": (acquired_at - started_at) * 1000,
+                "execution_ms": ((handled_at or finished_at) - acquired_at) * 1000,
+                "commit_cleanup_ms": (finished_at - (handled_at or finished_at)) * 1000,
+                "commit_observed_epoch_ms": time.time() * 1000 if committed else None,
+                **(getattr(database, "training_commit", {}) if committed else {}),
+            })
         if background and acquired_at is not None:
             finished_at = time.perf_counter()
             _logger.info(
