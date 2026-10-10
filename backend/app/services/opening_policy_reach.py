@@ -225,6 +225,7 @@ class PolicyReachResult:
     policy_id: str
     context_id: str
     root_key: str
+    target_context_json: str
     paths: tuple[PathReach, ...]
     positions: tuple[UniqueReach, ...]
     decisions: tuple[UniqueReach, ...]
@@ -294,7 +295,8 @@ def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRo
             prefix = authored_route.moves[:offset]
             position_key = opening_position_key(board.fen())
             next_move = authored_route.moves[offset] if offset < len(authored_route.moves) else None
-            prescribed = actions.get(position_key) if board.turn == learner_turn else None
+            requires_learner_action = board.turn == learner_turn and bool(board.legal_moves)
+            prescribed = actions.get(position_key) if requires_learner_action else None
             decision_id = None
             if board.turn == learner_turn and prescribed is not None:
                 if next_move is not None and next_move != prescribed:
@@ -305,7 +307,7 @@ def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRo
                            if unresolved else route_probability(context.root_probability, (item[3] for item in factors)))
             path = PathReach(position_key, RouteReach(context.context_id, root_key, prefix, probability,
                              policy_id=policy.policy_id), decision_id, prescribed, tuple(factors), tuple(sorted(unresolved)),
-                             board.turn == learner_turn and prescribed is None, ())
+                             requires_learner_action and prescribed is None, ())
             if prefix in paths_by_prefix and paths_by_prefix[prefix] != path:
                 raise ValueError("Conflicting prefix evidence")
             paths_by_prefix[prefix] = path
@@ -351,7 +353,7 @@ def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRo
             selection.snapshot_json if selection else None, tuple(sorted(probabilities.items())), tuple(sorted(covered)),
             known_covered, known_outside, ProbabilityEvidence.exact(distribution.unknown_mass) if distribution is not None
             else ProbabilityEvidence.unknown(reason[0]), reason))
-    return PolicyReachResult(policy.policy_id, context.context_id, root_key, paths,
+    return PolicyReachResult(policy.policy_id, context.context_id, root_key, context.target_context_json, paths,
         tuple(_aggregate(identity, position_paths[identity], policy.policy_id) for identity in sorted(position_paths)),
         tuple(_aggregate(identity, decision_paths[identity], policy.policy_id) for identity in sorted(decision_paths)),
         tuple(diagnostics))

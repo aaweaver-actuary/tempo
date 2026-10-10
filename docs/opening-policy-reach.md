@@ -83,18 +83,25 @@ is no authored continuation; no downstream position or learner action is invente
 Coverage is membership in the supplied route snapshot, not all persisted material.
 
 A missing current learner action is flagged at the visited position. Reach of
-that position is still identifiable from previous actions; crossing the missing
+that position is still identifiable from previous actions. Terminal positions have
+no required action and create no learner decision. Crossing the missing
 action makes downstream paths unresolved. Later decisions have unknown union
 reach and `kernel_routes()` raises rather than exporting an unjustified sum.
 The missing action itself has no invented decision identity or prescribed move.
 
 ## Paths, positions and decisions
 
-`PolicyReachResult` retains selected policy/context/root, model version, every
+`PolicyReachResult` retains selected policy/context/root, detached target-context
+JSON (including caller-supplied profile versions), model version, every
 visited `PathReach`, unique canonical-position summaries, unique learner-decision
 summaries and opponent diagnostics. Path records contain actual #149 `RouteReach`,
 policy-action/decision identity, opponent factors, unresolved policy positions,
 and sorted line/publication representation provenance.
+
+Reach summaries describe the union of the supplied finite route events, not an
+exhaustive probability of visiting a position over an unlimited game. Unrepresented
+legal replies remain outside/unassigned diagnostics; this module does not assume
+that no unrepresented continuation can later transpose into a decision.
 
 A prefix is an event from the common root, never a card-local root. Identical
 prefixes collapse even under different imported line IDs. A longer revisit under

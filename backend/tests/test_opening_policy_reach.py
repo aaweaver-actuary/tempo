@@ -379,3 +379,21 @@ def test_policy_reach_same_physical_decision_keeps_policy_identity_separate():
     assert second_decision.kernel_routes()[0].policy_id == "experiment"
     with pytest.raises(ValueError, match="Policy mismatch"):
         DecisionReadiness(first_decision.identity, second_decision.kernel_routes(), P.exact(.2), policy_id="italian")
+
+
+def test_policy_reach_terminal_position_does_not_report_a_required_learner_action():
+    root = "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1"
+    assert chess.Board(root).is_checkmate()
+    result = propagate_policy_reach(LearnerPolicy("terminal", "terminal", "black", ()),
+        (PolicyReachRoute("terminal", "terminal-line", ()),), (),
+        context=PolicyReachContext("opponent", root))
+    assert result.paths[0].route.probability == P.exact(1)
+    assert not result.paths[0].missing_current_action
+    assert result.decisions == ()
+
+
+def test_policy_reach_result_retains_explicit_selected_opponent_context():
+    context = replace(CONTEXT, target_context_json='{"profile_version":"selected-v1"}')
+    result = propagate_policy_reach(policy_for("italian", (ITALIAN,)),
+        (PolicyReachRoute("italian", "line", ITALIAN),), evidence_for((ITALIAN,)), context=context)
+    assert result.target_context_json == context.target_context_json

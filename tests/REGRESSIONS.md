@@ -23,6 +23,10 @@ All named cases below live in `backend/tests/test_opening_policy_reach.py` and r
 - `test_policy_reach_explicit_custom_root_and_bounded_root_mass`
 - `test_policy_reach_unknown_reply_is_bounded_by_retained_unassigned_mass`
 - `test_policy_reach_same_physical_decision_keeps_policy_identity_separate`
+- `test_policy_reach_terminal_position_does_not_report_a_required_learner_action`
+- `test_policy_reach_result_retains_explicit_selected_opponent_context`
+
+The last two cases failed on initial propagation commit `a52179b8` (2 failed, 27 deselected, pytest .35s): terminal checkmate incorrectly reported a missing action, and result metadata omitted the explicit selected opponent context. They pass after the diagnostic correction.
 
 Read-only sequence-aware opening frontier — related #118/#106 (October 10, 2026):
 
