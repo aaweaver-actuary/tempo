@@ -3412,3 +3412,42 @@ The first four implementation regressions failed on the reconciled baseline: pro
 
 - `PR132 explicit development exclusions preserve prior exact-suite qualification for ready transitions` ignores an explicitly inapplicable draft suite when finding the original passing execution. Exclusion itself is never evidence; an applicable missing result still prevents older-pass fallback. It first failed before the exclusion check.
 - `scripts/check_postgres_operation_recovery.py::test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery` runs in regular PostgreSQL durability. It covers the ordinary wrong-payload race and a coordinated control-reservation overlap; the old immediate-result assertion failed under that overlap. A valid background delivery may yield without spending failure attempts, but its original payload and cleared lease must survive, the conflicting delivery must reject, and pool recreation plus the real durable claim must complete exactly one business effect. Completed replay retains the same receipt. No transaction/lock budget or production behavior changes.
+## Canonical-prefix retention bounded convergence (PR #116 blocker)
+
+`backend/tests/test_canonical_prefix_retention.py` covers the independent retention
+defect without changing next-opponent behavior:
+
+- `test_canonical_prefix_retention_converges_within_three_admitted_slices` failed
+  against unchanged main at the three-slice limit. Twelve populated previews
+  require 115 old retention slices / 120 cleanup row mutations; bounded batches
+  preserve the active certificate and newest eight within three admitted slices,
+  with at most 64 cleanup rows and no hidden child cascades.
+- `test_canonical_prefix_retention_rechecks_creation_activation_and_source_changes`
+  checks real preview creation, save/activation and source changes after preparation.
+- `test_canonical_prefix_retention_handles_retired_tasks_and_partial_children`
+  covers queued, leased, already-superseded and missing tasks with incomplete children.
+- `test_canonical_prefix_retention_fences_leased_victim_before_partial_child_cleanup`
+  verifies generation retirement, cleared lease, stale certificate and rejected old
+  delivery while obsolete children still exist.
+- `test_canonical_prefix_retention_rejects_replaced_generation_lease_or_owner`
+  proves obsolete ownership cannot mutate any cleanup state.
+- `test_canonical_prefix_retention_partial_batch_restart_and_stale_replay_are_idempotent`
+  and `test_canonical_prefix_retention_rolls_back_cleanup_with_its_checkpoint`
+  preserve committed progress, recovery identity and atomic rollback.
+- `test_canonical_prefix_retention_limits_victims_even_when_children_are_empty`
+  independently protects the four-victim cap.
+
+`scripts/check_postgres_canonical_retention.py` runs from the regular
+canonical-freshness PostgreSQL rehearsal. Its named native proofs cover bounded
+slice convergence, process/pool restart, foreground preview latency with a verified
+row-lock dependency, foreground admission and lock contention, checkpoint rollback, stale replay,
+activation after preparation, and concurrent retention claims. They retain actual
+250 ms transaction / 25 ms lock settings. Measurements separate cleanup rows from
+task checkpoints, diagnostic writes, and SQLite's age-origin trigger bookkeeping.
+
+The existing `test_canonical_prefix_retired_preview_cannot_save_during_bounded_cleanup`
+keeps its stale-certificate/save-rejection assertion with enough child rows to
+remain partially retired after one batch. The Docker `study_durability` assertion
+`Bounded preview retention finishes and removes abandoned scans` keeps its original
+30-second deadline and survivor/task conditions; additive evidence records actual
+convergence and foreground preview request latency.

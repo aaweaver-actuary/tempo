@@ -764,8 +764,11 @@ async function verifyCurrentCanonicalRouteAdmission() {
     "e4 e5 Nf3 Nc6 Bc4", "e4 e5 Nf3 Nc6 Bc4 Bc5", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3",
     "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d3"];
   const requestedPreviewIds = new Set();
+  const previewRequestLatencies = [];
   for (const movetext of candidates) {
+    const requestStartedAt = performance.now();
     const admitted = await postCommand(`repertoires/${repertoireId}/canonical-prefix/preview`, { movetext });
+    previewRequestLatencies.push(performance.now() - requestStartedAt);
     requestedPreviewIds.add(admitted.preview_id);
   }
   const retentionDeadline = performance.now() + 30_000;
@@ -794,6 +797,10 @@ async function verifyCurrentCanonicalRouteAdmission() {
   }
   console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
   console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
+  console.log(`CANONICAL_RETENTION_INTEGRATION_EVIDENCE ${JSON.stringify({
+    convergenceMs: performance.now() - (retentionDeadline - 30_000),
+    previewRequestLatenciesMs: previewRequestLatencies,
+  })}`);
   console.log("PASS test_postgres_canonical_retention_scoped_readonly_poll_preserves_idle_worker_admission");
 }
 
