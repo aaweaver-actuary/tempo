@@ -23,7 +23,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("An owning disposable runner is required");
   const identifier = `training-transition-${randomUUID()}`;
   const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
-  const docker = (...args: string[]) => execFileSync("docker", [...compose, ...args], { encoding: "utf8", timeout: 60_000 });
+  const docker = (...args: string[]) => execFileSync("docker", [...compose, ...args], { encoding: "utf8", timeout: 60_000, maxBuffer: 8 * 1024 * 1024 });
   const fixture = (action: string, ...args: string[]) => docker("run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_training_transition.py", action, identifier, ...args);
   await expect.poll(async () => {
     const health = await request.get(`${api}/health`);
@@ -76,6 +76,15 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     await prepareUI(page);
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", /\d+/);
     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+    const playPreparedMove = async () => {
+      await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", startingFen);
+      const board = await boardBounds(page);
+      await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
+      await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
+      await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4P3/);
+    };
+    // Established cards create their current durable journal on first input.
+    await playPreparedMove();
     // Real immutable manifests and current-session ownership; only synthetic evidence.
     await expect.poll(() => page.evaluate(async () => {
       const opening = indexedDB.open("tempo-offline-training", 2);
@@ -129,14 +138,6 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const received = Date.now();
       clockRequests.push({ trace: createHash("sha256").update(clockIdentity).digest("hex").slice(0, 16), sent, received });
     }
-    const playPreparedMove = async () => {
-      await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", startingFen);
-      const board = await boardBounds(page);
-      await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
-      await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
-      await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4P3/);
-    };
-    await playPreparedMove();
     for (let index = 0; index < transitionCount; index++) {
       await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
       const previousEntry = await page.locator("#train").getAttribute("data-queue-entry-id");
@@ -227,7 +228,8 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   } finally {
     await page.evaluate(() => (Reflect.get(window, "releaseMeasuredRecovery") as (() => void) | undefined)?.()).catch(() => undefined);
     await page.close();
-    const ownedConsumers = ["api", "foreground-worker", "background-worker", "background-scheduler", "defense-engine", "maia-worker"];
+    // Keep API/proxy addressing stable; no UI requests survive page.close().
+    const ownedConsumers = ["background-worker", "background-scheduler", "defense-engine", "maia-worker"];
     docker("stop", ...ownedConsumers);
     try { fixture("cleanup"); }
     finally { docker("start", ...ownedConsumers); }
