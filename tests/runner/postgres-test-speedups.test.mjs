@@ -11,7 +11,8 @@ import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../.
 import { backgroundWorkloadConsumers, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
-import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
+import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
+import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
@@ -135,6 +136,7 @@ test("lifecycle rehearsal restores full-mode applications after failure and neve
     const calls = [];
     const rehearsalFailure = new Error("rehearsal failed");
     const context = { options: { mode }, project: "fixture", environment: {}, candidateRevision: "revision",
+      measureScenario: directMeasurement,
       buildLabels: "labels", compose: ["compose"], join, process: { cwd: () => root },
       verifyTempoCliLifecycle: async () => { calls.push("rehearsal"); if (shouldFail) throw rehearsalFailure; },
       run: (_command, args) => calls.push(args.includes("stop") ? "stop" : "restore"),
@@ -192,6 +194,7 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
   let backupVerified = false;
   let overrideReplayed = false;
   const context = {
+    measureScenario: { poll() {}, wait: async () => {} },
     assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
     workloadConsumers: ['background-worker','background-scheduler','defense-engine'],
     runPrefixApplicationProof: () => {},
@@ -365,6 +368,135 @@ test("timings retain successful, failed, and cleanup durations without recording
   assert.equal(serialized.includes("secret-canary"), false);
   assert.deepEqual(readdirSync(join(directory, "nested")), ["postgres-scenarios-full.json"]);
   await assert.rejects(measure("startup", () => {}), /Duplicate/);
+});
+
+test("nested PostgreSQL timings preserve start order, parent identity, process outcomes and secret exclusion", async context => {
+  const outputPath = join(temporaryDirectory(context), "timings.json");
+  let now = 1000;
+  const measure = createScenarioTimer(outputPath, { planned_stages: ["deployment_lifecycle"] }, () => now);
+  await measure("deployment_lifecycle", async () => {
+    assert.equal(await measure.detail("rehearsal", "scenario", async () => {
+      now += 100;
+      assert.equal(measure.syncDetail("compose_shutdown", "restart", () => {
+        now += 200;
+        measure.processResult({ status: 143, stdout: "secret-canary", args: ["secret-canary"] });
+        return 42;
+      }), 42);
+      await assert.rejects(measure.detail("migration_rejected", "migration", () => {
+        now += 50;
+        throw new Error("secret-canary");
+      }), /secret-canary/);
+      return "verified";
+    }), "verified");
+  });
+  const serialized = readFileSync(outputPath, "utf8");
+  const report = JSON.parse(serialized);
+  assert.deepEqual(report.details.map(({ id, parent_id, label, exit_code, completed }) =>
+    ({ id, parent_id, label, exit_code, completed })), [
+    { id: 0, parent_id: null, label: "rehearsal", exit_code: 0, completed: true },
+    { id: 1, parent_id: 0, label: "compose_shutdown", exit_code: 0, completed: true },
+    { id: 2, parent_id: 0, label: "migration_rejected", exit_code: 1, completed: true },
+  ]);
+  assert.deepEqual(report.details.map(entry => entry.start_seconds), [0, 0.1, 0.3]);
+  assert.deepEqual(report.details.map(entry => entry.duration_seconds), [0.35, 0.2, 0.05]);
+  assert.equal(report.details[1].process_exit_code, 143);
+  assert.deepEqual(Object.keys(report.stages), ["deployment_lifecycle"]);
+  assert.equal(report.stages.deployment_lifecycle.exit_code, 0, "Expected rejection is still asserted by the scenario");
+  assert(!serialized.includes("secret-canary"));
+});
+
+test("nested PostgreSQL timers keep concurrent Redis observation and deployment ownership separate", async context => {
+  const outputPath = join(temporaryDirectory(context), "timings.json");
+  const measure = createScenarioTimer(outputPath, {});
+  let releaseDeployment;
+  await measure("deployment_lifecycle", async () => {
+    const deployment = measure.detail("redis_loading", "scenario", async () => {
+      await new Promise(resolveDeployment => { releaseDeployment = resolveDeployment; });
+      await measure.detail("redis_probe", "readiness", () => { measure.poll(); });
+    });
+    await measure.detail("loading_observation", "readiness", () => { measure.poll(); });
+    releaseDeployment();
+    await deployment;
+  });
+  const { details } = JSON.parse(readFileSync(outputPath, "utf8"));
+  assert.deepEqual(details.map(entry => entry.parent_id), [null, null, 0]);
+  assert.deepEqual(details.map(entry => entry.poll_count ?? 0), [0, 1, 1]);
+});
+
+test("nested PostgreSQL waiting records elapsed time and polls without changing the requested interval", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const outputPath = join(temporaryDirectory(context), "timings.json");
+  let now = 0;
+  const measure = createScenarioTimer(outputPath, {}, () => now);
+  const execution = measure("startup", () => measure.detail("api_ready", "readiness", async () => {
+    measure.poll();
+    await measure.wait(1000);
+    measure.poll();
+  }));
+  now = 1000;
+  context.mock.timers.tick(1000);
+  await execution;
+  const { details } = JSON.parse(readFileSync(outputPath, "utf8"));
+  assert.equal(details[0].waiting_seconds, 1);
+  assert.equal(details[0].poll_count, 2);
+  assert.equal(details[0].duration_seconds, 1);
+});
+
+test("nested timing write failures propagate and cleanup executes even when its measurement also fails", async context => {
+  const directory = temporaryDirectory(context);
+  const blockedPath = join(directory, "file");
+  writeFileSync(blockedPath, "blocked");
+  const measure = createScenarioTimer(join(blockedPath, "timings.json"), {});
+  const failure = new Error("migration failed");
+  let cleaned = false;
+  await assert.rejects(executePostgresTestPlan(["schema_migrations", "cleanup"], {
+    schema_migrations: () => measure.detail("schema_check", "migration", () => { throw failure; }),
+    cleanup: () => measure.syncDetail("compose_teardown", "cleanup", () => { cleaned = true; }),
+  }, measure), error => {
+    assert(error instanceof AggregateError);
+    assert.equal(error.errors[0].errors[0].errors[0], failure);
+    return true;
+  });
+  assert(cleaned);
+});
+
+test("PostgreSQL command timings classify fixed operations without retaining arguments or credentials", () => {
+  for (const [args, expected] of [
+    [["compose", "build", "secret-canary"], { label: "image_build", category: "build" }],
+    [["compose", "stop", "defense-engine"], { label: "compose_shutdown", category: "restart" }],
+    [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
+    [["run", "migration", "scripts/apply_postgres_migrations.py", "--writer-passfile", "secret-canary"],
+      { label: "apply_postgres_migrations", category: "migration" }],
+    [["run", "schema", "/source/scripts/check_postgres_deletion.py"],
+      { label: "check_postgres_deletion", category: "scenario" }],
+    [["exec", "sh", "pg_dump --password=secret-canary"], { label: "backup_restore", category: "backup" }],
+    [["inspect", "secret-canary"], { label: "resource_inspection", category: "inspection" }],
+  ]) {
+    assert.deepEqual(postgresCommandTiming(args), expected);
+    assert(!JSON.stringify(postgresCommandTiming(args)).includes("secret-canary"));
+  }
+});
+
+test("nested timing cannot qualify failed, missing or stale durability and lifecycle inventories", () => {
+  for (const [layer, mode] of [["postgres", "durability"], ["lifecycle", "lifecycle"]]) {
+    const planned_stages = postgresTestStages({ mode });
+    const plan = { commit: "candidate", hash: "immutable-plan", jobs: { [layer]: { mode, planned_stages } } };
+    const report = { runner: "postgres", mode, commit: plan.commit, plan_hash: plan.hash, planned_stages,
+      stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
+      details: [{ label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
+    assert.doesNotThrow(() => validatePostgresScenarios(layer, plan, report));
+    for (const modify of [
+      candidate => { candidate.stages[planned_stages[0]].exit_code = 1; },
+      candidate => { delete candidate.stages[planned_stages[0]]; },
+      candidate => { candidate.commit = "stale"; },
+      candidate => { candidate.plan_hash = "stale"; },
+      candidate => { candidate.planned_stages = candidate.planned_stages.slice(1); },
+    ]) {
+      const invalid = structuredClone(report);
+      modify(invalid);
+      assert.throws(() => validatePostgresScenarios(layer, plan, invalid), /missing, failed or mismatched/);
+    }
+  }
 });
 
 test("completed invalid study fixtures fail immediately instead of polling for impossible admission", () => {

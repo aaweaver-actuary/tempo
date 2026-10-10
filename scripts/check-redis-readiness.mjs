@@ -5,20 +5,23 @@ import { join } from "node:path";
 import { atomicJson } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 
-async function waitForFixtureCondition(description, probe) {
+async function waitForFixtureCondition(description, probe, measure) {
   const deadline = performance.now() + 30_000;
   let observation;
   while (performance.now() < deadline) {
+    measure?.poll();
     observation = await probe();
     if (observation.ready) return observation;
-    await new Promise(resolveWait => setTimeout(resolveWait, 100));
+    if (measure) await measure.wait(100);
+    else await new Promise(resolveWait => setTimeout(resolveWait, 100));
   }
   throw new Error(`${description} was not observed: ${JSON.stringify(observation)}`);
 }
 
 export async function verifyPersistedRedisReadiness({ target, runtime, run, compose, docker, directory, revision,
-  images, readHistory, expectedHistory, expectedSchema, commandLog }) {
+  images, readHistory, expectedHistory, expectedSchema, commandLog, measure = null }) {
   assert(target.disposable && target.project.startsWith("tempo-pg-regressions-"));
+  const waitForCondition = (description, probe) => waitForFixtureCondition(description, probe, measure);
   const fixturePrefix = "tempo:redis-readiness-fixture:";
   const redis = (args, options = {}) => compose(["exec", "-T", "redis", "redis-cli", "-e", "--raw", ...args],
     { timeout: 5000, ...options });
@@ -32,7 +35,7 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
   await redis(["CONFIG", "SET", "rdbcompression", "no"]);
   const originalRewrites = Number((await persistence()).aof_rewrites);
   await redis(["BGREWRITEAOF"]);
-  await waitForFixtureCondition("completed Redis RDB AOF base rewrite", async () => {
+  await waitForCondition("completed Redis RDB AOF base rewrite", async () => {
     const info = await persistence();
     return { ready: info.aof_rewrite_in_progress === "0" && info.aof_rewrite_scheduled === "0"
       && info.aof_last_bgrewrite_status === "ok" && Number(info.aof_rewrites) > originalRewrites, info };
@@ -54,22 +57,25 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
     await loading.inspectTarget();
     const loadingPreparedImages = { revision, images, configFingerprint: configurationFingerprint(loading.configuration) };
     const loadingRuntime = createRuntime(fixtureTarget, { run, stateDirectory: loadingStateDirectory, revision,
+      redisReadinessOptions: measure ? { wait: measure.wait, poll: measure.poll } : {},
+      readinessOptions: measure ? { wait: measure.wait, poll: measure.poll } : {},
       preparedImages: loadingPreparedImages, evidence: { commit: revision, disposable_runner: target.project }, log: console.log });
     await loadingRuntime.inspectTarget();
     const firstCommand = commandLog.length;
     let deploymentFinished = false;
     let deploymentFailure;
-    const deployment = executeLifecycle({ recreate: true }, loadingRuntime).then(() => { deploymentFinished = true; }, error => {
+    const deploy = () => executeLifecycle({ recreate: true }, loadingRuntime);
+    const deployment = (measure ? measure.detail(`redis_loading_${variant}`, "scenario", deploy) : deploy()).then(() => { deploymentFinished = true; }, error => {
       deploymentFinished = true; deploymentFailure = error;
     });
     let fixtureFailure;
     try {
-      await waitForFixtureCondition(`${variant} Redis real persisted LOADING reply`, async () => {
+      await waitForCondition(`${variant} Redis real persisted LOADING reply`, async () => {
         const response = await redis(["PING"], { allowFailure: true });
         const reply = (response.stdout || response.stderr).trim();
         return { ready: reply.startsWith("LOADING"), code: response.code, reply };
       });
-      const healthObservation = await waitForFixtureCondition(`${variant} Redis healthcheck during LOADING`, async () => {
+      const healthObservation = await waitForCondition(`${variant} Redis healthcheck during LOADING`, async () => {
         const id = (await compose(["ps", "-q", "redis"], { timeout: 5000 })).stdout.trim();
         const container = id ? JSON.parse((await docker(["inspect", id], { timeout: 5000 })).stdout)[0] : null;
         const health = container?.State?.Health;
@@ -83,7 +89,7 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
       assert.equal(existsSync(join(loadingStateDirectory, "deployment.json")), false);
       assert.equal(healthObservation.probe.ExitCode, variant === "legacy" ? 0 : 1);
       if (variant === "strict") assert.notEqual(healthObservation.status, "healthy");
-      if (variant === "legacy") await waitForFixtureCondition("CLI PONG verification after falsely healthy legacy Redis", async () => {
+      if (variant === "legacy") await waitForCondition("CLI PONG verification after falsely healthy legacy Redis", async () => {
         if (deploymentFinished) throw deploymentFailure ?? new Error("Deployment finished while Redis was still loading");
         const journal = JSON.parse(readFileSync(join(loadingStateDirectory, "operation.json"), "utf8"));
         return { ready: journal.phase === "checking_redis", phase: journal.phase };
