@@ -1,10 +1,12 @@
 import { test, expect, api, nav } from "./product-fixtures";
 
-for (const { width, forcedDatabaseRefusals, title } of [
-  ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0,
+for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, title } of [
+  ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0,
     title: `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence ${width}` })),
-  { width: 1280, forcedDatabaseRefusals: 2,
+  { width: 1280, forcedDatabaseRefusals: 2, forcedForegroundDeferrals: 0,
     title: "PD-82 repeated database refusals require explicit read-only inspection retries" },
+  { width: 1280, forcedDatabaseRefusals: 1, forcedForegroundDeferrals: 1,
+    title: "PD-82 foreground deferral followed by database refusal still requires explicit retry" },
 ]) test(title, async ({ page, request }) => {
   const settings = await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`, { data: { ...settings, initial_depth: 3 } });
@@ -41,14 +43,19 @@ for (const { width, forcedDatabaseRefusals, title } of [
   } else await page.getByRole("button", { name: "View imported repertoire" }).click();
   await nav(page, "Insights"); await nav(page, "Repertoire");
   await expect.poll(async () => (await request.get(`${api}/repertoires/${repertoireId}/prefix-diagnostics`, { headers: { "X-Tempo-Work-Class": "background" } })).status(), { timeout: 30_000 }).toBe(200);
+  let settledQueueCards: unknown[] = [];
   await expect.poll(async () => {
     const response = await request.get(`${api}/queue/today`, { headers: { "X-Tempo-Work-Class": "background" } });
     if (response.status() === 503 && response.headers()["retry-after"]) return false;
     expect(response.ok()).toBe(true);
     const queue = await response.json();
-    return queue.cards.some((card: { repertoire_id: string }) => card.repertoire_id === repertoireId);
+    // Partial publication may expose a card before its admission fields settle.
+    // Capture the baseline from the same ready response that proves completion.
+    if (queue.projection.state !== "ready" || queue.projection.refresh_pending !== 0
+      || !queue.cards.some((card: { repertoire_id: string }) => card.repertoire_id === repertoireId)) return false;
+    settledQueueCards = queue.cards;
+    return true;
   }, { timeout: 30_000 }).toBe(true);
-  const before = await (await request.get(`${api}/queue/today`)).json();
   const diagnosticReads: string[] = [];
   page.on("request", resource => {
     if (resource.url().includes("/prefix-diagnostics")) {
@@ -66,8 +73,13 @@ for (const { width, forcedDatabaseRefusals, title } of [
   await expect(inspectButton).toBeVisible();
   await expect(inspectButton).toBeEnabled();
   let injectedDatabaseRefusals = 0;
+  let injectedForegroundDeferrals = 0;
   if (forcedDatabaseRefusals) await page.route("**/prefix-diagnostics/*", async route => {
-    if (injectedDatabaseRefusals < forcedDatabaseRefusals) {
+    if (injectedForegroundDeferrals < forcedForegroundDeferrals) {
+      injectedForegroundDeferrals += 1;
+      await route.fulfill({ status: 503, headers: { "Retry-After": "1" },
+        contentType: "application/json", body: JSON.stringify({ detail: "Waiting for foreground activity" }) });
+    } else if (injectedDatabaseRefusals < forcedDatabaseRefusals) {
       injectedDatabaseRefusals += 1;
       await route.fulfill({ status: 503, headers: { "Retry-After": "1" },
         contentType: "application/json", body: JSON.stringify({ detail: "Waiting for a database section" }) });
@@ -95,7 +107,10 @@ for (const { width, forcedDatabaseRefusals, title } of [
       expect(body).toEqual({ detail: "Waiting for foreground activity" });
       await expect(page.getByRole("status")).toContainText("Loading evidence");
       await expect(page.getByRole("alert")).toHaveCount(0);
-      break;
+      // Continue observing the automatic foreground retry: its next response
+      // may be a database refusal that requires an explicit click.
+      detailResponse = await page.waitForResponse(response => response.url() === initialDetailResponse.url()
+        && response.request().method() === "GET", { timeout: remainingInspectionMilliseconds() });
     } else {
       const temporaryMessage = "Prefix difficulty is temporarily unavailable. Retry after study work settles.";
       expect([temporaryMessage, "Waiting for a database section"]).toContain(body.detail);
@@ -110,7 +125,8 @@ for (const { width, forcedDatabaseRefusals, title } of [
     }
   }
   if (detailResponse.status() !== 503) expect(detailResponse.status()).toBe(200);
-  if (forcedDatabaseRefusals) expect(injectedDatabaseRefusals).toBe(2);
+  if (forcedDatabaseRefusals) expect(injectedDatabaseRefusals).toBe(forcedDatabaseRefusals);
+  expect(injectedForegroundDeferrals).toBe(forcedForegroundDeferrals);
   await expect(page.getByText("Unknown", { exact: true })).toHaveCount(3, { timeout: remainingInspectionMilliseconds() });
   await expect(page.getByText("No observations for this decision.", { exact: true })).toHaveCount(3);
   await expect(page.getByText(/Latest 0 of up to 100 attempts/)).toBeVisible();
@@ -118,7 +134,7 @@ for (const { width, forcedDatabaseRefusals, title } of [
   await page.screenshot({ path: test.info().outputPath(`prefix-diagnostics-${width}.png`), fullPage: true });
   expect(await page.getByRole("button", { name: /apply|shorten|recommend/i }).count()).toBe(0);
   const after = await (await request.get(`${api}/queue/today`)).json();
-  expect(after.cards).toEqual(before.cards);
+  expect(after.cards).toEqual(settledQueueCards);
   await page.getByRole("button", { name: "← Repertoires" }).click();
   await expect(card).toBeVisible();
 });
