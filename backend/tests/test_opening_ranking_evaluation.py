@@ -234,6 +234,7 @@ def test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closu
         try: yield ReadOnlyDatabase()
         finally: state["open"] = False
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(snapshot, "shared_admission_configured", lambda: True)
     monkeypatch.setattr(postgres_store, "connection", read_section)
     original_loads = json.loads
     def outside_transaction_loads(*args, **kwargs):
@@ -257,6 +258,7 @@ def test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closu
 def test_shadow_capture_rejects_backdating_and_foreground_work_without_database_access(monkeypatch):
     from app.services import opening_ranking_snapshot as snapshot
     monkeypatch.setattr(snapshot.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(snapshot, "shared_admission_configured", lambda: True)
     @contextmanager
     def no_connection(**options):
         raise AssertionError("Capture opened SQL despite foreground work")
@@ -388,6 +390,7 @@ def test_shadow_pool_timeout_is_opt_in_and_preserves_existing_connection_default
 def test_shadow_capture_pool_failure_is_actionable_and_releases_background_reservation(monkeypatch):
     from app.services import opening_ranking_snapshot as snapshot
     monkeypatch.setattr(snapshot.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(snapshot, "shared_admission_configured", lambda: True)
     @contextmanager
     def failed_acquisition(**options):
         assert options["pool_timeout_seconds"] == 0.1
@@ -412,6 +415,7 @@ def test_shadow_capture_as_of_boundary_uses_deployment_timezone_not_cli_date(mon
     monkeypatch.setattr(snapshot, "date", UtcCliDate, raising=False)
     monkeypatch.delenv("TZ", raising=False)
     monkeypatch.setattr(snapshot.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(snapshot, "shared_admission_configured", lambda: True)
     class Database:
         def execute_native(self, query, parameters=()):
             assert query.startswith("SELECT transaction_timestamp")
@@ -452,3 +456,16 @@ def test_shadow_invalid_deployment_timezone_is_rejected_before_sql(monkeypatch):
     with pytest.raises(evaluation.OpeningRankingError) as raised:
         snapshot.capture_snapshot(production_timezone="not/a-timezone")
     assert raised.value.code == "invalid_production_timezone"
+
+
+def test_shadow_capture_requires_shared_foreground_admission_before_sql(monkeypatch):
+    from app.services import opening_ranking_snapshot as snapshot
+    monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
+    monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
+    monkeypatch.setattr(snapshot.postgres_store, "configured", lambda: True)
+    def prohibited(**options):
+        raise AssertionError("Capture opened PostgreSQL without shared foreground admission")
+    monkeypatch.setattr(snapshot.postgres_store, "connection", prohibited)
+    with pytest.raises(evaluation.OpeningRankingError) as raised:
+        snapshot.capture_snapshot()
+    assert raised.value.code == "admission_unavailable"

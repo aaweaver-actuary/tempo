@@ -13,6 +13,8 @@ Use the repository's Python environment. Capture requires the normal primary
 PostgreSQL configuration (`TEMPO_DATABASE_WRITE_URL`) and the product's Redis
 admission configuration (`TEMPO_REDIS_URL`). The primary connection uses a
 PostgreSQL-enforced read-only transaction even when the configured role can write.
+Missing Redis admission configuration is rejected before opening PostgreSQL;
+the standalone CLI cannot infer other processes' study activity from a local gate.
 Do not change database roles or point disposable tests at the live study stack.
 Match the deployed Tempo timezone with `TZ` or `--production-timezone`; the
 default is `America/New_York`, matching Compose. Capture derives the study day

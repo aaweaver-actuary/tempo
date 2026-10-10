@@ -14,7 +14,7 @@ import redis
 from .. import postgres_store
 from ..schema_version import POSTGRES_SCHEMA_VERSION
 from .activity_gate import activity_gate
-from .redis_admission_gate import BackgroundAdmissionDeferred
+from .redis_admission_gate import BackgroundAdmissionDeferred, configured as shared_admission_configured
 from .real_game_feedback import MISS_REASON, outstanding_miss_sql
 from .opening_ranking_evaluation import (
     OpeningRankingCandidate, OpeningRankingContext, OpeningRankingError,
@@ -59,6 +59,8 @@ def capture_snapshot(*, study_day: str | None = None, repertoire_ids=(),
         raise OpeningRankingError("historical_capture_unavailable", "Capture supports only the current production study day; replay a saved snapshot for an earlier boundary.")
     if not postgres_store.configured():
         raise OpeningRankingError("unsupported_backend", "Capture requires authoritative PostgreSQL configuration; file replay needs no database.")
+    if not shared_admission_configured():
+        raise OpeningRankingError("admission_unavailable", "Configure TEMPO_REDIS_URL for the deployed Tempo foreground admission service before capture; offline replay needs no service.")
     if any(not isinstance(identifier, str) or not identifier for identifier in repertoire_ids):
         raise OpeningRankingError("invalid_selection", "Repertoire IDs must be nonempty strings.")
     from .postgres_queue_refresh import _PRIORITY_OPENING_PAGE_SQL

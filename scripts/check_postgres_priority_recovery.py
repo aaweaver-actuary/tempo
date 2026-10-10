@@ -467,6 +467,17 @@ def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
                 raise AssertionError("PostgreSQL allowed a write in the read-only boundary")
         postgres_store.connection = checked_connection
         product._plan_prioritized_opening_admissions = checked_planner
+        deployed_redis_url = os.environ.pop("TEMPO_REDIS_URL")
+        try:
+            try:
+                snapshot.capture_snapshot(repertoire_ids=(repertoire_id,))
+            except evaluation.OpeningRankingError as error:
+                assert error.code == "admission_unavailable"
+            else:
+                raise AssertionError("Capture accepted missing cross-process foreground admission")
+        finally:
+            os.environ["TEMPO_REDIS_URL"] = deployed_redis_url
+        assert opened_connections == 0
         with snapshot.activity_gate.foreground():
             try:
                 snapshot.capture_snapshot(repertoire_ids=(repertoire_id,))

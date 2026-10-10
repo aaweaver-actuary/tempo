@@ -3427,6 +3427,8 @@ The first four implementation regressions failed on the reconciled baseline: pro
 
 - CI exposed an existing checkpoint rehearsal setup racing deployed API foreground/health admission before its intended contention check (`BackgroundAdmissionDeferred` in run 38049152056). `scripts/check_postgres_opening_evidence.py::test_postgres_checkpoint_admission_proof_preserves_unrelated_foreground_lease` keeps an unrelated real Redis lease active while the complete original HTTP/worker proof runs in an owned admission scope. It retains genuine local foreground denial, read-only budgets, historical payload/recovery checks and owned-lease cleanup, and confirms the unrelated lease survives. Lease-release assertions execute before scope teardown removes owned keys, so teardown cannot conceal leaks. Production admission is unchanged.
 
+- `test_shadow_capture_requires_shared_foreground_admission_before_sql` failed before the capture boundary rejected missing Redis admission configuration: a standalone CLI could otherwise open PostgreSQL while its local-only gate knew nothing about deployed study activity. Missing configuration now reports `admission_unavailable` before SQL. The regular real PostgreSQL no-write proof also removes/restores admission configuration and asserts zero capture connections before proceeding to genuine foreground contention and normal capture.
+
 
 # Read-only opening decision readiness (version 1, related #112)
 
