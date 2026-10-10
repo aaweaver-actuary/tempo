@@ -49,6 +49,7 @@ def proof_background_wakes():
     ownership_key = ownership_prefix + task_name
     publication_key = ownership_key + ':publication'
     useful_executions = []
+    effective_headers = []
     delivery_tags = set()
 
     def pending_count():
@@ -71,7 +72,10 @@ def proof_background_wakes():
         task = tasks.poll_background_tasks
         task.push_request(id=token, headers={background_wakes.WAKE_HEADER: token})
         try:
-            return task()
+            result = task()
+            if result:
+                effective_headers.append(dict(task.request.headers))
+            return result
         finally:
             task.pop_request()
 
@@ -96,7 +100,7 @@ def proof_background_wakes():
                     assert paused.wait(5), 'publisher did not reach actual broker enqueue'
                     assert server.get(ownership_key) == slow_token
                     server.pexpire(ownership_key, 0)
-                    assert publish(task_id=successor_token) == successor_token
+                    assert publish(task_id=successor_token, headers={'queue_refresh_wake': True}) == successor_token
                     if consume_successor:
                         execute_pending(successor_token)
                     resume.set()
@@ -110,6 +114,7 @@ def proof_background_wakes():
             assert server.get(ownership_key) == successor_token
             assert pending_count() == 1
             execute_pending(successor_token)
+        assert effective_headers[-1]['queue_refresh_wake'] is True
         assert not deliver(slow_token)
 
     try:
@@ -135,14 +140,60 @@ def proof_background_wakes():
                     delivery_tags.add(message.delivery_tag)
                     assert pending_count() == 0
                     assert server.hexists('unacked', message.delivery_tag)
-                    assert publish() == first_token and pending_count() == 0
+                    assert publish(headers={'queue_refresh_wake': True}) == first_token and pending_count() == 0
                     channel.qos.restore_by_tag(message.delivery_tag, leftmost=leftmost)
                     assert pending_count() == 1
                     assert publish() == first_token and pending_count() == 1
                 message = channel.basic_get(queue_name)
                 assert deliver(first_token)
+                assert effective_headers[-1]['queue_refresh_wake'] is True
                 message.ack()
                 assert pending_count() == 0
+
+            # Requirements form an OR join, independent of the queued envelope.
+            for first_marked, second_marked in ((False, False), (False, True), (True, False), (True, True)):
+                token = publish(headers={'queue_refresh_wake': first_marked})
+                assert publish(headers={'queue_refresh_wake': second_marked}) == token
+                assert pending_count() == 1
+                execute_pending(token)
+                assert (effective_headers[-1].get('queue_refresh_wake') is True) == (first_marked or second_marked)
+
+            # Linearize upgrades on both sides of consumption while a real
+            # Kombu delivery is unacked. Barriers replace timing assumptions.
+            for consume_first in (False, True):
+                token = publish()
+                with celery_app.connection_for_read() as connection:
+                    channel = connection.channel()
+                    message = channel.basic_get(queue_name)
+                    delivery_tags.add(message.delivery_tag)
+                    paused, resume = Event(), Event()
+                    original_consume = background_wakes.consume_wake
+
+                    def paused_consume(*args, **kwargs):
+                        if consume_first:
+                            result = original_consume(*args, **kwargs)
+                        paused.set()
+                        assert resume.wait(5), 'consumer barrier was not released'
+                        return result if consume_first else original_consume(*args, **kwargs)
+
+                    with patch.object(background_wakes, 'consume_wake', paused_consume):
+                        with ThreadPoolExecutor(max_workers=1) as workers:
+                            execution = workers.submit(deliver, token)
+                            try:
+                                assert paused.wait(5), 'consumer did not reach ownership boundary'
+                                successor = publish(headers={'queue_refresh_wake': True})
+                                assert (successor != token) == consume_first
+                                assert pending_count() == int(consume_first)
+                                resume.set()
+                                assert execution.result(timeout=5)
+                            finally:
+                                resume.set()
+                    message.ack()
+                    assert (effective_headers[-1].get('queue_refresh_wake') is True) == (not consume_first)
+                    if consume_first:
+                        execute_pending(successor)
+                        assert effective_headers[-1]['queue_refresh_wake'] is True
+                    assert server.get(ownership_key) is None
 
             assert background_wakes.consume_wake(broker_url, task_name, None)
             slow_pair()
@@ -192,6 +243,7 @@ def proof_background_wakes():
                 else:
                     raise AssertionError('controlled publication error was hidden')
             assert server.get(ownership_key) == committed_token and pending_count() == 1
+            assert publish(headers={'queue_refresh_wake': True}) == committed_token
             committed_headers = json.loads(server.lindex(queue_name, 0))['headers']
             publish(task_id=committed_token, headers=committed_headers)
             assert pending_count() == 1
@@ -221,6 +273,7 @@ def proof_background_wakes():
                 assert publish() == committed_token
                 message.ack()
                 execute_pending(committed_token)
+                assert effective_headers[-1]['queue_refresh_wake'] is True
 
             # Reserve-only crash recovery and aborted-publication resurrection.
             server.eval(background_wakes._RESERVE, 2, ownership_key, publication_key, 'crashed-publisher')
@@ -262,6 +315,8 @@ def prepare_restart_proof(evidence_path):
     try:
         with patch.object(background_wakes, '_KEY_PREFIX', ownership_prefix):
             token = celery_app.send_task(task_name, queue=queue_name, ignore_result=True).id
+            assert celery_app.send_task(task_name, queue=queue_name, ignore_result=True,
+                                        headers={'queue_refresh_wake': True}).id == token
             envelope = server.lindex(queue_name, 0)
             assert server.llen(queue_name) == 1
             assert server.pttl(ownership_prefix + task_name) == -1
@@ -305,7 +360,9 @@ def verify_restart_proof(evidence_path):
             assert celery_app.send_task(task_name, queue=queue_name).id == evidence['token']
             assert server.llen(queue_name) == 1
             assert json.loads(server.rpop(queue_name))['headers'][background_wakes.WAKE_HEADER] == evidence['token']
-            assert background_wakes.consume_wake(broker_url, task_name, evidence['token'])
+            headers = {}
+            assert background_wakes.consume_wake(broker_url, task_name, evidence['token'], headers)
+            assert headers['queue_refresh_wake'] is True
             stranded_task = tasks.recover_operations.name
             assert server.get(ownership_prefix + stranded_task) == evidence['stranded_token']
             assert server.pttl(ownership_prefix + stranded_task) == -1

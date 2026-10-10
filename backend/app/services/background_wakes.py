@@ -14,6 +14,8 @@ WAKE_TASK_NAMES = frozenset({
     'app.tasks.recover_active_coverage', 'app.tasks.ensure_daily_queue',
 })
 WAKE_HEADER = 'tempo-wake-token'
+QUEUE_REFRESH_HEADER = 'queue_refresh_wake'
+_POLL_TASK_NAME = 'app.tasks.poll_background_tasks'
 _PUBLICATION_HEADER = 'tempo-wake-publication'
 _KEY_PREFIX = 'tempo:wake:'
 
@@ -22,7 +24,18 @@ _KEY_PREFIX = 'tempo:wake:'
 # publishers even when the owner key is absent. No per-delivery keys accumulate.
 _RESERVE = """-- reserve
 local existing = redis.call('GET', KEYS[1])
+-- Join requirements without rewriting a queued/unacked envelope. Transfer
+-- outstanding intent on crash recovery, but never revive consumed requirements.
+local requirement = ARGV[2] or '0'
+local previous_phase = redis.call('HGET', KEYS[2], 'phase')
+if (previous_phase == 'reserved' or previous_phase == 'published') and
+   redis.call('HGET', KEYS[2], 'queue_refresh_wake') == '1' then
+    requirement = '1'
+end
 if existing then
+    if redis.call('HGET', KEYS[2], 'token') == existing and requirement == '1' then
+        redis.call('HSET', KEYS[2], 'queue_refresh_wake', '1')
+    end
     if redis.call('HGET', KEYS[2], 'token') ~= existing or
        redis.call('HGET', KEYS[2], 'phase') ~= 'published' then
         return {0, existing}
@@ -39,7 +52,8 @@ if existing then
 end
 redis.call('SET', KEYS[1], ARGV[1], 'PX', 5000)
 redis.call('DEL', KEYS[2])
-redis.call('HSET', KEYS[2], 'token', ARGV[1], 'phase', 'reserved')
+redis.call('HSET', KEYS[2], 'token', ARGV[1], 'phase', 'reserved',
+           'queue_refresh_wake', requirement)
 return {1, ARGV[1]}
 """
 _PUBLISH = """-- publish
@@ -70,13 +84,18 @@ redis.call('HSET', KEYS[2], 'phase', 'aborted')
 return 1
 """
 _CONSUME = """-- consume
-if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return {0, 0} end
+local requirement = 0
+if redis.call('HGET', KEYS[2], 'token') == ARGV[1] and
+   redis.call('HGET', KEYS[2], 'queue_refresh_wake') == '1' then
+    requirement = 1
+end
 redis.call('DEL', KEYS[1])
 if redis.call('HGET', KEYS[2], 'token') == ARGV[1] then
     redis.call('DEL', KEYS[2])
     redis.call('HSET', KEYS[2], 'token', ARGV[1], 'phase', 'consumed')
 end
-return 1
+return {1, requirement}
 """
 
 
@@ -91,15 +110,21 @@ def client(broker_url):
                                socket_connect_timeout=1, socket_timeout=1)
 
 
-def consume_wake(broker_url, task_name, ownership_token):
+def consume_wake(broker_url, task_name, ownership_token, request_headers=None):
     """Consume before work; retain the latest-token fence for late publishers.
 
     Tokenless pre-upgrade messages remain compatible and cannot remove a newer
     owner. Broker retry/redelivery uses the same fenced identity.
+    Read stronger requirements in the same atomic operation as consumption, so
+    a raced marked producer either upgrades this execution or reserves a successor.
     """
     if not ownership_token:
         return True
-    return bool(client(broker_url).eval(_CONSUME, 2, *ownership_keys(task_name), ownership_token))
+    consumed, queue_refresh_required = client(broker_url).eval(
+        _CONSUME, 2, *ownership_keys(task_name), ownership_token)
+    if consumed and queue_refresh_required and task_name == _POLL_TASK_NAME and request_headers is not None:
+        request_headers[QUEUE_REFRESH_HEADER] = True
+    return bool(consumed)
 
 
 def is_owned_publication(message):
@@ -152,7 +177,9 @@ class CoalescingCelery(Celery):
         ownership_token = options.get('task_id') or uuid.uuid4().hex
         server = client(self.conf.broker_url)
         try:
-            reserved, existing_token = server.eval(_RESERVE, 2, *ownership_keys(name), ownership_token)
+            reserved, existing_token = server.eval(
+                _RESERVE, 2, *ownership_keys(name), ownership_token,
+                '1' if name == _POLL_TASK_NAME and headers.get(QUEUE_REFRESH_HEADER) is True else '0')
         except redis.RedisError as error:
             raise BrokerUnavailable('Maintenance wake queue is unavailable; durable work is retained') from error
         if not reserved:
@@ -178,12 +205,14 @@ class CoalescedWakeTask(Task):
     max_retries = None
 
     def __call__(self, *args, **kwargs):
+        request_headers = dict(self.request.headers or {})
         try:
             consumed = consume_wake(self.app.conf.broker_url, self.name,
-                                    (self.request.headers or {}).get(WAKE_HEADER))
+                                    request_headers.get(WAKE_HEADER), request_headers)
         except redis.RedisError as error:
             # Retry the same delivery, never abandon a persistent queued owner.
             raise self.retry(exc=error, countdown=1)
         if not consumed:
             return False
+        self.request.headers = request_headers
         return super().__call__(*args, **kwargs)

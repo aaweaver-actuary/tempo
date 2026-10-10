@@ -30,14 +30,19 @@ def wake_broker(monkeypatch):
             token = arguments[0]
             metadata = self.metadata.get(metadata_key, {})
             if script.startswith('-- reserve'):
+                requirement = arguments[1] if len(arguments) > 1 else '0'
+                if metadata.get('phase') in ('reserved', 'published') and metadata.get('queue_refresh_wake') == '1':
+                    requirement = '1'
                 if key in values:
+                    if metadata.get('token') == values[key] and requirement == '1':
+                        metadata['queue_refresh_wake'] = '1'
                     tracked = (metadata.get('token') == values[key]
                                and metadata.get('phase') == 'published')
                     if not tracked or (metadata['message'] in self.queues.get(metadata['queue'], [])
                                        or metadata['tag'] in self.unacked):
                         return [0, values[key]]
                 values[key] = token
-                self.metadata[metadata_key] = {'token': token, 'phase': 'reserved'}
+                self.metadata[metadata_key] = {'token': token, 'phase': 'reserved', 'queue_refresh_wake': requirement}
                 return [1, token]
             if script.startswith('-- publish'):
                 if metadata.get('token') != token or metadata.get('phase') not in ('reserved', 'published'):
@@ -56,7 +61,7 @@ def wake_broker(monkeypatch):
                 else:
                     self.queues.setdefault(queue, []).append(message)
                 values[key] = token
-                self.metadata[metadata_key] = dict(token=token, phase='published',
+                self.metadata[metadata_key] = dict(metadata, token=token, phase='published',
                                                   queue=queue, message=message, tag=tag, unacked=unacked_key)
                 return 1
             if script.startswith('-- abort'):
@@ -67,11 +72,12 @@ def wake_broker(monkeypatch):
                 metadata['phase'] = 'aborted'
                 return 1
             if values.get(key) != token:
-                return 0
+                return [0, 0]
+            requirement = int(metadata.get('queue_refresh_wake', '0'))
             del values[key]
             if metadata.get('token') == token:
                 self.metadata[metadata_key] = {'token': token, 'phase': 'consumed'}
-            return 1
+            return [1, requirement]
     server = Server()
     monkeypatch.setattr(redis.Redis, 'from_url', lambda *args, **kwargs: server)
     channel = object.__new__(background_wakes.WakeRedisChannel)
@@ -362,3 +368,122 @@ def test_consumed_metadata_is_bounded_and_rejects_late_publication(wake_broker):
         background_wakes.WAKE_HEADER: current.id, background_wakes._PUBLICATION_HEADER: True,
     })
     assert len(_published) == publication_count
+
+
+def test_queue_refresh_capacity_marker_survives_a_pending_generic_poll(wake_broker, monkeypatch):
+    from app import tasks
+
+    published, values = wake_broker
+    task = tasks.poll_background_tasks
+    generic = celery_app.send_task(task.name, queue='background')
+    marked = celery_app.send_task(task.name, queue='background', headers={'queue_refresh_wake': True})
+    assert generic.id == marked.id
+    assert len(published) == 1 and len(values) == 1
+    effective_headers = []
+    monkeypatch.setattr(task, 'run', lambda: effective_headers.append(dict(task.request.headers)) or True)
+    task.push_request(id=generic.id, headers=dict(published[0][3]['headers']))
+    try:
+        assert task()
+    finally:
+        task.pop_request()
+    assert effective_headers[0].get('queue_refresh_wake') is True
+
+
+@pytest.mark.parametrize('first_marked,second_marked', [(False, False), (False, True), (True, False), (True, True)])
+def test_coalesced_poll_requirements_join_without_downgrade(wake_broker, first_marked, second_marked):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    first = celery_app.send_task(task_name, headers={'queue_refresh_wake': first_marked})
+    second = celery_app.send_task(task_name, headers={'queue_refresh_wake': second_marked})
+    assert first.id == second.id and len(published) == len(values) == 1
+    headers = {}
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, first.id, headers)
+    assert (headers.get('queue_refresh_wake') is True) == (first_marked or second_marked)
+    following = celery_app.send_task(task_name)
+    headers = {}
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, following.id, headers)
+    assert 'queue_refresh_wake' not in headers  # consumed requirements do not self-perpetuate
+
+
+@pytest.mark.parametrize('lost_phase', ['reserved', 'published'])
+def test_marked_requirement_transfers_to_recovered_owner(wake_broker, lost_phase):
+    published, values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    server = background_wakes.client(celery_app.conf.broker_url)
+    keys = background_wakes.ownership_keys(task_name)
+    if lost_phase == 'reserved':
+        server.eval(background_wakes._RESERVE, 2, *keys, 'crashed', '1')
+        del values[keys[0]]
+    else:
+        celery_app.send_task(task_name, task_id='crashed', headers={'queue_refresh_wake': True})
+        server.queues.clear()  # interrupted pop before unacked registration
+        published.clear()
+    recovered = celery_app.send_task(task_name)
+    assert recovered.id != 'crashed' and len(published) == 1
+    headers = {}
+    assert not background_wakes.consume_wake(celery_app.conf.broker_url, task_name, 'crashed', headers)
+    assert values[keys[0]] == recovered.id
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, recovered.id, headers)
+    assert headers['queue_refresh_wake'] is True
+
+
+def test_marked_request_upgrades_reserved_slow_publisher(wake_broker, monkeypatch):
+    published, _values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    original_publish = Celery.send_task
+
+    def upgrade_before_enqueue(app, name, args=None, kwargs=None, **options):
+        assert celery_app.send_task(name, headers={'queue_refresh_wake': True}).id == options['task_id']
+        return original_publish(app, name, args, kwargs, **options)
+
+    monkeypatch.setattr(Celery, 'send_task', upgrade_before_enqueue)
+    result = celery_app.send_task(task_name)
+    assert len(published) == 1
+    headers = {}
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, result.id, headers)
+    assert headers['queue_refresh_wake'] is True
+
+
+def test_upgraded_unacked_poll_retains_semantics_through_restoration(wake_broker):
+    published, _values = wake_broker
+    task_name = 'app.tasks.poll_background_tasks'
+    result = celery_app.send_task(task_name)
+    server = background_wakes.client(celery_app.conf.broker_url)
+    metadata = server.metadata[background_wakes.ownership_keys(task_name)[1]]
+    server.queues.clear()
+    server.unacked[metadata['tag']] = metadata['message']
+    assert celery_app.send_task(task_name, headers={'queue_refresh_wake': True}).id == result.id
+    channel = object.__new__(background_wakes.WakeRedisChannel)
+    envelope = {'headers': {'task': task_name, **published[0][3]['headers']},
+                'properties': {'delivery_tag': metadata['tag'], 'delivery_info': {}}}
+    channel._publish_wake('background', envelope, server, leftmost=False)
+    assert len(server.queues['background']) == 1
+    assert celery_app.send_task(task_name).id == result.id
+    headers = {}
+    assert background_wakes.consume_wake(celery_app.conf.broker_url, task_name, result.id, headers)
+    assert headers['queue_refresh_wake'] is True
+
+
+def test_upgraded_poll_foreground_denial_retains_only_bounded_marked_opportunity(wake_broker, monkeypatch):
+    from app import tasks
+    from app.services.activity_gate import BackgroundAdmissionDeferred
+
+    published, _values = wake_broker
+    task = tasks.poll_background_tasks
+    first = celery_app.send_task(task.name)
+    celery_app.send_task(task.name, headers={'queue_refresh_wake': True})
+    monkeypatch.setattr(tasks.activity_gate, 'check_background_admission',
+                        lambda: (_ for _ in ()).throw(BackgroundAdmissionDeferred('foreground active')))
+    monkeypatch.setattr(tasks, 'claim_task', lambda **options: pytest.fail('denied wake cannot claim work'))
+    task.push_request(id=first.id, headers=dict(published[0][3]['headers']))
+    try:
+        assert task() is False
+    finally:
+        task.pop_request()
+    assert len(published) == 2
+    delayed = published[-1][3]
+    assert delayed['headers']['queue_refresh_wake'] is True
+    from datetime import datetime, timezone
+    assert 0 < (delayed['eta'] - datetime.now(timezone.utc)).total_seconds() <= 1
+    assert celery_app.send_task(task.name).id == delayed['task_id']
+    assert len(published) == 2
