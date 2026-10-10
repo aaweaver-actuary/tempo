@@ -38,7 +38,7 @@ it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unres
   expect(pendingReviews().map(review => review.attemptId)).toEqual(["independent-pending"]);
 });
 
-it.each(["revision", "cycle", "day", "generation", "pending", "window", "readiness", "database"])(
+it.each(["revision", "cycle", "day", "generation", "pending", "conflict", "window", "readiness", "database"])(
   "prepared_continuation_requires_current_head_and_matching_identity: local %s invalidation", invalidation => {
     const candidate = capturePreparedNext()!;
     const { attempt } = useTrainingStore.getState();
@@ -46,6 +46,12 @@ it.each(["revision", "cycle", "day", "generation", "pending", "window", "readine
     if (invalidation === "cycle") candidate.cycle++;
     if (invalidation === "day") candidate.local_date = "1999-01-01";
     if (invalidation === "pending") enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
+    if (invalidation === "conflict") {
+      enqueuePendingReview({ backendId: "b", queueEntryId: 502, outcome: "again", guided: false });
+      const stored = JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!);
+      stored[0] = { ...stored[0], state: "conflicted", conflict: { code: "queue_attempt_unprovable", message: "Needs review", retryable: false } };
+      localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify(stored));
+    }
     if (invalidation === "window") useTrainingStore.setState({ practiceCards: [cards[0]] });
     if (invalidation === "readiness") useTrainingStore.setState({ queueReadiness: "loading" });
     if (invalidation === "database") useTrainingStore.setState({ isDatabaseQueueActive: false });

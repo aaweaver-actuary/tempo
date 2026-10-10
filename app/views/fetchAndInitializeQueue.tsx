@@ -343,11 +343,16 @@ export async function fetchAndInitializeQueue(
     performance.measure("tempo.queue.processing", { start: processingStarted, end: performance.now(), detail: { generation } });
     if (generation !== requestGeneration) return;
     const availableCards = eligibleQueueCards(retainPendingFailures(cards, pendingFailureContexts), (replayed ?? savedPreparedQueue)?.attempts);
-    if (!options.preservePreparedAttempt && cards[0] && !eligibleQueueCards([cards[0]]).length) {
+    const returnedHead = cards[0];
+    const headHasUnconfirmedDelivery = returnedHead && pendingReviews().some(review =>
+      review.queueEntryId === returnedHead.queueEntryId && review.backendId === String(returnedHead.backendId ?? returnedHead.id));
+    const headWasLocallyCompleted = returnedHead && useTrainingStore.getState().confirmedQueueEntryKeys?.includes(attemptEntryKey(returnedHead));
+    if (!options.preservePreparedAttempt && (headHasUnconfirmedDelivery || headWasLocallyCompleted)) {
       // Only the returned head was issued. Local filtering must not authorize
       // another prefetched card, including after an explicit recovery retry.
       // Phone attempts retain their existing prepared-queue authorization;
-      // this check concerns connected pending/conflicted/completed reviews.
+      // this check concerns unconfirmed deliveries and locally completed heads.
+      // Existing independent-card conflict recovery is unchanged.
       useTrainingStore.getState().setPendingReviewError(pendingReviewError ||
         "The authoritative queue head has unresolved local results. Check saved reviews and Notifications, then retry loading the queue.");
       throw new QueueProcessingError("The authoritative queue head is excluded by local review state. Check saved reviews and Notifications, then retry loading the queue.");
