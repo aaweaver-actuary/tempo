@@ -120,7 +120,7 @@ export default function RepertoireView({
     typeof window === "undefined" ? null : sessionStorage.getItem("tempo-statistics-repertoire"));
 
   const loadBackend = useCallback(async () => {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi()) return true;
     try {
       const response = await readWorkspaceResponse(
         `${API_URL}/api/repertoires`,
@@ -182,6 +182,7 @@ export default function RepertoireView({
           side: "white", detail: "", sourceName: "", progress: 0, due: 0, backend: true,
         });
       }
+      return true;
     } catch (failure) {
       reportDebugError(failure, {
         kind: "api",
@@ -192,6 +193,7 @@ export default function RepertoireView({
       setError(
         `Repertoires unavailable: ${failure instanceof Error ? failure.message : "connection failed"}.`,
       );
+      return false;
     }
   }, []);
 
@@ -391,7 +393,9 @@ export default function RepertoireView({
         repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
         onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
           invalidateWorkspaceData(); setCoverageByRepertoire({}); setGapsByRepertoire({}); setOpportunitiesByRepertoire({});
-          await loadBackend(); await onQueueChanged();
+          if (!await loadBackend()) throw new Error("Saved prefix metadata could not be reloaded.");
+          // The queue callback reports training failures independently of confirmed prefix metadata.
+          void onQueueChanged().catch(() => undefined);
         }} />)}
       {error && (
         <Notice
