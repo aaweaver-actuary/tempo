@@ -763,6 +763,207 @@ def test_issue135_postgres_first_ensure_calls_preserve_singleton_creation():
     print('PASS test_issue135_postgres_first_ensure_calls_preserve_singleton_creation', flush=True)
 
 
+class _EnqueueProofRollback(Exception):
+    """Roll back a proof transaction after the real enqueue has completed."""
+
+
+def _issue144_enqueue_history(database):
+    return [tuple(row) for row in database.execute(
+        "SELECT task_event.task_id,task_event.generation,task_event.event "
+        "FROM background_task_events task_event JOIN background_tasks task ON task.id=task_event.task_id "
+        "WHERE task.kind='daily_queue' AND task.deduplication_key='current' ORDER BY task_event.id",
+    )]
+
+
+def _issue144_first_enqueue_race(*, rollback_creator):
+    first_inserted, release_creator, second_connected = Event(), Event(), Event()
+    creator_backend_pids, contender_backend_pids = [], []
+    proposed_task_ids_by_backend, attempted_events_by_backend = {}, {}
+    original_execute = postgres_store.PostgresConnection.execute
+    original_record_event = durable_tasks._record_event
+
+    def observe_insert(database, statement, parameters=()):
+        backend_pid = database.raw.info.backend_pid
+        if statement == durable_tasks._TASK_UPSERT_SQL:
+            proposed_task_ids_by_backend[backend_pid] = parameters[0]
+        cursor = original_execute(database, statement, parameters)
+        if backend_pid in creator_backend_pids and statement == durable_tasks._TASK_UPSERT_SQL:
+            first_inserted.set()
+            assert release_creator.wait(4), 'First enqueue barrier was not released'
+        return cursor
+
+    def observe_event(database, task_id, generation, event, *args, **kwargs):
+        attempted_events_by_backend.setdefault(database.raw.info.backend_pid, []).append((task_id, generation, event))
+        return original_record_event(database, task_id, generation, event, *args, **kwargs)
+
+    def enqueue(caller_backend_pids, *, creator=False):
+        try:
+            with _lock_order_connection() as database:
+                caller_backend_pids.append(database.raw.info.backend_pid)
+                assert database.execute(durable_tasks._TASK_BY_KIND_SQL, ('daily_queue', 'current')).fetchone() is None
+                if not creator:
+                    second_connected.set()
+                queued = durable_tasks.enqueue_task_in_transaction(
+                    database, 'daily_queue', 'current', {'caller': 'A' if creator else 'B'},
+                    priority=70 if creator else 40,
+                )
+                if creator and rollback_creator:
+                    raise _EnqueueProofRollback()
+                return queued
+        except _EnqueueProofRollback:
+            return None
+
+    with _queue_lock_order_fixture(leased=False), \
+            patch.object(postgres_store.PostgresConnection, 'execute', observe_insert), \
+            patch.object(durable_tasks, '_record_event', observe_event), \
+            ThreadPoolExecutor(max_workers=2) as executor:
+        durable_tasks.warm_completion_sql()
+        with _lock_order_connection() as observer:
+            initial_generations_started = observer.execute("SELECT COALESCE(SUM(generations_started),0) FROM background_metric_buckets WHERE kind='daily_queue'").fetchone()[0]
+        creator_future = executor.submit(enqueue, creator_backend_pids, creator=True)
+        try:
+            assert first_inserted.wait(3), 'First enqueue did not insert the singleton'
+            contender_future = executor.submit(enqueue, contender_backend_pids)
+            assert second_connected.wait(3), 'Second enqueue did not observe an absent singleton'
+            _wait_for_lock_owner(contender_backend_pids[0], creator_backend_pids[0], contender_future)
+            assert proposed_task_ids_by_backend[creator_backend_pids[0]] != proposed_task_ids_by_backend[contender_backend_pids[0]]
+        finally:
+            release_creator.set()
+        creator_result = creator_future.result(timeout=5)
+        try:
+            contender_result = contender_future.result(timeout=5)
+        except psycopg.errors.ForeignKeyViolation as error:
+            discarded_id = proposed_task_ids_by_backend[contender_backend_pids[0]]
+            assert error.diag.constraint_name == 'background_task_events_task_id_fkey'
+            assert discarded_id in error.diag.message_detail
+            assert attempted_events_by_backend[contender_backend_pids[0]] == [(discarded_id, 1, 'enqueued')]
+            print(f'Observed first-enqueue identity defect: winner={creator_result["id"]}, discarded={discarded_id}, event={attempted_events_by_backend[contender_backend_pids[0]]}', flush=True)
+            raise
+        authoritative_id = proposed_task_ids_by_backend[contender_backend_pids[0] if rollback_creator else creator_backend_pids[0]]
+        discarded_id = proposed_task_ids_by_backend[creator_backend_pids[0] if rollback_creator else contender_backend_pids[0]]
+        assert contender_result['id'] == authoritative_id
+        assert contender_result['generation'] == 1
+        if rollback_creator:
+            assert creator_result is None
+        else:
+            assert creator_result['id'] == authoritative_id and creator_result['generation'] == 1
+            assert attempted_events_by_backend[contender_backend_pids[0]] == [(authoritative_id, 1, 'enqueued')]
+        with _lock_order_connection() as observer:
+            singleton_rows = observer.execute(durable_tasks._TASK_BY_KIND_SQL, ('daily_queue', 'current')).fetchall()
+            assert len(singleton_rows) == 1
+            assert dict(singleton_rows[0]) == contender_result
+            assert json.loads(contender_result['payload_json']) == {'caller': 'B'}
+            assert contender_result['state'] == 'queued' and contender_result['priority'] == 40
+            assert observer.execute('SELECT 1 FROM background_tasks WHERE id=?', (discarded_id,)).fetchone() is None
+            assert observer.execute('SELECT 1 FROM background_task_events WHERE task_id=?', (discarded_id,)).fetchone() is None
+            assert observer.execute('SELECT 1 FROM background_task_events event LEFT JOIN background_tasks task ON task.id=event.task_id WHERE task.id IS NULL').fetchone() is None
+            events = [tuple(row) for row in observer.execute('SELECT task_id,generation,event FROM background_task_events WHERE task_id=? ORDER BY id', (authoritative_id,))]
+            expected_enqueue_events = 1 if rollback_creator else 2
+            assert events == [(authoritative_id, 1, 'enqueued')] * expected_enqueue_events
+            committed_generations_started = observer.execute("SELECT COALESCE(SUM(generations_started),0) FROM background_metric_buckets WHERE kind='daily_queue'").fetchone()[0]
+            assert committed_generations_started == initial_generations_started + expected_enqueue_events
+
+
+def test_issue144_postgres_concurrent_first_enqueues_preserve_durable_identity():
+    """Two real first enqueues both use the identity retained by ON CONFLICT."""
+    _issue144_first_enqueue_race(rollback_creator=False)
+    print('PASS test_issue144_postgres_concurrent_first_enqueues_preserve_durable_identity', flush=True)
+
+
+def test_issue144_postgres_first_enqueue_survives_creator_rollback():
+    _issue144_first_enqueue_race(rollback_creator=True)
+    print('PASS test_issue144_postgres_first_enqueue_survives_creator_rollback', flush=True)
+
+
+def test_issue144_postgres_uncontended_enqueue_preserves_contract():
+    with _queue_lock_order_fixture(leased=False) as (_task, clock):
+        with _lock_order_connection() as database:
+            queued = durable_tasks.enqueue_task_in_transaction(
+                database, 'daily_queue', 'current', {'value': 'first'},
+                priority=73, max_attempts=9, delay_seconds=17,
+            )
+        with _lock_order_connection() as observer:
+            saved = observer.execute(durable_tasks._TASK_BY_KIND_SQL, ('daily_queue', 'current')).fetchone()
+            assert dict(saved) == queued
+            assert queued['generation'] == 1 and queued['priority'] == 73
+            assert (queued['state'], queued['phase'], queued['payload_version']) == ('queued', 'queued', 1)
+            assert json.loads(queued['payload_json']) == {'value': 'first'}
+            assert queued['attempt_count'] == 0 and queued['max_attempts'] == 9
+            assert queued['lease_token'] is None and queued['lease_expires_at'] is None
+            assert queued['last_error'] is None and queued['completed_at'] is None
+            assert queued['created_at'] == queued['updated_at'] == clock.isoformat()
+            assert datetime.fromisoformat(queued['next_attempt_at']) == clock + timedelta(seconds=17)
+            assert _issue144_enqueue_history(observer) == [(queued['id'], 1, 'enqueued')]
+    print('PASS test_issue144_postgres_uncontended_enqueue_preserves_contract', flush=True)
+
+
+def test_issue144_postgres_existing_enqueue_preserves_contract():
+    for prior_state in ('queued', 'leased', 'retrying', 'complete', 'failed', 'superseded'):
+        with _queue_lock_order_fixture(leased=False) as (_task, clock):
+            with _lock_order_connection() as database:
+                previous = durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', 'current', {'value': 'old'}, priority=30)
+                database.execute("UPDATE background_tasks SET generation=5,state=?,phase='checkpoint',payload_version=3,attempt_count=3,max_attempts=4,lease_token='old-lease',lease_expires_at=?,last_error='old failure',completed_at=?,started_at=?,transaction_timeout_count=4,transaction_timeout_checkpoint='old checkpoint' WHERE id=?",
+                                 (prior_state, clock.isoformat(), clock.isoformat(), (clock - timedelta(seconds=20)).isoformat(), previous['id']))
+            minimum_generation = 8 if prior_state == 'leased' else 0
+            with _lock_order_connection() as database:
+                queued = durable_tasks.enqueue_task_in_transaction(
+                    database, 'daily_queue', 'current', {'value': 'replacement'},
+                    priority=90, max_attempts=7, delay_seconds=11,
+                    minimum_generation=minimum_generation,
+                )
+            expected_generation = 9 if prior_state == 'leased' else 6
+            with _lock_order_connection() as observer:
+                rows = observer.execute(durable_tasks._TASK_BY_KIND_SQL, ('daily_queue', 'current')).fetchall()
+                assert len(rows) == 1 and dict(rows[0]) == queued
+                assert queued['id'] == previous['id'] and queued['generation'] == expected_generation
+                assert queued['priority'] == 30
+                assert (queued['state'], queued['phase'], queued['payload_version']) == ('queued', 'queued', 1)
+                assert json.loads(queued['payload_json']) == {'value': 'replacement'}
+                assert queued['attempt_count'] == queued['transaction_timeout_count'] == 0
+                assert queued['max_attempts'] == 7 and queued['transaction_timeout_checkpoint'] is None
+                assert queued['lease_token'] is None and queued['lease_expires_at'] is None
+                assert queued['last_error'] is None and queued['completed_at'] is None
+                assert queued['created_at'] == previous['created_at']
+                assert queued['started_at'] == (clock - timedelta(seconds=20)).isoformat()
+                assert datetime.fromisoformat(queued['next_attempt_at']) == clock + timedelta(seconds=11)
+                expected_events = [(queued['id'], 1, 'enqueued'), (queued['id'], expected_generation, 'enqueued')]
+                if prior_state not in ('complete', 'superseded'):
+                    expected_events.append((queued['id'], expected_generation, 'generation_replaced'))
+                assert _issue144_enqueue_history(observer) == expected_events
+    print('PASS test_issue144_postgres_existing_enqueue_preserves_contract', flush=True)
+
+
+def test_issue144_postgres_enqueue_rollback_and_retry_preserve_history():
+    with _queue_lock_order_fixture(leased=False):
+        try:
+            with _lock_order_connection() as database:
+                rolled_back = durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', 'current', {'value': 'rolled back'})
+                raise _EnqueueProofRollback()
+        except _EnqueueProofRollback:
+            pass
+        with _lock_order_connection() as observer:
+            assert observer.execute(durable_tasks._TASK_BY_KIND_SQL, ('daily_queue', 'current')).fetchone() is None
+            assert _issue144_enqueue_history(observer) == []
+        with _lock_order_connection() as database:
+            retried = durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', 'current', {'value': 'retried'})
+        assert retried['id'] != rolled_back['id'] and retried['generation'] == 1
+        with _lock_order_connection() as observer:
+            original_events = _issue144_enqueue_history(observer)
+            original_metrics = [dict(row) for row in observer.execute("SELECT * FROM background_metric_buckets WHERE kind='daily_queue' ORDER BY shard,slot")]
+        try:
+            with _lock_order_connection() as database:
+                replacement = durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', 'current', {'value': 'rejected replacement'})
+                assert replacement['id'] == retried['id'] and replacement['generation'] == 2
+                raise _EnqueueProofRollback()
+        except _EnqueueProofRollback:
+            pass
+        with _lock_order_connection() as observer:
+            assert dict(observer.execute(durable_tasks._TASK_BY_KIND_SQL, ('daily_queue', 'current')).fetchone()) == retried
+            assert _issue144_enqueue_history(observer) == original_events == [(retried['id'], 1, 'enqueued')]
+            assert [dict(row) for row in observer.execute("SELECT * FROM background_metric_buckets WHERE kind='daily_queue' ORDER BY shard,slot")] == original_metrics
+    print('PASS test_issue144_postgres_enqueue_rollback_and_retry_preserve_history', flush=True)
+
+
 def proof():
     from check_redis_socket_deadlines import test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery
     test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery()
@@ -853,6 +1054,11 @@ def _proof_daily_queue_dispatch_and_sparse_unlock():
         test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral()
         test_issue135_postgres_ensure_current_absent_task_creation_lock_order()
         test_issue135_postgres_first_ensure_calls_preserve_singleton_creation()
+        test_issue144_postgres_concurrent_first_enqueues_preserve_durable_identity()
+        test_issue144_postgres_first_enqueue_survives_creator_rollback()
+        test_issue144_postgres_uncontended_enqueue_preserves_contract()
+        test_issue144_postgres_existing_enqueue_preserves_contract()
+        test_issue144_postgres_enqueue_rollback_and_retry_preserve_history()
     finally:
         cleanup(identifier)
 
