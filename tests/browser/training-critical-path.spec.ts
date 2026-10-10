@@ -209,6 +209,17 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       if (index >= warmup) samples.push({ clickEpochMs, submissionEpochMs, responseEpochMs: reviewResponseEpochMs, interactiveEpochMs, operationId,
         receiptObservationEpochMs, nextInputAcceptedEpochMs, ...nativeInput, queueNetworkMs: [...queueNetworkMs], queueProcessingMs, network: [...network] });
     }
+    const measuredRecoveryRequests = { recoveryRequests, historicalRecoveryRequests };
+    if (condition === "recovery-held") {
+      expect(historicalRecoveryRequests).toBe(0);
+      await page.evaluate(() => (Reflect.get(window, "releaseMeasuredRecovery") as (() => void))());
+    }
+    if (condition === "prepared" || condition === "recovery-held") {
+      // Outside the timed region, prove the frozen fixture is recoverable and
+      // that releasing ownership automatically resumes ordinary idle recovery.
+      await expect.poll(() => JSON.parse(fixture("verify")).historical_partials,
+        { timeout: 30_000, message: "An eligible historical journal must commit after foreground activity yields" }).toBeGreaterThan(0);
+    }
     const historicalJournalState = await page.evaluate(async () => {
       const opening = indexedDB.open("tempo-offline-training", 2);
       const database = await new Promise<IDBDatabase>(resolve => { opening.onsuccess = () => resolve(opening.result); });
@@ -241,7 +252,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
       fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup, samples: measuredCount, snapshot },
-      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Commit-to-input time includes test-driver scheduling; nativeInputProcessingMs uses browser event/mutation clocks.", ...clock }, measured, recoveryRequests, historicalRecoveryRequests, historicalJournalState,
+      clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Commit-to-input time includes test-driver scheduling; nativeInputProcessingMs uses browser event/mutation clocks.", ...clock }, measured, ...measuredRecoveryRequests, historicalJournalState,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
     mkdirSync(output, { recursive: true }); writeFileSync(join(output, `training-transition-${condition}.json`), JSON.stringify(report, null, 2));
@@ -253,8 +264,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     expect(expectedEvents).toBeGreaterThanOrEqual(transitionCount);
     expect(report.persisted.completion_events).toBe(expectedEvents);
     expect(historicalJournalState.rejected).toEqual([]);
-    if (condition === "recovery-held") expect(historicalRecoveryRequests).toBe(0);
-    if (condition === "prepared") expect(historicalRecoveryRequests).toBeGreaterThan(0);
+    if (condition === "prepared") expect(measuredRecoveryRequests.historicalRecoveryRequests).toBeGreaterThan(0);
     if (process.env.TEMPO_TRAINING_TIMINGS === "1" && condition !== "refresh") {
       expect(measured.every(sample => sample.commitToInteractiveMs !== null && sample.commitToInteractiveMs >= 0)).toBe(true);
       const durations = measured.map(sample => sample.commitToInteractiveMs!).sort((left, right) => left - right);
