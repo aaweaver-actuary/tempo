@@ -3412,3 +3412,41 @@ The first four implementation regressions failed on the reconciled baseline: pro
 
 - `PR132 explicit development exclusions preserve prior exact-suite qualification for ready transitions` ignores an explicitly inapplicable draft suite when finding the original passing execution. Exclusion itself is never evidence; an applicable missing result still prevents older-pass fallback. It first failed before the exclusion check.
 - `scripts/check_postgres_operation_recovery.py::test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery` runs in regular PostgreSQL durability. It covers the ordinary wrong-payload race and a coordinated control-reservation overlap; the old immediate-result assertion failed under that overlap. A valid background delivery may yield without spending failure attempts, but its original payload and cleared lease must survive, the conflicting delivery must reject, and pool recreation plus the real durable claim must complete exactly one business effect. Completed replay retains the same receipt. No transaction/lock budget or production behavior changes.
+
+# Probability-based opening-card priority contract
+
+Related #106/#112/#113/#118; source integration points #116/#117. This is a
+disconnected pure computational foundation, not completion of those roadmaps.
+`backend/tests/test_opening_preparedness.py` is collected by the regular backend
+suite. Named cases:
+
+- `test_probability_priority_hand_calculated_route_preparedness_and_marginal_gain`
+  and `test_probability_priority_frequent_deeper_decision_outranks_rare_shallow_decision`:
+  interpretable arithmetic and recall-weighted frequent/rare ranking.
+- `test_probability_priority_increasing_reach_cannot_reduce_marginal_value`,
+  `test_probability_priority_increasing_readiness_cannot_increase_remaining_benefit`,
+  and `test_probability_priority_zero_reach_and_unchanged_readiness_have_zero_gain`:
+  parameterized monotonicity and benefit bounds.
+- `test_probability_priority_rejects_invalid_probability_values`,
+  `test_probability_priority_rejects_invalid_probability_evidence`,
+  `test_probability_priority_rejects_impossible_distribution_mass`, and
+  `test_probability_priority_conflicting_duplicates_and_invalid_references_fail`:
+  invalid data fails explicitly, with no normalization/fallback.
+- `test_probability_priority_retains_authored_outside_and_unassigned_mass_without_normalization`
+  and `test_probability_priority_unknown_reply_evidence_is_not_a_genuine_zero`:
+  uncovered/unassigned/unknown mass remains visible.
+- `test_probability_priority_duplicate_routes_and_shared_trunks_are_counted_once`,
+  `test_probability_priority_distinct_transposed_opponent_paths_share_one_decision`,
+  `test_probability_priority_overlapping_revisits_do_not_double_count_decision_reach`,
+  and `test_probability_priority_disjoint_context_weights_and_union_bounds_remain_bounded`:
+  shared knowledge receives the union of incoming event probabilities exactly once.
+- `test_probability_priority_interval_bounds_contain_all_feasible_non_regressive_changes`
+  and `test_probability_priority_unknown_readiness_has_no_fabricated_score_even_at_zero_reach`:
+  conservative bounds, reasons and separate incomplete rankings.
+- `test_probability_priority_totals_can_exceed_one_but_each_probability_is_bounded`,
+  `test_probability_priority_input_permutations_and_ties_are_deterministic`, and
+  `test_probability_priority_existing_identity_maps_short_prefixes_and_trained_colors`:
+  expected-decision units, deterministic ties and reuse of existing identities.
+- `test_probability_priority_inputs_and_results_are_immutable` and
+  `test_probability_priority_fresh_import_and_scoring_need_no_database_network_chess_or_fsrs`:
+  copied/frozen inputs and actual fresh-process dependency-free computation.
