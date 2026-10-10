@@ -3448,6 +3448,60 @@ The first four implementation regressions failed on the reconciled baseline: pro
 - `test_decision_readiness_boolean_scheduler_parameters_are_unavailable` first failed in all four cases against `40e1f20`: FSRS silently accepted boolean identity/state/stability/difficulty and the adapter reported full same-day readiness. The adapter rejects that corrupt serialized state before FSRS coercion.
 - `test_decision_readiness_assistance_only_checkpoint_cannot_clear_failure` and `test_decision_readiness_unattributed_invalidation_cannot_hide_observed_failure` first failed in all seven cases against `c156604`. Hint/reveal checkpoints without a submitted response still prevent linked aggregate clean recovery; foreign, non-study, stale-revision, future and timezone-naive invalidations cannot suppress an otherwise valid observed failure.
 
+# Probability-based opening-card priority contract
+
+Related #106/#112/#113/#118; source integration points #116/#117. This is a
+disconnected pure computational foundation, not completion of those roadmaps.
+`backend/tests/test_opening_preparedness.py` is collected by the regular backend
+suite. Named cases:
+
+- `test_probability_priority_hand_calculated_route_preparedness_and_marginal_gain`
+  and `test_probability_priority_frequent_deeper_decision_outranks_rare_shallow_decision`:
+  interpretable arithmetic and recall-weighted frequent/rare ranking.
+- `test_probability_priority_increasing_reach_cannot_reduce_marginal_value`,
+  `test_probability_priority_increasing_readiness_cannot_increase_remaining_benefit`,
+  and `test_probability_priority_zero_reach_and_unchanged_readiness_have_zero_gain`:
+  parameterized monotonicity and benefit bounds.
+- `test_probability_priority_rejects_invalid_probability_values`,
+  `test_probability_priority_rejects_invalid_probability_evidence`,
+  `test_probability_priority_rejects_impossible_distribution_mass`, and
+  `test_probability_priority_conflicting_duplicates_and_invalid_references_fail`:
+  invalid data fails explicitly, with no normalization/fallback.
+- `test_probability_priority_retains_authored_outside_and_unassigned_mass_without_normalization`
+  and `test_probability_priority_unknown_reply_evidence_is_not_a_genuine_zero`:
+  uncovered/unassigned/unknown mass remains visible.
+- `test_probability_priority_duplicate_routes_and_shared_trunks_are_counted_once`,
+  `test_probability_priority_distinct_transposed_opponent_paths_share_one_decision`,
+  `test_probability_priority_overlapping_revisits_do_not_double_count_decision_reach`,
+  and `test_probability_priority_disjoint_context_weights_and_union_bounds_remain_bounded`:
+  shared knowledge receives the union of incoming event probabilities exactly once.
+- `test_probability_priority_interval_bounds_contain_all_feasible_non_regressive_changes`
+  and `test_probability_priority_unknown_readiness_has_no_fabricated_score_even_at_zero_reach`:
+  conservative bounds, reasons and separate incomplete rankings.
+- `test_probability_priority_totals_can_exceed_one_but_each_probability_is_bounded`,
+  `test_probability_priority_input_permutations_and_ties_are_deterministic`, and
+  `test_probability_priority_existing_identity_maps_short_prefixes_and_trained_colors`:
+  expected-decision units, deterministic ties and reuse of existing identities.
+- `test_probability_priority_inputs_and_results_are_immutable` and
+  `test_probability_priority_fresh_import_and_scoring_need_no_database_network_chess_or_fsrs`:
+  copied/frozen inputs and actual fresh-process dependency-free computation.
+
+
+## Issue #156: explicit learner-policy conditioning in PR #149
+
+The regular `backend/tests/test_opening_preparedness.py` suite now requires a
+selected policy throughout the reach/scoring boundary. This is a pure contract
+hardening; Redis, production admission/queue/scheduler, FSRS/readiness estimation,
+persistence and UI are unchanged. #156 remains open for broader integrations.
+
+- `test_probability_priority_policy_identity_is_required_and_nonempty` and `test_probability_priority_evaluation_requires_explicit_selected_policy` reject omitted/invalid identities on routes, readiness, effects and evaluation entry points.
+- `test_probability_priority_one_policy_generators_preserve_scores_and_provenance` and `test_probability_priority_empty_evaluations_still_require_and_retain_one_policy` preserve single-policy arithmetic and result/ranking identity, including one-shot iterables and empty inputs.
+- `test_probability_priority_mixed_policy_readiness_is_rejected` covers preparedness, marginal value and ranking, including equal decision IDs. The original named regression failed against reviewed head `b5cea185f33f63eaf34947f93825a7ffe4df2110`: Italian/Ruy readiness silently combined instead of raising `ValueError` (1 failed, 0.15s pytest). It now rejects foreign policies before deduplication/scoring.
+- `test_probability_priority_mixed_policy_routes_are_rejected_before_deduplication` and `test_probability_priority_foreign_policy_effects_are_rejected_before_projection_lookup` fence route union/readiness construction and card interventions, including identical prefixes/card IDs and empty projections.
+- `test_probability_priority_italian_is_unchanged_when_ruy_is_added_expanded_or_removed` and `test_probability_priority_ruy_is_unchanged_when_italian_is_added_expanded_or_removed` compare complete reach, preparedness contributions, marginal values and rankings by exact equality through adding, duplicating and removing the independent policy. The real shared trunk is `e4 e5 Nf3 Nc6`, with `Bc4`/`Bb5` learner choices.
+- `test_probability_priority_policy_conditioning_does_not_force_opponent_cooperation` retains `0.42`, then `0.42 * 0.5`, then a later opponent `0.25` factor; `test_probability_priority_learner_policy_moves_have_no_inferred_branch_probability` gives either defining learner action the same opponent-only product.
+- `test_probability_priority_identical_transposed_positions_have_independent_policy_mass` uses real shared canonical positions and deliberately equal decision/card IDs: within-policy duplicates/revisits collapse and disjoint transpositions add to 0.50/0.25 separately, while a mixed evaluation fails. `test_probability_priority_same_context_different_roots_are_disjoint_within_policy` protects the policy/context/root overlap comparison.
+- `test_probability_priority_policy_selection_preserves_outside_unassigned_and_unknown_mass` preserves 0.80 authored, 0.10 outside, 0.10 unassigned mass and unknown-reply bounds for either policy. Existing arithmetic, ranking, monotonicity, exact/bounded/unknown evidence, transposition, revisit and dependency-free regressions supply explicit fixture policy identity and retain their assertions.
 
 ## Fresh browser qualification critical path (#29, #45)
 
