@@ -219,11 +219,12 @@ def _pool(read_only: bool) -> ConnectionPool:
 
 @contextmanager
 def connection(*, read_only: bool = False, background: bool = False, authoritative: bool = False,
-               repeatable_read: bool = False) -> Iterator[PostgresConnection]:
+               repeatable_read: bool = False, pool_timeout_seconds: float | None = None) -> Iterator[PostgresConnection]:
     started_at = time.perf_counter()
     acquired_at = configured_at = handled_at = None
     try:
-        with _pool(read_only and not authoritative).connection() as database:
+        pool_options = {} if pool_timeout_seconds is None else {"timeout": pool_timeout_seconds}
+        with _pool(read_only and not authoritative).connection(**pool_options) as database:
             acquired_at = time.perf_counter()
             if repeatable_read:
                 # Isolation must be selected before the background timeout SELECTs.
