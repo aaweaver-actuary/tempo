@@ -215,10 +215,21 @@ def admitted_checkpoint_delivery(operation_id, command_name, payload):
 
 def _recover_checkpoint_operation(operation_id):
     from app import command_gateway, tasks
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
     with postgres_store.connection() as database:
         database.execute_native("UPDATE operation_receipts SET next_retry_at=NOW()-INTERVAL '1 minute',"
                                 "lease_expires_at=NOW()-INTERVAL '1 minute',updated_at='1970-01-01' WHERE operation_id=%s", (operation_id,))
-    recovered = command_gateway.claim_recoverable_operation()
+    # The real API may still own foreground admission after the preceding HTTP
+    # replay. Wait in this proof driver, never in the production worker, and
+    # never hide SQL errors or reset another caller's legitimate lease.
+    admission_deadline = time.monotonic() + 10
+    while True:
+        try:
+            recovered = command_gateway.claim_recoverable_operation()
+            break
+        except BackgroundAdmissionDeferred:
+            assert time.monotonic() < admission_deadline, 'Recovery never obtained foreground-idle admission within 10 seconds'
+            time.sleep(0.01)
     assert recovered and recovered['operation_id'] == operation_id and recovered['background'] is True
     return tasks.execute_background_command.run(operation_id, recovered['command_name'], recovered['payload'])
 
