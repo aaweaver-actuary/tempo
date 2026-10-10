@@ -21,7 +21,9 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   const transitionCount = warmup + measuredCount;
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("An owning disposable runner is required");
-  const identifier = `training-transition-${randomUUID()}`;
+  const identifier = process.env.TEMPO_TRAINING_FIXTURE_ID ?? `training-transition-${randomUUID()}`;
+  if (!/^training-transition-[a-f0-9-]+$/.test(identifier) || (process.env.TEMPO_TRAINING_FIXTURE_ID && conditions.length !== 1))
+    throw new Error("A fixed fixture requires one condition in a fresh disposable invocation");
   const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
   const docker = (...args: string[]) => execFileSync("docker", [...compose, ...args], { encoding: "utf8", timeout: 60_000, maxBuffer: 8 * 1024 * 1024 });
   const fixture = (action: string, ...args: string[]) => docker("run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_training_transition.py", action, identifier, ...args);
@@ -36,6 +38,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   type Sample = { clickEpochMs: number; submissionEpochMs: number; responseEpochMs: number; interactiveEpochMs: number;
     operationId: string; receiptObservationEpochMs: number; queueNetworkMs: number[]; queueProcessingMs: number[];
     nextInputAcceptedEpochMs?: number;
+    nativeInputDispatchEpochMs?: number; nativeInputAcceptedEpochMs?: number;
     network: { label: string; serverTiming: string | undefined; sqlCount: number; transactions: number }[] };
   const samples: Sample[] = [];
   let reviewResponseEpochMs = 0;
@@ -70,7 +73,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   });
   try {
     docker("stop", "background-worker", "background-scheduler");
-    fixture("seed", today);
+    const snapshot = JSON.parse(fixture("seed", today));
     if (condition !== "workers-held") docker("start", "background-worker", "background-scheduler");
     if (condition === "lines-held") await page.route("**/api/repertoire/lines", () => new Promise(() => {}));
     await prepareUI(page);
@@ -152,19 +155,34 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
       const previousEntry = await page.locator("#train").getAttribute("data-queue-entry-id");
       queueNetworkMs = []; network = []; reviewResponseEpochMs = 0;
-      await page.evaluate(() => {
+      await page.evaluate(expectedStartingFen => {
         performance.clearMeasures("tempo.queue.processing");
         performance.clearMarks("tempo.review.confirmed");
         const startedEntry = document.querySelector("#train")?.getAttribute("data-queue-entry-id");
         Reflect.set(window, "transitionInteractiveEpochMs", 0);
-        const observer = new MutationObserver(() => {
+        Reflect.set(window, "nativeInputDispatchEpochMs", 0);
+        Reflect.set(window, "nativeInputAcceptedEpochMs", 0);
+        let readinessScheduled = false;
+        const captureInput = (event: PointerEvent) => {
           if (document.querySelector("#train")?.getAttribute("data-queue-entry-id") !== startedEntry &&
-              document.querySelector('.board-frame[data-input-enabled="true"]')) {
-            requestAnimationFrame(() => { Reflect.set(window, "transitionInteractiveEpochMs", performance.timeOrigin + performance.now()); observer.disconnect(); });
+              event.target instanceof Element && event.target.closest(".board-frame"))
+            Reflect.set(window, "nativeInputDispatchEpochMs", performance.timeOrigin + performance.now());
+        };
+        document.addEventListener("pointerdown", captureInput, true);
+        const observer = new MutationObserver(() => {
+          const nextEntryActive = document.querySelector("#train")?.getAttribute("data-queue-entry-id") !== startedEntry;
+          const board = document.querySelector('.board-frame[data-input-enabled="true"]');
+          if (!readinessScheduled && nextEntryActive && board?.getAttribute("data-fen") === expectedStartingFen) {
+            readinessScheduled = true;
+            requestAnimationFrame(() => { Reflect.set(window, "transitionInteractiveEpochMs", performance.timeOrigin + performance.now()); });
+          }
+          if (nextEntryActive && Reflect.get(window, "nativeInputDispatchEpochMs") && board?.getAttribute("data-fen")?.includes("4P3")) {
+            Reflect.set(window, "nativeInputAcceptedEpochMs", performance.timeOrigin + performance.now());
+            observer.disconnect(); document.removeEventListener("pointerdown", captureInput, true);
           }
         });
         observer.observe(document.body, { subtree: true, attributes: true, childList: true });
-      });
+      }, startingFen);
       const clickEpochMs = Date.now();
       await page.getByRole("button", { name: "Correct", exact: true }).click();
       await expect(page.locator("#train")).not.toHaveAttribute("data-queue-entry-id", previousEntry!);
@@ -174,13 +192,17 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const nextInputAcceptedEpochMs = Date.now();
       await expect.poll(() => page.evaluate(() => Reflect.get(window, "transitionInteractiveEpochMs"))).toBeGreaterThan(0);
       const interactiveEpochMs = await page.evaluate(() => Reflect.get(window, "transitionInteractiveEpochMs") as number);
+      const nativeInput = await page.evaluate(() => ({ nativeInputDispatchEpochMs: Reflect.get(window, "nativeInputDispatchEpochMs") as number,
+        nativeInputAcceptedEpochMs: Reflect.get(window, "nativeInputAcceptedEpochMs") as number }));
+      expect(nativeInput.nativeInputAcceptedEpochMs).toBeGreaterThan(nativeInput.nativeInputDispatchEpochMs);
+      expect(nativeInput.nativeInputDispatchEpochMs).toBeGreaterThan(0);
       const queueProcessingMs = await page.evaluate(() => performance.getEntriesByName("tempo.queue.processing").map(entry => entry.duration));
       const receiptObservationEpochMs = await page.evaluate(() => {
         const marks = performance.getEntriesByName("tempo.review.confirmed");
         return marks.length ? performance.timeOrigin + marks.at(-1)!.startTime : 0;
       });
       if (index >= warmup) samples.push({ clickEpochMs, submissionEpochMs, responseEpochMs: reviewResponseEpochMs, interactiveEpochMs, operationId,
-        receiptObservationEpochMs, nextInputAcceptedEpochMs, queueNetworkMs: [...queueNetworkMs], queueProcessingMs, network: [...network] });
+        receiptObservationEpochMs, nextInputAcceptedEpochMs, ...nativeInput, queueNetworkMs: [...queueNetworkMs], queueProcessingMs, network: [...network] });
     }
     // Stop current UI timers/requests before service restart and fixture teardown.
     await page.close();
@@ -199,11 +221,12 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       return { ...sample, command: span, apiRequest: apiSpans.find(span => span.label === "review-request" && span.trace === trace), commitEpochMs: commit ?? null,
         commitToInteractiveMs: commit ? sample.interactiveEpochMs - (commit - clock.offsetMs) : null,
         commitToInputAcceptedMs: commit ? sample.nextInputAcceptedEpochMs! - (commit - clock.offsetMs) : null,
+        nativeInputProcessingMs: sample.nativeInputAcceptedEpochMs! - sample.nativeInputDispatchEpochMs!,
         clickToInteractiveMs: sample.interactiveEpochMs - sample.clickEpochMs };
     });
     const report = { condition, revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
       dirtyPatchSha256: createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], { encoding: "utf8" })).digest("hex"),
-      fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup, samples: measuredCount },
+      fixture: { prepared: 64, moves: ["e4", "e5", "Nf3"], establishedScheduling: true, competingJobs: 3000, lockedCards: 15000, journals: 100, warmup, samples: measuredCount, snapshot },
       clock: { description: "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Native-input time includes test-driver scheduling.", ...clock }, measured, recoveryRequests,
       persisted: JSON.parse(fixture("verify")) };
     const output = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";

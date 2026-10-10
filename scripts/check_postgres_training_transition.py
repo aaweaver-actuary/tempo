@@ -1,5 +1,6 @@
 """Synthetic, invocation-owned fixture for prepared-card contention measurements."""
 import json
+import hashlib
 import re
 import sys
 from datetime import date
@@ -38,6 +39,17 @@ def main():
                 connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (identifier, card_id))
                 connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'due',%s)", (today, card_id, index, identifier))
             connection.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(%s,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
+            # Stable source snapshot across independently fresh PostgreSQL/Redis stacks.
+            connection.execute("UPDATE repertoires SET created_at='2000-01-01T00:00:00+00:00' WHERE id=%s", (identifier,))
+            connection.execute("UPDATE repertoire_lines SET created_at='2000-01-01T00:00:00+00:00' WHERE repertoire_id=%s", (identifier,))
+            connection.execute("UPDATE background_tasks SET created_at='2000-01-01T00:00:00+00:00',updated_at='2000-01-01T00:00:00+00:00',next_attempt_at='2000-01-01T00:00:00+00:00' WHERE id LIKE %s", (identifier+'-analysis-%',))
+            snapshot = {
+                "cards": connection.execute("SELECT id,revision,state,due_date,first_correct_at,interval_days,moves_json FROM cards WHERE repertoire_id=%s ORDER BY id", (identifier,)).fetchall(),
+                "queue": connection.execute("SELECT card_id,position,cycle,admission_kind FROM daily_queue WHERE card_id LIKE %s ORDER BY position", (identifier+'-prepared-%',)).fetchall(),
+                "jobs": connection.execute("SELECT id,kind,priority,payload_json,next_attempt_at FROM background_tasks WHERE id LIKE %s ORDER BY id", (identifier+'-analysis-%',)).fetchall(),
+            }
+            print(json.dumps({"sha256": hashlib.sha256(json.dumps(snapshot, default=str, sort_keys=True).encode()).hexdigest(),
+                "description": "Canonical ordered source rows; identical fixed IDs/date/scheduling/eligible jobs in each fresh invocation. Runtime attempt IDs, leases and clocks are deliberately excluded."}))
         return
     if action == "verify":
         with psycopg.connect(DSN) as connection:
