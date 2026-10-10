@@ -35,6 +35,7 @@ class ArchiveCancellation(BaseException):
 class ArchiveCancellationState:
     def __init__(self):
         self.received_signal: int | None = None
+        self.process_registration_in_progress = False
 
 
 @contextmanager
@@ -48,7 +49,8 @@ def cli_cancellation_signals():
     def cancel_command(received_signal, _frame):
         if cancellation.received_signal is None:
             cancellation.received_signal = received_signal
-            raise ArchiveCancellation(received_signal)
+            if not cancellation.process_registration_in_progress:
+                raise ArchiveCancellation(received_signal)
         # Repeated signals defer to the first bounded cleanup unwind.
 
     try:
@@ -205,8 +207,18 @@ class ArchiveStream:
 
     def __enter__(self):
         try:
-            self.downloader = subprocess.Popen(["curl", "--fail", "--location", "--silent", "--show-error", self.source_url], stdout=subprocess.PIPE)
-            self.decompressor = subprocess.Popen(["zstd", "-dc"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            # Record cancellation during spawn without interrupting assignment:
+            # a child may run before Popen returns its ownership handle.
+            if self.cancellation is not None:
+                self.cancellation.process_registration_in_progress = True
+            try:
+                self.downloader = subprocess.Popen(["curl", "--fail", "--location", "--silent", "--show-error", self.source_url], stdout=subprocess.PIPE)
+                self.decompressor = subprocess.Popen(["zstd", "-dc"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            finally:
+                if self.cancellation is not None:
+                    self.cancellation.process_registration_in_progress = False
+            if self.cancellation is not None and self.cancellation.received_signal is not None:
+                raise ArchiveCancellation(self.cancellation.received_signal)
             def transfer_compressed_bytes():
                 try:
                     while not self.stopping.is_set() and (compressed_chunk := self.downloader.stdout.read(1024 * 1024)):

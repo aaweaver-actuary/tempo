@@ -658,6 +658,40 @@ def test_stalemate_archive_external_cancellation_reaps_owned_children(tmp_path, 
                              ignore_termination=ignore_termination)
 
 
+
+def test_stalemate_archive_cancellation_during_process_registration_reaps_both_children(monkeypatch):
+    module_spec = importlib.util.spec_from_file_location("stalemate_cli_registration_cancel", CLI)
+    cli_module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(cli_module)
+    original_popen = cli_module.subprocess.Popen
+    owned_processes = []
+
+    def interrupt_after_decompressor_creation(command, **options):
+        process = original_popen([sys.executable, "-c", "import signal; signal.pause()"], **options)
+        owned_processes.append(process)
+        if len(owned_processes) == 2:
+            # Deliver after the real child exists but before ArchiveStream can
+            # assign its returned handle. Do not depend on scheduler timing.
+            signal.raise_signal(signal.SIGINT)
+        return process
+
+    monkeypatch.setattr(cli_module.subprocess, "Popen", interrupt_after_decompressor_creation)
+    try:
+        with pytest.raises(cli_module.ArchiveCancellation):
+            with cli_module.cli_cancellation_signals() as cancellation:
+                with cli_module.ArchiveStream("fixture", "0" * 64, cancellation):
+                    pytest.fail("Cancelled startup must not enter mining")
+        assert len(owned_processes) == 2
+        assert all(process.poll() is not None for process in owned_processes), "Cancellation left a spawned child unowned"
+    finally:
+        for process in owned_processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+            for pipe in (process.stdin, process.stdout):
+                if pipe is not None:
+                    pipe.close()
+
 def test_stalemate_archive_cancellation_reaps_children_when_interruption_is_suppressed(tmp_path):
     # An asynchronous exception can be swallowed by an unraisable callback.
     # Cancellation must still wake a blocked read and reap the owned pipeline.

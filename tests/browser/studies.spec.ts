@@ -12,7 +12,7 @@ test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
 });
 
-test("Issue135 foreground queue commit wakes an idle worker without periodic polling", async ({ request }) => {
+test("Issue135 foreground queue commit wakes an idle worker without periodic polling", async ({ request }, testInfo) => {
   assertDisposableTarget(await (await request.get(`${api}/health`)).json());
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
@@ -51,9 +51,11 @@ test("Issue135 foreground queue commit wakes an idle worker without periodic pol
     const changed = { ...settings, new_cards_per_day: settings.new_cards_per_day === 2 ? 3 : 2 };
     const save = await request.put(`${api}/settings`, { data: changed, headers: { "Idempotency-Key": saveKey } });
     expect(save.ok(), await save.text()).toBe(true);
-    await expect.poll(async () => (await (await request.get(`${api}/queue/prepared`)).json()).projection,
-      { timeout: 30_000, message: "Committed queue refresh publishes while periodic polling is stopped" })
-      .toMatchObject({ state: "ready", refresh_pending: 0, last_error: null });
+    await verifyQueueReadinessWithDiagnostics(async () => {
+      await expect.poll(async () => (await (await request.get(`${api}/queue/prepared`)).json()).projection,
+        { timeout: 30_000, message: "Committed queue refresh publishes while periodic polling is stopped" })
+        .toMatchObject({ state: "ready", refresh_pending: 0, last_error: null });
+    }, (name, attachment) => testInfo.attach(name, attachment), { request, api });
     expect((await (await request.get(`${api}/queue/prepared`)).json()).projection.generation)
       .toBeGreaterThan(initialGeneration);
     const replay = await request.put(`${api}/settings`, { data: changed, headers: { "Idempotency-Key": saveKey } });
