@@ -98,14 +98,14 @@ def run_to_completion(repertoire_id, *, maximum=1000):
     raise AssertionError(f'Inventory failed to finish in {maximum} slices: {repertoire_id}')
 
 
-def verify_issue108_upgrade_restart_replay_and_coverage(dsn):
+def verify_issue108_upgrade_restart_replay_and_coverage(dsn, *, starting_schema=44):
     os.environ['TEMPO_DATABASE_WRITE_URL'] = dsn
     os.environ['TEMPO_DATABASE_READ_URL'] = dsn
-    # The existing main schema is the upgrade input; schema 46 must schedule one
-    # compact sweep and preserve every existing card and repertoire row.
+    # Preserve the original schema-44 proof as well as current-main schema 45.
+    # Schema 46 schedules one compact sweep and preserves all source rows.
     with psycopg.connect(dsn) as raw:
         for migration in sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql')):
-            if int(migration.name[:3]) > 45:
+            if int(migration.name[:3]) > starting_schema:
                 break
             raw.execute(migration.read_text(), prepare=False)
         raw.execute('INSERT INTO settings(id) VALUES(1)')
@@ -120,7 +120,7 @@ def verify_issue108_upgrade_restart_replay_and_coverage(dsn):
         preservation_queries = ['SELECT to_jsonb(row) FROM '+table+' row ORDER BY id'
                                 for table in ('repertoires', 'repertoire_lines', 'cards', 'reviews')]
         preserved_before = [raw.execute(query).fetchall() for query in preservation_queries]
-        assert [row[0] for row in raw.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1,46))
+        assert [row[0] for row in raw.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1,starting_schema+1))
     apply_migrations(dsn)
     apply_migrations(dsn)
     with psycopg.connect(dsn) as raw:
@@ -372,6 +372,20 @@ def verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn):
             admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
 
 
+def verify_issue108_schema45_upgrade_preserves_inventory_sources(admin_dsn):
+    database_name = 'tempo_inventory_upgrade45_'+uuid.uuid4().hex[:12]
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
+    dsn = psycopg.conninfo.make_conninfo(admin_dsn, dbname=database_name)
+    try:
+        verify_issue108_upgrade_restart_replay_and_coverage(dsn, starting_schema=45)
+        print('PASS issue108 schema45 upgrade preserves inventory sources', flush=True)
+    finally:
+        postgres_store.close_pools()
+        with psycopg.connect(admin_dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
+
+
 def _run_inventory_proof():
     from scripts import check_postgres_inventory_recovery as recovery
     repair_cases = {name: getattr(recovery, name) for name in (
@@ -407,6 +421,7 @@ def _run_inventory_proof():
             selected_cases[options.case](dsn)
         else:
             verify_issue108_fresh_install_has_no_upgrade_task(admin_dsn)
+            verify_issue108_schema45_upgrade_preserves_inventory_sources(admin_dsn)
             verify_issue108_upgrade_restart_replay_and_coverage(dsn)
             verify_issue108_transpositions_duplicates_long_routes(dsn)
             verify_issue108_scope_delta_and_card_authority(dsn)

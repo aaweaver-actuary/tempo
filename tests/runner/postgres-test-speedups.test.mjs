@@ -865,6 +865,7 @@ test("issue108 complete inventory proofs run in regular durability background wo
   const workloadAction = source.slice(source.indexOf("  background_workloads: async () => {"), source.indexOf("  threat_candidate_upsert: async () => {"));
   assert(workloadAction.includes("check_postgres_position_inventory.py"));
   const inventoryProof = readFileSync(join(root, "scripts/check_postgres_position_inventory.py"), "utf8");
+  assert(inventoryProof.includes("verify_issue108_schema45_upgrade_preserves_inventory_sources(admin_dsn)"));
   assert(inventoryProof.includes("'test_pr117_pd82_inspection_preserves_queue_while_independent_publication_assigns_admission'"));
   assert(inventoryProof.includes("'test_pr117_repertoire_deletion_and_inventory_slice_have_no_lock_cycle'"));
   assert(inventoryProof.includes("'test_pr117_deleted_inventory_routes_collect_with_foreground_contention_restart_replay_and_reuse'"));

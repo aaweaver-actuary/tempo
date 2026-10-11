@@ -3793,6 +3793,8 @@ Post-#116 reconstruction adds:
 
 All PostgreSQL cases run through the regular `background_workloads` stage. Migration 046 upgrades schema 45 with a populated repertoire, repeats the normal driver, and retains immutable published migrations 001–045. No cohort cache or probability fetching is introduced.
 
+- `verify_issue108_schema45_upgrade_preserves_inventory_sources`: current-main 45 → 46 uses a separate populated database, normal-driver repetition, exact source/history preservation and restart/replay. The original `verify_issue108_upgrade_restart_replay_and_coverage` still starts at historical schema 44 and upgrades through both published 045 and inventory 046; neither historical rehearsal is replaced.
+
 - `test_issue108_newer_graph_publication_fences_computed_inventory_output`: a deterministic compute/publication hook delivers old output after replacement; newer publication remains accepted after exact stale replay.
 
 - `test_issue108_current_worker_defers_inventory_without_resetting_checkpoint`: current worker dispatch yields denied inventory before computation/failure handling and passes the unchanged checkpoint to durable deferral. The original real PostgreSQL proof's blocking-wait expectation failed on post-#116 main; it now requires immediate `BackgroundAdmissionDeferred`, zero staged writes and subsequent exact-delivery resume/replay.
