@@ -524,3 +524,140 @@ npm run lint
 [PR #172](https://github.com/aaweaver-actuary/tempo/pull/172) records current-head/current-base
 qualification and final delivery evidence. Focused local passes and older
 measurements alone do not establish merge readiness for a newer SHA.
+
+## Issue #186: bounded post-review progression (2026-10-11)
+
+The reported incident saved review `92652c34-c66f-4dac-8a3b-8402185c9758`
+for queue entry `13034`, then left `review-queue:13034` active indefinitely.
+That sequence proves the failure occurred after review confirmation. It does
+not identify which later dependency stalled in the historical session.
+
+Inspection and controlled execution of unchanged #172 (`e1661b3a42a79ae368304834db338d7e2cda5039`)
+proved three uncovered waits: the queue fetch deadline and parent cancellation
+ended before JSON body consumption; card preparation had no acquisition deadline;
+and fallback progression awaited the integrity read after installing the queue.
+The named header/body/worker/abort/integrity cases failed against that product
+source (five failures, 4.14 s). The receipt-authorized prepared path already
+avoided the foreground refresh wait; this correction extends that implementation.
+
+Real PostgreSQL acceptance subsequently exposed the existing 30-second visible
+queue poll replacing prepared-card reconciliation. A failed ordinary poll made
+B unavailable even though its receipt had authorized it. Both new polling cases
+fail against the pre-correction integrated source (`ae34bc0d`, 9.50 s) and pass
+with progression ownership (two cases, 5.16 s). This is another proven structural
+interaction, not an attribution of the historical incident.
+
+### State and authority
+
+- Foreground confirmation, recovered receipts and manual post-review retry share
+  one progression owner. Only a matching durable receipt may select an eligible
+  prepared candidate; #172's revision, cycle, day, active-attempt and eligibility
+  checks remain in force.
+- Authoritative fallback has two complete acquisition attempts, each bounded at
+  15 seconds including prerequisites, response body, worker preparation and
+  installation. A retryable acquisition failure gets one automatic queue-only
+  retry. Invalid/unusable or locally completed authoritative heads enter recovery
+  directly. Filtering an invalid head never authorizes its successor.
+- The loader returns `installed`, `exhausted` or `superseded`. Generation and
+  expected-attempt fences revoke late installation authority. Unavailable state
+  remains distinct from authoritative empty-queue completion.
+- Successful installation or exhaustion settles progression immediately. The
+  existing integrity read runs afterward without holding foreground readiness.
+- Prepared B stays interactive while reconciliation gets its own 15-second
+  deadline. Failure retains B's attempt and a visible queue-retry action. Manual,
+  periodic and visibility reconciliation preserve that authorized attempt;
+  polling cannot supersede the completed review's foreground acquisition budget.
+- Queue-only retries disable both saved-review replay paths and never invoke
+  grading or enqueue the completed review again. Reconciliation preserves a
+  just-completed prepared attempt and excludes confirmed completed entries.
+- Home owns the stable `review-queue:<entry>` lifecycle through loading, retry,
+  success, exhaustion, recovery and supersession. Its unmount cancels acquisition
+  and deactivates an active record. Notification/debug details retain attempt
+  identity and the failing phase; replacing TrainingView cannot orphan loading.
+
+The correction changes frontend progression only. It adds no migration, FSRS,
+ordering/admission policy, pool setting or general recovery/notification framework.
+Current-main integration retains schema 46 introduced independently by #124.
+Two concurrent import-publication polling implementations were reconciled using
+main's shared reader, with both sets of named regression contracts preserved.
+
+### Regular acceptance coverage and selected development evidence
+
+All #186 names are registered in `tests/REGRESSIONS.md`. They cover bounded
+headers, JSON body, preparation and prerequisite stalls; contradictory counts; transport abort;
+held integrity; genuine exhaustion; missing prepared continuation; rejected
+heads; lost response/receipt recovery; manual queue retry; attempt replacement;
+view replacement; completed/overlapping prepared reconciliation; and periodic
+poll ownership. `issue186_cancelled_reconciliation_cannot_update_replaced_view`
+also fences notification updates after cancelled reconciliation on unmount. Existing #172 candidate-identity, guidance and opening-evidence
+regressions remain required.
+
+The PostgreSQL browser spec seeds invocation-owned established cards with a
+one-move tactics head before freezing its queue origin. Prepared abort, fallback
+abort and fallback timeout exercise native input, dependency restoration, retry,
+API/foreground-worker restart and exact original request replay. Each case
+compares the complete original review, receipt and scheduling snapshot before
+and after recovery/replay, requires one review POST, and proves native input on B.
+The spec is registered in the regular training browser family. Two pinned Linux
+rendering cases inspect the prepared recovery action at 390/1280 pixels without
+horizontal overflow and attach screenshots; existing baselines are unchanged.
+
+Development uses macOS arm64, Node 26.10, Python 3.14.8, isolated npm/backend
+virtual environments, disposable PostgreSQL 18.6/Redis and native Chromium;
+visual/performance validation uses the repository-pinned Linux arm64 runner.
+The settled runtime and regression revision is
+`fff7ed4b69b7c44cd8fbb653d05181df57f3fee2`, integrating main
+`a5171234`. Earlier rows are explicitly earlier/dirty-tree development evidence.
+
+| Command / selected evidence | Observed result | Duration |
+| --- | --- | --- |
+| Confirmation, prepared-continuation, pending-review recovery, opening lifecycle, burial and builder unit files on integrated `ae34bc0d` | 94 passed | 11.72 s |
+| Confirmation, prepared-continuation and pending-review recovery on settled runtime | 81 passed | 18.36 s |
+| Desktop queue, phone preparation, readiness diagnostics and offline-training unit files | 43 passed | 8.30 s |
+| `node --test tests/runner/postgres-test-speedups.test.mjs` after integration | 64 passed | 3.294 s |
+| `make python-file FILE=backend/tests/test_prepared_review_continuation.py` | 11 passed (pre-integration development source) | 18.26 s |
+| `make python-file FILE=backend/tests/test_training_transition_fixture.py` | 3 passed (unchanged cleanup contract) | 2.57 s |
+| `npm run typecheck` on settled runtime | Passed | 29.73 s |
+| `npm run lint` on settled runtime | Passed; ten existing warnings | 46.01 s |
+| Filtered PostgreSQL browser: prepared abort, restart and exact replay on settled runtime | 1 passed; complete three-case spec remains required in fresh CI | 49.5 s Playwright; 50.77 s browser stage; build 25.12 s, startup 38.99 s, cleanup 9.27 s |
+| `make visual` on settled runtime | 69 passed, including both #186 rendering cases | 438.05 s command; 6.6 min Playwright |
+
+The later cancellation lifecycle guard was checked separately: one case passed
+in 6.38 s; it is included in the fresh combined candidate qualification.
+
+Exact development commands include:
+
+```sh
+npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/pending-review-recovery-regressions.test.tsx
+npm run test:unit -- tests/unit/desktop-queue.test.ts tests/unit/phone-queue-preparation.test.ts tests/unit/readiness-diagnostics.test.ts tests/unit/offline-training-regressions.test.tsx
+node --test tests/runner/postgres-test-speedups.test.mjs
+make python-file FILE=backend/tests/test_prepared_review_continuation.py
+make python-file FILE=backend/tests/test_training_transition_fixture.py
+node scripts/test-postgres-docker.mjs --mode browser --browser-grep 'issue186_completed_tactic_has_bounded_progression: prepared abort'
+make visual
+npm run typecheck
+npm run lint
+make plan
+git diff --check
+```
+
+Exact filtered commands and raw logs are preserved under the root checkout's
+`test-results/2026-10-11-issue-186/`; unit stages overlap and are not summed.
+Earlier browser failures are retained: invalid fixture revision freezing;
+interrupted oversized fixture setup; required background-worker readiness;
+and the prepared-card periodic-poll regression. No timeout or qualification
+threshold was increased to clear those failures. The final fixture keeps CLI
+operations asynchronous so database inspection does not block browser routes.
+Conflict, migration-inventory (46), diff and executable test-plan guards are
+required before publishing. A local complete gate is not run concurrently with
+CI. Fresh head/base/integration qualification, ready-for-review state and verified
+mergeability are recorded in #172's description/handoff; old-head measurements
+above do not qualify this correction.
+
+The live study checkout and resources, another owner's prepared-training checkout,
+and uncertain old analysis-proof resources are retained. Disposable runners own
+unique projects, ports, credentials and volumes; diagnostics and ownership records
+are preserved outside the development clone before exact owned teardown is
+verified. This task's checkout and safe dependencies remain owned and retained
+until #172 merges and their preservation/consumer checks permit removal.
+Issue #186 remains open until merge. No merge or deployment is authorized.
