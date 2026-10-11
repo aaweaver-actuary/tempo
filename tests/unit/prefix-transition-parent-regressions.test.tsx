@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import RepertoireView from "../../app/views/repertoire_view";
 import { beginPrefixTransition } from "../../app/lib/prefix-transition-command";
@@ -16,7 +17,7 @@ vi.mock("../../app/lib/workspace-data", async importOriginal => ({
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 
 it("issue81_offline_repertoire_load_does_not_hide_saved_recovery", async () => {
-  const operation = beginPrefixTransition("rep", prefixTransitionApplySchema.parse(transition.request),
+  const operation = await beginPrefixTransition("rep", prefixTransitionApplySchema.parse(transition.request),
     transitionSummary(prefixTransitionPlanSchema.parse(transition.ready), prefixSourceSchema.parse(structural.source), "Combined Black"));
   const fetcher = vi.fn(async () => { throw new TypeError("Local service unavailable"); });
   vi.stubGlobal("fetch", fetcher);
@@ -33,3 +34,5 @@ it("issue81_offline_repertoire_load_does_not_hide_saved_recovery", async () => {
   await screen.findByRole("heading", { name: "Delivery unconfirmed" });
   expect(fetcher.mock.calls.every(([, options]: unknown[]) => !(options as RequestInit | undefined)?.method)).toBe(true);
 });
+
+beforeEach(() => { installPrefixTransitionTestLocks(); });

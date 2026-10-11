@@ -4054,3 +4054,25 @@ and unlocked edits are replaced with assertions of corrected behavior; originals
 remain in the audit. Backend `test_pr187_audit_contract.py` covers authoritative
 unknown/unavailable status and original-envelope retry 202/409/503 contracts with
 mocked seams, not database durability.
+
+## PR187 journal concurrency and recovery ownership (#81, #187)
+
+`tests/unit/prefix-transition-journal-regressions.test.ts` promotes the independent
+`audit187_published_journal_cannot_regress_after_older_*` schedules (pending,
+unknown, blocked, failed, transport error, and cancellation), same-origin lock
+reservation, no-lock refusal before UUID allocation/delivery, clear/stale/new-owner
+races, queued clearing during publication, repeated same-ID delivery, immutable
+caller data/scope, known journal loss, quota-retained identity/publication, and
+short structural admission that releases before networking. Existing promoted
+`pr187-audit-command`, `pr187-audit-ui`, command, comparison, and parent suites
+retain their status-first retry/409/503/lost-response/deadline and remount coverage
+with explicitly awaited journal APIs and scoped native-capability test doubles.
+
+`tests/browser/prefix-transition-journal.spec.ts` supplies native Chromium
+same-origin reservation, all five older-response publication/UI schedules,
+obsolete-writer clearing/replacement, actual debugger-gated lock exclusion of
+clear/new reservation, no-lock zero-ID/zero-delivery refusal, known deletion
+notice/guard, and real reload identity recovery. The separately named total-loss
+reload case documents the remaining backend-rediscovery limitation; it does not
+claim unconditional recovery. `cross-browser.spec.ts` verifies native lock
+reservation and unsupported-capability refusal across the regular browser engines.
