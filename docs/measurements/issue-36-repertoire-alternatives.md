@@ -111,13 +111,24 @@ memory tradeoffs; they do not establish production drop latency or a whole-app
 speedup. Superseded random-game generation and one overlapping run were stopped;
 their timing output was discarded and their logs remain in external diagnostics.
 
+## Compatibility
+
+A virtual merge of the task branch with PR #172 at
+`e1661b3a42a79ae368304834db338d7e2cda5039` auto-merges Home and recovery
+coverage. The initial compatibility check found only both branches appending
+regression registrations at the same end-of-file location. Moving this issue’s
+registration to its own leading section preserves both sections and the next
+virtual merge is conflict-free. This check does not merge PR #172 into the task
+branch or claim validation of its separate implementation. Current remote main
+remains `964b2a3a2ede4d9ac92288bb98a9ccba831d6b62`.
+
 ## Development validation
 
 - Baseline command: `npm run test:unit -- tests/unit/repertoire-alternative-home-regressions.test.tsx -t 'issue36_home_query|issue36_authoritative_changes.*edit'`: 2 intended failures, 16.25 s, before Home integration.
-- `make unit-file FILE=tests/unit/repertoire-alternative-index-regressions.test.ts`: 7 passed, 30.13 s.
+- `make unit-file FILE=tests/unit/repertoire-alternative-index-regressions.test.ts`: 7 passed, 30.13 s. After adding explicit checkmate/stalemate fixtures, all 7 passed again (4.20 s Vitest, 5.520 s command).
 - `npm run test:unit -- tests/unit/repertoire-alternative-index-regressions.test.ts tests/unit/repertoire-alternative-home-regressions.test.tsx tests/unit/study-position-store-regressions.test.ts tests/unit/position-search.test.ts tests/unit/study-regressions.test.tsx`: 105 passed, 1 navigation failure, 89.17 s. The misspelled position-search filter matched no file; the corrected file runs below. The navigation assertion diagnosed reuse of a prior pending request, then was repaired with targeted eviction.
 - `npm run test:unit -- tests/unit/repertoire-alternative-home-regressions.test.tsx tests/unit/position-search-regressions.test.ts tests/unit/background-workspace-regressions.test.tsx tests/unit/board-authoritative-restoration-regressions.test.tsx tests/unit/board-drag-preservation-regressions.test.tsx`: all 53 passed, 28.71 s, including all 20 Home cases and targeted request isolation. These run against the uncommitted production sources subsequently committed in `6937b06a`; source preparation/index tests also passed in the preceding run.
-- `npm run typecheck`: passed; local duration was not instrumented. `npm run lint`: passed with 10 existing warnings and no errors. Changed TypeScript/JavaScript files also passed direct ESLint; the bounded benchmark follow-up requires a fresh script lint.
+- `npm run typecheck`: passed; local duration was not instrumented. `npm run lint`: passed with 10 existing warnings and no errors. Changed TypeScript/JavaScript files also passed direct ESLint; the bounded benchmark follow-up also passed fresh script lint.
 - `npm run check:conflicts`, `node scripts/check-migration-inventory.mjs` (45), and `git diff --check`: passed before commits.
 
 Local environment: isolated worktree, Node v26.10.0 / Vitest 5.0.1 on Darwin ARM64,
