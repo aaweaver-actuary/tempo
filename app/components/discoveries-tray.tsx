@@ -164,6 +164,31 @@ function evidenceNumber(discovery: DiscoveryItem, key: string): string {
   return typeof discovery.evidence[key] === "number" ? String(discovery.evidence[key]) : "unavailable";
 }
 
+function missingResponseEvidenceSummary(discovery: DiscoveryItem): string {
+  const evidenceParts: string[] = [];
+  const personalEncounters = discovery.evidence.personal_count ?? discovery.evidence.supporting_games;
+  if (typeof personalEncounters === "number" && Number.isInteger(personalEncounters) && personalEncounters >= 0)
+    evidenceParts.push(`Personal encounters: ${personalEncounters}`);
+  for (const [evidenceKey, sourceLabel] of [
+    ["maia_probability", "Maia reply probability"],
+    ["explorer_probability", "Lichess cohort reply probability"],
+  ]) {
+    const probability = discovery.evidence[evidenceKey];
+    if (typeof probability === "number" && Number.isFinite(probability) && probability >= 0 && probability <= 1)
+      evidenceParts.push(`${sourceLabel}: ${(probability * 100).toFixed(1)}%`);
+  }
+  return evidenceParts.join(" · ");
+}
+
+function recommendationPreparationStatus(preview: Recommendation | undefined, status: PreviewStatus | undefined): string {
+  if (preview?.state === "ready") return "Ready";
+  if (status === "failed") return "Suggested continuation preparation failed. Open in Builder to investigate.";
+  const preparationStatus = preview?.state === "unavailable"
+    ? "Suggested continuation unavailable."
+    : "Preparing a suggested continuation.";
+  return preview?.reason ? `${preparationStatus} ${preview.reason}` : preparationStatus;
+}
+
 const recurringEvidenceKeys = [
   "window_days", "encounter_count", "analyzed_count", "miss_count",
   "strong_prefix_count", "sufficient_prefix_count", "immediate_average_loss_cp",
@@ -286,10 +311,12 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const dialogRef = useRef<HTMLElement>(null);
   const [completedAdmissions, setCompletedAdmissions] = useState<string[]>([]);
   const outboxRecoveryStarted = useRef(false);
-  const readyDiscoveries = useMemo(() => discoveries.filter((item) => {
+  const reviewableDiscoveries = useMemo(() => discoveries.filter((item) => {
     if (item.admission_state === "preparing" || item.admission_state === "queued" ||
         completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`)) return false;
-    if (item.card_id) return true;
+    // The current feed already qualifies repertoire gaps. Previews enrich them;
+    // recommendation readiness is only required for other cardless discoveries.
+    if (item.card_id || item.kind === "missing_response") return true;
     const recommendation = previews[item.id];
     return previewFingerprints[item.id] === item.evidence_fingerprint &&
       recommendation?.state === "ready" &&
@@ -297,8 +324,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       validatedPreviews[item.id]?.recommendation === recommendation &&
       validatedPreviews[item.id]?.decision === previewDecisionIdentity(item);
   }), [discoveries, previews, previewFingerprints, validatedPreviews, completedAdmissions]);
-  const visibleDiscoveries = useMemo(() => readyDiscoveries.filter((item) => !item.snoozed_until ||
-    new Date(item.snoozed_until).getTime() <= currentTime), [readyDiscoveries, currentTime]);
+  const visibleDiscoveries = useMemo(() => reviewableDiscoveries.filter((item) => !item.snoozed_until ||
+    new Date(item.snoozed_until).getTime() <= currentTime), [reviewableDiscoveries, currentTime]);
   const reviewItems = useMemo(() => sessionItems.length ? sessionItems.filter((item) =>
     item.admission_state !== "queued" &&
     !completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`) &&
@@ -946,6 +973,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const boardStep = boardHistory.steps[boardCursor];
   const atDecision = boardCursor === boardHistory.decisionIndex;
   const observedChange = active?.evidence.later_average_change_cp;
+  const gapEvidenceSummary = active?.kind === "missing_response" ? missingResponseEvidenceSummary(active) : "";
   const observedChangeText = typeof observedChange === "number"
     ? `${Math.abs(observedChange)} cp ${observedChange >= 0 ? "worse" : "better"}` : "unavailable";
   const mateOutcomes = Array.isArray(active?.evidence.mate_outcomes)
@@ -1330,6 +1358,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                         , this is your decision.
                       </p>
                     )}
+                  {gapEvidenceSummary && <p>{gapEvidenceSummary}</p>}
                   {active.routes[0] && (
                     <p>
                       Example route: {active.routes[0]}
@@ -1342,9 +1371,11 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                     Stockfish:{" "}
                     {active.card_id
                       ? engineStatus
-                      : preview?.state === "ready"
-                        ? "Ready"
-                        : (preview?.reason ?? "Preparing")}{" "}
+                      : active.kind === "missing_response"
+                        ? recommendationPreparationStatus(preview, previewStatuses[active.id])
+                        : preview?.state === "ready"
+                          ? "Ready"
+                          : (preview?.reason ?? "Preparing")}{" "}
                     · Lichess:{" "}
                     {explorer?.lichess.message ??
                       explorer?.lichess.state ??

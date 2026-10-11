@@ -8,8 +8,19 @@ safe-break candidate, then background preparation; ties follow feed order.
 An explicit request elevates queued work but does not interrupt an active request.
 
 Closed, visible, idle trays prepare at most two selected items per successful
-complete feed refresh. Newly ready items enter navigation immediately in feed
-order without replacing the active item. Saved-card items do not need previews.
+complete feed refresh. A current qualifying `missing_response` may be surfaced
+at an existing safe interruption point before continuation analysis completes.
+Recommendation preparation enriches the discovery but does not gate notification,
+the unread badge, or viewer navigation. Waiting, unavailable and failed previews
+leave the gap and its published evidence visible, with honest continuation status
+and the existing Builder investigation action. Add and train still requires a
+validated eligible continuation and an explicit user choice.
+
+Saved-card items do not need previews. Other cardless opportunity types retain
+their ready-preview requirement. Newly reviewable items enter navigation in feed
+order without replacing the active item; later preview readiness enriches that
+item without another interruption. Snooze, handled admissions, acknowledgement,
+and close suppression retain their existing semantics.
 The open viewer has a rolling two-item look-ahead, filling unused slots from the
 nearest preceding entries so returned items become navigable. Waiting and failed
 items retain retry demand at look-ahead priority, with their existing scheduler
@@ -45,7 +56,7 @@ All pages still use the existing endpoint and schema. Automatic pagination stops
 between pages if demand disappears; incomplete reads never replace the last
 complete snapshot or invent a partial count. Explicit and command-required reads
 finish pagination independently of that policy. Counts retain their existing
-meaning (complete loaded feed, or ready/unread items as appropriate).
+meaning (complete loaded feed, or reviewable/unread items as appropriate).
 
 ## Ownership, retry and validation
 

@@ -1,4 +1,5 @@
 import { test, expect, prepareUI, noPageOverflow, navigate } from "./ui-fixtures";
+import { prepareVisualUI } from "./visual-fixtures";
 
 async function openDiscoveries(page: import("@playwright/test").Page) {
   const trigger = page.getByRole("button", { name: "Discoveries", exact: true });
@@ -32,6 +33,67 @@ const readyPreview = (id: string, fingerprint = `${id}-revision`) => ({
     preview_moves_uci: ["g1f3"], engine_version: "Stockfish", network_version: "NNUE",
     depth: 14, report_id: "a".repeat(64), source_game_id: "game", source_ply: 2,
   }],
+});
+
+test("missing response opens after a safe training break before its preview settles and enriches once", async ({ page }, testInfo) => {
+  await prepareVisualUI(page, false, [{ id: "safe-break-card", queue_entry_id: 1, start_fen: startFen,
+    moves: ["e2e4"], content_type: "opening", repertoire_name: "Safe break fixture",
+    repertoire_source: "PGN", first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white" }]);
+  const gap = { ...discoveryFixture("safe-gap"), repertoire_id: "visual-repertoire",
+    fen_key: beforeReply.split(" ").slice(0, 4).join(" "),
+    kind: "missing_response", unread: true, seen_at: null,
+    evidence: { supporting_games: 4, personal_count: 4, maia_probability: 0.07 } };
+  let acknowledgements = 0;
+  let previewReads = 0;
+  let releasePreview: (() => Promise<void>) | undefined;
+  await page.route("**/api/discoveries?**", route => route.fulfill({ json: {
+    discoveries: [{ ...gap, unread: acknowledgements === 0 }], total: 1, next_offset: null,
+    unread_count: acknowledgements === 0 ? 1 : 0,
+  } }));
+  await page.route("**/api/repertoires/visual-repertoire/opportunities/safe-gap/acknowledge", route => {
+    acknowledgements++; return route.fulfill({ json: { acknowledged: true } });
+  });
+  await page.route("**/api/discoveries/safe-gap/recommendations", async route => {
+    previewReads++;
+    await new Promise<void>(resolve => { releasePreview = async () => {
+      releasePreview = undefined;
+      await route.fulfill({ json: readyPreview("safe-gap") }); resolve();
+    }; });
+  });
+  // The helper's first navigation installs its empty feed. Start the attempt
+  // with the actual discovery fixtures present, before the initial feed read.
+  await page.reload();
+  const viewer = page.getByRole("dialog", { name: "Discoveries" });
+  try {
+    const board = page.locator(".persistent-board-shell .board-frame");
+    await expect(board).toHaveAttribute("data-input-enabled", "true");
+    const bounds = (await board.locator(".cg-wrap").boundingBox())!;
+    const pawnX = bounds.x + bounds.width * 4.5 / 8;
+    await page.mouse.move(pawnX, bounds.y + bounds.height * 6.5 / 8);
+    await page.mouse.down();
+    await page.mouse.move(pawnX, bounds.y + bounds.height * 5.5 / 8);
+    await expect(board.locator("piece.dragging")).toBeVisible();
+    await expect(viewer).toHaveCount(0);
+    await page.mouse.move(pawnX, bounds.y + bounds.height * 4.5 / 8);
+    await page.mouse.up();
+    await expect(viewer).toBeVisible();
+    await expect(viewer.getByRole("heading", { name: "A response is missing from your repertoire" })).toBeVisible();
+    await expect(viewer.getByText(/Preparing a suggested continuation/)).toBeVisible();
+    await expect(viewer.getByText(/Maia reply probability: 7.0%/)).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Add and train" })).toBeDisabled();
+    await expect(viewer.getByRole("button", { name: "Open in Builder" })).toBeVisible();
+    await expect.poll(() => previewReads).toBe(1);
+    await testInfo.attach("pending-missing-response", { body: await viewer.screenshot(), contentType: "image/png" });
+    await releasePreview!();
+    await expect(viewer.getByRole("button", { name: "Suggested Nf3" })).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Add and train" })).toBeEnabled();
+    await testInfo.attach("enriched-missing-response", { body: await viewer.screenshot(), contentType: "image/png" });
+    await expect.poll(() => acknowledgements).toBe(1);
+    await viewer.getByRole("button", { name: "Back to work" }).click();
+    await navigate(page, "Games");
+    await expect(viewer).toHaveCount(0);
+    expect(acknowledgements).toBe(1);
+  } finally { await page.mouse.up(); await releasePreview?.(); }
 });
 
 test("inactive discovery preview refreshes once without a retry notification and another discovery loads", async ({ page }) => {

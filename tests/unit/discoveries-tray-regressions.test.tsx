@@ -1,12 +1,14 @@
 import { writeFileSync } from "node:fs";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { DiscoveriesTray } from "../../app/components/discoveries-tray";
+import { DiscoveriesTray, type DiscoveryItem } from "../../app/components/discoveries-tray";
 import { DISCOVERY_ADMISSION_QUEUED, flushPendingDiscoveryAdmissions, pendingDiscoveryAdmissions } from
   "../../app/lib/discovery-admission-outbox";
 import { clearDataDiagnostics, dataDiagnostics } from "../../app/lib/validated-data";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import { Chess } from "chess.js";
+import type { z } from "zod";
+import { repertoireOpportunitiesSchema } from "../../app/domain/schemas";
 import { clearNotificationHistory, notifications, publishNotification } from "../../app/lib/notifications";
 
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
@@ -27,6 +29,294 @@ vi.mock("../../app/lib/lichess-explorer", () => ({ loadExplorer: () => new Promi
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 beforeEach(() => { localStorage.clear(); clearNotificationHistory(); });
+
+const missingResponseBeforeReply = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+const missingResponseDecisionFen = new Chess(missingResponseBeforeReply).move("c5").after;
+
+function missingResponseDiscovery(
+  overrides: Partial<z.input<typeof repertoireOpportunitiesSchema>["opportunities"][number]> = {},
+): DiscoveryItem {
+  return repertoireOpportunitiesSchema.shape.opportunities.element.parse({
+    id: "gap", repertoire_id: "rep", kind: "missing_response", status: "active",
+    fen_key: missingResponseBeforeReply.split(" ").slice(0, 4).join(" "), fen: missingResponseBeforeReply,
+    decision_fen: missingResponseDecisionFen, decision_start_fen: startFen,
+    decision_route_uci: ["e2e4", "c7c5"], accepted_moves_uci: [],
+    card_id: null, opponent_move_uci: "c7c5", trained_color: "white", score: 1,
+    evidence: { supporting_games: 4, personal_count: 4, maia_probability: 0.07,
+      explorer_probability: 0.09, explorer_games: 200 },
+    evidence_fingerprint: "gap-v1", seen_at: null, snoozed_until: null,
+    admission_state: null, admitted_card_id: null, unread: true, source_games: [], routes: ["e4 c5"],
+    created_at: "2026-09-24T00:00:00Z", updated_at: "2026-09-24T00:00:00Z", ...overrides,
+  });
+}
+
+function missingResponseFeed(items: DiscoveryItem[]) {
+  return Response.json({ discoveries: items, total: items.length, next_offset: null,
+    unread_count: items.filter(item => item.unread).length });
+}
+
+function missingResponseRecommendation(item: DiscoveryItem, moveUci = "g1f3") {
+  const recommendation = schedulerRecommendation(item.id, item.evidence_fingerprint);
+  return { ...recommendation, starting_fen: item.decision_fen, suggested_move_uci: moveUci,
+    candidates: recommendation.candidates.map(candidate => ({ ...candidate,
+      move_uci: moveUci, preview_moves_uci: [moveUci] })) };
+}
+
+it("missing response opens at a safe break before its recommendation request settles", async () => {
+  const discovery = missingResponseDiscovery();
+  const pendingPreview = deferredEligibility<Response>();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => missingResponseFeed([discovery]));
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input).endsWith("/recommendations")
+    ? pendingPreview.promise : Promise.resolve(Response.json({ acknowledged: true }))));
+  const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  try {
+    await waitFor(() => expect(document.querySelector("aside")?.getAttribute("data-discovery-count")).toBe("1"));
+    expect(screen.queryByRole("dialog", { name: "Discoveries" })).toBeNull();
+    view.rerender(<DiscoveriesTray {...props} safeBreakCounter={1} />);
+    expect(await screen.findByRole("heading", { name: "A response is missing from your repertoire" })).toBeTruthy();
+    expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(missingResponseDecisionFen);
+    expect(screen.getByText("c5")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Add and train" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Open in Builder" })).toBeTruthy();
+  } finally {
+    view.unmount();
+    pendingPreview.resolve(Response.json({ state: "waiting", opportunity_id: "gap", candidates: [] }));
+  }
+});
+
+it.each(["waiting", "unavailable", "failed"] as const)(
+  "missing response with a %s recommendation remains visible at a safe break", async (state) => {
+    const discovery = missingResponseDiscovery();
+    backgroundFetch.mockReset();
+    backgroundFetch.mockImplementation(async () => missingResponseFeed([discovery]));
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (!String(input).endsWith("/recommendations")) return Response.json({ acknowledged: true });
+      if (state === "failed") throw new Error("Preview service failed");
+      return Response.json({ state, opportunity_id: discovery.id, candidates: [], reason: "Published preview reason" });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+    const view = render(<DiscoveriesTray {...props} />);
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    await schedulerMicrotasks();
+    view.rerender(<DiscoveriesTray {...props} safeBreakCounter={1} />);
+    expect(await screen.findByRole("heading", { name: "A response is missing from your repertoire" })).toBeTruthy();
+    expect(screen.getByText(/Personal encounters: 4/)).toBeTruthy();
+    expect(screen.getByText(/Maia reply probability: 7.0%/)).toBeTruthy();
+    expect(screen.getByText(/Lichess cohort reply probability: 9.0%/)).toBeTruthy();
+    expect(screen.getByText(state === "failed" ? /Suggested continuation preparation failed/ : /Published preview reason/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open in Builder" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Add and train" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /^Suggested / })).toBeNull();
+  },
+);
+
+it("missing response enriches with a ready recommendation without interrupting again", async () => {
+  const discovery = missingResponseDiscovery();
+  const pendingPreview = deferredEligibility<Response>();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => missingResponseFeed([discovery]));
+  const fetcher = vi.fn((input: RequestInfo | URL) => String(input).endsWith("/recommendations")
+    ? pendingPreview.promise : Promise.resolve(Response.json({ acknowledged: true })));
+  vi.stubGlobal("fetch", fetcher);
+  const props = { safeToOpen: true, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  try {
+    await screen.findByRole("heading", { name: "A response is missing from your repertoire" });
+    expect(screen.getByText(/Preparing a suggested continuation/)).toBeTruthy();
+    await act(async () => pendingPreview.resolve(Response.json(missingResponseRecommendation(discovery))));
+    expect(await screen.findByRole("button", { name: "Suggested Nf3" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Add and train" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText("1 of 1 · white to move")).toBeTruthy();
+    await waitFor(() => expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/acknowledge"))).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Back to work" }));
+    view.rerender(<DiscoveriesTray {...props} safeBreakCounter={1} />);
+    await schedulerMicrotasks();
+    expect(screen.queryByRole("dialog", { name: "Discoveries" })).toBeNull();
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/acknowledge"))).toHaveLength(1);
+  } finally { view.unmount(); pendingPreview.resolve(Response.json(missingResponseRecommendation(discovery))); }
+});
+
+it.each(["ready", "wrong decision"] as const)(
+  "missing response with an initially %s preview surfaces with only validated suggestions", async (previewKind) => {
+    const discovery = missingResponseDiscovery({ evidence: { supporting_games: 0, maia_probability: 0.07 } });
+    const recommendation = missingResponseRecommendation(discovery);
+    backgroundFetch.mockReset();
+    backgroundFetch.mockImplementation(async () => missingResponseFeed([discovery]));
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).endsWith("/recommendations")
+      ? { ...recommendation, starting_fen: previewKind === "ready" ? discovery.decision_fen : startFen }
+      : { acknowledged: true })));
+    const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+    const view = render(<DiscoveriesTray {...props} />);
+    await waitFor(() => expect(previewDiagnostics().validationInvocations).toBe(1));
+    view.rerender(<DiscoveriesTray {...props} safeBreakCounter={1} />);
+    await screen.findByRole("heading", { name: "A response is missing from your repertoire" });
+    expect(screen.queryByText(/Lichess cohort reply probability/)).toBeNull();
+    if (previewKind === "ready") {
+      expect(screen.getByRole("button", { name: "Suggested Nf3" })).toBeTruthy();
+      expect((screen.getByRole("button", { name: "Add and train" }) as HTMLButtonElement).disabled).toBe(false);
+    } else {
+      expect(screen.getByText(/Discovery position and recommendation disagree/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Suggested Nf3" })).toBeNull();
+      expect((screen.getByRole("button", { name: "Add and train" }) as HTMLButtonElement).disabled).toBe(true);
+    }
+  },
+);
+
+it("closing missing responses suppresses unopened items even when their previews later become ready", async () => {
+  vi.useFakeTimers();
+  const discoveries = [missingResponseDiscovery(), missingResponseDiscovery({ id: "second", routes: ["second"] })];
+  const requests = new Map<string, ReturnType<typeof deferredEligibility<Response>>>();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => missingResponseFeed(discoveries));
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Promise.resolve(Response.json({ acknowledged: true }));
+    const request = deferredEligibility<Response>(); requests.set(id, request); return request.promise;
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const props = { safeToOpen: true, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByText("1 of 2 · white to move")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to work" }));
+    for (const discovery of discoveries)
+      await act(async () => requests.get(discovery.id)!.resolve(Response.json(missingResponseRecommendation(discovery))));
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    view.rerender(<DiscoveriesTray {...props} safeBreakCounter={1} />);
+    await schedulerMicrotasks();
+    expect(screen.queryByRole("dialog", { name: "Discoveries" })).toBeNull();
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/acknowledge"))).toHaveLength(1);
+  } finally { view.unmount(); }
+});
+
+it("missing response waits for an unblocked safe break even when preview preparation is paused", async () => {
+  const discovery = missingResponseDiscovery();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => missingResponseFeed([discovery]));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).endsWith("/recommendations")
+    ? { state: "waiting", opportunity_id: "gap", candidates: [] } : { acknowledged: true })));
+  const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  await screen.findByLabelText("1 new discoveries");
+  view.rerender(<DiscoveriesTray {...props} interactionBlocked speculativePreparationPaused safeBreakCounter={1} />);
+  await schedulerMicrotasks();
+  expect(screen.queryByRole("dialog", { name: "Discoveries" })).toBeNull();
+  view.rerender(<DiscoveriesTray {...props} speculativePreparationPaused safeBreakCounter={1} />);
+  await schedulerMicrotasks();
+  expect(screen.queryByRole("dialog", { name: "Discoveries" })).toBeNull();
+  view.rerender(<DiscoveriesTray {...props} speculativePreparationPaused safeBreakCounter={2} />);
+  expect(await screen.findByRole("heading", { name: "A response is missing from your repertoire" })).toBeTruthy();
+});
+
+it.each(["snoozed", "preparing", "queued", "completed"] as const)(
+  "missing response that is %s does not interrupt as a fresh discovery", async (state) => {
+    const discovery = missingResponseDiscovery({
+      snoozed_until: state === "snoozed" ? new Date(Date.now() + 86_400_000).toISOString() : null,
+      admission_state: state === "preparing" || state === "queued" ? state : null,
+    });
+    backgroundFetch.mockReset();
+    backgroundFetch.mockImplementation(async () => missingResponseFeed([discovery]));
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(String(input).endsWith("/recommendations")
+      ? { state: "waiting", opportunity_id: "gap", candidates: [] } : { acknowledged: true })));
+    const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+    const view = render(<DiscoveriesTray {...props} />);
+    await waitFor(() => expect(document.querySelector("aside")?.getAttribute("data-discovery-count")).toBe("1"));
+    if (state === "completed") {
+      act(() => window.dispatchEvent(new CustomEvent(DISCOVERY_ADMISSION_QUEUED,
+        { detail: { opportunityId: discovery.id, evidenceFingerprint: discovery.evidence_fingerprint } })));
+      await schedulerMicrotasks();
+    }
+    view.rerender(<DiscoveriesTray {...props} safeToOpen safeBreakCounter={1} />);
+    await schedulerMicrotasks();
+    expect(screen.queryByRole("dialog", { name: "Discoveries" })).toBeNull();
+    expect(screen.queryByLabelText("1 new discoveries")).toBeNull();
+  },
+);
+
+it.each(["fingerprint", "decision"] as const)(
+  "missing response stays reviewable while an obsolete %s preview is rejected", async (change) => {
+    vi.useFakeTimers();
+    const original = missingResponseDiscovery();
+    let feed = [original];
+    const requests: ReturnType<typeof deferredEligibility<Response>>[] = [];
+    backgroundFetch.mockReset();
+    backgroundFetch.mockImplementation(async () => missingResponseFeed(feed));
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (!String(input).endsWith("/recommendations")) return Promise.resolve(Response.json({ acknowledged: true }));
+      const request = deferredEligibility<Response>(); requests.push(request); return request.promise;
+    }));
+    const view = render(<DiscoveriesTray safeToOpen safeBreakCounter={0} onQueueChanged={async () => {}} />);
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(requests).toHaveLength(1);
+      expect(screen.getByRole("heading", { name: "A response is missing from your repertoire" })).toBeTruthy();
+      const replacement = missingResponseDiscovery(change === "fingerprint"
+        ? { evidence_fingerprint: "gap-v2", routes: ["replacement evidence"] }
+        : { opponent_move_uci: "e7e5", decision_fen: new Chess(missingResponseBeforeReply).move("e5").after,
+          decision_route_uci: ["e2e4", "e7e5"], routes: ["replacement decision"] });
+      feed = [replacement];
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(requests).toHaveLength(2);
+      expect(screen.getByText(`Example route: replacement ${change === "fingerprint" ? "evidence" : "decision"}`)).toBeTruthy();
+      expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(replacement.decision_fen);
+      await act(async () => requests[0].resolve(Response.json(missingResponseRecommendation(original))));
+      expect(screen.queryByRole("button", { name: "Suggested Nf3" })).toBeNull();
+      expect((screen.getByRole("button", { name: "Add and train" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(previewDiagnostics().staleResultsIgnored).toBe(1);
+      await act(async () => requests[1].resolve(Response.json(missingResponseRecommendation(replacement, "f1c4"))));
+      expect(screen.getByRole("button", { name: "Suggested Bc4" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Suggested Nf3" })).toBeNull();
+    } finally {
+      view.unmount();
+      for (const request of requests) request.resolve(Response.json({ state: "waiting", opportunity_id: "gap", candidates: [] }));
+      await schedulerMicrotasks();
+    }
+  },
+);
+
+it("missing response feed reconciliation preserves navigation and rejects removed previews", async () => {
+  vi.useFakeTimers();
+  const first = missingResponseDiscovery({ id: "first", unread: false, routes: ["first"] });
+  const second = missingResponseDiscovery({ id: "second", unread: false, routes: ["second"] });
+  const added = missingResponseDiscovery({ id: "added", unread: false, routes: ["added"] });
+  let feed = [first, second];
+  const requests = new Map<string, ReturnType<typeof deferredEligibility<Response>>>();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => missingResponseFeed(feed));
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Promise.resolve(Response.json({ acknowledged: true }));
+    const request = deferredEligibility<Response>(); requests.set(id, request); return request.promise;
+  }));
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    fireEvent.click(screen.getByRole("button", { name: /^Next$/ }));
+    expect(screen.getByText("Example route: second")).toBeTruthy();
+    feed = [added, first, second];
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByText("3 of 3 · white to move")).toBeTruthy();
+    expect(screen.getByText("Example route: second")).toBeTruthy();
+    feed = [added, first];
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(screen.queryByText("Example route: second")).toBeNull();
+    await act(async () => requests.get("second")!.resolve(Response.json(missingResponseRecommendation(second))));
+    expect(screen.queryByText("Example route: second")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Suggested Nf3" })).toBeNull();
+    expect(screen.getByText("1 of 2 · white to move")).toBeTruthy();
+  } finally {
+    view.unmount();
+    for (const request of requests.values()) request.resolve(Response.json({ state: "waiting", opportunity_id: "gap", candidates: [] }));
+    await schedulerMicrotasks();
+  }
+});
 
 it("discovery confirmation waits for a queued admission", async () => {
   localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
@@ -277,9 +567,9 @@ it("shows only ready discoveries in feed order and does not acknowledge hidden i
   }
 });
 
-it("shows an empty ready queue when every cardless recommendation is unavailable", async () => {
+it("shows an empty ready queue when a post-gap recommendation is unavailable", async () => {
   const discovery = {
-    id: "unavailable", repertoire_id: "rep", kind: "missing_response", status: "active",
+    id: "unavailable", repertoire_id: "rep", kind: "post_gap_weakness", status: "active",
     fen_key: startFen.split(" ").slice(0, 4).join(" "), fen: startFen,
     card_id: null, opponent_move_uci: null, trained_color: "white", score: 0.5,
     evidence: { supporting_games: 0 }, evidence_fingerprint: "unavailable-fingerprint",
