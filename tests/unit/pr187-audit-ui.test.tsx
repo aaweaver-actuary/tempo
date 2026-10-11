@@ -113,3 +113,11 @@ it.each(['missing','locks','unreadable'] as const)('audit187_%s_journal_mutation
  fireEvent.click(check);await waitFor(()=>expect((check as HTMLButtonElement).disabled).toBe(false));
  expect(fetcher.mock.calls.length).toBeGreaterThan(0);expect(fetcher.mock.calls.every(([,options])=>options?.method!=='POST')).toBe(true);
 });
+
+it('audit187_verified_publication_survives_storage_deletion_and_component_remount',async()=>{
+ const original=await reserve();const fetcher=vi.fn<typeof fetch>(async()=>receipt(original.operationId));vi.stubGlobal('fetch',fetcher);
+ const first=panel();await screen.findByRole('heading',{name:'Prefix transition published'});first.unmount();localStorage.removeItem(key);
+ fetcher.mockResolvedValue(Response.json({}, {status:404}));panel();await screen.findByRole('heading',{name:'Prefix transition published'});
+ expect(readPrefixTransition('rep')?.result?.operation_id).toBe(original.operationId);expect(localStorage.getItem(key)).toBeNull();
+ expect(fetcher.mock.calls.every(([,options])=>options?.method!=='POST')).toBe(true);
+});

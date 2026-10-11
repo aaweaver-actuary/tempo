@@ -217,3 +217,42 @@ it.each(["snapshot_id", "transition_snapshot_id", "graph_generation", "plan_id",
     await expect(beginPrefixTransition("rep", changedRequest, changedSummary, undefined, { plan, source })).rejects.toThrow(/reviewed|evidence/);
     expect(allocate).not.toHaveBeenCalled(); expect(localStorage.getItem(key)).toBeNull();
   });
+
+it("audit187_verified_publication_survives_unexpected_journal_deletion", async () => {
+  const original = await begin(); vi.stubGlobal("fetch", vi.fn().mockResolvedValue(completion(original.operationId))); await recovering();
+  localStorage.removeItem(key);
+  const retained = readPrefixTransition("rep"); assertFrozen(retained, original.operationId);
+  expect(retained?.state).toBe("published"); expect(retained?.result?.operation_id).toBe(original.operationId);
+  const fetcher = vi.fn().mockResolvedValue(Response.json({}, { status: 404 })); vi.stubGlobal("fetch", fetcher);
+  expect((await recovering())?.state).toBe("published"); expect(localStorage.getItem(key)).toBeNull();
+  expect(fetcher).toHaveBeenCalledOnce();expect(fetcher.mock.calls[0][1]?.method).not.toBe("POST");
+  await clearResolvedPrefixTransition("rep", original.operationId); expect(readPrefixTransition("rep")).toBeNull();
+});
+
+it("audit187_deadline_feedback_preserves_latest_authoritative_blocked_state", async () => {
+  vi.useFakeTimers(); const deadlines: AbortController[] = [];
+  vi.spyOn(AbortSignal, "timeout").mockImplementation(milliseconds => {
+    expect(milliseconds).toBe(30_000); const controller = new AbortController(); deadlines.push(controller);
+    setTimeout(() => controller.abort(new DOMException("Checking deadline", "TimeoutError")), milliseconds); return controller.signal;
+  });
+  const original = await begin(); let statusReads = 0;
+  vi.stubGlobal("fetch", vi.fn((_url, options?: RequestInit) => {
+    ++statusReads;
+    if (statusReads === 2) return new Promise<Response>((_resolve, reject) => options?.signal?.addEventListener("abort", () => reject(options.signal!.reason), { once: true }));
+    return Promise.resolve(Response.json({ operation_id: original.operationId, state: statusReads === 1 ? "pending" : "blocked" }));
+  }));
+  const checking = recovering(); await vi.advanceTimersByTimeAsync(1000); expect(statusReads).toBe(2);
+  expect((await recovering())?.state).toBe("blocked"); await vi.advanceTimersByTimeAsync(29_000);
+  const timedOut = await checking; expect(timedOut?.state).toBe("blocked"); expect(timedOut?.message).toMatch(/timed out.*Backend work may still be running/);
+  expect(readPrefixTransition("rep")?.state).toBe("blocked"); assertFrozen(timedOut, original.operationId);
+  deadlines.forEach(controller => controller.abort());
+});
+
+it("audit187_lock_release_waits_for_storage_task_commit", async () => {
+  let committedIdentity: string | null = null;
+  const storageCommit = new MessageChannel();
+  storageCommit.port1.onmessage = () => { committedIdentity = "original"; storageCommit.port1.close(); storageCommit.port2.close(); };
+  const writing = withPrefixTransitionJournalLock(undefined, () => { storageCommit.port2.postMessage(null); });
+  const reading = withPrefixTransitionJournalLock(undefined, () => committedIdentity);
+  await writing; expect(await reading).toBe("original");
+});
