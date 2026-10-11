@@ -4106,3 +4106,5 @@ Journal capability and recovery boundary follow-ups:
 - `audit187_unresolved_clear_rejects_before_recovery_navigation` prevents an unsuccessful clear from being treated as permission to leave recovery.
 - `audit187_verified_publication_recovery_starts_with_get_and_never_replays` makes each recovery action inspect authoritative status while older `unknown` cannot erase verified publication or trigger delivery.
 - `audit187_unreadable_journal_remount_keeps_original_status_controls_and_verified_result` in `pr187-audit-ui.test.tsx` retains Check status across a component remount with unreadable persistence, then displays verified completion without changing the unreadable journal or sending POST.
+
+- `tests/runner/ci-reliability.test.mjs::audit187_native_journal_spec_is_required_in_complete_repertoire_family` reproduces the initially unclassified spec and requires its regular repertoire-family, nightly and release selection. Inventory registration adds coverage; unknown specs still fail planning.
