@@ -15,6 +15,8 @@
 
 `tests/unit/durable-engine-request-regressions.test.ts` adds named cases `issue171 retains the position claim identity after HTTP 503 and restart`, `issue171 position diagnostics are disabled by default and redact journal contents`, and `issue171 diagnostic sink failure preserves the claim error and journal`. Existing uncertain-response and terminal-receipt journal cases remain required.
 
+`tests/unit/defense-engine-smoke-regressions.test.ts` adds `issue171 engine image script manifest imports the position journal and all diagnostic dependencies`. It reconstructs the image's actual script manifest and imports the journal, catching missing transitive modules without engine searches. It failed on `5ae72c00` with `ERR_MODULE_NOT_FOUND` before `Dockerfile.engine` included the diagnostic module; the full Docker startup gate also caught this packaging omission.
+
 The ordinary PostgreSQL durability runner discovers these additions in `scripts/check_postgres_engine_fairness.py`:
 
 - `test_postgres_engine_issue171_position_deadline_recovers_and_replays_after_restart`: real server-enforced 250 ms expiry, no premature receipt/lease mutation, worker execution, fresh-process exact replay and conflicting identity.

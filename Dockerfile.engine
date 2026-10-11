@@ -7,6 +7,7 @@ COPY scripts/engine-worker-cycle.mjs ./scripts/engine-worker-cycle.mjs
 COPY scripts/engine-attempt-diagnostics.mjs ./scripts/engine-attempt-diagnostics.mjs
 COPY scripts/maia-coverage-client.mjs ./scripts/maia-coverage-client.mjs
 COPY scripts/durable-engine-request.mjs ./scripts/durable-engine-request.mjs
+COPY scripts/position-claim-diagnostics.mjs ./scripts/position-claim-diagnostics.mjs
 COPY scripts/engine-job-recovery.mjs ./scripts/engine-job-recovery.mjs
 COPY public/engines/sf_19_smallnet.js public/engines/sf_19_smallnet.wasm public/engines/nn-61e7af4bb97d.nnue ./public/engines/
 CMD ["node", "scripts/defense-engine-worker.mjs"]
