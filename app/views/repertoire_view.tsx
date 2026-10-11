@@ -29,7 +29,7 @@ import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
 import { PrefixDiagnostics } from "../components/prefix-diagnostics";
 import { PrefixComparisonDialog } from "../components/prefix-comparison-dialog";
-import { savedPrefixTransitions, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
+import { knownPrefixTransitions, effectivePrefixTransitionScope, savedPrefixTransitions, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
 import { OpeningSegmentation } from "../components/opening-segmentation";
 import { RepertoireStatistics } from "../components/repertoire-statistics";
 import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
@@ -126,14 +126,14 @@ export default function RepertoireView({
     const update = () => {
       if (disposed) return;
       try { setPrefixTransitions(savedPrefixTransitions()); setPrefixRecoveryError(""); }
-      catch (failure) { setPrefixRecoveryError(failure instanceof Error ? failure.message : "Prefix recovery data is unavailable."); }
+      catch (failure) { setPrefixTransitions(knownPrefixTransitions()); setPrefixRecoveryError(failure instanceof Error ? failure.message : "Prefix recovery data is unavailable."); }
     };
     queueMicrotask(update);
     const unsubscribe = subscribePrefixTransitions(update);
     return () => { disposed = true; unsubscribe(); };
   }, []);
   const prefixEditsPaused = (repertoireId: string) => Boolean(prefixRecoveryError) || prefixTransitions.some(operation =>
-    unresolvedPrefixTransition(operation) && operation.summary.affectedRepertoireIds.includes(repertoireId));
+    unresolvedPrefixTransition(operation) && effectivePrefixTransitionScope(operation).includes(repertoireId));
 
   const loadBackend = useCallback(async () => {
     if (!usesLocalApi()) return true;
@@ -449,6 +449,7 @@ export default function RepertoireView({
           <strong>{operation.summary.repertoireName}</strong> · {operation.state === "published" ? "Published; comparison refresh pending" :
             operation.state === "blocked" ? "Prefix publication needs recovery" : operation.state === "failed" || operation.state === "stale" ? "Prefix transition needs a fresh review" :
               operation.state === "transport_unknown" ? "Prefix delivery unconfirmed" : "Prefix transition in progress"}
+          {operation.journalMissing && <p role="alert">The browser recovery record is missing. This session retains the original identity; resume recovery before reloading.</p>}
           <Button onClick={event => { event.currentTarget.focus(); setComparisonRepertoireId(operation.repertoireId); }}>Resume prefix transition</Button>
         </div>)}
       </div>}

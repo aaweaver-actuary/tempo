@@ -4,9 +4,11 @@ import { cleanup, configure } from "@testing-library/react";
 import { resetWorkspaceCache } from "../../app/lib/workspace-data";
 import { useTrainingStore } from "../../app/state/training-store";
 import { clearDataDiagnostics } from "../../app/lib/validated-data";
+import { resetPrefixTransitionSessionForTests } from "../../app/lib/prefix-transition-command";
 configure({ asyncUtilTimeout: 5000 });
 beforeEach(() => {
   resetWorkspaceCache();
+  resetPrefixTransitionSessionForTests();
   useBoardShellStore.setState(useBoardShellStore.getInitialState(), true);
   useTrainingStore.setState(useTrainingStore.getInitialState(), true);
   clearDataDiagnostics();

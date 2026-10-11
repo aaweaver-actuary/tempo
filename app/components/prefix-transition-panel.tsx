@@ -3,7 +3,7 @@ import { routeMovetext, type PrefixSource } from "../domain/prefix-comparison";
 import { transitionRequest, transitionSummary, type PrefixTransitionPlan, type PrefixTransitionRequest, type PrefixTransitionSummary } from "../domain/prefix-transition";
 import { planPrefixTransition, PrefixPreviewError } from "../lib/prefix-comparison";
 import { reservePrefixTransition, clearResolvedPrefixTransition, readPrefixTransition, recoverPrefixTransition,
-  subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
+  restorePrefixTransitionJournal, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
 import { Button } from "./buttons/BaseButton";
 
 function TransitionConsequences({ summary, request }: { summary: PrefixTransitionSummary; request: PrefixTransitionRequest }) {
@@ -124,6 +124,21 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
     {failure && <p role="alert"><strong>{["stale_plan", "stale_snapshot"].includes(failure.code) ? "Stale transition" : "Transition unavailable"}</strong>: {failure.message}</p>}
     {operation && <div role={operation.state === "published" || operation.state === "pending" ? "status" : "alert"}>
       <p>{operation.message ?? "Waiting for authoritative confirmation."}</p>
+      {operation.journalMissing && <>
+        <p role="alert">The browser recovery record is missing. This session retains the original identity; recovery after a page reload is not guaranteed.</p>
+        <Button disabled={busy} onClick={() => void (async () => {
+          if (submitting.current) return;
+          submitting.current = true; setBusy(true);
+          const restoreController = new AbortController(); controller.current?.abort(); controller.current = restoreController;
+          try {
+            setOperation(await restorePrefixTransitionJournal(repertoireId, operation.operationId, restoreController.signal));
+            submitting.current = false;
+            if (!restoreController.signal.aborted) await recover();
+          } catch (cause) {
+            if (!restoreController.signal.aborted) setFailure({ code: "storage_error", message: (cause as Error).message });
+          } finally { if (controller.current === restoreController) { submitting.current = false; if (!restoreController.signal.aborted) setBusy(false); } }
+        })()}>Restore saved recovery record</Button>
+      </>}
       {operation.failureCode && <p>Service error: <code>{operation.failureCode}</code></p>}
       {operation.transitionPhase && <p>Publication phase: {operation.transitionPhase.replaceAll("_", " ")}</p>}
       <details><summary>Recovery identity</summary><code>{operation.operationId}</code><p>Approved plan: <code>{operation.request.plan_id}</code></p></details>

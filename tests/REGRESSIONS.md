@@ -4026,3 +4026,31 @@ The existing branch-scoped comparison now reviews the production transition plan
 `tests/unit/prefix-transition-command-regressions.test.ts` additionally proves offline status failure without blind replay, bounded unknown-admission replay, foreground-admitted status reads, mismatched completion identity/plan/repertoire/graph/queue, quota/unreadable storage, and late-callback ownership. `issue81_overlapping_repertoire_transition_remains_locked`, `issue81_changed_payload_cannot_be_overwritten_or_delivered`, and `issue81_blocked_nested_error_code_survives_recovery` cover overlapping reservations, immutable journal ownership, and nested publication errors. It preserves original identities/payloads and never clears unresolved operations. `tests/unit/api-schema-parity-regressions.test.ts::issue81_python_transition_planner_and_apply_match_frontend_contracts` checks the production-generated ready/reused/shared/blocked plans and apply/result contracts against checked fixtures.
 
 The existing backend apply regressions and regular PostgreSQL durability runner retain authoritative stale rejection, atomic activation, publication qualification, interruption/recreation, history/ownership preservation, and original-operation replay. Browser failure-state receipts are explicitly mocked where deterministic fault injection is needed; real publication and lost-response/reload cases use the disposable PostgreSQL service. Pinned `Prefix comparison 390/1280` cases additionally inspect confirmation and blocked-publication recovery snapshots. Existing PR #172 training/evidence tests remain required and unchanged.
+
+## PR #187 independent safety remediation (#81, roadmap #76)
+
+The original overlays and failing assertions remain preserved under
+`test-results/audits/2026-10-11-pr187/`. Regular command/UI suites retain the six
+normative audit assertions without weakening their safety meaning:
+
+- `audit187_DEFECT_B_blocked_retry_must_check_authoritative_status_before_post`
+- `audit187_DEFECT_timeout_must_explain_ended_recovery_attempt`
+- `audit187_DEFECT_D_summary_cannot_omit_its_own_repertoire_from_edit_guard`
+- `audit187_DEFECT_D_corrupt_scope_summary_must_keep_target_structural_edits_paused`
+- `audit187_DEFECT_A_lost_journal_during_unknown_delivery_must_not_allow_new_identity`
+- `audit187_DEFECT_D_lost_journal_after_admission_must_keep_recovery_reachable_after_reload`
+
+The last name is retained verbatim but its harness performs component remount in
+the same process. It does not qualify true browser reload after journal loss.
+`pr187-audit-command.test.ts` additionally covers status 404 unavailability,
+202/409/503/lost retry acknowledgments, concurrent active progress, persistent
+blockage with truthful feedback, unchanged deadline and explicit cancellation,
+missing/shared scope, invalid route depths, immutable restoration, Web Lock
+requirements, conflicting records, quota failure, and retained verified memory
+results after failed writes. `pr187-audit-ui.test.tsx` protects wakeups/remount,
+edit fences, storage-event and same-tab disappearance, status/retry controls and
+truthful errors. Obsolete characterizations of unsafe ordering, silent timeouts
+and unlocked edits are replaced with assertions of corrected behavior; originals
+remain in the audit. Backend `test_pr187_audit_contract.py` covers authoritative
+unknown/unavailable status and original-envelope retry 202/409/503 contracts with
+mocked seams, not database durability.

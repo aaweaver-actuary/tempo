@@ -364,3 +364,38 @@ require explicit reselection. A refresh failure preserves confirmed publication 
 journal for another read attempt. Closing/reloading leaves a repertoire-level **Resume
 prefix transition** notice; it does not automatically reopen a dialog or create a new
 operation. Unresolved or malformed recovery data is never discarded automatically.
+
+## PR #187 safety remediation and remaining rediscovery blocker
+
+Recovery always reads authoritative status before retrying a blocked receipt and
+reads it again after retry admission. HTTP 202 acknowledges dispatch only; 409/503
+plus an unchanged blocked receipt ends the attempt with actionable guidance.
+Concurrent active work continues bounded polling. Lost acknowledgments remain
+ambiguous. A 30-second timeout ends browser status checking, not backend work,
+rollback or publication. Status 404 means operations are unavailable before
+PostgreSQL cutover; only a valid 200 unknown receipt permits same-key apply recovery.
+
+Every unresolved operation guards its own repertoire independently of its stored
+summary. Invalid summaries fail closed. Planner-derived shared scope is retained;
+route/depth consistency checks do not authenticate all summary semantics.
+
+Successful reservation and validated journals retain their exact approved identity
+in session memory. Missing records keep recovery access and structural guards
+across component remounts. Status-only recovery never recreates a missing journal
+or replays apply. The explicit **Restore saved recovery record** action checks
+status first, never resurrects a server-confirmed terminal operation, requires
+Web Locks, refuses any existing record, and restores only the original approved
+session snapshot. Subsequent recovery starts with GET. Failed writes retain known
+identity and verified result evidence; no timeout abandons ownership.
+
+**BLOCKED: true reload after total journal loss.** Memory cannot survive a page
+reload/process restart. The current UI has no repertoire-scoped durable operation
+lookup. Apply dispatch precedes worker receipt creation. `/api/system/tasks` can
+expose a prefix application's operation ID via its deduplication key, but lacks
+approved request/repertoire mapping and omits older completed tasks. Fence errors
+can expose an operation ID; an operator can inspect authoritative receipt/application
+records and use existing status/retry endpoints for that original ID. Neither
+facility proves absence of an operation still in delivery. Do not confirm another
+transition or clear recovery data merely because the browser notice is absent.
+Agent 2 owns durable rediscovery investigation; no new backend API or migration is
+introduced by this remediation. A remount regression is not proof of true reload.

@@ -151,7 +151,9 @@ it("issue81_blocked_publication_retries_the_existing_operation", async () => {
   const original = begin(); localStorage.setItem(key, JSON.stringify({ ...original, state: "blocked", transitionPhase: "recovery_required" }));
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(complete(original.operationId)); vi.stubGlobal("fetch", fetcher);
   expect((await recover(new AbortController(), true))?.state).toBe("published");
-  expect(fetcher.mock.calls[0][0]).toContain(`/operations/${original.operationId}/retry`);
+  expect(fetcher.mock.calls[0][0]).toContain(`/operations/${original.operationId}`);
+  expect(fetcher.mock.calls[0][1]?.method).not.toBe("POST");
+  expect(fetcher).toHaveBeenCalledOnce();
   expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/apply"))).toBe(false);
 });
 it("issue81_blocked_nested_error_code_survives_recovery", async () => {
@@ -175,7 +177,8 @@ it("issue81_late_completion_cannot_erase_newer_operation", async () => {
   const resolving = recover();
   localStorage.setItem(key, JSON.stringify({ ...original, operationId: "newer" }));
   resolve(complete(original.operationId)); await expect(resolving).rejects.toThrow();
-  expect(readPrefixTransition("rep")?.operationId).toBe("newer");
+  expect(() => readPrefixTransition("rep")).toThrow(/unreadable/);
+  expect(JSON.parse(localStorage.getItem(key)!).operationId).toBe("newer");
 });
 it("issue81_changed_payload_cannot_be_overwritten_or_delivered", async () => {
   const original = begin(); let resolve!: (response: Response) => void;
@@ -183,6 +186,7 @@ it("issue81_changed_payload_cannot_be_overwritten_or_delivered", async () => {
   const resolving = recover();
   localStorage.setItem(key, JSON.stringify({ ...original, request: { ...original.request, plan_id: "changed" } }));
   resolve(Response.json({ operation_id: original.operationId, state: "unknown" }));
-  await expect(resolving).rejects.toThrow(/payload changed/);
-  expect(fetcher).toHaveBeenCalledOnce(); expect(readPrefixTransition("rep")?.request.plan_id).toBe("changed");
+  await expect(resolving).rejects.toThrow(/unreadable/);
+  expect(fetcher).toHaveBeenCalledOnce(); expect(() => readPrefixTransition("rep")).toThrow(/unreadable/);
+  expect(JSON.parse(localStorage.getItem(key)!).request.plan_id).toBe("changed");
 });
