@@ -379,6 +379,13 @@
   },
   {
     "method": "GET",
+    "path": "/api/repertoires/{identifier}/move-membership",
+    "handler": "repertoire_move_membership",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
     "path": "/api/compare/cards",
     "handler": "comparison_cards",
     "treatment": "reader",
