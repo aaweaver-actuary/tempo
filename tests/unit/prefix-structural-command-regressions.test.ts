@@ -229,14 +229,30 @@ for (const unavailableChannel of ["missing", "constructor_error"] as const) {
 
 it("issue81_immediate_transport_failure_is_handled_while_storage_commit_remains_locked", async () => {
   localStorage.removeItem(prefixKey);
+  const channels: { onmessage: (() => void) | null; closed: boolean }[] = [];
+  vi.stubGlobal("MessageChannel", class {
+    port1 = { onmessage: null as (() => void) | null, closed: false,
+      close() { this.closed = true; } };
+    port2 = { postMessage: vi.fn(), close: vi.fn() };
+    constructor() { channels.push(this.port1); }
+  });
   const unhandledRejection = vi.fn();
   process.on("unhandledRejection", unhandledRejection);
   const fetcher = vi.fn(() => Promise.reject(new TypeError("Immediate network failure")));
   vi.stubGlobal("fetch", fetcher);
+  const completion = deleteRepertoireCommand("rep").then(() => null, failure => failure);
   try {
-    await expect(deleteRepertoireCommand("rep")).rejects.toThrow("Immediate network failure");
-    expect(fetcher).toHaveBeenCalledOnce();
-    expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).not.toBeNull();
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    // Observe the rejected transport across a real event-loop turn while the
+    // publication task remains held; no wall-clock timeout controls this schedule.
+    await new Promise<void>(resolve => setImmediate(resolve));
     expect(unhandledRejection).not.toHaveBeenCalled();
-  } finally { process.off("unhandledRejection", unhandledRejection); }
+    expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).not.toBeNull();
+  } finally {
+    for (const channel of channels) if (!channel.closed) channel.onmessage?.();
+    const failure = await completion;
+    process.off("unhandledRejection", unhandledRejection);
+    expect(failure).toBeInstanceOf(TypeError);
+    expect(failure.message).toBe("Immediate network failure");
+  }
 });
