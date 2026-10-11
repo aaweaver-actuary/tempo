@@ -1973,6 +1973,8 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                            LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
                            LEFT JOIN studies study ON study.id=exercise.study_id
                            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                             AND c.superseded_by IS NULL
+                             AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
                              AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
                              AND COALESCE(c.pending_validation,0)=0
                              AND (c.content_type!='study_exercise' OR
@@ -2066,6 +2068,8 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
                LEFT JOIN studies study ON study.id=exercise.study_id
                WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                 AND c.superseded_by IS NULL
+                 AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
                  AND COALESCE(c.pending_validation,0)=0
                  AND (c.content_type!='defense' OR
                       (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
