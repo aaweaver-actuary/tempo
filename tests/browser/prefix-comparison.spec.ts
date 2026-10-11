@@ -282,7 +282,7 @@ async function mockTransitionUI(page: Page, kind: "ready" | "blocked" = "ready")
     line_count: 4, card_count: 5, due_count: 0, trained_color: "black" }] } }));
   await page.route("**/api/system/foreground-active", route => route.fulfill({ json: { active: false } }));
   await page.route("**/api/queue/**", route => route.fulfill({ json: { cards: [], count: 0,
-    local_date: new Date().toISOString().slice(0, 10), prepared_at: new Date().toISOString(),
+    local_date: new Date().toISOString().slice(0, 10),
     projection: { state: "ready", generation: 1, refresh_pending: 0, updated_at: null, last_error: null } } }));
   await page.route("**/api/repertoires/rep/prefix-evaluation/**", route => route.fulfill({ json: route.request().method() === "GET"
     ? control.admitted && control.state === "complete" ? transitionFixture.fresh_source : structuralFixture.source
