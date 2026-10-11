@@ -52,8 +52,8 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
         } else await route.fulfill({ response });
       });
       page.on("request", submitted => {
+        if (submitted.method() === "POST" && /\/api\/cards\/[^/]+\/review$/.test(new URL(submitted.url()).pathname)) reviewPosts++;
         if (submitted.url().endsWith(`/cards/${identifier}-prepared-000/review`)) {
-          reviewPosts++;
           delivery = { url: submitted.url(), key: submitted.headers()["idempotency-key"], body: submitted.postData()! };
         }
       });
@@ -68,11 +68,6 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
       // Completion normally schedules its review after the feedback pause.
       if (failure === "fallback timeout") await page.clock.runFor(1_000);
-      await expect.poll(async () => (await fixture("verify")).reviews, { timeout: 30_000 }).toBe(1);
-      const durableResult = await fixture("verify-progression");
-      expect(durableResult.reviews).toHaveLength(1);
-      expect(durableResult.receipts).toHaveLength(1);
-      expect(durableResult.queue).toContainEqual([Number(completedEntry), "complete"]);
       await expect.poll(() => queueFailures).toBeGreaterThan(0);
       if (failure === "prepared abort") {
         await expect(page.locator("#train")).not.toHaveAttribute("data-queue-entry-id", completedEntry!);
@@ -92,6 +87,11 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
         .find((record: { key: string }) => record.key === `review-queue:${entry}`), completedEntry);
       expect(lifecycle.active).toBe(false);
       expect(lifecycle.message).not.toBe("Result saved. Loading the next card…");
+      const durableResult = await fixture("verify-progression");
+      expect(durableResult.reviews).toHaveLength(1);
+      expect(durableResult.receipts).toHaveLength(1);
+      expect(durableResult.review_count).toBe(1);
+      expect(durableResult.queue).toContainEqual([Number(completedEntry), "complete"]);
       blockQueue = false;
       for (const abortRequest of heldRequests) await abortRequest();
       await page.getByRole("button", { name: "Retry loading the queue", exact: true }).click();
@@ -103,7 +103,6 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       await page.mouse.click(nextBoard.x + nextBoard.width * 4.5 / 8, nextBoard.y + nextBoard.height * 4.5 / 8);
       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4P3/);
       expect(reviewPosts).toBe(1);
-      expect((await fixture("verify")).reviews).toBe(1);
       expect(await fixture("verify-progression")).toEqual(durableResult);
       await page.close();
       await docker("start", ...consumers);
@@ -118,10 +117,10 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       expect(replay.ok()).toBe(true);
       const receipt = await replay.json();
       expect(receipt.persisted).toBe(true);
-      expect((await fixture("verify")).reviews).toBe(1);
-      expect(await fixture("verify-progression")).toEqual(durableResult);
+      const afterReplay = await fixture("verify-progression");
+      expect(afterReplay).toEqual(durableResult);
       await testInfo.attach("issue186-progression-proof", { body: JSON.stringify({ failure, completedEntry,
-        reviewPosts, queueFailures, lifecycle, receipt, persisted: await fixture("verify") }), contentType: "application/json" });
+        reviewPosts, queueFailures, lifecycle, receipt, persisted: afterReplay }), contentType: "application/json" });
     } catch (error) {
       await testInfo.attach("issue186-failure-screen", { body: await page.screenshot().catch(() => Buffer.alloc(0)),
         contentType: "image/png" }).catch(() => undefined);

@@ -100,7 +100,9 @@ def main():
             reviews = connection.execute("SELECT id,rating,previous_interval,next_interval FROM reviews WHERE card_id=%s ORDER BY id", (first_card,)).fetchall()
             receipts = connection.execute("SELECT attempt_id,queue_entry_id,review_id,scheduling_status,result_json FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id", (first_card,)).fetchall()
             completed = connection.execute("SELECT id,status FROM daily_queue WHERE card_id=%s ORDER BY id", (first_card,)).fetchall()
-            print(json.dumps({"scheduling": scheduling, "reviews": reviews, "receipts": receipts, "queue": completed}, default=str))
+            review_count = connection.execute("SELECT count(*) FROM reviews WHERE card_id LIKE %s", (identifier+'-prepared-%',)).fetchone()[0]
+            print(json.dumps({"scheduling": scheduling, "reviews": reviews, "receipts": receipts, "queue": completed,
+                "review_count": review_count}, default=str))
         return
     if action == "verify":
         with psycopg.connect(DSN) as connection:
