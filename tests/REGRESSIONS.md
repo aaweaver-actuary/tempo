@@ -3873,3 +3873,38 @@ PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2
 - `test_position_claim_identical_receipt_recovers_without_preparing_work` preserves identical hinted/unhinted replay and attachment, original lease/error/Location and no second preparation or dispatch. `test_position_claim_omitted_empty_and_null_requests_share_unhinted_identity` retains the existing model's absent/null normalization. `test_position_claim_receipt_preserves_command_identity_conflict` and `test_position_claim_receipt_recovery_preserves_explicit_hash_validation` keep normal command/hash rejection independent of shortcut validation.
 - `test_position_claim_legacy_receipt_recovery_remains_available` preserves historical receipts with or without a saved plan. Historical plans did not save the caller's hint, so their original hinted/unhinted identity cannot be verified; this compatibility exception is limited to receipts without `claim_request` metadata. New route operations retain that metadata in their ordinary persisted payload and validate against the unchanged canonical command hash. No migration or fairness-policy change.
 - `scripts/check_postgres_engine_fairness.py::test_postgres_engine_completed_position_receipt_validates_request_identity` and `test_postgres_engine_pending_position_receipt_validates_request_identity` run in regular durability. Real route/command receipts reject all three payload changes, retain identical replay across database pool recreation, and leave receipts, leases, positions and fairness state unchanged on conflicts. Queued operations still recover from their original saved payload and replay their completed receipt without spending another turn. The existing historical replay/crash/restart/concurrency proofs remain intact.
+
+## Issue #110 — independent Maia probability source foundation
+
+`backend/tests/test_maia_probability_contracts.py` covers
+`test_maia_cache_identity_is_shared_across_repertoires_and_counter_variations`,
+`test_maia_cache_identity_distinguishes_ordered_ratings_model_schema_and_runtime`,
+`test_maia_rating_context_rejects_unsupported_levels_without_rounding`,
+`test_maia_rating_context_rejects_invented_time_control`,
+`test_maia_evidence_preserves_all_legal_replies_and_explicit_zero_vs_unknown`,
+`test_maia_source_rejects_invalid_probabilities`,
+`test_maia_source_rejects_illegal_incomplete_and_wrong_orientation_results`,
+`test_maia_source_rejects_stale_model_rating_and_position_provenance`,
+`test_maia_evidence_serialization_checksum_and_provenance_are_deterministic`, and
+`test_maia_manifest_and_source_contract_import_do_not_load_model_or_database`.
+Shared position identity is independent of repertoire/counters; source/rating pairs
+remain distinct. Source results validate against the entire #154 legal universe,
+including unauthored replies, with finite unit mass and explicit zero. This is
+source acceptance protection, not a PostgreSQL cache-reuse or lease-fencing proof.
+
+`tests/unit/maia-probability-regressions.test.ts` protects complete legal support
+for both colors, castling, legal/pinned/uncapturable en passant and all promotions;
+missing/reversed/duplicate vocabulary mapping; incorrect side and incomplete
+inventory; invalid logits; explicit softmax underflow zero; independent rating
+inputs and unsupported-speed rejection; terminal/unavailable handling; caller
+mutation; asset/runtime/schema mismatch; pure import without network/inference or
+worker-loop startup; Node/Python/TypeScript producer-consumer parity; and actual
+bundled-model outputs changing independently with each rating input. Named cases
+start with `maia_` and run in the regular Vitest suite. Existing container/browser
+parity and worker-client regressions remain required after extraction.
+
+PR #117 owns the unmerged inventory. Durable filling, foreground contention,
+restart/idempotent delivery, refresh retention, generation-fenced publication,
+training/queue workflow proof and PostgreSQL durability remain dependency-blocked;
+these source tests do not claim those acceptance criteria. See
+[the integration boundary](../docs/maia-probability-cache.md).

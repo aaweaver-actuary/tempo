@@ -1,0 +1,258 @@
+{
+  "cases": [
+    {
+      "name": "counters",
+      "fen": "4k3/8/8/8/8/8/8/4K3 b - - 22 91",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/8/4K3 b - -",
+        "legal_moves": [
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    },
+    {
+      "name": "uncapturable_ep",
+      "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+      "position": {
+        "fen_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+        "legal_moves": [
+          "a7a5",
+          "a7a6",
+          "b7b5",
+          "b7b6",
+          "b8a6",
+          "b8c6",
+          "c7c5",
+          "c7c6",
+          "d7d5",
+          "d7d6",
+          "e7e5",
+          "e7e6",
+          "f7f5",
+          "f7f6",
+          "g7g5",
+          "g7g6",
+          "g8f6",
+          "g8h6",
+          "h7h5",
+          "h7h6"
+        ]
+      }
+    },
+    {
+      "name": "legal_ep",
+      "fen": "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+      "position": {
+        "fen_key": "4k3/8/8/3pP3/8/8/8/4K3 w - d6",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e5d6",
+          "e5e6"
+        ]
+      }
+    },
+    {
+      "name": "pinned_ep",
+      "fen": "k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+      "position": {
+        "fen_key": "k3r3/8/8/3pP3/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e5e6"
+        ]
+      }
+    },
+    {
+      "name": "castling",
+      "fen": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+      "position": {
+        "fen_key": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq -",
+        "legal_moves": [
+          "a1a2",
+          "a1a3",
+          "a1a4",
+          "a1a5",
+          "a1a6",
+          "a1a7",
+          "a1a8",
+          "a1b1",
+          "a1c1",
+          "a1d1",
+          "e1c1",
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2",
+          "e1g1",
+          "h1f1",
+          "h1g1",
+          "h1h2",
+          "h1h3",
+          "h1h4",
+          "h1h5",
+          "h1h6",
+          "h1h7",
+          "h1h8"
+        ]
+      }
+    },
+    {
+      "name": "promotion",
+      "fen": "4k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+      "position": {
+        "fen_key": "4k3/P7/8/8/8/8/8/4K3 w - -",
+        "legal_moves": [
+          "a7a8b",
+          "a7a8n",
+          "a7a8q",
+          "a7a8r",
+          "e1d1",
+          "e1d2",
+          "e1e2",
+          "e1f1",
+          "e1f2"
+        ]
+      }
+    },
+    {
+      "name": "opening-white",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "position": {
+        "fen_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "legal_moves": [
+          "a2a3",
+          "a2a4",
+          "b1a3",
+          "b1c3",
+          "b2b3",
+          "b2b4",
+          "c2c3",
+          "c2c4",
+          "d2d3",
+          "d2d4",
+          "e2e3",
+          "e2e4",
+          "f2f3",
+          "f2f4",
+          "g1f3",
+          "g1h3",
+          "g2g3",
+          "g2g4",
+          "h2h3",
+          "h2h4"
+        ]
+      }
+    },
+    {
+      "name": "opening-black",
+      "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+      "position": {
+        "fen_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+        "legal_moves": [
+          "a7a5",
+          "a7a6",
+          "b7b5",
+          "b7b6",
+          "b8a6",
+          "b8c6",
+          "c7c5",
+          "c7c6",
+          "d7d5",
+          "d7d6",
+          "e7e5",
+          "e7e6",
+          "f7f5",
+          "f7f6",
+          "g7g5",
+          "g7g6",
+          "g8f6",
+          "g8h6",
+          "h7h5",
+          "h7h6"
+        ]
+      }
+    },
+    {
+      "name": "black-promotion",
+      "fen": "4k3/8/8/8/8/8/p7/4K3 b - - 0 1",
+      "position": {
+        "fen_key": "4k3/8/8/8/8/8/p7/4K3 b - -",
+        "legal_moves": [
+          "a2a1b",
+          "a2a1n",
+          "a2a1q",
+          "a2a1r",
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    },
+    {
+      "name": "black-castling",
+      "fen": "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1",
+      "position": {
+        "fen_key": "r3k2r/8/8/8/8/8/8/R3K2R b KQkq -",
+        "legal_moves": [
+          "a8a1",
+          "a8a2",
+          "a8a3",
+          "a8a4",
+          "a8a5",
+          "a8a6",
+          "a8a7",
+          "a8b8",
+          "a8c8",
+          "a8d8",
+          "e8c8",
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8",
+          "e8g8",
+          "h8f8",
+          "h8g8",
+          "h8h1",
+          "h8h2",
+          "h8h3",
+          "h8h4",
+          "h8h5",
+          "h8h6",
+          "h8h7"
+        ]
+      }
+    },
+    {
+      "name": "black-en-passant",
+      "fen": "4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1",
+      "position": {
+        "fen_key": "4k3/8/8/8/3pP3/8/8/4K3 b - e3",
+        "legal_moves": [
+          "d4d3",
+          "d4e3",
+          "e8d7",
+          "e8d8",
+          "e8e7",
+          "e8f7",
+          "e8f8"
+        ]
+      }
+    }
+  ]
+}

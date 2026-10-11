@@ -1,0 +1,10 @@
+{
+  "model_id": "maia3-onnx",
+  "model_sha256": "405bf76c15727dad8728b352c06a8f3c1b80fb2760e8d666b32485c63d75b856",
+  "move_index_sha256": "e3351a233174e99d9ddca981681b65a444d191e8a6b474e27bd8fad8514af8d7",
+  "reverse_index_sha256": "bb9542b706d3011aa8c0bb067dd33b50bbd7313414cfb50052b0c92aaa9833ee",
+  "inference_schema": "maia-legal-softmax-v1",
+  "runtime_version": "1.23.0",
+  "chess_library_version": "1.4.0",
+  "upstream_checkpoint": null
+}
