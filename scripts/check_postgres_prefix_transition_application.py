@@ -1531,7 +1531,7 @@ def test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier():
     print('PASS test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier')
 
 
-def test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id():
+def assert_audit187_retry_receipt_recovery_with_fenced_edit(*, require_metadata_fence):
     from app import main
     from unittest.mock import patch
     from kombu.exceptions import OperationalError
@@ -1542,7 +1542,14 @@ def test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_reco
     with fixture('audit-journal-loss') as (repertoire_id,unrelated_repertoire_id,selected_lines,fixture_steps):
         approved_plan,approved_payload=ready_plan(repertoire_id,selected_lines)
         original_operation_id=approved_payload['operation_id']
-        execute(approved_payload);drain(application.TASK_KIND,application.execute_application_slice);execute(approved_payload)
+        # Follow the real worker admission path so the receipt retains its original
+        # recovery envelope before command execution or simulated broker refusal.
+        admitted,initial_saved_payload,initial_attempt_token,_=record_operation_attempt(
+            original_operation_id,application.COMMAND,approved_payload,background=False)
+        assert admitted and initial_saved_payload==approved_payload
+        idle_call(lambda:execute_command(original_operation_id,application.COMMAND,
+            initial_saved_payload,attempt_token=initial_attempt_token))
+        drain(application.TASK_KIND,application.execute_application_slice);execute(approved_payload)
         graph_task=idle_call(lambda:claim_task('opening_graph_rebuild'))
         assert graph_task and graph_task['payload']['repertoire_id']==repertoire_id
         with postgres_store.connection(read_only=False) as database:
@@ -1558,7 +1565,10 @@ def test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_reco
             assert saved_payload==approved_payload
         try:
             with postgres_store.connection(read_only=False) as database:
-                database.execute_native("UPDATE repertoires SET name=name||' blocked edit' WHERE id=%s",(repertoire_id,))
+                if require_metadata_fence:
+                    database.execute_native("UPDATE repertoires SET name=name||' blocked edit' WHERE id=%s",(repertoire_id,))
+                else:
+                    database.execute_native("UPDATE repertoire_lines SET name=name||' blocked edit' WHERE id=%s",(selected_lines[0]['id'],))
         except psycopg.Error as failure:
             assert failure.sqlstate=='P0080' and original_operation_id in str(failure)
         else:
@@ -1581,6 +1591,17 @@ def test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_reco
             try:main.retry_blocked_operation(original_operation_id)
             except HTTPException as failure:assert failure.status_code==409
             else:raise AssertionError('Completed operation accepted a blocked retry')
+
+
+def test_audit187_prefix_source_fence_retry_rejection_and_replay_preserve_identity():
+    assert_audit187_retry_receipt_recovery_with_fenced_edit(require_metadata_fence=False)
+    print('PASS test_audit187_prefix_source_fence_retry_rejection_and_replay_preserve_identity')
+
+
+def test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id():
+    # Preserve the original audit requirement even though migration 038 permits
+    # metadata-only updates. This remains an active contract qualification failure.
+    assert_audit187_retry_receipt_recovery_with_fenced_edit(require_metadata_fence=True)
 
 
 def main():
@@ -1648,6 +1669,7 @@ def main():
         test_issue80_unclean_source_integrity_rejects_before_acceptance()
         test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result()
         test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption()
+        test_audit187_prefix_source_fence_retry_rejection_and_replay_preserve_identity()
         test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id()
 
 
