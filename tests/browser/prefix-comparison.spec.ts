@@ -475,7 +475,10 @@ test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_iden
   await card.locator("details.card-menu summary").click();
   await page.getByRole("button", { name: "Resume prefix transition", exact: true }).click();
   await dialog.getByRole("button", { name: "Restore saved recovery record" }).click();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-transition-v1:rep")!).operationId)).toBe(originalId);
+  await expect.poll(() => page.evaluate(() => {
+    const restoredRecord = localStorage.getItem("tempo-pending-prefix-transition-v1:rep");
+    return restoredRecord === null ? null : JSON.parse(restoredRecord).operationId;
+  })).toBe(originalId);
   expect(control.deliveries).toBe(1); expect(control.retries).toBe(0);
 });
 
