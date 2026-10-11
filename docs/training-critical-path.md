@@ -835,3 +835,23 @@ On `4b86e2e3` plus the recorded dirty test correction:
 - Frontend typecheck, focused lint, conflict, migration inventory (46), and
   whitespace guards passed. The failed transient-row observation and CI trace
   remain preserved. Fresh complete CI is required for the published follow-up.
+
+### Latest-main integration after complete execution
+
+Run `38135422352` executed successfully on head `d144a8f2`, base `a5171234`,
+integration `ab3e44b7`: 1,536 frontend, 2,481 backend, 280 browser and 69 pinned
+cases, builds, PostgreSQL durability (611.81 seconds), and lifecycle. All three
+#186 PostgreSQL progression proofs passed. Its required quality result rejected
+draft state and a changed integration revision; main advanced during execution
+when PR #185 merged as `643f736b`. Those passes remain captured-source evidence,
+not qualification of the new main candidate.
+
+Merge `91cfbc41` incorporates that new main without rewriting #172 history.
+Home's indexed repertoire and generation protections merge cleanly alongside
+bounded progression. The only conflict was the regression registry; both #172
+and #185 entries are retained. Selected Home, confirmation and prepared
+continuation callers pass 93 cases in 16.34 seconds on the clean merge revision.
+Typecheck, lint, conflict, migration and whitespace guards, then fresh complete
+CI, validate the combined source. Wider workspace/debug/worker and real browser
+boundaries remain assigned to that immediately following complete CI run.
+No local complete gate or deployment is run.
