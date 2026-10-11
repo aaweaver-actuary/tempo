@@ -25,25 +25,44 @@ def main():
         return
     if action == "cleanup":
         cleanup(identifier)
+        displaced_positions = json.loads(sys.argv[3]) if len(sys.argv) > 3 else []
+        with psycopg.connect(DSN) as connection:
+            restored = 0
+            for entry_id, original_position, displaced_position in displaced_positions:
+                # Do not overwrite a newer queue reorder during fixture cleanup.
+                restored += connection.execute("UPDATE daily_queue SET position=%s WHERE id=%s AND position=%s",
+                    (original_position, entry_id, displaced_position)).rowcount
+            print(json.dumps({"restored_queue_positions": restored}))
         return
-    if action in {"seed", "seed-small"}:
+    if action in {"seed", "seed-small", "seed-with-existing-queue"}:
         today = sys.argv[3]
         seed(identifier, request_refresh=action == "seed-small", queue_date=today)
         with psycopg.connect(DSN) as connection:
             connection.execute("UPDATE repertoire_lines SET moves_json='[\"e2e4\",\"e7e5\",\"g1f3\"]' WHERE repertoire_id=%s", (identifier,))
             # Regular browser suites share only their invocation's disposable
             # database. Earlier tests may leave priority-promoted queue entries.
-            # Prepend this owned fixture without mutating those unrelated rows;
-            # fresh measurement stacks retain the original positions 0..63.
-            existing_position = connection.execute("SELECT min(position) FROM daily_queue WHERE queue_date=%s", (today,)).fetchone()[0]
-            first_position = min(0, existing_position - 64) if existing_position is not None else 0
+            # Regular coverage must reproduce a queue left by preceding cases.
+            # Opt-in fresh-stack timings retain their original source snapshot.
+            if action == "seed-with-existing-queue":
+                connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,0,'due',%s)",
+                    (today, identifier+'-due', identifier))
+            existing_positions = connection.execute("SELECT id,position,card_id FROM daily_queue WHERE queue_date=%s ORDER BY position,id", (today,)).fetchall()
+            displacement = 64 - min(0, min((row[1] for row in existing_positions), default=0))
+            # Queue positions are nonnegative client ordinals. Shift preceding
+            # entries together, preserving their relative order, and restore
+            # unchanged surviving rows during cleanup after owned rows retire.
+            displaced_positions = []
+            for entry_id, position, card_id in existing_positions:
+                connection.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (position+displacement, entry_id))
+                if not card_id.startswith(identifier):
+                    displaced_positions.append([entry_id, position, position+displacement])
             for index in range(64):
                 card_id = f"{identifier}-prepared-{index:03}"
                 connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,trained_color,introduced_at) VALUES(%s,%s,'prefix',%s,'[\"e2e4\",\"e7e5\",\"g1f3\"]','learning','2000-01-01','white','2000-01-01')", (card_id, identifier, FEN))
                 # Established cards isolate A→B progression from first-pass reinforcement.
                 connection.execute("UPDATE cards SET first_correct_at='2000-01-01T00:00:00+00:00',interval_days=1 WHERE id=%s", (card_id,))
                 connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (identifier, card_id))
-                connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'due',%s)", (today, card_id, first_position + index, identifier))
+                connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'due',%s)", (today, card_id, index, identifier))
             connection.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(%s,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
             # Stable source snapshot across independently fresh PostgreSQL/Redis stacks.
             connection.execute("UPDATE repertoires SET created_at='2000-01-01T00:00:00+00:00' WHERE id=%s", (identifier,))
@@ -55,6 +74,7 @@ def main():
                 "jobs": connection.execute("SELECT id,kind,priority,payload_json,next_attempt_at FROM background_tasks WHERE id LIKE %s ORDER BY id", (identifier+'-analysis-%',)).fetchall(),
             }
             print(json.dumps({"sha256": hashlib.sha256(json.dumps(snapshot, default=str, sort_keys=True).encode()).hexdigest(),
+                "displaced_queue_positions": displaced_positions,
                 "description": "Canonical ordered source rows; identical fixed IDs/date/scheduling/eligible jobs in each fresh invocation. Runtime attempt IDs, leases and clocks are deliberately excluded."}))
         return
     if action == "verify":

@@ -403,8 +403,18 @@ Linux cases passed in 17.15 s in a disposable container; the complete affected
 file passed 112 cases in 96.41 s locally. This CLI repair is separate from the
 training critical path. The ordinary three-transition browser case also passed
 (67.19 s browser stage); its failure hook now captures readiness before fixture
-teardown. The earlier full-suite startup failure did not reproduce locally; no
-production change or longer readiness deadline was introduced for it.
+teardown. Fresh full-suite CI then reproduced the startup failure: its HTTP 200
+body contained 20 prepared cards at positions -64 through -45. The fixture's
+initial prepending repair violated the client's nonnegative-position contract;
+all returned cards were correctly quarantined. Regular coverage now seeds an
+existing queue row even in isolation, asserts nonnegative prepared positions,
+shifts previous rows together without changing their relative order, and restores
+unchanged surviving positions during cleanup. Fresh timing stacks retain the
+same source positions 0..63 and fingerprint. No production change or longer
+readiness deadline was introduced for this fixture defect.
+The corrected ordinary browser case passed with an existing queue row in
+62.29 s (three transitions, real next-card input and durable replay); its owning
+runner's teardown passed in 4.99 s. Typecheck and selected ESLint passed.
 
 ```sh
 make python-file 'FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_external_cancellation_reaps_owned_children[term_resistant_children-term]'

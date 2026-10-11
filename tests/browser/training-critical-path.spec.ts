@@ -50,6 +50,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   let network: Sample["network"] = [];
   let firstReview: { url: string; body: string; key: string } | undefined;
   const submittedEvidenceEvents = new Map<string, number>();
+  let displacedQueuePositions: number[][] = [];
   page.on("request", request => {
     if (request.url().endsWith("/review")) {
       operationId = request.headers()["idempotency-key"] ?? ""; submissionEpochMs = Date.now();
@@ -77,7 +78,8 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   });
   try {
     docker("stop", "background-worker", "background-scheduler");
-    const snapshot = JSON.parse(fixture("seed", today));
+    const snapshot = JSON.parse(fixture(process.env.TEMPO_TRAINING_TIMINGS === "1" ? "seed" : "seed-with-existing-queue", today));
+    displacedQueuePositions = snapshot.displaced_queue_positions;
     if (condition !== "workers-held") docker("start", "background-worker", "background-scheduler");
     // Seeding is not proof that the authoritative reader, head issuance and
     // immutable manifests are ready. Establish that boundary before loading UI.
@@ -85,6 +87,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const response = await request.get(`${api}/queue/window?limit=20`);
       if (!response.ok()) return `HTTP ${response.status()}`;
       const prepared = await response.json();
+      expect(prepared.cards?.every((card: { position: number }) => Number.isInteger(card.position) && card.position >= 0)).toBe(true);
       return prepared.cards?.[0]?.id ?? "No authoritative prepared head";
     }, { timeout: 60_000, message: "The seeded authoritative prepared head must be readable before timing training" }).toBe(`${identifier}-prepared-000`);
     if (condition === "lines-held") await page.route("**/api/repertoire/lines", () => new Promise(() => {}));
@@ -313,7 +316,10 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     // Keep API/proxy addressing stable; no UI requests survive page.close().
     const ownedConsumers = ["background-worker", "background-scheduler", "defense-engine", "maia-worker"];
     docker("stop", ...ownedConsumers);
-    try { fixture("cleanup"); }
+    try {
+      const cleanup = JSON.parse(fixture("cleanup", JSON.stringify(displacedQueuePositions)));
+      expect(cleanup.restored_queue_positions).toBe(displacedQueuePositions.length);
+    }
     finally { docker("start", ...ownedConsumers); }
   }
 });
