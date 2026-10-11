@@ -112,12 +112,16 @@ export async function recoverPrefixTransition(repertoireId: string, options: { s
       signal.throwIfAborted();
       if (readPrefixTransition(repertoireId)?.operationId !== originalId) throw new Error("Prefix transition ownership changed. Reopen recovery.");
       const status = await backgroundReadWhenAdmitted(`${API_URL}/api/operations/${encodeURIComponent(originalId)}`, signal);
-      const receipt = status.status === 404 ? { operation_id: originalId, state: "unknown" as const }
-        : status.ok ? prefixTransitionReceiptSchema.parse(await status.json()) : null;
+      const receiptPayload: unknown = status.status === 404 ? { operation_id: originalId, state: "unknown" }
+        : status.ok ? await status.json().catch(() => null) : null;
+      const parsedReceipt = prefixTransitionReceiptSchema.safeParse(receiptPayload);
+      const receipt = parsedReceipt.success ? parsedReceipt.data : null;
       signal.throwIfAborted();
       if (!receipt || receipt.operation_id !== originalId) throw new Error("The service could not verify this exact prefix operation. Check status again.");
       if (receipt.state === "complete") {
-        const result = prefixTransitionResultSchema.parse(receipt.response);
+        const parsedResult = prefixTransitionResultSchema.safeParse(receipt.response);
+        if (!parsedResult.success) throw new Error("The service returned an unreadable completion result. Keep this identity and check status again.");
+        const result = parsedResult.data;
         if (result.operation_id !== originalId || result.plan_id !== operation.request.plan_id || result.repertoire_id !== repertoireId
           || result.no_op || !result.queue_date || result.graph_generation <= operation.request.graph_generation
           || receipt.transition?.state !== "complete" || receipt.transition.graph_generation !== result.graph_generation

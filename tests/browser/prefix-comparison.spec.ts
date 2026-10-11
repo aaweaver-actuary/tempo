@@ -30,7 +30,7 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
   }, { message: "Imported repertoire queue is published before immutability baseline", timeout: 30_000 })
     .toEqual({ cards: 2, state: "ready", pending: 0 });
   await page.setViewportSize({ width, height: 844 });
-  await page.goto("/"); await nav(page, "Repertoire");
+  await openRepertoireWithoutStartingStudy(page);
   const card = page.locator(".repertoire-card").filter({ has: page.getByRole("heading", { name: `prefix-comparison-${width}`, exact: true }) });
   await card.locator("details.card-menu summary").click();
   const sourceRead = page.waitForResponse(response => response.url().endsWith(`/repertoires/${repertoireId}/prefix-evaluation/source`));
@@ -69,7 +69,7 @@ for (const width of [390, 1280]) test(`issue78_phone_and_desktop_comparison_rema
     evaluations.length = 0;
     await dialog.getByRole("button", { name: "Compare depths", exact: true }).click();
     await expect.poll(async () => (await dialog.getByRole("region", { name: "Candidate depth 4", exact: true }).count())
-      + (await dialog.getByRole("alert").count())).toBe(1);
+      + (await dialog.getByRole("alert").count()), { timeout: 30_000, message: "Both admitted diagnostic reads finish or report an error" }).toBe(1);
     if (await dialog.getByRole("alert").count()) {
       await expect(dialog.getByRole("alert")).toContainText("Study work is active");
       return false;
@@ -165,11 +165,24 @@ async function importTransitionRepertoire(request: APIRequestContext, label: str
       expect(["evaluation_busy", "graph_not_ready"]).toContain((await response.json()).detail.code); return false;
     }
     source = prefixSourceSchema.parse(await response.json());
+    const integrityResponse = await request.get(`${api}/repertoires/${repertoireId}/integrity`);
+    expect(integrityResponse.ok()).toBe(true); const integrity = await integrityResponse.json();
     const queue = await request.get(`${api}/queue/today`);
     expect(queue.ok()).toBe(true); const projection = (await queue.json()).projection;
-    return projection.state === "ready" && projection.refresh_pending === 0;
-  }, { timeout: 30_000, message: "Import graph and queue settle before transition confirmation" }).toBe(true);
+    return integrity.status === "clean" && integrity.scan_status === "idle"
+      && projection.state === "ready" && projection.refresh_pending === 0;
+  }, { timeout: 30_000, message: "Import graph, clean source integrity and queue settle before transition confirmation" }).toBe(true);
   return { repertoireId, source: source! };
+}
+
+async function openRepertoireWithoutStartingStudy(page: Page) {
+  // Delay only delivery of the real initial queue until navigation has left Train.
+  // Its automatic attempt admission otherwise changes the planner's captured attempt inventory.
+  await page.route("**/api/queue/**", async route => {
+    await page.getByRole("heading", { name: "Repertoire", exact: true }).waitFor();
+    await route.continue();
+  });
+  await page.goto("/"); await nav(page, "Repertoire");
 }
 
 async function waitForPublishedTransition(dialog: Locator) {
@@ -177,6 +190,9 @@ async function waitForPublishedTransition(dialog: Locator) {
     if (await dialog.getByText(/Prefix transition published\. Graph, integrity and daily queue are confirmed\./).first().isVisible()) return true;
     const rejected = dialog.getByRole("heading", { name: /^(Prefix transition failed|Stale transition|Prefix transition needs recovery)$/ });
     expect(await rejected.count(), await dialog.textContent() ?? "Transition status unavailable").toBe(0);
+    const preflightFailure = dialog.getByRole("alert").filter({ hasText: /Stale transition|Transition unavailable/ });
+    const preflightFailureCount = await preflightFailure.count();
+    expect(preflightFailureCount, preflightFailureCount ? await preflightFailure.textContent() ?? "Preflight unavailable" : "No preflight rejection").toBe(0);
     const checkStatus = dialog.getByRole("button", { name: "Check status", exact: true });
     if (await checkStatus.count() && await checkStatus.isEnabled()) await checkStatus.click();
     return false;
@@ -188,7 +204,7 @@ for (const width of [390, 1280]) test(`issue81_confirm_waits_for_published_compl
   test.setTimeout(240_000);
   const label = `issue81-publication-${width}`;
   const { repertoireId, source } = await importTransitionRepertoire(request, label);
-  await page.setViewportSize({ width, height: 844 }); await page.goto("/"); await nav(page, "Repertoire");
+  await page.setViewportSize({ width, height: 844 }); await openRepertoireWithoutStartingStudy(page);
   const plans: ReturnType<typeof prefixTransitionPlanSchema.parse>[] = [];
   const deliveries: { operationId: string; body: unknown }[] = [];
   page.on("response", async response => {
@@ -240,7 +256,7 @@ test("issue81_lost_response_reload_recovers_original_operation", async ({ page, 
     await route.abort("failed");
   });
   await page.route("**/api/operations/*", route => route.abort("failed"));
-  await page.goto("/"); await nav(page, "Repertoire"); const { dialog } = await openShortening(page, label, source);
+  await openRepertoireWithoutStartingStudy(page); const { dialog } = await openShortening(page, label, source);
   // Permit the initial authoritative missing-receipt read, then lose subsequent status responses.
   await page.unroute("**/api/operations/*");
   let statusReads = 0;
@@ -265,6 +281,9 @@ async function mockTransitionUI(page: Page, kind: "ready" | "blocked" = "ready")
   await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{ id: "rep", name: "Combined Black", source_name: "Combined Black.pgn",
     line_count: 4, card_count: 5, due_count: 0, trained_color: "black" }] } }));
   await page.route("**/api/system/foreground-active", route => route.fulfill({ json: { active: false } }));
+  await page.route("**/api/queue/**", route => route.fulfill({ json: { cards: [], count: 0,
+    local_date: new Date().toISOString().slice(0, 10), prepared_at: new Date().toISOString(),
+    projection: { state: "ready", generation: 1, refresh_pending: 0, updated_at: null, last_error: null } } }));
   await page.route("**/api/repertoires/rep/prefix-evaluation/**", route => route.fulfill({ json: route.request().method() === "GET"
     ? control.admitted && control.state === "complete" ? transitionFixture.fresh_source : structuralFixture.source
     : control.admitted && control.state === "complete" ? transitionFixture.fresh_comparison : structuralFixture.comparisons["a,b:2"] }));

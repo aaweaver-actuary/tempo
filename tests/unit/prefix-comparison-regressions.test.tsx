@@ -55,11 +55,13 @@ function compareDepths(text = "2, 3") {
 
 function transitionFetch(kind: "ready" | "reused" | "shared" | "blocked" = "ready") {
   const control = { state: "complete", admitted: false, lostResponse: false, planChanged: false, sourceChanged: false,
-    refreshFailed: false, offlineAfterDelivery: false, deferPreflight: false, planReads: 0, deliveries: [] as { operationId: string; body: unknown }[], retries: 0 };
+    refreshFailed: false, offlineAfterDelivery: false, deferPreflight: false, unreadablePreflightStatus: null as number | null,
+    planReads: 0, deliveries: [] as { operationId: string; body: unknown }[], retries: 0 };
   stubDiagnosticFetch(vi.fn(async (url, options?: RequestInit) => {
     const path = String(url);
     if (path.endsWith("/prefix-transition/plan")) {
       ++control.planReads;
+      if (control.unreadablePreflightStatus && control.planReads === 2) return new Response("Unreadable service response", { status: control.unreadablePreflightStatus });
       if (control.deferPreflight && control.planReads === 2) return Response.json({ detail: { code: "evaluation_busy",
         message: "Study work is active. Retry the diagnostic when study is idle." } }, { status: 503, headers: { "Retry-After": "1" } });
       if (control.sourceChanged && control.planReads > 1) return Response.json({ detail: { code: "stale_snapshot", message: "Source changed concurrently. Refresh the source." } }, { status: 409 });
@@ -139,6 +141,13 @@ it("issue81_plan_changed_after_foreground_deferral_requires_new_confirmation", a
   fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
   await screen.findByText("Stale transition", {}, { timeout: 3000 });
   expect(control.planReads).toBe(3); expect(control.deliveries).toHaveLength(0);
+});
+it.each([200, 500])("issue81_unreadable_preflight_%s_fails_closed", async status => {
+  const control = transitionFetch(); await reviewShortening(); control.unreadablePreflightStatus = status;
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  const alert = await screen.findByRole("alert"); expect(alert.textContent).toContain(`unreadable response (HTTP ${status})`);
+  expect(alert.textContent).toContain("Check the local service and retry"); expect(control.deliveries).toHaveLength(0);
+  expect(readPrefixTransition("rep")).toBeNull();
 });
 it("issue81_pending_survives_remount_in_confirmation", async () => {
   const control = transitionFetch(); control.state = "pending"; const mounted = await reviewShortening();

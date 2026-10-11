@@ -41,7 +41,10 @@ async function readDiagnostic<T>(url: string, schema: z.ZodType<T>, signal: Abor
     await waitForPrefixIdle(readSignal);
     const response = await fetch(url, { signal: AbortSignal.any([readSignal, AbortSignal.timeout(15_000)]), cache: "no-store",
       ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
-    const payload: unknown = await response.json();
+    const payload: unknown = await response.json().catch(() => {
+      throw new PrefixPreviewError(response.ok ? "unsupported_source" : "service_error",
+        `The prefix service returned an unreadable response (HTTP ${response.status}). Check the local service and retry.`);
+    });
     if (!response.ok) {
       const failure = payload as { detail?: { code?: string; message?: string } | string };
       const detail = failure.detail;

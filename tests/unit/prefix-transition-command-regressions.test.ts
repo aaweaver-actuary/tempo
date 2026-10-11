@@ -107,6 +107,15 @@ it.each(["plan_id", "operation_id", "repertoire_id", "graph_generation", "queue_
   expect(readPrefixTransition("rep")?.result).toBeUndefined();
   expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
 });
+it.each(["invalid JSON", "unsupported state", "invalid completion"])("issue81_malformed_%s_retains_recovery_identity", async kind => {
+  const original = begin();
+  vi.stubGlobal("fetch", vi.fn(async () => kind === "invalid JSON" ? new Response("Unreadable receipt")
+    : Response.json({ operation_id: original.operationId, state: kind === "unsupported state" ? "new-state" : "complete", response: {} })));
+  expect((await recover())?.state).toBe("transport_unknown");
+  expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
+  expect(readPrefixTransition("rep")?.message).toMatch(/Check status again|check status again/);
+  expect(readPrefixTransition("rep")?.result).toBeUndefined();
+});
 
 it("issue81_terminal_failure_offers_actionable_recovery", async () => {
   const original = begin(); vi.stubGlobal("fetch", vi.fn(async () => Response.json({ operation_id: original.operationId, state: "failed",
