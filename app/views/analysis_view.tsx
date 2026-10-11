@@ -8,8 +8,8 @@ import {
   explorerResponseSchema,
   builderSessionSchema,
 } from "../domain/schemas";
-import { saveBranchCommand } from "../lib/branch-command";
-import { removeBranchCommand } from "../lib/branch-removal-command";
+import { recoverBranchReceipt, saveBranchCommand } from "../lib/branch-command";
+import { recoverBranchRemovalReceipt, removeBranchCommand } from "../lib/branch-removal-command";
 import { readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
@@ -1082,6 +1082,18 @@ export default function BuilderView({
     }
   }
 
+  async function checkEarlierBranchOperation(removal: boolean) {
+    try {
+      const result = await (removal ? recoverBranchRemovalReceipt() : recoverBranchReceipt());
+      if (!result) { setBranchNote("No earlier branch operation is awaiting recovery."); return; }
+      invalidateWorkspaceData();
+      await refreshBackendLines();
+      setBranchNote(removal ? "Earlier branch removal completed." : "Earlier branch save completed.");
+    } catch (failure) {
+      setBranchNote(failure instanceof Error ? failure.message : "Could not check the earlier branch operation.");
+    }
+  }
+
   const target = coverageTarget / 100;
   const explorerCandidates = candidatesThrough(
     explorerMoves,
@@ -1494,7 +1506,9 @@ export default function BuilderView({
             </Button>
           </div>
           <div className="branch-editor" data-task="Repertoire">
-            {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
+            {structuralAdmission.paused && <><p role="alert">{structuralAdmission.reason}</p>
+              <Button onClick={() => void checkEarlierBranchOperation(false)}>Check earlier branch save</Button>
+              <Button onClick={() => void checkEarlierBranchOperation(true)}>Check earlier branch removal</Button></>}
             <span>
               <b>
                 {branchStart === null

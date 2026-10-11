@@ -66,3 +66,20 @@ export async function saveAnalysisPasteCommand(payload: AnalysisPasteCommand) {
   localStorage.removeItem(PENDING_KEY);
   return result;
 }
+
+// Status-only recovery remains available while new structural delivery is paused.
+export async function recoverAnalysisPasteReceipt() {
+  const pending = readPending();
+  if (!pending) return undefined;
+  const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
+  if (!status.ok) throw new PendingOperationError(pending.operationId);
+  const receipt = await status.json() as { state?: string; response?: unknown; error?: { message?: string } };
+  if (receipt.state === "failed") {
+    if (readPending()?.operationId === pending.operationId) localStorage.removeItem(PENDING_KEY);
+    throw new Error(receipt.error?.message ?? "The earlier analysis save failed.");
+  }
+  if (receipt.state !== "complete") throw new PendingOperationError(pending.operationId);
+  const result = analysisPasteCommitSchema.parse(receipt.response);
+  if (readPending()?.operationId === pending.operationId) localStorage.removeItem(PENDING_KEY);
+  return result;
+}

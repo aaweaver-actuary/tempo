@@ -10,7 +10,7 @@ import { API_URL } from "./const";
 import {
   analysisPastePreviewSchema,
 } from "./domain/schemas";
-import { saveAnalysisPasteCommand } from "./lib/analysis-paste-command";
+import { recoverAnalysisPasteReceipt, saveAnalysisPasteCommand } from "./lib/analysis-paste-command";
 import { useDialogFocus } from "./hooks/use-dialog-focus";
 import { readJsonResponse } from "./lib/validated-data";
 import { usesLocalApi } from "./utils/local";
@@ -210,6 +210,16 @@ export function AnalysisPasteDialog({
     }
   }
 
+  async function checkEarlierSave() {
+    setWorking(true); setError("");
+    try {
+      const result = await recoverAnalysisPasteReceipt();
+      if (result) onSaved(result.affected_repertoire_ids, [...new Set(result.saved.filter(line => line.conflict).map(line => line.repertoire_id))]);
+      else setError("No earlier analysis save is awaiting recovery.");
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not check the earlier save."); }
+    finally { setWorking(false); }
+  }
+
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -261,7 +271,7 @@ export function AnalysisPasteDialog({
           </label>
         )}
         {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
-      {error && (
+        {error && (
           <p className="editor-error" role="alert">
             {error}
           </p>
@@ -373,6 +383,7 @@ export function AnalysisPasteDialog({
           </div>
         )}
         <div className="dialog-footer">
+          {usesLocalApi() && structuralAdmission.paused && <Button disabled={working} onClick={() => void checkEarlierSave()}>Check earlier save</Button>}
           <Button
             disabled={!usesLocalApi() || !text.trim() || working}
             onClick={() => void showPreview()}

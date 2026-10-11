@@ -2,12 +2,12 @@ import { installPrefixTransitionTestLocks } from "./support/prefix-transition-lo
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { deleteRepertoireCommand } from "../../app/lib/repertoire-delete-command";
 import { saveCanonicalPrefixCommand } from "../../app/lib/canonical-prefix-command";
-import { saveBranchCommand } from "../../app/lib/branch-command";
-import { removeBranchCommand } from "../../app/lib/branch-removal-command";
+import { recoverBranchReceipt, saveBranchCommand } from "../../app/lib/branch-command";
+import { recoverBranchRemovalReceipt, removeBranchCommand } from "../../app/lib/branch-removal-command";
 import { reviseCardCommand } from "../../app/lib/card-revision-command";
 import { deleteCardCommand } from "../../app/lib/card-delete-command";
 import { acceptPrefixSplitCommand } from "../../app/lib/prefix-split-command";
-import { saveAnalysisPasteCommand } from "../../app/lib/analysis-paste-command";
+import { recoverAnalysisPasteReceipt, saveAnalysisPasteCommand } from "../../app/lib/analysis-paste-command";
 import { prepareFindingCard } from "../../app/lib/finding-card-command";
 import { applyOpportunityCommand } from "../../app/lib/opportunity-command";
 import { saveTacticCapture } from "../../app/lib/tactic-capture-command";
@@ -166,3 +166,29 @@ it("issue81_previously_saved_repair_rechecks_admission_after_read_only_evidence"
   expect(requests).toHaveLength(0);
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: original.operationId, error: expect.stringContaining("Resolve the prefix transition") });
 });
+
+for (const [family, pendingKey, recover, response] of [
+  ["analysis_paste", "tempo-pending-analysis-paste-v1", recoverAnalysisPasteReceipt, { saved: [], affected_repertoire_ids: ["rep"], gap_resolved: false }],
+  ["branch_save", "tempo-pending-repertoire-branch-v1", recoverBranchReceipt, { id: "line", duplicate: false, moves: ["e2e4"], integrity: { status: "unchecked", issue_count: 0, first_issue_id: null } }],
+  ["branch_removal", "tempo-pending-branch-removal-v1", recoverBranchRemovalReceipt, { deleted_line_count: 1, deleted_card_count: 0, retained_line_count: 0, integrity: { status: "unchecked", issue_count: 0, first_issue_id: null } }],
+] as const) {
+  it(`issue81_${family}_status_only_recovery_preserves_draft_and_sends_no_mutation`, async () => {
+    localStorage.setItem(pendingKey, JSON.stringify({ operationId: "original-operation", body: "immutable earlier body" }));
+    const fetcher = vi.fn(async () => Response.json({ state: "complete", response }));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await recover()).toEqual(response);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]).toEqual([expect.stringContaining("/api/operations/original-operation")]);
+    expect(localStorage.getItem(pendingKey)).toBeNull();
+    expect(localStorage.getItem(prefixKey)).not.toBeNull();
+  });
+  it(`issue81_${family}_status_only_pending_recovery_never_replays`, async () => {
+    localStorage.setItem(pendingKey, JSON.stringify({ operationId: "original-operation", body: "immutable earlier body" }));
+    const fetcher = vi.fn(async () => Response.json({ state: "pending" }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(recover()).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem(pendingKey)!).operationId).toBe("original-operation");
+  });
+}

@@ -4148,3 +4148,6 @@ full family and does not exempt or quarantine any acceptance assertion.
 refuses source removal for a seemingly independent repertoire when the client
 cannot enumerate the ensuing derived graph/card scope. It sends no request and
 allocates no removal identity; complete canonical/deletion scopes stay eligible.
+
+- `issue81_{analysis_paste,branch_save,branch_removal}_status_only_recovery_preserves_draft_and_sends_no_mutation` and `issue81_{analysis_paste,branch_save,branch_removal}_status_only_pending_recovery_never_replays` in `tests/unit/prefix-structural-command-regressions.test.ts` keep completed receipt reads available and prevent pending status checks from redelivering during a conflicting transition.
+- `issue81_paused_paste_editor_can_check_completed_receipt_without_erasing_unsaved_input` in `tests/unit/prefix-structural-editors-regressions.test.tsx` proves the separate recovery control retains the current draft while new Save remains disabled.

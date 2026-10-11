@@ -39,7 +39,9 @@ Open dialogs subscribe to admission changes, disable conflicting confirmations,
 show the recovery reason and keep unsaved input. Displayed state is advisory:
 a stale enabled button still reaches final admission. Cancel, source/preview/status
 reads, recovery, study and inspection remain available. Verified resolution and
-permitted journal clearing restore admission.
+permitted journal clearing restore admission. Paste and branch editors expose
+separate status-only checks while structural save/removal controls are paused;
+these never redeliver a pending request or overwrite the current draft.
 
 ## Mutation inventory
 

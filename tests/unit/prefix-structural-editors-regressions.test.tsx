@@ -1,6 +1,7 @@
 import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AnalysisPasteDialog } from "../../app/AnalysisPasteDialog";
 import RepertoireView from "../../app/views/repertoire_view";
 import { prefixTransitionPlanSchema, transitionSummary } from "../../app/domain/prefix-transition";
 import { prefixSourceSchema } from "../../app/domain/prefix-comparison";
@@ -94,4 +95,20 @@ it("issue81_independent_repertoire_structural_controls_remain_editable", async (
   const menu = openMenu("Independent");
   expect((menu.getByRole("menuitem", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
   expect((menu.getByRole("menuitem", { name: "Canonical prefix…" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("issue81_paused_paste_editor_can_check_completed_receipt_without_erasing_unsaved_input", async () => {
+  savedReservation();
+  localStorage.setItem("tempo-pending-analysis-paste-v1", JSON.stringify({ operationId: "earlier-save", body: "earlier approved body" }));
+  const fetcher = vi.fn(async () => Response.json({ state: "complete", response: { saved: [], affected_repertoire_ids: ["rep"], gap_resolved: false } }));
+  vi.stubGlobal("fetch", fetcher);
+  const onSaved = vi.fn();
+  render(<AnalysisPasteDialog context={{}} onClose={vi.fn()} onSaved={onSaved} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "SAN or PGN" }), { target: { value: "1. d4 d5" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Check earlier save" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith(["rep"], []));
+  expect((screen.getByRole("textbox", { name: "SAN or PGN" }) as HTMLTextAreaElement).value).toBe("1. d4 d5");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(fetcher.mock.calls[0]).toHaveLength(1);
+  expect((screen.getByRole("button", { name: "Save selected lines" }) as HTMLButtonElement).disabled).toBe(true);
 });
