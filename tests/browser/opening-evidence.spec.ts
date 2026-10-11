@@ -95,6 +95,13 @@ test(compactFails
   expect(keys).toEqual([`phone-reconcile:${attemptId}:aggregate-only`]);
   expect(reviews[0]).not.toHaveProperty("opening_evidence_completion");
   expect(reviews[0]).toMatchObject({ attempt_id: attemptId, outcome: "correct", recorded_at: recorded.attempts[0].completedAt });
+  // Request observation precedes the durable phone acknowledgement. Fresh queue
+  // publication can immediately prune that acknowledged attempt, so wait for
+  // its persistent confirmation record before testing the subsequent reload.
+  await expect.poll(() => page.evaluate(confirmationKey =>
+    (JSON.parse(localStorage.getItem("tempo-notifications-v1") ?? "[]") as { key?: string; severity: string }[])
+      .some(notification => notification.key === confirmationKey && notification.severity === "success"),
+  `phone-review-credited:101:${recorded.attempts[0].completedAt}`)).toBe(true);
   await page.reload();
   await expect(page.getByText("Shadow opening", { exact: true })).toBeVisible();
   expect(reviews).toHaveLength(1);
