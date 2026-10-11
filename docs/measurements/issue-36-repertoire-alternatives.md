@@ -136,7 +136,7 @@ lockfile dependencies installed once with `npm ci`. An initial test process exit
 11 while dependency installation was incomplete; it was not treated as evidence.
 Test fixture corrections and controlled failing runs are retained diagnostically.
 `make ui-file FILE=recovery.spec.ts` passed all 25 Chromium cases on its disposable
-PostgreSQL stack (301.36 s command; browser 128.84 s; image build 100.01 s;
+PostgreSQL stack (301.36 s command; browser 128.63 s; image build 100.01 s;
 startup 41.55 s; owned cleanup 19.52 s). These are nested stage observations,
 not additional suite wall time. The runner captured revision `71becf14`; subsequent
 commits at this point only added terminal unit fixtures and evidence/registry prose.
@@ -144,6 +144,30 @@ The new real-worker alternative/retry/edit case passed (9.3 s) with rendered-pie
 and persisted-failure assertions. The next source change only makes the new task's
 activity label readable as “Preparing repertoire lines”; that is outside measured
 pure computation and does not change membership or grading.
-Held-drag results, cleanup verification and complete CI qualification remain pending. CI owns the complete
+`make ui-file FILE=held-drag-preservation.spec.ts` passed both Chromium cases
+(89.00 s command; browser 11.57 s; image build 43.45 s; startup 18.64 s;
+cleanup 13.50 s), capturing revision `8c65f5be`. No board implementation changed.
+
+Both runners removed their exact project-owned containers, volumes, networks and
+images; independent filtered inventories confirmed absence. Projects:
+`tempo-pg-regressions-29170-b51531aa` (recovery) and
+`tempo-pg-regressions-37865-7ae690cb` (held drag). Cleanup uses the runner's exact
+project and generated Compose inputs with `down -v --rmi local --remove-orphans`.
+Built image configuration hashes and teardown identifiers are in the preserved
+logs; the late resource audit retained one container ID, while the bounded Docker
+event history could not recover all already-removed container IDs. No claim of
+complete historical container-ID inventory or measured disk recovery is made.
+Live study resources, unrelated resources, shared base images and safe build
+caches were retained.
+
+Diagnostics are preserved and checksum-verified outside the worktree under
+`/Users/andy/tempo/test-results/issue-36-2026-10-11/`, including raw benchmark output,
+failing baseline/focused logs, browser reports and the preservation manifest.
+The isolated checkout and ownership record remain active for unmerged PR #185;
+remove only after merge/preservation and no remaining task/process/container use.
+[Current PR checks](https://github.com/aaweaver-actuary/tempo/pull/185/checks)
+own complete current-head/base/integration qualification. Draft development is
+intermediate; required final ready qualification remains pending here. Final
+verified head and successful CI evidence belong in the PR handoff. CI owns the complete
 gate; no local `make full`, unrelated Python/FSRS change, live data reset, merge or
 deployment belongs to this task.
