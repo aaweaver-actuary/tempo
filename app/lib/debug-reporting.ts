@@ -68,6 +68,7 @@ let records: readonly DebugErrorRecord[] = [];
 let activeWorkspace = "unknown";
 let nextErrorId = 1;
 let alreadyReported = new WeakMap<Error, DebugErrorRecord>();
+let notifiedRecords = new WeakSet<DebugErrorRecord>();
 let globalCleanup: (() => void) | undefined;
 
 function notify() {
@@ -124,7 +125,31 @@ export function debugErrors() {
 export function clearDebugErrors() {
   records = [];
   alreadyReported = new WeakMap();
+  notifiedRecords = new WeakSet();
   notify();
+}
+
+// Quiet evidence remains available for debugging without consuming a later
+// authoritative report's notification. Repeated published records stay quiet.
+function publishDebugNotification(record: DebugErrorRecord, shouldNotify: boolean): void {
+  if (!shouldNotify || record.context.source === "browser-extension" || notifiedRecords.has(record)) return;
+  const normalizedContext = record.context;
+  const signature = [record.kind, normalizedContext.source, normalizedContext.endpointPath ?? "",
+    record.name, record.message].join("\u0000");
+  notifiedRecords.add(record);
+  publishNotification({
+    severity: "error", source: normalizedContext.source,
+    message: record.message, key: debugIncidentKey(signature),
+    details: {
+      debugRecordId: record.id,
+      kind: record.kind,
+      ...(normalizedContext.operation ? { operation: normalizedContext.operation } : {}),
+      ...(normalizedContext.endpointPath ? { endpointPath: normalizedContext.endpointPath } : {}),
+      ...(normalizedContext.method ? { method: normalizedContext.method } : {}),
+      ...(normalizedContext.status ? { status: normalizedContext.status } : {}),
+      ...(record.stack ? { stack: record.stack } : {}),
+    },
+  });
 }
 
 export function reportDebugError(
@@ -133,7 +158,10 @@ export function reportDebugError(
 ): DebugErrorRecord {
   if (failure instanceof Error) {
     const priorReport = alreadyReported.get(failure);
-    if (priorReport) return priorReport;
+    if (priorReport) {
+      publishDebugNotification(priorReport, context.notify !== false);
+      return priorReport;
+    }
   }
   const details = errorDetails(failure);
   const normalizedContext = {
@@ -170,8 +198,11 @@ export function reportDebugError(
       previous.message,
     ].join("\u0000") === signature &&
     Date.now() - Date.parse(previous.occurredAt) < 1_000
-  )
+  ) {
+    if (failure instanceof Error) alreadyReported.set(failure, previous);
+    publishDebugNotification(previous, context.notify !== false);
     return previous;
+  }
 
   const record: DebugErrorRecord = {
     id: `debug-${typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -186,19 +217,7 @@ export function reportDebugError(
   records = [...records.slice(-(MAX_ERROR_RECORDS - 1)), record];
   if (failure instanceof Error) alreadyReported.set(failure, record);
   notify();
-  if (context.notify !== false && normalizedContext.source !== "browser-extension") publishNotification({
-    severity: "error", source: normalizedContext.source,
-    message: record.message, key: debugIncidentKey(signature),
-    details: {
-      debugRecordId: record.id,
-      kind: record.kind,
-      ...(normalizedContext.operation ? { operation: normalizedContext.operation } : {}),
-      ...(normalizedContext.endpointPath ? { endpointPath: normalizedContext.endpointPath } : {}),
-      ...(normalizedContext.method ? { method: normalizedContext.method } : {}),
-      ...(normalizedContext.status ? { status: normalizedContext.status } : {}),
-      ...(record.stack ? { stack: record.stack } : {}),
-    },
-  });
+  publishDebugNotification(record, context.notify !== false);
   return record;
 }
 

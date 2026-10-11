@@ -229,10 +229,12 @@ it("issue36_refreshing_observer_invalidation_keeps_the_new_request_authoritative
   } finally { window.removeEventListener("tempo-workspace-data", replaceOnRefresh); }
 });
 
-it("issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation", async () => {
+it.each(["success", "failure"])("issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation (%s)", async outcome => {
   vi.resetModules();
   const workspace = await import("../../app/lib/workspace-data");
   const validation = await import("../../app/lib/validated-data");
+  const workerNotifications = await import("../../app/lib/notifications");
+  workerNotifications.clearNotificationHistory();
   const messages: Array<{ id: number }> = [];
   const submitted = [0, 1].map(() => {
     let resolve!: () => void;
@@ -250,6 +252,7 @@ it("issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidati
   }
   vi.stubGlobal("Worker", ControlledWorker);
   const first = workspace.readWorkspaceData(apiUrl);
+  const firstOutcome = first.catch(error => error);
   reads[0].resolve(Response.json({ lines: [] }));
   await submitted[0].promise;
   workspace.invalidateWorkspaceData(apiUrl);
@@ -262,10 +265,63 @@ it("issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidati
   await second;
   expect(validation.dataDiagnostics()).toHaveLength(1);
   const currentDiagnostics = validation.dataDiagnostics();
-  workers[0].onmessage!({ data: { id: messages[0].id, result: { lines: [] }, diagnostics: [
+  workers[0].onmessage!({ data: { id: messages[0].id,
+    ...(outcome === "success" ? { result: { lines: [] } } : { error: "Obsolete worker validation failed" }), diagnostics: [
     { source: "repertoire line", raw: { id: "obsolete" }, recordId: "obsolete", message: "Obsolete invalid record", recordedAt: new Date().toISOString() },
   ] } } as MessageEvent);
-  await first;
+  if (outcome === "success") await expect(firstOutcome).resolves.toEqual({ lines: [] });
+  else expect(await firstOutcome).toMatchObject({ message: "Obsolete worker validation failed" });
+  expect(workerNotifications.notifications()).toEqual([]);
   expect(validation.dataDiagnostics()).toEqual(currentDiagnostics);
   expect(events).toEqual([{ state: "ready", url: apiUrl }]);
+});
+
+it.each([assetUrl, apiUrl])("issue36_quiet_obsolete_validation_cannot_suppress_current_identical_alert (%s)", async url => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-11T12:00:00Z"));
+  const schema = z.strictObject({ version: z.string() });
+  const obsoleteRead = readWorkspaceData(url, schema);
+  const obsoleteOutcome = obsoleteRead.catch(error => error);
+  invalidateWorkspaceData(url);
+  const currentRead = readWorkspaceData(url, schema);
+  const currentOutcome = currentRead.catch(error => error);
+  reads[0].resolve(Response.json({ malformed: true }));
+  const obsoleteError = await obsoleteOutcome;
+  expect(obsoleteError).toBeInstanceOf(Error);
+  expect(obsoleteError.message).toContain("Invalid");
+  expect(dataDiagnostics()).toEqual([]);
+  expect(notifications()).toEqual([]);
+  expect(events).toEqual([]);
+  expect(readWorkspaceData(url, schema)).toBe(currentRead);
+  const quietDebugRecord = debugErrors().at(-1)!;
+  reads[1].resolve(Response.json({ malformed: true }));
+  const currentError = await currentOutcome;
+  expect(currentError).toBeInstanceOf(Error);
+  expect(currentError.message).toBe(obsoleteError.message);
+  expect(dataDiagnostics()).toHaveLength(1);
+  expect(events).toEqual([{ state: "error", url }]);
+  expect(notifications()).toHaveLength(1);
+  expect(notifications()[0]).toMatchObject({ message: currentError.message,
+    details: { debugRecordId: quietDebugRecord.id, kind: "data-validation" } });
+});
+
+it("issue36_quiet_obsolete_quarantine_cannot_suppress_current_identical_alert", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-11T12:00:00Z"));
+  const obsoleteRead = readWorkspaceData(apiUrl);
+  invalidateWorkspaceData(apiUrl);
+  const currentRead = readWorkspaceData(apiUrl);
+  const invalidRecord = { lines: [{ id: "invalid-record" }] };
+  reads[0].resolve(Response.json(invalidRecord));
+  await expect(obsoleteRead).resolves.toEqual({ lines: [] });
+  expect(dataDiagnostics()).toEqual([]);
+  expect(notifications()).toEqual([]);
+  expect(events).toEqual([]);
+  expect(readWorkspaceData(apiUrl)).toBe(currentRead);
+  reads[1].resolve(Response.json(invalidRecord));
+  await expect(currentRead).resolves.toEqual({ lines: [] });
+  expect(dataDiagnostics()).toHaveLength(1);
+  expect(events).toEqual([{ state: "ready", url: apiUrl }]);
+  expect(notifications()).toHaveLength(1);
+  expect(notifications()[0]).toMatchObject({ details: { kind: "data-validation" } });
 });
