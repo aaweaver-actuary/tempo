@@ -205,7 +205,7 @@ describe("review attempt reliability", () => {
       /\/review(?:\/reconcile)?$/.test(String(input))).length;
 
     issueIndependentHead = true;
-    await expect(fetchAndInitializeQueue({ replaySavedReviews: false })).resolves.toBe("installed");
+    await expect(fetchAndInitializeQueue(false, { replaySavedReviews: false })).resolves.toBe("installed");
     expect(fetchMock.mock.calls.filter(([input]) =>
       /\/review(?:\/reconcile)?$/.test(String(input)))).toHaveLength(reviewRequestsBeforeQueueRetry);
 

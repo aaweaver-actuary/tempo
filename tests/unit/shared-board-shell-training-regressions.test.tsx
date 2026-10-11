@@ -54,7 +54,7 @@ it("failed saves remain actionable after saving progress ends", () => {
   const view = render(<TrainingView {...props} reviewPersistenceState="saving" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="saveFailed" reviewSaveError="Retry this review." />);
   expect(notifications()[0]).toMatchObject({ severity: "error", active: false, resolvedAt: null });
-  fireEvent.click(screen.getByRole("button", { name: "Retry save", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
   expect(props.retryReviewSave).toHaveBeenCalledTimes(1);
   view.rerender(<TrainingView {...props} reviewPersistenceState="saving" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="saved" />);
@@ -64,7 +64,7 @@ it("failed saves remain actionable after saving progress ends", () => {
   view.rerender(<TrainingView {...props} reviewPersistenceState="refreshingQueue" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="queueFailed" />);
   expect(screen.getByRole("alert").textContent).toContain("Result saved; the next card could not be loaded.");
-  fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue" }));
   expect(props.retryQueueAfterReview).toHaveBeenCalledTimes(1);
   expect(props.rateCard).not.toHaveBeenCalled();
   // Home owns progression; child queue states must retain the settled save.
