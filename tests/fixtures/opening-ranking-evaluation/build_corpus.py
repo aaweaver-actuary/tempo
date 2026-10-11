@@ -92,6 +92,9 @@ def make_fixture(identifier, policy, coverage):
     rows, metadata = [], {}
     for suffix, moves in moves_by_suffix.items():
         card_id = card_ids[suffix]
+        parent_card_id = (policy + "-support-failed" if moves[:5] == main[:5] and len(moves) > 5
+                          else "shared-e4-e5-nf3" if moves[:3] == main[:3] and len(moves) > 3
+                          else "shared-e4")
         line_id = "main" if suffix in ("a", "b") else "branch-" + suffix
         priority = {"a": .9, "b": .7, "c": .8, "d": .6, "e": .5, "f": .4}[suffix]
         row = {"id": card_id, "repertoire_id": policy, "moves_json": json.dumps(moves),
@@ -107,11 +110,11 @@ def make_fixture(identifier, policy, coverage):
             "memberships": [{"repertoire_id": policy, "frontier_ply": len(moves),
                 "priority_score": priority, "priority_generation": 1, "completed_line_ids": [line_id]}],
             "routes": [{"repertoire_id": policy, "generation": 1, "line_id": line_id,
-                "decision_index": len(decisions) - 1, "parent_card_id": policy + "-support-failed"}]}
+                "decision_index": len(decisions) - 1, "parent_card_id": parent_card_id}]}
         if identifier == "shared-prefixes" and suffix == "a":
             metadata[card_id]["routes"].append({"repertoire_id": policy, "generation": 1,
                 "line_id": "main-extension", "decision_index": len(decisions) - 1,
-                "parent_card_id": policy + "-support-failed"})
+                "parent_card_id": parent_card_id})
     planner_inputs = sorted(rows, key=lambda row: (row["repertoire_id"], row["id"]))
     order = _plan_prioritized_opening_admissions(planner_inputs, {}, DAY, len(rows))
     candidates = tuple(OpeningRankingCandidate(row["id"], index, canonical_json(metadata[row["id"]]),

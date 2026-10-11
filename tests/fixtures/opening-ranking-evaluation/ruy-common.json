@@ -506,7 +506,7 @@
             "decision_index": 1,
             "generation": 1,
             "line_id": "branch-f",
-            "parent_card_id": "ruy-support-failed",
+            "parent_card_id": "shared-e4",
             "repertoire_id": "ruy"
           }
         ],
@@ -696,7 +696,7 @@
       }
     ]
   },
-  "snapshot_id": "e90c2be242eaf8e717bdb3ddf62d8b0dd384fef9375d1c0d2d0855ae5e5aff29",
+  "snapshot_id": "2c319f23fef5ba26b7e4b6b02bf1e22ad9cc6102a2aa61da7995ecd1d9572318",
   "source_versions": {
     "cohorts": {
       "classical-1800-2000": {

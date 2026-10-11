@@ -237,7 +237,7 @@
             "decision_index": 1,
             "generation": 1,
             "line_id": "branch-d",
-            "parent_card_id": "italian-support-failed",
+            "parent_card_id": "shared-e4",
             "repertoire_id": "italian"
           }
         ],
@@ -310,7 +310,7 @@
             "decision_index": 2,
             "generation": 1,
             "line_id": "branch-e",
-            "parent_card_id": "italian-support-failed",
+            "parent_card_id": "shared-e4-e5-nf3",
             "repertoire_id": "italian"
           }
         ],
@@ -369,7 +369,7 @@
             "decision_index": 1,
             "generation": 1,
             "line_id": "branch-f",
-            "parent_card_id": "italian-support-failed",
+            "parent_card_id": "shared-e4",
             "repertoire_id": "italian"
           }
         ],
@@ -559,7 +559,7 @@
       }
     ]
   },
-  "snapshot_id": "94d4d3bd83e0bafbc09214a77f96541dda49d7207c6f3d0a2210e0178fcbf81a",
+  "snapshot_id": "45da839a1b0191b3a639e0ceb5c212d8cb9fb0044d71899ff2db1bbacade0884",
   "source_versions": {
     "cohorts": {
       "classical-1800-2000": {

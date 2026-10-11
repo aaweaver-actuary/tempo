@@ -132,6 +132,19 @@ def test_harness_checked_snapshots_rebuild_with_real_production_planner():
         assert document["production_order_basis"] == "production_planner_capacity_neutral_sorted_repertoire_then_card"
 
 
+@pytest.mark.parametrize("scenario", [entry["id"] for entry in read(MANIFEST)["scenarios"]])
+def test_harness_routes_reference_true_supporting_prefix_parents(scenario):
+    document = read(CORPUS / (scenario + ".json"))
+    supporting = {card["card_id"]: card for card in document["source_versions"]["supporting_cards"]}
+    for candidate in document["candidates"]:
+        moves = candidate["metadata"]["moves"]
+        for route in candidate["metadata"]["routes"]:
+            parent = supporting[route["parent_card_id"]]
+            assert parent["policy_id"] == candidate["policy_id"]
+            assert len(parent["moves"]) < len(moves)
+            assert moves[:len(parent["moves"])] == parent["moves"]
+
+
 def test_harness_hand_calculated_metrics_and_stable_ties():
     result = harness.run_corpus(MANIFEST, scenario_ids=["italian-common"], top_k=(2,))["results"][0]
     supplied = evaluation(result)
