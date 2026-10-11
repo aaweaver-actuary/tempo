@@ -116,7 +116,7 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
       currentController.signal.throwIfAborted();
       if (checked.plan_id !== plan.plan_id || checked.status !== "ready")
         throw new PrefixPreviewError("stale_plan", "This exact transition changed. Refresh the comparison and review the new consequences before confirming.");
-      const saved = await reservePrefixTransition(repertoireId, transitionRequest(plan, Object.fromEntries(selectedIds.map(id => [id, depth]))), transitionSummary(plan, source, repertoireName), currentController.signal);
+      const saved = await reservePrefixTransition(repertoireId, transitionRequest(plan, Object.fromEntries(selectedIds.map(id => [id, depth]))), transitionSummary(plan, source, repertoireName), currentController.signal, { plan, source });
       setOperation(saved);
       const resolved = await recoverPrefixTransition(repertoireId, { signal: currentController.signal });
       currentController.signal.throwIfAborted();

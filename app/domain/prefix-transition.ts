@@ -75,7 +75,7 @@ export function transitionRequest(plan: PrefixTransitionPlan, candidateDepths: R
     graph_generation: plan.graph_generation, study_day: plan.study_day });
 }
 
-export function transitionSummary(plan: PrefixTransitionPlan, source: PrefixSource, repertoireName: string): PrefixTransitionSummary {
+export function transitionSummary(plan: PrefixTransitionPlan, source: Pick<PrefixSource, "lines">, repertoireName: string): PrefixTransitionSummary {
   const classificationCount = (classification: PrefixTransitionPlan["cards"][number]["classification"]) =>
     plan.cards.filter(card => card.classification === classification).length;
   return prefixTransitionSummarySchema.parse({ repertoireName,
