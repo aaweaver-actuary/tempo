@@ -312,6 +312,9 @@ def claim_task(
             return None
         if scheduling_turn is not None:
             persist_scheduling_turn(database, scheduling_turn)
+        if row['kind'] in {'repertoire_priority', 'repertoire_opportunity'}:
+            database.execute('UPDATE analysis_refresh_requests SET pending_since=NULL WHERE kind=? AND repertoire_id=?',
+                             (row['kind'], row['deduplication_key']))
         _record_event(database, row["id"], row["generation"], "claimed", "claimed", kind=row["kind"])
         claimed = dict(database.execute("SELECT * FROM background_tasks WHERE id=?", (row["id"],)).fetchone())
         claimed["payload"] = json.loads(claimed.pop("payload_json"))
@@ -325,6 +328,14 @@ def claim_task(
 
 def complete_task(task_id: str, generation: int, lease_token: str, *, kind: str | None = None) -> bool:
     def operation(database: sqlite3.Connection) -> bool:
+        refresh_repertoire_id = None
+        if kind == 'repertoire_opportunity':
+            refresh_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
+            if refresh_row:
+                refresh_repertoire_id = refresh_row['deduplication_key']
+                from .postgres_priority import _priority_source_version
+                _priority_source_version(database, refresh_repertoire_id,
+                                         lock=hasattr(database, 'execute_native'))
         now = _iso()
         changed = database.execute(
             """UPDATE background_tasks SET state='complete',phase='published',
@@ -335,6 +346,9 @@ def complete_task(task_id: str, generation: int, lease_token: str, *, kind: str 
             (now, now, task_id, generation, lease_token),
         ).rowcount
         if changed:
+            if refresh_repertoire_id is not None:
+                from .refresh_requests import record_publication
+                record_publication(database, kind, refresh_repertoire_id)
             clear_queue_refresh_error_in_transaction(database, task_id, kind=kind)
             _record_event(database, task_id, generation, "published", "published", kind=kind)
         else:

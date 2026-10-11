@@ -10,7 +10,7 @@ import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
+  readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
 import { atomicJson, redact } from "./tempo-deployment.mjs";
@@ -216,18 +216,19 @@ async function pollForStudyableImport(repertoireId) {
   for (let attempt = 0; attempt < 180; attempt += 1) {
     measureScenario.poll();
     const [system, integrity, queue] = await Promise.all([
-      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }), get("queue/today", { background: true }),
+      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }),
+      apiRequest("queue/today", { headers: { "X-Tempo-Work-Class": "background" } }).then(readStudyQueuePublication),
     ]);
     assertNoCompletedFixtureConflict(integrity, repertoireId);
     const graphTask = system.tasks.find((task) => task.kind === "opening_graph_rebuild"
       && task.deduplication_key === repertoireId);
     if (graphTask?.state === "failed" || integrity.scan_status === "failed"
-      || queue.projection?.state === "failed") {
+      || queue?.projection?.state === "failed") {
       throw new Error(graphTask?.last_error ?? integrity.last_scan_error ?? integrity.last_error
-        ?? queue.projection?.last_error ?? "PostgreSQL import background work failed");
+        ?? queue?.projection?.last_error ?? "PostgreSQL import background work failed");
     }
     if (graphTask?.state === "complete" && integrity.scan_status === "idle" && integrity.status === "clean"
-      && queue.projection?.state === "ready" && !queue.projection.refresh_pending) {
+      && queue?.projection?.state === "ready" && !queue.projection.refresh_pending) {
       settledSamples += 1;
       if (settledSamples >= 3) return queue;
     } else {
