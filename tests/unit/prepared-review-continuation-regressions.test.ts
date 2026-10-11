@@ -96,6 +96,37 @@ it("async_reconciliation_preserves_active_attempt_and_excludes_completed_entries
   expect(useTrainingStore.getState().practiceCards.map(card => card.queueEntryId)).toEqual([503]);
 });
 
+it("issue186_reconciliation_preserves_completed_prepared_attempt", async () => {
+  const originalAttempt = useTrainingStore.getState().attempt;
+  rememberConfirmedQueueEntry(cards[0]);
+  expect(advancePreparedContinuation(capturePreparedNext(), originalAttempt.attemptId!, originalAttempt.generation)).toBe(true);
+  useTrainingStore.getState().setAttemptPhase("complete");
+  const completedAttempt = useTrainingStore.getState().attempt;
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ cards: queue, count: 3, local_date: localDayKey() })));
+  await fetchAndInitializeQueue(false, { preservePreparedAttempt: true, replaySavedReviews: false,
+    timeoutMs: 15_000, expectedAttempt: completedAttempt });
+  expect(useTrainingStore.getState().attempt).toEqual(completedAttempt);
+  expect(useTrainingStore.getState().practiceCards.map(card => card.queueEntryId)).toEqual([502, 503]);
+});
+
+it("issue186_late_body_after_deadline_cannot_install", async () => {
+  vi.useFakeTimers();
+  let finishBody!: (value: unknown) => void;
+  const response = Response.json({});
+  vi.spyOn(response, "json").mockImplementation(() => new Promise(resolve => { finishBody = resolve; }));
+  vi.stubGlobal("fetch", vi.fn(async () => response));
+  const activeAttempt = useTrainingStore.getState().attempt;
+  const loading = fetchAndInitializeQueue(true, { timeoutMs: 15_000, replaySavedReviews: false, expectedAttempt: activeAttempt });
+  const failure = loading.catch(error => error);
+  await vi.advanceTimersByTimeAsync(15_001);
+  expect(await failure).toBeInstanceOf(Error);
+  finishBody({ cards: queue.slice(1), count: 2, local_date: localDayKey() });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(useTrainingStore.getState().attempt).toEqual(activeAttempt);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+  expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
+});
+
 it("unconfirmed_review_does_not_advance_prepared_card: frozen retry and malformed optional result", async () => {
   const candidate = capturePreparedNext()!;
   const review = { backendId: "a", queueEntryId: 501, attemptId: "frozen-attempt", outcome: "correct" as const,

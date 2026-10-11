@@ -7,7 +7,9 @@ import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { asCardId, asFenString, asRepertoireId, asSanMove } from "../../app/types";
 
-vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: vi.fn() }));
+vi.mock("../../app/views/fetchAndInitializeQueue", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app/views/fetchAndInitializeQueue")>(), fetchAndInitializeQueue: vi.fn(),
+}));
 vi.mock("../../app/components/board/chessboard", () => ({ Chessboard: () => <div /> }));
 vi.mock("../../app/lib/analysis-engines", () => ({ analyzeWithStockfish: vi.fn(async () => []), analyzeWithMaia: vi.fn(async () => []) }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn(), moveSoundEnabled: () => false, prepareMoveSounds: vi.fn(), cancelMoveSounds: vi.fn() }));
@@ -23,6 +25,7 @@ beforeEach(() => {
   vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => {
     useTrainingStore.getState().hydrateLocalQueue([card], true);
     useTrainingStore.setState({ queueReadiness: "ready", step: 8, currentFenString: asFenString(positions[8]) });
+    return "installed" as const;
   });
 });
 

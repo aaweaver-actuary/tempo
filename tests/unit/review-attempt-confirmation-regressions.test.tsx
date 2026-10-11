@@ -10,6 +10,7 @@ import { clearNotificationHistory, notifications } from "../../app/lib/notificat
 import { clearDebugErrors, debugErrors, buildDebugBundle } from "../../app/lib/debug-reporting";
 import { asFenString } from "../../app/types";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
+import { runStudyTask } from "../../app/lib/background-study";
 
 let trainingProps: React.ComponentProps<typeof TrainingView>;
 vi.mock("../../app/views/training_view", async importOriginal => {
@@ -61,6 +62,186 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetcher);
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+it.each(["headers", "body", "worker", "abort"])("issue186_post_review_acquisition_has_bounded_recovery: %s", async failure => {
+  await readyHome();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  const originalCompute = vi.mocked(runStudyTask).getMockImplementation()!;
+  let acquisitionCount = 0;
+  fetcher.mockImplementation(async (input, options) => {
+    if (!String(input).includes("/api/queue/window")) return originalFetcher(input, options);
+    acquisitionCount++;
+    if (failure === "headers") return new Promise((_resolve, reject) => options?.signal?.addEventListener("abort",
+      () => reject(new DOMException("Fetch is aborted", "AbortError")), { once: true }));
+    if (failure === "abort") throw new DOMException("Fetch is aborted", "AbortError");
+    const response = Response.json({ cards: [queueCard("card-b", 13)], count: 1 });
+    if (failure === "body") vi.spyOn(response, "json").mockImplementation(() => new Promise(() => {}));
+    return response;
+  });
+  if (failure === "worker") vi.mocked(runStudyTask).mockImplementation(task => task.kind === "queue"
+    ? new Promise(() => {}) : originalCompute(task));
+  try {
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+    expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
+    expect(acquisitionCount).toBe(2);
+    expect(screen.getByRole("button", { name: "Retry loading the queue" })).toBeTruthy();
+    expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
+    expect(reviewPosts()).toHaveLength(1);
+    expect(pendingReviews()).toEqual([]);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
+  } finally { vi.mocked(runStudyTask).mockImplementation(originalCompute); }
+});
+
+it("issue186_healthy_fallback_does_not_wait_for_integrity", async () => {
+  await readyHome();
+  queue = [queueCard("card-b", 13)];
+  const originalFetcher = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (input, options) => String(input).endsWith("/api/repertoires")
+    ? new Promise(() => {}) : originalFetcher(input, options));
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+  expect(trainingProps.reviewPersistenceState).toBe("idle");
+  expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
+  expect(reviewPosts()).toHaveLength(1);
+});
+
+it("issue186_queue_retry_recovers_without_resubmitting_saved_review", async () => {
+  await readyHome();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  let queueUnavailable = true;
+  fetcher.mockImplementation(async (input, options) => {
+    if (String(input).includes("/api/queue/window") && queueUnavailable) throw new DOMException("Fetch is aborted", "AbortError");
+    return originalFetcher(input, options);
+  });
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
+  queueUnavailable = false;
+  queue = [queueCard("card-b", 13)];
+  await act(async () => { trainingProps.retryQueueAfterReview!(); });
+  expect(trainingProps.reviewPersistenceState).toBe("idle");
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+  expect(reviewPosts()).toHaveLength(1);
+  expect(notifications().filter(record => record.key === "review-queue:12")).toHaveLength(1);
+  expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false, severity: "success" });
+});
+
+it("issue186_authoritative_empty_queue_settles_saved_progression", async () => {
+  await readyHome();
+  queue = [];
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  expect(trainingProps.reviewPersistenceState).toBe("idle");
+  expect(useTrainingStore.getState().cardsLeft).toBe(0);
+  expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false,
+    message: "Result saved. Training queue complete." });
+});
+
+it("issue186_prepared_card_survives_aborted_reconciliation_and_recovers", async () => {
+  queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
+  await readyHome();
+  reviewResponse = async () => Response.json({ persisted: true, prepared_continuation: {
+    card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0, local_date: new Date().toLocaleDateString("en-CA"),
+  } });
+  const originalFetcher = fetcher.getMockImplementation()!;
+  let unavailable = true;
+  fetcher.mockImplementation(async (input, options) => {
+    if (unavailable && String(input).includes("/api/queue/window")) throw new DOMException("Fetch is aborted", "AbortError");
+    return originalFetcher(input, options);
+  });
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  const preparedAttempt = useTrainingStore.getState().attempt;
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+  expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+  expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");
+  expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
+  unavailable = false;
+  queue = queue.slice(1);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue" })); });
+  expect(useTrainingStore.getState().attempt).toEqual(preparedAttempt);
+  expect(useTrainingStore.getState().practiceCards.map(card => card.queueEntryId)).toEqual([13, 14]);
+  expect(reviewPosts()).toHaveLength(1);
+});
+
+it.each(["completed head", "malformed JSON", "invalid head", "partial envelope"])(
+  "issue186_invalid_authoritative_head_requires_recovery: %s", async invalid => {
+    await readyHome();
+    const originalFetcher = fetcher.getMockImplementation()!;
+    let queueReads = 0;
+    fetcher.mockImplementation(async (input, options) => {
+      if (!String(input).includes("/api/queue/window")) return originalFetcher(input, options);
+      queueReads++;
+      if (invalid === "malformed JSON") return new Response("{truncated");
+      if (invalid === "partial envelope") return Response.json({ count: 1 });
+      if (invalid === "invalid head") return Response.json({ count: 2, cards: [{ id: "unusable" }, queueCard("card-b", 13)] });
+      return Response.json({ count: 2, cards: [queueCard("card-a", 12), queueCard("card-b", 13)] });
+    });
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
+    expect(queueReads).toBe(1);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
+    expect(reviewPosts()).toHaveLength(1);
+    expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
+  });
+
+it("issue186_view_replacement_cannot_orphan_progression_notification", async () => {
+  await readyHome();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (input, options) => String(input).includes("/api/queue/window")
+    ? new Promise(() => {}) : originalFetcher(input, options));
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  expect(notifications().find(record => record.key === "review-queue:12")?.active).toBe(true);
+  cleanup();
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+  expect(notifications().find(record => record.key === "review-queue:12")?.active).toBe(false);
+  expect(reviewPosts()).toHaveLength(1);
+});
+
+it("issue186_lost_review_response_receipt_recovery_uses_queue_only_retry", async () => {
+  await readyHome();
+  let receiptReady = false;
+  reviewResponse = async url => url.includes("/api/operations/")
+    ? receiptReady ? Response.json({ state: "complete", response: { persisted: true } }) : new Response(null, { status: 404 })
+    : Promise.reject(new TypeError("Committed review response lost"));
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  expect(pendingReviews()).toHaveLength(1);
+  const originalAttempt = pendingReviews()[0].attemptId;
+  receiptReady = true;
+  const originalFetcher = fetcher.getMockImplementation()!;
+  let queueUnavailable = true;
+  fetcher.mockImplementation(async (input, options) => String(input).includes("/api/queue/window") && queueUnavailable
+    ? Promise.reject(new DOMException("Fetch is aborted", "AbortError")) : originalFetcher(input, options));
+  await recoverIdle();
+  await waitFor(() => expect(trainingProps.reviewPersistenceState).toBe("queueFailed"));
+  expect(pendingReviews()).toEqual([]);
+  expect(reviewPosts()).toHaveLength(1);
+  expect(notifications().find(record => record.key === `review-save:${originalAttempt}`)?.resolvedAt).not.toBeNull();
+  queueUnavailable = false;
+  queue = [queueCard("card-b", 13)];
+  await act(async () => { trainingProps.retryQueueAfterReview!(); });
+  await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
+  expect(reviewPosts()).toHaveLength(1);
+});
+
+it("issue186_stale_progression_cannot_replace_new_attempt", async () => {
+  await readyHome();
+  const originalFetcher = fetcher.getMockImplementation()!;
+  let finishQueue!: (response: Response) => void;
+  fetcher.mockImplementation(async (input, options) => String(input).includes("/api/queue/window")
+    ? new Promise(resolve => { finishQueue = resolve; }) : originalFetcher(input, options));
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  act(() => {
+    useTrainingStore.getState().hydrateLocalQueue([mapQueueCardToPracticeCard(queueCard("newer-card", 99))], true, 1);
+    useTrainingStore.setState({ queueReadiness: "ready" });
+  });
+  const newerAttempt = useTrainingStore.getState().attempt;
+  await act(async () => { finishQueue(Response.json({ cards: [queueCard("old-next", 13)], count: 1 })); });
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(99);
+  expect(useTrainingStore.getState().attempt).toEqual(newerAttempt);
+  expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+  expect(trainingProps.reviewPersistenceState).toBe("idle");
+  expect(notifications().find(record => record.key === "review-queue:12")?.active).toBe(false);
+});
 
 async function readyHome() {
   render(<Home />);

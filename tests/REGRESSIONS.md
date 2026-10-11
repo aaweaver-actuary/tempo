@@ -3893,3 +3893,22 @@ PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2
 ### Study-import queue issuance readiness
 
 - `study_import_waits_for_pending_head_issuance_without_masking_service_failures` and `study_import_pending_issuance_remains_bounded_and_preserves_integrity_failures` in `tests/runner/postgres-test-speedups.test.mjs` reproduce the production runner's import-publication poll through its real HTTP reader. A known queue-head issuance-pending response must reset the three consecutive settled samples; it cannot complete the import. HTTP 500, other HTTP 503 responses, malformed errors, task-service failures and completed integrity conflicts still fail. Persistent pending work retains the existing 180-poll/250 ms bound. Both cases failed before the repair and are consumed by the regular `tests/unit/postgres-test-speedups-regressions.test.ts` suite; real PostgreSQL durability remains required.
+
+## Issue #186 — bounded progression after a confirmed review
+
+A durable review must reach an interactive next card, authoritative queue completion, or an actionable recovery state. Queue acquisition gets 15 seconds per attempt and one queue-only automatic retry; no progression retry resubmits the saved grade.
+
+- `issue186_post_review_acquisition_has_bounded_recovery` — header/body/worker stalls and fetch aborts stop loading and expose retry within 30 seconds.
+- `issue186_healthy_fallback_does_not_wait_for_integrity` — next-card installation settles independently of an integrity read.
+- `issue186_queue_retry_recovers_without_resubmitting_saved_review` — manual progression recovery retains one original review and logical notification.
+- `issue186_authoritative_empty_queue_settles_saved_progression` — genuine exhaustion settles successfully.
+- `issue186_prepared_card_survives_aborted_reconciliation_and_recovers` — receipt-authorized B remains interactive and later reconciliation preserves its attempt.
+- `issue186_invalid_authoritative_head_requires_recovery` — completed, malformed, partial, and unusable heads cannot authorize a filtered successor.
+- `issue186_view_replacement_cannot_orphan_progression_notification` — unmount cancels acquisition and makes its notification inactive.
+- `issue186_lost_review_response_receipt_recovery_uses_queue_only_retry` — authoritative receipt recovery does not repeat review delivery.
+- `issue186_stale_progression_cannot_replace_new_attempt` — a late acquisition cannot install over a newer attempt.
+- `issue186_reconciliation_preserves_completed_prepared_attempt` — reconciliation cannot reset a just-completed prepared attempt.
+- `issue186_late_body_after_deadline_cannot_install` — cancellation revokes installation authority even if response parsing later resolves.
+- `issue186_completed_tactic_has_bounded_progression` — disposable PostgreSQL/native browser proof for prepared abort, fallback abort, and fallback timeout; recovery and restart/exact replay retain one durable review.
+
+Unit coverage is in `review-attempt-confirmation-regressions.test.tsx` and `prepared-review-continuation-regressions.test.ts`; real browser coverage is in `post-review-progression.spec.ts`. Existing #172 identity, guided-state, opening-evidence, FSRS, and receipt replay regressions remain in the regular gate.

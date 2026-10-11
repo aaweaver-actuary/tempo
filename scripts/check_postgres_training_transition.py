@@ -44,9 +44,11 @@ def main():
             print(json.dumps({"restored_queue_positions": restored, "runtime_reordered_positions": runtime_reordered,
                 "runtime_removed_entries": runtime_removed}))
         return
-    if action in {"seed", "seed-small", "seed-with-existing-queue"}:
+    if action in {"seed", "seed-small", "seed-with-existing-queue", "seed-progression"}:
         today = sys.argv[3]
-        seed(identifier, request_refresh=action == "seed-small", queue_date=today)
+        # Progression needs a small real queue, not the independent 15,000-card
+        # backlog measurement. Its projection is settled below before issuance.
+        seed(identifier, request_refresh=action in {"seed-small", "seed-progression"}, queue_date=today)
         with psycopg.connect(DSN) as connection:
             connection.execute("UPDATE repertoire_lines SET moves_json='[\"e2e4\",\"e7e5\",\"g1f3\"]' WHERE repertoire_id=%s", (identifier,))
             # Regular browser suites share only their invocation's disposable
@@ -71,6 +73,10 @@ def main():
                 connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,trained_color,introduced_at) VALUES(%s,%s,'prefix',%s,'[\"e2e4\",\"e7e5\",\"g1f3\"]','learning','2000-01-01','white','2000-01-01')", (card_id, identifier, FEN))
                 # Established cards isolate A→B progression from first-pass reinforcement.
                 connection.execute("UPDATE cards SET first_correct_at='2000-01-01T00:00:00+00:00',interval_days=1 WHERE id=%s", (card_id,))
+                if action == "seed-progression" and index == 0:
+                    # Freeze the tactic presentation before the queue insertion
+                    # binds its immutable origin and expected revision.
+                    connection.execute("UPDATE cards SET kind='checkpoint',content_type='tactic',moves_json='[\"e2e4\"]' WHERE id=%s", (card_id,))
                 connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (identifier, card_id))
                 connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'due',%s)", (today, card_id, index, identifier))
             connection.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(%s,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
@@ -86,6 +92,15 @@ def main():
             print(json.dumps({"sha256": hashlib.sha256(json.dumps(snapshot, default=str, sort_keys=True).encode()).hexdigest(),
                 "displaced_queue_positions": displaced_positions,
                 "description": "Canonical ordered source rows; identical fixed IDs/date/scheduling/eligible jobs in each fresh invocation. Runtime attempt IDs, leases and clocks are deliberately excluded."}))
+        return
+    if action == "verify-progression":
+        with psycopg.connect(DSN) as connection:
+            first_card = identifier+'-prepared-000'
+            scheduling = connection.execute("SELECT due_date,interval_days,repetitions,lapses,fsrs_card_json,stability,guided_review FROM cards WHERE id=%s", (first_card,)).fetchone()
+            reviews = connection.execute("SELECT id,rating,previous_interval,next_interval FROM reviews WHERE card_id=%s ORDER BY id", (first_card,)).fetchall()
+            receipts = connection.execute("SELECT attempt_id,queue_entry_id,review_id,scheduling_status,result_json FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id", (first_card,)).fetchall()
+            completed = connection.execute("SELECT id,status FROM daily_queue WHERE card_id=%s ORDER BY id", (first_card,)).fetchall()
+            print(json.dumps({"scheduling": scheduling, "reviews": reviews, "receipts": receipts, "queue": completed}, default=str))
         return
     if action == "verify":
         with psycopg.connect(DSN) as connection:
