@@ -146,15 +146,15 @@ it.each(['get','set','quota'] as const)('audit187_storage_%s_failure_at_reservat
  vi.spyOn(Storage.prototype,failure==='get'?'getItem':'setItem').mockImplementation(()=>{throw new DOMException('Storage unavailable',failure==='quota'?'QuotaExceededError':'SecurityError');});
  await expect(reserve()).rejects.toThrow(); expect(fetcher).not.toHaveBeenCalled();
 });
-it.each(['malformed','version','repertoire','routes'] as const)('audit187_saved_%s_mismatch_blocks_recovery_without_delivery', async mismatch => {
+it.each(['malformed','version','repertoire','routes'] as const)('audit187_saved_%s_mismatch_retains_known_status_only_recovery_without_delivery', async mismatch => {
  const operation=await reserve(); localStorage.setItem(key,mismatch==='malformed'?'invalid':JSON.stringify({...operation,
   ...(mismatch==='version'?{version:2}:{}),...(mismatch==='repertoire'?{repertoireId:'other'}:{}),...(mismatch==='routes'?{summary:{...summary,routes:[]}}:{})}));
- const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);await expect(recover()).rejects.toThrow(/unreadable/); expect(fetcher).not.toHaveBeenCalled();
+ const fetcher=vi.fn<typeof fetch>(async()=>receipt(operation));vi.stubGlobal('fetch',fetcher);expect((await recover())?.state).toBe('published'); expect(fetcher).toHaveBeenCalledOnce(); expect(fetcher.mock.calls[0][1]?.method).not.toBe('POST'); expect(()=>readPrefixTransition('rep')).toThrow(/unreadable/);
 });
 it.each(['get','set'] as const)('audit187_storage_%s_unavailable_after_reservation_prevents_undelivered_post', async failure => {
- await reserve(); const fetcher=vi.fn<typeof fetch>(async()=>receipt(readPrefixTransition('rep')!,'unknown'));vi.stubGlobal('fetch',fetcher);
+ const operation=await reserve(); const fetcher=vi.fn<typeof fetch>(async()=>receipt(operation,'unknown'));vi.stubGlobal('fetch',fetcher);
  vi.spyOn(Storage.prototype,failure==='get'?'getItem':'setItem').mockImplementation(()=>{throw new DOMException('Storage unavailable','SecurityError');});
- await expect(recover()).rejects.toThrow(); expect(fetcher.mock.calls.some(([,options])=>options?.method==='POST')).toBe(false);
+ if(failure==='get') expect((await recover())?.operationId).toBe(operation.operationId); else await expect(recover()).rejects.toThrow(); expect(fetcher.mock.calls.some(([,options])=>options?.method==='POST')).toBe(false);
 });
 it('audit187_journal_deleted_between_status_and_delivery_suppresses_post', async () => {
  const operation=await reserve(); let release!:(response:Response)=>void;
@@ -165,7 +165,7 @@ it('audit187_journal_deleted_after_admission_cannot_save_matching_completion', a
  const operation=await reserve();let release!:(response:Response)=>void;
  const fetcher=vi.fn(()=>new Promise<Response>(resolve=>{release=resolve;}));vi.stubGlobal('fetch',fetcher);
  const recovering=recover();localStorage.removeItem(key);release(receipt(operation));await expect(recovering).rejects.toThrow(/changed/);expect(readPrefixTransition('rep')?.state).toBe('published');expect(localStorage.getItem(key)).toBeNull();
- expect(readPrefixTransition('rep')?.operationId).toBe(operation.operationId); expect((await recover())?.state).toBe('published'); expect(fetcher).toHaveBeenCalledOnce();
+ expect(readPrefixTransition('rep')?.operationId).toBe(operation.operationId); fetcher.mockResolvedValue(receipt(operation)); expect((await recover())?.state).toBe('published'); expect(fetcher).toHaveBeenCalledTimes(2);
 });
 it('audit187_write_unavailable_after_admission_retains_journal_and_can_later_verify', async () => {
  const operation=await reserve();const fetcher=vi.fn<typeof fetch>(async()=>receipt(operation));vi.stubGlobal('fetch',fetcher);
@@ -188,7 +188,7 @@ it('audit187_DEFECT_D_summary_cannot_omit_its_own_repertoire_from_edit_guard', a
 it('audit187_storage_read_unavailable_after_admission_can_recover_when_restored', async () => {
  const operation=await reserve();vi.stubGlobal('fetch',vi.fn<typeof fetch>(async()=>receipt(operation)));
  const inaccessible=vi.spyOn(Storage.prototype,'getItem').mockImplementation(()=>{throw new DOMException('Storage unavailable','SecurityError');});
- await expect(recover()).rejects.toThrow(/Storage unavailable/);inaccessible.mockRestore();identityUnchanged(operation);expect((await recover())?.state).toBe('published');
+ expect((await recover())?.state).toBe('published');expect(knownPrefixTransitions()[0].operationId).toBe(operation.operationId);inaccessible.mockRestore();identityUnchanged(operation);expect((await recover())?.state).toBe('published');
 });
 it('audit187_DEFECT_A_lost_journal_during_unknown_delivery_must_not_allow_new_identity', async () => {
  const original=await reserve();const controller=new AbortController();

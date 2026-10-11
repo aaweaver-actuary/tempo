@@ -106,10 +106,11 @@ export function savedPrefixTransitions(): PrefixTransitionOperation[] {
 export function hasPrefixTransitionJournalLocks() {
   try { return typeof navigator.locks?.request === "function"; } catch { return false; }
 }
+export class PrefixTransitionSerializationError extends Error {}
 /** One feature-specific, short synchronous section. Never return a network promise. */
 export async function withPrefixTransitionJournalLock<T>(signal: AbortSignal | undefined, criticalSection: () => T): Promise<T> {
   signal?.throwIfAborted();
-  if (!hasPrefixTransitionJournalLocks()) throw new Error(lockUnavailableMessage);
+  if (!hasPrefixTransitionJournalLocks()) throw new PrefixTransitionSerializationError(lockUnavailableMessage);
   let enteredCriticalSection = false;
   try {
     return await navigator.locks.request(journalLockName, { signal }, () => {
@@ -117,7 +118,7 @@ export async function withPrefixTransitionJournalLock<T>(signal: AbortSignal | u
     });
   } catch (failure) {
     if (enteredCriticalSection || signal?.aborted) throw failure;
-    throw new Error(lockUnavailableMessage, { cause: failure });
+    throw new PrefixTransitionSerializationError(lockUnavailableMessage, { cause: failure });
   }
 }
 export class PrefixTransitionPersistenceError extends Error {}
@@ -157,7 +158,13 @@ export async function savePrefixTransitionOperation(proposed: PrefixTransitionOp
     knownOperations.set(proposed.repertoireId, reconciled); recoveryIssues.delete(proposed.repertoireId); notifyPrefixTransitions();
     return recordSchema.parse(reconciled);
   };
-  return memoryOnly ? reconcile() : withPrefixTransitionJournalLock(signal, reconcile);
+  if (memoryOnly) return reconcile();
+  try { return await withPrefixTransitionJournalLock(signal, reconcile); }
+  catch (failure) {
+    if (failure instanceof PrefixTransitionSerializationError)
+      recoveryIssues.set(proposed.repertoireId, { code: "serialization_unavailable", message: failure.message });
+    throw failure;
+  }
 }
 export function beginPrefixTransition(repertoireId: string, request: PrefixTransitionRequest, summary: PrefixTransitionSummary, signal?: AbortSignal) {
   return reservePrefixTransition(repertoireId, request, summary, signal);
@@ -190,7 +197,8 @@ export function clearResolvedPrefixTransition(repertoireId: string, operationId:
     const persisted = readPersistedPrefixTransition(repertoireId);
     const known = knownOperations.get(repertoireId);
     const operation = persisted ?? known;
-    if (!operation || operation.operationId !== operationId || unresolvedPrefixTransition(operation)) return;
+    if (!operation || operation.operationId !== operationId || unresolvedPrefixTransition(operation))
+      throw new Error("The resolved prefix transition could not be cleared. Check the current operation before leaving recovery.");
     if (persisted) localStorage.removeItem(storageKey(repertoireId));
     knownOperations.delete(repertoireId); recoveryIssues.delete(repertoireId); notifyPrefixTransitions();
   });

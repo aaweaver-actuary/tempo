@@ -3,8 +3,9 @@ import { API_URL } from "../const";
 import { backgroundReadWhenAdmitted } from "./background-fetch";
 import { prefixTransitionReceiptSchema, prefixTransitionResultSchema, type PrefixTransitionReceipt } from "../domain/prefix-transition";
 import { readPrefixTransition, readPersistedPrefixTransition, unresolvedPrefixTransition,
-  savePrefixTransitionOperation, hasPrefixTransitionJournalLocks, prefixTransitionRecoveryIssue,
-  restoreKnownPrefixTransition, PrefixTransitionPersistenceError, assertPrefixTransitionOwnership, type PrefixTransitionOperation } from "./prefix-transition-journal";
+  savePrefixTransitionOperation, hasPrefixTransitionJournalLocks,
+  restoreKnownPrefixTransition, knownPrefixTransitions, PrefixTransitionPersistenceError, PrefixTransitionSerializationError,
+  assertPrefixTransitionOwnership, type PrefixTransitionOperation } from "./prefix-transition-journal";
 export * from "./prefix-transition-journal";
 
 /** User-requested restore checks server status first and never overwrites ownership. */
@@ -32,14 +33,16 @@ function operationFailure(error: PrefixTransitionReceipt["error"]) {
 }
 /** Resolve only this frozen delivery. Unknown admissions may replay once per recovery action. */
 export async function recoverPrefixTransition(repertoireId: string, options: { signal: AbortSignal; retryBlocked?: boolean }): Promise<PrefixTransitionOperation | null> {
-  let operation = readPrefixTransition(repertoireId);
   let memoryOnly = !hasPrefixTransitionJournalLocks();
-  memoryOnly ||= Boolean(operation?.journalMissing);
-  if (!operation || !unresolvedPrefixTransition(operation)) {
-    if (operation?.state === "published" && prefixTransitionRecoveryIssue(repertoireId) && !memoryOnly)
-      return savePrefixTransitionOperation(operation, false, options.signal);
-    return operation;
+  let operation: PrefixTransitionOperation | null;
+  try { operation = readPrefixTransition(repertoireId); }
+  catch (failure) {
+    operation = knownPrefixTransitions().find(known => known.repertoireId === repertoireId) ?? null;
+    if (!operation) throw failure;
+    memoryOnly = true;
   }
+  memoryOnly ||= Boolean(operation?.journalMissing);
+  if (!operation) return null;
   const originalId = operation.operationId;
   const deadline = AbortSignal.timeout(30_000);
   const signal = AbortSignal.any([options.signal, deadline]);
@@ -47,10 +50,16 @@ export async function recoverPrefixTransition(repertoireId: string, options: { s
   let retryRequested = false;
   let retryAdmission: "accepted" | "rejected" | "unknown" | null = null;
   let retryFeedback = "";
-  const update = async (changes: Partial<PrefixTransitionOperation>) => {
-    signal.throwIfAborted();
-    operation = await savePrefixTransitionOperation({ ...operation!, ...changes }, memoryOnly, signal);
+  const reconcile = async (proposed: PrefixTransitionOperation, writeSignal: AbortSignal) => {
+    try { operation = await savePrefixTransitionOperation(proposed, memoryOnly, writeSignal); }
+    catch (failure) {
+      if (!(failure instanceof PrefixTransitionSerializationError)) throw failure;
+      memoryOnly = true; operation = await savePrefixTransitionOperation(proposed, true, writeSignal);
+    }
     return operation;
+  };
+  const update = (changes: Partial<PrefixTransitionOperation>) => {
+    signal.throwIfAborted(); return reconcile({ ...operation!, ...changes }, signal);
   };
   try {
     for (;;) {
@@ -58,7 +67,6 @@ export async function recoverPrefixTransition(repertoireId: string, options: { s
       if (!memoryOnly) {
         const latest = readPersistedPrefixTransition(repertoireId);
         assertPrefixTransitionOwnership(latest, operation);
-        if (latest.state === "published") return latest;
       }
       const status = await backgroundReadWhenAdmitted(`${API_URL}/api/operations/${encodeURIComponent(originalId)}`, signal);
       if (status.status === 404) throw new Error("Operation status is unavailable. Check the PostgreSQL service and check status again with the original identity.");
@@ -130,9 +138,9 @@ export async function recoverPrefixTransition(repertoireId: string, options: { s
     if (options.signal.aborted) throw options.signal.reason;
     if (failure instanceof PrefixTransitionPersistenceError) throw failure;
     if (!memoryOnly) assertPrefixTransitionOwnership(readPersistedPrefixTransition(repertoireId), operation!);
-    if (deadline.aborted) return savePrefixTransitionOperation({ ...operation!,
-      message: "Status checking timed out after 30 seconds. Backend work may still be running. Check status again using the original operation." }, memoryOnly, options.signal);
-    return savePrefixTransitionOperation({ ...operation!, state: operation!.state === "blocked" ? "blocked" : "transport_unknown",
-      message: failure instanceof Error ? failure.message : "Connection unavailable. Check status to recover the same operation." }, memoryOnly, options.signal);
+    if (deadline.aborted) return reconcile({ ...operation!,
+      message: "Status checking timed out after 30 seconds. Backend work may still be running. Check status again using the original operation." }, options.signal);
+    return reconcile({ ...operation!, state: operation!.state === "blocked" ? "blocked" : "transport_unknown",
+      message: failure instanceof Error ? failure.message : "Connection unavailable. Check status to recover the same operation." }, options.signal);
   }
 }

@@ -76,7 +76,10 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
     const initialController = new AbortController(); controller.current = initialController;
     const observe = () => {
       try { if (!disposed) setOperation(readPrefixTransition(repertoireId)); }
-      catch (cause) { if (!disposed) setFailure({ code: "storage_error", message: (cause as Error).message }); }
+      catch (cause) { if (!disposed) {
+        setOperation(knownPrefixTransitions().find(known => known.repertoireId === repertoireId) ?? null);
+        setFailure({ code: "storage_error", message: (cause as Error).message });
+      } }
     };
     const wake = () => {
       if (disposed || document.visibilityState === "hidden" || !navigator.onLine) return;
@@ -92,7 +95,10 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
         const planned = await planPrefixTransition(repertoireId, source, selectedIds, depth, initialController.signal);
         if (!disposed && !initialController.signal.aborted) setPlan(planned);
       } catch (cause) {
-        if (!disposed && !initialController.signal.aborted) setFailure({ code: cause instanceof PrefixPreviewError ? cause.code : "service_error", message: (cause as Error).message });
+        if (!disposed && !initialController.signal.aborted) {
+          setOperation(knownPrefixTransitions().find(known => known.repertoireId === repertoireId) ?? null);
+          setFailure({ code: cause instanceof PrefixPreviewError ? cause.code : "service_error", message: (cause as Error).message });
+        }
       } finally { if (!disposed && !submitting.current) setBusy(false); }
     });
     const unsubscribe = subscribePrefixTransitions(observe);
