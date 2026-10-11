@@ -804,3 +804,34 @@ and persisted proof files are hash-verified outside the clone. All three local
 projects from this investigation have no remaining containers, volumes or
 project-specific images. Fresh CI owns complete qualification of this follow-up;
 no local complete gate ran.
+
+### Durable phone confirmation before fixture reload
+
+The replacement same-head run `38134070634` on integration `d381b9be` passed
+1,536 frontend cases, 2,481 backend cases, builds, PostgreSQL durability
+(627.43 seconds), lifecycle, all 69 pinned cases and three browser shards.
+The historical checkpoint proof passed. Browser shard 4 failed only
+`AS-16 offline compact quota failure blocks advancement until durable retry`:
+the fixture reloaded after observing a request without waiting for the durable
+phone acknowledgement, and the original aggregate-only key was replayed.
+The three new #186 PostgreSQL progression proofs passed; these older-source
+passes do not qualify another head.
+
+Both existing AS-16 compact-quota cases now wait for the persistent matching
+phone confirmation emitted after acknowledgement commits before their final
+reload. The first local observation attempted to wait on the acknowledged
+IndexedDB row and failed because fresh prepared-queue publication legitimately
+prunes it immediately. The stable confirmation remains available after that
+publication. One submission, the original payload/key, quota retry, and retained
+opening-journal assertions remain unchanged. No product replay behavior changed.
+
+On `4b86e2e3` plus the recorded dirty test correction:
+
+- `make view VIEW='AS-16 offline compact quota failure blocks advancement until durable retry'`:
+  1 passed in 8.8 seconds; browser stage 10.63, build 19.09, startup 25.13,
+  cleanup 8.38 seconds.
+- `make ui-file FILE=opening-evidence.spec.ts`: 15 passed in 50.6 seconds;
+  browser stage 51.90, build 7.24, startup 20.12, cleanup 10.17 seconds.
+- Frontend typecheck, focused lint, conflict, migration inventory (46), and
+  whitespace guards passed. The failed transient-row observation and CI trace
+  remain preserved. Fresh complete CI is required for the published follow-up.
