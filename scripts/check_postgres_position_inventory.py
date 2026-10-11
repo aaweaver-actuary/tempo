@@ -101,11 +101,11 @@ def run_to_completion(repertoire_id, *, maximum=1000):
 def verify_issue108_upgrade_restart_replay_and_coverage(dsn):
     os.environ['TEMPO_DATABASE_WRITE_URL'] = dsn
     os.environ['TEMPO_DATABASE_READ_URL'] = dsn
-    # The existing main schema is the upgrade input; schema 45 must schedule one
+    # The existing main schema is the upgrade input; schema 46 must schedule one
     # compact sweep and preserve every existing card and repertoire row.
     with psycopg.connect(dsn) as raw:
         for migration in sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql')):
-            if int(migration.name[:3]) > 44:
+            if int(migration.name[:3]) > 45:
                 break
             raw.execute(migration.read_text(), prepare=False)
         raw.execute('INSERT INTO settings(id) VALUES(1)')
@@ -120,12 +120,12 @@ def verify_issue108_upgrade_restart_replay_and_coverage(dsn):
         preservation_queries = ['SELECT to_jsonb(row) FROM '+table+' row ORDER BY id'
                                 for table in ('repertoires', 'repertoire_lines', 'cards', 'reviews')]
         preserved_before = [raw.execute(query).fetchall() for query in preservation_queries]
-        assert [row[0] for row in raw.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1,45))
+        assert [row[0] for row in raw.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1,46))
     apply_migrations(dsn)
     apply_migrations(dsn)
     with psycopg.connect(dsn) as raw:
         assert [raw.execute(query).fetchall() for query in preservation_queries] == preserved_before
-        assert [row[0] for row in raw.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1,46))
+        assert [row[0] for row in raw.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1,47))
     with postgres_store.connection() as database:
         assert database.execute_native('SELECT COUNT(*) FROM repertoire_lines').fetchone()[0] == 3
         assert database.execute_native('SELECT COUNT(*) FROM background_tasks WHERE kind=%s',

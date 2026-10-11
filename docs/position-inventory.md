@@ -80,9 +80,9 @@ selection weights are never inferred from stored lines/cards/repertoires.
 
 ## Migration and qualification
 
-Migration 045 adds inventory tables and queues one bounded reconciliation task
-only when upgrading a database with existing repertoires. Readiness is 45.
-Published migrations 001–044 remain unchanged. The normal migration driver owns
+Migration 046 adds inventory tables and queues one bounded reconciliation task
+only when upgrading a database with existing repertoires. Readiness is 46.
+Published migrations 001–045 remain unchanged. The normal migration driver owns
 idempotent application; no study/history rebuild is performed.
 
 Named Python and real PostgreSQL cases are registered in `tests/REGRESSIONS.md`.

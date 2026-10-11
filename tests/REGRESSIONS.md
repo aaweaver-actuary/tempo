@@ -3791,7 +3791,7 @@ Post-#116 reconstruction adds:
 - `test_issue108_cross_repertoire_transposition_policy_independence_and_deletion`: real PostgreSQL shared identity, independent provenance, unrelated-repertoire isolation and deletion safety.
 - `test_issue108_profile_changes_do_not_rebuild_inventory`: profile publication changes do not alter the inventory or durable cursor.
 
-All PostgreSQL cases run through the regular `background_workloads` stage. Migration 045 upgrades schema 44 with a populated repertoire, repeats the normal driver, and retains immutable published migrations 001–044. No cohort cache or probability fetching is introduced.
+All PostgreSQL cases run through the regular `background_workloads` stage. Migration 046 upgrades schema 45 with a populated repertoire, repeats the normal driver, and retains immutable published migrations 001–045. No cohort cache or probability fetching is introduced.
 
 - `test_issue108_newer_graph_publication_fences_computed_inventory_output`: a deterministic compute/publication hook delivers old output after replacement; newer publication remains accepted after exact stale replay.
 

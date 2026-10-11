@@ -53,4 +53,4 @@ INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state
 SELECT 'position-inventory-upgrade','position_inventory_reconcile','all',1,85,'queued','queued',
     1,'{"after_repertoire_id":""}',0,5,now()::text,now()::text,now()::text
 WHERE EXISTS(SELECT 1 FROM repertoires);
-INSERT INTO tempo_schema_migrations(version) VALUES(45);
+INSERT INTO tempo_schema_migrations(version) VALUES(46);
