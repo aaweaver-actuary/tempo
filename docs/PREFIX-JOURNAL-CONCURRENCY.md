@@ -8,6 +8,15 @@ persisted ownership while holding the lock; absent or replaced owners cannot
 write. Matching verified publication is absorbing and retains its exact result.
 Intermediate pending/blocked/retrying states have no arbitrary rank.
 
+The shared interface is
+`withPrefixTransitionJournalLock<T>(signal, criticalSection): Promise<T>`.
+The callback performs bounded synchronous ownership/admission work; it must not
+await networking or recursively acquire this lock. Synchronous reads and
+subscriptions remain available, and `prefixTransitionRecoveryIssue` distinguishes
+missing journals, unavailable persistence and unavailable serialization. Recovery
+enumeration includes known session identities and always includes the target
+repertoire in effective scope.
+
 Network status reads, retries, apply requests, and polling waits are outside
 journal critical sections. Structural admission invokes the synchronous dispatch
 callback while holding the lock but wraps its response promise, so the response
@@ -41,7 +50,12 @@ execution.
 A mounted JavaScript session retains known identities across component remounts,
 failed storage writes, and journal disappearance. Unexpected disappearance keeps
 recovery reachable and guards unresolved scope. Status-only recovery never
-recreates a missing record or sends an apply request from it. Storage errors are
+recreates a missing record or sends an apply request from it. The existing
+separate **Restore saved recovery record** action is explicit: it first inspects
+status, then under the lock can restore only the exact retained unresolved
+identity/request/scope into an absent slot. It refuses any existing record and
+never reconstructs approval from a fresh plan. It is separate from Check status;
+authoritatively resolved publication needs no restoration. Storage errors are
 visible; verified publication received before a failed write stays known in
 memory. Keep the page open and retain the displayed operation ID if browser
 persistence fails.

@@ -642,6 +642,14 @@ test("documented global browser smoke count and titles match inventory and real 
   for (const demoted of demotedCriticalCases) assert(documentation.includes(`| \`${demoted.file}\` | \`${demoted.title}\` | family |`), demoted.title);
 });
 
+test('audit187_native_journal_spec_is_required_in_complete_repertoire_family', () => {
+  assert(inventory.families.repertoire.includes('prefix-transition-journal.spec.ts'));
+  const journalCase = { id: 'journal-native', file: 'prefix-transition-journal.spec.ts', title: 'native ownership schedule', fullTitle: 'native ownership schedule', project: 'chromium' };
+  const planned = plan({ paths: ['tests/browser/prefix-transition-journal.spec.ts'], cases: [...cases, journalCase] });
+  const selected = planned.collection.find(item => item.id === journalCase.id);
+  assert(selected.selected); assert(selected.nightly); assert(selected.release);
+});
+
 test("issue81_structural_safety_spec_remains_in_complete_repertoire_qualification", () => {
   const filename = "prefix-structural-safety.spec.ts";
   validateInventory([filename]);

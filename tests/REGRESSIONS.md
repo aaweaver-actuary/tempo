@@ -4099,6 +4099,16 @@ reservation and unsupported-capability refusal across the regular browser engine
   its task-owned server operation in `finally` so its fence cannot contaminate
   subsequent disposable fixture setup; its original UI assertion still fails.
 
+Journal capability and recovery boundary follow-ups:
+
+- `audit187_unusable_locks_reject_before_identity_or_delivery` and `audit187_unusable_locks_allow_status_only_recovery_of_known_identity` distinguish an exposed API from a usable native lock request; refused acquisition allocates nothing, while retained identities can inspect status without disk mutation or POST.
+- `audit187_unreadable_storage_keeps_known_status_only_recovery_without_overwrite` preserves the frozen known identity and verified result while retaining the corrupt stored bytes and conservative structural guard.
+- `audit187_unresolved_clear_rejects_before_recovery_navigation` prevents an unsuccessful clear from being treated as permission to leave recovery.
+- `audit187_verified_publication_recovery_starts_with_get_and_never_replays` makes each recovery action inspect authoritative status while older `unknown` cannot erase verified publication or trigger delivery.
+- `audit187_unreadable_journal_remount_keeps_original_status_controls_and_verified_result` in `pr187-audit-ui.test.tsx` retains Check status across a component remount with unreadable persistence, then displays verified completion without changing the unreadable journal or sending POST.
+
+- `tests/runner/ci-reliability.test.mjs::audit187_native_journal_spec_is_required_in_complete_repertoire_family` reproduces the initially unclassified spec and requires its regular repertoire-family, nightly and release selection. Inventory registration adds coverage; unknown specs still fail planning.
+
 ## #81 structural admission at final dispatch
 
 `prefix-structural-command-regressions.test.ts` registers
