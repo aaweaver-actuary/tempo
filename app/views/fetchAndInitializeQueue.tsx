@@ -380,11 +380,15 @@ export async function fetchAndInitializeQueue(
       throw new QueueProcessingError("The authoritative queue head could not be prepared. Retry loading the queue.");
     const availableCards = eligibleQueueCards(retainPendingFailures(cards, pendingFailureContexts), (replayed ?? savedPreparedQueue)?.attempts);
     const returnedHead = cards[0];
-    const headExcludedByLocalReviewState = returnedHead && !availableCards.some(candidate =>
-      attemptEntryKey(candidate) === attemptEntryKey(returnedHead));
-    if (!options.preservePreparedAttempt && headExcludedByLocalReviewState) {
-      // Only the returned head was issued. Filtering any unresolved local
-      // result must not authorize a different prefetched successor.
+    const headExcludedByConnectedReview = returnedHead && (
+      pendingReviews().some(review => review.queueEntryId === returnedHead.queueEntryId &&
+        review.backendId === String(returnedHead.backendId ?? returnedHead.id)) ||
+      conflictedReviews().some(review => review.backendId === String(returnedHead.backendId ?? returnedHead.id)) ||
+      useTrainingStore.getState().confirmedQueueEntryKeys?.includes(attemptEntryKey(returnedHead)));
+    if (!options.preservePreparedAttempt && headExcludedByConnectedReview) {
+      // Only the returned head was issued. Filtering a connected saved result
+      // cannot authorize another prefetched successor. Offline phone attempts
+      // retain their existing prepared-queue authorization.
       useTrainingStore.getState().setPendingReviewError(pendingReviewError ||
         "The authoritative queue head has unresolved local results. Check saved reviews and Notifications, then retry loading the queue.");
       throw new QueueProcessingError("The authoritative queue head is excluded by local review state. Check saved reviews and Notifications, then retry loading the queue.");
