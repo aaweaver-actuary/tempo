@@ -31,6 +31,13 @@ export function readPrefixTransition(repertoireId: string): PrefixTransitionOper
     const operation = recordSchema.parse(JSON.parse(stored));
     if (operation.repertoireId !== repertoireId || JSON.stringify(operation.request.selected_line_ids)
       !== JSON.stringify(operation.summary.routes.map(route => route.id))) throw new Error("Mismatched scope");
+    const result = operation.result;
+    if (operation.state === "published" && (!result || result.operation_id !== operation.operationId
+      || result.plan_id !== operation.request.plan_id || result.repertoire_id !== repertoireId
+      || result.no_op || !result.queue_date || result.graph_generation <= operation.request.graph_generation
+      || operation.transitionPhase !== "complete"))
+      return { ...operation, state: "transport_unknown", result: undefined,
+        message: "The saved completion cannot verify this approved publication. Check status to recover the original operation." };
     return operation;
   } catch { throw new Error("The saved prefix transition is unreadable. Restore browser data before changing this repertoire; do not clear an unresolved operation."); }
 }

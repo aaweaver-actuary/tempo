@@ -19,6 +19,28 @@ function complete(operationId: string, changes: Record<string, unknown> = {}) {
 }
 const recover = (controller = new AbortController(), retryBlocked = false) => recoverPrefixTransition("rep", { signal: controller.signal, retryBlocked });
 
+it.each(["missing", "identity", "plan", "repertoire", "generation", "queue"] as const)(
+  "issue81_unverifiable_published_journal_recovers_authoritative_operation_%s", async mismatch => {
+    const original = begin();
+    const result = { ...fixture.result, operation_id: original.operationId };
+    if (mismatch === "identity") result.operation_id = "different-operation";
+    if (mismatch === "plan") result.plan_id = "different-plan";
+    if (mismatch === "repertoire") result.repertoire_id = "different-repertoire";
+    if (mismatch === "generation") result.graph_generation = request.graph_generation;
+    const cached = { ...original, state: "published", transitionPhase: "complete",
+      result: mismatch === "missing" ? undefined : mismatch === "queue" ? { ...result, queue_date: undefined } : result };
+    const stored = JSON.stringify(cached); localStorage.setItem(key, stored);
+    expect(readPrefixTransition("rep")?.state).toBe("transport_unknown");
+    expect(localStorage.getItem(key)).toBe(stored);
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toContain(`/operations/${original.operationId}`);
+      return complete(original.operationId);
+    }); vi.stubGlobal("fetch", fetcher);
+    expect((await recover())?.state).toBe("published");
+    expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
 it("issue81_double_click_creates_one_operation", () => {
   const original = begin();
   expect(begin().operationId).toBe(original.operationId);
