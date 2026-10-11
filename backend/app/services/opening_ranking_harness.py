@@ -23,6 +23,9 @@ SCENARIOS = (
 )
 MAX_FILE_BYTES = 4 * 1024 * 1024
 MAX_CORPUS_BYTES = 16 * 1024 * 1024
+MAX_SCORE_BUNDLES = 16
+MAX_TOP_K_VALUES = 16
+MAX_REPORT_BYTES = 64 * 1024 * 1024
 
 
 def _invalid(message):
@@ -62,6 +65,8 @@ def _bundles(candidates, context):
     bundles = configuration.get("precomputed_score_bundles")
     if not isinstance(bundles, list) or not bundles:
         _invalid("Every snapshot requires nonempty precomputed_score_bundles.")
+    if len(bundles) > MAX_SCORE_BUNDLES:
+        raise OpeningRankingError("limit_exceeded", "Snapshots permit at most 16 score bundles.")
     identifiers = set()
     candidate_ids = {candidate.card_id for candidate in candidates}
     for bundle in bundles:
@@ -127,6 +132,9 @@ def evaluate_snapshot(document):
 
 def run_corpus(manifest_path, *, scenario_ids=None, top_k=(1, 5, 10)):
     """Validate the complete corpus first; evaluate selected scenarios without services."""
+    top_k = tuple(top_k)
+    if len(top_k) > MAX_TOP_K_VALUES:
+        raise OpeningRankingError("limit_exceeded", "Corpus reports permit at most 16 K values.")
     manifest_path = Path(manifest_path).resolve()
     manifest, total_bytes = _read_document(manifest_path)
     if type(manifest.get("corpus_version")) is not int or manifest["corpus_version"] != 1:
@@ -137,6 +145,7 @@ def run_corpus(manifest_path, *, scenario_ids=None, top_k=(1, 5, 10)):
     if not isinstance(entries, list) or not 1 <= len(entries) <= 32:
         _invalid("Corpus must declare between 1 and 32 scenarios.")
     loaded, covered = {}, set()
+    projected_report_bytes = 0
     for entry in entries:
         if not isinstance(entry, dict) or not _text(entry.get("id")) or entry["id"] in loaded:
             _invalid("Scenario IDs must be nonempty and unique.")
@@ -156,6 +165,13 @@ def run_corpus(manifest_path, *, scenario_ids=None, top_k=(1, 5, 10)):
         if total_bytes > MAX_CORPUS_BYTES:
             raise OpeningRankingError("limit_exceeded", "Corpus inputs exceed the 16 MiB total budget.")
         candidates, context, bundles, baseline = evaluate_snapshot(document)
+        if json.loads(context.source_versions_json).get("scenario_id") != entry["id"]:
+            _invalid("Manifest scenario identity must match source_versions.scenario_id.")
+        # Comparison rows repeat metadata per bundle, and concentration repeats it
+        # per K. Reserve a conservative expansion budget before any ranking.
+        projected_report_bytes += document_bytes * (len(bundles) + 1) * (len(top_k) + 4)
+        if projected_report_bytes > MAX_REPORT_BYTES:
+            raise OpeningRankingError("limit_exceeded", "Corpus comparison expansion exceeds the 64 MiB budget.")
         if entry.get("snapshot_id") != context.snapshot_id:
             _invalid("Manifest snapshot identity must match the validated snapshot digest.")
         loaded[entry["id"]] = (entry, document, candidates, context, bundles, baseline)
@@ -204,7 +220,7 @@ def run_corpus(manifest_path, *, scenario_ids=None, top_k=(1, 5, 10)):
     # Canonicalize manifest ordering too, so permutations retain the same corpus identity.
     canonical_manifest = dict(manifest, scenarios=sorted(
         [dict(entry, coverage=sorted(entry["coverage"])) for entry in entries], key=lambda entry: entry["id"]))
-    return {"harness_version": 1, "corpus_id": sha256(canonical_json(canonical_manifest).encode()).hexdigest(),
+    report = {"harness_version": 1, "corpus_id": sha256(canonical_json(canonical_manifest).encode()).hexdigest(),
         "provenance": manifest["provenance"], "declared_coverage": sorted(covered),
         "selected_coverage": sorted({tag for result in results for tag in result["coverage"]}),
         "comparison_basis": "supplied_score_assumptions_not_valuation_validation",
@@ -214,3 +230,7 @@ def run_corpus(manifest_path, *, scenario_ids=None, top_k=(1, 5, 10)):
                         "Production baseline is capacity-neutral planner order, not observed queue delivery.",
                         "No held-out-game or global-allocation qualification is claimed."],
         "results": results}
+
+    if len(canonical_json(report).encode()) > MAX_REPORT_BYTES:
+        raise OpeningRankingError("limit_exceeded", "Corpus report exceeds the 64 MiB output budget.")
+    return report

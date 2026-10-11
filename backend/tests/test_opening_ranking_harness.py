@@ -363,3 +363,43 @@ def test_harness_precomputed_lookup_detaches_supplied_results():
     before = scorer.score(candidates[0], context)
     bundles[0]["scores"][candidates[0].card_id]["score"] = 999
     assert scorer.score(candidates[0], context) == before
+
+
+@pytest.mark.parametrize("corruption", ["missing_embedded_id", "foreign_embedded_id", "renamed_manifest_id"])
+def test_harness_rejects_misattributed_scenario_before_ranking(copied_corpus, monkeypatch, corruption):
+    if corruption == "renamed_manifest_id":
+        manifest = read(copied_corpus)
+        manifest["scenarios"][0]["id"] = "renamed-experiment"
+        copied_corpus.write_text(shadow.canonical_json(manifest))
+    else:
+        def corrupt(document):
+            if corruption == "missing_embedded_id": document["source_versions"].pop("scenario_id")
+            else: document["source_versions"]["scenario_id"] = "foreign-experiment"
+        change_snapshot(copied_corpus, corrupt)
+    def never_rank(*args, **kwargs): raise AssertionError("Misattributed corpus reached ranking")
+    monkeypatch.setattr(harness, "rank", never_rank)
+    with pytest.raises(shadow.OpeningRankingError, match="scenario identity"):
+        harness.run_corpus(copied_corpus)
+
+
+@pytest.mark.parametrize("resource", ["bundle_count", "comparison_budget", "aggregate_comparison_budget", "top_k_count"])
+def test_harness_bounds_report_amplification_before_ranking(copied_corpus, monkeypatch, resource):
+    if resource == "bundle_count":
+        def amplify(document):
+            bundle = document["scorer_configuration"]["precomputed_score_bundles"][0]
+            document["scorer_configuration"]["precomputed_score_bundles"] = [
+                dict(deepcopy(bundle), name=bundle["name"] if index == 0 else f"variant-{index}")
+                for index in range(17)]
+        change_snapshot(copied_corpus, amplify)
+    elif resource == "comparison_budget":
+        change_snapshot(copied_corpus, lambda document: document["candidates"][0]["metadata"].update(
+            diagnostic_payload="x" * (3 * 1024 * 1024)))
+    elif resource == "aggregate_comparison_budget":
+        for scenario in ["italian-common", "ruy-common"]:
+            change_snapshot(copied_corpus, lambda document: document["candidates"][0]["metadata"].update(
+                diagnostic_payload="x" * (2 * 1024 * 1024)), scenario=scenario)
+    def never_rank(*args, **kwargs): raise AssertionError("Amplified corpus reached ranking")
+    monkeypatch.setattr(harness, "rank", never_rank)
+    with pytest.raises(shadow.OpeningRankingError) as failure:
+        harness.run_corpus(copied_corpus, top_k=tuple(range(1, 18)) if resource == "top_k_count" else (1, 2, 3, 5, 10))
+    assert failure.value.code == "limit_exceeded"

@@ -236,7 +236,12 @@ A corpus manifest has `corpus_version: 1`, a provenance description, and scenari
 entries with `id`, a local `snapshot` filename, the expected `snapshot_id`, and
 recognized `coverage` tags. The complete corpus must cover all 13 requested
 scenario tags, even when the command selects a subset. Files are limited to
-4 MiB each, 16 MiB combined and 32 scenarios. References and symlinks cannot
+4 MiB each, 16 MiB combined and 32 scenarios. Each snapshot permits at most
+16 supplied score bundles; each report permits at most 16 K values. Before
+ranking, the sum of snapshot bytes × (bundle count + 1) × (K count + 4) must
+fit a conservative 64 MiB comparison expansion budget; serialized reports
+also have a 64 MiB ceiling. Manifest IDs must match each digested snapshot’s
+`source_versions.scenario_id`. References and symlinks cannot
 escape the corpus directory. All inputs are validated before ranking.
 
 Scorer configuration adds this extension to the existing #155 snapshot:
