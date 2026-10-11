@@ -82,8 +82,15 @@ def _bundles(candidates, context):
             if score is None:
                 if not _text(supplied.get("reason")):
                     _invalid("Unscorable candidates require a nonempty reason; unknown is not zero.")
-            elif type(score) not in (int, float) or not isfinite(score):
+            elif type(score) not in (int, float):
                 _invalid("Precomputed scalar scores must be finite numbers, never booleans.")
+            else:
+                try:
+                    score_is_finite = isfinite(score)
+                except OverflowError:
+                    score_is_finite = False
+                if not score_is_finite:
+                    _invalid("Precomputed scalar scores must be finite representable numbers.")
     baseline = configuration.get("baseline_bundle")
     if not _text(baseline) or baseline not in identifiers:
         _invalid("baseline_bundle must identify a supplied score bundle.")

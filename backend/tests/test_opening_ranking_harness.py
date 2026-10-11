@@ -210,7 +210,7 @@ def test_harness_permuted_snapshot_keeps_metrics_but_changes_content_identity():
     assert shadow.compare(candidates, [shadow.rank(candidates, context, harness.PrecomputedScoreScorer(bundle)) for bundle in bundles]) == original
 
 
-@pytest.mark.parametrize("corruption", ["foreign_policy", "missing_score", "extra_score", "unknown_zero_reason", "bool_score", "string_score", "duplicate_bundle", "missing_baseline", "missing_provenance", "introduced_candidate", "mature_candidate", "global_scope"])
+@pytest.mark.parametrize("corruption", ["foreign_policy", "missing_score", "extra_score", "unknown_zero_reason", "bool_score", "string_score", "oversized_integer_score", "duplicate_bundle", "missing_baseline", "missing_provenance", "introduced_candidate", "mature_candidate", "global_scope"])
 def test_harness_rejects_invalid_snapshot_and_score_contract_before_ranking(copied_corpus, monkeypatch, corruption):
     def corrupt(document):
         bundle = document["scorer_configuration"]["precomputed_score_bundles"][0]
@@ -221,6 +221,7 @@ def test_harness_rejects_invalid_snapshot_and_score_contract_before_ranking(copi
         elif corruption == "unknown_zero_reason": bundle["scores"][card_id] = {"score": None, "reason": ""}
         elif corruption == "bool_score": bundle["scores"][card_id] = {"score": True}
         elif corruption == "string_score": bundle["scores"][card_id] = {"score": "0.1"}
+        elif corruption == "oversized_integer_score": bundle["scores"][card_id] = {"score": 10 ** 400}
         elif corruption == "duplicate_bundle": document["scorer_configuration"]["precomputed_score_bundles"].append(deepcopy(bundle))
         elif corruption == "missing_baseline": document["scorer_configuration"]["baseline_bundle"] = "missing@1"
         elif corruption == "missing_provenance": bundle.pop("provenance")
