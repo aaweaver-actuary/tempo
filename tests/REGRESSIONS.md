@@ -3998,3 +3998,48 @@ PR #185 final independent diagnostic qualification (October 11, 2026):
 - `issue36_quiet_obsolete_quarantine_cannot_suppress_current_identical_alert` proves a current invalid record still alerts after the same obsolete record was retained quietly; both callers receive the original quarantined result.
 - `quiet debug evidence permits one later authoritative notification` covers both Error-object and signature deduplication, one authorized alert, and unchanged suppression of later published/quiet repeats. All five cases fail against `f6f1e7fb`; envelope cases retain a generic API fallback alert but lose validation attribution, while quarantine and direct-report cases lose the alert entirely.
 - `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` now covers success and request-specific failure: current diagnostics survive, obsolete callers settle, and obsolete failures do not alert or publish workspace error events. Worker-wide protocol/decode failures remain genuine shared-worker failures covered by `study-worker-regressions.test.ts`; stale terminated-worker callbacks cannot affect a replacement worker.
+
+
+## PR #172 independent flush-settlement audit
+
+`flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities`
+in `tests/unit/review-outbox-regressions.test.ts` fails on merged main
+`d4dbf28d` for limits 1 and 2: overlapping unlimited drain retains confirmed IDs
+but discards both prepared-continuation maps. Merge both maps in the existing
+aggregation return; do not change generation tracking, APIs, persistence or queue
+policy. See `docs/review-outbox-settlement-audit.md` for baseline evidence and limits.
+
+Other named audit cases in the same file verify `next generation publishes before
+previous waiter callbacks` (completion/rejection), `submitted identities coalesce
+with limit` (1/2/Infinity), `overlapping submitted outcome remains truthful`
+(terminal/retryable conflict, network before/after simulated commit, missing
+confirmation), `unrelated rejection attributes its own attempt and explicit
+retry` (false/true), and `target cannot bypass same-card` predecessors
+(persisted/suppressed/conflicted). Cross-generation observation is reproduced,
+but its actual target conflict is truthful; shared state alone is not a defect.
+
+- `flush_settlement_audit overlapping continuation observers preserve %s authorization boundary`
+  in `tests/unit/prepared-review-continuation-regressions.test.ts`: none, missing,
+  mismatch, attempt, generation, entry, revision, cycle, date, failed-flag,
+  failed-marker; duplicate observers advance once or not at all and preserve
+  known failure evidence.
+- `flush_settlement_audit Home foreground settlement and idle observer retain ownership during reconnect=%s`
+  in `tests/unit/review-attempt-confirmation-regressions.test.tsx`: early prepared
+  advancement without reconnect; actionable authoritative recovery after
+  reconnect invalidates readiness; later delivery cannot advance again.
+- `flush_settlement_audit idle receipt observer retains target evidence after later %s`
+  in `tests/unit/pending-review-recovery-regressions.test.tsx`: shared-flush
+  success/failure retains original receipt and continuation evidence.
+- `flush_settlement_audit overlapping reconnect preserves issued successor and one durable review`
+  in `tests/browser/post-review-progression.spec.ts`: real PostgreSQL commits
+  while its response is held; concurrent reconnect cannot authorize an unready
+  cached successor, and queue recovery/restart/replay retain one original review.
+
+- `flush_settlement_audit %s follow-up failure retains earlier settled evidence`
+  (unlimited/submitted) proves A's confirmed IDs/continuation must survive a later
+  B failure before C. Both cases fail on unchanged main with an empty partial
+  result. Duplicate aggregate observers and a direct B observer guard original
+  error ownership and diagnostic identity.
+- `flush_settlement_audit different explicit retry identities retain suppression after %s owner`
+  (persisted/failed) proves separate explicit retries perform original-key receipt
+  reads and cannot release another attempt's terminal suppression.
