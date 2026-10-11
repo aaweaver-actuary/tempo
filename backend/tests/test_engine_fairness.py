@@ -271,4 +271,5 @@ def test_engine_position_hint_is_prepared_outside_write_and_forwarded_unchanged(
         headers={'X-Tempo-Engine-Worker': 'docker', 'X-Tempo-Work-Class': 'background', 'Idempotency-Key': 'hint-operation'})
     assert response.json() == {'job': None}
     assert selected == ['available-game']
-    assert dispatched == [('games.analysis.position.claim', plan, {'idempotency_key': 'hint-operation', 'background': True})]
+    assert dispatched == [('games.analysis.position.claim', {**plan, 'claim_request': {'preferred_game_id': 'available-game'}},
+                           {'idempotency_key': 'hint-operation', 'background': True})]

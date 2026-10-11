@@ -5084,12 +5084,15 @@ def claim_game_analysis_position(
     if postgres_store.configured():
         from .game_analysis_commands import prepare_position_claim
         from .command_dispatch import dispatch_command
+        preferred_game_id = request.preferred_game_id if request else None
+        claim_request_payload = {"preferred_game_id": preferred_game_id} if preferred_game_id is not None else {}
         # A restarted journal must recover its original lease before preparing
         # another position or treating a now-unavailable hint as an empty queue.
         if idempotency_key:
             try:
                 receipt = read_operation(idempotency_key,
-                    command_name="games.analysis.position.claim", background=True)
+                    command_name="games.analysis.position.claim", background=True,
+                    position_claim_request_payload=claim_request_payload)
             except CommandConflict as error:
                 raise HTTPException(409, str(error)) from error
             if receipt["state"] == "complete":
@@ -5101,12 +5104,11 @@ def claim_game_analysis_position(
                 return JSONResponse(status_code=202,
                     content={"operation_id": idempotency_key, "state": receipt["state"]},
                     headers={"Location": f"/api/operations/{idempotency_key}"})
-        preferred_game_id = request.preferred_game_id if request else None
         plan = prepare_position_claim(preferred_game_id) if preferred_game_id is not None else prepare_position_claim()
         if plan is None:
             return {"job": None}
         return dispatch_command(
-            "games.analysis.position.claim", plan,
+            "games.analysis.position.claim", {**plan, "claim_request": claim_request_payload},
             idempotency_key=idempotency_key, background=True,
         )
     parent_job = _claim_game_analysis(request.preferred_game_id if request else None)["job"]

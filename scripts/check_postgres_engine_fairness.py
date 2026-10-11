@@ -304,6 +304,84 @@ class EngineFairnessProof:
             engine_worker='docker', idempotency_key=ordinary_operation) == json.loads(json.dumps(result))
         assert self.streak() == 1
 
+    def assert_position_claim_request_identity(self, pending):
+        from fastapi import HTTPException
+        from fastapi.responses import JSONResponse
+        from app import command_dispatch, main
+        from app.command_gateway import record_operation_attempt
+        from app.models import GameAnalysisPositionClaimRequest
+
+        for original_request in ({'preferred_game_id': self.game_id}, {}):
+            self.reset(streak=3)
+            self.sequence += 1
+            operation_id = f'{self.identity}-position-identity-{self.sequence}'
+
+            def deliver(command_name, payload, *, idempotency_key, background):
+                assert idempotency_key == operation_id and background
+                with activity_gate.background_control():
+                    admitted, saved_payload, attempt_token, _ = record_operation_attempt(
+                        operation_id, command_name, payload, background=True)
+                assert admitted and saved_payload['claim_request'] == original_request
+                if pending:
+                    self.sql("UPDATE operation_receipts SET state='queued',attempt_token=NULL,lease_expires_at=NULL "
+                             "WHERE operation_id=%s", (operation_id,))
+                    return JSONResponse(status_code=202, content={'operation_id': operation_id, 'state': 'queued'})
+                return execute_command(operation_id, command_name, saved_payload,
+                                       background=True, attempt_token=attempt_token)
+
+            request = GameAnalysisPositionClaimRequest(**original_request)
+            with patch.object(command_dispatch, 'dispatch_command', deliver):
+                original_response = main.claim_game_analysis_position(
+                    request, engine_worker='docker', idempotency_key=operation_id)
+            assert self.streak() == (3 if pending else 0)
+            original_receipt = self.sql('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,))
+            original_jobs = self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id')
+            original_positions = self.sql('SELECT * FROM game_analysis_position_reports ORDER BY id')
+            conflicting_requests = ([{'preferred_game_id': 'different-game'}, {}] if original_request
+                                    else [{'preferred_game_id': self.game_id}])
+            postgres_store.close_pools()
+            with patch.object(game_analysis_commands, 'prepare_position_claim',
+                              side_effect=AssertionError('Receipt recovery prepared new work')), \
+                 patch.object(command_dispatch, 'dispatch_command',
+                              side_effect=AssertionError('Receipt recovery dispatched new work')):
+                replay = main.claim_game_analysis_position(request, engine_worker='docker', idempotency_key=operation_id)
+                if pending:
+                    assert replay.status_code == 202 and replay.body == original_response.body
+                else:
+                    assert replay == json.loads(json.dumps(original_response))
+                for conflicting_request in conflicting_requests:
+                    try:
+                        main.claim_game_analysis_position(GameAnalysisPositionClaimRequest(**conflicting_request),
+                            engine_worker='docker', idempotency_key=operation_id)
+                    except HTTPException as error:
+                        assert error.status_code == 409
+                        assert error.detail == 'Operation ID was already used for another request'
+                    else:
+                        raise AssertionError('Changed position-claim payload reused the original operation')
+            assert self.sql('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,)) == original_receipt
+            assert self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id') == original_jobs
+            assert self.sql('SELECT * FROM game_analysis_position_reports ORDER BY id') == original_positions
+            assert self.streak() == (3 if pending else 0)
+            if pending:
+                saved_payload = json.loads(self.sql('SELECT payload_json FROM operation_receipts WHERE operation_id=%s',
+                                                   (operation_id,))[0][0])
+                with activity_gate.background_control():
+                    admitted, saved_payload, attempt_token, _ = record_operation_attempt(
+                        operation_id, 'games.analysis.position.claim', saved_payload, background=True)
+                assert admitted
+                recovered_response = execute_command(operation_id, 'games.analysis.position.claim', saved_payload,
+                                                     background=True, attempt_token=attempt_token)
+                assert recovered_response['job'] and self.streak() == 0
+                assert main.claim_game_analysis_position(request, engine_worker='docker',
+                                                        idempotency_key=operation_id) == json.loads(json.dumps(recovered_response))
+                assert self.streak() == 0
+
+    def test_postgres_engine_completed_position_receipt_validates_request_identity(self):
+        self.assert_position_claim_request_identity(pending=False)
+
+    def test_postgres_engine_pending_position_receipt_validates_request_identity(self):
+        self.assert_position_claim_request_identity(pending=True)
+
     def child(self, mode):
         environment = dict(os.environ, TEMPO_ENGINE_FAIRNESS_CHILD_MODE=mode,
                            TEMPO_ENGINE_FAIRNESS_FOREGROUND_KEY=redis_admission_gate._FOREGROUND_KEY,

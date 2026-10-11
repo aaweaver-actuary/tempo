@@ -480,8 +480,148 @@ def test_postgres_game_position_claim_dispatches_prepared_plan_to_background(mon
                  "Idempotency-Key": "position-one"},
     )
     assert response.status_code == 200
-    assert observed == [("games.analysis.position.claim", plan,
+    assert observed == [("games.analysis.position.claim", {**plan, "claim_request": {}},
                          {"idempotency_key": "position-one", "background": True})]
+
+
+@pytest.fixture
+def position_claim_receipt_route(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import database, game_analysis_commands, main
+
+    receipts = {}
+    deliveries = []
+    preparations = []
+    saved_response = {"job": {"game_id": "game-a", "lease_id": "original-lease", "kind": "search"}}
+
+    def read_receipt(statement, parameters):
+        assert statement.startswith("SELECT command_name,request_hash,state,")
+        receipt = receipts.get(parameters[0])
+        columns = statement.split(" FROM ", 1)[0].removeprefix("SELECT ").split(",")
+        return SimpleNamespace(fetchone=lambda: tuple(receipt[column] for column in columns) if receipt else None)
+
+    def prepare(preferred_game_id=None):
+        preparations.append(preferred_game_id)
+        return {"game_id": "game-a", "analysis_version": 1, "kind": "search"}
+
+    def send_task(_task_name, *, args, **_options):
+        operation_id, command_name, payload = args
+        deliveries.append((operation_id, command_name, payload))
+        receipts[operation_id] = {
+            "command_name": command_name, "request_hash": request_digest(command_name, payload),
+            "state": "complete", "response_json": json.dumps(saved_response),
+            "error_json": None, "attempt_count": 1, "next_retry_at": None,
+            "last_error_json": None, "lease_expires_at": None,
+            "payload_json": json.dumps(payload), "retry_cycle": 0, "cycle_attempt_count": 1,
+        }
+        return SimpleNamespace(get=lambda **_options: saved_response)
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
+    monkeypatch.setattr(database, "background_read_connection",
+                        lambda: nullcontext(SimpleNamespace(raw=SimpleNamespace(execute=read_receipt))))
+    monkeypatch.setattr(game_analysis_commands, "prepare_position_claim", prepare)
+    monkeypatch.setattr(command_dispatch.celery_app, "send_task", send_task)
+    client = TestClient(main.app)
+
+    def post(payload):
+        return client.post("/api/games/analysis/position/claim", json=payload,
+                           headers={"X-Tempo-Engine-Worker": "docker", "X-Tempo-Work-Class": "background",
+                                    "Idempotency-Key": "position-identity"})
+
+    return SimpleNamespace(post=post, receipts=receipts, deliveries=deliveries,
+                           preparations=preparations, saved_response=saved_response)
+
+
+@pytest.mark.parametrize("receipt_state", ["complete", "pending", "queued", "executing", "retrying", "blocked", "failed"])
+@pytest.mark.parametrize("original_payload,replay_payload", [
+    ({"preferred_game_id": "game-a"}, {"preferred_game_id": "game-b"}),
+    ({"preferred_game_id": "game-a"}, {}),
+    ({}, {"preferred_game_id": "game-a"}),
+], ids=["game-a-then-game-b", "hinted-then-unhinted", "unhinted-then-hinted"])
+def test_position_claim_receipt_rejects_changed_request_payload(position_claim_receipt_route, receipt_state,
+                                                               original_payload, replay_payload):
+    route = position_claim_receipt_route
+    assert route.post(original_payload).status_code == 200
+    receipt = route.receipts["position-identity"]
+    receipt.update(state=receipt_state, error_json=json.dumps({"status_code": 503, "message": "saved failure"}))
+    original_receipt = dict(receipt)
+    response = route.post(replay_payload)
+    assert response.status_code == 409, response.text
+    assert response.json() == {"detail": "Operation ID was already used for another request"}
+    assert receipt == original_receipt
+    assert len(route.deliveries) == len(route.preparations) == 1
+
+
+@pytest.mark.parametrize("receipt_state", ["complete", "pending", "queued", "executing", "retrying", "blocked", "failed"])
+@pytest.mark.parametrize("payload", [{"preferred_game_id": "game-a"}, {}], ids=["hinted", "unhinted"])
+def test_position_claim_identical_receipt_recovers_without_preparing_work(position_claim_receipt_route,
+                                                                        receipt_state, payload):
+    route = position_claim_receipt_route
+    assert route.post(payload).status_code == 200
+    receipt = route.receipts["position-identity"]
+    receipt.update(state=receipt_state, error_json=json.dumps({"status_code": 503, "message": "saved failure"}))
+    original_receipt = dict(receipt)
+    response = route.post(payload)
+    if receipt_state == "complete":
+        assert response.status_code == 200
+        assert response.json() == route.saved_response
+    elif receipt_state == "failed":
+        assert response.status_code == 503
+        assert response.json() == {"detail": "saved failure"}
+    else:
+        assert response.status_code == 202
+        assert response.json() == {"operation_id": "position-identity", "state": receipt_state}
+        assert response.headers["Location"] == "/api/operations/position-identity"
+    assert receipt == original_receipt
+    assert len(route.deliveries) == len(route.preparations) == 1
+
+
+@pytest.mark.parametrize("receipt_state", ["complete", "pending"])
+@pytest.mark.parametrize("saved_payload_available", [False, True])
+def test_position_claim_legacy_receipt_recovery_remains_available(position_claim_receipt_route, receipt_state,
+                                                                saved_payload_available):
+    route = position_claim_receipt_route
+    assert route.post({"preferred_game_id": "game-a"}).status_code == 200
+    receipt = route.receipts["position-identity"]
+    legacy_payload = {"game_id": "game-a", "analysis_version": 1, "kind": "search"}
+    receipt.update(state=receipt_state, request_hash=request_digest(receipt["command_name"], legacy_payload),
+                   payload_json=json.dumps(legacy_payload) if saved_payload_available else None)
+    response = route.post({"preferred_game_id": "deleted-game"})
+    assert response.status_code == (200 if receipt_state == "complete" else 202)
+    if receipt_state == "complete":
+        assert response.json() == route.saved_response
+    assert len(route.deliveries) == len(route.preparations) == 1
+
+
+def test_position_claim_receipt_preserves_command_identity_conflict(position_claim_receipt_route):
+    route = position_claim_receipt_route
+    assert route.post({}).status_code == 200
+    route.receipts["position-identity"]["command_name"] = "threat.analysis.claim"
+    assert route.post({}).status_code == 409
+    assert len(route.deliveries) == len(route.preparations) == 1
+
+
+def test_position_claim_receipt_recovery_preserves_explicit_hash_validation(position_claim_receipt_route):
+    from app.command_gateway import read_operation
+
+    route = position_claim_receipt_route
+    assert route.post({}).status_code == 200
+    with pytest.raises(CommandConflict, match="Operation ID was already used for another request"):
+        read_operation("position-identity", command_name="games.analysis.position.claim",
+                       request_hash=request_digest("games.analysis.position.claim", {"different": "plan"}),
+                       background=True, position_claim_request_payload={})
+
+
+@pytest.mark.parametrize("replay_payload", [None, {}, {"preferred_game_id": None}])
+def test_position_claim_omitted_empty_and_null_requests_share_unhinted_identity(position_claim_receipt_route,
+                                                                              replay_payload):
+    route = position_claim_receipt_route
+    assert route.post({}).status_code == 200
+    response = route.post(replay_payload)
+    assert response.status_code == 200
+    assert response.json() == route.saved_response
+    assert len(route.deliveries) == len(route.preparations) == 1
 
 
 def test_postgres_game_position_preparation_closes_database_before_chess_traversal(monkeypatch):
