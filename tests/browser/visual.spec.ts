@@ -1,5 +1,6 @@
 import { test, expect } from "./observability";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { navigate, boardBounds, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import type { ActivityResponse } from "../../app/lib/service-status";
@@ -33,7 +34,11 @@ for (const width of [390, 1280]) {
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", "2");
     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
     await noPageOverflow(page);
-    await testInfo.attach("issue186-prepared-recovery", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
+    const recoveryScreenshot = await page.screenshot({ fullPage: true });
+    const evidenceDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
+    mkdirSync(evidenceDirectory, { recursive: true });
+    writeFileSync(join(evidenceDirectory, `issue186-prepared-recovery-${width}.png`), recoveryScreenshot);
+    await testInfo.attach("issue186-prepared-recovery", { body: recoveryScreenshot, contentType: "image/png" });
   });
 }
 

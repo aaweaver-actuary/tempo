@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { test, expect } from "./observability";
 import { api } from "./product-fixtures";
 import { prepareUI, boardBounds } from "./ui-fixtures";
@@ -119,8 +121,12 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       expect(receipt.persisted).toBe(true);
       const afterReplay = await fixture("verify-progression");
       expect(afterReplay).toEqual(durableResult);
-      await testInfo.attach("issue186-progression-proof", { body: JSON.stringify({ failure, completedEntry,
-        reviewPosts, queueFailures, lifecycle, receipt, persisted: afterReplay }), contentType: "application/json" });
+      const proof = JSON.stringify({ revision: (await promisify(execFile)("git", ["rev-parse", "HEAD"], { encoding: "utf8" })).stdout.trim(),
+        project, failure, completedEntry, reviewPosts, queueFailures, lifecycle, receipt, persisted: afterReplay }, null, 2);
+      const evidenceDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
+      mkdirSync(evidenceDirectory, { recursive: true });
+      writeFileSync(join(evidenceDirectory, `issue186-progression-${failure.replaceAll(" ", "-")}.json`), proof);
+      await testInfo.attach("issue186-progression-proof", { body: proof, contentType: "application/json" });
     } catch (error) {
       await testInfo.attach("issue186-failure-screen", { body: await page.screenshot().catch(() => Buffer.alloc(0)),
         contentType: "image/png" }).catch(() => undefined);
