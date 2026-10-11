@@ -1,0 +1,1658 @@
+{
+  "actual_admission_plan": [],
+  "actual_admission_plan_basis": "not_simulated_fixture_has_no_admission_plan",
+  "as_of": "2026-10-10T12:00:00+00:00",
+  "candidates": [
+    {
+      "card_id": "ruy-a",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1b5",
+            "move_uci": "f1b5",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:b5a4",
+            "move_uci": "b5a4",
+            "ply": 7,
+            "position_key": "r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "main"
+            ],
+            "frontier_ply": 7,
+            "priority_generation": 1,
+            "priority_score": 0.9,
+            "repertoire_id": "ruy"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5",
+          "a7a6",
+          "b5a4"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 3,
+            "generation": 1,
+            "line_id": "main",
+            "parent_card_id": "ruy-support-failed",
+            "repertoire_id": "ruy"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "ruy",
+      "production_rank": 1
+    },
+    {
+      "card_id": "ruy-c",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1b5",
+            "move_uci": "f1b5",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:b5a4",
+            "move_uci": "b5a4",
+            "ply": 7,
+            "position_key": "r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:e1g1",
+            "move_uci": "e1g1",
+            "ply": 9,
+            "position_key": "r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6",
+              "b5a4",
+              "g8f6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqk2r/1pppbppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 w kq -:f1e1",
+            "move_uci": "f1e1",
+            "ply": 11,
+            "position_key": "r1bqk2r/1pppbppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 w kq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6",
+              "b5a4",
+              "g8f6",
+              "e1g1",
+              "f8e7"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-c"
+            ],
+            "frontier_ply": 11,
+            "priority_generation": 1,
+            "priority_score": 0.8,
+            "repertoire_id": "ruy"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5",
+          "a7a6",
+          "b5a4",
+          "g8f6",
+          "e1g1",
+          "f8e7",
+          "f1e1"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 5,
+            "generation": 1,
+            "line_id": "branch-c",
+            "parent_card_id": "ruy-support-failed",
+            "repertoire_id": "ruy"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "ruy",
+      "production_rank": 2
+    },
+    {
+      "card_id": "ruy-d",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1b5",
+            "move_uci": "f1b5",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:b5a4",
+            "move_uci": "b5a4",
+            "ply": 7,
+            "position_key": "r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:e1g1",
+            "move_uci": "e1g1",
+            "ply": 9,
+            "position_key": "r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6",
+              "b5a4",
+              "g8f6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqk2r/1pppbppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 w kq -:f1e1",
+            "move_uci": "f1e1",
+            "ply": 11,
+            "position_key": "r1bqk2r/1pppbppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 w kq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6",
+              "b5a4",
+              "g8f6",
+              "e1g1",
+              "f8e7"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqk2r/2ppbppp/p1n2n2/1p2p3/B3P3/5N2/PPPP1PPP/RNBQR1K1 w kq -:a4b3",
+            "move_uci": "a4b3",
+            "ply": 13,
+            "position_key": "r1bqk2r/2ppbppp/p1n2n2/1p2p3/B3P3/5N2/PPPP1PPP/RNBQR1K1 w kq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6",
+              "b5a4",
+              "g8f6",
+              "e1g1",
+              "f8e7",
+              "f1e1",
+              "b7b5"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-d"
+            ],
+            "frontier_ply": 13,
+            "priority_generation": 1,
+            "priority_score": 0.6,
+            "repertoire_id": "ruy"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5",
+          "a7a6",
+          "b5a4",
+          "g8f6",
+          "e1g1",
+          "f8e7",
+          "f1e1",
+          "b7b5",
+          "a4b3"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 6,
+            "generation": 1,
+            "line_id": "branch-d",
+            "parent_card_id": "ruy-support-failed",
+            "repertoire_id": "ruy"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "ruy",
+      "production_rank": 3
+    },
+    {
+      "card_id": "ruy-e",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1b5",
+            "move_uci": "f1b5",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:d2d3",
+            "move_uci": "d2d3",
+            "ply": 7,
+            "position_key": "r1bqkb1r/pppp1ppp/2n2n2/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "g8f6"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-e"
+            ],
+            "frontier_ply": 7,
+            "priority_generation": 1,
+            "priority_score": 0.5,
+            "repertoire_id": "ruy"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5",
+          "g8f6",
+          "d2d3"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 3,
+            "generation": 1,
+            "line_id": "branch-e",
+            "parent_card_id": "ruy-support-failed",
+            "repertoire_id": "ruy"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "ruy",
+      "production_rank": 4
+    },
+    {
+      "card_id": "shared-sicilian",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "c7c5"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "branch-f"
+            ],
+            "frontier_ply": 3,
+            "priority_generation": 1,
+            "priority_score": 0.4,
+            "repertoire_id": "ruy"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "c7c5",
+          "g1f3"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 1,
+            "generation": 1,
+            "line_id": "branch-f",
+            "parent_card_id": "ruy-support-failed",
+            "repertoire_id": "ruy"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "ruy",
+      "production_rank": 5
+    },
+    {
+      "card_id": "ruy-b",
+      "metadata": {
+        "archived": 0,
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          },
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1b5",
+            "move_uci": "f1b5",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:b5a4",
+            "move_uci": "b5a4",
+            "ply": 7,
+            "position_key": "r1bqkbnr/1ppp1ppp/p1n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6"
+            ]
+          },
+          {
+            "decision_id": "white:r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq -:e1g1",
+            "move_uci": "e1g1",
+            "ply": 9,
+            "position_key": "r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6",
+              "f1b5",
+              "a7a6",
+              "b5a4",
+              "g8f6"
+            ]
+          }
+        ],
+        "introduced_at": null,
+        "memberships": [
+          {
+            "completed_line_ids": [
+              "main"
+            ],
+            "frontier_ply": 9,
+            "priority_generation": 1,
+            "priority_score": 0.7,
+            "repertoire_id": "ruy"
+          }
+        ],
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5",
+          "a7a6",
+          "b5a4",
+          "g8f6",
+          "e1g1"
+        ],
+        "pending_validation": 0,
+        "presentation": "cumulative_prefix",
+        "probability_status": "exact",
+        "revision": 1,
+        "routes": [
+          {
+            "decision_index": 4,
+            "generation": 1,
+            "line_id": "main",
+            "parent_card_id": "ruy-support-failed",
+            "repertoire_id": "ruy"
+          }
+        ],
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "new"
+      },
+      "policy_id": "ruy",
+      "production_rank": 6
+    }
+  ],
+  "evaluation_scope": "selected_policy",
+  "historical_counterfactual_supported": false,
+  "limitations": [
+    "Exact replay covers captured ranking inputs only, not learning gains or actual queue delivery.",
+    "Historical eligibility, introduction state, quota consumption and deleted routes cannot be reconstructed from current rows.",
+    "Retained priority generations alone do not establish historical counterfactual accuracy.",
+    "Historical probability/profile evidence is not captured by this infrastructure."
+  ],
+  "policy_id": "ruy",
+  "production_order_basis": "production_planner_capacity_neutral_sorted_repertoire_then_card",
+  "schema_version": 2,
+  "scorer_configuration": {
+    "baseline_bundle": "precomputed-base@1",
+    "precomputed_score_bundles": [
+      {
+        "assumption": "explicit baseline score assumptions",
+        "axis": "baseline",
+        "cohort_id": "rapid-1200-1400",
+        "name": "precomputed-base",
+        "provenance": "synthetic supplied scalar values; not adapter output",
+        "scores": {
+          "ruy-a": {
+            "score": 0.1
+          },
+          "ruy-b": {
+            "score": 0.3
+          },
+          "ruy-c": {
+            "score": 0.2
+          },
+          "ruy-d": {
+            "score": 0.04
+          },
+          "ruy-e": {
+            "score": 0.03
+          },
+          "shared-sicilian": {
+            "score": 0.02
+          }
+        },
+        "version": "1"
+      },
+      {
+        "assumption": "equal supplied scores preserve production tie ordering",
+        "axis": "ties",
+        "cohort_id": "rapid-1200-1400",
+        "name": "precomputed-ties",
+        "provenance": "synthetic supplied scalar values; not adapter output",
+        "scores": {
+          "ruy-a": {
+            "score": 0.1
+          },
+          "ruy-b": {
+            "score": 0.1
+          },
+          "ruy-c": {
+            "score": 0.1
+          },
+          "ruy-d": {
+            "score": 0.1
+          },
+          "ruy-e": {
+            "score": 0.1
+          },
+          "shared-sicilian": {
+            "score": 0.1
+          }
+        },
+        "version": "1"
+      }
+    ]
+  },
+  "snapshot_id": "e90c2be242eaf8e717bdb3ddf62d8b0dd384fef9375d1c0d2d0855ae5e5aff29",
+  "source_versions": {
+    "cohorts": {
+      "classical-1800-2000": {
+        "ratings": [
+          1800,
+          2000
+        ],
+        "speeds": [
+          "classical"
+        ]
+      },
+      "rapid-1200-1400": {
+        "ratings": [
+          1200,
+          1400
+        ],
+        "speeds": [
+          "rapid"
+        ]
+      }
+    },
+    "fixture_version": 1,
+    "opponent_evidence": [
+      {
+        "authored_replies": [
+          "b7b5"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-0",
+        "fen": "r1bqk2r/1pppbppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQR1K1 b kq - 5 6",
+        "moves": [
+          {
+            "move_uci": "a6a5",
+            "probability": 0.85
+          },
+          {
+            "move_uci": "a8a7",
+            "probability": 0
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6a7",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "e7a3",
+            "probability": 0
+          },
+          {
+            "move_uci": "e7b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "e7c5",
+            "probability": 0
+          },
+          {
+            "move_uci": "e7d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "e7f8",
+            "probability": 0
+          },
+          {
+            "move_uci": "e8f8",
+            "probability": 0
+          },
+          {
+            "move_uci": "e8g8",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6e4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6g4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6g8",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h8f8",
+            "probability": 0
+          },
+          {
+            "move_uci": "h8g8",
+            "probability": 0
+          }
+        ],
+        "outside_reply": "a6a5",
+        "position_key": "r1bqk2r/1pppbppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQR1K1 b kq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unknown_mass": 0
+      },
+      {
+        "authored_replies": [
+          "f8e7"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-1",
+        "fen": "r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 3 5",
+        "moves": [
+          {
+            "move_uci": "a6a5",
+            "probability": 0.85
+          },
+          {
+            "move_uci": "a8a7",
+            "probability": 0
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6a7",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6e4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6g4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6g8",
+            "probability": 0
+          },
+          {
+            "move_uci": "f6h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h8g8",
+            "probability": 0
+          }
+        ],
+        "outside_reply": "a6a5",
+        "position_key": "r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 b kq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unknown_mass": 0
+      },
+      {
+        "authored_replies": [
+          "g8f6"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-2",
+        "fen": "r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 1 4",
+        "moves": [
+          {
+            "move_uci": "a6a5",
+            "probability": 0.85
+          },
+          {
+            "move_uci": "a8a7",
+            "probability": 0
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6a7",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": 0
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": 0
+          }
+        ],
+        "outside_reply": "a6a5",
+        "position_key": "r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unknown_mass": 0
+      },
+      {
+        "authored_replies": [
+          "a7a6",
+          "g8f6"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-3",
+        "fen": "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.7
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "a8b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6a5",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6b8",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6d4",
+            "probability": 0
+          },
+          {
+            "move_uci": "c6e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": 0
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": 0
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unknown_mass": 0
+      },
+      {
+        "authored_replies": [
+          "b8c6"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-4",
+        "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.85
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": 0
+          },
+          {
+            "move_uci": "b8a6",
+            "probability": 0
+          },
+          {
+            "move_uci": "b8c6",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "c7c5",
+            "probability": 0
+          },
+          {
+            "move_uci": "c7c6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d8h4",
+            "probability": 0
+          },
+          {
+            "move_uci": "e8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8a3",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8b4",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8c5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8e7",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": 0
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unknown_mass": 0
+      },
+      {
+        "authored_replies": [
+          "c7c5",
+          "e7e5"
+        ],
+        "bounds": [],
+        "captured_at": "2026-10-10T11:00:00Z",
+        "cohort_id": "rapid-1200-1400",
+        "evidence_id": "synthetic-opponent-rapid-1200-1400-5",
+        "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        "moves": [
+          {
+            "move_uci": "a7a5",
+            "probability": 0.15
+          },
+          {
+            "move_uci": "a7a6",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b5",
+            "probability": 0
+          },
+          {
+            "move_uci": "b7b6",
+            "probability": 0
+          },
+          {
+            "move_uci": "b8a6",
+            "probability": 0
+          },
+          {
+            "move_uci": "b8c6",
+            "probability": 0
+          },
+          {
+            "move_uci": "c7c5",
+            "probability": 0.25
+          },
+          {
+            "move_uci": "c7c6",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d5",
+            "probability": 0
+          },
+          {
+            "move_uci": "d7d6",
+            "probability": 0
+          },
+          {
+            "move_uci": "e7e5",
+            "probability": 0.6
+          },
+          {
+            "move_uci": "e7e6",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f5",
+            "probability": 0
+          },
+          {
+            "move_uci": "f7f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g5",
+            "probability": 0
+          },
+          {
+            "move_uci": "g7g6",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8f6",
+            "probability": 0
+          },
+          {
+            "move_uci": "g8h6",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h5",
+            "probability": 0
+          },
+          {
+            "move_uci": "h7h6",
+            "probability": 0
+          }
+        ],
+        "outside_reply": "a7a5",
+        "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+        "provenance": "hand-authored legal reply distribution",
+        "source_version": "synthetic-1",
+        "unknown_mass": 0
+      }
+    ],
+    "policy_version": "synthetic-1",
+    "production_planner_inputs": [
+      {
+        "completed_line_ids_json": "[\"main\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "ruy-a",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"a7a6\", \"b5a4\"]",
+        "priority_date": null,
+        "priority_score": 0.9,
+        "repertoire_id": "ruy"
+      },
+      {
+        "completed_line_ids_json": "[\"main\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "ruy-b",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"a7a6\", \"b5a4\", \"g8f6\", \"e1g1\"]",
+        "priority_date": null,
+        "priority_score": 0.7,
+        "repertoire_id": "ruy"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-c\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "ruy-c",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"a7a6\", \"b5a4\", \"g8f6\", \"e1g1\", \"f8e7\", \"f1e1\"]",
+        "priority_date": null,
+        "priority_score": 0.8,
+        "repertoire_id": "ruy"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-d\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "ruy-d",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"a7a6\", \"b5a4\", \"g8f6\", \"e1g1\", \"f8e7\", \"f1e1\", \"b7b5\", \"a4b3\"]",
+        "priority_date": null,
+        "priority_score": 0.6,
+        "repertoire_id": "ruy"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-e\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "ruy-e",
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\", \"g8f6\", \"d2d3\"]",
+        "priority_date": null,
+        "priority_score": 0.5,
+        "repertoire_id": "ruy"
+      },
+      {
+        "completed_line_ids_json": "[\"branch-f\"]",
+        "frontier_decisions_json": "[]",
+        "gameplay_priority_reason": null,
+        "id": "shared-sicilian",
+        "moves_json": "[\"e2e4\", \"c7c5\", \"g1f3\"]",
+        "priority_date": null,
+        "priority_score": 0.4,
+        "repertoire_id": "ruy"
+      }
+    ],
+    "provenance": "synthetic legal opening routes, histories and explicit score assumptions",
+    "reference_main": "4dc17a96dd23da51047284d1bfb7434efee20d56",
+    "scenario_id": "ruy-common",
+    "supporting_cards": [
+      {
+        "card_id": "shared-e4",
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -:e2e4",
+            "move_uci": "e2e4",
+            "ply": 1,
+            "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+            "prefix": []
+          }
+        ],
+        "introduced_at": "2026-10-10T09:00:00Z",
+        "moves": [
+          "e2e4"
+        ],
+        "policy_id": "ruy",
+        "recall_assumption": 0.25,
+        "state": "learning"
+      },
+      {
+        "card_id": "shared-e4-e5-nf3",
+        "decisions": [
+          {
+            "decision_id": "white:rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -:g1f3",
+            "move_uci": "g1f3",
+            "ply": 3,
+            "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5"
+            ]
+          }
+        ],
+        "introduced_at": "2026-09-01T09:00:00Z",
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3"
+        ],
+        "policy_id": "ruy",
+        "recall_assumption": 0.9,
+        "state": "mature"
+      },
+      {
+        "card_id": "ruy-support-failed",
+        "decisions": [
+          {
+            "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1b5",
+            "move_uci": "f1b5",
+            "ply": 5,
+            "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",
+            "prefix": [
+              "e2e4",
+              "e7e5",
+              "g1f3",
+              "b8c6"
+            ]
+          }
+        ],
+        "introduced_at": "2026-10-09T09:00:00Z",
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5"
+        ],
+        "observation": {
+          "decision_id": "white:r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -:f1b5",
+          "observed_at": "2026-10-10T10:00:00Z",
+          "outcome": "incorrect"
+        },
+        "policy_id": "ruy",
+        "recall_assumption": 0.2,
+        "state": "learning"
+      }
+    ]
+  },
+  "study_day": "2026-10-10"
+}

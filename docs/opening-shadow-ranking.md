@@ -197,3 +197,125 @@ framework does not compute reach or infer repertoire-selection/study weights.
 The Italian/Ruy shadow regressions reuse the kernel's real shared-prefix fixtures,
 retain opponent deviations, and compare full scoring inputs, preparedness, marginal
 values and ranking after adding, expanding or removing the other policy.
+
+## Independent fixture corpus (Issue #175)
+
+The `corpus` command evaluates six synthetic scenario families without importing
+capture, storage, the application, or a valuation adapter. It uses the same
+schema-2 selected-policy snapshots and `rank`/`compare` contracts above. This is
+independent evaluation infrastructure for #113; it does not complete that issue's
+held-out-game, greedy marginal, global-allocation or release-recommendation work.
+Related #174 owns the real end-to-end valuation adapter.
+
+```sh
+backend/.venv/bin/python scripts/evaluate_opening_rankings.py corpus
+backend/.venv/bin/python scripts/evaluate_opening_rankings.py corpus --scenario italian-common --scenario ruy-common --top-k 2 --output new-report.json
+backend/.venv/bin/python scripts/evaluate_opening_rankings.py corpus --corpus tests/fixtures/opening-ranking-evaluation/manifest.json --scenario cohorts-uncertainty
+```
+
+The default corpus covers common Italian and Ruy Lopez moves, shared prefixes,
+rare Owen/Philidor sidelines, Sicilian/opponent deviations, two distinct rating
+and time-control evidence cohorts, exact/bounded/unknown and unassigned mass,
+introduced/mature supporting cards, recent failed decisions, and cumulative
+prefix presentations. Its 36 candidate occurrences are six new cards per
+scenario; physical candidates occur once within each snapshot. Introduced and
+mature cards appear only in supporting history. Individual learner decisions
+retain their identity; card-level recall assumptions are not assigned to every
+constituent decision. Histories, evidence and scalar scores are synthetic,
+explicit assumptions, not personal observations, calibrated recall or inferred
+repertoire-playing frequencies.
+
+### Contract and ownership
+
+A corpus manifest has `corpus_version: 1`, a provenance description, and scenario
+entries with `id`, a local `snapshot` filename, the expected `snapshot_id`, and
+recognized `coverage` tags. The complete corpus must cover all 13 requested
+scenario tags, even when the command selects a subset. Files are limited to
+4 MiB each, 16 MiB combined and 32 scenarios. References and symlinks cannot
+escape the corpus directory. All inputs are validated before ranking.
+
+Scorer configuration adds this extension to the existing #155 snapshot:
+
+```json
+{
+  "baseline_bundle": "supplied-marginal@1",
+  "precomputed_score_bundles": [{
+    "name": "supplied-marginal",
+    "version": "1",
+    "axis": "baseline",
+    "cohort_id": "rapid-1200-1400",
+    "assumption": "explicit externally supplied scores",
+    "provenance": "identify producer, versions and assumptions",
+    "scores": {
+      "card-a": {"score": 0.03},
+      "card-b": {"score": null, "reason": "required_probability_incomplete"}
+    }
+  }]
+}
+```
+
+Each bundle must preserve exactly the snapshot's card identities. Scores are
+finite scalars or explicit null plus a nonempty reason. Unknown is never replaced
+with zero. Bounded inputs remain incomplete in the baseline; explicitly labeled
+low/high endpoint experiments use separately supplied scalars and retain unknown
+mass. Other variants cover equal-score ties, opponent cohorts, decision readiness,
+learning effects and rare-line study value. The harness only looks up scores; it
+never joins reach/readiness/effects or computes marginal values.
+
+Agent 1 owns `opening_card_valuation.py` and its direct tests. Agent 5 owns the
+corpus, pure harness module, harness tests and CLI `corpus` subcommand. The shared
+interface is #155's unchanged candidate/context/result contracts. Interface
+requirements were sent to Agent 1; its compatible export boundary was inspected.
+This is documented compatibility, not a claim that an unmerged adapter has been
+integrated or its valuations independently validated. Future exports must supply
+the bundle extension and eligible-candidate metadata before entering this runner.
+
+### Reading the report
+
+The canonical JSON report embeds unmodified #155 comparisons, including row
+scores/reasons, production and alternative ranks, coverage, Spearman correlation,
+displacement, top-K overlap and concentration. Summaries identify promotions,
+demotions and missing scores. Sensitivity entries compare each variant with the
+supplied baseline, retaining its axis, cohort and assumption; changes into or out
+of unscorable status have null rank displacement. Results stay separated by
+scenario, selected policy and cohort assumption. There is no cross-policy pooled
+estimate or automatic improvement verdict.
+
+Each report records the corpus digest, snapshot digests, fixed timestamps,
+source/model versions, production-order basis and limitations. No execution time
+or current clock enters reproducible output. Runtime evidence is recorded
+separately during validation. Same inputs replay byte-identically across process
+hash seeds and machine timezones. Manifest/selection/K ordering is canonical;
+reordering arrays inside a snapshot changes #155's content digest, although
+candidate/bundle permutations preserve comparison metrics. Replay supports saved
+inputs, not reconstructed historical eligibility or observed queue delivery.
+
+Hand-checked Italian example: production order is `a,c,d,e,f,b` because breadth
+postpones the second main-line card. Supplied scores produce `b,c,a,d,e,f`.
+Rank displacement magnitudes are `2,0,1,1,1,5`; mean is `5/3`, maximum is `5`, and
+Spearman is `1 - 6*32/(6*35) = 3/35`. At K=2, overlap is `1/2` and weighted overlap
+is `0.5/2.5 = 0.2`. Equal-score variants retain production order. These numbers
+validate comparison mechanics, not the scientific correctness of supplied scores.
+
+### Fixture maintenance and validation
+
+Checked fixtures preserve the real production planner's capacity-neutral order
+on sorted inputs. Their synthetic source rows and reference main revision are
+saved in source provenance. The builder invokes the existing pure planner only;
+it requires the backend development dependencies and never captures live state.
+Regenerate into a **new** directory, inspect the differences, then deliberately
+copy reviewed JSON into the corpus:
+
+```sh
+PYTHONPATH=backend backend/.venv/bin/python tests/fixtures/opening-ranking-evaluation/build_corpus.py --output /tmp/new-opening-ranking-corpus
+make python-file FILE=backend/tests/test_opening_ranking_harness.py
+make python-file FILE=backend/tests/test_opening_ranking_evaluation.py
+```
+
+The regular suite verifies all coverage claims against legal boards, #154 move
+probability distribution contracts, real production planner order, fixed history
+identities and hand-calculated metrics. It also checks partial evidence, sensitivity
+reversals, policy isolation, input preservation, invalid contracts and CLI replay
+with storage/model imports and network connections prohibited. The command
+protects existing outputs and reports input errors with exit 2, without a
+successful partial report. CI owns final applicable candidate qualification.

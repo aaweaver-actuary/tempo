@@ -1,0 +1,62 @@
+{
+  "corpus_version": 1,
+  "provenance": "Synthetic representative openings and histories; precomputed score sensitivity only.",
+  "scenarios": [
+    {
+      "coverage": [
+        "common_italian",
+        "exact_probabilities"
+      ],
+      "id": "italian-common",
+      "snapshot": "italian-common.json",
+      "snapshot_id": "74660951cc0178b4802eb0a7d428c21921ca24e889437a76c248afb88abb9e4d"
+    },
+    {
+      "coverage": [
+        "common_ruy_lopez",
+        "exact_probabilities"
+      ],
+      "id": "ruy-common",
+      "snapshot": "ruy-common.json",
+      "snapshot_id": "e90c2be242eaf8e717bdb3ddf62d8b0dd384fef9375d1c0d2d0855ae5e5aff29"
+    },
+    {
+      "coverage": [
+        "shared_prefixes"
+      ],
+      "id": "shared-prefixes",
+      "snapshot": "shared-prefixes.json",
+      "snapshot_id": "94d4d3bd83e0bafbc09214a77f96541dda49d7207c6f3d0a2210e0178fcbf81a"
+    },
+    {
+      "coverage": [
+        "rare_sidelines",
+        "opponent_deviations"
+      ],
+      "id": "rare-deviations",
+      "snapshot": "rare-deviations.json",
+      "snapshot_id": "104b42a8c613fd0461f2b4e3ec6ed4d9a625e4f4293de804a493807d61c836b9"
+    },
+    {
+      "coverage": [
+        "multiple_cohorts",
+        "bounded_probabilities",
+        "unknown_unassigned_mass"
+      ],
+      "id": "cohorts-uncertainty",
+      "snapshot": "cohorts-uncertainty.json",
+      "snapshot_id": "46a9cf9f653b373d31818ba1071e7b9ae5be0b5b1cdcc18d184cd40399dbf095"
+    },
+    {
+      "coverage": [
+        "newly_introduced_cards",
+        "mature_cards",
+        "recently_failed_decisions",
+        "cumulative_prefix_cards"
+      ],
+      "id": "cumulative-history",
+      "snapshot": "cumulative-history.json",
+      "snapshot_id": "bfefb7a6395890e6f74125efe91aaba158e733e3836164049b99319a1bb73b71"
+    }
+  ]
+}

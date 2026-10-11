@@ -29,12 +29,22 @@ def main(arguments=None):
     comparison.add_argument("--scorer", choices=SCORERS, action="append")
     comparison.add_argument("--top-k", type=int, action="append")
     comparison.add_argument("--output", type=Path)
+    corpus = commands.add_parser("corpus", help="Evaluate deterministic local fixtures and precomputed score variants")
+    corpus.add_argument("--corpus", type=Path, default=Path(__file__).resolve().parents[1] /
+                        "tests/fixtures/opening-ranking-evaluation/manifest.json")
+    corpus.add_argument("--scenario", action="append")
+    corpus.add_argument("--top-k", type=int, action="append")
+    corpus.add_argument("--output", type=Path)
     options = parser.parse_args(arguments)
     try:
         if options.command == "capture":
             from app.services.opening_ranking_snapshot import capture_snapshot
             result = capture_snapshot(study_day=options.study_day, repertoire_ids=options.repertoire_id,
                                       production_timezone=options.production_timezone, policy_id=options.policy_id)
+        elif options.command == "corpus":
+            from app.services.opening_ranking_harness import run_corpus
+            result = run_corpus(options.corpus, scenario_ids=options.scenario,
+                                top_k=options.top_k if options.top_k is not None else (1, 5, 10))
         else:
             # Limit input before parsing; oversized files cannot bypass capture budgets.
             with options.snapshot.open("rb") as source:
