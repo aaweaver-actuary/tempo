@@ -329,7 +329,9 @@ test("issue81_pending_survives_remount", async ({ page }) => {
   const { control, dialog, card } = await mockTransitionUI(page); control.state = "pending";
   await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Prefix transition in progress" })).toBeVisible();
-  const operationId = control.operationId; await dialog.getByRole("button", { name: "Close window" }).click();
+  // The journal is durable before transport admission, so closure may precede the first apply request.
+  const operationId = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-transition-v1:rep")!).operationId as string);
+  expect(operationId).toBeTruthy(); await dialog.getByRole("button", { name: "Close window" }).click();
   await expect(page.getByRole("button", { name: "Resume prefix transition", exact: true })).toBeVisible();
   await card.locator("details.card-menu summary").click();
   for (const name of ["Rename", "Canonical prefix…", "Delete"]) await expect(card.getByRole("menuitem", { name, exact: true })).toBeDisabled();
@@ -337,6 +339,7 @@ test("issue81_pending_survives_remount", async ({ page }) => {
   await page.getByRole("button", { name: "Resume prefix transition", exact: true }).click();
   await expect(dialog.getByText("Selected source routes: 2", { exact: false })).toBeVisible();
   await expect(dialog.getByLabel("Candidate learner-decision depths")).toHaveCount(0);
+  await expect.poll(() => control.deliveries, { message: "The original persisted operation is delivered after reopening" }).toBe(1);
   expect(control.operationId).toBe(operationId); expect(control.deliveries).toBe(1);
 });
 test("issue81_terminal_failure_offers_actionable_recovery", async ({ page }) => {
