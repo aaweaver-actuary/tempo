@@ -799,6 +799,10 @@ def proof():
     proof_engine_fairness(DSN)
     from check_postgres_scheduling_turns import proof_scheduling_turns
     proof_scheduling_turns(DSN)
+    from check_postgres_refresh_inputs import proof_refresh_inputs, proof_refresh_state_recovery, proof_refresh_schema_upgrade
+    proof_refresh_inputs(DSN)
+    proof_refresh_state_recovery(DSN)
+    proof_refresh_schema_upgrade(DSN)
     from check_postgres_queue_unlock_scale import proof_graph_scale
     proof_graph_scale(DSN)
     from check_postgres_opening_progression import test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound

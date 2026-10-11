@@ -749,8 +749,18 @@ def enqueue_priority_refresh_in_transaction(
 
     from .. import postgres_store
 
-    now = datetime.now(timezone.utc)
-    next_attempt_at = (now + timedelta(seconds=quiet_seconds)).isoformat()
+    from .refresh_requests import request_refresh, _now as refresh_clock
+    scheduled_delay = request_refresh(database, 'repertoire_priority', repertoire_id,
+                                      quiet_seconds=quiet_seconds)
+    if scheduled_delay is None:
+        current_generation = database.execute(
+            'SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=? '
+            'UNION ALL SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=? LIMIT 1',
+            (repertoire_id, repertoire_id),
+        ).fetchone()
+        return int(current_generation[0])
+    now = refresh_clock()
+    next_attempt_at = (now + timedelta(seconds=scheduled_delay)).isoformat()
     database.execute(
         """INSERT INTO repertoire_priority_jobs(
                repertoire_id,generation,status,attempts,next_attempt_at,last_error,updated_at
@@ -771,7 +781,7 @@ def enqueue_priority_refresh_in_transaction(
         enqueue_compact_postgres_task_in_transaction(
             database, "repertoire_priority", repertoire_id,
             {"repertoire_id": repertoire_id, "generation": generation},
-            priority=131, delay_seconds=quiet_seconds,
+            priority=131, delay_seconds=scheduled_delay,
         )
         enqueue_compact_postgres_task_in_transaction(
             database, "priority_retention", repertoire_id,
@@ -825,6 +835,9 @@ def claim_priority_refresh() -> dict | None:
             (_now(), job["repertoire_id"], job["generation"]),
         ).rowcount
         claimed_job = dict(job) if changed else None
+        if changed:
+            database.execute("UPDATE analysis_refresh_requests SET pending_since=NULL "
+                             "WHERE kind='repertoire_priority' AND repertoire_id=?", (job['repertoire_id'],))
     if claimed_job:
         logging.getLogger("tempo.background").info(
             "priority refresh claimed repertoire_id=%s generation=%s attempts=%s",
@@ -889,6 +902,16 @@ def execute_priority_refresh(job: dict) -> None:
                        WHERE repertoire_id=? AND generation=?""",
                     (_now(), repertoire_id, generation),
                 )
+                database.execute(
+                    'INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) '
+                    'VALUES(?,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET '
+                    'generation=excluded.generation,updated_at=excluded.updated_at',
+                    (repertoire_id, generation, _now()),
+                )
+                from .refresh_requests import record_publication
+                record_publication(database, 'repertoire_priority', repertoire_id)
+                from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+                enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
             logging.getLogger("tempo.background").info(
                 "priority refresh commit repertoire_id=%s generation=%d duration=%.3fs",
                 repertoire_id,
@@ -1011,6 +1034,10 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
             {"repertoire_id": repertoire_id},
             priority=200,
         )
+        from .refresh_requests import record_publication
+        record_publication(database, 'repertoire_priority', repertoire_id)
+        from .repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+        enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     return True
 
 
