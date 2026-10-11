@@ -3,7 +3,7 @@ import { routeMovetext, type PrefixSource } from "../domain/prefix-comparison";
 import { transitionRequest, transitionSummary, type PrefixTransitionPlan, type PrefixTransitionRequest, type PrefixTransitionSummary } from "../domain/prefix-transition";
 import { planPrefixTransition, PrefixPreviewError } from "../lib/prefix-comparison";
 import { reservePrefixTransition, clearResolvedPrefixTransition, readPrefixTransition, recoverPrefixTransition,
-  restorePrefixTransitionJournal, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
+  prefixTransitionRecoveryIssue, knownPrefixTransitions, restorePrefixTransitionJournal, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
 import { Button } from "./buttons/BaseButton";
 
 function TransitionConsequences({ summary, request }: { summary: PrefixTransitionSummary; request: PrefixTransitionRequest }) {
@@ -62,7 +62,11 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
       setOperation(resolved);
       if (resolved?.state === "published") await publishedCallback.current(resolved, currentController.signal);
     } catch (cause) {
-      if (!currentController.signal.aborted) setFailure({ code: "service_error", message: cause instanceof Error ? cause.message : "Recovery unavailable. Check status again." });
+      if (!currentController.signal.aborted) {
+        const retained = knownPrefixTransitions().find(known => known.repertoireId === repertoireId);
+        if (retained) setOperation(retained);
+        setFailure({ code: "service_error", message: cause instanceof Error ? cause.message : "Recovery unavailable. Check status again." });
+      }
     } finally {
       if (controller.current === currentController) { submitting.current = false; if (!currentController.signal.aborted) setBusy(false); }
     }
@@ -124,6 +128,7 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
     {failure && <p role="alert"><strong>{["stale_plan", "stale_snapshot"].includes(failure.code) ? "Stale transition" : "Transition unavailable"}</strong>: {failure.message}</p>}
     {operation && <div role={operation.state === "published" || operation.state === "pending" ? "status" : "alert"}>
       <p>{operation.message ?? "Waiting for authoritative confirmation."}</p>
+      {prefixTransitionRecoveryIssue(repertoireId) && <p role="alert">{prefixTransitionRecoveryIssue(repertoireId)!.message}</p>}
       {operation.journalMissing && <>
         <p role="alert">The browser recovery record is missing. This session retains the original identity; recovery after a page reload is not guaranteed.</p>
         <Button disabled={busy} onClick={() => void (async () => {
@@ -149,7 +154,9 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
       </>}
       {operation.state === "published" && <Button disabled={busy} onClick={() => void recover()}>Refresh published comparison</Button>}
       {["failed", "stale"].includes(operation.state) && <Button disabled={busy} onClick={() => {
-        clearResolvedPrefixTransition(repertoireId, operation.operationId); onBack(true);
+        void clearResolvedPrefixTransition(repertoireId, operation.operationId).then(() => onBack(true)).catch(cause => {
+          setFailure({ code: "storage_error", message: (cause as Error).message });
+        });
       }}>Review a fresh comparison</Button>}
     </div>}
     {summary && request && <TransitionConsequences summary={summary} request={request} />}

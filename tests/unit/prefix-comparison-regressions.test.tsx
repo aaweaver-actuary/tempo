@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import fixture from "../fixtures/prefix-comparison/structural.json";
 import transitionFixture from "../fixtures/prefix-comparison/transition.json";
@@ -595,3 +596,5 @@ it("issue78_longer_requested_depth_can_have_no_structural_change", async () => {
   await screen.findByText("No structural change; requested depth differs from saved depth.");
   expect(screen.getByText((_text, element) => element?.tagName === "LI" && element.textContent === "b: saved 3, requested 4; effective 3 → 3")).toBeTruthy();
 });
+
+beforeEach(() => { installPrefixTransitionTestLocks(); });

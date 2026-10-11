@@ -1,3 +1,4 @@
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import fixture from "../fixtures/prefix-comparison/transition.json";
 import structural from "../fixtures/prefix-comparison/structural.json";
@@ -21,7 +22,7 @@ const recover = (controller = new AbortController(), retryBlocked = false) => re
 
 it.each(["missing", "identity", "plan", "repertoire", "generation", "queue"] as const)(
   "issue81_unverifiable_published_journal_recovers_authoritative_operation_%s", async mismatch => {
-    const original = begin();
+    const original = await begin();
     const result = { ...fixture.result, operation_id: original.operationId };
     if (mismatch === "identity") result.operation_id = "different-operation";
     if (mismatch === "plan") result.plan_id = "different-plan";
@@ -41,23 +42,23 @@ it.each(["missing", "identity", "plan", "repertoire", "generation", "queue"] as 
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
-it("issue81_double_click_creates_one_operation", () => {
-  const original = begin();
-  expect(begin().operationId).toBe(original.operationId);
-  expect(() => beginPrefixTransition("rep", { ...request, plan_id: "different" }, summary)).toThrow(/Resolve the saved/);
+it("issue81_double_click_creates_one_operation", async () => {
+  const original = await begin();
+  expect((await begin()).operationId).toBe(original.operationId);
+  await expect(beginPrefixTransition("rep", { ...request, plan_id: "different" }, summary)).rejects.toThrow(/Resolve the saved/);
   expect(readPrefixTransition("rep")?.request).toEqual(request);
 });
-it("issue81_overlapping_repertoire_transition_remains_locked", () => {
-  beginPrefixTransition("rep", request, { ...summary, affectedRepertoireIds: ["rep", "shared"] });
-  expect(() => beginPrefixTransition("shared", request, summary)).toThrow(/Resolve the prefix transition affecting/);
+it("issue81_overlapping_repertoire_transition_remains_locked", async () => {
+  await beginPrefixTransition("rep", request, { ...summary, affectedRepertoireIds: ["rep", "shared"] });
+  await expect(beginPrefixTransition("shared", request, summary)).rejects.toThrow(/Resolve the prefix transition affecting/);
   expect(readPrefixTransition("shared")).toBeNull();
-  expect(() => beginPrefixTransition("other", request, { ...summary, affectedRepertoireIds: ["other", "shared"] }))
-    .toThrow(/Resolve the prefix transition affecting/);
+  await expect(beginPrefixTransition("other", request, { ...summary, affectedRepertoireIds: ["other", "shared"] }))
+    .rejects.toThrow(/Resolve the prefix transition affecting/);
   expect(readPrefixTransition("other")).toBeNull();
 });
 
 it("issue81_lost_response_reload_recovers_original_operation", async () => {
-  const original = begin(); let admitted = false;
+  const original = await begin(); let admitted = false;
   const fetcher = vi.fn(async (_url, options?: RequestInit) => {
     if (options?.method === "POST") { admitted = true; throw new TypeError("Lost response"); }
     return admitted ? complete(original.operationId) : Response.json({ operation_id: original.operationId, state: "unknown" });
@@ -72,7 +73,7 @@ it("issue81_lost_response_reload_recovers_original_operation", async () => {
 });
 
 it("issue81_confirm_waits_for_published_completion", async () => {
-  vi.useFakeTimers(); const original = begin(); let published = false; let admitted = false;
+  vi.useFakeTimers(); const original = await begin(); let published = false; let admitted = false;
   vi.stubGlobal("fetch", vi.fn(async (_url, options?: RequestInit) => {
     if (options?.method === "POST") { admitted = true; return Response.json(fixture.result); }
     return published ? complete(original.operationId) : Response.json({ operation_id: original.operationId, state: admitted ? "pending" : "unknown" });
@@ -85,7 +86,7 @@ it("issue81_confirm_waits_for_published_completion", async () => {
 });
 
 it("issue81_pending_survives_remount", async () => {
-  const original = begin(); const controller = new AbortController();
+  const original = await begin(); const controller = new AbortController();
   const fetcher = vi.fn(async () => Response.json({ operation_id: original.operationId, state: "pending" }));
   vi.stubGlobal("fetch", fetcher);
   const resolving = recover(controller);
@@ -96,16 +97,16 @@ it("issue81_pending_survives_remount", async () => {
 });
 
 it("issue81_offline_status_failure_retains_identity_without_blind_replay", async () => {
-  const original = begin(); const fetcher = vi.fn().mockRejectedValue(new TypeError("Offline")); vi.stubGlobal("fetch", fetcher);
+  const original = await begin(); const fetcher = vi.fn().mockRejectedValue(new TypeError("Offline")); vi.stubGlobal("fetch", fetcher);
   expect((await recover())?.state).toBe("transport_unknown");
   expect(fetcher).toHaveBeenCalledOnce();
   expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
-  clearResolvedPrefixTransition("rep", original.operationId);
+  await clearResolvedPrefixTransition("rep", original.operationId);
   expect(readPrefixTransition("rep")).not.toBeNull();
 });
 
 it("issue81_unknown_admission_replays_once_with_original_payload", async () => {
-  const original = begin(); const fetcher = vi.fn(async () => Response.json({ operation_id: original.operationId, state: "unknown" }));
+  const original = await begin(); const fetcher = vi.fn(async () => Response.json({ operation_id: original.operationId, state: "unknown" }));
   vi.stubGlobal("fetch", fetcher);
   expect((await recover())?.state).toBe("transport_unknown");
   expect(fetcher).toHaveBeenCalledTimes(3); // status, original delivery, status; no retry storm
@@ -113,7 +114,7 @@ it("issue81_unknown_admission_replays_once_with_original_payload", async () => {
 });
 
 it("issue81_operation_status_polling_yields_to_foreground", async () => {
-  vi.useFakeTimers(); const original = begin(); let reads = 0;
+  vi.useFakeTimers(); const original = await begin(); let reads = 0;
   const fetcher = vi.fn(async (_url, options?: RequestInit) => {
     expect(new Headers(options?.headers).get("X-Tempo-Work-Class")).toBe("background");
     return ++reads === 1 ? Response.json({ detail: "Waiting for foreground activity" }, { status: 503, headers: { "Retry-After": "1" } }) : complete(original.operationId);
@@ -124,13 +125,13 @@ it("issue81_operation_status_polling_yields_to_foreground", async () => {
 });
 
 it.each(["plan_id", "operation_id", "repertoire_id", "graph_generation", "queue_date"])("issue81_mismatched_complete_%s_retains_recovery_identity", async field => {
-  const original = begin(); vi.stubGlobal("fetch", vi.fn(async () => complete(original.operationId, { [field]: field === "graph_generation" ? 1 : "wrong" })));
+  const original = await begin(); vi.stubGlobal("fetch", vi.fn(async () => complete(original.operationId, { [field]: field === "graph_generation" ? 1 : "wrong" })));
   expect((await recover())?.state).toBe("transport_unknown");
   expect(readPrefixTransition("rep")?.result).toBeUndefined();
   expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
 });
 it.each(["invalid JSON", "unsupported state", "invalid completion"])("issue81_malformed_%s_retains_recovery_identity", async kind => {
-  const original = begin();
+  const original = await begin();
   vi.stubGlobal("fetch", vi.fn(async () => kind === "invalid JSON" ? new Response("Unreadable receipt")
     : Response.json({ operation_id: original.operationId, state: kind === "unsupported state" ? "new-state" : "complete", response: {} })));
   expect((await recover())?.state).toBe("transport_unknown");
@@ -140,15 +141,15 @@ it.each(["invalid JSON", "unsupported state", "invalid completion"])("issue81_ma
 });
 
 it("issue81_terminal_failure_offers_actionable_recovery", async () => {
-  const original = begin(); vi.stubGlobal("fetch", vi.fn(async () => Response.json({ operation_id: original.operationId, state: "failed",
+  const original = await begin(); vi.stubGlobal("fetch", vi.fn(async () => Response.json({ operation_id: original.operationId, state: "failed",
     error: { message: "Rejected", detail: { code: "stale_plan", message: "Review a fresh plan." } } })));
   expect((await recover())?.state).toBe("stale");
   expect(readPrefixTransition("rep")?.message).toBe("Review a fresh plan.");
-  clearResolvedPrefixTransition("rep", original.operationId); expect(readPrefixTransition("rep")).toBeNull();
+  await clearResolvedPrefixTransition("rep", original.operationId); expect(readPrefixTransition("rep")).toBeNull();
 });
 
 it("issue81_blocked_publication_retries_the_existing_operation", async () => {
-  const original = begin(); localStorage.setItem(key, JSON.stringify({ ...original, state: "blocked", transitionPhase: "recovery_required" }));
+  const original = await begin(); localStorage.setItem(key, JSON.stringify({ ...original, state: "blocked", transitionPhase: "recovery_required" }));
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(complete(original.operationId)); vi.stubGlobal("fetch", fetcher);
   expect((await recover(new AbortController(), true))?.state).toBe("published");
   expect(fetcher.mock.calls[0][0]).toContain(`/operations/${original.operationId}`);
@@ -157,22 +158,22 @@ it("issue81_blocked_publication_retries_the_existing_operation", async () => {
   expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/apply"))).toBe(false);
 });
 it("issue81_blocked_nested_error_code_survives_recovery", async () => {
-  const original = begin();
+  const original = await begin();
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ operation_id: original.operationId, state: "blocked",
     last_error: { detail: { code: "publication_unavailable", message: "Restore the queue publisher and retry this operation." } } })));
   expect((await recover())?.failureCode).toBe("publication_unavailable");
   expect(readPrefixTransition("rep")?.message).toContain("Restore the queue publisher");
 });
 
-it("issue81_storage_quota_failure_prevents_delivery", () => {
+it("issue81_storage_quota_failure_prevents_delivery", async () => {
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Quota", "QuotaExceededError"); });
-  expect(begin).toThrow(/Quota/); expect(localStorage.getItem(key)).toBeNull();
+  await expect(begin()).rejects.toThrow(/Quota/); expect(localStorage.getItem(key)).toBeNull();
 });
-it("issue81_unreadable_storage_prevents_new_identity", () => {
-  localStorage.setItem(key, "broken"); expect(begin).toThrow(/unreadable/); expect(localStorage.getItem(key)).toBe("broken");
+it("issue81_unreadable_storage_prevents_new_identity", async () => {
+  localStorage.setItem(key, "broken"); await expect(begin()).rejects.toThrow(/unreadable/); expect(localStorage.getItem(key)).toBe("broken");
 });
 it("issue81_late_completion_cannot_erase_newer_operation", async () => {
-  const original = begin(); let resolve!: (response: Response) => void;
+  const original = await begin(); let resolve!: (response: Response) => void;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(accept => { resolve = accept; })));
   const resolving = recover();
   localStorage.setItem(key, JSON.stringify({ ...original, operationId: "newer" }));
@@ -181,7 +182,7 @@ it("issue81_late_completion_cannot_erase_newer_operation", async () => {
   expect(JSON.parse(localStorage.getItem(key)!).operationId).toBe("newer");
 });
 it("issue81_changed_payload_cannot_be_overwritten_or_delivered", async () => {
-  const original = begin(); let resolve!: (response: Response) => void;
+  const original = await begin(); let resolve!: (response: Response) => void;
   const fetcher = vi.fn(() => new Promise<Response>(accept => { resolve = accept; })); vi.stubGlobal("fetch", fetcher);
   const resolving = recover();
   localStorage.setItem(key, JSON.stringify({ ...original, request: { ...original.request, plan_id: "changed" } }));
@@ -190,3 +191,5 @@ it("issue81_changed_payload_cannot_be_overwritten_or_delivered", async () => {
   expect(fetcher).toHaveBeenCalledOnce(); expect(() => readPrefixTransition("rep")).toThrow(/unreadable/);
   expect(JSON.parse(localStorage.getItem(key)!).request.plan_id).toBe("changed");
 });
+
+beforeEach(() => { installPrefixTransitionTestLocks(); });

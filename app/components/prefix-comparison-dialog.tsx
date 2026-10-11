@@ -171,7 +171,7 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose, 
     setDepthText(String(chosenDepth)); setResults(comparison ? [{ depth: chosenDepth, comparison }] : []);
     setError(selectionAvailable ? null : { code: "invalid_selection", message: "The transition is published, but the original selected source IDs are no longer available. Select an exact scope again." });
     setCheckedAt(new Date().toLocaleTimeString()); setLoading(false);
-    clearResolvedPrefixTransition(repertoireId, operation.operationId);
+    await clearResolvedPrefixTransition(repertoireId, operation.operationId, signal);
     transitionActive.current = false; setTransitionOpened(false); setTransitionDepth(null);
   }
 
