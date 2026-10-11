@@ -59,8 +59,8 @@ def save_prefix(database, payload: dict) -> dict:
     )
     if moves != current["moves"]:
         enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
-    enqueue_task_in_transaction(database, "repertoire_opportunity", repertoire_id,
-                                {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""}, priority=130)
+    from .services.repertoire_opportunities import enqueue_opportunity_refresh_in_transaction
+    enqueue_opportunity_refresh_in_transaction(database, repertoire_id)
     if not postgres_store.configured():
         database.execute("UPDATE repertoire_coverage_runs SET status='failed',last_error='Opening scope changed; refresh coverage' WHERE repertoire_id=? AND status IN ('queued','running')", (repertoire_id,))
     if postgres_store.configured():
