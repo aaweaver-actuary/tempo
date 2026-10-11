@@ -33,7 +33,7 @@ export function runStudyTask<T>(
 ): Promise<T> {
   const id = ++nextId;
   const activityId = `study:${id}`;
-  const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind}`;
+  const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind === "repertoireAlternatives" ? "repertoire lines" : task.kind}`;
   updateBrowserActivity(activityId, title, "queued", "Waiting for study worker");
   if (signal?.aborted) {
     updateBrowserActivity(activityId, title, "complete", "Cancelled");

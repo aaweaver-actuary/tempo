@@ -135,7 +135,15 @@ Local environment: isolated worktree, Node v26.10.0 / Vitest 5.0.1 on Darwin ARM
 lockfile dependencies installed once with `npm ci`. An initial test process exited
 11 while dependency installation was incomplete; it was not treated as evidence.
 Test fixture corrections and controlled failing runs are retained diagnostically.
-Recovery and held-drag browser results, exact tested revisions, cleanup and CI
-current-candidate qualification will be added after execution. CI owns the complete
+`make ui-file FILE=recovery.spec.ts` passed all 25 Chromium cases on its disposable
+PostgreSQL stack (301.36 s command; browser 128.84 s; image build 100.01 s;
+startup 41.55 s; owned cleanup 19.52 s). These are nested stage observations,
+not additional suite wall time. The runner captured revision `71becf14`; subsequent
+commits at this point only added terminal unit fixtures and evidence/registry prose.
+The new real-worker alternative/retry/edit case passed (9.3 s) with rendered-piece
+and persisted-failure assertions. The next source change only makes the new task's
+activity label readable as “Preparing repertoire lines”; that is outside measured
+pure computation and does not change membership or grading.
+Held-drag results, cleanup verification and complete CI qualification remain pending. CI owns the complete
 gate; no local `make full`, unrelated Python/FSRS change, live data reset, merge or
 deployment belongs to this task.
