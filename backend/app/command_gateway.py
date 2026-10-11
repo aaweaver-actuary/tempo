@@ -354,6 +354,7 @@ def _execute_command(
 def read_operation(
     operation_id: str, *, command_name: str | None = None, request_hash: str | None = None,
     background: bool = False,
+    position_claim_request_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if background:
         from .database import background_read_connection
@@ -381,6 +382,16 @@ def read_operation(
         request_hash is not None and receipt[1] != request_hash
     ):
         raise CommandConflict("Operation ID was already used for another request")
+    if (position_claim_request_payload is not None and receipt[0] == "games.analysis.position.claim"
+            and receipt[9] is not None):
+        saved_payload = json.loads(receipt[9])
+        # Historical plans did not retain the hint; preserve their recovery.
+        # New plans bind the caller's request using the original canonical hash,
+        # without preparing another position or changing the saved generation.
+        if "claim_request" in saved_payload:
+            replay_payload = {**saved_payload, "claim_request": position_claim_request_payload}
+            if request_digest(receipt[0], replay_payload) != receipt[1]:
+                raise CommandConflict("Operation ID was already used for another request")
     state, response_json, error_json = receipt[2], receipt[3], receipt[4]
     response: dict[str, Any] = {"operation_id": operation_id, "state": state}
     if transition_progress is not None:

@@ -15,6 +15,7 @@ class Cursor:
     def __init__(self, row=None, rows=()):
         self.row = row
         self.rows = rows
+        self.rowcount = 1
 
     def fetchone(self):
         return self.row
@@ -29,6 +30,8 @@ def test_postgres_threat_claim_reclaims_one_lease_and_returns_claimed_request(mo
     class Database:
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
+            if statement.startswith("SELECT automated_streak"):
+                return Cursor((0,))
             if statement.startswith("SELECT defensive_analysis_enabled"):
                 return Cursor((1,))
             if statement.startswith("SELECT request.id"):
@@ -51,6 +54,8 @@ def test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue():
         def execute_native(self, statement, parameters=()):
             nonlocal request_queries
             statements.append(statement)
+            if statement.startswith("SELECT automated_streak"):
+                return Cursor((0,))
             if statement.startswith("SELECT defensive_analysis_enabled"):
                 return Cursor((1,))
             if statement.startswith("SELECT request.id"):
@@ -62,9 +67,10 @@ def test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue():
     result = threat_analysis_commands.claim_threat_analysis(Database(), {})
     assert result["job"]["id"] == "ordinary-request"
     assert "WHERE role='attempt'" in statements[2]
-    assert "SELECT 1 FROM background_activity" in statements[3]
-    assert "ORDER BY request.created_at,request.id" in statements[4]
-    assert "LIMIT 1 OFFSET 0" in statements[4]
+    assert "FOR UPDATE SKIP LOCKED" in statements[3]
+    assert "SELECT 1 FROM background_activity" in statements[4]
+    assert "ORDER BY request.created_at,request.id" in statements[5]
+    assert "LIMIT 1 OFFSET 0" in statements[5]
 
 
 def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically(monkeypatch):
@@ -173,6 +179,8 @@ def test_postgres_paused_claim_uses_active_recommendation_driver_without_claimin
     class Database:
         def execute_native(self, statement, parameters=()):
             statements.append(statement)
+            if statement.startswith('SELECT automated_streak'):
+                return Cursor((0,))
             if statement.startswith('SELECT defensive_analysis_enabled'):
                 return Cursor((0,))
             return Cursor()
