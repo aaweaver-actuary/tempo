@@ -119,7 +119,14 @@ async function openShortening(page: Page, repertoireName: string, source: typeof
   await card.locator("details.card-menu summary").click();
   await card.getByRole("menuitem", { name: "Compare prefix depths", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: /Compare prefix depths/ });
-  await expect(dialog.getByText("Selected source lines: 0", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    if (await dialog.getByText("Selected source lines: 0", { exact: true }).isVisible()) return true;
+    if (await dialog.getByRole("alert").count()) {
+      await expect(dialog.getByRole("alert")).toContainText("Study work is active");
+      await dialog.getByRole("button", { name: "Refresh source", exact: true }).click();
+    }
+    return false;
+  }, { timeout: 25_000, intervals: [1000], message: "Load the source or retry only documented foreground deferral" }).toBe(true);
   await dialog.getByLabel("Starting position and trained color").selectOption(JSON.stringify([source.lines[0].start_fen, "black"]));
   await dialog.getByRole("combobox", { name: "Move 1", exact: true }).selectOption("e2e4");
   await dialog.getByRole("combobox", { name: "Move 2", exact: true }).selectOption("c7c6");
@@ -209,9 +216,16 @@ for (const width of [390, 1280]) test(`issue81_confirm_waits_for_published_compl
   const status = await request.get(`${api}/operations/${deliveries[0].operationId}`); expect(status.ok()).toBe(true);
   const receipt = await status.json(); expect(receipt.state).toBe("complete"); expect(receipt.transition.state).toBe("complete");
   expect(receipt.response.plan_id).toBe(plans[0].plan_id); expect(receipt.response.operation_id).toBe(deliveries[0].operationId);
-  const latestResponse = await request.get(`${api}/repertoires/${repertoireId}/prefix-evaluation/source`);
-  expect(latestResponse.ok()).toBe(true); const latest = prefixSourceSchema.parse(await latestResponse.json());
-  for (const line of latest.lines) expect(line.saved_depth).toBe(selectedIds.includes(line.id) ? 2 : 3);
+  let latest: ReturnType<typeof prefixSourceSchema.parse>;
+  await expect.poll(async () => {
+    const response = await request.get(`${api}/repertoires/${repertoireId}/prefix-evaluation/source`);
+    if (!response.ok()) {
+      expect(response.status()).toBe(503); expect((await response.json()).detail.code).toBe("evaluation_busy");
+      expect(response.headers()["retry-after"]).toBe("1"); return false;
+    }
+    latest = prefixSourceSchema.parse(await response.json()); return true;
+  }, { timeout: 15_000, intervals: [1000], message: "Audit current source without outranking foreground work" }).toBe(true);
+  for (const line of latest!.lines) expect(line.saved_depth).toBe(selectedIds.includes(line.id) ? 2 : 3);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 });
 
