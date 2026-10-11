@@ -3874,6 +3874,28 @@ PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2
 - `test_position_claim_legacy_receipt_recovery_remains_available` preserves historical receipts with or without a saved plan. Historical plans did not save the caller's hint, so their original hinted/unhinted identity cannot be verified; this compatibility exception is limited to receipts without `claim_request` metadata. New route operations retain that metadata in their ordinary persisted payload and validate against the unchanged canonical command hash. No migration or fairness-policy change.
 - `scripts/check_postgres_engine_fairness.py::test_postgres_engine_completed_position_receipt_validates_request_identity` and `test_postgres_engine_pending_position_receipt_validates_request_identity` run in regular durability. Real route/command receipts reject all three payload changes, retain identical replay across database pool recreation, and leave receipts, leases, positions and fairness state unchanged on conflicts. Queued operations still recover from their original saved payload and replay their completed receipt without spending another turn. The existing historical replay/crash/restart/concurrency proofs remain intact.
 
+## Issue #118 policy-scoped sequence frontier
+
+All named cases below live in `backend/tests/test_opening_frontier.py` and run in
+the regular backend gate. The new contract reuses #151; #134 exposure, #149 math,
+#153 readiness and #170 propagation are retained. Merged #176 owns valuation.
+
+- `test_policy_frontier_foreign_route_cannot_establish_selected_policy_eligibility` proves a globally eligible shared card remains blocked under the selected unexposed route. Before implementation its fixture confirmed the global eligibility, then failed because the new policy API was absent; no pre-existing production defect is claimed.
+- `test_policy_frontier_preserves_durable_exposure_without_maturity` retains failed learning-state practice, queued-only exclusion, invalidation, unchanged-card re-import exposure, and changed-prefix isolation.
+- `test_policy_frontier_one_exposed_opponent_transposition_suffices_and_duplicates_collapse` covers actual shared-card opponent transpositions, multiple parents, one qualifying route and duplicate representations.
+- `test_policy_frontier_never_splices_transposed_practice_or_uses_valuation_as_exposure` keeps incomplete alternative routes blocked even with a supplied exact-one reach/readiness input; readiness never creates prerequisite practice.
+- `test_policy_frontier_incompatible_or_unresolved_actions_block_only_their_route` covers missing/divergent actions, descendant blocks and surviving compatible route context.
+- `test_policy_frontier_retains_explicit_policy_identity_and_trained_color` covers distinct policy/repertoire identities, versions and White/Black training.
+- `test_policy_frontier_italian_ruy_conditional_values_are_isolated` uses actual #170 values in both isolation directions while adding/duplicating the other repertoire.
+- `test_policy_frontier_supplied_reach_orders_deep_common_and_shallow_rare_with_existing_kernel` passes actual #170 reach to #149 ranking, preserves both eligible depths, and reverses ordering when supplied reach reverses.
+- `test_policy_frontier_preserves_real_readiness_and_unknown_prefix_decisions` retains actual #153 failure zero and unknown cumulative-prefix decision recall, with prerequisite inputs separate from eligibility.
+- `test_policy_frontier_missing_values_stay_unknown_and_supplied_bounds_survive` preserves supplied uncertainty/reasons and distinguishes absent readiness from exact zero.
+- `test_policy_frontier_rejects_mismatched_stale_and_conflicting_valuation_sources` covers snapshot, policy/version, card/decision, publication generation/scope, line, missing references and conflicting sources.
+- `test_policy_frontier_invalid_route_bindings_and_game_provenance_are_explicit` rejects foreign/stale/missing route bindings and absent durable game source IDs; wrong-color routes retain diagnostic blocks.
+- `test_policy_frontier_durable_game_obligations_remain_scoped_annotations` carries deduplicated qualified game provenance without exposing prerequisites or borrowing foreign obligations.
+- `test_policy_frontier_is_detached_read_only_and_order_independent` forbids file/network/database/clock/FSRS scheduling access, verifies immutable and detached results, and covers permutations and duplicate evidence.
+- `test_policy_frontier_empty_scope_and_unbound_cards_have_no_implicit_candidates` preserves empty/unbound scope without invented roots or eligibility.
+- `test_policy_frontier_composes_with_merged_valuation_adapter_without_fabricating_effects` carries actual frontier provenance through merged #176, consumes its real reach/readiness outputs, and leaves a missing effect unscorable despite sequence eligibility.
 
 ## PR #124 — unchanged priority/opportunity refresh progress on current main
 
