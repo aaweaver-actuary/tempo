@@ -724,3 +724,42 @@ replacement. The complete shared-board file passes two cases (3.51 s suite,
 for the planned ownership change, not a product behavior or deadline change.
 The superseded CI run is retained as diagnostic evidence and does not qualify
 the final head.
+
+
+### Reconnection and caller qualification follow-up
+
+CI `38130116428` captured head `26501a5f`, base `a5171234`, and integration
+`f097dbce`. PostgreSQL durability, backend, build, lifecycle and all 69 pinned
+visual cases passed. The frontend and phone browser failures were inspected,
+not retried as flakes: the old lifecycle fixture implicitly authorized a filtered
+conflicted head, while ordinary reconnection inherited the new queue-only flag
+and therefore did not replay saved offline reviews.
+
+Normal reconnection now uses normal saved-result synchronization after checking
+that no confirmed progression owner controls the active attempt. Foreground
+confirmation, prepared reconciliation and manual post-review recovery still
+disable both replay paths. `issue186_ordinary_reconnection_replays_saved_reviews_without_replacing_active_attempt`
+failed before the correction and passes afterward.
+`issue186_conflicted_issued_head_waits_for_fresh_authority` proves recovery until
+a fresh authoritative head is issued, with no additional review submission.
+The concurrent independent-head fixture correction (`5c7465ac`) is preserved
+alongside the additional stale-head case.
+
+Selected development evidence on this follow-up (dirty source is identified in
+the retained runner provenance rather than attributed to a clean earlier head):
+
+- Three affected unit files: 75 passed in 74.37 seconds; the two subsequent test
+  API corrections passed their focused cases in 7.49 seconds.
+- Smallest phone offline/reconnect browser case: 1 passed in 6.0 seconds; browser
+  stage 7.04 seconds, image build 21.42, startup 18.01, cleanup 14.79.
+- `make ui-file FILE=phone-offline-training.spec.ts`: 15 passed in 52.8 seconds;
+  browser stage 54.01 seconds, build 38.87, startup 47.30, cleanup 11.09.
+- Frontend typecheck passed after correcting the loader options argument and
+  unsupported Testing Library role options. Lint passed with 10 existing warnings.
+- Conflict, migration inventory (46), and whitespace guards passed.
+
+The initial local browser attempt stopped at capability preflight on a Docker
+access timeout; it ran no tests. Docker availability was then verified before
+the successful disposable runs. CI owns fresh complete candidate qualification;
+these development passes and the superseded CI passes do not qualify the new
+head for merging.
