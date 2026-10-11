@@ -24,10 +24,13 @@
 - `test_valuation_exports_complete_precomputed_bundles_for_independent_harness`
 - `test_valuation_rejects_ambiguous_dates_and_boolean_versions`
 - `test_valuation_black_policy_retains_white_opponent_uncertainty`
+- `test_valuation_matching_bound_decision_survives_divergent_prefix_actions`
 
 The Italian/Ruy case runs both directions and added/removed/duplicated foreign catalogs. The hand calculation uses .42 × .50 × .25 opponent reach, real #153 conservative failure evidence, and explicit projected readiness; multi-decision value .168 versus single-decision .189. Shared route representations and duplicate bindings do not inflate unique decisions. Unknown/bounded evidence receives no numeric fallback; partial and empty effects remain unscorable. Snapshot digest and cross-process hash-seed replay retain scores and diagnostics. The pure adapter cannot open storage or mutate scheduling/admissions.
 
 This is a new integration capability; no pre-existing adapter was available for an original-main failing baseline. During implementation `test_valuation_cumulative_prefix_card_readiness_not_copied_to_decisions` failed because the completeness flag ignored unknown decision recall, then passed after completeness included the kernel's incomplete result. No tests are skipped or removed. Related broader #112/#113/#156 requirements remain open.
+
+Review regression `test_valuation_matching_bound_decision_survives_divergent_prefix_actions` failed on `9ad96da2` (one case, 0.80 s): valid Nf3 decision-level failure evidence was rejected because its cumulative presentation later used Bb5. Policy-action validation now targets the bound occurrence; real #153 evidence for that occurrence survives, while binding the divergent Bb5 action still fails. Foreign policy/version/presentation/observation/game/effect checks remain required before scoring.
 
 Explicit policy-conditioned reach — #169 / related #156 (October 10, 2026):
 

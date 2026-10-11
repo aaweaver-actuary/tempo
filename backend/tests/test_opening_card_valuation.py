@@ -430,3 +430,34 @@ def test_valuation_black_policy_retains_white_opponent_uncertainty():
         (candidate,), AS_OF, AS_OF.date())
     result = valuation.evaluate_opening_card_valuation(snapshot)
     assert rows(result)["black-card"]["score"] == pytest.approx(.1 * .8 + .1 * .1 * .8)
+
+
+def test_valuation_matching_bound_decision_survives_divergent_prefix_actions():
+    current = fixture()
+    # The observed Nf3 decision agrees with Italian. A later Bb5 presentation
+    # occurrence is unrelated to that binding and must not discard its failure.
+    prefix = ReadinessSnapshot(PresentationIdentity("divergent-prefix", 1, "italian", "white"),
+                               chess.STARTING_FEN, RUY)
+    occurrences = presentation_occurrences("italian", {"id": "divergent-prefix", "revision": 1,
+        "trained_color": "white", "start_fen": prefix.start_fen, "moves_json": json.dumps(prefix.moves)})
+    target = occurrences[1]
+    observation = DecisionObservationEvidence("target-failure", prefix.presentation, 1,
+        target["decision_id"], target["expected_uci"], AS_OF, AS_OF, "f1c4")
+    prefix = replace(prefix, observations=(observation,))
+    expected = decision_readiness(prefix, AS_OF, decision_index=1)
+    assert expected.readiness_score == 0 and expected.basis == "conservative_failure"
+    binding = valuation.DecisionReadinessBinding("italian", 1, target["decision_id"], prefix, 1)
+    entry = current.candidates[1]
+    candidate = replace(entry, candidate=replace(entry.candidate, production_rank=1),
+        affected_decision_ids=(target["decision_id"],),
+        effect=replace(entry.effect, projected_readiness=((target["decision_id"], P.exact(.8)),)))
+    current = replace(current, readiness=(binding,), candidates=(candidate,))
+    result = valuation.evaluate_opening_card_valuation(current)
+    assert rows(result)["single"]["score"] == pytest.approx(.42 * .8)
+    estimate = rows(result)["single"]["metadata"]["valuation"]["readiness"][target["decision_id"]]["estimate"]
+    assert estimate["decision_id"] == expected.decision_id
+    assert estimate["readiness_score"] == expected.readiness_score
+    # Binding the actual foreign action still fails before any scoring.
+    foreign = replace(binding, decision_index=2, decision_id=occurrences[2]["decision_id"])
+    with pytest.raises(ValueError, match="contradicts selected policy"):
+        valuation.evaluate_opening_card_valuation(replace(current, readiness=(foreign,)))

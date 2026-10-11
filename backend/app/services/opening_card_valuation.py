@@ -170,11 +170,10 @@ def _validate_inputs(snapshot):
             if decision_identity(event.repertoire_id, event.fen_key, event.trained_color,
                                  event.expected_uci) not in presentation_decisions:
                 raise ValueError("Foreign readiness game decision")
-        for occurrence in occurrences:
-            position = opening_position_key(occurrence["decision_fen"])
-            if position in actions and actions[position] != occurrence["expected_uci"]:
-                raise ValueError("Readiness contradicts selected policy action")
         occurrence = occurrences[binding.decision_index]
+        position = opening_position_key(occurrence["decision_fen"])
+        if position in actions and actions[position] != occurrence["expected_uci"]:
+            raise ValueError("Readiness contradicts selected policy action")
         expected_identity = decision_identity(policy.repertoire_id, occurrence["decision_fen"],
             policy.trained_color, occurrence["expected_uci"], policy.policy_version)
         if binding.decision_id != expected_identity:

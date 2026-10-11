@@ -45,11 +45,16 @@ probability events. The adapter validates all supplied identities before scoring
 
 #153's presentation decision identity currently uses the existing decision identity
 version, whereas #170 uses the selected policy version. The adapter validates the
-presentation geometry and selected action using `presentation_occurrences` and
+presentation geometry and the bound occurrence's selected action using `presentation_occurrences` and
 `decision_identity`, then binds the existing readiness estimate to the versioned
 reach decision. Both IDs remain in provenance. It does not relabel or manufacture
 decision-specific observation evidence. A different action at the same position
 is a different decision and cannot donate readiness.
+
+Unrelated occurrences in a cumulative presentation may follow a different action
+without invalidating evidence for the bound matching decision. Only that occurrence
+is joined to reach. Binding the divergent action itself is rejected, while #153
+continues to keep whole-card recall separate from independent decision evidence.
 
 ## Computation and uncertainty
 
