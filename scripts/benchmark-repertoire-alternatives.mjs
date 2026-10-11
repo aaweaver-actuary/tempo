@@ -32,27 +32,28 @@ function memory() {
   return { ...process.memoryUsage(), maxRssBytes: process.resourceUsage().maxRSS * 1024 };
 }
 function fixture(recordCount, distribution) {
-  let randomState = fixtureSeed;
-  const randomIndex = count => {
-    randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0;
-    return randomState % count;
-  };
   const duplicateRoute = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6"];
+  const distinctRoute = ["a1b1", "h8h7", "b1c1", "h7g7", "c1d1", "g7f7", "d1e1", "f7e7", "e1f1"];
   const lines = [];
   let remainingRecords = recordCount;
   while (remainingRecords) {
-    const board = new Chess();
-    const maximumMoves = Math.min(distribution === "high-distinctness" ? 99 : duplicateRoute.length, remainingRecords - 1);
-    const moves = [];
-    for (let ply = 0; ply < maximumMoves; ply++) {
-      const legalMoves = board.moves({ verbose: true });
-      if (!legalMoves.length) break;
-      const move = distribution === "high-distinctness" ? legalMoves[randomIndex(legalMoves.length)] : duplicateRoute[ply];
-      const played = board.move(move);
-      moves.push(`${played.from}${played.to}${played.promotion ?? ""}`);
+    const highDistinctness = distribution === "high-distinctness";
+    let startingFen = new Chess().fen();
+    if (highDistinctness) {
+      // An injective seeded layout: one white pawn per file on ranks 2–5.
+      // Both kings' fixed route is legal in every layout. 90% of records are
+      // distinct continuation keys, without expensive random-game generation.
+      const board = new Chess("7k/8/8/8/8/8/8/K7 w - - 0 1");
+      let layout = (Math.imul(lines.length, 40503) + fixtureSeed) & 65535;
+      for (let file = 0; file < 8; file++) {
+        board.put({ type: "p", color: "w" }, `${String.fromCharCode(97 + file)}${2 + (layout & 3)}`);
+        layout >>>= 2;
+      }
+      startingFen = board.fen();
     }
+    const moves = (highDistinctness ? distinctRoute : duplicateRoute).slice(0, remainingRecords - 1);
     lines.push({ id: `line-${lines.length}`, repertoireId: "benchmark-repertoire", repertoireName: "Benchmark",
-      title: "Benchmark", side: "white", startingFen: new Chess().fen(), moves });
+      title: "Benchmark", side: "white", startingFen, moves });
     remainingRecords -= moves.length + 1;
   }
   return lines;
@@ -70,9 +71,11 @@ if (process.argv[2] === "--child") {
   const { computeStudyTask, buildRepertoireAlternativeSnapshot, lookupRepertoireAlternative, canonicalFenKey } =
     await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString("base64")}`);
   const lines = fixture(recordCount, distribution);
+  process.stderr.write("  source preparation\n");
   const preparation = measure(() => computeStudyTask({ kind: "index", lines }));
   const positions = computeStudyTask({ kind: "index", lines });
   if (positions.length !== recordCount) throw new Error(`Expected ${recordCount} records; prepared ${positions.length}`);
+  process.stderr.write("  construction, cloning, lookup and memory\n");
   const construction = measure(() => buildRepertoireAlternativeSnapshot(1, positions));
   const beforeIndex = memory();
   const snapshot = buildRepertoireAlternativeSnapshot(1, positions);
@@ -113,14 +116,15 @@ if (process.argv[2] === "--child") {
     dirtyTree: git("status", "--porcelain").length > 0,
     sourceSha256: createHash("sha256").update(relevantSources.map(path => `${path}\n${readFileSync(path, "utf8")}`).join("\n")).digest("hex"),
     runtime: { node: process.version, platform: process.platform, architecture: process.arch },
-    fixtureSeed, samplesPerOperation,
+    fixtureSeed, samplesPerOperation, fixtures: { highDistinctness: "seeded unique eight-pawn layouts, fixed nine-ply legal king route",
+      duplicateHeavy: "repeated eight-ply Spanish route, truncated last route for exact count" },
     method: "Fresh process per exact size/distribution; actual production source preparation and builder; 1 warmup/3 samples. 48 identical paired hit/miss queries per lookup batch. Forced GC retained heap; byte units. No worker scheduling/transfer, UI or persistence. Fixture generation/bundling excluded. Timing and memory descriptive, no pass/fail thresholds.",
     workloads: [] };
   for (const distribution of ["high-distinctness", "duplicate-heavy"]) {
     for (const recordCount of [1000, 10000, 100000]) {
       process.stderr.write(`Measuring ${distribution}, ${recordCount} records\n`);
       const child = spawnSync(process.execPath, ["--expose-gc", import.meta.filename, "--child", String(recordCount), distribution],
-        { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 20 * 60 * 1000 });
+        { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], maxBuffer: 1024 * 1024, timeout: 20 * 60 * 1000 });
       if (child.status !== 0) throw new Error(child.stderr || `Benchmark exited ${child.status}`);
       report.workloads.push(JSON.parse(child.stdout));
     }
