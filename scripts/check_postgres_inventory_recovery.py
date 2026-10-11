@@ -737,6 +737,13 @@ def test_pr117_deleted_inventory_routes_collect_with_foreground_contention_resta
                                                 (generation_id, first+'-private')).fetchone()[0]
         shared_route = database.execute_native('SELECT route_id FROM inventory_generation_routes WHERE generation_id=%s AND line_id=%s',
                                                (generation_id, first+'-shared')).fetchone()[0]
+        unrelated_shared_memberships = [dict(row) for row in database.execute_native(
+            'SELECT membership.* FROM inventory_generation_routes membership JOIN inventory_generations generation '
+            'ON generation.id=membership.generation_id WHERE membership.route_id=%s '
+            'AND generation.repertoire_id NOT IN (%s,%s) ORDER BY membership.generation_id,membership.line_id',
+            (shared_route, first, survivor)).fetchall()]
+        shared_occurrences = [dict(row) for row in database.execute_native(
+            'SELECT * FROM inventory_occurrences WHERE route_id=%s ORDER BY ply', (shared_route,)).fetchall()]
         private_occurrences = [dict(row) for row in database.execute_native('SELECT * FROM inventory_occurrences WHERE route_id=%s ORDER BY ply',
                                                                            (private_route,)).fetchall()]
         survivor_before = inventory.published_positions(database, survivor)
@@ -827,10 +834,18 @@ with _owned_inventory_admission():
     else:
         raise AssertionError('Orphan collector failed to complete bounded cleanup')
     final = routes_and_occurrences()
-    assert not any(row['id'] in (private_route, shared_route) for row in final[0])
-    assert not any(row['route_id'] in (private_route, shared_route) for row in final[1])
+    assert not any(row['id'] == private_route for row in final[0])
+    assert not any(row['route_id'] == private_route for row in final[1])
+    # Earlier proof groups may legitimately share this immutable route. Exact
+    # surviving provenance, rather than fixture ownership, decides collection.
+    assert any(row['id'] == shared_route for row in final[0]) == bool(unrelated_shared_memberships)
+    assert [row for row in final[1] if row['route_id'] == shared_route] == (
+        shared_occurrences if unrelated_shared_memberships else [])
     assert inventory.execute_reconcile_slice(last_delivery) is False
     assert routes_and_occurrences() == final
     with postgres_store.connection(read_only=True) as database:
+        assert [dict(row) for row in database.execute_native(
+            'SELECT * FROM inventory_generation_routes WHERE route_id=%s ORDER BY generation_id,line_id',
+            (shared_route,)).fetchall()] == unrelated_shared_memberships
         assert [row[0] for row in database.execute_native('SELECT to_jsonb(row) FROM inventory_legal_replies row ORDER BY fen_key,move_uci').fetchall()] == legal_before
     print('PASS test_pr117_deleted_inventory_routes_collect_with_foreground_contention_restart_replay_and_reuse', flush=True)
