@@ -583,12 +583,21 @@ main's shared reader, with both sets of named regression contracts preserved.
 
 ### Regular acceptance coverage and selected development evidence
 
+A final connected-head check also reproduced a filtered conflicted head on
+`aa78d162`: the new case failed (3.70 s) because fallback activated the next
+prefetched card. The correction rejects that connected saved-result conflict
+directly, while preserving the existing separately authorized offline phone
+queue contract. On clean runtime `048154806185763101cfa387b1550d5e4413be51`,
+all eight affected confirmation/prepared/recovery/outbox and queue/phone/offline
+files pass 199 cases (11.53 s suite, 12.88 s command). Typecheck passes in 16.73 s;
+lint passes in 48.30 s with the same ten existing warnings.
+
 All #186 names are registered in `tests/REGRESSIONS.md`. They cover bounded
 headers, JSON body, preparation and prerequisite stalls; contradictory counts; transport abort;
 held integrity; genuine exhaustion; missing prepared continuation; rejected
 heads; lost response/receipt recovery; manual queue retry; attempt replacement;
 view replacement; completed/overlapping prepared reconciliation; and periodic
-poll ownership. `issue186_cancelled_reconciliation_cannot_update_replaced_view`
+poll ownership and connected-head conflict filtering. `issue186_cancelled_reconciliation_cannot_update_replaced_view`
 also fences notification updates after cancelled reconciliation on unmount. Existing #172 candidate-identity, guidance and opening-evidence
 regressions remain required.
 
