@@ -16,7 +16,10 @@ synchronously. The callback returns a wrapper around the request promise, so the
 lock ends before network completion. A one-task MessageChannel barrier lets storage
 publication become visible before another tab enters the lock. Safe channel
 construction and posting are checked before any dispatch; missing or throwing
-capability refuses admission and allocates no command identity. Preparation, file hashing, status reads and
+capability refuses admission and allocates no command identity. The dispatched
+promise receives an immediate rejection observer while storage publication finishes;
+the caller still awaits the original promise and receives its original error.
+Preparation, file hashing, status reads and
 planning occur before acquiring it. Every later replay and retry is admitted again.
 
 New command identities are allocated only inside admitted dispatch callbacks.
