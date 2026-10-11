@@ -458,11 +458,14 @@ export default function Home() {
         timeoutMs: 15_000, expectedAttempt, signal: progressionController.current?.signal });
       if (!stillPrepared() || result === "superseded") return;
       setQueueReconciliationError("");
-      if (notice) resolveNotification(notice, { severity: "success", message: "Result saved. Upcoming queue reconciled." });
+      if (notice) resolveNotification(notice, { severity: "success", message: "Result saved. Upcoming queue reconciled.",
+        details: { ...notifications().find(record => record.id === notice)?.details,
+          phase: "prepared queue reconciled", reconciliationAttemptId: expectedAttempt.attemptId ?? "unknown" } });
     } catch (error) {
       if (!stillPrepared()) return;
       if (notice) updateNotification(notice, { severity: "warning", active: false,
-        details: { attemptId: expectedAttempt.attemptId ?? "unknown", phase: "prepared reconciliation requires recovery", error: String(error) },
+        details: { ...notifications().find(record => record.id === notice)?.details,
+          reconciliationAttemptId: expectedAttempt.attemptId ?? "unknown", phase: "prepared reconciliation requires recovery", error: String(error) },
         message: "Result saved. The prepared card is ready; retry loading the queue to reconcile upcoming cards." });
       setQueueReconciliationError("Queue reconciliation is waiting. You can finish the prepared card.");
     }

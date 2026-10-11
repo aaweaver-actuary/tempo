@@ -211,7 +211,7 @@ it.each(["abort", "deadline"])("issue186_prepared_card_survives_aborted_reconcil
   expect(reviewPosts()).toHaveLength(1);
 });
 
-it.each(["completed head", "malformed JSON", "invalid head", "partial envelope"])(
+it.each(["completed head", "malformed JSON", "invalid head", "partial envelope", "inconsistent count"])(
   "issue186_invalid_authoritative_head_requires_recovery: %s", async invalid => {
     await readyHome();
     const originalFetcher = fetcher.getMockImplementation()!;
@@ -221,6 +221,7 @@ it.each(["completed head", "malformed JSON", "invalid head", "partial envelope"]
       queueReads++;
       if (invalid === "malformed JSON") return new Response("{truncated");
       if (invalid === "partial envelope") return Response.json({ count: 1 });
+      if (invalid === "inconsistent count") return Response.json({ count: 0, cards: [queueCard("card-b", 13)] });
       if (invalid === "invalid head") return Response.json({ count: 2, cards: [{ id: "unusable" }, queueCard("card-b", 13)] });
       return Response.json({ count: 2, cards: [queueCard("card-a", 12), queueCard("card-b", 13)] });
     });

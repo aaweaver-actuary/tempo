@@ -376,7 +376,7 @@ export async function fetchAndInitializeQueue(
     if (controller.signal.aborted) throw controller.signal.reason;
     const rawHead = raw.cards?.[0] as { id?: unknown; queue_entry_id?: unknown } | undefined;
     if ((rawHead && (!cards[0] || cards[0].backendId !== rawHead.id || cards[0].queueEntryId !== rawHead.queue_entry_id)) ||
-        (!rawHead && (raw.count ?? 0) > 0))
+        (!rawHead && (raw.count ?? 0) > 0) || (raw.count !== undefined && raw.count < (raw.cards?.length ?? 0)))
       throw new QueueProcessingError("The authoritative queue head could not be prepared. Retry loading the queue.");
     const availableCards = eligibleQueueCards(retainPendingFailures(cards, pendingFailureContexts), (replayed ?? savedPreparedQueue)?.attempts);
     const returnedHead = cards[0];
