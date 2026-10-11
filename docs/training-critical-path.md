@@ -386,6 +386,33 @@ npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx
 PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_opening_evidence_contracts.py backend/tests/test_prepared_review_continuation.py
 ```
 
+Current-base CI `38097726441` also failed the archive miner's existing
+TERM-resistant cancellation case at its unchanged 20-second deadline. The
+unchanged local case passed in 16.21 s. Captured thread state showed successive
+child shutdown waits; a controlled-clock regression failed because the second
+child received ten seconds rather than the pipeline's five-second grace. A
+separate CLI repair applies one shared deadline and kills both resistant stages
+before reaping either. It preserves signal status, ownership, pipe cleanup and
+output-certification assertions. This demonstrates the sequential-wait problem;
+the historical CI signal timing was not captured and is not established as the
+sole cause. Failure-only thread dumps now preserve that boundary.
+
+The new `test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children`
+failed in 0.61 s before the repair and passed in 1.47 s afterward. Five focused
+Linux cases passed in 17.15 s in a disposable container; the complete affected
+file passed 112 cases in 96.41 s locally. This CLI repair is separate from the
+training critical path. The ordinary three-transition browser case also passed
+(67.19 s browser stage); its failure hook now captures readiness before fixture
+teardown. The earlier full-suite startup failure did not reproduce locally; no
+production change or longer readiness deadline was introduced for it.
+
+```sh
+make python-file 'FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_external_cancellation_reaps_owned_children[term_resistant_children-term]'
+make python-file FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children
+make python-file FILE=backend/tests/test_stalemate_swindles.py
+make ui-file FILE=training-critical-path.spec.ts
+```
+
 [PR #172](https://github.com/aaweaver-actuary/tempo/pull/172) records current-head/current-base
 qualification and final delivery evidence. Focused local passes and older
 measurements alone do not establish merge readiness for a newer SHA.
