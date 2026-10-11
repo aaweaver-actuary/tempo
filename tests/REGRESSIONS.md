@@ -3904,6 +3904,7 @@ A durable review must reach an interactive next card, authoritative queue comple
 - `issue186_authoritative_empty_queue_settles_saved_progression` — genuine exhaustion settles successfully.
 - `issue186_prepared_card_survives_aborted_reconciliation_and_recovers` — abort and deadline leave receipt-authorized B interactive; later reconciliation preserves its attempt.
 - `issue186_invalid_authoritative_head_requires_recovery` — completed, conflicted, malformed, partial, and unusable heads cannot authorize a filtered successor.
+- `failed saves remain actionable after saving progress ends` in the shared-board TrainingView file retains save-error retry, explicit queue-retry dispatch and the settled saved-review notice; Home owns the separate progression warning lifecycle. CI 38129113827 exposed its obsolete child-owned queue-notification assertion.
 - `issue186_view_replacement_cannot_orphan_progression_notification` — unmount cancels acquisition and makes its notification inactive.
 - `issue186_lost_review_response_receipt_recovery_uses_queue_only_retry` — authoritative receipt recovery does not repeat review delivery.
 - `issue186_stale_progression_cannot_replace_new_attempt` — a late acquisition cannot install over a newer attempt.

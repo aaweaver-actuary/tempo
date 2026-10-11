@@ -710,3 +710,17 @@ are preserved outside the development clone before exact owned teardown is
 verified. This task's checkout and safe dependencies remain owned and retained
 until #172 merges and their preservation/consumer checks permit removal.
 Issue #186 remains open until merge. No merge or deployment is authorized.
+
+### Current-candidate consumer qualification repair
+
+CI 38129113827 on `aa78d162` passed its 69-case pinned visual layer but failed
+one of 1,533 frontend cases: the existing `failed saves remain actionable after
+saving progress ends` test still expected TrainingView to own queue warnings.
+The updated consumer contract keeps save-error retry and explicitly dispatches
+queue retry without grading, while preserving the settled save record unchanged.
+Home's named #186 cases continue to own progression warnings, settlement and
+replacement. The complete shared-board file passes two cases (3.51 s suite,
+4.65 s command), and its focused lint check passes. This is a contract update
+for the planned ownership change, not a product behavior or deadline change.
+The superseded CI run is retained as diagnostic evidence and does not qualify
+the final head.

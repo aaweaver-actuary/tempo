@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import TrainingView from "../../app/views/training_view";
 import { useTrainingStore } from "../../app/state/training-store";
@@ -49,21 +49,28 @@ it("failed saves remain actionable after saving progress ends", () => {
       startingFen: asFenString(STANDARD_FEN), moves: [asSanMove("e4")], userMoveTarget: 1, orientation: "white" as const },
     boardTheme: "brown" as const, pieceSet: "cburnett" as const, rateCard: vi.fn(async () => undefined),
     handleAttemptFailure: vi.fn(), resetCardAttempt: vi.fn(), setEditorCard: vi.fn(), onMove: vi.fn(), useSharedBoard: true,
+    retryReviewSave: vi.fn(), retryQueueAfterReview: vi.fn(),
   };
   const view = render(<TrainingView {...props} reviewPersistenceState="saving" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="saveFailed" reviewSaveError="Retry this review." />);
   expect(notifications()[0]).toMatchObject({ severity: "error", active: false, resolvedAt: null });
+  fireEvent.click(screen.getByRole("button", { name: "Retry save", exact: true }));
+  expect(props.retryReviewSave).toHaveBeenCalledTimes(1);
   view.rerender(<TrainingView {...props} reviewPersistenceState="saving" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="saved" />);
   expect(notifications()[0]).toMatchObject({ severity: "success", active: false });
   expect(notifications()[0].resolvedAt).not.toBeNull();
+  const committedSaveNotice = { ...notifications()[0] };
   view.rerender(<TrainingView {...props} reviewPersistenceState="refreshingQueue" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="queueFailed" />);
-  expect(notifications()[0]).toMatchObject({ severity: "warning", active: false, resolvedAt: null });
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue", exact: true }));
+  expect(props.retryQueueAfterReview).toHaveBeenCalledTimes(1);
+  expect(props.rateCard).not.toHaveBeenCalled();
+  // Home owns progression; child queue states must retain the settled save.
+  expect(notifications()).toEqual([committedSaveNotice]);
   view.rerender(<TrainingView {...props} reviewPersistenceState="refreshingQueue" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="idle" />);
-  expect(notifications()[0]).toMatchObject({ severity: "success", active: false });
-  expect(notifications()[0].resolvedAt).not.toBeNull();
+  expect(notifications()).toEqual([committedSaveNotice]);
 });
 
 it("Training shared board publishes shell ownership and hides local board instance", async () => {
