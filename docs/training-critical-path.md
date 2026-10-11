@@ -423,6 +423,11 @@ runtime changes. Its named three-case regression failed before the correction
 separate from review durability and the measured training runtime.
 The final fixture follow-up passed its ordinary browser case in 59.89 s and
 teardown in 5.21 s; typecheck and full lint passed (ten existing warnings).
+CI `38099826878` subsequently confirmed the assertion problem: the prepared
+case completed grading, native input and durable replay, then failed cleanup
+because 11 of 12 prior entries matched the restoration fence. The skipped
+entry's final state was not recorded; both newer ordering and deletion must be
+preserved. The other 275 browser cases and all other execution layers passed.
 
 ```sh
 make python-file 'FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_external_cancellation_reaps_owned_children[term_resistant_children-term]'
