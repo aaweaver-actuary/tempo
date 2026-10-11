@@ -4109,6 +4109,8 @@ Journal capability and recovery boundary follow-ups:
 
 - `tests/runner/ci-reliability.test.mjs::audit187_native_journal_spec_is_required_in_complete_repertoire_family` reproduces the initially unclassified spec and requires its regular repertoire-family, nightly and release selection. Inventory registration adds coverage; unknown specs still fail planning.
 
+- `audit187_published_comparison_waits_for_clear_before_changing_recovery_props` queues native-style clearing after verified publication. The comparison must complete that clear before updating source/selection props that restart the recovery effect; it preserves one delivery and requires refreshed results plus an absent resolved journal. The pre-fix controlled schedule failed, matching the real phone/desktop refresh stalls.
+
 ## #81 structural admission at final dispatch
 
 `prefix-structural-command-regressions.test.ts` registers

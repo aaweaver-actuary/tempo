@@ -167,11 +167,14 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose, 
     }
     signal.throwIfAborted();
     if (generation !== sourceGeneration.current) return;
+    // Changing source/selection restarts the recovery panel effect. Finish the
+    // locked clear first so that restart cannot cancel its own queued writer.
+    await clearResolvedPrefixTransition(repertoireId, operation.operationId, signal);
+    signal.throwIfAborted();
     currentSource.current = latest; setSource(latest); setRoute(null); setSelectedIds(selectionAvailable ? selected : []);
     setDepthText(String(chosenDepth)); setResults(comparison ? [{ depth: chosenDepth, comparison }] : []);
     setError(selectionAvailable ? null : { code: "invalid_selection", message: "The transition is published, but the original selected source IDs are no longer available. Select an exact scope again." });
     setCheckedAt(new Date().toLocaleTimeString()); setLoading(false);
-    await clearResolvedPrefixTransition(repertoireId, operation.operationId, signal);
     transitionActive.current = false; setTransitionOpened(false); setTransitionDepth(null);
   }
 
