@@ -210,3 +210,26 @@ all 28 refresh cases passes **34 tests in 5.49 s**. No runtime/deadline/assertio
 change accompanies that test-only repair. First-candidate build, frontend, lifecycle,
 pinned visual/performance and all four browser shards passed; those passes are
 preserved as historical evidence and cannot validate the repaired head.
+
+## Current-main reconciliation and readiness polling repair
+
+Main advanced to `964b2a3a2ede4d9ac92288bb98a9ccba831d6b62` during qualification
+when #176 added read-only opening-card valuation. The two reconstructed commits
+applied cleanly; no refresh or migration conflict. The combined refresh, portable
+fixture, and new valuation test files passed **79 tests in 135.49 s** on the
+reconciled head `d9fae84a471de168a2456b389ffecd9a65ca3415`.
+
+Complete CI 38120975288 captured integration `ae1338c5` with that head and new main
+as its parents. Backend passed **2,427 tests** with no failures/errors/skips; build,
+frontend, lifecycle, and pinned visual/performance passed. All three native refresh
+proofs passed before PostgreSQL study durability encountered the existing queue API's
+explicit 503 response: "Queue changed or attempt issuance is pending. Retry loading
+the queue." The import readiness poll treated this pending publication as fatal.
+
+The deterministic runner regression reproduced that exact failure in **1.43 s**.
+The narrow harness correction treats only that exact response as a pending sample
+within the existing 180 polls and 250 ms cadence, resetting consecutive-ready samples.
+Other service errors still fail immediately; no product behavior or deadline changes.
+Both new cases pass in **1.06 s**; the full runner file passes **62 cases in 16.55 s**.
+The regular Vitest wrapper executes those named cases. Fresh complete qualification
+is required for the resulting head; prior candidate evidence remains historical.
