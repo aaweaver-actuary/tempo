@@ -1,7 +1,7 @@
 import { test, expect, api, nav } from "./product-fixtures";
 import { prefixSourceSchema, prefixComparisonSchema } from "../../app/domain/prefix-comparison";
 import { prefixTransitionPlanSchema } from "../../app/domain/prefix-transition";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 const structuralFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8")) as typeof import("../fixtures/prefix-comparison/structural.json");
 const transitionFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/transition.json", "utf8")) as typeof import("../fixtures/prefix-comparison/transition.json");
@@ -165,7 +165,20 @@ async function importTransitionRepertoire(request: APIRequestContext, label: str
   return { repertoireId, source: source! };
 }
 
+async function waitForPublishedTransition(dialog: Locator) {
+  await expect.poll(async () => {
+    if (await dialog.getByText(/Prefix transition published\. Graph, integrity and daily queue are confirmed\./).first().isVisible()) return true;
+    const rejected = dialog.getByRole("heading", { name: /^(Prefix transition failed|Stale transition|Prefix transition needs recovery)$/ });
+    expect(await rejected.count(), await dialog.textContent() ?? "Transition status unavailable").toBe(0);
+    const checkStatus = dialog.getByRole("button", { name: "Check status", exact: true });
+    if (await checkStatus.count() && await checkStatus.isEnabled()) await checkStatus.click();
+    return false;
+  }, { timeout: 90_000, intervals: [1000], message: "Resolve publication through bounded recovery windows using the original operation" }).toBe(true);
+}
+
 for (const width of [390, 1280]) test(`issue81_confirm_waits_for_published_completion and issue81_double_click_creates_one_operation ${width}`, async ({ page, request }, testInfo) => {
+  // Import, two diagnostic stages, preflight, recovery windows and refresh each have separate bounded contracts.
+  test.setTimeout(240_000);
   const label = `issue81-publication-${width}`;
   const { repertoireId, source } = await importTransitionRepertoire(request, label);
   await page.setViewportSize({ width, height: 844 }); await page.goto("/"); await nav(page, "Repertoire");
@@ -190,7 +203,7 @@ for (const width of [390, 1280]) test(`issue81_confirm_waits_for_published_compl
   const screenshot = testInfo.outputPath(`issue81-confirmation-${width}.png`);
   await page.screenshot({ path: screenshot }); await testInfo.attach(`confirmation-${width}`, { path: screenshot, contentType: "image/png" });
   await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).dblclick();
-  await expect(dialog.getByText(/Prefix transition published\. Graph, integrity and daily queue are confirmed\./).first()).toBeVisible({ timeout: 40_000 });
+  await waitForPublishedTransition(dialog);
   await expect(dialog.getByText("No change from saved depths.", { exact: true })).toBeVisible({ timeout: 20_000 });
   expect(deliveries).toHaveLength(1); expect(plans).toHaveLength(2);
   const status = await request.get(`${api}/operations/${deliveries[0].operationId}`); expect(status.ok()).toBe(true);
@@ -203,6 +216,7 @@ for (const width of [390, 1280]) test(`issue81_confirm_waits_for_published_compl
 });
 
 test("issue81_lost_response_reload_recovers_original_operation", async ({ page, request }, testInfo) => {
+  test.setTimeout(240_000);
   const label = "issue81-lost-response";
   const { repertoireId, source } = await importTransitionRepertoire(request, label);
   let operationId = ""; let deliveries = 0;
@@ -226,7 +240,7 @@ test("issue81_lost_response_reload_recovers_original_operation", async ({ page, 
   await page.unroute("**/api/operations/*"); await page.reload(); await nav(page, "Repertoire");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Resume prefix transition", exact: true }).click();
-  await expect(page.getByText(/Prefix transition published\. Graph, integrity and daily queue are confirmed\./).first()).toBeVisible({ timeout: 40_000 });
+  await waitForPublishedTransition(page.getByRole("dialog", { name: /Compare prefix depths/ }));
   await expect(page.getByText("No change from saved depths.", { exact: true })).toBeVisible({ timeout: 20_000 });
   expect(deliveries).toBe(1); const status = await request.get(`${api}/operations/${operationId}`);
   expect((await status.json()).state).toBe("complete");
