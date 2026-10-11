@@ -4132,6 +4132,9 @@ Journal capability and recovery boundary follow-ups:
 
 - `audit187_{missing,constructor_error,granted_constructor_error,post_error,granted_post_error}_storage_channel_rejects_before_identity_and_dispatch` preserves zero identities/dispatches when storage-publication capability is missing or fails, including faults discovered after lock grant. All five failed before capability preflight (3.38s); the helper now validates capability and registers its boundary before the callback, and advisory structural admission fails conservatively. `audit187_queued_abort_closes_publication_probe_ports_without_entering_callback` proves prompt caller cancellation, closed probe ports and no granted callback/barrier allocation.
 
+- `audit187_immediate_transport_rejection_is_observed_during_storage_commit` produces a native unhandled rejection before the storage boundary releases, despite the eventual caller assertion passing. It failed the regular unhandled-error guard before synchronous observation of the original dispatched promise; caller rejection identity/semantics remain intact and no network response is awaited under lock.
+- `audit187_blocked_retry_waits_for_serialized_reconciliation` holds the blocked receipt commit, requires Retry to stay disabled, releases it, then requires enabled Retry and the original one-retry/one-delivery publication result. The old click-before-release schedule failed (alongside the transport case,7.51s). Existing `issue81_blocked_publication_recovers_without_reapplying` exposed the same ignored disabled-button click in CI38146625876 and now waits for the meaningful enabled-control condition; assertions/deadlines unchanged.
+
 ## #81 structural admission at final dispatch
 
 `prefix-structural-command-regressions.test.ts` registers

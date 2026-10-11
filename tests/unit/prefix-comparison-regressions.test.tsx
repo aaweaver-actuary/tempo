@@ -223,7 +223,8 @@ it("issue81_blocked_publication_recovers_without_reapplying", async () => {
   const control = transitionFetch(); control.state = "blocked"; await reviewShortening();
   fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
   await screen.findByText(/activated graph remains committed/);
-  fireEvent.click(screen.getByRole("button", { name: "Retry publication recovery" }));
+  const retry = screen.getByRole("button", { name: "Retry publication recovery" }) as HTMLButtonElement;
+  await waitFor(() => expect(retry.disabled).toBe(false)); fireEvent.click(retry);
   await screen.findByRole("region", { name: "Candidate depth 2" });
   expect(control.retries).toBe(1); expect(control.deliveries).toHaveLength(1);
 });
@@ -615,4 +616,28 @@ it("audit187_published_comparison_waits_for_clear_before_changing_recovery_props
   await act(async () => { releaseClearing(); });
   await screen.findByRole("region", { name: "Candidate depth 2" });
   expect(readPrefixTransition("rep")).toBeNull(); expect(control.deliveries).toHaveLength(1);
+});
+
+it("audit187_blocked_retry_waits_for_serialized_reconciliation", async () => {
+  const locks = installPrefixTransitionTestLocks(); const implementation = locks.getMockImplementation()!;
+  let releaseCommit!: () => void; let reportHeld!: () => void; let intercepted = false;
+  const commitHeld = new Promise<void>(resolve => { reportHeld = resolve; });
+  const commitReleased = new Promise<void>(resolve => { releaseCommit = resolve; });
+  locks.mockImplementation((name, options, callback) => implementation(name, options, lock => {
+    const outcome = callback(lock);
+    if (!intercepted && readPrefixTransition("rep")?.state === "blocked") {
+      intercepted = true; reportHeld(); return Promise.resolve(outcome).then(async resolved => { await commitReleased; return resolved; });
+    }
+    return outcome;
+  }));
+  try {
+    const control = transitionFetch(); control.state = "blocked"; await reviewShortening();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+    await commitHeld; await screen.findByText(/activated graph remains committed/);
+    const retry = screen.getByRole("button", { name: "Retry publication recovery" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(true);
+    releaseCommit(); await waitFor(() => expect(retry.disabled).toBe(false)); fireEvent.click(retry);
+    await screen.findByRole("region", { name: "Candidate depth 2" });
+    expect(control.retries).toBe(1); expect(control.deliveries).toHaveLength(1);
+  } finally { releaseCommit(); }
 });

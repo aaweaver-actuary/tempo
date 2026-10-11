@@ -293,3 +293,10 @@ it("audit187_queued_abort_closes_publication_probe_ports_without_entering_callba
   expect(channels).toHaveBeenCalledOnce(); expect(portClosures).toHaveLength(2);
   portClosures.forEach(close => expect(close).toHaveBeenCalledOnce()); expect(callback).not.toHaveBeenCalled();
 });
+
+it("audit187_immediate_transport_rejection_is_observed_during_storage_commit", async () => {
+  const replyLost = new Error("Response lost after admission");
+  const delivering = admitPrefixStructuralMutation({ repertoireIds: ["independent"], scopeComplete: true }, () => Promise.reject(replyLost));
+  await expect(delivering).rejects.toBe(replyLost);
+  // Vitest's regular unhandled-rejection guard must also stay clean across the task boundary.
+});

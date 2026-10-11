@@ -302,8 +302,11 @@ export async function admitPrefixStructuralMutation<T>(scope: StructuralMutation
   const dispatched = await withPrefixTransitionJournalLock(signal, () => {
     const admission = readPrefixStructuralAdmission(scope);
     if (admission.paused) throw new Error(admission.reason);
-    // The wrapper prevents Web Locks from awaiting the network response.
-    return { response: dispatch() };
+    const dispatchedResponse = dispatch();
+    // Observe an immediate rejection before the storage boundary releases the lock.
+    // The caller still receives this original promise and its original failure.
+    void dispatchedResponse.catch(() => undefined);
+    return { response: dispatchedResponse };
   });
   return dispatched.response;
 }
