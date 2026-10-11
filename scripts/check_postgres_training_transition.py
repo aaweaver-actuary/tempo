@@ -56,6 +56,9 @@ def main():
             # Regular coverage must reproduce a queue left by preceding cases.
             # Opt-in fresh-stack timings retain their original source snapshot.
             if action == "seed-with-existing-queue":
+                connection.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
+                    "VALUES(%s,%s,'Saved alternative','white',%s,'[\"d2d4\"]','2000-01-01')",
+                    (identifier+'-alternative', identifier, FEN))
                 connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,0,'due',%s)",
                     (today, identifier+'-due', identifier))
             existing_positions = connection.execute("SELECT id,position,card_id FROM daily_queue WHERE queue_date=%s ORDER BY position,id", (today,)).fetchall()

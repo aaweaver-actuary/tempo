@@ -82,6 +82,9 @@ def proof():
             today = date.today().isoformat()
             with postgres_store.connection() as database:
                 database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('mode-proof','Mode proof','synthetic',?)", (today,))
+                database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
+                    "VALUES('mode-line','mode-proof','Saved source','white',?,'[\"d2d4\"]',?)",
+                    ('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', today))
                 entries = []
                 for index, card_id in enumerate(('superseded', 'deleted', 'eligible-a', 'eligible-b')):
                     database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,'mode-proof','prefix',?,'[\"e2e4\"]','learning',?,'tactic')",
@@ -90,6 +93,13 @@ def proof():
                 database.execute("UPDATE cards SET superseded_by='eligible-a' WHERE id='superseded'")
                 database.execute("INSERT INTO deleted_cards(card_id,deleted_at) VALUES('deleted',?)", (today,))
                 database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(?,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
+            from app.services.repertoire_move_verification import verify_repertoire_move
+            source_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+            assert verify_repertoire_move('mode-proof', source_fen, 'd2d4')['verified'] is True
+            assert verify_repertoire_move('mode-proof', source_fen, 'c2c4')['verified'] is False
+            postgres_store.close_pools()
+            assert verify_repertoire_move('mode-proof', source_fen, 'd2d4')['verified'] is True
+            print('PASS study_only_mode_verifies_non_expected_move_from_saved_sources_without_bulk_preparation')
             issued = execute_command(uuid4().hex, 'queue.issue_head',
                 {'entry_id': entries[2], 'queue_date': today, 'card_id': 'eligible-a', 'expected_revision': 1})
             assert issued == {'issued': True}

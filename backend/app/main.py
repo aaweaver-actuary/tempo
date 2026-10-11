@@ -20,7 +20,7 @@ import chess
 import chess.pgn
 import httpx
 import psycopg
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -2463,6 +2463,15 @@ def list_repertoires():
     return {
         "repertoires": repertoire_items
     }
+
+
+@app.get("/api/repertoires/{identifier}/move-membership")
+def repertoire_move_membership(identifier: str, fen: str = Query(max_length=128),
+                              move_uci: str = Query(max_length=5),
+                              cursor: str = Query(default='', max_length=256),
+                              source_token: str | None = Query(default=None, max_length=64)):
+    from .services.repertoire_move_verification import verify_repertoire_move
+    return verify_repertoire_move(identifier, fen, move_uci, cursor, source_token)
 
 
 @app.get("/api/repertoire/lines")

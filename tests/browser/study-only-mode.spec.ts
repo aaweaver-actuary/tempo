@@ -47,6 +47,12 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
       await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(head.queue_entry_id));
       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
       const board = await boardBounds(page);
+      if (index === 0) {
+        await page.mouse.click(board.x + board.width * 3.5 / 8, board.y + board.height * 6.5 / 8);
+        await page.mouse.click(board.x + board.width * 3.5 / 8, board.y + board.height * 4.5 / 8);
+        await expect(page.getByText(/Valid repertoire move/)).toBeVisible();
+        await expect(page.getByText(/Cannot verify another repertoire move/)).toHaveCount(0);
+      }
       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
       await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();

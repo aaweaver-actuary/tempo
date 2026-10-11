@@ -1,5 +1,6 @@
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
 import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
+import { verifySavedRepertoireMove } from "../lib/repertoire-move-verification";
 import { PendingOperationError, readOperationResponse } from "../lib/operation-status";
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
 import { backgroundFetch } from "../lib/background-fetch";
@@ -228,6 +229,7 @@ export default function Home() {
   }, [deferRepairDialog]);
   const repertoireAlternativeSnapshot = useRef<RepertoireAlternativeSnapshot | null>(null);
   const repertoirePositionGeneration = useRef(0);
+  const pendingMoveVerification = useRef<AbortController | null>(null);
   const [branchIndexLoadError, setBranchIndexLoadError] = useState("");
   const [branchIndexRetry, setBranchIndexRetry] = useState(0);
   const invalidateBranchEvidence = useCallback(() => {
@@ -1028,7 +1030,16 @@ export default function Home() {
     setSafeBreakCounter((count) => count + 1);
   }
 
-  const tryMove = useCommittedCallback((from: Square, to: Square) => {
+  useEffect(() => () => {
+    pendingMoveVerification.current?.abort();
+    pendingMoveVerification.current = null;
+  }, [currentView, currentFenString, attempt, studyOnlyMode]);
+
+  const tryMove = useCommittedCallback(async (from: Square, to: Square) => {
+    if (pendingMoveVerification.current) {
+      setBoardAttempt((value) => value + 1);
+      return;
+    }
     if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     const currentTurn =
       new Chess(currentFenString).turn() === "b" ? "black" : "white";
@@ -1066,10 +1077,32 @@ export default function Home() {
       return;
     }
     if (move.san !== card.moves[step]) {
-      const indexedAlternative = usesLocalApi()
+      let indexedAlternative = usesLocalApi()
         ? lookupRepertoireAlternative(repertoireAlternativeSnapshot.current, repertoirePositionGeneration.current,
             card.repertoireId, currentFenString, responseUci)
         : undefined;
+      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && studyOnlyMode === true && card.repertoireId) {
+        const verification = new AbortController();
+        pendingMoveVerification.current = verification;
+        const capturedAttempt = useTrainingStore.getState().attempt;
+        const isCurrent = () => !verification.signal.aborted
+          && pendingMoveVerification.current === verification
+          && useTrainingStore.getState().attempt === capturedAttempt
+          && useTrainingStore.getState().currentFenString === currentFenString;
+        setBoardAttempt((value) => value + 1);
+        setQueueNotice("Checking this move against saved repertoire lines...");
+        try {
+          indexedAlternative = await verifySavedRepertoireMove(String(card.repertoireId), currentFenString, responseUci, verification.signal);
+          if (!isCurrent()) return;
+        } catch (error) {
+          if (!isCurrent()) return;
+          openingJournal()?.response(step, responseUci, "unverified");
+          setQueueNotice(`Could not verify this move. ${error instanceof Error ? error.message : "Reload and retry."}`);
+          return;
+        } finally {
+          if (pendingMoveVerification.current === verification) pendingMoveVerification.current = null;
+        }
+      }
       if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined) {
         openingJournal()?.response(step, responseUci, "unverified");
         setBoardAttempt((value) => value + 1);
