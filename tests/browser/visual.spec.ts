@@ -62,8 +62,9 @@ for (const width of [390, 1280]) {
       repertoires: [{ id: "visual-repertoire", name: "Spanish opening — tournament preparation" }, { id: "shared", name: "Shared tournament lines" }],
     } }));
     await navigate(page, "Train");
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
     const editCard = page.getByRole("button", { name: /Edit card/ });
-    if (!await editCard.isVisible()) await page.locator(".phone-study-actions summary").click();
+    if (width === 390) await page.locator(".phone-study-actions summary").click();
     await editCard.click();
     await expect(page.getByRole("button", { name: "Delete card", exact: true })).toHaveCSS("background-color", "rgb(160, 82, 61)");
     await page.getByRole("button", { name: "Delete card", exact: true }).click();
