@@ -411,6 +411,7 @@ test("audit187_true_reload_after_total_journal_loss_must_rediscover_original_ope
   const label = "audit187-total-journal-loss";
   const { repertoireId, source } = await importTransitionRepertoire(request, label);
   let operationId = ""; let deliveries = 0;
+  try {
   await page.route("**/prefix-transition/apply", async route => {
     ++deliveries; operationId = route.request().headers()["idempotency-key"];
     await route.fetch(); // Admission is real; erase only browser recovery data below.
@@ -437,6 +438,23 @@ test("audit187_true_reload_after_total_journal_loss_must_rediscover_original_ope
   await page.getByRole("dialog").locator("summary", { hasText: "Recovery identity" }).click();
   await expect(page.getByRole("dialog").getByText(operationId, { exact: false })).toBeVisible();
   expect(deliveries).toBe(1);
+  } finally {
+    // Preserve the failing UI assertion, but release this test's server fence before
+    // the next disposable-product fixture tries to delete its repertoire.
+    if (operationId) {
+      let retried = false;
+      await expect.poll(async () => {
+        const response = await request.get(`${api}/operations/${operationId}`, { headers: { "X-Tempo-Work-Class": "background" } });
+        if (!response.ok()) return false;
+        const receipt = await response.json();
+        if (receipt.state === "blocked" && !retried) {
+          retried = true;
+          await request.post(`${api}/operations/${operationId}/retry`);
+        }
+        return receipt.state === "complete" || receipt.state === "failed";
+      }, { timeout: 90_000, intervals: [1000], message: "Task-owned original operation settles before fixture teardown; UI rediscovery assertion remains failing" }).toBe(true);
+    }
+  }
 });
 
 test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity", async ({ page }) => {

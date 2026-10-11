@@ -4069,3 +4069,10 @@ mocked seams, not database durability.
   leaves the receipt unchanged, verifies original-cycle recovery and one business
   effect, and rejects blocked retry after verified completion. Diagnostic ID
   enumeration is explicitly distinguished from full browser rediscovery.
+
+- `audit187_storage_event_preserves_prefix_identity_and_guard across browser engines`
+  runs on Chromium, Firefox and WebKit. A second same-origin document removes the
+  journal; the active product retains identity/guard, then explicitly restores
+  under Web Locks using status-only recovery. The true-reload failing case settles
+  its task-owned server operation in `finally` so its fence cannot contaminate
+  subsequent disposable fixture setup; its original UI assertion still fails.
