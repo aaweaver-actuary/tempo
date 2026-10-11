@@ -580,7 +580,7 @@
       }
     ]
   },
-  "snapshot_id": "142504cd888632443a143a6f5c94ebfdbdab15a0bcf49e2e25cc19c1d71e1da8",
+  "snapshot_id": "6bf3d49e0abe919bfda74f1ae96a6a9f3c5f32a995a7b845b3bf515d1c6bc4ca",
   "source_versions": {
     "cohorts": {
       "classical-1800-2000": {
@@ -763,6 +763,7 @@
         "position_key": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -905,6 +906,7 @@
         "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -1039,6 +1041,7 @@
         "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -1138,6 +1141,7 @@
         "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       }
     ],

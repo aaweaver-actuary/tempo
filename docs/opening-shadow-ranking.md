@@ -225,6 +225,11 @@ constituent decision. Histories, evidence and scalar scores are synthetic,
 explicit assumptions, not personal observations, calibrated recall or inferred
 repertoire-playing frequencies.
 
+Route parents reference shorter supporting prefixes from the same policy. In the
+uncertainty family, the Owen `b7b6` reply is genuinely unassigned in both cohorts;
+its mass stays explicit. Bounds apply only to the deeper main-card `g8f6` reply,
+so earlier cards retain known authored-route probabilities.
+
 ### Contract and ownership
 
 A corpus manifest has `corpus_version: 1`, a provenance description, and scenario

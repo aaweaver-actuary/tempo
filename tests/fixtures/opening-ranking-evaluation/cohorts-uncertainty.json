@@ -644,7 +644,7 @@
       }
     ]
   },
-  "snapshot_id": "584ab35dc0219af09c13c02c6a2b801997c7c870549aa9b3c3f121e497fcd2d5",
+  "snapshot_id": "e5e3ed1da6c8949e93995d26e3a92a60a0846581ddc7483fe217f19edbc3d76b",
   "source_versions": {
     "cohorts": {
       "classical-1800-2000": {
@@ -674,7 +674,7 @@
         ],
         "bounds": [
           {
-            "lower": 0.09999999999999999,
+            "lower": 0.1,
             "move_uci": "g8f6",
             "upper": 0.2
           }
@@ -833,6 +833,7 @@
         "position_key": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0.1
       },
       {
@@ -840,13 +841,7 @@
           "f8c5",
           "g8f6"
         ],
-        "bounds": [
-          {
-            "lower": 0.09999999999999999,
-            "move_uci": "f8c5",
-            "upper": 0.2
-          }
-        ],
+        "bounds": [],
         "captured_at": "2026-10-10T11:00:00Z",
         "cohort_id": "rapid-1200-1400",
         "evidence_id": "synthetic-opponent-rapid-1200-1400-1",
@@ -981,6 +976,7 @@
         "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0.1
       },
       {
@@ -988,13 +984,7 @@
           "b8c6",
           "d7d6"
         ],
-        "bounds": [
-          {
-            "lower": 0.09999999999999999,
-            "move_uci": "b8c6",
-            "upper": 0.2
-          }
-        ],
+        "bounds": [],
         "captured_at": "2026-10-10T11:00:00Z",
         "cohort_id": "rapid-1200-1400",
         "evidence_id": "synthetic-opponent-rapid-1200-1400-2",
@@ -1121,6 +1111,7 @@
         "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0.1
       },
       {
@@ -1129,13 +1120,7 @@
           "c7c5",
           "e7e5"
         ],
-        "bounds": [
-          {
-            "lower": 0,
-            "move_uci": "b7b6",
-            "upper": 0.1
-          }
-        ],
+        "bounds": [],
         "captured_at": "2026-10-10T11:00:00Z",
         "cohort_id": "rapid-1200-1400",
         "evidence_id": "synthetic-opponent-rapid-1200-1400-3",
@@ -1143,7 +1128,7 @@
         "moves": [
           {
             "move_uci": "a7a5",
-            "probability": -0.0
+            "probability": 0.0
           },
           {
             "move_uci": "a7a6",
@@ -1155,7 +1140,7 @@
           },
           {
             "move_uci": "b7b6",
-            "probability": 0.05
+            "probability": null
           },
           {
             "move_uci": "b8a6",
@@ -1226,7 +1211,10 @@
         "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
-        "unknown_mass": 0.1
+        "unassigned_authored_replies": [
+          "b7b6"
+        ],
+        "unknown_mass": 0.15
       },
       {
         "authored_replies": [
@@ -1234,7 +1222,7 @@
         ],
         "bounds": [
           {
-            "lower": 0.15000000000000002,
+            "lower": 0.15,
             "move_uci": "g8f6",
             "upper": 0.25
           }
@@ -1393,6 +1381,7 @@
         "position_key": "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0.1
       },
       {
@@ -1400,13 +1389,7 @@
           "f8c5",
           "g8f6"
         ],
-        "bounds": [
-          {
-            "lower": 0.15000000000000002,
-            "move_uci": "f8c5",
-            "upper": 0.25
-          }
-        ],
+        "bounds": [],
         "captured_at": "2026-10-10T11:00:00Z",
         "cohort_id": "classical-1800-2000",
         "evidence_id": "synthetic-opponent-classical-1800-2000-1",
@@ -1541,6 +1524,7 @@
         "position_key": "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0.1
       },
       {
@@ -1548,13 +1532,7 @@
           "b8c6",
           "d7d6"
         ],
-        "bounds": [
-          {
-            "lower": 0.15000000000000002,
-            "move_uci": "b8c6",
-            "upper": 0.25
-          }
-        ],
+        "bounds": [],
         "captured_at": "2026-10-10T11:00:00Z",
         "cohort_id": "classical-1800-2000",
         "evidence_id": "synthetic-opponent-classical-1800-2000-2",
@@ -1681,6 +1659,7 @@
         "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0.1
       },
       {
@@ -1689,13 +1668,7 @@
           "c7c5",
           "e7e5"
         ],
-        "bounds": [
-          {
-            "lower": 0,
-            "move_uci": "b7b6",
-            "upper": 0.08
-          }
-        ],
+        "bounds": [],
         "captured_at": "2026-10-10T11:00:00Z",
         "cohort_id": "classical-1800-2000",
         "evidence_id": "synthetic-opponent-classical-1800-2000-3",
@@ -1715,7 +1688,7 @@
           },
           {
             "move_uci": "b7b6",
-            "probability": 0.03
+            "probability": null
           },
           {
             "move_uci": "b8a6",
@@ -1786,7 +1759,10 @@
         "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
-        "unknown_mass": 0.1
+        "unassigned_authored_replies": [
+          "b7b6"
+        ],
+        "unknown_mass": 0.13
       }
     ],
     "policy_version": "synthetic-1",

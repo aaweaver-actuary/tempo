@@ -9,7 +9,7 @@
       ],
       "id": "italian-common",
       "snapshot": "italian-common.json",
-      "snapshot_id": "4e5fa9a3d249d083a28ddf31bf1e6a72264bf8a97b5e2b1bae77f4ae157df1ba"
+      "snapshot_id": "546162ada4a8942dd5345d05da37e0d05ff6dad075058a00cdc81992516b649d"
     },
     {
       "coverage": [
@@ -18,7 +18,7 @@
       ],
       "id": "ruy-common",
       "snapshot": "ruy-common.json",
-      "snapshot_id": "2c319f23fef5ba26b7e4b6b02bf1e22ad9cc6102a2aa61da7995ecd1d9572318"
+      "snapshot_id": "304f0797518275bdd018af6538cfebb2e4348a28e516bcedec8396aabaa52e47"
     },
     {
       "coverage": [
@@ -26,7 +26,7 @@
       ],
       "id": "shared-prefixes",
       "snapshot": "shared-prefixes.json",
-      "snapshot_id": "45da839a1b0191b3a639e0ceb5c212d8cb9fb0044d71899ff2db1bbacade0884"
+      "snapshot_id": "1a6a74d4a5f979a6516f099ee7b278455f29c5bc55ae8f3eff4165a9895a2a8b"
     },
     {
       "coverage": [
@@ -35,7 +35,7 @@
       ],
       "id": "rare-deviations",
       "snapshot": "rare-deviations.json",
-      "snapshot_id": "142504cd888632443a143a6f5c94ebfdbdab15a0bcf49e2e25cc19c1d71e1da8"
+      "snapshot_id": "6bf3d49e0abe919bfda74f1ae96a6a9f3c5f32a995a7b845b3bf515d1c6bc4ca"
     },
     {
       "coverage": [
@@ -45,7 +45,7 @@
       ],
       "id": "cohorts-uncertainty",
       "snapshot": "cohorts-uncertainty.json",
-      "snapshot_id": "584ab35dc0219af09c13c02c6a2b801997c7c870549aa9b3c3f121e497fcd2d5"
+      "snapshot_id": "e5e3ed1da6c8949e93995d26e3a92a60a0846581ddc7483fe217f19edbc3d76b"
     },
     {
       "coverage": [
@@ -56,7 +56,7 @@
       ],
       "id": "cumulative-history",
       "snapshot": "cumulative-history.json",
-      "snapshot_id": "8d88611364033cd7099a847ddedd17695e6096012012181f405b37e991d3e669"
+      "snapshot_id": "03d78ee53e24d9ec612251dbf7ae622df1aa2b8cbb8d3eab3faad3e8a1fcf4c2"
     }
   ]
 }

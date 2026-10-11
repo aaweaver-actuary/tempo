@@ -55,24 +55,34 @@ def opponent_evidence(routes, *, incomplete=False, cohort="rapid-1200-1400"):
                 positions.setdefault(key, {"fen": board.fen(), "authored_replies": set()})["authored_replies"].add(move)
             board.push_uci(move)
     evidence = []
+    bounded_board = chess.Board()
+    for move in ITALIAN[:7]:
+        bounded_board.push_uci(move)
+    bounded_position_key = opening_position_key(bounded_board.fen())
     for index, (key, source) in enumerate(sorted(positions.items())):
         board = chess.Board(source["fen"])
         replies = sorted(source["authored_replies"])
         frequencies = {"e7e5": .60, "c7c5": .25, "b7b6": .05} if cohort == "rapid-1200-1400" else {"e7e5": .70, "c7c5": .15, "b7b6": .03}
         assigned = {move: frequencies.get(move, .15 if cohort == "rapid-1200-1400" else .20)
                     for move in replies}
-        outside_reply = next(move for move in sorted(move.uci() for move in board.legal_moves) if move not in assigned)
+        outside_reply = next(move for move in sorted(move.uci() for move in board.legal_moves) if move not in replies)
         unknown_mass = .10 if incomplete else 0
+        unassigned_authored = ["b7b6"] if incomplete and "b7b6" in assigned else []
+        for move in unassigned_authored:
+            unknown_mass += assigned.pop(move)
+        unknown_mass = round(unknown_mass, 10)
         assigned[outside_reply] = round(1 - sum(assigned.values()) - unknown_mass, 10)
         evidence.append({"evidence_id": "synthetic-opponent-" + cohort + "-" + str(index), "position_key": key,
             "fen": source["fen"], "cohort_id": cohort, "source_version": "synthetic-1",
             "captured_at": "2026-10-10T11:00:00Z", "provenance": "hand-authored legal reply distribution",
             "authored_replies": replies, "outside_reply": outside_reply,
+            "unassigned_authored_replies": unassigned_authored,
             "moves": [{"move_uci": move, "probability": assigned.get(move, None if incomplete else 0)}
                       for move in sorted(move.uci() for move in board.legal_moves)],
             "unknown_mass": unknown_mass,
-            "bounds": [{"move_uci": replies[0], "lower": max(0, assigned[replies[0]] - .05),
-                        "upper": min(1, assigned[replies[0]] + .05)}] if incomplete else []})
+            "bounds": [{"move_uci": "g8f6", "lower": round(max(0, assigned["g8f6"] - .05), 10),
+                        "upper": round(min(1, assigned["g8f6"] + .05), 10)}]
+                      if incomplete and key == bounded_position_key else []})
     return evidence
 
 

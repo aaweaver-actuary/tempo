@@ -696,7 +696,7 @@
       }
     ]
   },
-  "snapshot_id": "2c319f23fef5ba26b7e4b6b02bf1e22ad9cc6102a2aa61da7995ecd1d9572318",
+  "snapshot_id": "304f0797518275bdd018af6538cfebb2e4348a28e516bcedec8396aabaa52e47",
   "source_versions": {
     "cohorts": {
       "classical-1800-2000": {
@@ -855,6 +855,7 @@
         "position_key": "r1bqk2r/1pppbppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQR1K1 b kq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -992,6 +993,7 @@
         "position_key": "r1bqkb1r/1ppp1ppp/p1n2n2/4p3/B3P3/5N2/PPPP1PPP/RNBQ1RK1 b kq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -1137,6 +1139,7 @@
         "position_key": "r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -1275,6 +1278,7 @@
         "position_key": "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -1408,6 +1412,7 @@
         "position_key": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       },
       {
@@ -1506,6 +1511,7 @@
         "position_key": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
         "provenance": "hand-authored legal reply distribution",
         "source_version": "synthetic-1",
+        "unassigned_authored_replies": [],
         "unknown_mass": 0
       }
     ],

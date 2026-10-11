@@ -84,9 +84,12 @@ def test_harness_all_thirteen_scenarios_have_substantive_legal_evidence():
             assert distribution.position.fen_key == evidence["position_key"]
             assert evidence["outside_reply"] not in evidence["authored_replies"]
             if "unknown_unassigned_mass" in entry["coverage"]:
-                assert distribution.unknown_mass == .1
+                expected_unknown = ({"rapid-1200-1400": .15, "classical-1800-2000": .13}[evidence["cohort_id"]]
+                                    if evidence["unassigned_authored_replies"] else .1)
+                assert distribution.unknown_mass == expected_unknown
                 assert any(move.probability is None for move in distribution.moves)
-                assert evidence["bounds"][0]["lower"] < evidence["bounds"][0]["upper"]
+                for bound in evidence["bounds"]:
+                    assert bound["lower"] < bound["upper"]
         if "common_italian" in entry["coverage"]:
             assert any(candidate.metadata()["moves"][4] == "f1c4" for candidate in candidates)
         if "common_ruy_lopez" in entry["coverage"]:
@@ -104,6 +107,7 @@ def test_harness_all_thirteen_scenarios_have_substantive_legal_evidence():
             e5_values = {next(move["probability"] for move in evidence["moves"] if move["move_uci"] == "e7e5")
                          for evidence in source["opponent_evidence"] if evidence["authored_replies"] == ["b7b6", "c7c5", "e7e5"]}
             assert e5_values == {.6, .7}
+            assert any(evidence["bounds"] for evidence in source["opponent_evidence"])
         if "cumulative_prefix_cards" in entry["coverage"]:
             assert any(len(candidate.metadata()["decisions"]) >= 5 for candidate in candidates)
             supporting = source["supporting_cards"]
@@ -143,6 +147,32 @@ def test_harness_routes_reference_true_supporting_prefix_parents(scenario):
             assert parent["policy_id"] == candidate["policy_id"]
             assert len(parent["moves"]) < len(moves)
             assert moves[:len(parent["moves"])] == parent["moves"]
+
+
+def test_harness_unknown_probability_candidate_has_unassigned_authored_reply():
+    document = read(CORPUS / "cohorts-uncertainty.json")
+    unknown = next(candidate for candidate in document["candidates"] if candidate["card_id"] == "italian-f")
+    assert unknown["metadata"]["moves"][:2] == ["e2e4", "b7b6"]
+    board = chess.Board()
+    board.push_uci("e2e4")
+    root_key = opening_position_key(board.fen())
+    evidence = [item for item in document["source_versions"]["opponent_evidence"] if item["position_key"] == root_key]
+    assert len(evidence) == 2
+    for cohort in evidence:
+        reply = next(item for item in cohort["moves"] if item["move_uci"] == "b7b6")
+        assert reply["probability"] is None
+        assert "b7b6" in cohort["unassigned_authored_replies"]
+        assert cohort["unknown_mass"] > 0
+    # Only the deeper b card traverses this uncertain opponent reply; the other
+    # baseline scalar fixtures retain known authored-route probabilities.
+    bounded = next(candidate for candidate in document["candidates"] if candidate["card_id"] == "italian-b")
+    board = chess.Board()
+    for move in bounded["metadata"]["moves"][:-2]:
+        board.push_uci(move)
+    bound_key = opening_position_key(board.fen())
+    bounds = [item for item in document["source_versions"]["opponent_evidence"] if item["bounds"]]
+    assert len(bounds) == 2
+    assert {item["position_key"] for item in bounds} == {bound_key}
 
 
 def test_harness_hand_calculated_metrics_and_stable_ties():
