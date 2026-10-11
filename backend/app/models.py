@@ -329,6 +329,10 @@ class GameAnalysisFailureRequest(BaseModel):
     error: str = Field(min_length=1, max_length=1000)
 
 
+class GameAnalysisPositionClaimRequest(BaseModel):
+    preferred_game_id: str | None = Field(default=None, min_length=1)
+
+
 class GameAnalysisLeaseRequest(BaseModel):
     """Request model for acquiring a game analysis lease."""
     diagnostics: EngineAttemptDiagnostics | None = None

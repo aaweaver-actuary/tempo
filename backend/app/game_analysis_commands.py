@@ -19,11 +19,14 @@ from .services.game_analysis_worker import _confirmed_indices, _positions
 from .services.threat_pipeline import ENGINE_VERSION, NETWORK_VERSION
 from .services.threat_pipeline import report_from_json, validate_analysis_report
 from .services.threat_validation import AnalysisRequest
+from .services.engine_scheduling import ordinary_selection_allowed, record_ordinary_selection
 
 
 def claim_game_analysis(database: PostgresConnection, _payload: dict[str, Any]) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     now_text = now.isoformat()
+    if not ordinary_selection_allowed(database):
+        return {"job": None}
     job = database.execute_native(
         "SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,"
         "g.provider,g.username,g.played_at,g.color,g.start_fen,g.moves_json,"
@@ -36,22 +39,25 @@ def claim_game_analysis(database: PostgresConnection, _payload: dict[str, Any]) 
         "AND g.rated=1 AND g.speed IN ('blitz','rapid','classical') "
         "AND COALESCE(control.paused,0)=0 "
         "ORDER BY COALESCE(control.promoted,0) DESC,g.played_at DESC,j.game_id "
-        "LIMIT 1 FOR UPDATE OF j SKIP LOCKED",
+        "LIMIT 1 FOR UPDATE OF j,g SKIP LOCKED",
         (now_text,),
     ).fetchone()
     if job is None:
         return {"job": None}
     lease_id = str(uuid.uuid4())
     expires_at = (now + timedelta(minutes=5)).isoformat()
-    database.execute_native(
+    accepted_parent = database.execute_native(
         "UPDATE game_analysis_jobs SET status='leased',lease_id=%s,lease_expires_at=%s,"
         "attempts=attempts+1,updated_at=%s WHERE game_id=%s",
         (lease_id, expires_at, now_text, job["game_id"]),
     )
+    if accepted_parent.rowcount != 1:
+        return {"job": None}
     database.execute_native(
         "UPDATE imported_games SET analysis_state='analyzing' WHERE id=%s",
         (job["game_id"],),
     )
+    record_ordinary_selection(database)
     return {"job": {**dict(job), "moves": json.loads(job["moves_json"]),
                     "lease_id": lease_id, "lease_expires_at": expires_at}}
 
@@ -59,7 +65,7 @@ def claim_game_analysis(database: PostgresConnection, _payload: dict[str, Any]) 
 register_command("games.analysis.claim", claim_game_analysis)
 
 
-def prepare_position_claim() -> dict[str, Any] | None:
+def prepare_position_claim(preferred_game_id: str | None = None) -> dict[str, Any] | None:
     """Read a candidate, then traverse its chess history after closing PostgreSQL."""
 
     with background_read_connection() as database:
@@ -73,8 +79,9 @@ def prepare_position_claim() -> dict[str, Any] | None:
             "WHERE (j.status='queued' OR (j.status='leased' AND j.lease_expires_at<%s)) "
             "AND g.rated=1 AND g.speed IN ('blitz','rapid','classical') "
             "AND COALESCE(control.paused,0)=0 "
+            + ("AND j.game_id=%s " if preferred_game_id is not None else "") +
             "ORDER BY COALESCE(control.promoted,0) DESC,g.played_at DESC,j.game_id LIMIT 1",
-            (datetime.now(timezone.utc).isoformat(),),
+            (datetime.now(timezone.utc).isoformat(), *((preferred_game_id,) if preferred_game_id is not None else ())),
         ).fetchone()
         if candidate is None:
             return None
@@ -123,10 +130,12 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
 
     now = datetime.now(timezone.utc)
     now_text = now.isoformat()
+    if not ordinary_selection_allowed(database):
+        return {"job": None}
     parent = database.execute_native(
         "SELECT j.analysis_version,j.analysis_evidence_version,j.status,j.lease_expires_at,"
         "g.rated,g.speed FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
-        "WHERE j.game_id=%s FOR UPDATE OF j",
+        "WHERE j.game_id=%s FOR UPDATE OF j,g SKIP LOCKED",
         (plan["game_id"],),
     ).fetchone()
     if (parent is None or parent["analysis_version"] != plan["analysis_version"]
@@ -146,7 +155,7 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
     existing = None
     if position_index is not None:
         existing = database.execute_native(
-            "SELECT id,state FROM game_analysis_position_reports "
+            "SELECT id,state,lease_expires_at FROM game_analysis_position_reports "
             "WHERE game_id=%s AND analysis_version=%s AND scan_pass=%s AND position_index=%s FOR UPDATE",
             (plan["game_id"], plan["analysis_version"], plan["scan_pass"], position_index),
         ).fetchone()
@@ -161,14 +170,18 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
                 (plan["game_id"],),
             )
             return {"job": None}
-        if existing is not None and existing["state"] == "complete":
+        if existing is not None and (existing["state"] == "complete" or
+                existing["state"] == "leased" and existing["lease_expires_at"] is not None
+                and existing["lease_expires_at"] >= now_text):
             return {"job": None}
     parent_lease_id = str(uuid.uuid4())
-    database.execute_native(
+    accepted_parent = database.execute_native(
         "UPDATE game_analysis_jobs SET status='leased',lease_id=%s,lease_expires_at=%s,"
         "attempts=attempts+1,updated_at=%s WHERE game_id=%s",
         (parent_lease_id, (now + timedelta(minutes=5)).isoformat(), now_text, plan["game_id"]),
     )
+    if accepted_parent.rowcount != 1:
+        return {"job": None}
     database.execute_native(
         "UPDATE imported_games SET analysis_state='analyzing' WHERE id=%s", (plan["game_id"],),
     )
@@ -176,10 +189,11 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
               **({"lease_expiries": 1, "lease_reclaims": 1, "generation_restarts": 1}
                  if parent["status"] == "leased" else {}))
     if plan["kind"] == "finalize":
+        record_ordinary_selection(database)
         return {"job": {"kind": "finalize", "game_id": plan["game_id"],
                         "lease_id": parent_lease_id}}
     if plan["kind"] == "terminal":
-        database.execute_native(
+        accepted_position = database.execute_native(
             "INSERT INTO game_analysis_position_reports("
             "id,game_id,analysis_version,scan_pass,position_index,request_json,report_json,state,updated_at) "
             "VALUES(%s,%s,%s,%s,%s,'{}',%s,'complete',%s) "
@@ -187,6 +201,8 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
             (str(uuid.uuid4()), plan["game_id"], plan["analysis_version"], plan["scan_pass"],
              position_index, json.dumps({"terminal": plan["terminal"]}), now_text),
         )
+        if accepted_position.rowcount != 1:
+            raise HTTPException(409, "Game position changed; retry the claim")
         database.execute_native(
             "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
             "updated_at=%s WHERE game_id=%s", (now_text, plan["game_id"]),
@@ -194,20 +210,21 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
         database.execute_native(
             "UPDATE imported_games SET analysis_state='pending' WHERE id=%s", (plan["game_id"],),
         )
+        record_ordinary_selection(database)
         return {"job": None}
     position_lease_id = str(uuid.uuid4())
     report_id = existing["id"] if existing else str(uuid.uuid4())
     request_json = json.dumps(plan["request"], sort_keys=True)
     expires_at = (now + timedelta(minutes=2)).isoformat()
     if existing:
-        database.execute_native(
+        accepted_position = database.execute_native(
             "UPDATE game_analysis_position_reports SET state='leased',lease_id=%s,"
             "parent_lease_id=%s,lease_expires_at=%s,request_json=%s,attempts=attempts+1,"
             "updated_at=%s WHERE id=%s",
             (position_lease_id, parent_lease_id, expires_at, request_json, now_text, report_id),
         )
     else:
-        database.execute_native(
+        accepted_position = database.execute_native(
             "INSERT INTO game_analysis_position_reports("
             "id,game_id,analysis_version,scan_pass,position_index,request_json,state,"
             "lease_id,parent_lease_id,lease_expires_at,attempts,updated_at) "
@@ -215,6 +232,9 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
             (report_id, plan["game_id"], plan["analysis_version"], plan["scan_pass"],
              position_index, request_json, position_lease_id, parent_lease_id, expires_at, now_text),
         )
+    if accepted_position.rowcount != 1:
+        raise HTTPException(409, "Game position changed; retry the claim")
+    record_ordinary_selection(database)
     return {"job": {"kind": "search", "id": report_id, "game_id": plan["game_id"],
                     "position_index": position_index, "scan_pass": plan["scan_pass"],
                     "lease_id": position_lease_id, "request": plan["request"]}}

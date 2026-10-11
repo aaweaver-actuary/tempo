@@ -511,6 +511,7 @@ def test_engine_defense_expired_lease_reclaim_and_claim_are_observed(monkeypatch
     class Cursor:
         def __init__(self,row=None):
             self.row=row
+            self.rowcount=1
         def fetchone(self):
             return self.row
     class ClaimDatabase:
