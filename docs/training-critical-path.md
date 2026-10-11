@@ -7,8 +7,8 @@ reproduced this dependency without sleeps. The new path confirms and issues the
 prepared successor inside the review transaction, then uses cached advancement
 and reconciles the remaining window asynchronously.
 
-The latest-main prepared repeat achieved p95 **32.615 ms** from successful writer
-commit completion to a fresh, enabled board (**37.897 ms** including measured
+The latest-main prepared repeat achieved p95 **20.657 ms** from successful writer
+commit completion to a fresh, enabled board (**24.904 ms** including measured
 clock uncertainty). All five original prepared-path conditions also met the <500 ms p95 target.
 The equivalent refresh control reached 829.546 ms p95. Healthy measured main also
 met the target at 110.037 ms p95; this fixture does not reproduce every reported
@@ -436,6 +436,65 @@ make python-file FILE=backend/tests/test_stalemate_swindles.py
 make python-file FILE=backend/tests/test_training_transition_fixture.py
 make ui-file FILE=training-critical-path.spec.ts
 ```
+
+## Current-main integration repeat
+
+Main advanced to `55e77bbbe707418069ce95e78a860b0058a3bf07` (engine fairness and
+position-claim recovery, PR #123). The clean integration runtime
+`924528d8e0f7efeed06ddded211e6d064cbd674e` passed 74 focused review, opening-evidence
+and engine-fairness cases in 5.81 s. The conflict, migration-inventory (45) and
+diff guards passed. Local pytest reported existing deprecations and an unwritable
+external cache warning; the selected cases all executed. Exact command:
+
+```sh
+PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_opening_evidence_contracts.py backend/tests/test_prepared_review_continuation.py backend/tests/test_engine_fairness.py
+```
+
+A fresh disposable PostgreSQL/Redis/Celery cohort then passed three warm-ups and
+50 measured transitions: **p50 10.024 ms, p95 20.657 ms, maximum 22.328 ms** from
+successful commit completion to the enabled board. Clock uncertainty was 4.247 ms
+(p95 upper bound 24.904 ms); native input-processing p95 was 17.945 ms. All 53
+reviews, evidence completions and completion events survived API/foreground
+restart and exact original frozen-delivery replay. Historical recovery processed
+the 100 retained journals, with its partial record retained. The source tree was
+clean; a subsequent report-only commit does not relabel the measured revision.
+
+| Current-main waterfall | p50 ms | p95 ms |
+| --- | --- | --- |
+| Click → commit | 61.314 | 106.770 |
+| Commit → receipt observation | 5.889 | 9.041 |
+| Receipt → enabled board | 3.550 | 14.730 |
+| Broker wait | 3.824 | 10.585 |
+| Foreground worker admission | 0.215 | 0.502 |
+| Worker connection acquisition | 0.083 | 0.202 |
+| Worker statement execution | 18.734 | 40.238 |
+| Review commit | 0.645 | 1.316 |
+| Optional head issuance | 1.901 | 4.568 |
+| Asynchronous queue TTFB | 40.671 | 71.280 |
+| Asynchronous queue processing | 10.135 | 26.305 |
+
+Counts remained 100 worker statements/three commits and two API statements/two
+read-only commits. The browser stage took 105.80 s; owned teardown took 6.30 s.
+This new cohort ran on workspace date 2026-10-11 and schema 45. The seed assigns
+that workspace date to locked-card due dates, so its source fingerprint is
+`fd78fd28388860bbc76563f2d929ea6021f092c27d654406efc7b98df0e09b7f`, rather than the
+earlier cohorts' fingerprint. Counts, fixed identities, prepared scheduling,
+recovery journals and runtime settings are retained. This is a new acceptance
+proof, not another equivalent before/after comparison or an attributed speedup.
+The original paired comparisons retain their original sources and fingerprints.
+
+Prior-base ready CI passed backend 2,301, frontend 1,493 and all 276 browser
+cases, plus durability/lifecycle/builds. Its first visual run passed 66/67:
+one Builder view-switch sample was 370.260 ms against the unchanged 300 ms
+budget, with the other 24 samples at 26–51 ms. The unchanged pinned focused case
+passed (10.1 s; workspace p95 29–30 ms), and re-executed CI passed all 67 visual
+cases. The captured trace lacks CPU/GC/frame attribution for the original
+outlier; its cause remains unproven. No threshold, timeout or source was changed
+to obtain that repeat. The failed-layer retry's aggregation then rejected
+mixed-attempt browser job identity. A complete fresh run was started, and
+superseded when main advanced. Current-base qualification must execute and
+aggregate consistent candidate evidence; none of these older results qualifies
+the new head. Failure traces and provenance are retained in the delivery report.
 
 [PR #172](https://github.com/aaweaver-actuary/tempo/pull/172) records current-head/current-base
 qualification and final delivery evidence. Focused local passes and older
