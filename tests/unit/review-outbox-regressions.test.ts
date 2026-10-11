@@ -17,6 +17,74 @@ const auditReview = (attemptId: string, queueEntryId: number, backendId = attemp
 });
 const auditSuccessor = { card_id: "audit-successor", queue_entry_id: 9999, revision: 1, cycle: 0, local_date: "2026-10-11" };
 
+it("flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery", async () => {
+  enqueuePendingReview({ ...auditReview("startup-predecessor", 10001, "startup-conflict-card"), state: "conflicted",
+    conflict: { code: "retired", message: "Needs attention", retryable: false } });
+  enqueuePendingReview(auditReview("startup-conflict", 10002, "startup-conflict-card"));
+  enqueuePendingReview({ ...auditReview("startup-target", 10003), preparedNext: auditSuccessor });
+  const heldPost = auditDeferred<Response>();
+  const postRequested = auditDeferred<void>();
+  const heldReceipt = auditDeferred<Response>();
+  const receiptRequested = auditDeferred<void>();
+  const trace: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    if (String(input).includes("/api/operations/")) {
+      trace.push("receipt requested"); receiptRequested.resolve(); return heldReceipt.promise;
+    }
+    expect(JSON.parse(options!.body as string).attempt_id).toBe("startup-target");
+    trace.push("submitted POST started"); postRequested.resolve(); return heldPost.promise;
+  }));
+  let enteredReentrantCall = false;
+  let submittedOutcome: Promise<{ result?: Awaited<ReturnType<typeof flushPendingReviews>>; error?: ReviewReplayError }> | undefined;
+  const submitFromInitialConflict = () => {
+    if (enteredReentrantCall || !conflictedReviews().some(review => review.attemptId === "startup-conflict")) return;
+    enteredReentrantCall = true;
+    trace.push("initial conflict storage event");
+    submittedOutcome = flushPendingReviews(Infinity, false, undefined, undefined, "startup-target")
+      .then(result => ({ result }), error => { trace.push("submitted owner rejected"); return { error }; });
+  };
+  window.addEventListener("tempo:review-outbox", submitFromInitialConflict);
+  const firstFlush = flushPendingReviews(1, false, undefined, undefined, "startup-conflict");
+  let recoveredOutcome: ReturnType<typeof flushPendingReviews> | undefined;
+  try {
+    expect((await firstFlush).conflictedAttemptIds).toEqual(["startup-conflict"]);
+    await postRequested.promise;
+    expect(enteredReentrantCall).toBe(true);
+    recoveredOutcome = flushPendingReviews(Infinity, true, "startup-target", undefined, "startup-target")
+      .then(result => { trace.push("authoritative recovery confirmed"); return result; });
+    // Receipt-first delivery begins synchronously only if the initial owner's
+    // cleanup discarded the reentrant submission's active ownership.
+    const concurrentRecoveryStarted = trace.includes("receipt requested");
+    const confirmedReceipt = Response.json({ state: "complete", response: { persisted: true,
+      prepared_continuation: auditSuccessor } });
+    if (concurrentRecoveryStarted) {
+      heldReceipt.resolve(confirmedReceipt);
+      expect((await recoveredOutcome).persistedAttemptIds).toEqual(["startup-target"]);
+      expect(pendingReviews().some(review => review.attemptId === "startup-target")).toBe(false);
+      heldPost.reject(new Error("Lost POST response after the authoritative receipt"));
+      const submitted = await submittedOutcome!;
+      console.info("flush_settlement_audit initial ownership", { concurrentRecoveryStarted, trace, submitted });
+      expect(submitted).toMatchObject({ result: { persistedAttemptIds: ["startup-target"] } });
+    } else {
+      expect(pendingReviews().some(review => review.attemptId === "startup-target")).toBe(true);
+      heldPost.reject(new Error("Lost POST response before any receipt observation"));
+      expect((await submittedOutcome!).error).toMatchObject({ attemptId: "startup-target", classification: "transient" });
+      await receiptRequested.promise;
+      heldReceipt.resolve(confirmedReceipt);
+      const recovered = await recoveredOutcome;
+      expect(recovered.persistedAttemptIds).toEqual(["startup-target"]);
+      expect(recovered.preparedContinuations?.["startup-target"]).toEqual(auditSuccessor);
+      expect(trace.indexOf("submitted owner rejected")).toBeLessThan(trace.indexOf("authoritative recovery confirmed"));
+    }
+    console.info("flush_settlement_audit initial ownership", { concurrentRecoveryStarted, trace });
+  } finally {
+    window.removeEventListener("tempo:review-outbox", submitFromInitialConflict);
+    heldPost.reject(new Error("Release held POST"));
+    heldReceipt.resolve(Response.json({ state: "complete", response: { persisted: true, prepared_continuation: auditSuccessor } }));
+    await firstFlush; await submittedOutcome; await recoveredOutcome;
+  }
+});
+
 it.each(["persisted", "terminal"])("flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication", async outcome => {
   enqueuePendingReview({ ...auditReview("reentrant-a", 9901), preparedNext: auditSuccessor });
   enqueuePendingReview(auditReview("reentrant-b", 9902));

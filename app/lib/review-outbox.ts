@@ -478,8 +478,17 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
     if (retainedRetry && !recoverableReviews(explicitRetryAttemptId).some(review => logicalAttemptId(review) === explicitRetryAttemptId))
       return Promise.reject(new Error("An earlier result for this card needs attention before this result can retry."));
     activeFlushMaximumReviews = maximumReviews;
+    // Reserve ownership before saving can synchronously emit a public event.
+    // Reentrant callers observe this reservation's forwarded settlement.
+    let resolveFlushReservation!: (result: ReviewFlushResult | PromiseLike<ReviewFlushResult>) => void;
+    const flushReservation = new Promise<ReviewFlushResult>(resolve => { resolveFlushReservation = resolve; });
+    // Ordinary callers receive the actual flush below; an unused reservation
+    // must not create a second unhandled rejection when that flush fails.
+    void flushReservation.catch(() => undefined);
+    activeFlush = flushReservation;
     activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst || !!explicitRetryAttemptId, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId)
       .finally(() => { activeFlush = undefined; });
+    resolveFlushReservation(activeFlush);
   }
   return activeFlush;
 }
