@@ -1,6 +1,8 @@
 """Study-only moves require current evidence, never an empty paused index."""
 from contextlib import contextmanager
 import json
+import chess
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -91,3 +93,24 @@ def test_saved_move_verification_never_grades_missing_invalid_or_stale_evidence(
         return
     response = TestClient(main.app).get('/api/repertoires/issuance/move-membership', params=params)
     assert response.status_code == (409 if failure.startswith('changed') else 503)
+
+
+def test_saved_move_verification_yields_completed_lines_when_next_line_exhausts_slice(saved_sources, monkeypatch):
+    original_clock = verification.time
+    slice_clock = iter([0, 0, 0, 0, 1])
+    monkeypatch.setattr(verification, 'time', SimpleNamespace(monotonic=lambda: next(slice_clock)))
+    first = verification.verify_repertoire_move('issuance', START_FEN, 'd2d4')
+    assert first['verified'] is None and first['next_cursor'] == 'a'
+    monkeypatch.setattr(verification, 'time', original_clock)
+    final = verification.verify_repertoire_move('issuance', START_FEN, 'd2d4', first['next_cursor'], first['source_token'])
+    assert final['verified'] is True
+
+
+def test_saved_move_verification_canonicalizes_transposed_positions(saved_sources):
+    moves = ['g1f3', 'g8f6', 'g2g3', 'd7d5', 'f1g2']
+    with database.connection() as connection:
+        connection.execute('UPDATE repertoire_lines SET moves_json=? WHERE id=\'b\'', (json.dumps(moves),))
+    board = chess.Board(START_FEN)
+    for move in ['g2g3', 'd7d5', 'g1f3', 'g8f6']:
+        board.push_uci(move)
+    assert verification.verify_repertoire_move('issuance', board.fen(), 'f1g2')['verified'] is True

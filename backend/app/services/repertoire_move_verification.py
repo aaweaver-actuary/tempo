@@ -16,6 +16,10 @@ SOURCE_REPLAY_SECONDS = 0.15
 SOURCE_LINE_MOVE_LIMIT = 2048
 
 
+class _ReplayBudgetExhausted(Exception):
+    """An unfinished line must be retried from the last completed source."""
+
+
 class _SourceDigest:
     def __init__(self):
         self.digest = hashlib.sha256()
@@ -51,11 +55,12 @@ def _line_contains_move(source_line, position_key, move_uci, deadline):
         matched = False
         for source_move in moves:
             if time.monotonic() >= deadline:
-                raise HTTPException(503, 'Saved line verification exceeded its bounded slice. Retry or inspect this repertoire.')
+                raise _ReplayBudgetExhausted()
             parsed_move = chess.Move.from_uci(source_move)
             if parsed_move not in board.legal_moves:
                 raise ValueError('Illegal saved source move')
-            matched |= canonical_fen(board.fen()) == position_key and source_move == move_uci
+            # Board.fen() already normalizes legal en passant and castling rights.
+            matched |= ' '.join(board.fen().split()[:4]) == position_key and source_move == move_uci
             board.push(parsed_move)
         return matched
     except (ValueError, TypeError, KeyError) as error:
@@ -88,7 +93,11 @@ def verify_repertoire_move(repertoire_id, fen, move_uci, cursor='', source_token
     for source_line in source_lines[:SOURCE_PAGE_SIZE]:
         if time.monotonic() >= deadline:
             break
-        if _line_contains_move(source_line, position_key, move_uci, deadline):
+        try:
+            matched = _line_contains_move(source_line, position_key, move_uci, deadline)
+        except _ReplayBudgetExhausted:
+            break
+        if matched:
             verified = True
             next_cursor = None
             break
