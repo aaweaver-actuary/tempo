@@ -152,6 +152,114 @@ def prove_optional_handoff(identifier):
     legacy_result = execute_command(str(uuid4()), "cards.review", legacy)
     assert legacy_result["persisted"] and "prepared_continuation" not in legacy_result
     print("prepared_continuation_native_lock_head_and_receipt_replay: passed")
+    test_postgres_prepared_optional_locks_decline_without_blocking_review(identity, issue, review)
+    test_postgres_prepared_issuance_fences_competing_edits_and_deletions(identity, issue, review)
+
+
+def test_postgres_prepared_optional_locks_decline_without_blocking_review(identity, issue, review):
+    """Exercise native advisory/row contention with both lexical card orders."""
+    from app.command_gateway import execute_command
+
+    for reviewed_index, successor_index, contention in [(6, 5, "advisory"), (8, 9, "row")]:
+        reviewed_identity = identity(reviewed_index)
+        successor_identity = identity(successor_index)
+        with psycopg.connect(DSN) as connection:
+            connection.execute("UPDATE daily_queue SET position=-4000 WHERE id=%s", (reviewed_identity["queue_entry_id"],))
+            connection.execute("UPDATE daily_queue SET position=-3999 WHERE id=%s", (successor_identity["queue_entry_id"],))
+        issue(reviewed_index)
+        operation = str(uuid4())
+        payload = review(reviewed_index, successor_index)
+        with psycopg.connect(DSN) as editing:
+            if contention == "advisory":
+                editing.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{successor_identity['card_id']}",))
+            else:
+                # Isolate row contention from other mutation-trigger locks.
+                editing.execute("SELECT id FROM cards WHERE id=%s FOR UPDATE", (successor_identity["card_id"],))
+            result = execute_command(operation, "cards.review", payload)
+            assert result["persisted"] and "prepared_continuation" not in result
+            # The editor still owns its lock when persistence has completed.
+            with psycopg.connect(DSN) as observer:
+                assert observer.execute("SELECT count(*) FROM reviews WHERE card_id=%s", (reviewed_identity["card_id"],)).fetchone()[0] == 1
+                assert observer.execute("SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s", (successor_identity["queue_entry_id"],)).fetchone()[0] == 0
+            if contention == "row":
+                editing.execute("UPDATE cards SET revision=revision+1 WHERE id=%s", (successor_identity["card_id"],))
+        assert execute_command(operation, "cards.review", payload) == result
+        assert execute_command(str(uuid4()), "cards.review", payload) == result
+        if contention == "row":
+            assert execute_command(str(uuid4()), "queue.issue_head", {"queue_date": successor_identity["local_date"],
+                "entry_id": successor_identity["queue_entry_id"], "card_id": successor_identity["card_id"],
+                "expected_revision": successor_identity["revision"]}) == {"issued": False}
+    # Validation after a completed deletion must preserve the preceding review.
+    with psycopg.connect(DSN) as connection:
+        connection.execute("UPDATE daily_queue SET position=-5000 WHERE id=%s", (identity(10)["queue_entry_id"],))
+        connection.execute("UPDATE daily_queue SET position=-4999 WHERE id=%s", (identity(11)["queue_entry_id"],))
+        connection.execute("INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s)", (identity(11)["card_id"], date.today().isoformat()))
+    issue(10)
+    deleted_successor_result = execute_command(str(uuid4()), "cards.review", review(10, 11))
+    assert deleted_successor_result["persisted"] and "prepared_continuation" not in deleted_successor_result
+    print("PASS test_postgres_prepared_optional_locks_decline_without_blocking_review")
+
+
+def test_postgres_prepared_issuance_fences_competing_edits_and_deletions(identity, issue, review):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from time import monotonic
+    from unittest.mock import patch
+    from app import postgres_store, review_commands
+    from app.card_deletion import permanent_delete_card
+    from app.command_gateway import execute_command
+
+    for reviewed_index, successor_index, mutation in [(30, 31, "edit"), (32, 33, "delete")]:
+        successor_identity = identity(successor_index)
+        with psycopg.connect(DSN) as connection:
+            connection.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (-6000-reviewed_index, identity(reviewed_index)["queue_entry_id"]))
+            connection.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (-5999-reviewed_index, successor_identity["queue_entry_id"]))
+        issue(reviewed_index)
+        issuance_reached, release_issuance, mutation_started = Event(), Event(), Event()
+        review_pids, mutation_pids = [], []
+        original_issuance = review_commands._issue_prepared_continuation
+
+        def pause_issuance(database, candidate):
+            review_pids.append(database.execute_native("SELECT pg_backend_pid()").fetchone()[0])
+            issuance_reached.set()
+            assert release_issuance.wait(timeout=15), "Prepared issuance barrier was not released"
+            return original_issuance(database, candidate)
+
+        def mutate_successor():
+            with postgres_store.connection() as database:
+                mutation_pids.append(database.execute_native("SELECT pg_backend_pid()").fetchone()[0])
+                mutation_started.set()
+                if mutation == "delete":
+                    permanent_delete_card(database, successor_identity["card_id"], successor_identity["revision"])
+                else:
+                    database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{successor_identity['card_id']}",))
+                    database.execute("UPDATE cards SET revision=revision+1 WHERE id=?", (successor_identity["card_id"],))
+
+        with ThreadPoolExecutor(max_workers=2) as executor, patch.object(review_commands, "_issue_prepared_continuation", pause_issuance):
+            review_future = executor.submit(execute_command, str(uuid4()), "cards.review", review(reviewed_index, successor_index))
+            try:
+                assert issuance_reached.wait(timeout=5), "Review did not reach prepared issuance"
+                mutation_future = executor.submit(mutate_successor)
+                assert mutation_started.wait(timeout=5), "Competing mutation did not start"
+                deadline = monotonic() + 5
+                with psycopg.connect(DSN, autocommit=True) as observer:
+                    while True:
+                        blocked = observer.execute("SELECT wait_event_type,pg_blocking_pids(pid) FROM pg_stat_activity WHERE pid=%s", (mutation_pids[0],)).fetchone()
+                        if blocked and blocked[0] == "Lock" and review_pids[0] in blocked[1]:
+                            break
+                        assert not mutation_future.done(), "Mutation escaped the prepared-card lock"
+                        assert monotonic() < deadline, f"Mutation did not wait on review: {blocked}"
+            finally:
+                release_issuance.set()
+            result = review_future.result(timeout=15)
+            mutation_future.result(timeout=15)
+        assert result["persisted"] and result["prepared_continuation"] == {**successor_identity, "attempt_failed": False}
+        assert execute_command(str(uuid4()), "queue.issue_head", {"queue_date": successor_identity["local_date"],
+            "entry_id": successor_identity["queue_entry_id"], "card_id": successor_identity["card_id"],
+            "expected_revision": successor_identity["revision"]}) == {"issued": False}
+        with psycopg.connect(DSN) as observer:
+            assert observer.execute("SELECT count(*) FROM reviews WHERE card_id=%s", (identity(reviewed_index)["card_id"],)).fetchone()[0] == 1
+    print("PASS test_postgres_prepared_issuance_fences_competing_edits_and_deletions")
 
 
 if __name__ == "__main__":

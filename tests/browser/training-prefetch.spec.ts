@@ -18,6 +18,54 @@ async function clickBoardSquare(page: Page, square: string): Promise<void> {
   );
 }
 
+test("prepared_reconciliation_failure_preserves_native_play_and_blocks_unissued_successor_until_retry", async ({ page }) => {
+  await prepareVisualUI(page);
+  const queueCards = ["a", "b", "c"].map((id, index) => ({ id: `qualification-${id}`, queue_entry_id: 701 + index,
+    start_fen: startFen, moves: ["e2e4", "e7e5", "g1f3"], revision: 1, cycle: 0,
+    content_type: "opening", repertoire_name: `Qualification ${id}`, repertoire_source: "PGN",
+    first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white" }));
+  let confirmedCount = 0;
+  let recoverQueue = false;
+  let reconciliationFailed = false;
+  const submittedAttempts: string[] = [];
+  await page.route("**/api/queue/window?**", async route => {
+    if (confirmedCount && !recoverQueue) {
+      reconciliationFailed = true;
+      await route.fulfill({ status: 422, json: { detail: "Qualification queue is unavailable. Retry loading the queue." } });
+    } else await route.fulfill({ json: { cards: queueCards.slice(confirmedCount), count: 3 - confirmedCount, local_date: "2026-09-18" } });
+  });
+  await page.route("**/api/cards/qualification-*/review", async route => {
+    const review = route.request().postDataJSON();
+    submittedAttempts.push(review.attempt_id);
+    confirmedCount++;
+    await route.fulfill({ json: { persisted: true, ...(confirmedCount === 1 ? { prepared_continuation: {
+      card_id: "qualification-b", queue_entry_id: 702, revision: 1, cycle: 0, local_date: "2026-09-18",
+    } } : {}) } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Correct", exact: true }).click();
+  await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", "702");
+  await expect.poll(() => reconciliationFailed).toBe(true);
+  const board = page.locator(".board-frame").first();
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  await clickBoardSquare(page, "e2"); await clickBoardSquare(page, "e4");
+  await expect(board).toHaveAttribute("data-fen", /4P3/);
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  const playedFen = await board.getAttribute("data-fen");
+  await page.getByRole("button", { name: "Correct", exact: true }).click();
+  await expect(page.getByText("Result saved; the next card could not be loaded.", { exact: false }).first()).toBeVisible();
+  await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", "702");
+  await expect(board).toHaveAttribute("data-fen", playedFen!);
+  await expect(board).toHaveAttribute("data-input-enabled", "false");
+  expect(submittedAttempts).toHaveLength(2);
+  expect(new Set(submittedAttempts).size).toBe(2);
+  recoverQueue = true;
+  await page.getByRole("button", { name: "Retry loading the queue", exact: true }).click();
+  await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", "703");
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  expect(submittedAttempts).toHaveLength(2);
+});
+
 test("connected next training card waits for review confirmation and fresh queue", async ({ page }) => {
   await prepareVisualUI(page);
   let confirmed = false;
