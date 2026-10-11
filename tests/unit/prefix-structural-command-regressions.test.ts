@@ -101,6 +101,12 @@ it("issue81_independent_repertoire_final_admission_allows_real_command", async (
   await deleteRepertoireCommand("independent");
   expect(fetcher).toHaveBeenCalledOnce();
 });
+it("issue81_branch_removal_without_complete_rebuild_scope_cannot_guess_independence", async () => {
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await expect(removeBranchCommand({ ...branch, repertoire_id: "independent" })).rejects.toThrow("Resolve the prefix transition");
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(localStorage.getItem("tempo-pending-branch-removal-v1")).toBeNull();
+});
 it("issue81_verified_resolution_and_permitted_clear_restore_structural_submission", async () => {
   const operation = JSON.parse(localStorage.getItem(prefixKey)!);
   localStorage.setItem(prefixKey, JSON.stringify({ ...operation, state: "published", transitionPhase: "complete", result: {

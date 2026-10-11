@@ -40,7 +40,7 @@ export async function removeBranchCommand(payload: BranchRemoval) {
       if (pending.body !== body) throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }
-  let response = await admitPrefixStructuralMutation({ repertoireIds: [payload.repertoire_id], scopeComplete: true }, () => {
+  let response = await admitPrefixStructuralMutation({ repertoireIds: [payload.repertoire_id], scopeComplete: false }, () => {
     if (!pending) {
       pending = { operationId: crypto.randomUUID(), body };
       localStorage.setItem(PENDING_KEY, JSON.stringify(pending));

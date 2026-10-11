@@ -396,7 +396,6 @@ export default function BuilderView({
   const selectedRepertoireId = selectedRepertoire?.id;
   const selectedRepertoireSide = selectedRepertoire?.side;
   const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: selectedRepertoireId ? [selectedRepertoireId] : [], scopeComplete: false }, usesLocalApi());
-  const removalAdmission = usePrefixStructuralAdmission({ repertoireIds: selectedRepertoireId ? [selectedRepertoireId] : [], scopeComplete: Boolean(selectedRepertoireId) }, usesLocalApi());
   const lineMatches = useMemo(
     () =>
       availableLines.filter(
@@ -1538,7 +1537,7 @@ export default function BuilderView({
               <Button
                 className="danger"
                 onClick={() => void removeBranchFromCurrentPosition()}
-                disabled={Boolean(trainingRouteToResolve) || !selectedRepertoire || cursor === 0 || removalAdmission.paused}
+                disabled={Boolean(trainingRouteToResolve) || !selectedRepertoire || cursor === 0 || structuralAdmission.paused}
               >
                 Delete line from here
               </Button>

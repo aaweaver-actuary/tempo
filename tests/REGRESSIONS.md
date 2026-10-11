@@ -4141,3 +4141,8 @@ Server durable reservation/discovery remains proposed separately; #81 is open.
 of all four real structural browser cases in complete repertoire qualification.
 It first failed on the missing registration; the inventory repair retains the
 full family and does not exempt or quarantine any acceptance assertion.
+
+`issue81_branch_removal_without_complete_rebuild_scope_cannot_guess_independence`
+refuses source removal for a seemingly independent repertoire when the client
+cannot enumerate the ensuing derived graph/card scope. It sends no request and
+allocates no removal identity; complete canonical/deletion scopes stay eligible.
