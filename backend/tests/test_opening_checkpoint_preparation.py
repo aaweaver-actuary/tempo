@@ -15,7 +15,7 @@ from app.services.opening_decision_evidence import EvidenceConflict, decision_ma
 
 
 @pytest.mark.parametrize('historical_preparation', [None, 'valid', 'obsolete'])
-def test_standalone_opening_checkpoint_reduces_outside_background_transaction(monkeypatch, historical_preparation):
+def test_standalone_opening_checkpoint_reduces_outside_background_transaction(normal_study_mode, monkeypatch, historical_preparation):
     from app import command_gateway, database, tasks
     from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
     from app.services import postgres_opening_evidence as evidence

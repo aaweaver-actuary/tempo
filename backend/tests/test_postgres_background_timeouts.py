@@ -13,7 +13,7 @@ from app.services.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_S
 
 
 @pytest.fixture
-def timeout_database(monkeypatch):
+def timeout_database(normal_study_mode, monkeypatch):
     database = sqlite3.connect(":memory:")
     database.row_factory = sqlite3.Row
     database.executescript(BACKGROUND_METRIC_SCHEMA)

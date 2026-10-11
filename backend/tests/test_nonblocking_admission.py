@@ -56,7 +56,7 @@ def test_control_bookkeeping_does_not_claim_shared_admission(monkeypatch):
             pytest.fail('control context leaked')
 
 
-def test_background_http_admission_reports_waiting_and_retry_without_false_success(monkeypatch):
+def test_background_http_admission_reports_waiting_and_retry_without_false_success(normal_study_mode, monkeypatch):
     from contextlib import contextmanager
     from fastapi.testclient import TestClient
     from app import main
@@ -184,7 +184,7 @@ def test_prefix_foreground_receipt_denial_does_not_consume_failure_attempts(monk
 
 
 @pytest.fixture
-def control_command_store(monkeypatch):
+def control_command_store(normal_study_mode, monkeypatch):
     """SQL-backed command harness; native proof owns PostgreSQL lock/budget evidence."""
     import sqlite3
     from datetime import datetime, timezone

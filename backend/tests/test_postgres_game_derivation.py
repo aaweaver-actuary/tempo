@@ -159,7 +159,7 @@ def test_postgres_game_position_index_retains_final_legal_position_on_bad_move()
     assert prepared.fen_key == " ".join(board.fen().split()[:4])
 
 
-def test_postgres_derivation_lock_conflicts_yield_without_failing_task(monkeypatch):
+def test_postgres_derivation_lock_conflicts_yield_without_failing_task(normal_study_mode, monkeypatch):
     monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
     from contextlib import nullcontext
 
