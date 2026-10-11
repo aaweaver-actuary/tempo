@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import FrozenInstanceError, replace
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import random
@@ -18,6 +19,16 @@ from app.services.opening_frontier import (
     project_opening_frontier,
 )
 from app.services.opening_graph import GraphInput, build_graph
+from app.services import opening_frontier as frontier_contract
+from app.services.opening_policy_reach import propagate_policy_reach, PolicyReachRoute
+from app.services.opening_preparedness import (
+    ProbabilityEvidence, DecisionReadiness, CardLearningEffect, rank_card_values,
+)
+from app.services.opening_segmentation import decision_identity
+from app.services.decision_readiness import (
+    PresentationIdentity, ReadinessSnapshot, StudyReviewEvidence, decision_readiness,
+)
+from test_opening_policy_reach import policy_for, evidence_for, CONTEXT, ITALIAN, RUY
 
 
 MAIN_MOVES = tuple("e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4".split())
@@ -378,3 +389,352 @@ def test_relaxed_frontier_empty_snapshot_and_fixture_diagnostic_are_explicit():
     }
     assert any(card["obligations"] for card in example["cards"])
     assert len(example["eligible_card_ids"]) == len(set(example["eligible_card_ids"]))
+
+
+def _policy_projection(snapshot, *routes, valuation_inputs=(), policy=None):
+    policy = policy or policy_for(routes[0].publication.repertoire_id,
+        (tuple(move for step in route.steps for move in step.moves) for route in routes),
+        trained_color=routes[0].steps[0].trained_color, root=routes[0].steps[0].starting_fen)
+    bindings = tuple(frontier_contract.OpeningPolicyRouteBinding(route.publication, route.line_id)
+                     for route in routes)
+    return frontier_contract.project_policy_opening_frontier(snapshot, policy=policy,
+        route_bindings=bindings, valuation_inputs=valuation_inputs)
+
+
+def _policy_card(result, identifier):
+    return next(card for card in result.cards if card.eligibility.card_id == identifier)
+
+
+def _valuation_input(snapshot, policy, route, step, *, reach=None, readiness=None):
+    board = chess.Board(step.starting_fen)
+    for move in step.moves:
+        if board.turn == (policy.trained_color == "white"):
+            identifier = decision_identity(policy.repertoire_id, board.fen(), policy.trained_color,
+                                           move, policy.policy_version)
+        board.push_uci(move)
+    return frontier_contract.OpeningFrontierValuationInput(snapshot.snapshot_id,
+        policy.policy_id, policy.policy_version, step.card_id, identifier,
+        (frontier_contract.OpeningPolicyRouteBinding(route.publication, route.line_id),),
+        reach if reach is not None else ProbabilityEvidence.exact(.25),
+        readiness if readiness is not None else ProbabilityEvidence.exact(.2),
+        ("explicit-fixture-input-v1",))
+
+
+def test_policy_frontier_foreign_route_cannot_establish_selected_policy_eligibility():
+    first, second = _transposed_routes(separate_repertoires=True)
+    snapshot = _snapshot(first, second, reviewed=(first.steps[0].card_id,))
+    shared_identifier = first.steps[-1].card_id
+    # Existing #151 remains deliberately global; selecting after aggregation is unsafe.
+    assert shared_identifier in project_opening_frontier(snapshot).eligible_card_ids
+    result = _policy_projection(snapshot, second)
+    assert shared_identifier not in result.eligible_card_ids
+    blocked = _policy_card(result, shared_identifier)
+    assert blocked.eligibility.status == "prerequisite_unseen"
+    assert blocked.eligibility.routes[0].missing_prerequisite_card_ids == (second.steps[0].card_id,)
+    assert all(route.publication.repertoire_id == "other" for route in blocked.eligibility.routes)
+
+
+@pytest.mark.parametrize("evidence,expected", [
+    ("failed_learning", "eligible"), ("queued_only", "prerequisite_unseen"),
+    ("invalidated", "prerequisite_unseen"), ("reimport", "eligible"),
+    ("changed_prefix", "prerequisite_unseen"),
+])
+def test_policy_frontier_preserves_durable_exposure_without_maturity(evidence, expected):
+    route = _route()
+    root_identifier, child_identifier = (step.card_id for step in route.steps[:2])
+    snapshot = _snapshot(route, reviewed=(root_identifier,))
+    if evidence == "queued_only":
+        snapshot = replace(snapshot, reviews=())  # Introduced/new/queued metadata cannot be a review.
+    elif evidence == "invalidated":
+        snapshot = replace(snapshot, reviews=(replace(snapshot.reviews[0], invalidated_at="2026-10-11"),))
+    elif evidence == "reimport":
+        route = replace(route, publication=replace(route.publication, generation=3))
+        snapshot = _snapshot(route, reviewed=(root_identifier,))
+    elif evidence == "changed_prefix":
+        old = _route(prefix=2)
+        snapshot = replace(_snapshot(route), reviews=(OpeningFrontierReview("old-prefix-review", old.steps[0].card_id),))
+    result = _policy_projection(snapshot, route)
+    assert _policy_card(result, child_identifier).eligibility.status == expected
+    assert _policy_card(result, root_identifier).decisions[0].readiness.status == "unknown"
+    assert result.exposure_version == "sequence-exposure-v1"
+
+
+def test_policy_frontier_one_exposed_opponent_transposition_suffices_and_duplicates_collapse():
+    first = _route("first", tuple("g1f3 d7d5 g2g3 g8f6 f1g2 e7e6 e1g1".split()), prefix=2)
+    second = _route("second", tuple("g1f3 g8f6 g2g3 d7d5 f1g2 e7e6 e1g1".split()), prefix=2)
+    assert first.steps[-1].card_id == second.steps[-1].card_id
+    snapshot = _snapshot(first, second, reviewed=tuple(step.card_id for step in first.steps[:-1]))
+    result = _policy_projection(snapshot, first, second)
+    shared = _policy_card(result, first.steps[-1].card_id)
+    assert shared.eligibility.status == "eligible"
+    assert len(shared.eligibility.qualifying_routes) == 1
+    assert len(shared.eligibility.routes) == 2
+    assert result.eligible_card_ids.count(shared.eligibility.card_id) == 1
+    duplicated = replace(snapshot, routes=(*snapshot.routes, *snapshot.routes), reviews=snapshot.reviews * 2)
+    assert _policy_projection(duplicated, first, second, first) == result
+
+
+def test_policy_frontier_never_splices_transposed_practice_or_uses_valuation_as_exposure():
+    first = _route("first", tuple("g1f3 d7d5 g2g3 g8f6 f1g2 e7e6 e1g1".split()))
+    second = _route("second", tuple("g1f3 g8f6 g2g3 d7d5 f1g2 e7e6 e1g1".split()))
+    policy = policy_for("rep", (tuple(move for step in route.steps for move in step.moves)
+                                for route in (first, second)))
+    snapshot = _snapshot(first, second,
+        reviewed=(first.steps[0].card_id, first.steps[1].card_id, second.steps[2].card_id))
+    supplied = _valuation_input(snapshot, policy, first, first.steps[-1],
+        reach=ProbabilityEvidence.exact(1), readiness=ProbabilityEvidence.exact(1))
+    result = _policy_projection(snapshot, first, second, policy=policy, valuation_inputs=(supplied,))
+    shared = _policy_card(result, first.steps[-1].card_id)
+    assert shared.eligibility.status == "prerequisite_unseen"
+    assert shared.eligibility.qualifying_routes == ()
+    assert shared.decisions == (supplied,)
+    assert {route.missing_prerequisite_card_ids for route in shared.eligibility.routes} == {
+        (first.steps[2].card_id,), (second.steps[1].card_id,)}
+
+
+@pytest.mark.parametrize("missing_action", [False, True])
+def test_policy_frontier_incompatible_or_unresolved_actions_block_only_their_route(missing_action):
+    italian = _route("italian", ITALIAN)
+    ruy = _route("ruy", RUY)
+    policy = policy_for("rep", (ITALIAN,))
+    if missing_action:
+        policy = replace(policy, actions=tuple(action for action in policy.actions if action.move_uci != "f1c4"))
+    snapshot = _snapshot(italian, ruy, reviewed=tuple(step.card_id for step in italian.steps[:2]))
+    result = _policy_projection(snapshot, italian, ruy, policy=policy)
+    assert _policy_card(result, ruy.steps[2].card_id).eligibility.status == "structurally_unreachable"
+    assert _policy_card(result, italian.steps[2].card_id).eligibility.status == (
+        "structurally_unreachable" if missing_action else "eligible")
+    reason = "missing_policy_action" if missing_action else "policy_action_mismatch"
+    assert reason in _policy_card(result, ruy.steps[2].card_id).eligibility.routes[0].blocked_reasons
+    assert reason in _policy_card(result, ruy.steps[-1].card_id).eligibility.routes[0].blocked_reasons
+    assert _policy_card(result, italian.steps[1].card_id).eligibility.status == "already_introduced"
+
+
+@pytest.mark.parametrize("color", ["white", "black"])
+def test_policy_frontier_retains_explicit_policy_identity_and_trained_color(color):
+    moves = ITALIAN if color == "white" else (*ITALIAN, "g8f6")
+    route = _route(moves=moves, color=color)
+    snapshot = _snapshot(route, reviewed=(route.steps[0].card_id,))
+    policy = replace(policy_for("rep", (moves,), trained_color=color), policy_id="chosen-experiment",
+        actions=tuple(replace(action, policy_id="chosen-experiment")
+                      for action in policy_for("rep", (moves,), trained_color=color).actions), policy_version=3)
+    result = _policy_projection(snapshot, route, policy=policy)
+    assert result.policy == policy and result.policy.policy_id != result.policy.repertoire_id
+    assert route.steps[1].card_id in result.eligible_card_ids
+    assert all(value.policy_id == policy.policy_id and value.policy_version == 3
+               for card in result.cards for value in card.decisions)
+
+
+@pytest.mark.parametrize("selected_moves,other_moves", [(ITALIAN, RUY), (RUY, ITALIAN)])
+def test_policy_frontier_italian_ruy_conditional_values_are_isolated(selected_moves, other_moves):
+    selected = _route("selected", selected_moves, repertoire_id="selected")
+    other = _route("other", other_moves, repertoire_id="other")
+    snapshot = _snapshot(selected, reviewed=tuple(step.card_id for step in selected.steps[:-1]))
+    policy = policy_for("selected", (selected_moves,))
+    reach = propagate_policy_reach(policy, (PolicyReachRoute("selected", "selected", selected_moves),),
+                                   evidence_for((selected_moves,)), context=CONTEXT)
+    value = _valuation_input(snapshot, policy, selected, selected.steps[-1])
+    actual_reach = next(decision for decision in reach.decisions if decision.identity == value.decision_id)
+    value = replace(value, reach=actual_reach.probability, provenance=(reach.model_version, reach.context_id))
+    expected = _policy_projection(snapshot, selected, policy=policy, valuation_inputs=(value,))
+    for copies in (1, 2, 4):
+        expanded = _snapshot(selected, *((other,) * copies),
+                             reviewed=tuple(step.card_id for step in selected.steps[:-1]))
+        assert _policy_projection(expanded, selected, policy=policy, valuation_inputs=(value,)) == expected
+    assert _policy_card(expected, value.card_id).decisions == (value,)
+
+
+def test_policy_frontier_supplied_reach_orders_deep_common_and_shallow_rare_with_existing_kernel():
+    common_moves = ITALIAN[:5]
+    rare_moves = ("e2e4", "c7c5", "g1f3")
+    common, rare = _route("common", common_moves), _route("rare", rare_moves)
+    policy = policy_for("rep", (common_moves, rare_moves))
+    snapshot = _snapshot(common, rare, reviewed=tuple(step.card_id for step in common.steps[:-1]))
+    reach = propagate_policy_reach(policy,
+        (PolicyReachRoute("rep", "common", common_moves), PolicyReachRoute("rep", "rare", rare_moves)),
+        evidence_for((common_moves, rare_moves)), context=CONTEXT)
+    supplied = tuple(_valuation_input(snapshot, policy, route, route.steps[-1]) for route in (common, rare))
+    by_decision = {decision.identity: decision for decision in reach.decisions}
+    supplied = tuple(replace(value, reach=by_decision[value.decision_id].probability,
+                            provenance=(reach.model_version, reach.context_id)) for value in supplied)
+    assert supplied[0].reach.lower == pytest.approx(.42 * .50)
+    assert supplied[1].reach.lower == pytest.approx(.10)
+    assert common.steps[-1].last_decision_index > rare.steps[-1].last_decision_index
+
+    def ordering(values):
+        result = _policy_projection(snapshot, common, rare, policy=policy, valuation_inputs=values)
+        rows = tuple(value for card in result.cards if card.eligibility.status == "eligible"
+                     for value in card.decisions if value.card_id in {row.card_id for row in supplied})
+        assert {row.card_id for row in rows} == {row.card_id for row in supplied}
+        memory = tuple(DecisionReadiness(row.decision_id,
+            (replace(by_decision[row.decision_id].kernel_routes()[0], probability=row.reach),),
+            row.readiness, policy_id=policy.policy_id) for row in rows)
+        effects = tuple(CardLearningEffect(row.card_id, ((row.decision_id, ProbabilityEvidence.exact(.8)),),
+                                          policy_id=policy.policy_id) for row in rows)
+        ranking = rank_card_values(memory, effects, policy_id=policy.policy_id)
+        return tuple(value.card_id for value in ranking.ranked)
+
+    assert ordering(supplied) == (supplied[0].card_id, supplied[1].card_id)
+    assert ordering((replace(supplied[0], reach=supplied[1].reach),
+                     replace(supplied[1], reach=supplied[0].reach))) == (supplied[1].card_id, supplied[0].card_id)
+
+
+def test_policy_frontier_preserves_real_readiness_and_unknown_prefix_decisions():
+    route = _route(prefix=2)
+    snapshot = _snapshot(route, reviewed=(route.steps[0].card_id,))
+    policy = policy_for("rep", (MAIN_MOVES,))
+    as_of = datetime(2026, 10, 11, 12, tzinfo=timezone.utc)
+    values = []
+    for step in route.steps[:2]:
+        memory = ReadinessSnapshot(PresentationIdentity(step.card_id, 1, "rep", "white"),
+            step.starting_fen, step.moves,
+            reviews=(StudyReviewEvidence(1, step.card_id, as_of, "again", card_revision=1),))
+        estimate = decision_readiness(memory, as_of,
+                                      decision_index=step.last_decision_index - step.first_decision_index)
+        probability = (ProbabilityEvidence.unknown(";".join(estimate.reasons)) if estimate.readiness_score is None
+                       else ProbabilityEvidence.exact(estimate.readiness_score))
+        row = _valuation_input(snapshot, policy, route, step, readiness=probability)
+        values.append(replace(row, provenance=(f"readiness:{estimate.version}:{as_of.isoformat()}",)))
+    result = _policy_projection(snapshot, route, policy=policy, valuation_inputs=tuple(values))
+    root, child = (_policy_card(result, step.card_id) for step in route.steps[:2])
+    assert all(row.readiness.status == "unknown" for row in root.decisions)
+    assert child.decisions[0].readiness == ProbabilityEvidence.exact(0)
+    assert child.eligibility.status == "eligible"
+    assert child.prerequisites == root.decisions
+    assert len(root.decisions) == 2  # No coarse prefix estimate was copied into either decision.
+
+
+def test_policy_frontier_missing_values_stay_unknown_and_supplied_bounds_survive():
+    route = _route()
+    snapshot = _snapshot(route, reviewed=(route.steps[0].card_id,))
+    policy = policy_for("rep", (MAIN_MOVES,))
+    value = _valuation_input(snapshot, policy, route, route.steps[1],
+        reach=ProbabilityEvidence.bounded(.1, .4, "missing_source_distribution"),
+        readiness=ProbabilityEvidence.unknown("unavailable_readiness"))
+    result = _policy_projection(snapshot, route, policy=policy, valuation_inputs=(value,))
+    child = _policy_card(result, value.card_id)
+    assert child.decisions == (value,)
+    assert child.eligibility.status == "eligible"
+    assert child.prerequisites[0].reach.status == child.prerequisites[0].readiness.status == "unknown"
+    assert child.prerequisites[0].readiness != ProbabilityEvidence.exact(0)
+
+
+@pytest.mark.parametrize("defect", ["snapshot", "policy", "version", "boolean_version", "card", "decision",
+    "generation", "scope", "line", "empty_routes", "empty_provenance", "conflict"])
+def test_policy_frontier_rejects_mismatched_stale_and_conflicting_valuation_sources(defect):
+    route = _route()
+    snapshot = _snapshot(route, reviewed=(route.steps[0].card_id,))
+    policy = policy_for("rep", (MAIN_MOVES,))
+    value = _valuation_input(snapshot, policy, route, route.steps[1])
+    changes = {"snapshot": {"snapshot_id": "old-snapshot"}, "policy": {"policy_id": "other"},
+        "version": {"policy_version": 2}, "boolean_version": {"policy_version": True},
+        "card": {"card_id": "foreign-card"}, "decision": {"decision_id": "foreign-decision"},
+        "empty_routes": {"route_bindings": ()}, "empty_provenance": {"provenance": ()}}
+    if defect in changes:
+        value = replace(value, **changes[defect])
+    elif defect in {"generation", "scope", "line"}:
+        binding = value.route_bindings[0]
+        publication = replace(binding.publication, **({"generation": 1} if defect == "generation"
+                              else {"scope_digest": "old-scope"} if defect == "scope" else {}))
+        value = replace(value, route_bindings=(replace(binding, publication=publication,
+                                                      line_id="other" if defect == "line" else binding.line_id),))
+    inputs = (value, replace(value, readiness=ProbabilityEvidence.exact(.3))) if defect == "conflict" else (value,)
+    with pytest.raises(ValueError):
+        _policy_projection(snapshot, route, policy=policy, valuation_inputs=inputs)
+
+
+@pytest.mark.parametrize("defect", ["foreign", "generation", "missing", "color", "game_source"])
+def test_policy_frontier_invalid_route_bindings_and_game_provenance_are_explicit(defect):
+    route = _route()
+    snapshot = _snapshot(route)
+    policy = policy_for("rep", (MAIN_MOVES,))
+    binding = frontier_contract.OpeningPolicyRouteBinding(route.publication, route.line_id)
+    if defect == "foreign":
+        binding = replace(binding, publication=replace(binding.publication, repertoire_id="other"))
+    elif defect == "generation":
+        binding = replace(binding, publication=replace(binding.publication, generation=1))
+    elif defect == "missing":
+        binding = replace(binding, line_id="absent")
+    elif defect == "game_source":
+        snapshot = replace(snapshot, obligations=(OpeningFrontierObligation("rep", route.steps[1].card_id,
+                                                                           "real_game_miss", ""),))
+    else:
+        black = _route(color="black")
+        snapshot = _snapshot(black)
+        result = frontier_contract.project_policy_opening_frontier(snapshot, policy=policy, route_bindings=(binding,))
+        assert all("policy_trained_color_mismatch" in card.eligibility.reasons for card in result.cards)
+        return
+    with pytest.raises(ValueError):
+        frontier_contract.project_policy_opening_frontier(snapshot, policy=policy, route_bindings=(binding,))
+
+
+@pytest.mark.parametrize("kind", ["real_game_miss", "approved_gameplay_opportunity"])
+def test_policy_frontier_durable_game_obligations_remain_scoped_annotations(kind):
+    route = _route()
+    snapshot = _snapshot(route)
+    obligation = OpeningFrontierObligation("rep", route.steps[-1].card_id, kind, "durable-game-7")
+    snapshot = replace(snapshot, obligations=(obligation, obligation, replace(obligation, repertoire_id="foreign")))
+    result = _policy_projection(snapshot, route)
+    card = _policy_card(result, obligation.card_id)
+    assert card.eligibility.obligations == (obligation,)
+    assert card.eligibility.status == "prerequisite_unseen"
+
+
+def test_policy_frontier_is_detached_read_only_and_order_independent(monkeypatch):
+    route = _route()
+    snapshot = _snapshot(route, reviewed=(route.steps[0].card_id,))
+    policy = policy_for("rep", (MAIN_MOVES,))
+    value = _valuation_input(snapshot, policy, route, route.steps[1])
+    parent_value = _valuation_input(snapshot, policy, route, route.steps[0])
+    original = deepcopy((snapshot, policy, value, parent_value))
+    expected = _policy_projection(snapshot, route, policy=policy, valuation_inputs=(value, parent_value))
+    import builtins
+    import socket
+    import sqlite3
+    import time
+    import psycopg
+    from app.services import scheduler
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Policy projection must not read/write storage, use network/clock, or schedule FSRS")
+
+    for target, name in ((builtins, "open"), (socket.socket, "connect"), (sqlite3, "connect"),
+                         (psycopg, "connect"), (time, "time"), (scheduler, "schedule_review")):
+        monkeypatch.setattr(target, name, forbidden)
+    for index in range(8):
+        randomizer = random.Random(index)
+        def shuffled(items):
+            items = list(items)
+            randomizer.shuffle(items)
+            return tuple(items)
+        changed = replace(snapshot, cards=shuffled(snapshot.cards), reviews=shuffled(snapshot.reviews * 2),
+            publications=shuffled(snapshot.publications * 2),
+            routes=shuffled((route, replace(route, steps=shuffled(route.steps)))))
+        assert _policy_projection(changed, route, policy=policy,
+                                  valuation_inputs=shuffled((value, parent_value, value))) == expected
+    assert (snapshot, policy, value, parent_value) == original
+    with pytest.raises(FrozenInstanceError):
+        expected.cards[0].eligibility.status = "eligible"
+    with pytest.raises(FrozenInstanceError):
+        expected.cards[0].decisions[0].readiness = ProbabilityEvidence.exact(0)
+    mutable_bindings, mutable_provenance = list(value.route_bindings), ["explicit-fixture-input-v1"]
+    detached = replace(value, route_bindings=mutable_bindings, provenance=mutable_provenance)
+    mutable_bindings.clear()
+    mutable_provenance.clear()
+    assert detached == value
+    mutable_steps = list(route.steps)
+    mutable_snapshot = replace(snapshot, routes=[replace(route, steps=mutable_steps)], cards=list(snapshot.cards))
+    detached_result = _policy_projection(mutable_snapshot, route, policy=policy)
+    mutable_steps.clear()
+    mutable_snapshot.cards.clear()
+    assert detached_result == _policy_projection(snapshot, route, policy=policy)
+
+
+def test_policy_frontier_empty_scope_and_unbound_cards_have_no_implicit_candidates():
+    policy = policy_for("rep", (MAIN_MOVES,))
+    empty = OpeningFrontierSnapshot("empty", (), (), ())
+    result = frontier_contract.project_policy_opening_frontier(empty, policy=policy, route_bindings=())
+    assert result.cards == result.eligible_card_ids == ()
+    result = frontier_contract.project_policy_opening_frontier(_snapshot(), policy=policy, route_bindings=())
+    assert result.eligible_card_ids == ()
+    assert all(card.eligibility.reasons == ("no_current_route",) for card in result.cards)
