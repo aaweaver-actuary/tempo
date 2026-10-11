@@ -89,8 +89,10 @@ browser storage. It supplies no cross-device pre-admission fence. A browser jour
 reservation precedes server persistence; HTTP/broker 202 acknowledgment alone does
 not establish a receipt, application record or structural fence.
 
-After writer admission, PostgreSQL's existing barrier revalidates the approved
-plan and atomically persists application state and repertoire/card fences. Triggers
+After writer admission, the existing prefix acceptance barrier revalidates the
+approved plan and atomically persists application state and repertoire/card fences.
+Protection begins when that acceptance transaction commits; a command receipt
+alone does not prove that the application and its fences have been installed. Triggers
 protect structural card, source, depth, membership and graph writes. Ordinary
 review/schedule updates are excluded. Publication recovery retains fences until
 verified completion; rejected preactivation work follows the existing release

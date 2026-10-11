@@ -47,6 +47,8 @@ New-client rollout requires a server capability/version contract. A new client m
 
 Full PostgreSQL backups must include approval associations/tombstones, saved requests, reserved applications and fences. Restart/recreation and restore must preserve both unused reservations and dispatched applications. The existing migration snapshot export is not a recovery backup for these records. No new startup sweep is needed; existing durable recovery processes dispatched work only.
 
+Backup guarantees are bound to the declared recovery point and the committed records captured there. Restoring an older backup cannot reconstruct approvals or receipts first persisted after that point. A client retaining a later acknowledgment must show that mismatch as unresolved and use authoritative discovery; an absent restored receipt cannot authorize a new identity or automatic apply. A complete backup/restore proof must include a committed unused reservation, dispatched publication recovery and cancellation tombstones from the same recovery point.
+
 ## Required named regressions for the separate PR
 
 1. `prefix_reservation_lost_acknowledgment_rediscovers_original_approval`: lost acknowledgment plus total journal deletion, reload and delayed first delivery converge to one apply identity.
