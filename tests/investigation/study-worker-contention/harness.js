@@ -13,6 +13,13 @@ let preparedLines;
 let foregroundTasks;
 const now = () => performance.timeOrigin + performance.now();
 if (window.__investigationTraced) {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async function (...args) {
+    const startedAt = now();
+    const response = await originalFetch(...args);
+    responsePhases.push({ name: 'fetch-to-headers', startedAt, durationMs: now() - startedAt });
+    return response;
+  };
   const originalJson = Response.prototype.json;
   Response.prototype.json = async function () {
     const startedAt = now();
@@ -34,7 +41,9 @@ class ObservedWorker extends NativeWorker {
       if (!record) return;
       if (event.data.state === 'running') {
         record.runningAt = now();
-        record.workerStartAt = trace?.at;
+        record.workerRunningNoticeAt = trace?.at;
+        record.workerReceiptAt = trace?.receivedAt;
+        record.workerValidatedAt = trace?.validatedAt;
         record.runningStages = trace?.stages;
         if (startHook && record.kind === 'repertoireAlternatives') {
           const hook = startHook;
@@ -44,6 +53,9 @@ class ObservedWorker extends NativeWorker {
       } else {
         record.replyAt = now();
         record.workerEndAt = trace?.at;
+        record.workerStartAt = trace?.computeStartedAt;
+        record.workerReceiptAt = trace?.receivedAt;
+        record.workerValidatedAt = trace?.validatedAt;
         record.stages = trace?.stages;
         record.fenNormalization = trace?.fenNormalization;
         record.computeMs = event.data.computeMs;
@@ -98,7 +110,12 @@ function summarizeSnapshot(snapshot) {
 
 function measurements(startedAt) {
   const records = [...requests.values()].filter(record => record.sentAt >= startedAt);
-  return { startedAt, durationMs: now() - startedAt, requests: records, responsePhases: responsePhases.filter(phase => phase.startedAt >= startedAt), longTasks: longTasks.filter(task => task.start + task.duration >= startedAt), tempoTimings: tempoPerformanceTimings().filter(timing => timing.recordedAt >= Math.floor(startedAt) - 1) };
+  const workerClockInversions = window.__investigationTraced ? records.flatMap(record => {
+    const boundaries = [record.sentAt, record.workerReceiptAt, record.workerValidatedAt, record.workerStartAt, record.workerEndAt, record.replyAt];
+    return boundaries.flatMap((boundary,index) => index && boundary !== undefined && boundaries[index-1] !== undefined && boundary < boundaries[index-1] - 0.2 ? [{id:record.id,boundary:index,inversionMs:boundaries[index-1]-boundary}] : []);
+  }) : undefined;
+  if (workerClockInversions?.length) throw new Error('Browser/worker epoch ordering failed; phase attribution is not valid');
+  return { startedAt, durationMs: now() - startedAt, requests: records, workerClockInversions, responsePhases: responsePhases.filter(phase => phase.startedAt >= startedAt), longTasks: longTasks.filter(task => task.start + task.duration >= startedAt), tempoTimings: tempoPerformanceTimings().filter(timing => timing.recordedAt >= Math.floor(startedAt) - 1) };
 }
 
 async function configure() {
@@ -116,9 +133,10 @@ async function configure() {
     { kind: 'deck', records: deck, deckId: deck[0].DeckId },
   ];
   const snapshot = await call({ kind: 'repertoireAlternatives', generation: 1, lines: preparedLines });
-  const snapshotEncoding = JSON.stringify({ ...snapshot, movesByRepertoire: [...snapshot.movesByRepertoire].map(([repertoire, positions]) => [repertoire, [...positions].map(([fen, moves]) => [fen, [...moves]])]) });
+  const encodedMembership = [...snapshot.movesByRepertoire].map(([repertoire, positions]) => [repertoire, [...positions].map(([fen, moves]) => [fen, [...moves]])]);
+  const snapshotEncoding = JSON.stringify({ ...snapshot, movesByRepertoire: encodedMembership });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(snapshotEncoding));
-  return { lines: preparedLines.length, ...summarizeSnapshot(snapshot), coldConfiguration: measurements(startedAt), outputSha256: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''), payloadJsonBytes: new TextEncoder().encode(JSON.stringify({ kind: 'repertoireAlternatives', generation: 1, lines: preparedLines })).byteLength, replyJsonEquivalentBytes: new TextEncoder().encode(snapshotEncoding).byteLength };
+  return { lines: preparedLines.length, ...summarizeSnapshot(snapshot), coldConfiguration: measurements(startedAt), outputSha256: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join(''), payloadJsonBytes: new TextEncoder().encode(JSON.stringify({ kind: 'repertoireAlternatives', generation: 1, lines: preparedLines })).byteLength, replyJsonEquivalentBytes: new TextEncoder().encode(snapshotEncoding).byteLength, membershipOnlyJsonEquivalentBytes: new TextEncoder().encode(JSON.stringify({generation:snapshot.generation,movesByRepertoire:encodedMembership})).byteLength };
 }
 
 async function pipeline() {
