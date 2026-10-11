@@ -1,13 +1,15 @@
 import { test, expect } from "./observability";
 import { prepareVisualUI, type VisualRepertoireLine } from "./visual-fixtures";
 import { navigate, prepareUI } from "./ui-fixtures";
-import { test as productTest, api, move } from "./product-fixtures";
+import { test as productTest, api, move, Chess } from "./product-fixtures";
 import { readFileSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 
 type WorkerEvent = { id: number; kind: string; state: string; at: number; resource?: string };
 type ProbeWindow = Window & { workerInvestigation: { events: WorkerEvent[]; navigateDuringIndex: boolean; navigationAt?: number } };
+type PhaseSample = { operationId: number; operation: string; edge: string; atMs: number };
+type PerformanceProbeWindow = Window & { tempoPerformance?: { snapshot: () => { sessions: Array<{ phases: PhaseSample[] }> } } };
 const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const sourceFile = process.env.TEMPO_INVESTIGATION_SNAPSHOT;
 const uiSamples = Number(process.env.TEMPO_INVESTIGATION_UI_SAMPLES ?? 1);
@@ -54,6 +56,43 @@ function saveEvidence(name: string, value: unknown) {
   writeFileSync(join(directory, name), `${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function captureStudyPhases(page: Page) {
+  return page.evaluate(() => {
+    const phases = (window as unknown as PerformanceProbeWindow).tempoPerformance?.snapshot().sessions.flatMap(session => session.phases) ?? [];
+    return [...new Map(phases.map(phase => [`${phase.operationId}:${phase.edge}`, phase])).values()];
+  });
+}
+
+async function enableStudyTiming(page: Page) {
+  await page.addInitScript(() => {
+    const url = new URL(location.href);
+    url.searchParams.set("tempoPerformance", "drag");
+    history.replaceState({}, "", url);
+  });
+}
+
+async function dragExpectedMoveWithTiming(page: Page, from: string, to: string) {
+  const board = page.locator(".board-frame").first();
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  const bounds = (await board.locator(".cg-wrap").boundingBox())!;
+  const black = await board.getAttribute("data-orientation") === "black";
+  const center = (square: string) => {
+    const file = square.charCodeAt(0) - 97;
+    const rank = Number(square[1]) - 1;
+    return { x: bounds.x + ((black ? 7 - file : file) + 0.5) * bounds.width / 8,
+      y: bounds.y + ((black ? rank : 7 - rank) + 0.5) * bounds.height / 8 };
+  };
+  const origin = center(from);
+  const destination = center(to);
+  await page.mouse.move(origin.x, origin.y);
+  await page.mouse.down();
+  await page.mouse.move(destination.x, destination.y, { steps: 4 });
+  await expect(board.locator("piece.dragging")).toHaveCount(1);
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await page.mouse.up();
+  await expect(board.locator("piece.dragging")).toHaveCount(0);
+}
+
 test("study_worker_navigation_cancels_publication_but_foreground_games_waits_for_the_real_index", async ({ page }) => {
   test.setTimeout((sourceFile ? 180_000 : 60_000) * Math.max(1, uiSamples + 3));
   await observeWorker(page, true);
@@ -91,28 +130,30 @@ test("study_worker_navigation_cancels_publication_but_foreground_games_waits_for
 test("study_worker_ordinary_reviews_reuse_the_accepted_repertoire_snapshot", async ({ page }) => {
   test.setTimeout(sourceFile ? 180_000 : 60_000);
   await observeWorker(page);
+  await enableStudyTiming(page);
   const cards = Array.from({ length: uiSamples > 1 ? uiSamples + 4 : 4 }, (_, index) => ["e2e4", "d2d4", "g1f3", "c2c4"][index % 4]).map((uci, index) => ({ id: `contention-card-${index}`, queue_entry_id: index + 1, start_fen: startingFen, moves: [uci], content_type: "opening" as const, repertoire_name: `Contention card ${index}`, repertoire_source: "PGN", first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white" as const }));
   await prepareVisualUI(page, false, cards, repertoireLines);
   await expect.poll(() => page.evaluate(() => (window as unknown as ProbeWindow).workerInvestigation.events.some(event => event.kind === "repertoireAlternatives" && event.state === "reply")), { timeout: sourceFile ? 120_000 : 30_000 }).toBe(true);
   const samples = [];
   const moveSamples = [];
+  const phasesByReview = [];
   for (let index = 1; index < cards.length; index++) {
     const moveStartedAt = await page.evaluate(() => performance.now());
+    await page.evaluate(() => performance.clearMeasures("tempo:move-to-paint"));
     const expectedMove = cards[index - 1].moves[0];
     await move(page, expectedMove.slice(0, 2), expectedMove.slice(2, 4));
-    await expect(page.locator(".board-frame").first()).not.toHaveAttribute("data-fen", startingFen);
-    const moveVisibleAt = await page.evaluate(() => new Promise<number>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now())))));
-    moveSamples.push(moveVisibleAt - moveStartedAt);
-    const startedAt = await page.evaluate(() => performance.now());
-    await page.getByRole("button", { name: "Correct", exact: true }).click();
     await expect(page.locator(".opening-title h2")).toHaveText(cards[index].repertoire_name);
     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
     const completedAt = await page.evaluate(() => new Promise<number>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now())))));
-    samples.push(completedAt - startedAt);
+    samples.push(completedAt - moveStartedAt);
+    const moveToPaint = await page.evaluate(() => performance.getEntriesByName("tempo:move-to-paint").at(-1)?.duration);
+    expect(moveToPaint).toBeDefined();
+    moveSamples.push(moveToPaint!);
+    phasesByReview.push((await captureStudyPhases(page)).filter(phase => phase.atMs >= moveStartedAt));
   }
   const events = await page.evaluate(() => (window as unknown as ProbeWindow).workerInvestigation.events);
   expect(events.filter(event => event.kind === "repertoireAlternatives" && event.state === "sent")).toHaveLength(1);
-  saveEvidence("study-worker-ordinary-progression-with-moves.json", { samples, measuredSamples: uiSamples > 1 ? samples.slice(3) : samples, moveSamples, measuredMoveSamples: uiSamples > 1 ? moveSamples.slice(3) : moveSamples, measurementBoundary: "Playwright move helper start to changed board and two animation frames; includes helper assertions and pointer interaction", excludedWarmups: uiSamples > 1 ? 3 : 0, events, reviews: cards.length - 1 });
+  saveEvidence("study-worker-ordinary-progression-with-moves.json", { samples, measuredSamples: uiSamples > 1 ? samples.slice(3) : samples, moveSamples, measuredMoveSamples: uiSamples > 1 ? moveSamples.slice(3) : moveSamples, phasesByReview, measurementBoundary: "Existing tempo:move-to-paint callback-to-rAF proxy; helper-to-next-card includes the product's 750ms feedback pause. Existing review-persistence / next-card-readiness spans remain separate.", excludedWarmups: uiSamples > 1 ? 3 : 0, events, reviews: cards.length - 1 });
 });
 
 test("study_worker_alternative_moves_use_accepted_membership_without_worker_reconstruction", async ({ page }) => {
@@ -161,22 +202,32 @@ productTest("study_worker_real_postgres_review_refreshes_without_rebuilding_repe
     return (await queue.json()).cards.length;
   }, { timeout: 30_000, message: "Imported study fixture is published before browser measurement" }).toBeGreaterThan(0);
   await observeWorker(page);
+  await enableStudyTiming(page);
   await prepareUI(page);
   await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true", { timeout: 30_000 });
   await expect.poll(() => page.evaluate(() => (window as unknown as ProbeWindow).workerInvestigation.events.some(event => event.kind === "repertoireAlternatives" && event.state === "reply"))).toBe(true);
-  await move(page, "e2", "e4");
-  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4p3\/4P3/);
+  const initialQueue = (await (await request.get(`${api}/queue/window?limit=20`)).json()).cards as Array<{ start_fen: string; moves: string[]; queue_entry_id: number }>;
+  const displayedFen = await page.locator(".board-frame").first().getAttribute("data-fen");
+  const activeFixture = initialQueue.find(card => card.start_fen === displayedFen);
+  expect(activeFixture).toBeDefined();
   const responsePromise = page.waitForResponse(response => response.url().includes("/review") && response.request().method() === "POST");
   const startedAt = await page.evaluate(() => performance.now());
-  await move(page, "g1", "f3");
+  const fixtureBoard = new Chess(activeFixture!.start_fen);
+  for (const [moveIndex, expectedMove] of activeFixture!.moves.entries()) {
+    const playerMove = fixtureBoard.turn() === "w";
+    fixtureBoard.move({ from: expectedMove.slice(0, 2), to: expectedMove.slice(2, 4), promotion: expectedMove[4] });
+    if (playerMove) await dragExpectedMoveWithTiming(page, expectedMove.slice(0, 2), expectedMove.slice(2, 4));
+    if (!playerMove || moveIndex === activeFixture!.moves.length - 1)
+      await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", fixtureBoard.fen());
+  }
   const response = await responsePromise;
   expect(response.ok(), await response.text()).toBe(true);
   await expect(page.getByText("Result saved.", { exact: true })).toHaveCount(0);
-  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /2n5/);
+  await expect.poll(async () => (await captureStudyPhases(page)).some(phase => phase.operation === "next-card-readiness" && phase.edge === "end" && phase.atMs >= startedAt)).toBe(true);
   await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
   const events = await page.evaluate(() => (window as unknown as ProbeWindow).workerInvestigation.events);
   expect(events.filter(event => event.kind === "repertoireAlternatives" && event.state === "sent")).toHaveLength(1);
   const finishedAt = await page.evaluate(() => performance.now());
-  saveEvidence("study-worker-postgres-review.json", { finalMoveHelperToNextInteractiveMs: finishedAt - startedAt, events, responseStatus: response.status(), fixturePreparation: "Import receipt confirmed and explicit per-repertoire quota enabled before measuring; no direct database seeding" });
+  saveEvidence("study-worker-postgres-review.json", { lineHelperToNextInteractiveMs: finishedAt - startedAt, phases: (await captureStudyPhases(page)).filter(phase => phase.atMs >= startedAt), events, responseStatus: response.status(), fixtureMoveCount: activeFixture!.moves.length, fixturePreparation: "Import receipt confirmed and explicit per-repertoire quota enabled before measuring; real expected moves follow authoritative queue contents; no direct database seeding" });
   await navigate(page, "Games");
 });
