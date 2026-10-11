@@ -18,6 +18,31 @@ import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redi
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
 
+test("disposable_health_probe_does_not_hold_foreground_admission", () => {
+  const composeSource = readFileSync(join(root, "docker-compose.postgres.test.yml"), "utf8");
+  const apiConfiguration = composeSource.slice(composeSource.indexOf("  api:"), composeSource.indexOf("  foreground-worker:"));
+  const configuredHealthProbeCommand = JSON.parse(apiConfiguration.match(/test: (\[.*\])/)[1]);
+  assert.deepEqual(configuredHealthProbeCommand.slice(0, 3), ["CMD", "python", "-c"]);
+  // Execute the configured probe with only transport observed. This catches an
+  // ordinary URL request that would acquire the API's foreground request lease.
+  const probeExecution = spawnSync("python3", ["-c", `
+import json,sys,urllib.request
+from types import SimpleNamespace
+def observe(request, timeout):
+    request = urllib.request.Request(request) if isinstance(request, str) else request
+    print(json.dumps({"url": request.full_url, "headers": dict(request.header_items()), "timeout": timeout}))
+    return SimpleNamespace(close=lambda: None)
+urllib.request.urlopen = observe
+exec(sys.argv[1])
+`, configuredHealthProbeCommand[3]], { encoding: "utf8" });
+  assert.equal(probeExecution.status, 0, probeExecution.stderr);
+  const emittedHealthRequest = JSON.parse(probeExecution.stdout);
+  assert.equal(emittedHealthRequest.url, "http://127.0.0.1:8000/api/health");
+  assert.equal(emittedHealthRequest.timeout, 3, "The existing health deadline remains bounded");
+  assert.equal(emittedHealthRequest.headers["X-tempo-work-class"], "background",
+    "Housekeeping health reads must not acquire foreground admission while awaiting worker readiness");
+});
+
 test("burial_publication_fixture_reads_do_not_hold_foreground_admission", async () => {
   const source = readFileSync(join(root, "tests/browser/workspace-flows.spec.ts"), "utf8");
   const publicationPolls = source.slice(source.indexOf('  await expect.poll(async () => {'), source.indexOf('  await page.goto("/");'))

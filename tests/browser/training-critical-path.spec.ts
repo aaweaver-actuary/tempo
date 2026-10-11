@@ -295,6 +295,16 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       expect(JSON.parse(fixture("verify"))).toMatchObject({ reviews: transitionCount, complete_evidence: transitionCount, completion_events: expectedEvents });
     }
   } catch (error) {
+    // Capture worker admission before cleanup restarts the consumers and the
+    // runner's bounded log tail replaces the failed checkpoint's context.
+    await Promise.resolve().then(() => testInfo.attach("training-worker-admission", {
+      body: docker("logs", "--no-color", "--tail=3000", "background-worker", "foreground-worker", "api"),
+      contentType: "text/plain",
+    })).catch(() => undefined);
+    await Promise.resolve().then(() => testInfo.attach("training-foreground-leases", {
+      body: docker("exec", "-T", "redis", "redis-cli", "ZRANGE", "tempo:admission:foreground", "0", "-1", "WITHSCORES"),
+      contentType: "text/plain",
+    })).catch(() => undefined);
     // The fixture closes its page before the shared failure-evidence hook runs.
     // Capture this boundary first so setup failures retain actionable evidence.
     const readinessBoundary = await page.evaluate(() => ({
