@@ -42,7 +42,10 @@ def proof():
             assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (47, 47)
         print('PASS additive_migration_47_preserves_schema46_settings_and_replays')
         postgres_store.close_pools()
-        with patch.dict(os.environ, {'TEMPO_DATABASE_WRITE_URL': owned_url, 'TEMPO_DATABASE_READ_URL': owned_url}):
+        # This exclusive database executes synchronously; its wake must not be
+        # delivered to the parent runner's workers connected to another database.
+        with patch.dict(os.environ, {'TEMPO_DATABASE_WRITE_URL': owned_url, 'TEMPO_DATABASE_READ_URL': owned_url}), \
+                patch('app.services.queue_refresh_wakeup.wake_queue_refresh'):
             def save_mode(enabled):
                 settings = main.get_settings().model_dump(mode='json')
                 settings['study_only_mode'] = enabled
@@ -64,7 +67,7 @@ def proof():
             worker = SimpleNamespace(request=SimpleNamespace(headers={}))
             with patch.object(tasks, 'execute_command', side_effect=AssertionError('Paused import executed')):
                 assert tasks._execute_foreground_command(worker, import_operation, 'imports.pgn.admit', {'saved_source': 'preserve'}) is None
-            assert read_operation(import_operation)['state'] == 'pending'
+            assert read_operation(import_operation)['state'] == 'retrying'
             accepted_operation = uuid4().hex
             with patch.object(tasks, 'execute_command', side_effect=AssertionError('Paused aggregation executed')):
                 assert tasks.execute_background_command.run(accepted_operation, 'coverage.maia.submit',
