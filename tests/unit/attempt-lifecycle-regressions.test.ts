@@ -151,11 +151,13 @@ describe("review attempt reliability", () => {
         return Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 });
       if (url.endsWith("/review/reconcile"))
         return Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original attempt unavailable", retryable: false } });
+      // The server issues the first returned card. Independent recovery needs
+      // that authority; filtering a conflicted head cannot grant it locally.
       return Response.json({ cards: [
-        { id: "persisted-card", queue_entry_id: 42, start_fen: card.startingFen,
-          moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending", repertoire_source: "PGN" },
         { id: "other-card", queue_entry_id: 43, start_fen: card.startingFen,
           moves: ["d2d4"], content_type: "opening", repertoire_name: "Available", repertoire_source: "PGN" },
+        { id: "persisted-card", queue_entry_id: 42, start_fen: card.startingFen,
+          moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending", repertoire_source: "PGN" },
       ], count: 2 });
     });
     vi.stubGlobal("fetch", fetchMock);
