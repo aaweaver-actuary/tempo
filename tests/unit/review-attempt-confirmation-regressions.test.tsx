@@ -211,14 +211,18 @@ it.each(["abort", "deadline"])("issue186_prepared_card_survives_aborted_reconcil
   expect(reviewPosts()).toHaveLength(1);
 });
 
-it.each(["completed head", "malformed JSON", "invalid head", "partial envelope", "inconsistent count"])(
+it.each(["completed head", "malformed JSON", "invalid head", "partial envelope", "inconsistent count", "conflicted head"])(
   "issue186_invalid_authoritative_head_requires_recovery: %s", async invalid => {
     await readyHome();
+    if (invalid === "conflicted head") await act(async () => { enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
+      attemptId: "conflicted-next", outcome: "again", guided: false, state: "conflicted",
+      conflict: { code: "queue_attempt_unprovable", message: "Saved next-card attempt needs attention", retryable: false } }); });
     const originalFetcher = fetcher.getMockImplementation()!;
     let queueReads = 0;
     fetcher.mockImplementation(async (input, options) => {
       if (!String(input).includes("/api/queue/window")) return originalFetcher(input, options);
       queueReads++;
+      if (invalid === "conflicted head") return Response.json({ count: 2, cards: [queueCard("card-b", 13), queueCard("card-c", 14)] });
       if (invalid === "malformed JSON") return new Response("{truncated");
       if (invalid === "partial envelope") return Response.json({ count: 1 });
       if (invalid === "inconsistent count") return Response.json({ count: 0, cards: [queueCard("card-b", 13)] });
