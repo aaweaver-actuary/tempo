@@ -598,3 +598,21 @@ it("issue78_longer_requested_depth_can_have_no_structural_change", async () => {
 });
 
 beforeEach(() => { installPrefixTransitionTestLocks(); });
+
+it("audit187_published_comparison_waits_for_clear_before_changing_recovery_props", async () => {
+  const lockRequests = installPrefixTransitionTestLocks(); const nativeRequest = lockRequests.getMockImplementation()!;
+  let releaseClearing!: () => void; const clearingGate = new Promise<void>(resolve => { releaseClearing = resolve; });
+  let clearingQueued = false;
+  lockRequests.mockImplementation((name, options, callback) => {
+    if (!clearingQueued && readPrefixTransition("rep")?.state === "published") {
+      clearingQueued = true; return clearingGate.then(() => nativeRequest(name, options, callback));
+    }
+    return nativeRequest(name, options, callback);
+  });
+  const control = transitionFetch(); await reviewShortening();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await waitFor(() => expect(clearingQueued).toBe(true));
+  await act(async () => { releaseClearing(); });
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  expect(readPrefixTransition("rep")).toBeNull(); expect(control.deliveries).toHaveLength(1);
+});

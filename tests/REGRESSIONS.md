@@ -4108,3 +4108,5 @@ Journal capability and recovery boundary follow-ups:
 - `audit187_unreadable_journal_remount_keeps_original_status_controls_and_verified_result` in `pr187-audit-ui.test.tsx` retains Check status across a component remount with unreadable persistence, then displays verified completion without changing the unreadable journal or sending POST.
 
 - `tests/runner/ci-reliability.test.mjs::audit187_native_journal_spec_is_required_in_complete_repertoire_family` reproduces the initially unclassified spec and requires its regular repertoire-family, nightly and release selection. Inventory registration adds coverage; unknown specs still fail planning.
+
+- `audit187_published_comparison_waits_for_clear_before_changing_recovery_props` queues native-style clearing after verified publication. The comparison must complete that clear before updating source/selection props that restart the recovery effect; it preserves one delivery and requires refreshed results plus an absent resolved journal. The pre-fix controlled schedule failed, matching the real phone/desktop refresh stalls.
