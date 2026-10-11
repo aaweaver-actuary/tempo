@@ -1071,7 +1071,7 @@ def test_issue80_retired_queued_active_partial_pending_and_offline_presentations
             database.execute_native("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path) VALUES(%s,%s,0,%s,'[]','root')",(rep+'-position',rep+'-source',lines[0]['start_fen']))
             database.execute_native("INSERT INTO study_exercises(id,study_id,position_id,status,created_at,updated_at) VALUES(%s,%s,%s,'published',%s,%s)",(rep+'-exercise',rep,rep+'-position',now,now))
             database.execute_native("INSERT INTO study_attempts(id,exercise_id,revision,card_id,queue_entry_id,cycle,context,answer_json,answer_hash,assessment_json,assessment_method,grader_version,started_at,committed_at) VALUES(%s,%s,1,%s,%s,99,'review','{}','fixture','{\"outcome\":\"needs_self_assessment\"}','self',1,%s,%s)",(rep+'-study-attempt',rep+'-exercise',root,second,now,now))
-        prepared=prepare_standalone_checkpoint({'checkpoint':active})
+        prepared=idle_call(lambda:prepare_standalone_checkpoint({'checkpoint':active}))
         plan,payload=ready_plan(rep,lines)
         assert next(card for card in plan.cards if card.card_id==root).lifecycle=='archive'
         execute(payload);publish(payload)
@@ -1103,6 +1103,33 @@ def test_issue80_retired_queued_active_partial_pending_and_offline_presentations
                     assert not database.execute_native('SELECT 1 FROM reviews WHERE card_id=%s',(card.card_id,)).fetchone()
         assert read_operation(pending_id)['state']=='unknown'
     print('PASS test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements')
+
+def test_issue80_retired_checkpoint_preparation_yields_to_foreground_admission():
+    from unittest.mock import patch
+    from app.services import postgres_opening_evidence
+    from app.services.redis_admission_gate import foreground_lease
+    from check_postgres_graph_retention import owned_admission_scope
+
+    original_preparation = postgres_opening_evidence.prepare_standalone_checkpoint
+    preparation_attempts = 0
+
+    def prepare_after_controlled_foreground_denial(checkpoint):
+        nonlocal preparation_attempts
+        preparation_attempts += 1
+        if preparation_attempts == 1:
+            # The real background reader must deny this lease. It releases
+            # before the existing proof driver gets its next idle opportunity.
+            with foreground_lease():
+                return original_preparation(checkpoint)
+        return original_preparation(checkpoint)
+
+    with owned_admission_scope('retired-checkpoint-'+uuid.uuid4().hex), \
+            patch.object(postgres_opening_evidence, 'prepare_standalone_checkpoint',
+                         prepare_after_controlled_foreground_denial):
+        test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements()
+    assert preparation_attempts == 2, preparation_attempts
+    print('PASS test_issue80_retired_checkpoint_preparation_yields_to_foreground_admission')
+
 
 def test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks():
     from app.services.durable_tasks import fail_task
@@ -1590,6 +1617,7 @@ def main():
         test_issue80_same_operation_concurrency_stale_slice_lost_response_and_activation_rollback()
         test_issue80_shared_history_seed_implicit_owner_and_authored_checkpoint_reuse_are_preserved()
         test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements()
+        test_issue80_retired_checkpoint_preparation_yields_to_foreground_admission()
         test_issue80_publication_failure_keeps_activation_and_retry_resumes_linked_tasks()
         test_issue80_midnight_recovery_keeps_approved_due_dates_and_publishes_current_queue()
         test_issue80_staging_failure_releases_fences_without_product_activation_and_noops_replay()
