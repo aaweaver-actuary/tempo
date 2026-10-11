@@ -13,7 +13,10 @@ command modules own the final structural request boundary.
 an actionable reason. `admitPrefixStructuralMutation` rereads journal ownership
 under the same named Web Lock as reservation/update/clear and calls `dispatch`
 synchronously. The callback returns a wrapper around the request promise, so the
-lock ends before network completion. Preparation, file hashing, status reads and
+lock ends before network completion. A one-task MessageChannel barrier lets storage
+publication become visible before another tab enters the lock. Safe channel
+construction and posting are checked before any dispatch; missing or throwing
+capability refuses admission and allocates no command identity. Preparation, file hashing, status reads and
 planning occur before acquiring it. Every later replay and retry is admitted again.
 
 New command identities are allocated only inside admitted dispatch callbacks.
@@ -78,8 +81,10 @@ Repertoire rename changes name only. Repertoire settings change scheduling/impor
 defaults, not existing source depths. Prefix split rejection records the rejected
 suggestion; it creates no split. Opportunity dismiss/acknowledge/snooze and finding
 curation update decisions/status, not card/source membership. Preview commands do
-not save structural products. Endgame template edits have their separate template
-identity. Import discard cancels an existing import; it does not create structure.
+not save structural products. Endgame templates create only `__endgames__` cards whose deterministic identity
+uses a `template:` material key; they create no repertoire source lines and cannot
+reuse an opening-prefix card identity. Endgame attempts update template attempts,
+not prefix structure. Import discard cancels an existing import; it does not create structure.
 These remain governed by their existing idempotency/recovery contracts.
 
 ## Browser and PostgreSQL protection limits
