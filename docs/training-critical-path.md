@@ -7,9 +7,9 @@ reproduced this dependency without sleeps. The new path confirms and issues the
 prepared successor inside the review transaction, then uses cached advancement
 and reconciles the remaining window asynchronously.
 
-The measured prepared path achieved p95 **49.856 ms** from successful writer
-commit completion to a fresh, enabled board (**54.523 ms** including measured
-clock uncertainty). All five prepared-path conditions met the <500 ms p95 target.
+The latest-main prepared repeat achieved p95 **32.615 ms** from successful writer
+commit completion to a fresh, enabled board (**37.897 ms** including measured
+clock uncertainty). All five original prepared-path conditions also met the <500 ms p95 target.
 The equivalent refresh control reached 829.546 ms p95. Healthy measured main also
 met the target at 110.037 ms p95; this fixture does not reproduce every reported
 production stall, and these serial cohorts do not establish a click-to-commit
@@ -35,6 +35,28 @@ integration onto main `a0bea98433fb0cd2c7e32f56f5b1634dafe4ce3d` produced runtim
 candidate `ce3a8be1a36c36429890c2ae0dceec4ec81d8bcf`. Do not attribute the earlier
 measurements to this later SHA. The fallback guard concerns excluded connected
 heads; it does not execute in the healthy measured continuation fixture.
+
+A final clean runtime repeat on `5fb582becf9efc58e71b8f509946ade7084042a5`,
+rebased onto main `4dc17a96dd23da51047284d1bfb7434efee20d56`, retained the same
+canonical fixture fingerprint and settings. It measured 50 transitions after
+three warm-ups: p50 11.334 ms, p95 32.615 ms, maximum 38.959 ms and clock uncertainty
+5.282 ms. Native move-processing p95 was 20.240 ms. All 53 reviews, completion
+evidence records and completion events remained durable after API/foreground
+restart and exact original receipt replay; historical recovery resumed and
+retained its evidence. The final report-only commit does not relabel this result.
+
+Final repeat p50/p95 milliseconds: click-to-commit 77.719/288.787;
+commit-to-receipt 6.579/28.725; receipt-to-enabled-board 4.015/12.785;
+broker wait 6.263/37.121; worker connection acquisition 0.095/0.199;
+statement execution 24.324/91.219; review commit 0.842/2.736;
+optional issuance 2.500/8.776. Worker counts remained 100 statements/three
+commits, API two statements/two read-only commits. Concurrent queue reads
+remained asynchronous (TTFB 47.311/108.901; processing 5.385/20.670).
+These nested spans and percentile values must not be added together.
+
+Final runner durations: configuration 0.45 s, build 37.78 s, startup 16.84 s,
+health 0.20 s, browser 112.28 s, cleanup 7.88 s. Every stage exited 0.
+No other local heavy test ran during this repeat.
 
 Development checkout: `.dev-copies/training-critical-path`, branch
 `codex/training-critical-path`. Live study data and other checkouts were retained.
@@ -364,6 +386,6 @@ npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx
 PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_opening_evidence_contracts.py backend/tests/test_prepared_review_continuation.py
 ```
 
-Draft [PR #172](https://github.com/aaweaver-actuary/tempo/pull/172) is open.
-Current-head/current-base repair qualification remains pending. Focused local
-passes and old measurements do not establish merge readiness for a newer SHA.
+[PR #172](https://github.com/aaweaver-actuary/tempo/pull/172) records current-head/current-base
+qualification and final delivery evidence. Focused local passes and older
+measurements alone do not establish merge readiness for a newer SHA.
