@@ -124,6 +124,7 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
     {failure && <p role="alert"><strong>{["stale_plan", "stale_snapshot"].includes(failure.code) ? "Stale transition" : "Transition unavailable"}</strong>: {failure.message}</p>}
     {operation && <div role={operation.state === "published" || operation.state === "pending" ? "status" : "alert"}>
       <p>{operation.message ?? "Waiting for authoritative confirmation."}</p>
+      {operation.failureCode && <p>Service error: <code>{operation.failureCode}</code></p>}
       {operation.transitionPhase && <p>Publication phase: {operation.transitionPhase.replaceAll("_", " ")}</p>}
       <details><summary>Recovery identity</summary><code>{operation.operationId}</code><p>Approved plan: <code>{operation.request.plan_id}</code></p></details>
       {unresolvedPrefixTransition(operation) && <>

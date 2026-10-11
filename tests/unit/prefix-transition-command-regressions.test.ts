@@ -29,6 +29,9 @@ it("issue81_overlapping_repertoire_transition_remains_locked", () => {
   beginPrefixTransition("rep", request, { ...summary, affectedRepertoireIds: ["rep", "shared"] });
   expect(() => beginPrefixTransition("shared", request, summary)).toThrow(/Resolve the prefix transition affecting/);
   expect(readPrefixTransition("shared")).toBeNull();
+  expect(() => beginPrefixTransition("other", request, { ...summary, affectedRepertoireIds: ["other", "shared"] }))
+    .toThrow(/Resolve the prefix transition affecting/);
+  expect(readPrefixTransition("other")).toBeNull();
 });
 
 it("issue81_lost_response_reload_recovers_original_operation", async () => {
@@ -120,6 +123,13 @@ it("issue81_blocked_publication_retries_the_existing_operation", async () => {
   expect(fetcher.mock.calls[0][0]).toContain(`/operations/${original.operationId}/retry`);
   expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/apply"))).toBe(false);
 });
+it("issue81_blocked_nested_error_code_survives_recovery", async () => {
+  const original = begin();
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ operation_id: original.operationId, state: "blocked",
+    last_error: { detail: { code: "publication_unavailable", message: "Restore the queue publisher and retry this operation." } } })));
+  expect((await recover())?.failureCode).toBe("publication_unavailable");
+  expect(readPrefixTransition("rep")?.message).toContain("Restore the queue publisher");
+});
 
 it("issue81_storage_quota_failure_prevents_delivery", () => {
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("Quota", "QuotaExceededError"); });
@@ -135,4 +145,13 @@ it("issue81_late_completion_cannot_erase_newer_operation", async () => {
   localStorage.setItem(key, JSON.stringify({ ...original, operationId: "newer" }));
   resolve(complete(original.operationId)); await expect(resolving).rejects.toThrow();
   expect(readPrefixTransition("rep")?.operationId).toBe("newer");
+});
+it("issue81_changed_payload_cannot_be_overwritten_or_delivered", async () => {
+  const original = begin(); let resolve!: (response: Response) => void;
+  const fetcher = vi.fn(() => new Promise<Response>(accept => { resolve = accept; })); vi.stubGlobal("fetch", fetcher);
+  const resolving = recover();
+  localStorage.setItem(key, JSON.stringify({ ...original, request: { ...original.request, plan_id: "changed" } }));
+  resolve(Response.json({ operation_id: original.operationId, state: "unknown" }));
+  await expect(resolving).rejects.toThrow(/payload changed/);
+  expect(fetcher).toHaveBeenCalledOnce(); expect(readPrefixTransition("rep")?.request.plan_id).toBe("changed");
 });

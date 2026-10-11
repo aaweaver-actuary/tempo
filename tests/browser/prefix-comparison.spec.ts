@@ -125,10 +125,21 @@ async function openShortening(page: Page, repertoireName: string, source: typeof
   await dialog.getByRole("combobox", { name: "Move 2", exact: true }).selectOption("c7c6");
   if (source.lines.some(line => line.id === "alias")) await dialog.getByRole("checkbox", { name: /^alias ·/ }).uncheck();
   await dialog.getByLabel("Candidate learner-decision depths").fill("2");
-  await dialog.getByRole("button", { name: "Compare depths", exact: true }).click();
-  await expect(dialog.getByRole("region", { name: "Candidate depth 2", exact: true })).toBeVisible();
+  const candidate = dialog.getByRole("region", { name: "Candidate depth 2", exact: true });
+  await expect.poll(async () => {
+    await dialog.getByRole("button", { name: "Compare depths", exact: true }).click();
+    // Evaluation and its freshness read both wait for foreground admission.
+    // Observe their outcome rather than imposing the default five-second assertion.
+    await expect.poll(async () => await candidate.count() + await dialog.getByRole("alert").count(),
+      { timeout: 30_000, message: "Comparison finishes or reports an actionable diagnostic error" }).toBe(1);
+    if (await dialog.getByRole("alert").count()) {
+      await expect(dialog.getByRole("alert")).toContainText("Study work is active");
+      return false;
+    }
+    return true;
+  }, { timeout: 40_000, intervals: [1000] }).toBe(true);
   await dialog.getByRole("button", { name: "Review shortening", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Confirm shortening", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Confirm shortening", exact: true })).toBeVisible({ timeout: 25_000 });
   return { dialog, card };
 }
 

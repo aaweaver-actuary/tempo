@@ -3,7 +3,7 @@ import { API_URL } from "../const";
 import { backgroundReadWhenAdmitted } from "./background-fetch";
 import { PendingOperationError } from "./operation-status";
 import { prefixTransitionApplySchema, prefixTransitionReceiptSchema, prefixTransitionResultSchema,
-  prefixTransitionSummarySchema, type PrefixTransitionRequest, type PrefixTransitionSummary } from "../domain/prefix-transition";
+  prefixTransitionSummarySchema, type PrefixTransitionReceipt, type PrefixTransitionRequest, type PrefixTransitionSummary } from "../domain/prefix-transition";
 
 const storagePrefix = "tempo-pending-prefix-transition-v1:";
 const recordSchema = z.strictObject({ version: z.literal(1), operationId: z.string().min(1), repertoireId: z.string().min(1),
@@ -43,6 +43,9 @@ function saveOperation(operation: PrefixTransitionOperation, creating = false): 
   const previous = readPrefixTransition(operation.repertoireId);
   if (!creating && previous?.operationId !== operation.operationId)
     throw new Error("The saved prefix transition changed. Reopen it to recover the current operation.");
+  if (previous && (JSON.stringify(previous.request) !== JSON.stringify(operation.request)
+    || JSON.stringify(previous.summary) !== JSON.stringify(operation.summary)))
+    throw new Error("The saved prefix transition payload changed. Recover its original browser data before delivery.");
   if (creating && previous) throw new PendingOperationError(previous.operationId, "Resolve the saved prefix transition before confirming another.");
   const validated = recordSchema.parse(operation);
   localStorage.setItem(storageKey(operation.repertoireId), JSON.stringify(validated));
@@ -57,7 +60,7 @@ export function beginPrefixTransition(repertoireId: string, request: PrefixTrans
     return previous;
   }
   const overlapping = savedPrefixTransitions().find(operation => unresolvedPrefixTransition(operation)
-    && operation.summary.affectedRepertoireIds.includes(repertoireId));
+    && operation.summary.affectedRepertoireIds.some(id => summary.affectedRepertoireIds.includes(id)));
   if (overlapping) throw new PendingOperationError(overlapping.operationId, "Resolve the prefix transition affecting this repertoire before confirming another.");
   return saveOperation({ version: 1, operationId: crypto.randomUUID(), repertoireId,
     request, summary, state: "pending" }, true);
@@ -65,7 +68,7 @@ export function beginPrefixTransition(repertoireId: string, request: PrefixTrans
 export async function reservePrefixTransition(repertoireId: string, request: PrefixTransitionRequest, summary: PrefixTransitionSummary, signal: AbortSignal) {
   const reserve = () => { signal.throwIfAborted(); return beginPrefixTransition(repertoireId, request, summary); };
   // Serialize only this feature's journal reservation across browser tabs.
-  return navigator.locks ? navigator.locks.request(storageKey(repertoireId), { signal }, reserve) : reserve();
+  return navigator.locks ? navigator.locks.request(`${storagePrefix}reservation`, { signal }, reserve) : reserve();
 }
 export function clearResolvedPrefixTransition(repertoireId: string, operationId: string) {
   const operation = readPrefixTransition(repertoireId);
@@ -80,6 +83,11 @@ function pause(signal: AbortSignal): Promise<void> {
     signal.addEventListener("abort", cancel, { once: true });
     if (signal.aborted) cancel();
   });
+}
+function operationFailure(error: PrefixTransitionReceipt["error"]) {
+  const detail = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(error?.detail);
+  return { code: error?.code ?? (detail.success ? detail.data.code : undefined),
+    message: (detail.success ? detail.data.message : undefined) ?? error?.message };
 }
 /** Resolve only this frozen delivery. Unknown admissions may replay once per recovery action. */
 export async function recoverPrefixTransition(repertoireId: string, options: { signal: AbortSignal; retryBlocked?: boolean }): Promise<PrefixTransitionOperation | null> {
@@ -118,23 +126,26 @@ export async function recoverPrefixTransition(repertoireId: string, options: { s
         return update({ state: "published", result, message: "Prefix transition published. Graph, integrity and daily queue are confirmed.", transitionPhase: "complete" });
       }
       if (receipt.state === "failed") {
-        const detail = z.object({ code: z.string().optional(), message: z.string().optional() }).safeParse(receipt.error?.detail);
-        const code = receipt.error?.code ?? (detail.success ? detail.data.code : undefined);
+        const { code, message } = operationFailure(receipt.error);
         return update({ state: code === "stale_plan" || code === "stale_snapshot" ? "stale" : "failed", failureCode: code,
-          message: (detail.success ? detail.data.message : undefined) ?? receipt.error?.message ?? "The operation failed. Review a fresh comparison before trying again.",
+          message: message ?? "The operation failed. Review a fresh comparison before trying again.",
           transitionPhase: receipt.transition?.state });
       }
       if (receipt.state === "blocked") {
-        const blocked = update({ state: "blocked", transitionPhase: receipt.transition?.state,
-          message: receipt.transition?.recovery ?? receipt.last_error?.message ?? receipt.message ?? "Publication needs recovery. Resolve the reported service error and retry this operation." });
+        const failure = operationFailure(receipt.last_error ?? receipt.error);
+        const blocked = update({ state: "blocked", transitionPhase: receipt.transition?.state, failureCode: failure.code,
+          message: receipt.transition?.recovery ?? failure.message ?? receipt.message ?? "Publication needs recovery. Resolve the reported service error and retry this operation." });
         if (!retryRequested) return blocked;
       } else if (receipt.state === "unknown") {
         update({ state: "transport_unknown", message: "Delivery is unconfirmed. Recovery uses the same operation and approved plan." });
         if (posted || retryRequested) return operation;
         posted = true;
+        const delivery = readPrefixTransition(repertoireId);
+        if (delivery?.operationId !== originalId || JSON.stringify(delivery.request) !== JSON.stringify(operation!.request))
+          throw new Error("The saved prefix transition changed before delivery. Reopen recovery.");
         // Neither a 200 nor a 202 response is completion evidence here.
         try { await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/prefix-transition/apply`, {
-          method: "POST", signal, headers: { "Content-Type": "application/json", "Idempotency-Key": originalId }, body: JSON.stringify(operation!.request),
+          method: "POST", signal, headers: { "Content-Type": "application/json", "Idempotency-Key": originalId }, body: JSON.stringify(delivery.request),
         }); } catch { signal.throwIfAborted(); }
         continue;
       } else update({ state: "pending", transitionPhase: receipt.transition?.state,
