@@ -172,9 +172,20 @@ async function pollForReady({ requireContainerHealthy = false } = {}) {
   throw new Error("Disposable PostgreSQL Tempo did not become ready");
 }
 
-async function get(path, { background = false } = {}) {
+async function get(path, { background = false, allowPendingQueueIssuance = false } = {}) {
   const response = await apiRequest(path, background ? { headers: { "X-Tempo-Work-Class": "background" } } : {});
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
+  if (!response.ok) {
+    const responseBody = await response.text();
+    if (allowPendingQueueIssuance && path === "queue/today" && response.status === 503) {
+      let responseErrorDetail;
+      try { responseErrorDetail = JSON.parse(responseBody)?.detail; }
+      catch { responseErrorDetail = undefined; }
+      // Publication can change the head between its read and durable issuance.
+      // This exact retry response is unfinished work, never a settled sample.
+      if (responseErrorDetail === "Queue changed or attempt issuance is pending. Retry loading the queue.") return null;
+    }
+    throw new Error(`${path}: HTTP ${response.status} ${responseBody}`);
+  }
   return response.json();
 }
 
@@ -216,18 +227,19 @@ async function pollForStudyableImport(repertoireId) {
   for (let attempt = 0; attempt < 180; attempt += 1) {
     measureScenario.poll();
     const [system, integrity, queue] = await Promise.all([
-      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }), get("queue/today", { background: true }),
+      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }),
+      get("queue/today", { background: true, allowPendingQueueIssuance: true }),
     ]);
     assertNoCompletedFixtureConflict(integrity, repertoireId);
     const graphTask = system.tasks.find((task) => task.kind === "opening_graph_rebuild"
       && task.deduplication_key === repertoireId);
     if (graphTask?.state === "failed" || integrity.scan_status === "failed"
-      || queue.projection?.state === "failed") {
+      || queue?.projection?.state === "failed") {
       throw new Error(graphTask?.last_error ?? integrity.last_scan_error ?? integrity.last_error
-        ?? queue.projection?.last_error ?? "PostgreSQL import background work failed");
+        ?? queue?.projection?.last_error ?? "PostgreSQL import background work failed");
     }
     if (graphTask?.state === "complete" && integrity.scan_status === "idle" && integrity.status === "clean"
-      && queue.projection?.state === "ready" && !queue.projection.refresh_pending) {
+      && queue?.projection?.state === "ready" && !queue.projection.refresh_pending) {
       settledSamples += 1;
       if (settledSamples >= 3) return queue;
     } else {
