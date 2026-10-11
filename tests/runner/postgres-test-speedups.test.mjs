@@ -18,6 +18,66 @@ import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redi
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
 
+test("burial_publication_fixture_reads_do_not_hold_foreground_admission", async () => {
+  const source = readFileSync(join(root, "tests/browser/workspace-flows.spec.ts"), "utf8");
+  const publicationPolls = source.slice(source.indexOf('  await expect.poll(async () => {'), source.indexOf('  await page.goto("/");'))
+    .replace('(item: { name: string })', '(item)');
+  const paths = [];
+  await runInNewContext(`(async () => { ${publicationPolls} })()`, {
+    api: "http://owned/api",
+    request: { get: async (url, options) => {
+      assert.equal(options?.headers?.["X-Tempo-Work-Class"], "background",
+        "Fixture publication reads must not renew the foreground lease they wait to clear");
+      paths.push(url);
+      return { json: async () => url.endsWith('/repertoires')
+        ? { repertoires: [{ name: "bury-training", graph_state: "ready", integrity_status: "clean", integrity_scan_status: "idle" }] }
+        : { projection: { state: "ready", refresh_pending: false }, cards: [{}, {}] } };
+    } },
+    expect: { poll: (read, options) => ({ toEqual: async value => {
+      assert.equal(options.timeout, 20_000, "Publication keeps its existing deadline");
+      assert.equal(JSON.stringify(await read()), JSON.stringify(value));
+    } }) },
+  });
+  assert.deepEqual(paths, ["http://owned/api/repertoires", "http://owned/api/queue/today"]);
+});
+
+test("training_transition_cleanup_waits_for_restored_background_readiness", async () => {
+  const source = readFileSync(join(root, "tests/browser/training-critical-path.spec.ts"), "utf8");
+  const cleanupSource = source.slice(source.indexOf('    const ownedConsumers ='), source.lastIndexOf('\n  }\n});'));
+  const events = [];
+  let releaseHealth;
+  const heldHealth = new Promise(resolve => { releaseHealth = resolve; });
+  let healthReads = 0;
+  let completed = false;
+  const expected = value => ({ toBe: other => assert.equal(value, other) });
+  expected.poll = (read, options) => ({ toBe: async ready => {
+    assert.equal(options.timeout, 60_000, "Restoration retains the existing readiness deadline");
+    const unavailable = await read();
+    assert.notEqual(unavailable, ready, "A worker-unavailable response cannot finish cleanup");
+    assert.equal(await read(), ready);
+  } });
+  const cleanup = runInNewContext(`(async () => { ${cleanupSource} })()`, {
+    docker: action => { events.push(action); },
+    fixture: action => { events.push(action); return JSON.stringify({ restored_queue_positions: 1, runtime_reordered_positions: 0, runtime_removed_entries: 0 }); },
+    expect: expected, displacedQueuePositions: [[1, 0, 64]], api: "http://owned/api",
+    request: { get: async url => {
+      assert.equal(url, "http://owned/api/health");
+      events.push("health");
+      return healthReads++ === 0 ? heldHealth : { ok: () => true };
+    } },
+  }).then(() => { completed = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.deepEqual(events, ["stop", "cleanup", "start", "health"]);
+    assert.equal(completed, false, "Cleanup must remain pending until restored workers are ready");
+  } finally {
+    releaseHealth({ ok: () => false, text: async () => "Required Celery workers are unavailable: background" });
+    await cleanup;
+  }
+  assert.deepEqual(events, ["stop", "cleanup", "start", "health", "health"]);
+  assert.equal(completed, true);
+});
+
 function studyImportPollingFixture(queueResponses, { integrityStatus = "clean", systemResponse } = {}) {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const getSource = source.slice(source.indexOf("async function get("), source.indexOf("async function postCommand("));
