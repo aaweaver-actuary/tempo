@@ -449,13 +449,15 @@ export default function Home() {
   const reconcilePreparedQueue = useCommittedCallback(async () => {
     const expectedAttempt = preparedProgressionAttempt.current;
     const notice = progressionNotification.current;
+    const controller = progressionController.current;
     if (!expectedAttempt) return;
     const stillPrepared = () => preparedProgressionAttempt.current === expectedAttempt &&
+      progressionController.current === controller && !controller?.signal.aborted &&
       useTrainingStore.getState().attempt.attemptId === expectedAttempt.attemptId &&
       useTrainingStore.getState().attempt.generation === expectedAttempt.generation;
     try {
       const result = await fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true,
-        timeoutMs: 15_000, expectedAttempt, signal: progressionController.current?.signal });
+        timeoutMs: 15_000, expectedAttempt, signal: controller?.signal });
       if (!stillPrepared() || result === "superseded") return;
       setQueueReconciliationError("");
       if (notice) resolveNotification(notice, { severity: "success", message: "Result saved. Upcoming queue reconciled.",
