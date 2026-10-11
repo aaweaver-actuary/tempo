@@ -372,6 +372,72 @@ it("prepared_next_card_advances_after_durable_review_without_queue_refresh", asy
   }
 });
 
+it.each(["missing continuation", "pending review", "conflicted review"])(
+  "prepared_reconciliation_failure_keeps_play_then_requires_successor_authorization: %s", async settlement => {
+    queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
+    await readyHome();
+    vi.useRealTimers();
+    const originalFetcher = fetcher.getMockImplementation()!;
+    let rejectReconciliation!: (error: Error) => void;
+    let queueRequests = 0;
+    let recovered = false;
+    fetcher.mockImplementation(async (input, options) => {
+      if (String(input).includes("/api/queue/window")) {
+        queueRequests++;
+        if (queueRequests === 1) return new Promise<Response>((_resolve, reject) => { rejectReconciliation = reject; });
+        if (!recovered) throw new Error("Queue unavailable after the prepared card");
+        return Response.json({ cards: queue.slice(2), count: 1, local_date: new Date().toLocaleDateString("en-CA") });
+      }
+      return originalFetcher(input, options);
+    });
+    reviewResponse = async () => Response.json({ persisted: true, prepared_continuation: {
+      card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0,
+      local_date: new Date().toLocaleDateString("en-CA"),
+    } });
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    await waitFor(() => expect(rejectReconciliation).toBeTypeOf("function"));
+    const playedPosition = new Chess(); playedPosition.move("e4");
+    act(() => useTrainingStore.setState({ currentFenString: asFenString(playedPosition.fen()), step: 1,
+      lastMove: ["e2", "e4"], opponentLastMove: ["e2", "e4"] }));
+    const activeBoard = snapshotActive();
+    await act(async () => { rejectReconciliation(new Error("Prepared reconciliation failed")); });
+    await waitFor(() => expect(notifications().some(record => record.message.includes("Queue reconciliation is waiting"))).toBe(true));
+    expect(snapshotActive()).toEqual(activeBoard);
+    expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+    expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");
+    const submittedAttempt = activeBoard.attempt.attemptId!;
+    reviewResponse = async url => {
+      if (settlement === "pending review") return url.includes("/api/operations/")
+        ? Response.json({ state: "queued" })
+        : Response.json({ operation_id: `review-attempt:${submittedAttempt}` }, { status: 202 });
+      if (settlement === "conflicted review") return url.endsWith("/review/reconcile")
+        ? Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Attempt needs attention", retryable: false } })
+        : Response.json({ detail: "Attempt retired", retryable: false }, { status: 409 });
+      return Response.json({ persisted: true });
+    };
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    await waitFor(() => expect(trainingProps.reviewPersistenceState).toBe(
+      settlement === "pending review" ? "pendingConfirmation" : settlement === "conflicted review" ? "conflicted" : "queueFailed"));
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+    expect(useTrainingStore.getState().attempt.attemptId).toBe(submittedAttempt);
+    expect(useTrainingStore.getState().currentFenString).toBe(activeBoard.fen);
+    expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
+    expect(reviewPosts().map(([, options]) => JSON.parse(String(options!.body)).queue_entry_id)).toEqual([12, 13]);
+    if (settlement === "pending review") expect(pendingReviews()[0].attemptId).toBe(submittedAttempt);
+    if (settlement === "conflicted review") expect(conflictedReviews()[0].attemptId).toBe(submittedAttempt);
+    recovered = true;
+    reviewResponse = async () => Response.json({ state: "complete", response: { persisted: true } });
+    await act(async () => {
+      if (settlement === "pending review") await trainingProps.retryReviewSave!();
+      else trainingProps.retryQueueAfterReview!();
+    });
+    await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(14));
+    expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+    expect(useTrainingStore.getState().attempt.attemptId).not.toBe(submittedAttempt);
+    expect(pendingReviews()).toEqual([]);
+    expect(reviewPosts()).toHaveLength(2);
+  });
+
 it.each(["pending", "network timeout", "failed"])("unconfirmed_review_does_not_advance_prepared_card: %s then successful retry", async failure => {
   queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
   await readyHome();

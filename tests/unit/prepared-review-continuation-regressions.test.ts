@@ -40,7 +40,7 @@ it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unres
   expect(pendingReviews().map(review => review.attemptId)).toEqual(["independent-pending"]);
 });
 
-it.each(["revision", "cycle", "day", "generation", "pending", "conflict", "guided_pending", "guided_flag", "window", "readiness", "database"])(
+it.each(["revision", "cycle", "day", "generation", "attempt", "pending", "conflict", "guided_pending", "guided_flag", "window", "readiness", "database"])(
   "prepared_continuation_requires_current_head_and_matching_identity: local %s invalidation", invalidation => {
     const candidate = { ...capturePreparedNext()!, attempt_failed: false };
     const { attempt } = useTrainingStore.getState();
@@ -59,7 +59,8 @@ it.each(["revision", "cycle", "day", "generation", "pending", "conflict", "guide
     if (invalidation === "window") useTrainingStore.setState({ practiceCards: [cards[0]] });
     if (invalidation === "readiness") useTrainingStore.setState({ queueReadiness: "loading" });
     if (invalidation === "database") useTrainingStore.setState({ isDatabaseQueueActive: false });
-    expect(advancePreparedContinuation(candidate, attempt.attemptId!, attempt.generation + (invalidation === "generation" ? 1 : 0))).toBe(false);
+    expect(advancePreparedContinuation(candidate, invalidation === "attempt" ? "another-attempt" : attempt.attemptId!,
+      attempt.generation + (invalidation === "generation" ? 1 : 0))).toBe(false);
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
   });
 
@@ -69,6 +70,59 @@ it("prepared_continuation_requires_current_head_and_matching_identity: confirmed
   expect(advancePreparedContinuation(continuation, attempt.attemptId!, attempt.generation)).toBe(true);
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(502);
   expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
+});
+
+const preparedBoardSnapshot = () => {
+  const state = useTrainingStore.getState();
+  return { attempt: state.attempt, card: state.getCard(), fen: state.currentFenString, step: state.step,
+    lastMove: state.lastMove, opponentLastMove: state.opponentLastMove, failed: state.isAttemptFailed, hint: state.showHint };
+};
+
+it("prepared_reconciliation_failure_preserves_authorized_attempt_and_later_recovers", async () => {
+  const initialAttempt = useTrainingStore.getState().attempt;
+  rememberConfirmedQueueEntry(cards[0]);
+  expect(advancePreparedContinuation(capturePreparedNext(), initialAttempt.attemptId!, initialAttempt.generation)).toBe(true);
+  useTrainingStore.setState({ step: 1, lastMove: ["e2", "e4"], isAttemptFailed: true, showHint: true });
+  const activeBoard = preparedBoardSnapshot();
+  let rejectReconciliation!: (error: Error) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((_resolve, reject) => { rejectReconciliation = reject; })));
+  const reconciliation = fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true });
+  const rejected = expect(reconciliation).rejects.toThrow("queue processing failed");
+  await vi.waitFor(() => expect(rejectReconciliation).toBeTypeOf("function"));
+  rejectReconciliation(new Error("queue processing failed"));
+  await rejected;
+  expect(preparedBoardSnapshot()).toEqual(activeBoard);
+  // Ready describes the retained authorized attempt, not issuance of C.
+  expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+  expect(advancePreparedContinuation(undefined, activeBoard.attempt.attemptId!, activeBoard.attempt.generation)).toBe(false);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ cards: queue.slice(1), count: 2, local_date: localDayKey() })));
+  await fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true });
+  expect(preparedBoardSnapshot()).toEqual(activeBoard);
+  expect(useTrainingStore.getState().practiceCards.map(card => card.queueEntryId)).toEqual([502, 503]);
+});
+
+it.each(["success", "failure"])("superseded_prepared_reconciliation_cannot_change_active_board_or_readiness: %s", async outcome => {
+  const initialAttempt = useTrainingStore.getState().attempt;
+  expect(advancePreparedContinuation(capturePreparedNext(), initialAttempt.attemptId!, initialAttempt.generation)).toBe(true);
+  useTrainingStore.setState({ step: 1 });
+  const activeBoard = preparedBoardSnapshot();
+  let resolveStale!: (response: Response) => void;
+  let rejectStale!: (error: Error) => void;
+  vi.stubGlobal("fetch", vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve, reject) => {
+    resolveStale = resolve; rejectStale = reject;
+  })).mockResolvedValue(Response.json({ detail: "Authoritative refresh unavailable" }, { status: 422 })));
+  const stale = fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true });
+  await vi.waitFor(() => expect(resolveStale).toBeTypeOf("function"));
+  await expect(fetchAndInitializeQueue(false, { replaySavedReviews: false })).rejects.toThrow("Authoritative refresh unavailable");
+  const failedRefreshState = useTrainingStore.getState();
+  expect(failedRefreshState.queueReadiness).toBe("unavailable");
+  const serviceError = failedRefreshState.serviceError;
+  if (outcome === "success") resolveStale(Response.json({ cards: queue, count: 3, local_date: localDayKey() }));
+  else rejectStale(new Error("Superseded request failed"));
+  await stale;
+  expect(preparedBoardSnapshot()).toEqual(activeBoard);
+  expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
+  expect(useTrainingStore.getState().serviceError).toBe(serviceError);
 });
 
 it("async_reconciliation_preserves_active_attempt_and_excludes_completed_entries", async () => {
