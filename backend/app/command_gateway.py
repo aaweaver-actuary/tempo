@@ -202,7 +202,7 @@ def claim_recoverable_operation(*, allowed_background_commands=None, paused_comm
         admission_clause = ''
         admission_parameters = ()
         if allowed_background_commands is not None:
-            admission_clause = ' AND (background=0 OR command_name=ANY(%s))'
+            admission_clause = ' AND (NOT background OR command_name=ANY(%s))'
             admission_parameters = (sorted(allowed_background_commands),)
         if paused_commands:
             admission_clause += ' AND NOT (command_name=ANY(%s))'
