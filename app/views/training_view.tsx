@@ -165,16 +165,7 @@ function StandardTrainingView({
     } else if (reviewPersistenceState === "saved") {
       if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved." });
       reviewNotificationId.current = undefined;
-    } else if (reviewPersistenceState === "refreshingQueue") {
-      reviewNotificationId.current = publishNotification({ severity: "info", source,
-        key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved. Loading the next card…", active: true });
-    } else if (reviewPersistenceState === "queueFailed") {
-      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "warning", active: false, message: "Result saved; the next card could not be loaded." });
-      else publishNotification({ severity: "warning", source, key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved; the next card could not be loaded." });
-      reviewNotificationId.current = undefined;
-    } else if (reviewNotificationId.current && notifications().find(record => record.id === reviewNotificationId.current)?.key?.startsWith("review-queue:")) {
-      resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved. Next card loaded." });
-      reviewNotificationId.current = undefined;
+
     }
   }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError, reviewPersistenceIdentity]);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
@@ -420,6 +411,7 @@ function StandardTrainingView({
         <section
           className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}${phoneOpening ? " phone-opening-study" : ""}`}
           id="train"
+          data-queue-entry-id={card.queueEntryId}
         >
           <div className="board-column">
             {phoneOpening && <BoardHeading>

@@ -9,6 +9,13 @@ import { describeOfflineQueue, OfflineReplayError, PhoneQueueRefreshingError, re
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureContexts, isLegacyTrainingFailure } from "../lib/training-failure-outbox";
 import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
+import { attemptEntryKey } from "../domain/attempt";
+import { queueEnvelopeSchema } from "../domain/schemas";
+
+export function rememberConfirmedQueueEntry(card: PracticeCard): void {
+  const keys = useTrainingStore.getState().confirmedQueueEntryKeys ?? [];
+  useTrainingStore.setState({ confirmedQueueEntryKeys: [...keys.filter(key => key !== attemptEntryKey(card)), attemptEntryKey(card)].slice(-256) });
+}
 
 let requestGeneration = 0;
 let activeQueueController: AbortController | null = null;
@@ -18,13 +25,14 @@ function eligibleQueueCards(
   cards: PracticeCard[], phoneAttempts: readonly OfflineAttempt[] = [], localRepeatQueueIds: ReadonlySet<number> = new Set(),
 ): PracticeCard[] {
   const pendingResults = pendingReviews();
+  const confirmedEntries = new Set(useTrainingStore.getState().confirmedQueueEntryKeys);
   const conflictedCardIds = new Set(conflictedReviews().map((review) => review.backendId));
   const unacknowledgedPhoneCardIds = new Set(phoneAttempts
     .filter((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged)
     .map((attempt) => attempt.cardId));
   return cards.filter((card) => {
     const backendCardId = String(card.backendId ?? card.id);
-    return !pendingResults.some((review) => review.queueEntryId === card.queueEntryId && review.backendId === backendCardId) &&
+    return !confirmedEntries.has(attemptEntryKey(card)) && !pendingResults.some((review) => review.queueEntryId === card.queueEntryId && review.backendId === backendCardId) &&
       !conflictedCardIds.has(backendCardId) &&
       (!unacknowledgedPhoneCardIds.has(backendCardId) || localRepeatQueueIds.has(Number(card.queueEntryId)));
   });
@@ -95,11 +103,24 @@ type QueuePayload = {
   cards?: unknown[];
   count?: number;
   local_date?: string;
-  projection?: { state?: string; generation?: number; last_error?: string };
+  projection?: { state?: string; generation?: number; last_error?: string | null };
 };
 
-class QueueProcessingError extends Error {}
+export class QueueProcessingError extends Error {}
 class LegacyTrainingFailurePendingError extends QueueProcessingError {}
+
+export type QueueInitializationResult = "installed" | "exhausted" | "superseded";
+
+function awaitQueueStage<T>(operation: Promise<T> | T, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const cancelled = () => reject(signal.reason ?? new DOMException("Queue acquisition cancelled", "AbortError"));
+    signal.addEventListener("abort", cancelled, { once: true });
+    // Attach settlement handlers even after cancellation: late stage results
+    // have no installation authority, and late rejections remain observed.
+    Promise.resolve(operation).then(resolve, reject).finally(() => signal.removeEventListener("abort", cancelled));
+    if (signal.aborted) cancelled();
+  });
+}
 
 function retainPendingFailures(
   cards: PracticeCard[], failureContexts = pendingTrainingFailureContexts(),
@@ -129,7 +150,7 @@ function retainPendingFailures(
     failure.expectedRevision === card.revision) ? { ...card, attemptFailed: true } : card);
 }
 
-async function fetchQueueWindow(signal: AbortSignal, observePreparation = false): Promise<Response> {
+async function fetchQueueWindow(signal: AbortSignal, observePreparation = false): Promise<{ response: Response; payload: unknown }> {
   const controller = new AbortController();
   const abortSupersededRequest = () => controller.abort();
   if (signal.aborted) abortSupersededRequest();
@@ -140,10 +161,17 @@ async function fetchQueueWindow(signal: AbortSignal, observePreparation = false)
     controller.abort();
   }, 15_000);
   try {
-    return await fetch(`${API_URL}/api/queue/window?limit=20&include_opening_evidence=true`, {
+    const response = await awaitQueueStage(fetch(`${API_URL}/api/queue/window?limit=20&include_opening_evidence=true`, {
       signal: controller.signal,
       ...(observePreparation ? { headers: { "X-Tempo-Work-Class": "background" } } : {}),
-    });
+    }), controller.signal);
+    let payload: unknown;
+    try { payload = await awaitQueueStage(response.json(), controller.signal); }
+    catch (error) {
+      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+      if (response.ok) throw new QueueProcessingError(`The local queue returned invalid JSON. ${String(error)}`);
+    }
+    return { response, payload };
   } catch (error) {
     if (timedOut)
       throw new Error("Queue request timed out after 15 seconds. Retry loading the queue.", { cause: error });
@@ -172,19 +200,19 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
 async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayload> {
   let failedRequests = 0;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const response = await fetchQueueWindow(signal, attempt > 0);
+    const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0);
     if (response.ok) {
       failedRequests = 0;
-      let payload: QueuePayload;
-      try {
-        payload = await response.json() as QueuePayload;
-      } catch (error) {
-        throw new QueueProcessingError(`The local queue returned invalid JSON. ${String(error)}`);
-      }
+      const payload = responsePayload as QueuePayload;
+      if (!Array.isArray(payload?.cards))
+        throw new QueueProcessingError("The local queue returned an invalid queue response. Retry loading the queue.");
       if (payload.projection?.state === "failed")
         throw new QueueProcessingError(payload.projection.last_error ?? "Daily queue refresh failed");
-      if (payload.projection?.state !== "refreshing" || payload.cards?.length)
-        return payload;
+      if (payload.projection?.state !== "refreshing" || payload.cards.length) {
+        const validated = queueEnvelopeSchema.safeParse(responsePayload);
+        if (!validated.success) throw new QueueProcessingError("The local queue returned an invalid queue response. Retry loading the queue.");
+        return validated.data;
+      }
       if (attempt === 19) throw new QueueProcessingError("Daily queue is still preparing. Check the analysis worker and retry.");
       await waitForQueueRetry(250, signal);
       continue;
@@ -193,7 +221,7 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
     let detail = `HTTP ${response.status}`;
     let retryable = response.status === 503;
     try {
-      const payload = (await response.json()) as {
+      const payload = responsePayload as {
         detail?: unknown;
         retryable?: unknown;
       };
@@ -207,7 +235,8 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
       continue;
     }
     failedRequests += 1;
-    if (!retryable || failedRequests >= 3) throw new Error(detail);
+    if (!retryable) throw new QueueProcessingError(detail);
+    if (failedRequests >= 3) throw new Error(detail);
     await waitForQueueRetry(250 * (attempt + 1), signal);
   }
   throw new Error("The local queue could not be loaded.");
@@ -215,14 +244,23 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
 
 export async function fetchAndInitializeQueue(
   advance = false,
-  options: { preparePhoneQueue?: boolean; replaySavedReviews?: boolean } = {},
-): Promise<void> {
-  if (!usesLocalApi()) return;
+  options: { preparePhoneQueue?: boolean; replaySavedReviews?: boolean; preservePreparedAttempt?: boolean;
+    timeoutMs?: number; signal?: AbortSignal; expectedAttempt?: { attemptId?: string; generation: number } } = {},
+): Promise<QueueInitializationResult> {
+  if (!usesLocalApi()) return "superseded";
   const generation = ++requestGeneration;
   activeQueueController?.abort();
   const controller = new AbortController();
   activeQueueController = controller;
-  useTrainingStore.setState({ queueReadiness: "loading" });
+  const cancelAcquisition = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener("abort", cancelAcquisition, { once: true });
+  if (options.signal?.aborted) cancelAcquisition();
+  const deadline = options.timeoutMs === undefined ? undefined : setTimeout(() => controller.abort(
+    new Error("Queue acquisition timed out after 15 seconds. Retry loading the queue.")), options.timeoutMs);
+  const expectedAttemptMatches = () => !options.expectedAttempt ||
+    (useTrainingStore.getState().attempt.attemptId === options.expectedAttempt.attemptId &&
+      useTrainingStore.getState().attempt.generation === options.expectedAttempt.generation);
+  if (!options.preservePreparedAttempt) useTrainingStore.setState({ queueReadiness: "loading" });
   let queueInitialized = false;
   let failedOperation = "process today queue";
   let failedEndpoint: string | undefined;
@@ -233,7 +271,7 @@ export async function fetchAndInitializeQueue(
     let failureSaveError: string | null = null;
     try { retainPendingFailures([], pendingFailureContexts); }
     catch (error) { if (!(error instanceof LegacyTrainingFailurePendingError)) throw error; }
-    const savedPreparedQueue = typeof indexedDB === "undefined" ? null : await readPreparedTraining().catch(() => null);
+    const savedPreparedQueue = typeof indexedDB === "undefined" ? null : await awaitQueueStage(readPreparedTraining().catch(() => null), controller.signal);
     if (isIPhoneHomeScreen() && !useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length &&
         savedPreparedQueue?.localDate !== localDayKey()) {
       const stored = localStorage.getItem(queueCacheKey);
@@ -241,8 +279,8 @@ export async function fetchAndInitializeQueue(
         try {
           const cached = JSON.parse(stored) as QueuePayload;
           if (cached.local_date === localDayKey() && cached.cards?.length) {
-            const cachedCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: cached });
-            if (generation === requestGeneration) {
+            const cachedCards = await awaitQueueStage(runStudyTask<PracticeCard[]>({ kind: "queue", payload: cached }, controller.signal), controller.signal);
+            if (generation === requestGeneration && expectedAttemptMatches() && !controller.signal.aborted) {
               const availableCards = eligibleQueueCards(retainPendingFailures(cachedCards, pendingFailureContexts), savedPreparedQueue?.attempts);
               useTrainingStore.getState().hydrateLocalQueue(
                 availableCards, false, Math.max(0, (cached.count ?? cachedCards.length) - (cachedCards.length - availableCards.length)),
@@ -256,12 +294,12 @@ export async function fetchAndInitializeQueue(
     }
     let replayed: Awaited<ReturnType<typeof replayOfflineAttempts>> | null = null;
     let pendingReviewError = "";
-    if (typeof indexedDB !== "undefined") {
+    if (typeof indexedDB !== "undefined" && options.replaySavedReviews !== false) {
       try {
         if (savedPreparedQueue?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged && !attempt.conflict))
           publishNotification({ severity: "info", source: "phone review sync", key: "phone-review-syncing",
             message: "Syncing reviews saved on this phone with the computer." });
-        replayed = await replayOfflineAttempts();
+        replayed = await awaitQueueStage(replayOfflineAttempts(), controller.signal);
         const syncing = notifications().find((record) => record.key === "phone-review-syncing" && !record.resolvedAt);
         if (syncing) {
           if (replayed?.attempts.some((attempt) => attempt.conflict))
@@ -294,7 +332,7 @@ export async function fetchAndInitializeQueue(
       pendingReviewError = "Previously saved reviews are waiting for confirmation.";
     if (options.replaySavedReviews !== false && pendingReviews().length) {
       try {
-        await flushPendingReviews(Infinity, true);
+        await awaitQueueStage(flushPendingReviews(Infinity, true), controller.signal);
       } catch (error) {
         pendingReviewError = error instanceof Error ? error.message : String(error);
         if (generation === requestGeneration)
@@ -321,20 +359,62 @@ export async function fetchAndInitializeQueue(
       });
     let raw: QueuePayload;
     try {
-      raw = await loadTodayQueueWithRetry(controller.signal);
+      raw = await awaitQueueStage(loadTodayQueueWithRetry(controller.signal), controller.signal);
     } catch (error) {
       queueRequestFailed = !(error instanceof QueueProcessingError);
       failedOperation = queueRequestFailed ? "load today queue" : "process today queue response";
       failedEndpoint = `${API_URL}/api/queue/window?limit=20`;
       throw error;
     }
-    const cards = await runStudyTask<PracticeCard[]>({
+    const processingStarted = performance.now();
+    const cards = await awaitQueueStage(runStudyTask<PracticeCard[]>({
       kind: "queue",
       payload: raw,
-    });
-    if (generation !== requestGeneration) return;
+    }, controller.signal), controller.signal);
+    performance.measure("tempo.queue.processing", { start: processingStarted, end: performance.now(), detail: { generation } });
+    if (generation !== requestGeneration || !expectedAttemptMatches()) return "superseded";
+    if (controller.signal.aborted) throw controller.signal.reason;
+    const rawHead = raw.cards?.[0] as { id?: unknown; queue_entry_id?: unknown } | undefined;
+    if ((rawHead && (!cards[0] || cards[0].backendId !== rawHead.id || cards[0].queueEntryId !== rawHead.queue_entry_id)) ||
+        (!rawHead && (raw.count ?? 0) > 0) || (raw.count !== undefined && raw.count < (raw.cards?.length ?? 0)))
+      throw new QueueProcessingError("The authoritative queue head could not be prepared. Retry loading the queue.");
     const availableCards = eligibleQueueCards(retainPendingFailures(cards, pendingFailureContexts), (replayed ?? savedPreparedQueue)?.attempts);
-    useTrainingStore.getState().hydrateLocalQueue(
+    const returnedHead = cards[0];
+    const headExcludedByConnectedReview = returnedHead && (
+      pendingReviews().some(review => review.queueEntryId === returnedHead.queueEntryId &&
+        review.backendId === String(returnedHead.backendId ?? returnedHead.id)) ||
+      conflictedReviews().some(review => review.backendId === String(returnedHead.backendId ?? returnedHead.id)) ||
+      useTrainingStore.getState().confirmedQueueEntryKeys?.includes(attemptEntryKey(returnedHead)));
+    if (!options.preservePreparedAttempt && headExcludedByConnectedReview) {
+      // Only the returned head was issued. Filtering a connected saved result
+      // cannot authorize another prefetched successor. Offline phone attempts
+      // retain their existing prepared-queue authorization.
+      useTrainingStore.getState().setPendingReviewError(pendingReviewError ||
+        "The authoritative queue head has unresolved local results. Check saved reviews and Notifications, then retry loading the queue.");
+      throw new QueueProcessingError("The authoritative queue head is excluded by local review state. Check saved reviews and Notifications, then retry loading the queue.");
+    }
+    useTrainingStore.setState({ queueLocalDate: raw.local_date });
+    if (options.preservePreparedAttempt) {
+      // Reconciliation updates upcoming data, never authorizes advancement or
+      // creates another attempt when the prepared board has just completed.
+      const retainedAttempt = useTrainingStore.getState();
+      const activeCard = retainedAttempt.getCard();
+      const matchingActiveCard = availableCards.find(candidate => attemptEntryKey(candidate) === retainedAttempt.attempt.entryKey);
+      const retainedActiveCard = matchingActiveCard ? { ...activeCard, priorityReason: matchingActiveCard.priorityReason,
+        attemptFailed: activeCard.attemptFailed || matchingActiveCard.attemptFailed } : activeCard;
+      const upcoming = availableCards.filter(candidate => attemptEntryKey(candidate) !== retainedAttempt.attempt.entryKey);
+      const activeStillQueued = availableCards.some(candidate => attemptEntryKey(candidate) === retainedAttempt.attempt.entryKey);
+      useTrainingStore.setState({
+        practiceCards: [retainedActiveCard, ...upcoming], activeCardIndex: 0,
+        dailyQueue: [retainedActiveCard, ...upcoming].map((_, index) => index),
+        cardsLeft: Math.max(0, (raw.count ?? cards.length) - (cards.length - availableCards.length)) + Number(!activeStillQueued),
+        queueLocalDate: raw.local_date, serviceError: "" });
+      if (matchingActiveCard?.attemptFailed && !["feedbackPause", "complete"].includes(retainedAttempt.attempt.phase)) {
+        retainedAttempt.setAttemptFailed(true);
+        retainedAttempt.setShowHint(true);
+        retainedAttempt.setFailureFen(retainedAttempt.failureFen ?? retainedAttempt.currentFenString);
+      }
+    } else useTrainingStore.getState().hydrateLocalQueue(
       availableCards, advance, Math.max(0, (raw.count ?? cards.length) - (cards.length - availableCards.length)),
     );
     useTrainingStore.getState().setPendingReviewError(pendingReviewError);
@@ -373,9 +453,9 @@ export async function fetchAndInitializeQueue(
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json() as QueuePayload & { prepared_at: string };
-        if (generation !== requestGeneration) return null;
+        if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;
         const prepared = await savePreparedTraining(payload);
-        if (generation !== requestGeneration) return null;
+        if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;
         if (prepared.preparedAt !== payload.prepared_at || prepared.localDate !== payload.local_date)
           throw new Error(prepared.attempts.some((attempt) => !attempt.serverReviewId && !attempt.conflict)
             ? "Saved phone reviews are still waiting to sync. The older offline queue was kept."
@@ -390,8 +470,8 @@ export async function fetchAndInitializeQueue(
           const completeCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: {
             cards: payload.cards, count: payload.count, local_date: payload.local_date,
             projection: payload.projection,
-          } });
-          if (generation !== requestGeneration) return null;
+          } }, controller.signal);
+          if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;
           const availableCards = eligibleQueueCards(retainPendingFailures(completeCards, pendingFailureContexts), prepared.attempts);
           useTrainingStore.getState().hydrateLocalQueue(
             availableCards, false, Math.max(0, prepared.cards.length - (completeCards.length - availableCards.length)),
@@ -419,17 +499,19 @@ export async function fetchAndInitializeQueue(
             error instanceof PhoneQueueRefreshingError ? "info" : "warning",
           );
       });
+    return availableCards.length ? "installed" : "exhausted";
   } catch (error) {
-    if (generation !== requestGeneration) return;
+    if (generation !== requestGeneration || !expectedAttemptMatches()) return "superseded";
     reportDebugError(error, {
       kind: "api", source: queueRequestFailed ? "training-queue" : "training-queue-processing",
       operation: failedOperation, endpoint: failedEndpoint,
     });
+    if (options.preservePreparedAttempt) throw error;
     const prepared = queueRequestFailed && isIPhoneHomeScreen()
-      ? await readPreparedTraining().catch(() => null) : null;
+      ? await awaitQueueStage(readPreparedTraining().catch(() => null), controller.signal) : null;
     if (prepared?.localDate === localDayKey()) {
       try {
-        await waitForOfflineShell();
+        await awaitQueueStage(waitForOfflineShell(), controller.signal);
       } catch (shellError) {
         // A saved queue is usable offline only with the current verified app shell.
         useTrainingStore.getState().setServiceError(
@@ -437,13 +519,13 @@ export async function fetchAndInitializeQueue(
         );
         throw error;
       }
-      const availableCards = await loadEligibleOfflineQueue(prepared);
-      if (generation !== requestGeneration) return;
+      const availableCards = await awaitQueueStage(loadEligibleOfflineQueue(prepared), controller.signal);
+      if (generation !== requestGeneration || !expectedAttemptMatches()) return "superseded";
       useTrainingStore.getState().hydrateLocalQueue(availableCards, advance, availableCards.length);
       useTrainingStore.getState().setOfflineQueue(true);
       queueInitialized = true;
       showQueueNotice(`${describeOfflineQueue(prepared)} Live service: ${String(error)}. Retry sync when connected.`, "warning");
-      return;
+      return availableCards.length ? "installed" : "exhausted";
     }
     useTrainingStore
       .getState()
@@ -452,8 +534,10 @@ export async function fetchAndInitializeQueue(
       );
     throw error;
   } finally {
-    if (generation === requestGeneration)
-      useTrainingStore.setState({ queueReadiness: queueInitialized ? "ready" : "unavailable" });
+    clearTimeout(deadline);
+    options.signal?.removeEventListener("abort", cancelAcquisition);
+    if (generation === requestGeneration && (queueInitialized || expectedAttemptMatches()))
+      useTrainingStore.setState({ queueReadiness: queueInitialized || options.preservePreparedAttempt ? "ready" : "unavailable" });
     if (activeQueueController === controller) activeQueueController = null;
   }
 }

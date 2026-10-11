@@ -179,6 +179,15 @@ def execute_foreground_command(
     self, operation_id: str, command_name: str, payload: dict[str, Any],
     expected_retry_cycle: int | None = None,
 ) -> Any:
+    from .services.background_runtime import measure_training_timing
+    with measure_training_timing(command_name, operation_id) as measurement:
+        submitted_at = (self.request.headers or {}).get("submitted_at")
+        if measurement is not None and submitted_at:
+            measurement["broker_wait_ms"] = max(0.0, time.time() - float(submitted_at)) * 1000
+        return _execute_foreground_command(self, operation_id, command_name, payload, expected_retry_cycle)
+
+
+def _execute_foreground_command(self, operation_id, command_name, payload, expected_retry_cycle=None):
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()

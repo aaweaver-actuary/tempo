@@ -151,16 +151,63 @@ describe("review attempt reliability", () => {
         return Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 });
       if (url.endsWith("/review/reconcile"))
         return Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original attempt unavailable", retryable: false } });
+      // The server issues the first returned card. Independent recovery needs
+      // that authority; filtering a conflicted head cannot grant it locally.
       return Response.json({ cards: [
-        { id: "persisted-card", queue_entry_id: 42, start_fen: card.startingFen,
-          moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending", repertoire_source: "PGN" },
         { id: "other-card", queue_entry_id: 43, start_fen: card.startingFen,
           moves: ["d2d4"], content_type: "opening", repertoire_name: "Available", repertoire_source: "PGN" },
+        { id: "persisted-card", queue_entry_id: 42, start_fen: card.startingFen,
+          moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending", repertoire_source: "PGN" },
       ], count: 2 });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchAndInitializeQueue();
+
+    expect(useTrainingStore.getState().practiceCards.map((queuedCard) => queuedCard.queueEntryId)).toEqual([43]);
+    expect(useTrainingStore.getState().cardsLeft).toBe(1);
+    expect(useTrainingStore.getState().serviceError).toBe("");
+    expect(useTrainingStore.getState().pendingReviewError).toBe("");
+    expect(pendingReviews()).toHaveLength(0);
+    expect(conflictedReviews()).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/queue/window"))).toBe(true);
+  });
+  it("issue186_conflicted_issued_head_waits_for_fresh_authority", async () => {
+    localStorage.clear();
+    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
+    let issueIndependentHead = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/operations/")) return new Response(null, { status: 404 });
+      if (url.endsWith("/fail"))
+        return Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 });
+      if (url.endsWith("/review"))
+        return Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 });
+      if (url.endsWith("/review/reconcile"))
+        return Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original attempt unavailable", retryable: false } });
+      return Response.json({ cards: [
+        ...(!issueIndependentHead ? [{ id: "persisted-card", queue_entry_id: 42, start_fen: card.startingFen,
+          moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending", repertoire_source: "PGN" }] : []),
+        { id: "other-card", queue_entry_id: 43, start_fen: card.startingFen,
+          moves: ["d2d4"], content_type: "opening", repertoire_name: "Available", repertoire_source: "PGN" },
+      ], count: issueIndependentHead ? 1 : 2 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const attemptBeforeAcquisition = useTrainingStore.getState().attempt;
+    await expect(fetchAndInitializeQueue()).rejects.toThrow("authoritative queue head is excluded");
+    expect(useTrainingStore.getState().attempt).toEqual(attemptBeforeAcquisition);
+    expect(useTrainingStore.getState().practiceCards.some(queuedCard => queuedCard.queueEntryId === 43)).toBe(false);
+    expect(useTrainingStore.getState().serviceError).toContain("authoritative queue head is excluded");
+    expect(pendingReviews()).toHaveLength(0);
+    expect(conflictedReviews()).toHaveLength(1);
+    const reviewRequestsBeforeQueueRetry = fetchMock.mock.calls.filter(([input]) =>
+      /\/review(?:\/reconcile)?$/.test(String(input))).length;
+
+    issueIndependentHead = true;
+    await expect(fetchAndInitializeQueue(false, { replaySavedReviews: false })).resolves.toBe("installed");
+    expect(fetchMock.mock.calls.filter(([input]) =>
+      /\/review(?:\/reconcile)?$/.test(String(input)))).toHaveLength(reviewRequestsBeforeQueueRetry);
 
     expect(useTrainingStore.getState().practiceCards.map((queuedCard) => queuedCard.queueEntryId)).toEqual([43]);
     expect(useTrainingStore.getState().cardsLeft).toBe(1);

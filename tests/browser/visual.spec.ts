@@ -1,8 +1,46 @@
 import { test, expect } from "./observability";
-import { readFileSync } from "node:fs";
-import { navigate } from "./ui-fixtures";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { navigate, boardBounds, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import type { ActivityResponse } from "../../app/lib/service-status";
+
+for (const width of [390, 1280]) {
+  test(`issue186_prepared_recovery_remains_visible_and_interactive-${width}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 720 });
+    await prepareVisualUI(page);
+    let completed = false;
+    const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    await page.route("**/api/queue/window?**", route => completed ? route.abort("aborted") : route.fulfill({ json: {
+      local_date: "2026-09-18", count: 2, cards: [
+        { id: "visual-card", queue_entry_id: 1, revision: 1, start_fen: startFen, moves: ["e2e4"],
+          content_type: "tactic", repertoire_name: "Saved tactic", repertoire_source: "PGN" },
+        { id: "visual-next", queue_entry_id: 2, revision: 1, start_fen: startFen, moves: ["e2e4", "e7e5", "g1f3"],
+          content_type: "opening", repertoire_name: "Prepared next card", repertoire_source: "PGN" },
+      ],
+    } }));
+    await page.route("**/api/cards/visual-card/review", route => {
+      completed = true;
+      return route.fulfill({ json: { persisted: true, prepared_continuation: {
+        card_id: "visual-next", queue_entry_id: 2, revision: 1, cycle: 0, local_date: "2026-09-18",
+      } } });
+    });
+    await page.reload();
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+    const board = await boardBounds(page);
+    await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
+    await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
+    await expect(page.getByRole("button", { name: "Retry loading the queue", exact: true })).toBeVisible();
+    await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", "2");
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+    await noPageOverflow(page);
+    const recoveryScreenshot = await page.screenshot({ fullPage: true });
+    const evidenceDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
+    mkdirSync(evidenceDirectory, { recursive: true });
+    writeFileSync(join(evidenceDirectory, `issue186-prepared-recovery-${width}.png`), recoveryScreenshot);
+    await testInfo.attach("issue186-prepared-recovery", { body: recoveryScreenshot, contentType: "image/png" });
+  });
+}
 
 for (const width of [390, 1280]) {
   test(`repertoire-deletion-${width}`, async ({ page }) => {

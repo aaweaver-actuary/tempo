@@ -8,7 +8,9 @@ import * as journal from "../../app/lib/opening-evidence-journal";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
 import manifest from "../fixtures/opening-evidence-manifest.json";
 
-vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: vi.fn() }));
+vi.mock("../../app/views/fetchAndInitializeQueue", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app/views/fetchAndInitializeQueue")>(), fetchAndInitializeQueue: vi.fn(),
+}));
 vi.mock("../../app/components/board/chessboard", () => ({ Chessboard: () => <div /> }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn(),
   moveSoundEnabled: () => false, prepareMoveSounds: vi.fn(), cancelMoveSounds: vi.fn() }));
@@ -32,7 +34,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localS
 it("AS-15 opening evidence recovery waits for foreground startup readiness", async () => {
   const recover = vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   let finishQueue!: () => void;
-  vi.mocked(fetchAndInitializeQueue).mockImplementation(() => new Promise<void>(resolve => { finishQueue = resolve; }));
+  vi.mocked(fetchAndInitializeQueue).mockImplementation(() => new Promise<"installed">(resolve => { finishQueue = () => resolve("installed"); }));
   render(<Home />);
   await waitFor(() => expect(fetchAndInitializeQueue).toHaveBeenCalled());
   expect(recover).not.toHaveBeenCalled();
@@ -55,6 +57,7 @@ it("AS-15 recovery cancels idle work during foreground transitions and after unm
   vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => {
     if (!useTrainingStore.getState().isDatabaseQueueActive) useTrainingStore.getState().hydrateLocalQueue([card], true);
     useTrainingStore.setState({ queueReadiness: "ready" });
+    return "installed" as const;
   });
   const mounted = render(<Home />);
   await waitFor(() => expect(idleCallbacks.size).toBe(1));
@@ -77,7 +80,8 @@ it("AS-16 restarted opening attempt records displayed guidance as guided", async
   const assistance = vi.fn();
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ assistance } as unknown as journal.OpeningAttemptJournal);
   const partial = vi.spyOn(journal, "partialOpeningAttempt").mockImplementation(() => undefined);
-  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); });
+  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); return "installed" as const;
+  });
   render(<Home />);
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(101));
   const original = useTrainingStore.getState().attempt.attemptId;
@@ -99,7 +103,8 @@ it("AS-16 wrong-response reveal remains revealed", async () => {
   const assistance = vi.fn();
   const response = vi.fn();
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ assistance, response } as unknown as journal.OpeningAttemptJournal);
-  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); });
+  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); return "installed" as const;
+  });
   render(<Home />);
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(101));
   await act(async () => { await Promise.resolve(); });

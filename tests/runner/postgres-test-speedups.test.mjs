@@ -17,6 +17,155 @@ import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redi
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
+
+test("disposable_health_probe_does_not_hold_foreground_admission", () => {
+  const composeSource = readFileSync(join(root, "docker-compose.postgres.test.yml"), "utf8");
+  const apiConfiguration = composeSource.slice(composeSource.indexOf("  api:"), composeSource.indexOf("  foreground-worker:"));
+  const configuredHealthProbeCommand = JSON.parse(apiConfiguration.match(/test: (\[.*\])/)[1]);
+  assert.deepEqual(configuredHealthProbeCommand.slice(0, 3), ["CMD", "python", "-c"]);
+  // Execute the configured probe with only transport observed. This catches an
+  // ordinary URL request that would acquire the API's foreground request lease.
+  const probeExecution = spawnSync("python3", ["-c", `
+import json,sys,urllib.request
+from types import SimpleNamespace
+def observe(request, timeout):
+    request = urllib.request.Request(request) if isinstance(request, str) else request
+    print(json.dumps({"url": request.full_url, "headers": dict(request.header_items()), "timeout": timeout}))
+    return SimpleNamespace(close=lambda: None)
+urllib.request.urlopen = observe
+exec(sys.argv[1])
+`, configuredHealthProbeCommand[3]], { encoding: "utf8" });
+  assert.equal(probeExecution.status, 0, probeExecution.stderr);
+  const emittedHealthRequest = JSON.parse(probeExecution.stdout);
+  assert.equal(emittedHealthRequest.url, "http://127.0.0.1:8000/api/health");
+  assert.equal(emittedHealthRequest.timeout, 3, "The existing health deadline remains bounded");
+  assert.equal(emittedHealthRequest.headers["X-tempo-work-class"], "background",
+    "Housekeeping health reads must not acquire foreground admission while awaiting worker readiness");
+});
+
+test("burial_publication_fixture_reads_do_not_hold_foreground_admission", async () => {
+  const source = readFileSync(join(root, "tests/browser/workspace-flows.spec.ts"), "utf8");
+  const publicationPolls = source.slice(source.indexOf('  await expect.poll(async () => {'), source.indexOf('  await page.goto("/");'))
+    .replace('(item: { name: string })', '(item)');
+  const paths = [];
+  await runInNewContext(`(async () => { ${publicationPolls} })()`, {
+    api: "http://owned/api",
+    request: { get: async (url, options) => {
+      assert.equal(options?.headers?.["X-Tempo-Work-Class"], "background",
+        "Fixture publication reads must not renew the foreground lease they wait to clear");
+      paths.push(url);
+      return { json: async () => url.endsWith('/repertoires')
+        ? { repertoires: [{ name: "bury-training", graph_state: "ready", integrity_status: "clean", integrity_scan_status: "idle" }] }
+        : { projection: { state: "ready", refresh_pending: false }, cards: [{}, {}] } };
+    } },
+    expect: { poll: (read, options) => ({ toEqual: async value => {
+      assert.equal(options.timeout, 20_000, "Publication keeps its existing deadline");
+      assert.equal(JSON.stringify(await read()), JSON.stringify(value));
+    } }) },
+  });
+  assert.deepEqual(paths, ["http://owned/api/repertoires", "http://owned/api/queue/today"]);
+});
+
+test("training_transition_cleanup_waits_for_restored_background_readiness", async () => {
+  const source = readFileSync(join(root, "tests/browser/training-critical-path.spec.ts"), "utf8");
+  const cleanupSource = source.slice(source.indexOf('    const ownedConsumers ='), source.lastIndexOf('\n  }\n});'));
+  const events = [];
+  let releaseHealth;
+  const heldHealth = new Promise(resolve => { releaseHealth = resolve; });
+  let healthReads = 0;
+  let completed = false;
+  const expected = value => ({ toBe: other => assert.equal(value, other) });
+  expected.poll = (read, options) => ({ toBe: async ready => {
+    assert.equal(options.timeout, 60_000, "Restoration retains the existing readiness deadline");
+    const unavailable = await read();
+    assert.notEqual(unavailable, ready, "A worker-unavailable response cannot finish cleanup");
+    assert.equal(await read(), ready);
+  } });
+  const cleanup = runInNewContext(`(async () => { ${cleanupSource} })()`, {
+    docker: action => { events.push(action); },
+    fixture: action => { events.push(action); return JSON.stringify({ restored_queue_positions: 1, runtime_reordered_positions: 0, runtime_removed_entries: 0 }); },
+    expect: expected, displacedQueuePositions: [[1, 0, 64]], api: "http://owned/api",
+    request: { get: async url => {
+      assert.equal(url, "http://owned/api/health");
+      events.push("health");
+      return healthReads++ === 0 ? heldHealth : { ok: () => true };
+    } },
+  }).then(() => { completed = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.deepEqual(events, ["stop", "cleanup", "start", "health"]);
+    assert.equal(completed, false, "Cleanup must remain pending until restored workers are ready");
+  } finally {
+    releaseHealth({ ok: () => false, text: async () => "Required Celery workers are unavailable: background" });
+    await cleanup;
+  }
+  assert.deepEqual(events, ["stop", "cleanup", "start", "health", "health"]);
+  assert.equal(completed, true);
+});
+
+function studyImportPollingFixture(queueResponses, { integrityStatus = "clean", systemResponse } = {}) {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const getSource = source.slice(source.indexOf("async function get("), source.indexOf("async function postCommand("));
+  const pollingSource = source.slice(source.indexOf("async function pollForStudyableImport("), source.indexOf("function stableStudyState("));
+  const observed = { polls: 0, waits: [], queueReads: 0 };
+  const context = {
+    JSON, assertNoCompletedFixtureConflict, readStudyQueuePublication,
+    measureScenario: { poll: () => { observed.polls += 1; }, wait: async interval => { observed.waits.push(interval); } },
+    apiRequest: async (path, options) => {
+      assert.equal(options.headers["X-Tempo-Work-Class"], "background");
+      let status = 200, body;
+      if (path === "system/tasks") {
+        status = systemResponse?.status ?? 200;
+        body = systemResponse?.body ?? { tasks: [{ kind: "opening_graph_rebuild", deduplication_key: "fixture", state: "complete" }] };
+      } else if (path === "repertoires/fixture/integrity") {
+        body = { scan_status: "idle", status: integrityStatus };
+      } else {
+        assert.equal(path, "queue/today");
+        const response = queueResponses[Math.min(observed.queueReads++, queueResponses.length - 1)];
+        status = response.status;
+        body = response.body;
+      }
+      return { ok: status >= 200 && status < 300, status,
+        json: async () => body, text: async () => typeof body === "string" ? body : JSON.stringify(body) };
+    },
+  };
+  return { observed, run: () => runInNewContext(`${getSource}\n${pollingSource}\npollForStudyableImport("fixture")`, context) };
+}
+
+test("study_import_waits_for_pending_head_issuance_without_masking_service_failures", async () => {
+  const readyQueue = { cards: [{ id: "issued-card" }], projection: { state: "ready", refresh_pending: false } };
+  const pendingDetail = "Queue changed or attempt issuance is pending. Retry loading the queue.";
+  const fixture = studyImportPollingFixture([
+    { status: 200, body: readyQueue },
+    { status: 503, body: { detail: pendingDetail } },
+    { status: 200, body: readyQueue },
+  ]);
+  const queue = await fixture.run();
+  assert.equal(queue, readyQueue);
+  assert.equal(fixture.observed.queueReads, 5, "A pending issuance resets the three consecutive settled samples");
+  assert.deepEqual(fixture.observed.waits, [250, 250, 250, 250]);
+  for (const failure of [
+    { status: 500, body: { detail: pendingDetail } },
+    { status: 503, body: { detail: "Database unavailable" } },
+    { status: 503, body: "invalid JSON" },
+  ]) {
+    await assert.rejects(studyImportPollingFixture([failure]).run(), /queue\/today: HTTP (500|503)/);
+  }
+  await assert.rejects(studyImportPollingFixture([{ status: 200, body: readyQueue }], {
+    systemResponse: { status: 503, body: { detail: pendingDetail } },
+  }).run(), /system\/tasks: HTTP 503/);
+});
+
+test("study_import_pending_issuance_remains_bounded_and_preserves_integrity_failures", async () => {
+  const pending = { status: 503, body: { detail: "Queue changed or attempt issuance is pending. Retry loading the queue." } };
+  const fixture = studyImportPollingFixture([pending]);
+  await assert.rejects(fixture.run(), /graph, integrity, and queue work did not settle/);
+  assert.equal(fixture.observed.queueReads, 180);
+  assert.equal(fixture.observed.waits.length, 180);
+  assert.equal(fixture.observed.waits.reduce((sum, interval) => sum + interval, 0), 45_000);
+  await assert.rejects(studyImportPollingFixture([pending], { integrityStatus: "needs_repair" }).run(), /integrity|conflict/i);
+});
+
 const fullStages = [
   "compose_config", "image_build", "maintenance_cli", "startup", "service_health",
   "background_budget", "operation_recovery", "schema_migrations", "priority_recovery", "background_diagnostics", "deployment_lifecycle", "background_workloads",

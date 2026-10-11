@@ -6,6 +6,166 @@ import { openingEvidenceCheckpointSchema } from "../../app/domain/opening-eviden
 import * as notificationModule from "../../app/lib/notifications";
 import * as openingEvidenceJournal from "../../app/lib/opening-evidence-journal";
 
+function heldReviewResponse() {
+  let resolveResponse!: (response: Response) => void;
+  let rejectResponse!: (error: Error) => void;
+  const response = new Promise<Response>((resolve, reject) => { resolveResponse = resolve; rejectResponse = reject; });
+  return { response, resolveResponse, rejectResponse };
+}
+
+it.each(["success", "failure"])("overlapping_review_flushes_settle_only_their_submitted_attempt: %s", async laterOutcome => {
+  const preparedNext = { card_id: "successor-a", queue_entry_id: 104, revision: 1, cycle: 0, local_date: "2026-10-11" };
+  const firstReview = { backendId: "a", queueEntryId: 101, attemptId: "overlap-a", outcome: "correct" as const,
+    guided: false, preparedNext };
+  enqueuePendingReview(firstReview);
+  enqueuePendingReview({ ...firstReview, backendId: "b", queueEntryId: 102, attemptId: "overlap-b", preparedNext: undefined });
+  const firstResponse = heldReviewResponse();
+  const secondResponse = heldReviewResponse();
+  const thirdResponse = heldReviewResponse();
+  const fetcher = vi.fn().mockImplementationOnce(() => firstResponse.response)
+    .mockImplementationOnce(() => secondResponse.response).mockImplementationOnce(() => thirdResponse.response);
+  vi.stubGlobal("fetch", fetcher);
+  const originalFlush = flushPendingReviews();
+  const originalOutcome = originalFlush.then(result => ({ result }), error => ({ error }));
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  const firstWaiter = flushPendingReviews(Infinity, false, undefined, undefined, firstReview.attemptId);
+  firstResponse.resolveResponse(Response.json({ persisted: true, prepared_continuation: preparedNext }));
+  const firstSettlement = await firstWaiter;
+  expect(firstSettlement.persistedAttemptIds).toEqual(["overlap-a"]);
+  expect(firstSettlement.preparedContinuations).toEqual({ "overlap-a": preparedNext });
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  // Joining after publication must consume A's snapshot only for A.
+  expect(await flushPendingReviews(Infinity, false, undefined, undefined, "overlap-a")).toEqual(firstSettlement);
+  enqueuePendingReview({ ...firstReview, backendId: "c", queueEntryId: 103, attemptId: "overlap-c", preparedNext: undefined });
+  let thirdSettled = false;
+  const thirdWaiter = flushPendingReviews(Infinity, false, undefined, undefined, "overlap-c");
+  const thirdOutcome = thirdWaiter.then(result => { thirdSettled = true; return { result }; }, error => ({ error }));
+  expect(thirdSettled).toBe(false);
+  expect(firstSettlement.preparedContinuations?.["overlap-c"]).toBeUndefined();
+  if (laterOutcome === "failure") {
+    secondResponse.rejectResponse(new Error("B delivery failed after A persisted"));
+    const failedThird = await thirdOutcome;
+    expect(failedThird).toMatchObject({ error: { attemptId: "overlap-b", flushResult: { persistedAttemptIds: ["overlap-a"] } } });
+    expect(thirdSettled).toBe(false);
+    await originalOutcome;
+    expect(pendingReviews().map(review => review.attemptId)).toEqual(["overlap-b", "overlap-c"]);
+    // A new target flush must not settle C from the earlier shared snapshot.
+    const retry = flushPendingReviews(Infinity, false, undefined, undefined, "overlap-c");
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    thirdResponse.resolveResponse(Response.json({ persisted: true }));
+    expect((await retry).persistedAttemptIds).toEqual(["overlap-c"]);
+    expect(pendingReviews().map(review => review.attemptId)).toEqual(["overlap-b"]);
+  } else {
+    secondResponse.resolveResponse(Response.json({ persisted: true }));
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    expect(thirdSettled).toBe(false);
+    thirdResponse.resolveResponse(Response.json({ persisted: true }));
+    expect(await thirdOutcome).toMatchObject({ result: { persistedAttemptIds: ["overlap-a", "overlap-b", "overlap-c"] } });
+    await originalOutcome;
+    expect(pendingReviews()).toEqual([]);
+  }
+  expect(firstSettlement.persistedAttemptIds).toEqual(["overlap-a"]);
+  expect(firstSettlement.preparedContinuations).toEqual({ "overlap-a": preparedNext });
+  expect(fetcher.mock.calls.map(([, options]) => JSON.parse(options.body).attempt_id)).toEqual(["overlap-a", "overlap-b", "overlap-c"]);
+});
+
+it.each(["success", "rejection", "timeout"])("review_flush_waiters_release_listeners_on_settlement: %s", async outcome => {
+  const review = { backendId: "listener-card", queueEntryId: 201, attemptId: "listener-attempt", outcome: "correct" as const, guided: false };
+  enqueuePendingReview(review);
+  const heldResponse = heldReviewResponse();
+  vi.stubGlobal("fetch", vi.fn((_url, options) => {
+    options.signal.addEventListener("abort", () => heldResponse.rejectResponse(options.signal.reason), { once: true });
+    return heldResponse.response;
+  }));
+  if (outcome === "timeout") vi.useFakeTimers();
+  const active = flushPendingReviews();
+  const activeOutcome = active.catch(error => error);
+  const originalAdd = Set.prototype.add;
+  const originalDelete = Set.prototype.delete;
+  const registrations: { owner: Set<unknown>; listener: unknown }[] = [];
+  const removals: { owner: Set<unknown>; listener: unknown }[] = [];
+  let registeringWaiter = true;
+  // Native wrappers avoid instrumenting Vitest's own Set-based spy bookkeeping.
+  Set.prototype.add = function (listener: unknown) {
+    if (registeringWaiter && typeof listener === "function") registrations.push({ owner: this, listener });
+    return originalAdd.call(this, listener);
+  };
+  Set.prototype.delete = function (listener: unknown) {
+    if (registrations.some(registration => registration.owner === this && registration.listener === listener))
+      removals.push({ owner: this, listener });
+    return originalDelete.call(this, listener);
+  };
+  try {
+    const waiter = flushPendingReviews(Infinity, false, undefined, undefined, review.attemptId);
+    registeringWaiter = false;
+    const registration = registrations[0];
+    expect(registration).toBeDefined();
+    const waiterOutcome = waiter.catch(error => error);
+    if (outcome === "success") heldResponse.resolveResponse(Response.json({ persisted: true }));
+    if (outcome === "rejection") heldResponse.rejectResponse(new Error("Transport failed"));
+    if (outcome === "timeout") await vi.advanceTimersByTimeAsync(15_000);
+    const settlement = await waiterOutcome;
+    await activeOutcome;
+    expect(removals.some(removal => removal.owner === registration.owner && removal.listener === registration.listener)).toBe(true);
+    if (outcome === "success") expect(settlement.persistedAttemptIds).toEqual([review.attemptId]);
+    else expect(settlement).toBeInstanceOf(ReviewReplayError);
+    if (outcome === "timeout") expect(settlement.message).toContain("timed out");
+  } finally {
+    Set.prototype.add = originalAdd; Set.prototype.delete = originalDelete;
+    heldResponse.resolveResponse(Response.json({ persisted: true }));
+    await activeOutcome;
+    vi.useRealTimers();
+  }
+});
+
+it("new_review_flush_and_restart_receipt_cannot_reuse_previous_attempt_authorization", async () => {
+  const preparedNext = { card_id: "next-a", queue_entry_id: 304, revision: 1, cycle: 0, local_date: "2026-10-11" };
+  enqueuePendingReview({ backendId: "a", queueEntryId: 301, attemptId: "receipt-a", outcome: "correct", guided: false, preparedNext });
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ persisted: true, prepared_continuation: preparedNext })));
+  await flushPendingReviews();
+  enqueuePendingReview({ backendId: "b", queueEntryId: 302, attemptId: "receipt-b", outcome: "correct", guided: false });
+  const heldResponse = heldReviewResponse();
+  const fetcher = vi.fn(() => heldResponse.response);
+  vi.stubGlobal("fetch", fetcher);
+  const active = flushPendingReviews();
+  const waiter = flushPendingReviews(Infinity, false, undefined, undefined, "receipt-b");
+  heldResponse.resolveResponse(Response.json({ persisted: true, prepared_continuation: preparedNext }));
+  const result = await waiter;
+  await active;
+  expect(result.persistedAttemptIds).toEqual(["receipt-b"]);
+  expect(result.preparedContinuations).toEqual({});
+  // A restarted module has no in-memory flush; the original receipt is authoritative.
+  enqueuePendingReview({ backendId: "a", queueEntryId: 301, attemptId: "receipt-a", outcome: "correct", guided: false, preparedNext });
+  vi.resetModules();
+  const restartedOutbox = await import("../../app/lib/review-outbox");
+  const receiptReader = vi.fn<typeof fetch>(async () => Response.json({ state: "complete", response: { persisted: true, prepared_continuation: preparedNext } }));
+  vi.stubGlobal("fetch", receiptReader);
+  const recovered = await restartedOutbox.flushPendingReviews(Infinity, true, undefined, undefined, "receipt-a");
+  expect(recovered.persistedAttemptIds).toEqual(["receipt-a"]);
+  expect(recovered.preparedContinuations).toEqual({ "receipt-a": preparedNext });
+  expect(receiptReader).toHaveBeenCalledTimes(1);
+  expect(String(receiptReader.mock.calls[0][0])).toContain("review-attempt%3Areceipt-a");
+});
+
+it("conflicted_review_settlement_never_returns_prepared_authorization", async () => {
+  const preparedNext = { card_id: "successor", queue_entry_id: 402, revision: 1, cycle: 0, local_date: "2026-10-11" };
+  enqueuePendingReview({ backendId: "conflicted", queueEntryId: 401, attemptId: "conflicted-attempt",
+    outcome: "correct", guided: false, preparedNext });
+  const heldResponse = heldReviewResponse();
+  vi.stubGlobal("fetch", vi.fn().mockImplementationOnce(() => heldResponse.response)
+    .mockResolvedValueOnce(Response.json({ persisted: false,
+      conflict: { code: "queue_attempt_unprovable", message: "Needs attention", retryable: false }, prepared_continuation: preparedNext })));
+  const active = flushPendingReviews();
+  const waiter = flushPendingReviews(Infinity, false, undefined, undefined, "conflicted-attempt");
+  heldResponse.resolveResponse(Response.json({ detail: "Retired", retryable: false }, { status: 409 }));
+  const settlement = await waiter;
+  await active;
+  expect(settlement.persistedAttemptIds).toEqual([]);
+  expect(settlement.conflictedAttemptIds).toEqual(["conflicted-attempt"]);
+  expect(settlement.preparedContinuations).toEqual({});
+  expect(conflictedReviews()[0].attemptId).toBe("conflicted-attempt");
+});
+
 beforeEach(() => {
   localStorage.clear();
   vi.unstubAllGlobals();

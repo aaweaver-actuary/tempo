@@ -13,7 +13,9 @@ vi.mock("../../app/views/training_view", async (importOriginal) => {
   burialPending = props.burialPending;
   return <ActualTrainingView {...props} />;
 } }; });
-vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: vi.fn() }));
+vi.mock("../../app/views/fetchAndInitializeQueue", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app/views/fetchAndInitializeQueue")>(), fetchAndInitializeQueue: vi.fn(),
+}));
 vi.mock("../../app/components/board/chessboard", () => ({ Chessboard: () => <div /> }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn(),
   moveSoundEnabled: () => false, prepareMoveSounds: vi.fn(), cancelMoveSounds: vi.fn() }));
@@ -29,13 +31,14 @@ it("Home burial retry after failed queue refresh replays the selected entry even
   }));
   let failRefresh = true;
   vi.mocked(fetchAndInitializeQueue).mockImplementation(async (advance = false) => {
-    if (!advance) { useTrainingStore.getState().hydrateLocalQueue(cards, true, 2); return; }
+    if (!advance) { useTrainingStore.getState().hydrateLocalQueue(cards, true, 2); return "installed" as const; }
     useTrainingStore.getState().hydrateLocalQueue([cards[1]], true, 1);
     if (failRefresh) {
       failRefresh = false;
       useTrainingStore.getState().setServiceError("Synthetic queue refresh failure");
       throw new Error("Synthetic queue refresh failure");
     }
+  return "installed" as const;
   });
   const burialRequests: Array<{ url: string; operationId: string }> = [];
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -78,6 +81,7 @@ it.each(["transport", "pending", "terminal"])("Home %s burial controls block mut
   };
   vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => {
     useTrainingStore.getState().hydrateLocalQueue([card], true, 1);
+  return "installed" as const;
   });
   let rejectedId = "";
   let burialCalls = 0;
@@ -147,7 +151,8 @@ it.each(["transport", "pending", "blocked", "complete", "failed", "refresh-faile
     vi.mocked(fetchAndInitializeQueue).mockImplementation(async (advance = false) => {
       useTrainingStore.getState().hydrateLocalQueue(remounted ? [cards[1]] : cards, true, remounted ? 1 : 2);
       if (advance && failRefresh) { failRefresh = false; throw new Error("Recovered refresh failed"); }
-    });
+    return "installed" as const;
+  });
     let operationId = "";
     const postedEntries: string[] = [];
     let blockedRetries = 0;

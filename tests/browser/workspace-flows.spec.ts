@@ -25,12 +25,16 @@ test("training Bury hides the card for today across reload and reports a failed 
   // Cards can appear before graph/integrity publication and the final queue ordering.
   // This scenario tests burial recovery, so establish its published input before opening an attempt.
   await expect.poll(async () => {
-    const repertoires = (await (await request.get(`${api}/repertoires`)).json()).repertoires;
+    const repertoires = (await (await request.get(`${api}/repertoires`, {
+      headers: { "X-Tempo-Work-Class": "background" },
+    })).json()).repertoires;
     const repertoire = repertoires.find((item: { name: string }) => item.name === "bury-training");
     return { graph: repertoire?.graph_state, integrity: repertoire?.integrity_status, scan: repertoire?.integrity_scan_status };
   }, { timeout: 20_000 }).toEqual({ graph: "ready", integrity: "clean", scan: "idle" });
   await expect.poll(async () => {
-    const queue = await (await request.get(`${api}/queue/today`)).json();
+    const queue = await (await request.get(`${api}/queue/today`, {
+      headers: { "X-Tempo-Work-Class": "background" },
+    })).json();
     return { ready: queue.projection?.state === "ready" && !queue.projection.refresh_pending, cards: queue.cards.length > 1 };
   }, { timeout: 20_000 }).toEqual({ ready: true, cards: true });
   await page.goto("/");

@@ -26,6 +26,8 @@ import { partialOpeningAttempt } from "../lib/opening-evidence-journal";
 
 export type TrainingStoreState = {
   queueReadiness: "uninitialized" | "loading" | "ready" | "unavailable";
+  queueLocalDate?: string;
+  confirmedQueueEntryKeys?: string[];
   practiceCards: PracticeCard[];
   importedRepertoires: LocalRepertoire[];
   activeCardIndex: number;
