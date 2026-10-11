@@ -17,6 +17,59 @@ const auditReview = (attemptId: string, queueEntryId: number, backendId = attemp
 });
 const auditSuccessor = { card_id: "audit-successor", queue_entry_id: 9999, revision: 1, cycle: 0, local_date: "2026-10-11" };
 
+it.each(["persisted", "terminal"])("flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication", async outcome => {
+  enqueuePendingReview({ ...auditReview("reentrant-a", 9901), preparedNext: auditSuccessor });
+  enqueuePendingReview(auditReview("reentrant-b", 9902));
+  const heldA = auditDeferred<Response>();
+  const requestedA = auditDeferred<void>();
+  const heldB = auditDeferred<Response>();
+  const requestedB = auditDeferred<void>();
+  const trace: string[] = [];
+  const deliveries: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    const attempt = JSON.parse(options!.body as string).attempt_id;
+    deliveries.push(attempt);
+    if (attempt === "reentrant-b") { requestedB.resolve(); return heldB.promise; }
+    if (String(input).endsWith("/reconcile")) return Response.json({ persisted: false,
+      conflict: { code: "retired", message: "Needs attention", retryable: false } });
+    requestedA.resolve(); return heldA.promise;
+  }));
+  let ownerCompleted = false;
+  const owner = flushPendingReviews().then(result => { ownerCompleted = true; return result; });
+  await requestedA.promise;
+  let reentrant: ReturnType<typeof flushPendingReviews> | undefined;
+  const subscribeDuringStorageChange = () => {
+    const target = [...pendingReviews(), ...conflictedReviews()].find(review => review.attemptId === "reentrant-a");
+    if (reentrant || (outcome === "persisted" ? !!target : target?.state !== "conflicted")) return;
+    trace.push("target storage transition");
+    reentrant = flushPendingReviews(Infinity, false, undefined, undefined, "reentrant-a")
+      .then(result => { trace.push("target observer settled"); return result; });
+    trace.push("synchronous subscriber returned");
+  };
+  window.addEventListener("tempo:review-outbox", subscribeDuringStorageChange);
+  try {
+    heldA.resolve(outcome === "persisted" ? Response.json({ persisted: true, prepared_continuation: auditSuccessor })
+      : Response.json({ detail: "Conflict", retryable: false }, { status: 409 }));
+    await requestedB.promise;
+    expect(reentrant).toBeDefined();
+    const result = await reentrant!;
+    expect(ownerCompleted).toBe(false);
+    expect(result.persistedAttemptIds).toEqual(outcome === "persisted" ? ["reentrant-a"] : []);
+    expect(result.conflictedAttemptIds).toEqual(outcome === "terminal" ? ["reentrant-a"] : []);
+    expect(result.preparedContinuations).toEqual(outcome === "persisted" ? { "reentrant-a": auditSuccessor } : {});
+    expect(trace).toEqual(["target storage transition", "synchronous subscriber returned", "target observer settled"]);
+    heldB.resolve(Response.json({ persisted: true }));
+    await owner;
+    expect(result.persistedAttemptIds).not.toContain("reentrant-b");
+    expect(deliveries).toEqual(outcome === "persisted" ? ["reentrant-a", "reentrant-b"] : ["reentrant-a", "reentrant-a", "reentrant-b"]);
+    console.info("flush_settlement_audit synchronous subscriber", outcome, trace);
+  } finally {
+    window.removeEventListener("tempo:review-outbox", subscribeDuringStorageChange);
+    heldA.resolve(Response.json({ persisted: true })); heldB.resolve(Response.json({ persisted: true }));
+    await owner; await reentrant;
+  }
+});
+
 it.each(["unlimited", "submitted"])("flush_settlement_audit %s follow-up failure retains earlier settled evidence", async caller => {
   enqueuePendingReview({ ...auditReview("partial-a", 9801, "partial-card"), preparedNext: auditSuccessor });
   enqueuePendingReview(auditReview("partial-b", 9802, "partial-card"));

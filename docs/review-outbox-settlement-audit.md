@@ -70,7 +70,7 @@ private flush-state writes or wall-clock sleeps are used.
 | Scenario | Classification / observable proof |
 | --- | --- |
 | A completes/rejects; B publishes before A callbacks | SAFE — VERIFIED; genuine B conflict, no false persistence/capability |
-| Subscribe before/after publication; duplicate target observers | SAFE — VERIFIED; exact target attribution and immutable early snapshot |
+| Subscribe before/after publication, including synchronous public-event reentrancy; duplicate target observers | SAFE — VERIFIED; exact target attribution and immutable early snapshot |
 | Different submitted IDs; limits 1, 2, Infinity; differing retry/receipt settings | SAFE — VERIFIED for settlement; original delivery is coalesced and follow-up uses caller settings |
 | Bounded owner followed by unlimited drain | CONFIRMED DEFECT; both capability maps disappear despite confirmed IDs |
 | Unlimited/submitted follow-up rejects after earlier confirmation | CONFIRMED DEFECT; earlier IDs and capability map disappear from partial error evidence |
@@ -140,6 +140,13 @@ training, attempt lifecycle and opening-evidence deadlines. Smallest four
 previously failing cases pass in 9.42 s. These runs have dirty task source on the
 baseline commit, not clean HEAD.
 
+Two additional synchronous public-event subscription cases passed on unchanged
+production (2.74 s), bringing the audit to **38 unit cases: 4 baseline failures,
+34 baseline passes, all passing after correction**. The final outbox file passed
+all 89 cases (2.13 s); its changed-test lint passed. The terminal fixture initially
+looked in the pending-only projection rather than the conflicted projection; that
+fixture error is retained in the diagnostics.
+
 After explicit cleanup was added to the new held-response tests, both affected
 Home/recovery files passed all 69 cases. Two follow-up-error cases also passed
 with explicit prototype, message, stack, cause and shared-observer assertions.
@@ -147,8 +154,40 @@ Typecheck passed (30.10 s), lint passed (54.35 s, ten pre-existing warnings), an
 conflict/migration/whitespace guards passed. Subsequent changed-test lint passed
 with one pre-existing warning.
 
-Browser-file, PostgreSQL durability, tested clean revision, successful CI, and
-cleanup records will be added before handoff. Evidence is retained outside
+The corrected browser file passed all four workflows (287.61 s browser stage)
+on clean runtime correction commit `c46bc94d1b703a53d640db972cb3b49130a85011`.
+It includes authoritative review/receipt confirmation, native board interaction,
+API/worker restart and exact original-request replay. Subsequent changes add only
+the two synchronous-subscription tests, regression registration and this report.
+
+Local `make docker-durability` did **not** pass completely: its first execution
+stopped in unchanged `operation_recovery` with a PostgreSQL transaction timeout
+(25.34 s failed stage); focused unchanged operation recovery passed (11.21 s).
+The next complete durability execution passed operation recovery (6.07 s), but
+stopped in unchanged daily-study refresh recovery with a lock timeout while
+locking `priority_source_epoch` (62.80 s failed background-workloads stage).
+The isolated unchanged refresh-recovery case passed (18.17 s stage).
+These failures are retained and are not attributed to this client correction.
+No database budget, test expectation or backend behavior is changed. Final CI
+must provide complete current-candidate durability and qualification; focused
+successes do not constitute a complete durability pass.
+
+Exact development commands (reporter/output options omitted only where cosmetic):
+
+```sh
+npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/pending-review-recovery-regressions.test.tsx -t flush_settlement_audit
+npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/pending-review-recovery-regressions.test.tsx tests/unit/desktop-queue-regressions.test.ts tests/unit/phone-queue-preparation-regressions.test.ts tests/unit/queue-readiness-diagnostics-regressions.test.ts tests/unit/offline-training-regressions.test.ts tests/unit/attempt-lifecycle-regressions.test.ts tests/unit/opening-evidence-review-deadlines.test.ts
+npm run test:unit -- tests/unit/review-outbox-regressions.test.ts
+npm run typecheck
+npm run lint
+make ui-file FILE=post-review-progression.spec.ts
+make docker-durability
+```
+
+Each exact audit case, its baseline artifact and corrected result are listed in
+`exact-audit-cases.json` in the local bundle. Ordered handoff and synchronous
+subscription traces are retained in the corresponding verbose logs. The PR and
+final local handoff record link current-candidate CI separately. Evidence is retained outside
 the clone under root `test-results/audits/2026-10-11-review-outbox-settlement/`.
 Mocked commit/receipt cases establish client semantics, not PostgreSQL durability.
 This finite scenario set is not exhaustive model checking and does not claim

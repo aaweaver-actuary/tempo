@@ -4043,3 +4043,7 @@ but its actual target conflict is truthful; shared state alone is not a defect.
 - `flush_settlement_audit different explicit retry identities retain suppression after %s owner`
   (persisted/failed) proves separate explicit retries perform original-key receipt
   reads and cannot release another attempt's terminal suppression.
+- `flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication`
+  (persisted/terminal) subscribes inside the public storage-change callback before
+  settlement publication. Both baseline cases preserve exact attribution and an
+  immutable early result while unrelated delivery remains held.
