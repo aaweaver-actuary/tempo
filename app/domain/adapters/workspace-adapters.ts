@@ -33,13 +33,15 @@ export function repertoireLinesFromPayload(raw: unknown): AnalysisLine[] {
 }
 
 // The cache holds transport values, never unchecked domain values.
-export function validateWorkspacePayload(url: string, raw: unknown): unknown {
+export function validateWorkspacePayload(url: string, raw: unknown, shouldPublishDiagnostics?: () => boolean): unknown {
+  const parseWorkspaceData = <T>(schema: z.ZodType<T>, value: unknown, source: string) =>
+    parseData(schema, value, source, undefined, undefined, shouldPublishDiagnostics);
   const path = new URL(url, "http://tempo.local").pathname;
   switch (path) {
     case "/api/settings":
-      return parseData(settingsResponseSchema, raw, "settings");
+      return parseWorkspaceData(settingsResponseSchema, raw, "settings");
     case "/api/repertoire/lines": {
-      const body = parseData(
+      const body = parseWorkspaceData(
         repertoireLinesResponseSchema,
         raw,
         "repertoire lines",
@@ -49,11 +51,12 @@ export function validateWorkspacePayload(url: string, raw: unknown): unknown {
           repertoireLineSchema,
           body.lines,
           "repertoire line",
+          shouldPublishDiagnostics,
         ),
       };
     }
     case "/api/repertoires": {
-      const body = parseData(
+      const body = parseWorkspaceData(
         z.strictObject({ repertoires: z.array(z.unknown()) }),
         raw,
         "repertoires",
@@ -63,18 +66,19 @@ export function validateWorkspacePayload(url: string, raw: unknown): unknown {
           repertoiresResponseSchema.shape.repertoires.element,
           body.repertoires,
           "repertoire",
+          shouldPublishDiagnostics,
         ),
       };
     }
     case "/api/progress":
-      return parseData(progressResponseSchema, raw, "study progress");
+      return parseWorkspaceData(progressResponseSchema, raw, "study progress");
     case "/api/tactics/progress":
-      return parseData(tacticProgressSchema, raw, "tactics progress");
+      return parseWorkspaceData(tacticProgressSchema, raw, "tactics progress");
     case "/api/games/summary": {
-      return parseData(gamesSummarySchema, raw, "games");
+      return parseWorkspaceData(gamesSummarySchema, raw, "games");
     }
     case "/api/endgames/templates":
-      return parseData(endgameTemplatesSchema, raw, "endgame templates");
+      return parseWorkspaceData(endgameTemplatesSchema, raw, "endgame templates");
     default:
       return raw;
   }

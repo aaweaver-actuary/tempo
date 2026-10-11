@@ -74,19 +74,22 @@ export function parseData<T>(
   source: string,
   endpoint?: string,
   debugSource = "validated-data",
+  shouldPublishDiagnostics?: () => boolean,
 ): T {
   const result = schema.safeParse(raw);
   if (result.success) return result.data;
   const message = result.error.issues
     .map((issue) => `${issue.path.join(".") || "record"}: ${issue.message}`)
     .join("; ");
-  reportDataDiagnostic(source, raw, message, recordIdentity(raw));
+  if (shouldPublishDiagnostics?.() !== false)
+    reportDataDiagnostic(source, raw, message, recordIdentity(raw));
   const failure = new Error(`Invalid ${source} data: ${message}`);
   reportDebugError(failure, {
     kind: "data-validation",
     source: debugSource,
     operation: "schema validation",
     endpoint,
+    notify: shouldPublishDiagnostics?.() !== false,
   });
   throw failure;
 }
@@ -95,10 +98,11 @@ export function validRecords<T>(
   schema: z.ZodType<T>,
   records: readonly unknown[],
   source: string,
+  shouldPublishDiagnostics?: () => boolean,
 ): T[] {
   return records.flatMap((raw) => {
     try {
-      return [parseData(schema, raw, source)];
+      return [parseData(schema, raw, source, undefined, undefined, shouldPublishDiagnostics)];
     } catch {
       return [];
     }

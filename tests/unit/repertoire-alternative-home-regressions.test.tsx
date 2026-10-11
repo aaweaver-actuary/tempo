@@ -186,6 +186,9 @@ it("issue36_failed_loading_never_grades_unverified_moves_wrong", async () => {
 });
 
 it.each(["fetch", "preparation"] as const)("issue36_late_loads_cannot_replace_current_evidence (%s)", async stage => {
+  const dispatch = vi.spyOn(window, "dispatchEvent");
+  const lineReadyEvents = () => dispatch.mock.calls.filter(([event]) => event instanceof CustomEvent &&
+    event.type === "tempo-workspace-data" && event.detail.state === "ready" && event.detail.url.endsWith("/api/repertoire/lines"));
   let releaseOld!: (value: Response | RepertoireAlternativeSnapshot) => void;
   const heldOld = new Promise<Response | RepertoireAlternativeSnapshot>(resolve => { releaseOld = resolve; });
   const originalRun = study.runStudyTask;
@@ -208,6 +211,7 @@ it.each(["fetch", "preparation"] as const)("issue36_late_loads_cannot_replace_cu
   await finishPreparation(stage === "fetch" ? 1 : 2);
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "wrong");
+  const currentReadyCount = lineReadyEvents().length;
   await act(async () => {
     if (stage === "fetch") releaseOld(Response.json({ lines: obsoleteLines }));
     else releaseOld(buildRepertoireAlternativeSnapshot(heldGeneration,
@@ -217,6 +221,7 @@ it.each(["fetch", "preparation"] as const)("issue36_late_loads_cannot_replace_cu
   });
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "wrong");
+  expect(lineReadyEvents()).toHaveLength(currentReadyCount);
   expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(stage === "fetch" ? 1 : 2);
 });
 
