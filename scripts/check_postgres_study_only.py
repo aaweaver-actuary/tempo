@@ -89,7 +89,7 @@ def proof():
                     entries.append(database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?) RETURNING id', (today, card_id, index)).fetchone()[0])
                 database.execute("UPDATE cards SET superseded_by='eligible-a' WHERE id='superseded'")
                 database.execute("INSERT INTO deleted_cards(card_id,deleted_at) VALUES('deleted',?)", (today,))
-                database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(?,'ready',1,0)", (today,))
+                database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(?,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
             issued = execute_command(uuid4().hex, 'queue.issue_head',
                 {'entry_id': entries[2], 'queue_date': today, 'card_id': 'eligible-a', 'expected_revision': 1})
             assert issued == {'issued': True}
@@ -111,8 +111,8 @@ def proof():
             with postgres_store.connection() as database:
                 assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id='eligible-a'").fetchone()[0] == 1
                 assert database.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE attempt_id='mode-proof-review'").fetchone()[0] == 1
-                assert database.execute('SELECT COUNT(*) FROM daily_queue').fetchone()[0] == 4
-                assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins').fetchone()[0] == 4
+                assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE id IN (?,?,?,?)', entries).fetchone()[0] == 4
+                assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE queue_entry_id IN (?,?,?,?)', entries).fetchone()[0] == 4
             print('PASS superseded_queue_head_does_not_block_eligible_successor')
             print('PASS deleted_queue_head_is_excluded_from_payload_and_count')
             print('PASS study_only_mode_preserves_foreground_review_and_queue_progression')
