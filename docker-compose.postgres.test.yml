@@ -93,7 +93,7 @@ services:
       schema: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/api/health', headers={'X-Tempo-Work-Class': 'background'}), timeout=3).close()"]
       interval: 3s
       timeout: 4s
       retries: 60
