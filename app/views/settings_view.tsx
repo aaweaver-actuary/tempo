@@ -34,6 +34,7 @@ type SettingsValues = {
   defense_new_cards_per_day: number;
   include_defensive_cards_in_daily_stack: boolean;
   defensive_analysis_enabled: boolean;
+  study_only_mode: boolean;
   discovery_window_days: 30 | 90;
   lichess_username: string;
   chesscom_username: string;
@@ -84,6 +85,7 @@ export default function SettingsView({
     defense_new_cards_per_day: 5,
     include_defensive_cards_in_daily_stack: true,
     defensive_analysis_enabled: false,
+    study_only_mode: false,
     discovery_window_days: 90,
     lichess_username: "",
     chesscom_username: "",
@@ -241,6 +243,7 @@ export default function SettingsView({
         defense_new_cards_per_day: values.defense_new_cards_per_day,
         include_defensive_cards_in_daily_stack: values.include_defensive_cards_in_daily_stack,
         defensive_analysis_enabled: values.defensive_analysis_enabled,
+        study_only_mode: values.study_only_mode,
         discovery_window_days: values.discovery_window_days,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
@@ -257,6 +260,7 @@ export default function SettingsView({
       };
       try {
         await saveLocalSettings(backend);
+        window.dispatchEvent(new Event("tempo:study-mode-changed"));
         setSavedDailyLimit(values.new_cards_per_day);
         invalidateWorkspaceData();
         setStatus("Saved.");
@@ -440,6 +444,12 @@ export default function SettingsView({
               }
             />
           </label>
+          {usesLocalApi() && <label>
+            <span>Study-only mode<small>Pause optional analysis and imports. Existing cards, review saves, and the daily queue remain available. Pending work resumes when turned off.</small></span>
+            <TextInput disabled={!settingsLoaded} type="checkbox"
+              checked={values.study_only_mode}
+              onChange={(event) => update("study_only_mode", event.target.checked)} />
+          </label>}
           <label>
             <span>Defensive analysis<small>Generate defensive exercises in the background. Turning off preserves your work; game analysis and repertoire recommendations continue.</small></span>
             <TextInput disabled={!settingsLoaded} type="checkbox"

@@ -17,8 +17,9 @@ def analysis_enabled(database) -> bool:
 
 def task_admission_sql(kind_expression: str) -> str:
     kinds = ','.join("'" + kind + "'" for kind in DEFENSIVE_TASK_KINDS)
-    return (f"({kind_expression} NOT IN ({kinds}) OR "
-            "(SELECT defensive_analysis_enabled FROM settings WHERE id=1)=1)")
+    return (f"(({kind_expression}='daily_queue' OR (SELECT study_only_mode FROM settings WHERE id=1)=0) AND "
+            f"({kind_expression} NOT IN ({kinds}) OR "
+            "(SELECT defensive_analysis_enabled FROM settings WHERE id=1)=1))")
 
 
 def recommendation_sql(request_id_expression: str) -> str:
@@ -33,8 +34,9 @@ def recommendation_sql(request_id_expression: str) -> str:
 
 
 def search_admission_sql(request_id_expression: str) -> str:
-    return ('((SELECT defensive_analysis_enabled FROM settings WHERE id=1)=1 OR '
-            + recommendation_sql(request_id_expression) + ')')
+    return ('((SELECT study_only_mode FROM settings WHERE id=1)=0 AND '
+            '((SELECT defensive_analysis_enabled FROM settings WHERE id=1)=1 OR '
+            + recommendation_sql(request_id_expression) + '))')
 
 
 def recommendation_request_ids_sql() -> str:

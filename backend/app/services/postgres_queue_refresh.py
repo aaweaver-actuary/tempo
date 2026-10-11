@@ -781,6 +781,14 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                      "admit_study", "real_game_misses", "randomize_queue", "quarantine",
                      "publish_projection"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
+    from .study_mode import study_only_enabled
+    minimal_study = study_only_enabled()
+    # Resume existing checkpoints without traversing optional admission/ranking.
+    skipped_phases = {"prioritized_openings": "admit_study",
+                      "prioritized_opening_item": "admit_study",
+                      "real_game_misses": "quarantine", "randomize_queue": "quarantine"}
+    if minimal_study and phase in skipped_phases:
+        phase = skipped_phases[phase]
     prepared_tactic = None
     if phase == "tactical_introductions":
         activity_gate.wait_for_foreground()

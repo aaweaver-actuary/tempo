@@ -94,7 +94,9 @@ if (process.env.TEMPO_MAIA_SMOKE === "1") {
 while (true) {
   let job;
   try {
-    if ((await request("/api/system/foreground-active")).active) { await sleep(1_000); continue; }
+    const admission = await request("/api/system/foreground-active");
+    if (admission.study_only_mode) { await sleep(5_000); continue; }
+    if (admission.active) { await sleep(1_000); continue; }
     if (!(await request("/api/repertoire-coverage/maia/available")).available) {
       await sleep(5_000); continue;
     }

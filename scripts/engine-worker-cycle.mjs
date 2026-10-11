@@ -14,6 +14,7 @@ export async function runEngineWorkerCycle({ searches, request, durableRequest, 
     let { defenseClaimUnresolved, preferredGameId } = recovered;
     if (!job) {
       const available = await request("/api/system/foreground-active");
+      if (available.study_only_mode) { engineWaitingStage("engine", "study_only_mode"); await sleep(5_000); return; }
       if (available.active) { engineWaitingStage("engine", "foreground_admission"); await sleep(2_000); return; }
       if (!defenseClaimUnresolved) {
         try {

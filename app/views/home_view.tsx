@@ -1,4 +1,5 @@
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
+import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
 import { PendingOperationError, readOperationResponse } from "../lib/operation-status";
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
 import { backgroundFetch } from "../lib/background-fetch";
@@ -126,6 +127,7 @@ import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
 export default function Home() {
+  const studyOnlyMode = useStudyOnlyMode();
   const gameSync = useGameSync();
   useEffect(() => prepareMoveSounds(), []);
   useEffect(() => {
@@ -682,7 +684,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (usesLocalApi() && currentView === "train") {
+    if (usesLocalApi() && currentView === "train" && studyOnlyMode === false) {
       let active = true;
       const generation = ++repertoirePositionGeneration.current;
       const controller = new AbortController();
@@ -727,7 +729,7 @@ export default function Home() {
         }
       };
     }
-  }, [currentView, branchIndexRetry]);
+  }, [currentView, branchIndexRetry, studyOnlyMode]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
@@ -1760,7 +1762,7 @@ export default function Home() {
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
           <NotificationCenter />
-          <ServiceStatusPanel />
+          <ServiceStatusPanel studyOnlyMode={studyOnlyMode} />
           <DiscoveriesTray
             safeToOpen={
               !(["train", "tactics", "endgames", "builder"] as View[]).includes(
@@ -1817,6 +1819,7 @@ export default function Home() {
         {deletionRecoveryError && <div className="ui-notice error" role="alert">{deletionRecoveryError} <Button onClick={() => void recoverCardDeletion()}>Check card deletion</Button></div>}
         {currentView === "train" && (
           <>
+            {studyOnlyMode === true && <div className="ui-notice" role="status">Study-only mode is on. Optional analysis and imports are paused. Review saves and the daily queue remain available.</div>}
             <OfflineReviewConflicts />
             {queueReconciliationError && <div role="status">
               {queueReconciliationError}{" "}

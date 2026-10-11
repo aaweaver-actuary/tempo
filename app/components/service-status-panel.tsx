@@ -70,7 +70,7 @@ function sameActivitySummary(left: ActivityResponse | null, right: ActivityRespo
 
 const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently completed"];
 
-export function ServiceStatusPanel() {
+export function ServiceStatusPanel({ studyOnlyMode = false }: { studyOnlyMode?: boolean | null } = {}) {
   const lastDiagnosticsRequest = useRef(Number.NEGATIVE_INFINITY);
   const [open, setOpen] = useState(false);
   const popupRef = useRef<HTMLElement>(null);
@@ -112,7 +112,7 @@ export function ServiceStatusPanel() {
 
 
   useEffect(() => {
-    if (!usesLocalApi()) return;
+    if (!usesLocalApi() || studyOnlyMode !== false) return;
     let stopped = false;
     let panelOpen = false;
     let currentOffset = 0;
@@ -240,7 +240,7 @@ export function ServiceStatusPanel() {
       window.removeEventListener("offline", recover);
       document.removeEventListener("visibilitychange", recover);
     };
-  }, [publishError]);
+  }, [publishError, studyOnlyMode]);
   useEffect(() => { updatePollingDemand.current(open, offset); }, [open, offset]);
 
   const control = async (item: ActivityItem, action: string) => {
@@ -288,21 +288,23 @@ export function ServiceStatusPanel() {
       onClick={event => { event.currentTarget.focus(); setOpen(value => !value); }}>
       <span className="tempo-activity-trigger-desktop">Analysis activity</span>
       <span className="tempo-activity-trigger-mobile">Jobs</span>
-      {activeCount > 0 && <span> · {activeCount}</span>}
+      {studyOnlyMode ? <span> · Paused</span> : activeCount > 0 && <span> · {activeCount}</span>}
       {((status?.counts.failed ?? 0) > 0 || status?.writer?.healthy === false || error) && <span className="tempo-activity-attention" aria-label="needs attention"> !</span>}
     </Button>
     {open && <section ref={popupRef} id="tempo-activity-content" className="tempo-activity-content" aria-label="Analysis activity">
       <div className="tempo-activity-heading"><strong>Background activity</strong><Button type="button" onClick={() => setOpen(false)}>Close</Button></div>
+      {studyOnlyMode && <p>Study-only mode is on. Optional analysis and imports are paused; pending work is preserved. Turn it off in Settings to resume.</p>}
       {!usesLocalApi() && <p>This practice demo has no local analysis service.</p>}
       {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}
       {status?.writer?.healthy === false && <p role="alert">The database writer is unavailable. Restart Tempo before making changes.</p>}
+      {studyOnlyMode && status && <p>Last activity snapshot before the pause:</p>}
       {status && <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>}
       {!error && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
       {!error && status !== null && visibleItems.length === 0 && <p>No background activity yet.</p>}
       <div className="tempo-activity-list">
         {visibleItems.map((item, index) => {
           const key = `${item.source}:${item.id}`;
-          const controlEligible = item.source !== "study" && item.state !== "complete" && item.state !== "failed";
+          const controlEligible = !studyOnlyMode && item.source !== "study" && item.state !== "complete" && item.state !== "failed";
           const group = activityGroup(item.state);
           return <Fragment key={key}>
             {(index === 0 || activityGroup(visibleItems[index - 1].state) !== group) && <h3>{group}</h3>}

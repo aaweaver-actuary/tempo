@@ -59,11 +59,13 @@ let sourceLines: ReturnType<typeof line>[];
 let lineRequests: number;
 let nextLineRead: Promise<Response> | undefined;
 let responseJournal: ReturnType<typeof vi.fn>;
+let studyOnlyMode: boolean;
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   sourceLines = [line("alternative")]; lineRequests = 0; nextLineRead = undefined;
+  studyOnlyMode = false;
   responseJournal = vi.fn();
   vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ response: responseJournal,
@@ -75,6 +77,7 @@ beforeEach(() => {
     return "installed";
   });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/api/settings")) return Response.json({ study_only_mode: studyOnlyMode });
     if (String(input).includes("/repertoire/lines")) {
       lineRequests++;
       const heldRead = nextLineRead; nextLineRead = undefined;
@@ -84,6 +87,21 @@ beforeEach(() => {
   }));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("study_only_mode_pauses_bulk_preparation_preserves_expected_moves_and_resumes", async () => {
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  studyOnlyMode = true;
+  render(<Home />);
+  await waitFor(() => expect(screen.getByText(/Study-only mode is on. Optional/)).toBeTruthy());
+  expect(lineRequests).toBe(0);
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  await play("e2e4");
+  expect(useTrainingStore.getState().getCard().backendId).toBe(card.backendId);
+  expect(responseJournal).toHaveBeenCalled();
+  studyOnlyMode = false;
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  await waitFor(() => expect(lineRequests).toBe(1));
+});
 
 async function readyHome() {
   const prepare = vi.spyOn(study, "runStudyTask");
