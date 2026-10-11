@@ -36,7 +36,9 @@ repertoire in effective scope.
 Network status reads, retries, apply requests, and polling waits are outside
 journal critical sections. Structural admission invokes the synchronous dispatch
 callback while holding the lock but wraps its response promise, so the response
-wait occurs after release. Callers must resolve affected membership beforehand
+wait occurs after release. The original dispatched promise gets an immediate
+rejection observer before the storage task boundary; its eventual failure still
+propagates unchanged to the caller, without an unhandled-rejection interval. Callers must resolve affected membership beforehand
 and perform every mutation delivery through this guard. This is browser
 coordination, not a durable cross-device reservation or a substitute for backend
 snapshot checks, receipts, and fences.
