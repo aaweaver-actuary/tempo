@@ -524,3 +524,140 @@ def test_issue108_newer_graph_publication_fences_computed_inventory_output(dsn):
         assert database.execute_native('SELECT COUNT(*) FROM inventory_generation_routes WHERE generation_id=%s',
                                        (accepted_generation,)).fetchone()[0] == 1
     print('PASS test_issue108_newer_graph_publication_fences_computed_inventory_output', flush=True)
+
+
+def test_pr117_pd82_inspection_preserves_queue_while_independent_publication_assigns_admission(dsn):
+    """Hold a real queue checkpoint, without pausing inside a transaction.
+
+    The old browser precondition accepted any target card, including this
+    unpublished row. Inventory and inspection must leave it untouched; only
+    the normal daily-queue randomization may finalize its admission kind.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app import prefix_diagnostics_api as diagnostics, queue_commands
+    from app.services import postgres_queue_refresh as queue_refresh
+    from scripts.check_postgres_position_inventory import seed, publish_graph, claim, run_to_completion
+
+    repertoire_id = 'pr117-pd82-publication'
+    queue_date = datetime.now(timezone.utc).date().isoformat()
+    with postgres_store.connection() as database:
+        seed(database.raw, repertoire_id, [(repertoire_id+'-line',
+            ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5'], 'white', chess.STARTING_FEN)])
+        publish_graph(database, repertoire_id)
+        card_id = database.execute_native(
+            'SELECT id FROM cards WHERE repertoire_id=%s ORDER BY length(moves_json) DESC LIMIT 1',
+            (repertoire_id,)).fetchone()[0]
+        database.execute_native("UPDATE cards SET state='learning',due_date=%s WHERE id=%s", (queue_date, card_id))
+        database.execute_native('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,0)',
+                                (queue_date, card_id))
+        queue_task = queue_commands.request_queue_refresh_in_transaction(database, queue_date)
+        # Establish the persisted checkpoint immediately before randomization.
+        # Later deliveries execute the real handler with its normal budgets.
+        database.execute_native("UPDATE background_tasks SET phase='randomize_queue',payload_json=%s WHERE id=%s",
+            (json.dumps({'queue_date': queue_date, '_queue_phase': 'randomize_queue'}), queue_task['id']))
+
+    snapshot_queries = {
+        'cards': 'SELECT to_jsonb(row) FROM cards row ORDER BY id',
+        'queue': 'SELECT to_jsonb(row) FROM daily_queue row ORDER BY id',
+        'projection': 'SELECT to_jsonb(row) FROM queue_projections row ORDER BY queue_date',
+        'origins': 'SELECT to_jsonb(row) FROM queue_attempt_origins row ORDER BY queue_entry_id',
+        'reviews': 'SELECT to_jsonb(row) FROM reviews row ORDER BY id',
+        'tasks': 'SELECT to_jsonb(row) FROM background_tasks row ORDER BY id',
+        'events': 'SELECT to_jsonb(row) FROM background_task_events row ORDER BY id',
+        'receipts': 'SELECT to_jsonb(row) FROM operation_receipts row ORDER BY operation_id',
+        'inventory': 'SELECT to_jsonb(row) FROM inventory_publications row ORDER BY repertoire_id',
+        'presentations': 'SELECT to_jsonb(row) FROM opening_evidence_presentations row ORDER BY id',
+        'attempts': 'SELECT to_jsonb(row) FROM opening_evidence_attempts row ORDER BY attempt_id',
+        'observations': 'SELECT to_jsonb(row) FROM opening_evidence_observations row ORDER BY attempt_id,decision_index',
+    }
+    snapshot_boundaries = []
+
+    def snapshot():
+        with postgres_store.connection(read_only=True) as database:
+            captured = {name: [row[0] for row in database.execute_native(statement).fetchall()]
+                        for name, statement in snapshot_queries.items()}
+        snapshot_boundaries.append({'at': datetime.now(timezone.utc).isoformat(),
+                                    'projection': captured['projection'],
+                                    'admission_kind': captured['queue'][0]['admission_kind']})
+        return captured
+
+    partial = snapshot()
+    assert partial['queue'][0]['admission_kind'] is None
+    assert partial['projection'][0]['state'] == 'refreshing'
+    assert partial['projection'][0]['refresh_pending'] == 1
+    # Inventory publication completes while queue publication remains held.
+    run_to_completion(repertoire_id)
+    after_inventory = snapshot()
+    assert after_inventory['queue'] == partial['queue']
+    assert after_inventory['projection'] == partial['projection']
+    assert next(row for row in after_inventory['tasks'] if row['id'] == queue_task['id']) == next(
+        row for row in partial['tasks'] if row['id'] == queue_task['id'])
+
+    application = FastAPI()
+    application.include_router(diagnostics.router)
+    client = TestClient(application)
+    listing = client.get(f'/api/repertoires/{repertoire_id}/prefix-diagnostics')
+    assert listing.status_code == 200, listing.text
+    prefix = next(row for row in listing.json()['prefixes'] if row['card_id'] == card_id)
+    assert prefix['manifest'] is not None, prefix
+    detail_url = (f'/api/repertoires/{repertoire_id}/prefix-diagnostics/{card_id}'
+                  f"?manifest_id={prefix['manifest']['manifest_id']}&graph_generation=1")
+    original_connection = postgres_store.connection
+    diagnostic_boundaries = []
+    remaining_refusals = 2
+
+    @contextmanager
+    def observe_diagnostic_connection(**options):
+        nonlocal remaining_refusals
+        if options.get('repeatable_read'):
+            assert options['read_only'] and options['background'], options
+            diagnostic_boundaries.append({'at': datetime.now(timezone.utc).isoformat(),
+                                          'refused': remaining_refusals > 0})
+            if remaining_refusals:
+                remaining_refusals -= 1
+                raise psycopg.errors.TransactionTimeout('Controlled diagnostic database refusal')
+        with original_connection(**options) as database:
+            yield database
+
+    before_inspection = snapshot()
+    with patch.object(postgres_store, 'connection', observe_diagnostic_connection):
+        for _ in range(2):
+            refused = client.get(detail_url, headers={'X-Tempo-Work-Class': 'background'})
+            assert refused.status_code == 503 and refused.headers['Retry-After'] == '1', refused.text
+            assert refused.json() == {'detail': 'Prefix difficulty is temporarily unavailable. Retry after study work settles.'}
+            assert snapshot() == before_inspection
+        inspected = client.get(detail_url, headers={'X-Tempo-Work-Class': 'background'})
+        assert inspected.status_code == 200, inspected.text
+        assert inspected.json()['read_only'] is True
+        assert all(row['coverage'] == 'unknown' for row in inspected.json()['decisions'])
+    assert len(diagnostic_boundaries) == 3 and remaining_refusals == 0
+    assert snapshot() == before_inspection
+
+    publication_boundaries = []
+    for _ in range(4):
+        with postgres_store.connection() as database:
+            delivered = claim(database, 'current', kind='daily_queue')
+        if delivered is None:
+            break
+        publication_boundaries.append({'at': datetime.now(timezone.utc).isoformat(),
+            'task_id': delivered['id'], 'generation': delivered['generation'],
+            'phase': delivered['payload']['_queue_phase']})
+        queue_refresh.execute_postgres_queue_refresh_slice(delivered)
+    else:
+        raise AssertionError('Held queue publication did not finish in four bounded deliveries')
+    settled = snapshot()
+    assert settled['queue'][0]['admission_kind'] == 'new'
+    assert settled['projection'][0]['state'] == 'ready' and settled['projection'][0]['refresh_pending'] == 0
+    assert settled['projection'][0]['generation'] == partial['projection'][0]['generation'] + 1
+    assert publication_boundaries[0]['phase'] == 'randomize_queue'
+    assert all(row['task_id'] == queue_task['id'] for row in publication_boundaries)
+    # This is the original equality failure, reproduced without timing races.
+    assert settled['queue'] != partial['queue']
+    assert client.get(detail_url).status_code == 200
+    assert snapshot() == settled
+    print('PASS test_pr117_pd82_inspection_preserves_queue_while_independent_publication_assigns_admission ' +
+          json.dumps({'snapshots': snapshot_boundaries, 'diagnostics': diagnostic_boundaries,
+                      'queue_publication': publication_boundaries,
+                      'admission_origin': 'daily_queue/randomize_queue', 'queue_task_id': queue_task['id'],
+                      'receipts_unchanged_by_inspection': True}), flush=True)

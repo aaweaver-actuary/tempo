@@ -382,7 +382,8 @@ def _run_inventory_proof():
         'test_pr117_inventory_publication_rejects_incomplete_routes',
         'test_issue108_cross_repertoire_transposition_policy_independence_and_deletion',
         'test_issue108_profile_changes_do_not_rebuild_inventory',
-        'test_issue108_newer_graph_publication_fences_computed_inventory_output')}
+        'test_issue108_newer_graph_publication_fences_computed_inventory_output',
+        'test_pr117_pd82_inspection_preserves_queue_while_independent_publication_assigns_admission')}
     selected_cases = {**repair_cases, 'verify_issue108_transpositions_duplicates_long_routes': verify_issue108_transpositions_duplicates_long_routes}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--case', choices=selected_cases)
