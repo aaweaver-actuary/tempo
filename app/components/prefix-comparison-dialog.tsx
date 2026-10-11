@@ -5,6 +5,8 @@ import { comparePrefixDepth, PrefixPreviewError, readPrefixSource } from "../lib
 import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { Button } from "./buttons/BaseButton";
 import CloseButton from "./buttons/CloseButton";
+import { PrefixTransitionPanel } from "./prefix-transition-panel";
+import { clearResolvedPrefixTransition, readPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
 
 type CandidateResult = { depth: number; comparison: PrefixComparison };
 const errorLabels: Record<string, string> = {
@@ -39,8 +41,8 @@ function ScopeResults({ comparison, title }: { comparison: PrefixComparison["sel
   </section>;
 }
 
-export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }: {
-  repertoireId: string; repertoireName: string; onClose: () => void;
+export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose, onPublished, editsPaused = false }: {
+  repertoireId: string; repertoireName: string; onClose: () => void; onPublished?: () => Promise<void>; editsPaused?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
@@ -56,6 +58,10 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
   const [working, setWorking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const [transitionOpened, setTransitionOpened] = useState(false);
+  const [transitionDepth, setTransitionDepth] = useState<number | null>(null);
+  const [publishedMessage, setPublishedMessage] = useState<string | null>(null);
+  const transitionActive = useRef(false);
   const sourceGeneration = useRef(0);
   const comparisonGeneration = useRef(0);
   const sourceController = useRef<AbortController | null>(null);
@@ -97,16 +103,22 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
     let disposed = false;
     const sourceEpoch = sourceGeneration;
     const comparisonEpoch = comparisonGeneration;
-    queueMicrotask(() => { if (!disposed) void loadSource(); });
+    queueMicrotask(() => {
+      if (disposed) return;
+      try {
+        if (readPrefixTransition(repertoireId)) { transitionActive.current = true; setTransitionOpened(true); setLoading(false); }
+        else void loadSource();
+      } catch { transitionActive.current = true; setTransitionOpened(true); setLoading(false); }
+    });
     return () => {
       disposed = true; ++sourceEpoch.current; ++comparisonEpoch.current;
       currentSource.current = null; sourceController.current?.abort(); comparisonController.current?.abort(); monitorController.current?.abort();
     };
-  }, [loadSource]);
+  }, [loadSource, repertoireId]);
   useEffect(() => {
     async function checkFreshness() {
       const expectedSource = currentSource.current;
-      if (!expectedSource || document.visibilityState === "hidden" || monitorController.current || comparisonController.current) return;
+      if (transitionActive.current || !expectedSource || document.visibilityState === "hidden" || monitorController.current || comparisonController.current) return;
       const generation = sourceGeneration.current;
       const comparisonRequest = comparisonGeneration.current;
       const controller = new AbortController(); monitorController.current = controller;
@@ -124,6 +136,7 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
     }
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
+        if (transitionActive.current) return;
         monitorController.current?.abort(); cancelComparison(); setCheckedAt(null);
       } else void checkFreshness();
     };
@@ -131,6 +144,36 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
     window.addEventListener("focus", checkFreshness); document.addEventListener("visibilitychange", onVisibility);
     return () => { window.clearInterval(interval); window.removeEventListener("focus", checkFreshness); document.removeEventListener("visibilitychange", onVisibility); };
   }, [cancelComparison, repertoireId, reportError]);
+
+  async function refreshPublishedComparison(operation: PrefixTransitionOperation, recoverySignal: AbortSignal) {
+    setPublishedMessage(operation.message ?? "Prefix transition published. Graph, integrity and daily queue are confirmed.");
+    const generation = ++sourceGeneration.current;
+    cancelComparison(); sourceController.current?.abort(); monitorController.current?.abort();
+    const controller = new AbortController(); sourceController.current = controller;
+    const signal = AbortSignal.any([controller.signal, recoverySignal]);
+    await onPublished?.(); signal.throwIfAborted();
+    const latest = await readPrefixSource(repertoireId, signal);
+    signal.throwIfAborted();
+    if (generation !== sourceGeneration.current) return;
+    const selected = operation.request.selected_line_ids;
+    const chosenDepth = Object.values(operation.request.candidate_depths)[0];
+    const selectionAvailable = selected.every(id => latest.lines.some(line => line.id === id));
+    let comparison: PrefixComparison | undefined;
+    if (selectionAvailable) {
+      comparison = await comparePrefixDepth(repertoireId, latest, selected, chosenDepth, signal);
+      const verified = await readPrefixSource(repertoireId, signal);
+      if (verified.snapshot_id !== latest.snapshot_id || verified.graph_generation !== latest.graph_generation)
+        throw new PrefixPreviewError("stale_snapshot", "The published source changed during refresh. Refresh the comparison again.");
+    }
+    signal.throwIfAborted();
+    if (generation !== sourceGeneration.current) return;
+    currentSource.current = latest; setSource(latest); setRoute(null); setSelectedIds(selectionAvailable ? selected : []);
+    setDepthText(String(chosenDepth)); setResults(comparison ? [{ depth: chosenDepth, comparison }] : []);
+    setError(selectionAvailable ? null : { code: "invalid_selection", message: "The transition is published, but the original selected source IDs are no longer available. Select an exact scope again." });
+    setCheckedAt(new Date().toLocaleTimeString()); setLoading(false);
+    clearResolvedPrefixTransition(repertoireId, operation.operationId);
+    transitionActive.current = false; setTransitionOpened(false); setTransitionDepth(null);
+  }
 
   function selectRoute(nextRoute: RoutePrefix | null) {
     cancelComparison(); setError(null); setRoute(nextRoute);
@@ -183,6 +226,10 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
   ])), [displayedLines]);
   return <div className="modal-backdrop"><div className="ui-dialog prefix-comparison-dialog" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="prefix-comparison-title" ref={dialogRef}>
     <header className="prefix-comparison-header"><h2 id="prefix-comparison-title">Compare prefix depths · {repertoireName}</h2><CloseButton onClose={onClose} /></header>
+    {publishedMessage && <p role="status">{publishedMessage}</p>}
+    {transitionOpened ? <PrefixTransitionPanel repertoireId={repertoireId} repertoireName={repertoireName}
+      source={source} selectedIds={selectedIds} depth={transitionDepth} onPublished={refreshPublishedComparison}
+      onBack={refresh => { transitionActive.current = false; setTransitionOpened(false); setTransitionDepth(null); if (refresh) void loadSource(); }} /> : <>
     <p><strong>Read-only preview</strong> · Depth means learner decisions from each source line’s starting position.</p>
     <p>Structural efficiency is not evidence of improved learning or measured time savings.</p>
     {error && <div role="alert"><strong>{errorLabels[error.code] ?? "Comparison unavailable"}</strong>: {error.message}</div>}
@@ -239,6 +286,13 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
       <details><summary>Per-line requested and effective depths</summary><ul>{comparison.line_depths.map(line => <li key={line.line_id}>
         <code>{line.line_id}</code>: saved {line.current_depth}, requested {line.requested_depth}; effective {line.current_effective_depth} → {line.proposed_effective_depth}
       </li>)}</ul></details>
+      {comparison.line_depths.some(line => depth < line.current_depth) && comparison.line_depths.every(line => depth <= line.current_depth) && <Button
+        disabled={editsPaused}
+        onClick={() => { sourceController.current?.abort(); comparisonController.current?.abort(); monitorController.current?.abort();
+          transitionActive.current = true; setTransitionDepth(depth); setTransitionOpened(true); }}>
+        Review shortening
+      </Button>}
     </section>)}
+    </>}
   </div></div>;
 }

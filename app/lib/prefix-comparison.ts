@@ -1,6 +1,7 @@
 import { API_URL } from "../const";
 import { prefixSourceSchema, prefixComparisonSchema, type PrefixSource, type PrefixComparison } from "../domain/prefix-comparison";
 import { z } from "zod";
+import { prefixTransitionPlanSchema, type PrefixTransitionPlan } from "../domain/prefix-transition";
 
 export class PrefixPreviewError extends Error {
   constructor(public readonly code: string, message: string) { super(message); }
@@ -69,5 +70,20 @@ export async function comparePrefixDepth(repertoireId: string, source: PrefixSou
     || result.line_depths.some(line => !sortedIds.includes(line.line_id) || line.requested_depth !== depth
       || line.current_depth !== source.lines.find(saved => saved.id === line.line_id)?.saved_depth))
     throw new PrefixPreviewError("stale_snapshot", "The comparison does not match the selected snapshot. Refresh the source and select again.");
+  return result;
+}
+
+export async function planPrefixTransition(repertoireId: string, source: PrefixSource, selectedIds: string[], candidateDepth: number, signal: AbortSignal): Promise<PrefixTransitionPlan> {
+  const sortedIds = [...selectedIds].sort();
+  const result = await readDiagnostic(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/prefix-transition/plan`,
+    prefixTransitionPlanSchema, signal, { snapshot_id: source.snapshot_id, selected_line_ids: sortedIds,
+      candidate_depths: Object.fromEntries(sortedIds.map(id => [id, candidateDepth])) });
+  const expectedChanges = source.lines.filter(line => sortedIds.includes(line.id) && line.saved_depth !== candidateDepth)
+    .map(line => ({ line_id: line.id, before: line.saved_depth, after: candidateDepth })).sort((left, right) => left.line_id.localeCompare(right.line_id));
+  if (result.repertoire_id !== repertoireId || result.snapshot_id !== source.snapshot_id || result.graph_generation !== source.graph_generation
+    || JSON.stringify(result.selected_line_ids) !== JSON.stringify(sortedIds)
+    || JSON.stringify([...result.depth_changes].sort((left, right) => left.line_id.localeCompare(right.line_id))) !== JSON.stringify(expectedChanges)
+    || new Set(result.cards.map(card => card.card_id)).size !== result.cards.length)
+    throw new PrefixPreviewError("stale_plan", "The transition does not match this exact source and selection. Refresh and review again.");
   return result;
 }

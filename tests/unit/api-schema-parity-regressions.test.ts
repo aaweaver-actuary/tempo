@@ -98,3 +98,16 @@ it("issue78_python_prefix_evaluator_matches_frontend_source_and_comparison_contr
   expect(prefixSourceSchema.safeParse({ ...raw.source, version: 2 }).success).toBe(false);
   expect(prefixComparisonSchema.safeParse({ ...raw.comparisons["a,b:2"], preview_only: false }).success).toBe(false);
 });
+
+it("issue81_python_transition_planner_and_apply_match_frontend_contracts", async () => {
+  const { prefixTransitionPlanSchema, prefixTransitionApplySchema, prefixTransitionResultSchema } = await import("../../app/domain/prefix-transition");
+  const raw = JSON.parse(execFileSync(resolvePython(), ["tests/fixtures/prefix-comparison/transition_generate.py"],
+    { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
+  for (const kind of ["ready", "reused", "shared", "blocked"]) expect(prefixTransitionPlanSchema.parse(raw[kind])).toEqual(raw[kind]);
+  expect(prefixTransitionApplySchema.parse(raw.request)).toEqual(raw.request);
+  expect(prefixTransitionResultSchema.parse(raw.result)).toEqual(raw.result);
+  const { default: checkedFixture } = await import("../fixtures/prefix-comparison/transition.json");
+  expect(raw).toEqual(checkedFixture);
+  expect(prefixTransitionPlanSchema.safeParse({ ...raw.ready, version: 2 }).success).toBe(false);
+  expect(prefixTransitionResultSchema.safeParse({ ...raw.result, status: "pending" }).success).toBe(false);
+});

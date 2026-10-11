@@ -29,6 +29,7 @@ import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
 import { PrefixDiagnostics } from "../components/prefix-diagnostics";
 import { PrefixComparisonDialog } from "../components/prefix-comparison-dialog";
+import { savedPrefixTransitions, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
 import { OpeningSegmentation } from "../components/opening-segmentation";
 import { RepertoireStatistics } from "../components/repertoire-statistics";
 import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
@@ -92,6 +93,8 @@ export default function RepertoireView({
   const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
   const [comparisonRepertoireId, setComparisonRepertoireId] = useState<string | null>(null);
   const [prefixRepertoireId, setPrefixRepertoireId] = useState<string | null>(null);
+  const [prefixTransitions, setPrefixTransitions] = useState<PrefixTransitionOperation[]>([]);
+  const [prefixRecoveryError, setPrefixRecoveryError] = useState("");
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
@@ -118,6 +121,19 @@ export default function RepertoireView({
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [statisticsRepertoireId, setStatisticsRepertoireId] = useState<string | null>(() =>
     typeof window === "undefined" ? null : sessionStorage.getItem("tempo-statistics-repertoire"));
+  useEffect(() => {
+    let disposed = false;
+    const update = () => {
+      if (disposed) return;
+      try { setPrefixTransitions(savedPrefixTransitions()); setPrefixRecoveryError(""); }
+      catch (failure) { setPrefixRecoveryError(failure instanceof Error ? failure.message : "Prefix recovery data is unavailable."); }
+    };
+    queueMicrotask(update);
+    const unsubscribe = subscribePrefixTransitions(update);
+    return () => { disposed = true; unsubscribe(); };
+  }, []);
+  const prefixEditsPaused = (repertoireId: string) => Boolean(prefixRecoveryError) || prefixTransitions.some(operation =>
+    unresolvedPrefixTransition(operation) && operation.summary.affectedRepertoireIds.includes(repertoireId));
 
   const loadBackend = useCallback(async () => {
     if (!usesLocalApi()) return true;
@@ -395,7 +411,12 @@ export default function RepertoireView({
         onClose={() => setDeleteTarget(null)} onConfirm={policy => remove(deleteTarget, policy)} />}
       {backendItems.filter(item => item.id === comparisonRepertoireId).map(item => <PrefixComparisonDialog
         key={`${item.id}:${refreshRevision}`} repertoireId={item.id} repertoireName={item.title}
-        onClose={() => setComparisonRepertoireId(null)} />)}
+        editsPaused={prefixEditsPaused(item.id)}
+        onClose={() => setComparisonRepertoireId(null)} onPublished={async () => {
+          invalidateWorkspaceData(); setCoverageByRepertoire({}); setGapsByRepertoire({}); setOpportunitiesByRepertoire({});
+          if (!await loadBackend()) throw new Error("The transition is published, but repertoire metadata could not be refreshed. Retry the published comparison.");
+          await onQueueChanged();
+        }} />)}
       {backendItems.filter(item => item.id === prefixRepertoireId).map(item => <CanonicalPrefixDialog key={item.id}
         repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
         onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
@@ -416,6 +437,15 @@ export default function RepertoireView({
           {error}
         </Notice>
       )}
+      {prefixRecoveryError && <Notice error>{prefixRecoveryError}</Notice>}
+      {prefixTransitions.length > 0 && <div className="prefix-transition-notice" role="status">
+        {prefixTransitions.map(operation => <div key={operation.operationId}>
+          <strong>{operation.summary.repertoireName}</strong> · {operation.state === "published" ? "Published; comparison refresh pending" :
+            operation.state === "blocked" ? "Prefix publication needs recovery" : operation.state === "failed" || operation.state === "stale" ? "Prefix transition needs a fresh review" :
+              operation.state === "transport_unknown" ? "Prefix delivery unconfirmed" : "Prefix transition in progress"}
+          <Button onClick={event => { event.currentTarget.focus(); setComparisonRepertoireId(operation.repertoireId); }}>Resume prefix transition</Button>
+        </div>)}
+      </div>}
       {!loaded && !error && <Notice>Loading repertoires…</Notice>}
       <div className="page-heading compact">
         <h1>Repertoire</h1>
@@ -464,13 +494,13 @@ export default function RepertoireView({
                     setOpenMenu(event.currentTarget.open ? item.id : null)
                   }
                 >
-                  <Button role="menuitem" onClick={() => void rename(item)}>
+                  <Button role="menuitem" disabled={prefixEditsPaused(item.id)} onClick={() => void rename(item)}>
                     Rename
                   </Button>
                   {item.backend && <Button role="menuitem" onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); setComparisonRepertoireId(item.id); setOpenMenu(null); }}>Compare prefix depths</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setDiagnosticsRepertoireId(item.id); setOpenMenu(null); }}>Prefix difficulty</Button>}
                   {item.backend && <Button role="menuitem" onClick={() => { setSegmentationRepertoireId(item.id); setOpenMenu(null); }}>Recommended segmentation</Button>}
-                  {item.backend && <Button role="menuitem" onClick={() => { setPrefixRepertoireId(item.id); setOpenMenu(null); }}>Canonical prefix…</Button>}
+                  {item.backend && <Button role="menuitem" disabled={prefixEditsPaused(item.id)} onClick={() => { setPrefixRepertoireId(item.id); setOpenMenu(null); }}>Canonical prefix…</Button>}
                   <Button role="menuitem" onClick={() => exportPgn(item)}>
                     ⇩ Export PGN
                   </Button>
@@ -478,6 +508,7 @@ export default function RepertoireView({
                     role="menuitem"
                     variant="danger"
                     className="delete-repertoire"
+                    disabled={prefixEditsPaused(item.id)}
                     onClick={event => {
                       try {
                         const pending = pendingRepertoireDeletion();
@@ -493,6 +524,7 @@ export default function RepertoireView({
                 </ActionMenu>}
               </div>
               <p>{item.detail}</p>
+              {prefixEditsPaused(item.id) && <p>Structural edits are paused until the saved prefix transition is resolved. Study and read-only diagnostics remain available.</p>}
               {Boolean(item.canonicalPrefix?.moves_uci.length) && <p className="canonical-prefix-summary">
                 <strong>Canonical prefix: {item.canonicalPrefix?.san}</strong><br />Discoveries start after this opening.
               </p>}
@@ -503,7 +535,7 @@ export default function RepertoireView({
                     {item.blockedCardCount ?? 0} total opening cards paused ·{" "}
                     {item.integrityIssueCount ?? 0} integrity issues
                   </p>
-                  <Button onClick={() => onRepair(item.id)}>
+                  <Button disabled={prefixEditsPaused(item.id)} onClick={() => onRepair(item.id)}>
                     Resume repair
                   </Button>
                 </>
@@ -546,14 +578,14 @@ export default function RepertoireView({
                   {coverageByRepertoire[item.id].last_error && <p role="alert">{coverageByRepertoire[item.id].last_error}</p>}
                   {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => (
                     <span key={gap.gap_id}>
-                      <Button onClick={() => onResolveGap(item.id, gap)}>
+                      <Button disabled={prefixEditsPaused(item.id)} onClick={() => onResolveGap(item.id, gap)}>
                         Fill {gap.move_uci} gap ·{" "}
                         {gap.probability === null
                           ? "unknown"
                           : `${Math.round(gap.probability * 1000) / 10}%`}
                       </Button>
                       {onPasteGap && (
-                        <Button onClick={() => onPasteGap(item.id, gap)}>
+                        <Button disabled={prefixEditsPaused(item.id)} onClick={() => onPasteGap(item.id, gap)}>
                           Paste line for gap
                         </Button>
                       )}
@@ -660,7 +692,7 @@ export default function RepertoireView({
                         )}
                         {opportunity.card_id ? (
                           <Button
-                            disabled={opportunity.admission_state === "queued"}
+                            disabled={opportunity.admission_state === "queued" || prefixEditsPaused(item.id)}
                             onClick={() =>
                               void trainOpportunity(
                                 item.id,
@@ -778,7 +810,7 @@ export default function RepertoireView({
               )}
               <div className="repertoire-actions">
                 <Button
-                  disabled={item.id === "__retained_cards__"}
+                  disabled={item.id === "__retained_cards__" || prefixEditsPaused(item.id)}
                   className="browse-button"
                   onClick={() => onBrowse(item.id)}
                 >

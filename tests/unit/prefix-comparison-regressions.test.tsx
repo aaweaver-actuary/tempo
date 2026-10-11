@@ -1,13 +1,26 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import fixture from "../fixtures/prefix-comparison/structural.json";
+import transitionFixture from "../fixtures/prefix-comparison/transition.json";
+import { readPrefixTransition } from "../../app/lib/prefix-transition-command";
 import { PrefixComparisonDialog } from "../../app/components/prefix-comparison-dialog";
 import { waitForPrefixIdle, readPrefixSource } from "../../app/lib/prefix-comparison";
 import { candidateDepths, exactRouteLines, prefixSourceSchema, prefixComparisonSchema } from "../../app/domain/prefix-comparison";
 
 const source = prefixSourceSchema.parse(fixture.source);
 const comparisons = fixture.comparisons as Record<string, unknown>;
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+it("issue81_confirmation_matches_exact_scope_and_counts", async () => {
+  transitionFetch(); await reviewShortening();
+  const consequences = screen.getByRole("region", { name: "Exact transition consequences" });
+  expect(consequences.textContent).toContain("Selected source routes: 2");
+  expect(consequences.textContent).toContain("a · learner-decision depth 2 → 2");
+  expect(consequences.textContent).toContain("b · learner-decision depth 3 → 2");
+  expect(consequences.textContent).not.toContain("qgd");
+  for (const [label, count] of [["Unchanged", 4], ["Reused", 0], ["Added", 1], ["Retired", 1], ["Retained shared", 0]])
+    expect(within(consequences).getByText(String(label), { selector: "dt" }).nextElementSibling?.textContent).toBe(String(count));
+  expect(consequences.textContent).toContain("no review history or learning evidence transfers");
+});
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 function stubDiagnosticFetch(fetcher: typeof fetch) {
   vi.stubGlobal("fetch", (url: string | URL | Request, options?: RequestInit) => String(url).endsWith("/system/foreground-active")
     ? Promise.resolve(Response.json({ active: false })) : fetcher(url, options));
@@ -39,6 +52,143 @@ function compareDepths(text = "2, 3") {
   fireEvent.change(screen.getByLabelText("Candidate learner-decision depths"), { target: { value: text } });
   fireEvent.click(screen.getByRole("button", { name: "Compare depths" }));
 }
+
+function transitionFetch(kind: "ready" | "reused" | "shared" | "blocked" = "ready") {
+  const control = { state: "complete", admitted: false, lostResponse: false, planChanged: false, sourceChanged: false,
+    refreshFailed: false, planReads: 0, deliveries: [] as { operationId: string; body: unknown }[], retries: 0 };
+  stubDiagnosticFetch(vi.fn(async (url, options?: RequestInit) => {
+    const path = String(url);
+    if (path.endsWith("/prefix-transition/plan")) {
+      ++control.planReads;
+      if (control.sourceChanged && control.planReads > 1) return Response.json({ detail: { code: "stale_snapshot", message: "Source changed concurrently. Refresh the source." } }, { status: 409 });
+      return Response.json(control.planChanged && control.planReads > 1 ? { ...transitionFixture[kind], plan_id: "changed" } : transitionFixture[kind]);
+    }
+    if (path.endsWith("/prefix-transition/apply")) {
+      control.admitted = true;
+      control.deliveries.push({ operationId: new Headers(options?.headers).get("Idempotency-Key")!, body: JSON.parse(String(options?.body)) });
+      if (control.lostResponse) throw new TypeError("Lost HTTP response");
+      return Response.json({ operation_id: control.deliveries.at(-1)!.operationId, state: "pending" }, { status: 202 });
+    }
+    if (path.endsWith("/retry")) { ++control.retries; control.state = "complete"; return Response.json({ state: "blocked" }, { status: 202 }); }
+    if (path.includes("/operations/")) {
+      const operationId = path.split("/").at(-1)!;
+      if (!control.admitted) return Response.json({ operation_id: operationId, state: "unknown" });
+      return Response.json({ operation_id: operationId, state: control.state,
+        transition: { state: control.state === "complete" ? "complete" : control.state === "blocked" ? "recovery_required" : "staging",
+          graph_generation: 2, queue_date: control.state === "complete" ? transitionFixture.result.queue_date : null,
+          recovery: control.state === "blocked" ? "The activated graph remains committed. Retry this operation to resume publication." : null },
+        response: { ...transitionFixture.result, plan_id: transitionFixture[kind].plan_id, operation_id: operationId },
+        error: control.state === "failed" ? { detail: { code: "staging_failed", message: "Staging failed before activation. Review a fresh plan." } } : undefined });
+    }
+    const published = control.admitted && control.state === "complete";
+    if (options?.method !== "POST") {
+      if (published && control.refreshFailed) throw new Error("Refresh offline");
+      return Response.json(published ? transitionFixture.fresh_source : source);
+    }
+    const body = JSON.parse(String(options.body));
+    return Response.json(published ? transitionFixture.fresh_comparison : comparisons[body.selected_line_ids.join(",") + ":" + Object.values(body.candidate_depths)[0]]);
+  }));
+  return control;
+}
+async function reviewShortening() {
+  const mounted = await mount(); selectLines("a", "b"); compareDepths("2");
+  const candidate = await screen.findByRole("region", { name: "Candidate depth 2" });
+  fireEvent.click(within(candidate).getByRole("button", { name: "Review shortening" }));
+  await screen.findByRole("button", { name: "Confirm shortening" });
+  return mounted;
+}
+
+it.each(["reused", "shared"] as const)("issue81_confirmation_uses_%s_planner_dispositions", async kind => {
+  transitionFetch(kind); await reviewShortening();
+  const label = kind === "reused" ? "Reused" : "Retained shared";
+  expect(screen.getByText(label, { selector: "dt" }).nextElementSibling?.textContent).toBe("1");
+});
+it("issue81_confirm_waits_for_published_completion", async () => {
+  const control = transitionFetch(); control.state = "pending"; await reviewShortening();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByText("Prefix transition in progress");
+  expect(screen.queryByText("Prefix transition published")).toBeNull();
+  expect(readPrefixTransition("rep")?.result).toBeUndefined();
+  control.state = "complete";
+  await screen.findByText(/Prefix transition published\. Graph/, {}, { timeout: 3000 });
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  expect(screen.getByText("No change from saved depths.")).toBeTruthy();
+  expect(readPrefixTransition("rep")).toBeNull();
+});
+it("issue81_double_click_creates_one_operation_in_confirmation", async () => {
+  const control = transitionFetch(); await reviewShortening();
+  const confirm = screen.getByRole("button", { name: "Confirm shortening" }); fireEvent.click(confirm); fireEvent.click(confirm);
+  await screen.findByText(/Prefix transition published\. Graph/);
+  expect(control.deliveries).toHaveLength(1);
+  expect(control.planReads).toBe(2);
+  expect(control.deliveries[0].body).toEqual(transitionFixture.request);
+});
+it("issue81_pending_survives_remount_in_confirmation", async () => {
+  const control = transitionFetch(); control.state = "pending"; const mounted = await reviewShortening();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await waitFor(() => expect(control.deliveries).toHaveLength(1));
+  const operationId = readPrefixTransition("rep")!.operationId; mounted.unmount();
+  render(<PrefixComparisonDialog repertoireId="rep" repertoireName="Combined Black" onClose={() => {}} />);
+  await screen.findByText("Prefix transition in progress");
+  expect(screen.getByText(/Selected source routes: 2/)).toBeTruthy();
+  expect(readPrefixTransition("rep")!.operationId).toBe(operationId);
+  expect(screen.queryByLabelText("Candidate learner-decision depths")).toBeNull();
+  expect(control.deliveries).toHaveLength(1);
+});
+it("issue81_lost_response_reload_recovers_original_operation_in_confirmation", async () => {
+  const control = transitionFetch(); control.state = "pending"; control.lostResponse = true;
+  const mounted = await reviewShortening(); fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await waitFor(() => expect(control.deliveries).toHaveLength(1));
+  const operationId = readPrefixTransition("rep")!.operationId; mounted.unmount(); control.state = "complete";
+  render(<PrefixComparisonDialog repertoireId="rep" repertoireName="Combined Black" onClose={() => {}} />);
+  await screen.findByText(/Prefix transition published\. Graph/);
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  expect(control.deliveries.map(delivery => delivery.operationId)).toEqual([operationId]);
+});
+it("issue81_stale_plan_never_mutates", async () => {
+  const control = transitionFetch(); await reviewShortening(); control.planChanged = true;
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByText("Stale transition");
+  expect((screen.getByRole("button", { name: "Confirm shortening" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(control.deliveries).toHaveLength(0); expect(readPrefixTransition("rep")).toBeNull();
+});
+it("issue81_concurrent_source_change_rejects_confirmation", async () => {
+  const control = transitionFetch(); await reviewShortening(); control.sourceChanged = true;
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByText("Stale transition"); expect(control.deliveries).toHaveLength(0);
+});
+it("issue81_unsupported_shortening_preserves_original_repertoire", async () => {
+  const control = transitionFetch("blocked"); await reviewShortening();
+  expect(screen.getByText("Unsupported or blocked shortening")).toBeTruthy();
+  expect(screen.getByText(/original repertoire remains available/)).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Confirm shortening" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Back to comparison" }));
+  await screen.findByRole("region", { name: "Candidate depth 2" }); expect(control.deliveries).toHaveLength(0);
+});
+it("issue81_terminal_failure_offers_actionable_recovery_in_confirmation", async () => {
+  const control = transitionFetch(); control.state = "failed"; await reviewShortening();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByText("Prefix transition failed");
+  expect(screen.getByText(/Staging failed before activation/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Review a fresh comparison" }));
+  await screen.findByText("Selected source lines: 0"); expect(readPrefixTransition("rep")).toBeNull();
+});
+it("issue81_blocked_publication_recovers_without_reapplying", async () => {
+  const control = transitionFetch(); control.state = "blocked"; await reviewShortening();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByText(/activated graph remains committed/);
+  fireEvent.click(screen.getByRole("button", { name: "Retry publication recovery" }));
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  expect(control.retries).toBe(1); expect(control.deliveries).toHaveLength(1);
+});
+it("issue81_published_success_survives_comparison_refresh_failure", async () => {
+  const control = transitionFetch(); control.refreshFailed = true; await reviewShortening();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByText("Prefix transition published");
+  await screen.findByText(/Refresh offline/); expect(readPrefixTransition("rep")?.state).toBe("published");
+  control.refreshFailed = false; fireEvent.click(screen.getByRole("button", { name: "Refresh published comparison" }));
+  await screen.findByRole("region", { name: "Candidate depth 2" }); expect(control.deliveries).toHaveLength(1);
+});
 
 it("issue78_exact_route_selection_resolves_deterministic_source_ids", async () => {
   const prefix = { ...source.lines[0], moves: ["e2e4", "c7c6"] };

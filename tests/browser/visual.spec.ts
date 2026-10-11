@@ -379,6 +379,7 @@ for (const width of [390, 1280]) {
 
 for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ page }) => {
   const fixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8"));
+  const transition = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/transition.json", "utf8"));
   await page.setViewportSize({ width, height: 844 });
   await prepareVisualUI(page);
   await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{
@@ -390,6 +391,17 @@ for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ pag
     if (route.request().method() === "GET") return route.fulfill({ json: fixture.source });
     return route.fulfill({ json: fixture.comparisons["a,b:2"] });
   });
+  await page.route("**/api/repertoires/rep/prefix-transition/plan", route => route.fulfill({ json: transition.ready }));
+  let delivered = false;
+  await page.route("**/api/repertoires/rep/prefix-transition/apply", route => {
+    delivered = true;
+    return route.fulfill({ status: 202, json: { operation_id: route.request().headers()["idempotency-key"], state: "pending" } });
+  });
+  await page.route("**/api/operations/*", route => route.fulfill({ json: {
+    operation_id: route.request().url().split("/").at(-1), state: delivered ? "blocked" : "unknown",
+    ...(delivered ? { transition: { state: "recovery_required", graph_generation: 2, queue_date: null,
+      recovery: "The activated graph remains committed. Resolve the service error and retry this operation to resume publication." } } : {}),
+  } }));
   await navigate(page, "Repertoire");
   await page.locator("details.card-menu summary").click();
   await page.getByRole("menuitem", { name: "Compare prefix depths", exact: true }).click();
@@ -405,4 +417,12 @@ for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ pag
   await expect(page).toHaveScreenshot(`prefix-comparison-${width}.png`, { animations: "disabled", fullPage: true });
   await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).getByRole("heading", { name: "Whole repertoire", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
   await expect(page).toHaveScreenshot(`prefix-comparison-whole-${width}.png`, { animations: "disabled", fullPage: true });
+  await dialog.getByRole("button", { name: "Review shortening", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Confirm shortening", exact: true })).toBeEnabled();
+  await dialog.getByRole("heading", { name: "Confirm shorter prefix transition" }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
+  await expect(page).toHaveScreenshot(`prefix-transition-confirmation-${width}.png`, { animations: "disabled", fullPage: true });
+  await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Prefix transition needs recovery" })).toBeVisible();
+  await dialog.getByRole("heading", { name: "Prefix transition needs recovery" }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
+  await expect(page).toHaveScreenshot(`prefix-transition-recovery-${width}.png`, { animations: "disabled", fullPage: true });
 });

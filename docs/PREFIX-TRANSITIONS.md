@@ -322,3 +322,43 @@ bulk evidence retains the same server SHA256 and authoritative replay queries.
 
 The size query binds the card lookup array and repertoire identity once through a
 materialized scope, avoiding duplicate large-array parameters for every table.
+
+## Prefix confirmation and browser recovery (#81)
+
+The repertoire's **Compare prefix depths** dialog keeps structural previews read-only.
+A candidate that shortens at least one selected route and lengthens none offers
+**Review shortening**. The production transition planner supplies the confirmation:
+exact selected routes and saved/proposed learner-decision depths, whole-transition
+card dispositions (including reused and retained shared identities), blockers, and
+original-history/attempt/submission consequences. The planner runs again on confirmation;
+changed source, state, study day, or plan identity requires a new explicit review.
+
+Before delivery, the browser saves one immutable request and operation identity under
+`tempo-pending-prefix-transition-v1:<encoded repertoire ID>`, with the original scope
+summary. A storage failure prevents submission. A feature-specific Web Lock serializes
+journal reservation across tabs where available. Local subscriptions/storage events
+pause structural-edit entry points for the affected repertoires. The existing server
+fences remain authoritative; study and read-only diagnostics remain available.
+
+The same dialog recovers its journal before requesting a new comparison. Receipt reads
+use existing background admission so polling cannot outrank active study or hold back
+the publication being observed. Each recovery action is bounded to thirty seconds,
+polls at one-second intervals, and cancels on unmount. Reopening, focus, reconnection,
+and **Check status** resume that same operation. A confirmed absent/unknown receipt
+permits at most one replay of the original identity and payload per recovery action.
+Transport failure alone cannot authorize a replay or clear the journal.
+
+Pending, delivery-unconfirmed, stale, blocked, failed, and published states remain
+distinct. A blocked publication resumes through the existing operation retry endpoint;
+it does not claim the activated graph was rolled back. A terminal rejection offers a
+fresh comparison. HTTP acknowledgments and receipt creation never display success.
+Success requires a matching complete operation/result and complete transition progress,
+including its graph generation and queue date. The backend completion gate described
+above is the authority for graph, integrity, and daily-queue publication.
+
+After publication the UI refreshes repertoire/queue data, reloads authoritative source,
+and recomputes the confirmed candidate with the original exact source IDs. Missing IDs
+require explicit reselection. A refresh failure preserves confirmed publication and the
+journal for another read attempt. Closing/reloading leaves a repertoire-level **Resume
+prefix transition** notice; it does not automatically reopen a dialog or create a new
+operation. Unresolved or malformed recovery data is never discarded automatically.
