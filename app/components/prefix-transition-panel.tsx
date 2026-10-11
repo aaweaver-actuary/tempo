@@ -50,9 +50,11 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
   useEffect(() => { heading.current?.focus(); }, [operation?.state, failure?.message]);
   const controller = useRef<AbortController | null>(null);
   const submitting = useRef(false);
+  const pendingRecoveryWake = useRef(false);
+  const recoverAfterWake = useRef<() => void>(() => undefined);
   const publishedCallback = useRef(onPublished);
   useEffect(() => { publishedCallback.current = onPublished; }, [onPublished]);
-  const recover = useCallback(async (retryBlocked = false) => {
+  const recover = useCallback(async (retryBlocked = false): Promise<void> => {
     if (submitting.current) return;
     submitting.current = true; setBusy(true); setFailure(null);
     const currentController = new AbortController(); controller.current?.abort(); controller.current = currentController;
@@ -68,9 +70,16 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
         setFailure({ code: "service_error", message: cause instanceof Error ? cause.message : "Recovery unavailable. Check status again." });
       }
     } finally {
-      if (controller.current === currentController) { submitting.current = false; if (!currentController.signal.aborted) setBusy(false); }
+      if (controller.current === currentController) {
+        submitting.current = false;
+        if (!currentController.signal.aborted) {
+          setBusy(false);
+          if (pendingRecoveryWake.current) { pendingRecoveryWake.current = false; recoverAfterWake.current(); }
+        }
+      }
     }
   }, [repertoireId]);
+  useEffect(() => { recoverAfterWake.current = () => { void recover(); }; }, [recover]);
   useEffect(() => {
     let disposed = false;
     const initialController = new AbortController(); controller.current = initialController;
@@ -83,6 +92,7 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
     };
     const wake = () => {
       if (disposed || document.visibilityState === "hidden" || !navigator.onLine) return;
+      if (submitting.current) { pendingRecoveryWake.current = true; return; }
       try { if (readPrefixTransition(repertoireId)) void recover(); }
       catch (cause) { setFailure({ code: "storage_error", message: (cause as Error).message }); }
     };
@@ -103,7 +113,7 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
     });
     const unsubscribe = subscribePrefixTransitions(observe);
     window.addEventListener("online", wake); window.addEventListener("focus", wake); document.addEventListener("visibilitychange", wake);
-    return () => { disposed = true; controller.current?.abort(); unsubscribe(); window.removeEventListener("online", wake);
+    return () => { disposed = true; pendingRecoveryWake.current = false; controller.current?.abort(); unsubscribe(); window.removeEventListener("online", wake);
       window.removeEventListener("focus", wake); document.removeEventListener("visibilitychange", wake); };
   }, [repertoireId, source, selectedIds, depth, recover]);
 
@@ -124,7 +134,13 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
       if (resolved?.state === "published") await publishedCallback.current(resolved, currentController.signal);
     } catch (cause) {
       if (!currentController.signal.aborted) setFailure({ code: cause instanceof PrefixPreviewError ? cause.code : "service_error", message: (cause as Error).message });
-    } finally { if (controller.current === currentController) { submitting.current = false; if (!currentController.signal.aborted) setBusy(false); } }
+    } finally { if (controller.current === currentController) {
+        submitting.current = false;
+        if (!currentController.signal.aborted) {
+          setBusy(false);
+          if (pendingRecoveryWake.current) { pendingRecoveryWake.current = false; recoverAfterWake.current(); }
+        }
+      } }
   }
   const summary = operation?.summary ?? (plan && source ? transitionSummary(plan, source, repertoireName) : null);
   const request = operation?.request ?? (plan && depth !== null ? transitionRequest(plan, Object.fromEntries(selectedIds.map(id => [id, depth]))) : null);

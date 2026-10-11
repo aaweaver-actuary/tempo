@@ -4087,10 +4087,15 @@ reservation and unsupported-capability refusal across the regular browser engine
   exercise real browser storage/events/UI with deterministic transport seams.
 - `test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id`
   is integrated into the regular PostgreSQL prefix application proof. It preserves
-  the audited native receipt/payload, rejects a fenced edit, proves broker refusal
-  leaves the receipt unchanged, verifies original-cycle recovery and one business
-  effect, and rejects blocked retry after verified completion. Diagnostic ID
-  enumeration is explicitly distinguished from full browser rediscovery.
+  the audited native receipt/payload and its original metadata-edit fence
+  assertion. That assertion remains an active **BLOCKED** contract requirement:
+  migration 038 explicitly permits metadata-only repertoire updates. It is not
+  skipped or replaced with the structural assertion below.
+- `test_audit187_prefix_source_fence_retry_rejection_and_replay_preserve_identity`
+  independently proves the existing source-line edit fence, real receipt/payload
+  retention after worker admission, broker refusal leaving the receipt unchanged,
+  original-cycle recovery, one business effect and completed-retry rejection.
+  Diagnostic ID enumeration is explicitly distinguished from full browser rediscovery.
 
 - `audit187_storage_event_preserves_prefix_identity_and_guard across browser engines`
   runs on Chromium, Firefox and WebKit. A second same-origin document removes the
@@ -4117,6 +4122,13 @@ Journal capability and recovery boundary follow-ups:
 - `audit187_stored_planner_evidence_rejects_valid_shape_omitted_shared_scope_after_reload` resets session memory and rejects a still-targeted summary that omits a membership present in its saved reviewed planner. The immutable approval is retained; no fresh plan reconstruction is used.
 
 - `audit187_{missing,locks,unreadable}_journal_mutation_unavailable_disables_retry_but_keeps_check_status` keeps status-only recovery truthful: Retry is disabled when persistence or serialization cannot authorize delivery, Check status remains enabled, and all observed requests remain GET. All three schedules fail against the previous enabled Retry control and pass after correction.
+
+- `audit187_verified_publication_survives_unexpected_journal_deletion` and `audit187_verified_publication_survives_storage_deletion_and_component_remount` retain verified result/identity after unexpected storage deletion, including failed status inspection and a separate component remount. Both failed before the retention correction; only explicit locked clearing forgets the resolved session owner.
+- `audit187_deadline_feedback_preserves_latest_authoritative_blocked_state` overlaps two recovery actions at the unchanged 30-second deadline. Message-only timeout reconciliation preserves the newer blocked receipt, frozen request/scope and original identity; it failed before mutable patches were applied against the latest locked record.
+
+- `audit187_lock_release_waits_for_storage_task_commit` models an end-of-task storage commit and reproduces release before that commit. The native cross-browser same-ID assertion remains unchanged; the helper holds exclusion through a task boundary after its synchronous callback without awaiting network work. Firefox CI had returned two IDs before this correction; exact candidate native verification remains required.
+
+- Existing `issue81_{online,focus}_resumes_uncertain_delivery_without_reconfirmation` both exposed lost foreground wake events while recovery was finishing its storage commit. The panel retains one pending wake and checks the same identity after the current action finishes, preserving one delivery and refreshed comparison assertions without extending deadlines.
 
 ## #81 structural admission at final dispatch
 

@@ -6,7 +6,13 @@ clearing, and final structural-admission sections. It coordinates cooperating
 same-origin tabs in the same browser storage partition. Each writer rereads
 persisted ownership while holding the lock; absent or replaced owners cannot
 write. Matching verified publication is absorbing and retains its exact result.
-Intermediate pending/blocked/retrying states have no arbitrary rank.
+The helper retains the lock through the storage task boundary after its synchronous
+callback so Firefox commits its task-scoped localStorage snapshot before the next
+writer enters. This coordinates the [Firefox task-scoped storage snapshot](https://bugzilla.mozilla.org/show_bug.cgi?id=1868833#c6).
+It does not wait for network work or a polling interval.
+Intermediate pending/blocked/retrying states have no arbitrary rank. Mutable
+patches are applied to the latest record inside the lock; message-only timeout
+feedback cannot copy an older receipt state over a newer one.
 
 New confirmations retain optional V1 `approval` evidence: the original reviewed
 planner response plus its source target/snapshot/generation and selected routes.
@@ -60,7 +66,9 @@ execution.
 
 A mounted JavaScript session retains known identities across component remounts,
 failed storage writes, and journal disappearance. Unexpected disappearance keeps
-recovery reachable and guards unresolved scope. Status-only recovery never
+recovery reachable and guards unresolved scope. Verified publication/result also
+stays known after deletion until an explicit locked clear; missing storage alone
+cannot prove that another tab intentionally cleared it. Status-only recovery never
 recreates a missing record or sends an apply request from it. The existing
 separate **Restore saved recovery record** action is explicit: it first inspects
 status, then under the lock can restore only the exact retained unresolved

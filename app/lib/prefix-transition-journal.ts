@@ -119,9 +119,8 @@ export function readPrefixTransition(repertoireId: string): PrefixTransitionOper
   const known = knownOperations.get(repertoireId);
   if (!persisted) {
     if (!known) return null;
-    // A resolved record may legitimately be cleared by another tab. Unresolved
-    // identities remain guarded until status proves resolution in this session.
-    if (verifiedPrefixPublication(known) && !recoveryIssues.has(repertoireId)) { knownOperations.delete(repertoireId); return null; }
+    // Storage disappearance cannot prove an intentional clear. Retain verified
+    // evidence too; only an explicit locked clear forgets this session's owner.
     const missing = { ...known, journalMissing: true };
     knownOperations.set(repertoireId, missing);
     recoveryIssues.set(repertoireId, { code: "journal_missing", message: missingJournalMessage });
@@ -141,14 +140,27 @@ export function hasPrefixTransitionJournalLocks() {
   try { return typeof navigator.locks?.request === "function"; } catch { return false; }
 }
 export class PrefixTransitionSerializationError extends Error {}
+function journalStorageTaskBoundary(): Promise<void> {
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => { channel.port1.close(); channel.port2.close(); resolve(); };
+    channel.port2.postMessage(null);
+  });
+}
 /** One feature-specific, short synchronous section. Never return a network promise. */
 export async function withPrefixTransitionJournalLock<T>(signal: AbortSignal | undefined, criticalSection: () => T): Promise<T> {
   signal?.throwIfAborted();
   if (!hasPrefixTransitionJournalLocks()) throw new PrefixTransitionSerializationError(lockUnavailableMessage);
   let enteredCriticalSection = false;
   try {
-    return await navigator.locks.request(journalLockName, { signal }, () => {
-      enteredCriticalSection = true; signal?.throwIfAborted(); return criticalSection();
+    return await navigator.locks.request(journalLockName, { signal }, async () => {
+      enteredCriticalSection = true; signal?.throwIfAborted();
+      try { return criticalSection(); }
+      finally {
+        // Firefox commits its localStorage snapshot at the end of the task.
+        // Keep exclusion until that boundary; no networking or polling is awaited.
+        await journalStorageTaskBoundary();
+      }
     });
   } catch (failure) {
     if (enteredCriticalSection || signal?.aborted) throw failure;
@@ -161,21 +173,26 @@ export function assertPrefixTransitionOwnership(current: PrefixTransitionOperati
     throw new Error("The saved prefix transition changed. Reopen it to recover the current operation.");
   if (!matchingIdentity(current, owner)) throw new Error("The saved prefix transition payload changed. Recover its original browser data before delivery.");
 }
-/** Reconcile the proposed state with current persisted ownership inside the lock. */
-export async function savePrefixTransitionOperation(proposed: PrefixTransitionOperation, memoryOnly = false, signal?: AbortSignal): Promise<PrefixTransitionOperation> {
+export type PrefixTransitionMutableChanges = Partial<Pick<PrefixTransitionOperation, "state" | "message" | "transitionPhase" | "failureCode" | "result">>;
+export type PrefixTransitionReconciliation = PrefixTransitionMutableChanges | ((current: PrefixTransitionOperation) => PrefixTransitionMutableChanges);
+/** Apply mutable changes to the latest record while validating the frozen owner. */
+export async function savePrefixTransitionOperation(owner: PrefixTransitionOperation, memoryOnly = false, signal?: AbortSignal, changes?: PrefixTransitionReconciliation): Promise<PrefixTransitionOperation> {
   const reconcile = () => {
     let persisted: PrefixTransitionOperation | null = null;
-    try { persisted = readPersistedPrefixTransition(proposed.repertoireId); }
+    try { persisted = readPersistedPrefixTransition(owner.repertoireId); }
     catch (failure) { if (!memoryOnly) throw failure; }
-    const known = knownOperations.get(proposed.repertoireId);
+    const known = knownOperations.get(owner.repertoireId);
+    const current = known && persisted && matchingIdentity(known, persisted) && verifiedPrefixPublication(known) ? known : persisted ?? known;
+    const mutableChanges = typeof changes === "function" ? changes(recordSchema.parse(current ?? owner)) : changes;
+    const proposed = mutableChanges ? { ...(current ?? owner), ...mutableChanges } : owner;
+    assertPrefixTransitionOwnership(proposed, owner);
     if (!persisted && !memoryOnly && known && matchingIdentity(known, proposed) && verifiedPrefixPublication(proposed)) {
       knownOperations.set(proposed.repertoireId, { ...proposed, journalMissing: true });
       recoveryIssues.set(proposed.repertoireId, { code: "journal_missing", message: missingJournalMessage });
       notifyPrefixTransitions();
     }
-    assertPrefixTransitionOwnership(persisted ?? (memoryOnly ? known ?? null : null), proposed);
-    const current = known && persisted && matchingIdentity(known, persisted) && verifiedPrefixPublication(known) ? known : persisted ?? known!;
-    const reconciled = recordSchema.parse(verifiedPrefixPublication(current) ? current : proposed);
+    assertPrefixTransitionOwnership(persisted ?? (memoryOnly ? known ?? null : null), owner);
+    const reconciled = recordSchema.parse(current && verifiedPrefixPublication(current) ? current : proposed);
     if (memoryOnly) {
       reconciled.journalMissing = !persisted || undefined;
       if (!hasPrefixTransitionJournalLocks()) recoveryIssues.set(proposed.repertoireId, { code: "serialization_unavailable", message: lockUnavailableMessage });
@@ -196,7 +213,7 @@ export async function savePrefixTransitionOperation(proposed: PrefixTransitionOp
   try { return await withPrefixTransitionJournalLock(signal, reconcile); }
   catch (failure) {
     if (failure instanceof PrefixTransitionSerializationError)
-      recoveryIssues.set(proposed.repertoireId, { code: "serialization_unavailable", message: failure.message });
+      recoveryIssues.set(owner.repertoireId, { code: "serialization_unavailable", message: failure.message });
     throw failure;
   }
 }

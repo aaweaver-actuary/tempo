@@ -5,7 +5,7 @@ import { prefixTransitionReceiptSchema, prefixTransitionResultSchema, type Prefi
 import { readPrefixTransition, readPersistedPrefixTransition, unresolvedPrefixTransition,
   savePrefixTransitionOperation, hasPrefixTransitionJournalLocks,
   restoreKnownPrefixTransition, knownPrefixTransitions, PrefixTransitionPersistenceError, PrefixTransitionSerializationError,
-  assertPrefixTransitionOwnership, type PrefixTransitionOperation } from "./prefix-transition-journal";
+  assertPrefixTransitionOwnership, type PrefixTransitionOperation, type PrefixTransitionMutableChanges, type PrefixTransitionReconciliation } from "./prefix-transition-journal";
 export * from "./prefix-transition-journal";
 
 /** User-requested restore checks server status first and never overwrites ownership. */
@@ -50,16 +50,17 @@ export async function recoverPrefixTransition(repertoireId: string, options: { s
   let retryRequested = false;
   let retryAdmission: "accepted" | "rejected" | "unknown" | null = null;
   let retryFeedback = "";
-  const reconcile = async (proposed: PrefixTransitionOperation, writeSignal: AbortSignal) => {
-    try { operation = await savePrefixTransitionOperation(proposed, memoryOnly, writeSignal); }
+  const reconcile = async (changes: PrefixTransitionReconciliation, writeSignal: AbortSignal) => {
+    const owner = operation!;
+    try { operation = await savePrefixTransitionOperation(owner, memoryOnly, writeSignal, changes); }
     catch (failure) {
       if (!(failure instanceof PrefixTransitionSerializationError)) throw failure;
-      memoryOnly = true; operation = await savePrefixTransitionOperation(proposed, true, writeSignal);
+      memoryOnly = true; operation = await savePrefixTransitionOperation(owner, true, writeSignal, changes);
     }
     return operation;
   };
-  const update = (changes: Partial<PrefixTransitionOperation>) => {
-    signal.throwIfAborted(); return reconcile({ ...operation!, ...changes }, signal);
+  const update = (changes: PrefixTransitionMutableChanges) => {
+    signal.throwIfAborted(); return reconcile(changes, signal);
   };
   try {
     for (;;) {
@@ -138,9 +139,9 @@ export async function recoverPrefixTransition(repertoireId: string, options: { s
     if (options.signal.aborted) throw options.signal.reason;
     if (failure instanceof PrefixTransitionPersistenceError) throw failure;
     if (!memoryOnly) assertPrefixTransitionOwnership(readPersistedPrefixTransition(repertoireId), operation!);
-    if (deadline.aborted) return reconcile({ ...operation!,
+    if (deadline.aborted) return reconcile({
       message: "Status checking timed out after 30 seconds. Backend work may still be running. Check status again using the original operation." }, options.signal);
-    return reconcile({ ...operation!, state: operation!.state === "blocked" ? "blocked" : "transport_unknown",
-      message: failure instanceof Error ? failure.message : "Connection unavailable. Check status to recover the same operation." }, options.signal);
+    return reconcile(current => ({ state: current.state === "blocked" ? "blocked" : "transport_unknown",
+      message: failure instanceof Error ? failure.message : "Connection unavailable. Check status to recover the same operation." }), options.signal);
   }
 }
