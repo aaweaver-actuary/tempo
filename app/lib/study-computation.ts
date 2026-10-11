@@ -9,6 +9,7 @@ import {
 import { mapPackagedPuzzleToPracticeCard } from "../domain/adapters/practice-card-adapters";
 import { queueCardsFromPayload } from "../domain/adapters/practice-card-adapters";
 import { canonicalizeLine } from "../utils/canonical-line";
+import { buildRepertoireAlternativeSnapshot } from "./repertoire-alternative-index";
 import { resolveTrainingRoute } from "./training-builder-route";
 import {
   indexRepertoirePositions,
@@ -24,6 +25,7 @@ export type PureStudyTask =
   | { kind: "deck"; records: unknown[]; deckId: string }
   | { kind: "lines"; lines: AnalysisLine[] }
   | { kind: "index"; lines: AnalysisLine[] }
+  | { kind: "repertoireAlternatives"; generation: number; lines: AnalysisLine[] }
   | {
       kind: "similarity" | "matches";
       fen: string;
@@ -81,6 +83,9 @@ export function computeStudyTask(task: PureStudyTask) {
       ];
     case "index":
       return indexRepertoirePositions(task.lines.map(canonicalizeLine));
+    case "repertoireAlternatives":
+      return buildRepertoireAlternativeSnapshot(task.generation,
+        indexRepertoirePositions(task.lines.map(canonicalizeLine)));
     case "matches":
     case "similarity": {
       const distanceToQuery = prepareChessPositionDistance(task.fen);

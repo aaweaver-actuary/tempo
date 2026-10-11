@@ -55,7 +55,7 @@ import {
   asSanMove,
 } from "../types";
 import { canonicalFenKey } from "../utils/canonical-line";
-import { IndexedPosition } from "../lib/position-similarity";
+import { lookupRepertoireAlternative, type RepertoireAlternativeSnapshot } from "../lib/repertoire-alternative-index";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
@@ -224,9 +224,17 @@ export default function Home() {
     }
     requestAnimationFrame(() => requestAnimationFrame(finished));
   }, [deferRepairDialog]);
-  const branchPositions = useRef<IndexedPosition[] | null>(null);
+  const repertoireAlternativeSnapshot = useRef<RepertoireAlternativeSnapshot | null>(null);
+  const repertoirePositionGeneration = useRef(0);
   const [branchIndexLoadError, setBranchIndexLoadError] = useState("");
   const [branchIndexRetry, setBranchIndexRetry] = useState(0);
+  const invalidateBranchEvidence = useCallback(() => {
+    if (!usesLocalApi()) return;
+    repertoirePositionGeneration.current += 1;
+    repertoireAlternativeSnapshot.current = null;
+    invalidateWorkspaceData();
+    setBranchIndexRetry((generation) => generation + 1);
+  }, []);
   const {
     practiceCards,
     importedRepertoires,
@@ -543,6 +551,7 @@ export default function Home() {
   const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
   const deletionRecoveryStarted = useRef(false);
   const finishPermanentDeletion = useCallback(async (cardId: string) => {
+    invalidateBranchEvidence();
     const training = useTrainingStore.getState();
     const cachedCards = training.practiceCards.slice(training.activeCardIndex);
     const deletesActiveCard = cachedCards[0]?.backendId === cardId;
@@ -559,7 +568,7 @@ export default function Home() {
     catch {
       useTrainingStore.getState().setServiceError("Card deleted. Training queue refresh failed; retry loading the queue.");
     }
-  }, [refreshDatabaseQueue]);
+  }, [refreshDatabaseQueue, invalidateBranchEvidence]);
   const recoverCardDeletion = useCallback(async () => {
     try {
       const pending = pendingCardDeletion();
@@ -596,6 +605,14 @@ export default function Home() {
     invalidateWorkspaceData();
     await fetchAndInitializeQueue(false);
   }, []);
+  const refreshQueueAfterRepertoireChange = useCallback(async () => {
+    invalidateBranchEvidence();
+    await refreshQueueOnly();
+  }, [invalidateBranchEvidence, refreshQueueOnly]);
+  const refreshDatabaseQueueAfterRepertoireChange = useCallback(async () => {
+    invalidateBranchEvidence();
+    await refreshDatabaseQueue();
+  }, [invalidateBranchEvidence, refreshDatabaseQueue]);
 
   useEffect(() => {
     const onIntegrity = (event: Event) => {
@@ -667,25 +684,34 @@ export default function Home() {
   useEffect(() => {
     if (usesLocalApi() && currentView === "train") {
       let active = true;
-      branchPositions.current = null;
+      const generation = ++repertoirePositionGeneration.current;
+      const controller = new AbortController();
+      const isCurrent = () => active && generation === repertoirePositionGeneration.current;
+      repertoireAlternativeSnapshot.current = null;
+      invalidateWorkspaceData(`${API_URL}/api/repertoire/lines`);
       void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
         .then(async (body) => {
+          if (!isCurrent()) return;
           const lines = await runStudyTask<AnalysisLine[]>({
             kind: "transportLines",
             payload: body,
-          });
-          const indexedPositions = await runStudyTask<IndexedPosition[]>({
-            kind: "index",
+          }, controller.signal);
+          if (!isCurrent()) return;
+          const indexedPositions = await runStudyTask<RepertoireAlternativeSnapshot>({
+            kind: "repertoireAlternatives",
+            generation,
             lines,
-          });
-          if (active) {
-            branchPositions.current = indexedPositions;
+          }, controller.signal);
+          if (isCurrent()) {
+            if (indexedPositions.generation !== generation)
+              throw new Error("Repertoire lines have an obsolete generation. Retry loading lines.");
+            repertoireAlternativeSnapshot.current = indexedPositions;
             setBranchIndexLoadError("");
           }
         })
         .catch((failure) => {
-          if (!active) return;
-          branchPositions.current = null;
+          if (!isCurrent()) return;
+          repertoireAlternativeSnapshot.current = null;
           setBranchIndexLoadError(
             failure instanceof Error
               ? failure.message
@@ -694,6 +720,11 @@ export default function Home() {
         });
       return () => {
         active = false;
+        controller.abort();
+        if (generation === repertoirePositionGeneration.current) {
+          repertoirePositionGeneration.current += 1;
+          repertoireAlternativeSnapshot.current = null;
+        }
       };
     }
   }, [currentView, branchIndexRetry]);
@@ -1033,7 +1064,11 @@ export default function Home() {
       return;
     }
     if (move.san !== card.moves[step]) {
-      if (usesLocalApi() && !offlineQueue && branchPositions.current === null) {
+      const indexedAlternative = usesLocalApi()
+        ? lookupRepertoireAlternative(repertoireAlternativeSnapshot.current, repertoirePositionGeneration.current,
+            card.repertoireId, currentFenString, responseUci)
+        : undefined;
+      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined) {
         openingJournal()?.response(step, responseUci, "unverified");
         setBoardAttempt((value) => value + 1);
         setQueueNotice(
@@ -1041,14 +1076,8 @@ export default function Home() {
         );
         return;
       }
-      const alternateBranch = usesLocalApi() && branchPositions.current
-        ? branchPositions.current.some(
-            (other) =>
-              other.repertoireId === card.repertoireId &&
-              canonicalFenKey(other.fen) ===
-                canonicalFenKey(currentFenString) &&
-              other.nextUci === `${move.from}${move.to}${move.promotion ?? ""}`,
-          )
+      const alternateBranch = usesLocalApi() && indexedAlternative !== undefined
+        ? indexedAlternative
         : (usesLocalApi() ? practiceCards : demoCards).some(
             (other) =>
               other.id !== card.id &&
@@ -1823,7 +1852,7 @@ export default function Home() {
                 <Button
                   onClick={() => {
                     setBranchIndexLoadError("");
-                    setBranchIndexRetry((attempt) => attempt + 1);
+                    invalidateBranchEvidence();
                   }}
                 >
                   Retry loading lines
@@ -1872,6 +1901,7 @@ export default function Home() {
                   throw new Error("The card is missing its local database ID. Refresh the queue.");
                 if (pendingReviews().length) await flushPendingReviews();
                 await acceptPrefixSplitCommand(prefixCard.backendId, prefixCard.revision ?? 1);
+                invalidateBranchEvidence();
                 invalidateTrainingQueueCache();
                 setSuggestShorter(false);
                 activeQueueEntry.current = undefined;
@@ -1992,7 +2022,7 @@ export default function Home() {
               changeWorkspace("games");
             }}
             onRenameLocal={renameLocalRepertoire}
-            onQueueChanged={refreshDatabaseQueue}
+            onQueueChanged={refreshDatabaseQueueAfterRepertoireChange}
             onTrain={() => changeWorkspace("train")}
           />
         )}
@@ -2101,7 +2131,7 @@ export default function Home() {
             setSafeBreakCounter((count) => count + 1);
           }}
           onImported={addImportedRepertoire}
-          onDatabaseUpdated={refreshQueueOnly}
+          onDatabaseUpdated={refreshQueueAfterRepertoireChange}
           onViewRepertoire={() => changeWorkspace("repertoire")}
         />
       )}
@@ -2113,7 +2143,7 @@ export default function Home() {
             setSafeBreakCounter((count) => count + 1);
           }}
           onSaved={(affectedRepertoireIds, conflictingRepertoireIds) => {
-            invalidateWorkspaceData();
+            invalidateBranchEvidence();
             setPasteRevision((revision) => revision + 1);
             void refreshQueueOnly();
             setPasteContext(null);
@@ -2173,6 +2203,7 @@ export default function Home() {
             changeWorkspace("builder");
           }}
           onSave={(updated) => {
+            invalidateBranchEvidence();
             setPracticeCards((current) =>
               current.map((item) => (item.id === updated.id ? updated : item)),
             );
@@ -2197,6 +2228,7 @@ export default function Home() {
       )}
       <IntegrityRepairStatus
         onReconcile={(repertoireId) => {
+          invalidateBranchEvidence();
           deferredRepairIds.current.delete(repertoireId);
           invalidateWorkspaceData();
           invalidateTrainingQueueCache();
