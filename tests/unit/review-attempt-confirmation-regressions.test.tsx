@@ -230,9 +230,9 @@ it.each(["completed head", "malformed JSON", "invalid head", "partial envelope",
       return Response.json({ count: 2, cards: [queueCard("card-a", 12), queueCard("card-b", 13)] });
     });
     await act(async () => { await trainingProps.rateCard("correct"); });
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
     expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
     expect(queueReads).toBe(1);
-    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
     expect(reviewPosts()).toHaveLength(1);
     expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
   });
@@ -427,6 +427,8 @@ it.each(["missing continuation", "pending review", "conflicted review"])(
     expect(useTrainingStore.getState().currentFenString).toBe(activeBoard.fen);
     expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
     expect(reviewPosts().map(([, options]) => JSON.parse(String(options!.body)).queue_entry_id)).toEqual([12, 13]);
+    if (settlement === "missing continuation") expect(notifications().find(record => record.key === "review-queue:13"))
+      .toMatchObject({ severity: "warning", active: false, resolvedAt: null });
     if (settlement === "pending review") expect(pendingReviews()[0].attemptId).toBe(submittedAttempt);
     if (settlement === "conflicted review") expect(conflictedReviews()[0].attemptId).toBe(submittedAttempt);
     recovered = true;
@@ -440,6 +442,11 @@ it.each(["missing continuation", "pending review", "conflicted review"])(
     expect(useTrainingStore.getState().attempt.attemptId).not.toBe(submittedAttempt);
     expect(pendingReviews()).toEqual([]);
     expect(reviewPosts()).toHaveLength(2);
+    if (settlement === "missing continuation") {
+      const recoveredQueueNotice = notifications().find(record => record.key === "review-queue:13");
+      expect(recoveredQueueNotice).toMatchObject({ severity: "success", active: false });
+      expect(recoveredQueueNotice?.resolvedAt).not.toBeNull();
+    }
   });
 
 it.each(["pending", "network timeout", "failed"])("unconfirmed_review_does_not_advance_prepared_card: %s then successful retry", async failure => {

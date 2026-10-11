@@ -63,6 +63,7 @@ it("failed saves remain actionable after saving progress ends", () => {
   const committedSaveNotice = { ...notifications()[0] };
   view.rerender(<TrainingView {...props} reviewPersistenceState="refreshingQueue" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="queueFailed" />);
+  expect(screen.getByRole("alert").textContent).toContain("Result saved; the next card could not be loaded.");
   fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue", exact: true }));
   expect(props.retryQueueAfterReview).toHaveBeenCalledTimes(1);
   expect(props.rateCard).not.toHaveBeenCalled();
@@ -70,6 +71,7 @@ it("failed saves remain actionable after saving progress ends", () => {
   expect(notifications()).toEqual([committedSaveNotice]);
   view.rerender(<TrainingView {...props} reviewPersistenceState="refreshingQueue" />);
   view.rerender(<TrainingView {...props} reviewPersistenceState="idle" />);
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(notifications()).toEqual([committedSaveNotice]);
 });
 
