@@ -321,7 +321,13 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       expect(cleanup.restored_queue_positions + cleanup.runtime_reordered_positions + cleanup.runtime_removed_entries)
         .toBe(displacedQueuePositions.length);
     }
-    finally { docker("start", ...ownedConsumers); }
+    finally {
+      docker("start", ...ownedConsumers);
+      await expect.poll(async () => {
+        const restoredHealth = await request.get(`${api}/health`);
+        return restoredHealth.ok() ? "ready" : await restoredHealth.text();
+      }, { timeout: 60_000, message: "Training fixture cleanup must restore service readiness before the next test" }).toBe("ready");
+    }
   }
 });
 }

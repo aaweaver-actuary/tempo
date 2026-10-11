@@ -129,7 +129,13 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       await page.close();
       await docker("stop", ...consumers);
       try { await fixture("cleanup", JSON.stringify(displaced)); }
-      finally { await docker("start", ...consumers); }
+      finally {
+        await docker("start", ...consumers);
+        await expect.poll(async () => {
+          const restoredHealth = await request.get(`${api}/health`);
+          return restoredHealth.ok() ? "ready" : await restoredHealth.text();
+        }, { timeout: 60_000, message: "Progression fixture cleanup must restore service readiness before the next test" }).toBe("ready");
+      }
     }
   });
 }
