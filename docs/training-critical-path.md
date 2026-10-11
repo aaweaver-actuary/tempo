@@ -624,7 +624,8 @@ The settled runtime and regression revision is
 
 The later cancellation lifecycle guard was checked separately: its regression
 failed before that guard on `fff7ed4b` (one failure, 6.30 s), then passed in
-6.38 s. The PR branch concurrently received qualification commit `a659d219`;
+6.38 s. The PR branch concurrently received qualification commits `a659d219` and
+`bb008567`;
 its additional attempt identity, outbox settlement, native input and PostgreSQL
 contention cases are preserved through a non-rewriting merge. On combined
 revision `1f7fcfa7`, the confirmation, prepared-continuation, pending-recovery
@@ -646,7 +647,18 @@ predecessor/successor pair ran on `efa56dbf`: 2 failures, 202.20 s browser stage
 refreshing at its unchanged 20-second bound. The earlier disposable-instance
 refusal did not recur. Other local disposable stacks were active, but this alone
 does not prove the cause of either timeout. Logs, traces and ownership records
-are retained; full combined CI must resolve this boundary before handoff.
+are retained; full combined CI must resolve this boundary before handoff. The
+subsequent concurrent correction marks only burial-fixture publication reads as
+background work, with a named admission-header contract and unchanged 20-second
+publication deadline. The combined runner file passes 66 cases in 2.091 s
+(2.33 s command), including the bounded restored-health regression.
+
+A later screenshot-preservation run of the two #186 layouts failed under the
+unchanged 60-second visual deadline (698.94 s total including container setup
+and stalled browser teardown). The trace records a closed browser session and
+no review POST; this is not a successful rendering proof. Its screenshots and
+traces are preserved alongside the earlier 69-case pinned pass. Fresh CI must
+pass both layouts on the combined candidate; no baseline or deadline was changed.
 
 Exact development commands include:
 
