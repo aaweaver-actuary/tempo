@@ -4130,6 +4130,8 @@ Journal capability and recovery boundary follow-ups:
 
 - Existing `issue81_{online,focus}_resumes_uncertain_delivery_without_reconfirmation` both exposed lost foreground wake events while recovery was finishing its storage commit. The panel retains one pending wake and checks the same identity after the current action finishes, preserving one delivery and refreshed comparison assertions without extending deadlines.
 
+- `audit187_{missing,constructor_error,granted_constructor_error,post_error,granted_post_error}_storage_channel_rejects_before_identity_and_dispatch` preserves zero identities/dispatches when storage-publication capability is missing or fails, including faults discovered after lock grant. All five failed before capability preflight (3.38s); the helper now validates capability and registers its boundary before the callback, and advisory structural admission fails conservatively. `audit187_queued_abort_closes_publication_probe_ports_without_entering_callback` proves prompt caller cancellation, closed probe ports and no granted callback/barrier allocation.
+
 ## #81 structural admission at final dispatch
 
 `prefix-structural-command-regressions.test.ts` registers

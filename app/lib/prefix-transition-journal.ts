@@ -137,15 +137,22 @@ export function savedPrefixTransitions(): PrefixTransitionOperation[] {
   return [...repertoireIds].sort().map(readPrefixTransition).filter((operation): operation is PrefixTransitionOperation => operation !== null);
 }
 export function hasPrefixTransitionJournalLocks() {
-  try { return typeof navigator.locks?.request === "function"; } catch { return false; }
+  try {
+    if (typeof navigator.locks?.request !== "function" || typeof MessageChannel !== "function") return false;
+    const channel = new MessageChannel();
+    try { channel.port2.postMessage(null); return true; }
+    finally { channel.port1.close(); channel.port2.close(); }
+  } catch { return false; }
 }
 export class PrefixTransitionSerializationError extends Error {}
 function journalStorageTaskBoundary(): Promise<void> {
-  return new Promise(resolve => {
-    const channel = new MessageChannel();
+  const channel = new MessageChannel();
+  const boundary = new Promise<void>(resolve => {
     channel.port1.onmessage = () => { channel.port1.close(); channel.port2.close(); resolve(); };
-    channel.port2.postMessage(null);
   });
+  try { channel.port2.postMessage(null); }
+  catch (failure) { channel.port1.close(); channel.port2.close(); throw failure; }
+  return boundary;
 }
 /** One feature-specific, short synchronous section. Never return a network promise. */
 export async function withPrefixTransitionJournalLock<T>(signal: AbortSignal | undefined, criticalSection: () => T): Promise<T> {
@@ -154,12 +161,15 @@ export async function withPrefixTransitionJournalLock<T>(signal: AbortSignal | u
   let enteredCriticalSection = false;
   try {
     return await navigator.locks.request(journalLockName, { signal }, async () => {
-      enteredCriticalSection = true; signal?.throwIfAborted();
+      signal?.throwIfAborted();
+      // Discover unusable publication capability before identity allocation or dispatch.
+      const storageCommit = journalStorageTaskBoundary();
+      enteredCriticalSection = true;
       try { return criticalSection(); }
       finally {
         // Firefox commits its localStorage snapshot at the end of the task.
         // Keep exclusion until that boundary; no networking or polling is awaited.
-        await journalStorageTaskBoundary();
+        await storageCommit;
       }
     });
   } catch (failure) {
