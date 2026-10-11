@@ -41,6 +41,7 @@ from .services.tactical_catalog import (
     progress_pack_id,
 )
 from .learning_priorities import LearningPriorityUpdate
+from .learning_priority_api import LearningPriorityRoute
 from .models import (
     AccountSettings,
     AnalysisPasteCommitRequest,
@@ -979,7 +980,6 @@ def get_repertoire_learning_priorities():
         return read_learning_priority_snapshot(db).document()
 
 
-@app.put("/api/repertoires/{identifier}/learning-priority")
 def put_repertoire_learning_priority(identifier: str, request: LearningPriorityUpdate,
                                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
@@ -993,6 +993,12 @@ def put_repertoire_learning_priority(identifier: str, request: LearningPriorityU
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
         return update_learning_priority(db, identifier, request, postgres=False)
+
+
+app.router.add_api_route(
+    "/api/repertoires/{identifier}/learning-priority", put_repertoire_learning_priority,
+    methods=["PUT"], route_class_override=LearningPriorityRoute,
+)
 
 
 @app.get("/api/settings", response_model=Settings)

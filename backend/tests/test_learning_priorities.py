@@ -248,3 +248,18 @@ def test_learning_priority_integer_float_and_negative_zero_noops_are_canonical(w
     zero_snapshot = workspace.get('/api/settings/repertoire-learning-priorities').json()
     assert save(workspace, weight=0, revision=2).json()['revision'] == 2
     assert workspace.get('/api/settings/repertoire-learning-priorities').json() == zero_snapshot
+
+
+@pytest.mark.parametrize('invalid', ['NaN', 'Infinity', '-Infinity', '1e400'])
+@pytest.mark.parametrize('field', ['learning_priority_weight', 'learning_priority_active', 'expected_revision', 'unknown'])
+def test_learning_priority_nonfinite_http_inputs_return_422_without_mutation(workspace, field, invalid):
+    import json
+    client = TestClient(main.app, raise_server_exceptions=False)
+    baseline = client.get('/api/settings/repertoire-learning-priorities').json()
+    payload = {'learning_priority_weight': 1, 'learning_priority_active': True, 'expected_revision': 1}
+    serialized = json.dumps(payload)[:-1] + ',"' + field + '":' + invalid + '}'
+    response = client.put('/api/repertoires/italian/learning-priority', content=serialized,
+                          headers={'Content-Type': 'application/json'})
+    assert response.status_code == 422, response.text
+    assert response.json()['detail']
+    assert client.get('/api/settings/repertoire-learning-priorities').json() == baseline

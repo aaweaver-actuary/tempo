@@ -3887,6 +3887,7 @@ PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2
 - `test_learning_priority_italian_ruy_scale_and_shared_card_preferences_preserve_conditional_models` (test-local study-benefit illustration, no production ranking).
 - `test_learning_priority_changes_leave_admissions_fsrs_graph_evidence_tasks_and_queue_unchanged`.
 - `test_learning_priority_postgres_api_dispatch_preserves_version_and_idempotency`.
+- `test_learning_priority_nonfinite_http_inputs_return_422_without_mutation` (raw NaN, infinities and numeric overflow in any request field; reproduced HTTP 500 before the scoped transport repair).
 
 `scripts/check_postgres_learning_priorities.py`, registered in the regular full and durability PostgreSQL runner:
 - `test_postgres_learning_priority_populated_upgrade_defaults_and_replay_preserve_study_state`.
