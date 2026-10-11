@@ -9,6 +9,19 @@ export function assertNoCompletedFixtureConflict(integrity, repertoireId) {
   }
 }
 
+// Queue-head issuance can be pending while the durable writer finishes. Only
+// this explicit publication response belongs in an existing readiness poll.
+export async function readStudyQueuePublication(response) {
+  if (response.ok) return response.json();
+  const responseBody = await response.text();
+  if (response.status === 503) {
+    let errorPayload;
+    try { errorPayload = JSON.parse(responseBody); } catch { /* Preserve the service error below. */ }
+    if (errorPayload?.detail === "Queue changed or attempt issuance is pending. Retry loading the queue.") return null;
+  }
+  throw new Error(`queue/today: HTTP ${response.status} ${responseBody}`);
+}
+
 export const studyDurabilityPgn = [
   '[Event "PostgreSQL recovery durability"]', "",
   "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 d6 5. O-O Be7 6. c3 O-O 7. Re1 a6 8. Bb3 *",

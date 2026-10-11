@@ -10,7 +10,7 @@ import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
+  readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
 import { atomicJson, redact } from "./tempo-deployment.mjs";
@@ -172,20 +172,9 @@ async function pollForReady({ requireContainerHealthy = false } = {}) {
   throw new Error("Disposable PostgreSQL Tempo did not become ready");
 }
 
-async function get(path, { background = false, allowPendingQueueIssuance = false } = {}) {
+async function get(path, { background = false } = {}) {
   const response = await apiRequest(path, background ? { headers: { "X-Tempo-Work-Class": "background" } } : {});
-  if (!response.ok) {
-    const responseBody = await response.text();
-    if (allowPendingQueueIssuance && path === "queue/today" && response.status === 503) {
-      let responseErrorDetail;
-      try { responseErrorDetail = JSON.parse(responseBody)?.detail; }
-      catch { responseErrorDetail = undefined; }
-      // Publication can change the head between its read and durable issuance.
-      // This exact retry response is unfinished work, never a settled sample.
-      if (responseErrorDetail === "Queue changed or attempt issuance is pending. Retry loading the queue.") return null;
-    }
-    throw new Error(`${path}: HTTP ${response.status} ${responseBody}`);
-  }
+  if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
   return response.json();
 }
 
@@ -228,7 +217,7 @@ async function pollForStudyableImport(repertoireId) {
     measureScenario.poll();
     const [system, integrity, queue] = await Promise.all([
       get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }),
-      get("queue/today", { background: true, allowPendingQueueIssuance: true }),
+      apiRequest("queue/today", { headers: { "X-Tempo-Work-Class": "background" } }).then(readStudyQueuePublication),
     ]);
     assertNoCompletedFixtureConflict(integrity, repertoireId);
     const graphTask = system.tasks.find((task) => task.kind === "opening_graph_rebuild"

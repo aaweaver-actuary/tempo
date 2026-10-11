@@ -10,7 +10,7 @@ import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
 import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
+  readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
 import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
 import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redis-readiness.mjs";
@@ -24,7 +24,7 @@ function studyImportPollingFixture(queueResponses, { integrityStatus = "clean", 
   const pollingSource = source.slice(source.indexOf("async function pollForStudyableImport("), source.indexOf("function stableStudyState("));
   const observed = { polls: 0, waits: [], queueReads: 0 };
   const context = {
-    JSON, assertNoCompletedFixtureConflict,
+    JSON, assertNoCompletedFixtureConflict, readStudyQueuePublication,
     measureScenario: { poll: () => { observed.polls += 1; }, wait: async interval => { observed.waits.push(interval); } },
     apiRequest: async (path, options) => {
       assert.equal(options.headers["X-Tempo-Work-Class"], "background");
@@ -95,6 +95,52 @@ function temporaryDirectory(testContext) {
   testContext.after(() => rmSync(directory, { recursive: true, force: true }));
   return directory;
 }
+
+test("import readiness preserves its bound and settled samples across pending queue-head issuance", async () => {
+  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const pollStart = runnerSource.indexOf("async function pollForStudyableImport(");
+  const pollEnd = runnerSource.indexOf("\nfunction stableStudyState", pollStart);
+  const queue = { projection: { state: "ready", refresh_pending: false } };
+  for (const indefinitelyPending of [false, true]) {
+    let queueReads = 0, polls = 0, waits = 0;
+    const apiRequest = async () => {
+      queueReads += 1;
+      const pending = indefinitelyPending || queueReads === 3;
+      return new Response(JSON.stringify(pending ? {
+        detail: "Queue changed or attempt issuance is pending. Retry loading the queue.",
+      } : queue), { status: pending ? 503 : 200 });
+    };
+    const context = {
+      assertNoCompletedFixtureConflict, readStudyQueuePublication, apiRequest,
+      get: async path => {
+        if (path === "system/tasks") return { tasks: [{ kind: "opening_graph_rebuild", deduplication_key: "scope", state: "complete" }] };
+        if (path.includes("integrity")) return { scan_status: "idle", status: "clean" };
+        const response = await apiRequest();
+        if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
+        return response.json();
+      },
+      measureScenario: {
+        poll: () => { polls += 1; },
+        wait: async interval => { assert.equal(interval, 250); waits += 1; },
+      },
+    };
+    const poll = runInNewContext(`(${runnerSource.slice(pollStart, pollEnd)})`, context);
+    if (indefinitelyPending) {
+      await assert.rejects(poll("scope"), /did not settle for scope/);
+      assert.equal(polls, 180); assert.equal(waits, 180); assert.equal(queueReads, 180);
+    } else {
+      assert.deepEqual(await poll("scope"), queue);
+      assert.equal(queueReads, 6); assert.equal(polls, 6); assert.equal(waits, 5);
+    }
+  }
+});
+
+test("queue publication polling propagates service failures instead of reporting readiness", async () => {
+  for (const [status, body] of [[500, { detail: "database unavailable" }],
+    [503, { detail: "database unavailable" }], [503, { detail: "other pending work" }], [503, "invalid JSON"]]) {
+    await assert.rejects(readStudyQueuePublication(new Response(JSON.stringify(body), { status })), /queue\/today: HTTP/);
+  }
+});
 
 test("preview retention timing succeeds promptly and reports scoped checkpoints at the unchanged deadline", async () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
