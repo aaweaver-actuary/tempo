@@ -622,8 +622,26 @@ The settled runtime and regression revision is
 | Filtered PostgreSQL browser: prepared abort, restart and exact replay on settled runtime | 1 passed; complete three-case spec remains required in fresh CI | 49.5 s Playwright; 50.77 s browser stage; build 25.12 s, startup 38.99 s, cleanup 9.27 s |
 | `make visual` on settled runtime | 69 passed, including both #186 rendering cases | 438.05 s command; 6.6 min Playwright |
 
-The later cancellation lifecycle guard was checked separately: one case passed
-in 6.38 s; it is included in the fresh combined candidate qualification.
+The later cancellation lifecycle guard was checked separately: its regression
+failed before that guard on `fff7ed4b` (one failure, 6.30 s), then passed in
+6.38 s. The PR branch concurrently received qualification commit `a659d219`;
+its additional attempt identity, outbox settlement, native input and PostgreSQL
+contention cases are preserved through a non-rewriting merge. On combined
+revision `1f7fcfa7`, the confirmation, prepared-continuation, pending-recovery
+and outbox files passed 155 cases in 18.51 s (19.66 s command); typecheck passed
+in 26.87 s and lint passed with ten existing warnings in 47.72 s.
+The concurrent Home test now checks the visible reconciliation status directly;
+its original notification wording changed with #186, while all board, identity,
+unissued-successor and no-repeat-review assertions remain.
+
+Prior concurrent CI 38126678104 exposed a service handoff failure: the regular
+`training Bury hides the card for today across reload and reports a failed bury`
+case correctly refused destructive fixtures while a restarted consumer had not
+regained authoritative health. Training fixture cleanup now waits on real health
+within the existing 60-second readiness bound before yielding to another case.
+The disposable-instance guard and global/test deadlines are unchanged. The exact
+predecessor/successor pair is checked separately, and full combined CI remains
+required.
 
 Exact development commands include:
 
@@ -637,6 +655,8 @@ node scripts/test-postgres-docker.mjs --mode browser --browser-grep 'issue186_co
 make visual
 npm run typecheck
 npm run lint
+npm run check:conflicts
+node scripts/check-migration-inventory.mjs
 make plan
 git diff --check
 ```
