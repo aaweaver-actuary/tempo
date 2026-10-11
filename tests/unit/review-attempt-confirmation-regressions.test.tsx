@@ -401,7 +401,7 @@ it.each(["missing continuation", "pending review", "conflicted review"])(
       lastMove: ["e2", "e4"], opponentLastMove: ["e2", "e4"] }));
     const activeBoard = snapshotActive();
     await act(async () => { rejectReconciliation(new Error("Prepared reconciliation failed")); });
-    await waitFor(() => expect(notifications().some(record => record.message.includes("Queue reconciliation is waiting"))).toBe(true));
+    await waitFor(() => expect(screen.getByText("Queue reconciliation is waiting. You can finish the prepared card.")).toBeTruthy());
     expect(snapshotActive()).toEqual(activeBoard);
     expect(useTrainingStore.getState().queueReadiness).toBe("ready");
     expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");

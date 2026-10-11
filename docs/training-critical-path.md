@@ -629,7 +629,7 @@ Exact development commands include:
 
 ```sh
 npm run test:unit -- tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/pending-review-recovery-regressions.test.tsx
-npm run test:unit -- tests/unit/desktop-queue.test.ts tests/unit/phone-queue-preparation.test.ts tests/unit/readiness-diagnostics.test.ts tests/unit/offline-training-regressions.test.tsx
+npm run test:unit -- tests/unit/desktop-queue-regressions.test.ts tests/unit/phone-queue-preparation-regressions.test.ts tests/unit/queue-readiness-diagnostics-regressions.test.ts tests/unit/offline-training-regressions.test.ts
 node --test tests/runner/postgres-test-speedups.test.mjs
 make python-file FILE=backend/tests/test_prepared_review_continuation.py
 make python-file FILE=backend/tests/test_training_transition_fixture.py
