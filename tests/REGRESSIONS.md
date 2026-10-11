@@ -3878,7 +3878,7 @@ PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2
 
 All named cases below live in `backend/tests/test_opening_frontier.py` and run in
 the regular backend gate. The new contract reuses #151; #134 exposure, #149 math,
-#153 readiness and #170 propagation are retained. Pending #176 owns valuation.
+#153 readiness and #170 propagation are retained. Merged #176 owns valuation.
 
 - `test_policy_frontier_foreign_route_cannot_establish_selected_policy_eligibility` proves a globally eligible shared card remains blocked under the selected unexposed route. Before implementation its fixture confirmed the global eligibility, then failed because the new policy API was absent; no pre-existing production defect is claimed.
 - `test_policy_frontier_preserves_durable_exposure_without_maturity` retains failed learning-state practice, queued-only exclusion, invalidation, unchanged-card re-import exposure, and changed-prefix isolation.
@@ -3895,3 +3895,4 @@ the regular backend gate. The new contract reuses #151; #134 exposure, #149 math
 - `test_policy_frontier_durable_game_obligations_remain_scoped_annotations` carries deduplicated qualified game provenance without exposing prerequisites or borrowing foreign obligations.
 - `test_policy_frontier_is_detached_read_only_and_order_independent` forbids file/network/database/clock/FSRS scheduling access, verifies immutable and detached results, and covers permutations and duplicate evidence.
 - `test_policy_frontier_empty_scope_and_unbound_cards_have_no_implicit_candidates` preserves empty/unbound scope without invented roots or eligibility.
+- `test_policy_frontier_composes_with_merged_valuation_adapter_without_fabricating_effects` carries actual frontier provenance through merged #176, consumes its real reach/readiness outputs, and leaves a missing effect unscorable despite sequence eligibility.

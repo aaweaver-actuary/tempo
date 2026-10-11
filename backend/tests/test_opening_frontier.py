@@ -1,7 +1,7 @@
 """Sequence eligibility contracts, independent of production admissions."""
 
 from copy import deepcopy
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, asdict, replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -738,3 +738,38 @@ def test_policy_frontier_empty_scope_and_unbound_cards_have_no_implicit_candidat
     result = frontier_contract.project_policy_opening_frontier(_snapshot(), policy=policy, route_bindings=())
     assert result.eligible_card_ids == ()
     assert all(card.eligibility.reasons == ("no_current_route",) for card in result.cards)
+
+
+def test_policy_frontier_composes_with_merged_valuation_adapter_without_fabricating_effects():
+    from app.services import opening_card_valuation as valuation
+    from app.services.opening_ranking_evaluation import OpeningRankingCandidate, canonical_json
+    from test_opening_card_valuation import fixture
+
+    current = fixture()
+    route = _route("line", ITALIAN, repertoire_id="italian")
+    route = replace(route, publication=replace(route.publication, generation=7))
+    snapshot = _snapshot(route, reviewed=tuple(step.card_id for step in route.steps[:2]))
+    selected = _policy_card(_policy_projection(snapshot, route, policy=current.policy), route.steps[2].card_id)
+    assert selected.eligibility.status == "eligible"
+    affected = tuple(value.decision_id for value in selected.decisions)
+    metadata = {"frontier": asdict(selected)}
+    candidate = valuation.ValuationCandidate(
+        OpeningRankingCandidate(selected.eligibility.card_id, 1, canonical_json(metadata), policy_id="italian"),
+        1, 1, affected, (("generation-7", "line"),),
+        CardLearningEffect(selected.eligibility.card_id, ((affected[0], ProbabilityEvidence.exact(.8)),),
+                           policy_id="italian"), "explicit-fixture-effect-v1")
+    result = valuation.evaluate_opening_card_valuation(replace(current, candidates=(candidate,)))
+    row = result["evaluations"][0]["rows"][0]
+    assert row["score"] == pytest.approx(.42 * .50 * .8)
+    assert row["metadata"]["frontier"] == json.loads(canonical_json(asdict(selected)))
+    supplied = _valuation_input(snapshot, current.policy, route, route.steps[2],
+        reach=ProbabilityEvidence(**row["metadata"]["valuation"]["reach"][0]["probability"]),
+        readiness=ProbabilityEvidence(**row["metadata"]["valuation"]["readiness"][affected[0]]["recall"]))
+    supplied = replace(supplied, provenance=(valuation.VALUATION_VERSION, current.as_of.isoformat()))
+    enriched = _policy_card(_policy_projection(snapshot, route, policy=current.policy,
+                                               valuation_inputs=(supplied,)), supplied.card_id)
+    assert enriched.decisions == (supplied,)
+    assert supplied.readiness == ProbabilityEvidence.exact(0)
+    missing_effect = valuation.evaluate_opening_card_valuation(
+        replace(current, candidates=(replace(candidate, effect=None, effect_reference=None),)))
+    assert missing_effect["evaluations"][0]["rows"][0]["score"] is None

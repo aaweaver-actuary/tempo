@@ -193,9 +193,13 @@ Use #170's already propagated decision probabilities and #153's already derived
 decision-level readiness (including its unknowns) to supply these records.
 Source-provenance strings retain their versions, context and fixed-as-of references.
 This API performs no propagation, readiness estimation, preparedness calculation or
-ranking. #149 owns that mathematics; pending #176 owns valuation orchestration.
+ranking. #149 owns that mathematics; merged #176 owns valuation orchestration.
 Its separate policy-version and publication/line inputs can consume this contract
 upstream without an import of unmerged code or a competing scoring implementation.
+A direct compatibility regression retains frontier metadata through that actual
+adapter, consumes its reach/readiness outputs, and proves an eligible candidate
+with no supplied learning effect remains unscorable. #176 merged while this task
+was in development; the final candidate is based on its current-main merge.
 
 Caller-qualified durable game obligations remain scoped annotations. A nonempty
 durable source ID is required, but the pure API does not certify raw game evidence
