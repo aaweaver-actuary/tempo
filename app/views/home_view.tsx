@@ -328,6 +328,7 @@ export default function Home() {
     transitionGeneration: number; conflicted: boolean } | undefined>(undefined);
   const progressionController = useRef<AbortController | undefined>(undefined);
   const progressionNotification = useRef<string | undefined>(undefined);
+  const preparedProgressionAttempt = useRef<{ attemptId?: string; generation: number } | undefined>(undefined);
   useEffect(() => () => {
     progressionController.current?.abort();
     if (progressionNotification.current && notifications().find(record => record.id === progressionNotification.current)?.active)
@@ -445,6 +446,27 @@ export default function Home() {
     },
     [checkPendingIntegrity],
   );
+  const reconcilePreparedQueue = useCommittedCallback(async () => {
+    const expectedAttempt = preparedProgressionAttempt.current;
+    const notice = progressionNotification.current;
+    if (!expectedAttempt) return;
+    const stillPrepared = () => preparedProgressionAttempt.current === expectedAttempt &&
+      useTrainingStore.getState().attempt.attemptId === expectedAttempt.attemptId &&
+      useTrainingStore.getState().attempt.generation === expectedAttempt.generation;
+    try {
+      const result = await fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true,
+        timeoutMs: 15_000, expectedAttempt, signal: progressionController.current?.signal });
+      if (!stillPrepared() || result === "superseded") return;
+      setQueueReconciliationError("");
+      if (notice) resolveNotification(notice, { severity: "success", message: "Result saved. Upcoming queue reconciled." });
+    } catch (error) {
+      if (!stillPrepared()) return;
+      if (notice) updateNotification(notice, { severity: "warning", active: false,
+        details: { attemptId: expectedAttempt.attemptId ?? "unknown", phase: "prepared reconciliation requires recovery", error: String(error) },
+        message: "Result saved. The prepared card is ready; retry loading the queue to reconcile upcoming cards." });
+      setQueueReconciliationError("Queue reconciliation is waiting. You can finish the prepared card.");
+    }
+  });
   const progressConfirmedReview = useCommittedCallback(async (completedCard: PracticeCard, attemptId: string,
     generation: number, transitionGeneration: number, conflicted: boolean = false, continuation?: PreparedContinuation) => {
     progressionController.current?.abort();
@@ -469,6 +491,7 @@ export default function Home() {
     };
     if (!stillDisplayed() || !ownsProgression()) { settleSuperseded(); return; }
     confirmedProgression.current = { card: completedCard, attemptId, generation, transitionGeneration, conflicted };
+    preparedProgressionAttempt.current = undefined;
     setQueueReconciliationError("");
     if (!conflicted) rememberConfirmedQueueEntry(completedCard);
     invalidateWorkspaceData();
@@ -477,14 +500,8 @@ export default function Home() {
       setSafeBreakCounter(count => count + 1);
       resolveNotification(notice, { severity: "success", details: { ...details, phase: "prepared continuation selected" },
         message: "Result saved. Next card loaded." });
-      const preparedAttempt = useTrainingStore.getState().attempt;
-      void fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true,
-        timeoutMs: 15_000, expectedAttempt: preparedAttempt, signal: controller.signal }).catch(() => {
-        if (!ownsProgression() || useTrainingStore.getState().attempt.attemptId !== preparedAttempt.attemptId) return;
-        updateNotification(notice, { severity: "warning", active: false, details: { ...details, phase: "progression recovery required" },
-          message: "Result saved. The prepared card is ready; retry loading the queue to reconcile upcoming cards." });
-        setQueueReconciliationError("Queue reconciliation is waiting. You can finish the prepared card.");
-      });
+      preparedProgressionAttempt.current = useTrainingStore.getState().attempt;
+      void reconcilePreparedQueue();
       void checkPendingIntegrity();
       return;
     }
@@ -594,6 +611,20 @@ export default function Home() {
     }
   }, [currentView, refreshDatabaseQueue]);
 
+  const refreshVisibleQueue = useCommittedCallback((preparePhoneQueue: boolean) => {
+    const activeAttempt = useTrainingStore.getState().attempt;
+    const progression = confirmedProgression.current;
+    // The confirmed-review owner controls loading and its two-attempt budget.
+    // A periodic/visibility refresh cannot supersede it or reset its recovery.
+    if (progression && progression.attemptId === activeAttempt.attemptId && progression.generation === activeAttempt.generation) return;
+    const preparedAttempt = preparedProgressionAttempt.current;
+    if (preparedAttempt && preparedAttempt.attemptId === activeAttempt.attemptId && preparedAttempt.generation === activeAttempt.generation) {
+      void reconcilePreparedQueue();
+      return;
+    }
+    void fetchAndInitializeQueue(false, { preparePhoneQueue, replaySavedReviews: false }).catch(() => undefined);
+  });
+
   useEffect(() => {
     if (!usesLocalApi() || currentView !== "train") return;
     let visibleRefreshCount = 0;
@@ -601,15 +632,13 @@ export default function Home() {
       if (document.visibilityState !== "visible") return;
       if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
       visibleRefreshCount = 0;
-      void fetchAndInitializeQueue(false, { preparePhoneQueue: true, replaySavedReviews: false }).catch(() => undefined);
+      refreshVisibleQueue(true);
     };
     const refreshTimer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
       visibleRefreshCount += 1;
-      void fetchAndInitializeQueue(false, {
-        preparePhoneQueue: visibleRefreshCount % 2 === 0, replaySavedReviews: false,
-      }).catch(() => undefined);
+      refreshVisibleQueue(visibleRefreshCount % 2 === 0);
     }, 30_000);
     window.addEventListener("online", refreshWhenVisible);
     document.addEventListener("visibilitychange", refreshWhenVisible);
@@ -618,7 +647,7 @@ export default function Home() {
       window.removeEventListener("online", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [currentView]);
+  }, [currentView, refreshVisibleQueue]);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -1755,16 +1784,7 @@ export default function Home() {
             <OfflineReviewConflicts />
             {queueReconciliationError && <div role="status">
               {queueReconciliationError}{" "}
-              <Button onClick={() => {
-                const expectedAttempt = useTrainingStore.getState().attempt;
-                const notice = progressionNotification.current;
-                void fetchAndInitializeQueue(false, { preservePreparedAttempt: true, replaySavedReviews: false,
-                  timeoutMs: 15_000, expectedAttempt, signal: progressionController.current?.signal }).then(result => {
-                  if (result === "superseded") return;
-                  setQueueReconciliationError("");
-                  if (notice) resolveNotification(notice, { severity: "success", message: "Result saved. Upcoming queue reconciled." });
-                }).catch(() => undefined);
-              }}>Retry loading the queue</Button>
+              <Button onClick={() => void reconcilePreparedQueue()}>Retry loading the queue</Button>
             </div>}
             {offlineQueue && (
               <div className="ui-notice training-offline-notice" role="status">
