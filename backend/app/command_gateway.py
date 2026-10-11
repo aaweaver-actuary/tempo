@@ -196,16 +196,25 @@ def defer_operation_for_foreground(operation_id: str, attempt_token: str) -> boo
         ).rowcount)
 
 
-def claim_recoverable_operation() -> dict[str, Any] | None:
+def claim_recoverable_operation(*, allowed_background_commands=None, paused_commands=()) -> dict[str, Any] | None:
     """Reserve one abandoned operation for broker redelivery."""
     with _writer_connection(True) as database:
+        admission_clause = ''
+        admission_parameters = ()
+        if allowed_background_commands is not None:
+            admission_clause = ' AND (NOT background OR command_name=ANY(%s))'
+            admission_parameters = (sorted(allowed_background_commands),)
+        if paused_commands:
+            admission_clause += ' AND NOT (command_name=ANY(%s))'
+            admission_parameters += (sorted(paused_commands),)
         row = database.raw.execute(
             "SELECT operation_id,command_name,payload_json,background FROM operation_receipts "
             "WHERE payload_json IS NOT NULL AND ("
             "(state='retrying' AND next_retry_at<=NOW()) OR "
             "(state='executing' AND lease_expires_at<=NOW()) OR "
             "(state='queued' AND updated_at<=NOW()-INTERVAL '30 seconds')) "
-            "ORDER BY updated_at,operation_id LIMIT 1 FOR UPDATE SKIP LOCKED",
+            + admission_clause + " ORDER BY updated_at,operation_id LIMIT 1 FOR UPDATE SKIP LOCKED",
+            admission_parameters,
         ).fetchone()
         if row is None:
             return None

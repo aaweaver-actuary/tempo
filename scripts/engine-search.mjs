@@ -15,7 +15,7 @@ export async function engineSearchAllowed(job, kind, request) {
     const control = await request(engineControlPath(job, kind), { signal: AbortSignal.timeout(1_500) });
     return kind === "engine_defense"
       ? control.search_allowed === true && control.foreground_active === false
-      : control.active === false;
+      : control.active === false && control.study_only_mode !== true;
   } catch {
     // A control outage cannot authorize continuing a background search.
     return false;
@@ -23,8 +23,11 @@ export async function engineSearchAllowed(job, kind, request) {
 }
 
 export async function admitEngineJob(job, kind, request) {
-  if (kind !== "engine_defense" || await engineSearchAllowed(job, kind, request)) return true;
-  await request(`/api/defensive-threats/analysis/${encodeURIComponent(job.id)}/release`, {
+  if (await engineSearchAllowed(job, kind, request)) return true;
+  const releasePath = kind === "engine_defense"
+    ? `/api/defensive-threats/analysis/${encodeURIComponent(job.id)}/release`
+    : `/api/games/analysis/position/${encodeURIComponent(job.id)}/release`;
+  await request(releasePath, {
     method: "POST", body: JSON.stringify({ lease_id: job.lease_id }),
   });
   return false;

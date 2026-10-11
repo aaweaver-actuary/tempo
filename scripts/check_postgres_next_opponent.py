@@ -401,11 +401,13 @@ def test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sourc
             assert [row[0] for row in database.execute(
                 "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 44))
             assert database.execute("SELECT to_regclass('next_opponent_accounts')").fetchone()[0] is None
-            settings_before = database.execute("SELECT * FROM settings").fetchall()
+            settings_cursor = database.execute("SELECT * FROM settings ORDER BY id")
+            historical_settings_columns = sql.SQL(',').join(sql.Identifier(column.name) for column in settings_cursor.description)
+            settings_before = settings_cursor.fetchall()
             turns_before = database.execute("SELECT * FROM background_scheduling_turns").fetchall()
         test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently(dsn)
         with psycopg.connect(dsn) as database:
-            assert database.execute("SELECT * FROM settings").fetchall() == settings_before
+            assert database.execute(sql.SQL("SELECT {} FROM settings ORDER BY id").format(historical_settings_columns)).fetchall() == settings_before
             assert database.execute("SELECT * FROM background_scheduling_turns").fetchall() == turns_before
         print("PASS test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sources")
     finally:
@@ -522,13 +524,15 @@ def _run_profile_proof():
             assert [row[0] for row in database.execute(
                 "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, 40))
             source_before = database.execute("SELECT * FROM imported_games ORDER BY id").fetchall()
-            settings_before = database.execute("SELECT * FROM settings ORDER BY id").fetchall()
+            settings_cursor = database.execute("SELECT * FROM settings ORDER BY id")
+            historical_settings_columns = sql.SQL(',').join(sql.Identifier(column.name) for column in settings_cursor.description)
+            settings_before = settings_cursor.fetchall()
         test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently(dsn)
         with psycopg.connect(dsn) as database:
             assert [row[0] for row in database.execute(
                 "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
             assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == source_before
-            assert database.execute("SELECT * FROM settings ORDER BY id").fetchall() == settings_before
+            assert database.execute(sql.SQL("SELECT {} FROM settings ORDER BY id").format(historical_settings_columns)).fetchall() == settings_before
             for schema_object in ('idx_opening_graph_current_roots', 'idx_opening_graph_mature_parent_candidates',
                                   'idx_cards_locked_openings', 'idx_cards_mature_parent',
                                   'next_opponent_accounts', 'next_opponent_snapshots'):

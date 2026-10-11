@@ -157,6 +157,31 @@ def test_queue_issuance_rejects_promotion_between_response_read_and_commit(queue
         assert connection.execute('SELECT SUM(issued_as_head) FROM queue_attempt_origins').fetchone()[0] == 0
 
 
+def test_superseded_queue_head_does_not_block_eligible_successor(queued_attempts):
+    with database.connection() as connection:
+        connection.execute("UPDATE cards SET superseded_by='later-b' WHERE id='active-a'")
+    response = TestClient(main.app).get('/api/queue/window?limit=1')
+    assert response.status_code == 200, response.text
+    assert response.json()['count'] == 1
+    assert [card['id'] for card in response.json()['cards']] == ['later-b']
+    assert main.queue_entry_state(queued_attempts['later-b'])['state'] == 'head'
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?',
+                                  (queued_attempts['later-b'],)).fetchone()[0] == 1
+        assert connection.execute('SELECT COUNT(*) FROM daily_queue').fetchone()[0] == 2
+
+
+def test_deleted_queue_head_is_excluded_from_payload_and_count(queued_attempts):
+    with database.connection() as connection:
+        connection.execute("INSERT INTO deleted_cards(card_id,deleted_at) VALUES('active-a',?)",
+                           (date.today().isoformat(),))
+    response = TestClient(main.app).get('/api/queue/window?limit=1')
+    assert response.status_code == 200, response.text
+    assert response.json()['count'] == 1
+    assert [card['id'] for card in response.json()['cards']] == ['later-b']
+    assert main.queue_entry_state(queued_attempts['later-b'])['state'] == 'head'
+
+
 def test_postgres_queue_issuance_uses_worker_and_never_returns_unconfirmed_head(queued_attempts, monkeypatch):
     from app import command_dispatch
     from fastapi.responses import JSONResponse

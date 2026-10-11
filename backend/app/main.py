@@ -20,7 +20,7 @@ import chess
 import chess.pgn
 import httpx
 import psycopg
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -859,7 +859,10 @@ def health():
 @app.get("/api/system/foreground-active")
 def foreground_active():
     """Allow the isolated engine worker to yield without acquiring SQLite."""
-    return {"active": activity_gate.foreground_waiting}
+    if activity_gate.foreground_waiting:
+        return {"active": True}
+    from .services.study_mode import study_only_enabled
+    return {"active": activity_gate.foreground_waiting, "study_only_mode": study_only_enabled()}
 
 
 @app.get("/api/system/foreground-requests-active")
@@ -999,7 +1002,7 @@ def capabilities():
 def get_settings():
     with read_connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -1023,15 +1026,16 @@ def put_settings(s: Settings,
     )
     def persist_settings(db):
         previous_settings = db.execute(
-            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,defensive_analysis_enabled=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,defensive_analysis_enabled=?,study_only_mode=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
                 s.defense_new_cards_per_day,
                 int(s.include_defensive_cards_in_daily_stack) if "include_defensive_cards_in_daily_stack" in s.model_fields_set else previous_settings["include_defensive_cards_in_daily_stack"],
                 int(s.defensive_analysis_enabled) if "defensive_analysis_enabled" in s.model_fields_set else previous_settings["defensive_analysis_enabled"],
+                int(s.study_only_mode) if "study_only_mode" in s.model_fields_set else previous_settings["study_only_mode"],
                 s.discovery_window_days,
                 s.initial_depth,
                 s.timezone,
@@ -1973,6 +1977,8 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                            LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
                            LEFT JOIN studies study ON study.id=exercise.study_id
                            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                             AND c.superseded_by IS NULL
+                             AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
                              AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
                              AND COALESCE(c.pending_validation,0)=0
                              AND (c.content_type!='study_exercise' OR
@@ -1980,10 +1986,13 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                                    AND (q.admission_kind='explicit' OR NOT EXISTS(
                                      SELECT 1 FROM study_sibling_burials burial
                                      WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
-                             AND (c.content_type!='opening' OR NOT EXISTS(
-                                 SELECT 1 FROM repertoire_integrity_card_blocks block
-                                 WHERE block.repertoire_id=r.id AND block.card_id=c.id
-                             ))
+                             AND (c.content_type!='opening' OR EXISTS(
+                                 SELECT 1 FROM repertoires repertoire
+                                 WHERE (repertoire.id=c.repertoire_id OR EXISTS(
+                                     SELECT 1 FROM repertoire_cards link
+                                     WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
+                                   AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                                       WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id)))
                            ORDER BY q.position,q.id"""
         if postgres_store.configured():
             # Resolve linked repertoires once as a set. The correlated SQLite
@@ -2061,24 +2070,9 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
             if encounter_count >= 3:
                 badges.append("Frequent")
             card["encounter_badges"] = badges
+        from .queue_commands import _AVAILABLE_ATTEMPT_SQL
         total_count = len(cards) if limit is None else db.execute(
-            """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
-               LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
-               LEFT JOIN studies study ON study.id=exercise.study_id
-               WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
-                 AND COALESCE(c.pending_validation,0)=0
-                 AND (c.content_type!='defense' OR
-                      (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-                 AND (c.content_type!='study_exercise' OR
-                      (exercise.status='published' AND study.archived=0
-                       AND (q.admission_kind='explicit' OR NOT EXISTS(
-                         SELECT 1 FROM study_sibling_burials burial
-                         WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
-                 AND (c.content_type!='opening' OR NOT EXISTS(
-                     SELECT 1 FROM repertoire_integrity_card_blocks block
-                     WHERE block.repertoire_id=COALESCE(c.repertoire_id,
-                       (SELECT rc.repertoire_id FROM repertoire_cards rc WHERE rc.card_id=c.id LIMIT 1))
-                       AND block.card_id=c.id))""",
+            "SELECT COUNT(*) FROM (" + _AVAILABLE_ATTEMPT_SQL + ") eligible_queue",
             (day,),
         ).fetchone()[0]
     if cards:
@@ -2170,6 +2164,9 @@ async def import_pgn(
     initial_depth: int | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
+    from .services.study_mode import study_only_enabled
+    if study_only_enabled():
+        raise HTTPException(409, "Imports are paused by Study-only mode. Turn it off in Settings to import this PGN.")
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(400, "Choose a .pgn file")
     if trained_color not in {"white", "black"}:
@@ -2466,6 +2463,15 @@ def list_repertoires():
     return {
         "repertoires": repertoire_items
     }
+
+
+@app.get("/api/repertoires/{identifier}/move-membership")
+def repertoire_move_membership(identifier: str, fen: str = Query(max_length=128),
+                              move_uci: str = Query(max_length=5),
+                              cursor: str = Query(default='', max_length=256),
+                              source_token: str | None = Query(default=None, max_length=64)):
+    from .services.repertoire_move_verification import verify_repertoire_move
+    return verify_repertoire_move(identifier, fen, move_uci, cursor, source_token)
 
 
 @app.get("/api/repertoire/lines")
@@ -2860,11 +2866,10 @@ def requeue(db, day, cid, after, attempt):
             (day,),
         ).fetchone()[0]
     else:
+        from .queue_commands import _AVAILABLE_ATTEMPT_SQL
         row = db.execute(
-            """SELECT q.position FROM daily_queue q JOIN cards c ON c.id=q.card_id
-               WHERE q.queue_date=? AND q.status='queued'
-                 AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-               ORDER BY q.position,q.id LIMIT 1 OFFSET ?""",
+            _AVAILABLE_ATTEMPT_SQL.replace("SELECT q.id FROM", "SELECT q.position FROM", 1)
+            + " ORDER BY q.position,q.id LIMIT 1 OFFSET ?",
             (day, max(0, after)),
         ).fetchone()
         position = (
@@ -2908,12 +2913,9 @@ def queue_entry_state(entry_id: int):
         if entry["status"] != "queued":
             return {"state": "completed" if entry["status"] == "complete" else "unavailable",
                     "attempt_failed": bool(entry["attempt_failed"])}
+        from .queue_commands import _AVAILABLE_ATTEMPT_SQL
         active_entry = database.execute(
-            """SELECT queue.id FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
-               WHERE queue.queue_date=? AND queue.status='queued'
-                 AND (card.content_type!='defense' OR
-                      (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-               ORDER BY queue.position,queue.id LIMIT 1""",
+            _AVAILABLE_ATTEMPT_SQL + " ORDER BY q.position,q.id LIMIT 1",
             (date.today().isoformat(),),
         ).fetchone()
     return {"state": "head" if active_entry and active_entry["id"] == entry_id else "queued",
@@ -4319,6 +4321,9 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str,
 
 @app.get("/api/repertoire-coverage/maia/available")
 def coverage_maia_available():
+    from .services.study_mode import study_only_enabled
+    if study_only_enabled():
+        return {"available": False, "paused_reason": "study_only_mode"}
     from .services.canonical_scope_freshness import coverage_scope_predicate, latest_coverage_attempt_predicate
     if not postgres_store.configured():
         return {"available": True}
@@ -5127,6 +5132,9 @@ def claim_game_analysis_position(
                 return JSONResponse(status_code=202,
                     content={"operation_id": idempotency_key, "state": receipt["state"]},
                     headers={"Location": f"/api/operations/{idempotency_key}"})
+        from .services.study_mode import study_only_enabled
+        if study_only_enabled():
+            return {"job": None, "paused_reason": "study_only_mode"}
         plan = prepare_position_claim(preferred_game_id) if preferred_game_id is not None else prepare_position_claim()
         if plan is None:
             return {"job": None}

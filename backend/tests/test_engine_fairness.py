@@ -254,7 +254,7 @@ def test_engine_position_journal_replays_receipt_before_preparing_stale_hint(eng
         assert json.loads(result.body)['operation_id'] == 'original-operation'
 
 
-def test_engine_position_hint_is_prepared_outside_write_and_forwarded_unchanged(engine_store, monkeypatch):
+def test_engine_position_hint_is_prepared_outside_write_and_forwarded_unchanged(normal_study_mode, engine_store, monkeypatch):
     from app import command_dispatch, game_analysis_commands
     from fastapi.testclient import TestClient
     selected = []

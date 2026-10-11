@@ -62,8 +62,9 @@ for (const width of [390, 1280]) {
       repertoires: [{ id: "visual-repertoire", name: "Spanish opening — tournament preparation" }, { id: "shared", name: "Shared tournament lines" }],
     } }));
     await navigate(page, "Train");
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
     const editCard = page.getByRole("button", { name: /Edit card/ });
-    if (!await editCard.isVisible()) await page.locator(".phone-study-actions summary").click();
+    if (width === 390) await page.locator(".phone-study-actions summary").click();
     await editCard.click();
     await expect(page.getByRole("button", { name: "Delete card", exact: true })).toHaveCSS("background-color", "rgb(160, 82, 61)");
     await page.getByRole("button", { name: "Delete card", exact: true }).click();
@@ -102,6 +103,8 @@ for (const viewport of [
           "8/8/8/7R/K7/8/8/6k1 w - - 0 1",
         );
       if (workspace === "Settings") {
+        await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeVisible();
+        await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).not.toBeChecked();
         await expect(page.getByRole("group", { name: "Spanish opening — tournament preparation daily limit" })).toBeVisible();
         await expect(page.getByText("Current limit: 10/day")).toBeVisible();
       }

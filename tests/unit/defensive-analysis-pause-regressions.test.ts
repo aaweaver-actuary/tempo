@@ -8,6 +8,17 @@ import { recoverNextEngineJob } from "../../scripts/engine-job-recovery.mjs";
 import { createDurableEngineRequest } from "../../scripts/durable-engine-request.mjs";
 import { runEngineWorkerCycle } from "../../scripts/engine-worker-cycle.mjs";
 
+it("study_only_mode_releases_recovered_game_work_before_computation", async () => {
+  const recovered = { id: "study-mode-job", lease_id: "preserved-lease", kind: "position" };
+  const request = vi.fn(async (path: string) => path === "/api/system/foreground-active"
+    ? { active: false, study_only_mode: true } : { ok: true });
+  expect(await admitEngineJob(recovered, "engine_game", request)).toBe(false);
+  expect(request).toHaveBeenLastCalledWith("/api/games/analysis/position/study-mode-job/release", {
+    method: "POST", body: JSON.stringify({ lease_id: "preserved-lease" }),
+  });
+  expect(await engineSearchAllowed(recovered, "engine_game", request)).toBe(false);
+});
+
 const job = { id: "defensive-request", lease_id: "current-lease", request: {
   position_start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
   position_prefix_uci: [], depth: 14, multipv: 1,
@@ -104,7 +115,7 @@ it("ordinary game searches retain foreground control and complete while defense 
   const engine = new Engine();
   const request = vi.fn().mockResolvedValue({ active: false });
   expect(await admitEngineJob(job, "engine_game", request)).toBe(true);
-  expect(request).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledWith("/api/system/foreground-active", expect.any(Object));
   const result = createEngineSearch(engine, request).evaluate(job, "engine_game");
   await vi.advanceTimersByTimeAsync(750);
   engine.finish();

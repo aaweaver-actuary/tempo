@@ -241,7 +241,7 @@ def test_issue107_missing_settings_is_service_error_not_unknown_account(monkeypa
     assert "check Tempo service status" in response.json()["detail"]
 
 
-def test_issue107_regular_worker_dispatch_completes_profile_receipt_once(monkeypatch):
+def test_issue107_regular_worker_dispatch_completes_profile_receipt_once(normal_study_mode, monkeypatch):
     from app import tasks
     claimed = {**task(), "kind": service.TASK_KIND, "generation": 1}
     calls = []

@@ -69,6 +69,18 @@ function successfulResults(planned) {
   return { needs, reports };
 }
 
+test("study_only_mode_browser_regression_is_registered_and_selected", () => {
+  const studyOnlySpec = "study-only-mode.spec.ts";
+  const collected = currentBrowserCases();
+  validateInventory([studyOnlySpec]);
+  assert(inventory.families.training.includes(studyOnlySpec));
+  const selected = verificationPlan({ commit: "revision", paths: [`tests/browser/${studyOnlySpec}`],
+    files, cases: collected });
+  const studyOnlyCases = selected.collection.filter(item => item.file === studyOnlySpec);
+  assert(studyOnlyCases.length > 0, "Study-only workflow must be collected by the regular browser suite");
+  assert(studyOnlyCases.every(item => item.selected), "Training family must select every study-only workflow case");
+});
+
 test("lifecycle-sensitive changes require deployment lifecycle verification", () => {
   for (const path of ["scripts/tempo-runtime.mjs", "scripts/tempo-deployment.mjs", "scripts/tempo-cli.mjs",
     "scripts/check-tempo-cli.mjs", "docker-compose.yml", "docker-compose.postgres-maintenance.yml",

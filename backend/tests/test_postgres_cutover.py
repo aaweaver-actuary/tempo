@@ -27,6 +27,18 @@ from app.services import redis_admission_gate
 from app.services.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_SCHEMA
 
 
+@pytest.fixture(autouse=True)
+def normal_study_mode_for_protocol_doubles(monkeypatch):
+    """These isolated protocol doubles model normal mode without a settings pool.
+
+    Durable mode, migration and real admission are covered by test_study_only_mode
+    and the regular check_postgres_study_only.py PostgreSQL durability proof.
+    """
+    from app import tasks
+    from app.services import study_mode
+    monkeypatch.setattr(study_mode, 'study_only_enabled', lambda database=None: False)
+    monkeypatch.setattr(tasks, 'study_only_enabled', lambda database=None: False)
+
 
 @pytest.fixture
 def unscoped_canonical_prefix(monkeypatch):
@@ -4605,8 +4617,8 @@ def test_postgres_cutover_background_claim_fairly_orders_only_supported_kinds(mo
         database.row_factory = sqlite3.Row
         database.executescript(BACKGROUND_METRIC_SCHEMA)
         database.executescript("""
-            CREATE TABLE settings(id INTEGER PRIMARY KEY,defensive_analysis_enabled INTEGER);
-            INSERT INTO settings VALUES(1,1);
+            CREATE TABLE settings(id INTEGER PRIMARY KEY,defensive_analysis_enabled INTEGER,study_only_mode INTEGER);
+            INSERT INTO settings VALUES(1,1,0);
             CREATE TABLE background_tasks(
                 id TEXT PRIMARY KEY,kind TEXT,deduplication_key TEXT,replaced_pending_generation INTEGER DEFAULT 0,
                 generation INTEGER,priority INTEGER,state TEXT,phase TEXT,

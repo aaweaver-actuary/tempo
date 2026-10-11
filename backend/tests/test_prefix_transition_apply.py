@@ -173,7 +173,7 @@ def test_issue80_checkpoint_locks_original_card_and_rejects_retirement_before_ev
     ]
 
 
-def test_issue80_external_worker_claims_transition_slices_and_owns_atomic_cursor_completion(monkeypatch):
+def test_issue80_external_worker_claims_transition_slices_and_owns_atomic_cursor_completion(normal_study_mode, monkeypatch):
     from app import tasks
     from app.services import prefix_transition_application as application
     assert application.TASK_KIND in tasks._SUPPORTED_BACKGROUND_KINDS

@@ -82,6 +82,11 @@ export function useGameSync() {
       const settingsResponse = await (manual ? fetch : backgroundFetch)(`${API_URL}/api/settings`);
       const settings = await readJsonResponse(settingsResponse, settingsResponseSchema, "game sync settings", { endpoint: failedEndpoint, reportHttpFailure: false });
       interval.current = Number(settings.auto_sync_minutes ?? 3) * 60_000;
+      if (settings.study_only_mode) {
+        if (manual) publishState(current => current,
+          { message: "Game imports are paused by study-only mode. Turn it off in Settings to resume.", owner: "command" });
+        return;
+      }
       if (!settings.lichess_username && !settings.chesscom_username) {
         if (manual) publishState(current => current,
           { message: "Add a Lichess or Chess.com username in Settings.", owner: "command" });

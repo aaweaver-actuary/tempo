@@ -59,11 +59,15 @@ let sourceLines: ReturnType<typeof line>[];
 let lineRequests: number;
 let nextLineRead: Promise<Response> | undefined;
 let responseJournal: ReturnType<typeof vi.fn>;
+let studyOnlyMode: boolean;
+let membershipRead: Promise<Response> | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   sourceLines = [line("alternative")]; lineRequests = 0; nextLineRead = undefined;
+  studyOnlyMode = false;
+  membershipRead = undefined;
   responseJournal = vi.fn();
   vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ response: responseJournal,
@@ -75,6 +79,8 @@ beforeEach(() => {
     return "installed";
   });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/api/settings")) return Response.json({ study_only_mode: studyOnlyMode });
+    if (String(input).includes("/move-membership?")) return membershipRead ?? Response.json({ verified: true, next_cursor: null, source_token: "saved-source-1" });
     if (String(input).includes("/repertoire/lines")) {
       lineRequests++;
       const heldRead = nextLineRead; nextLineRead = undefined;
@@ -84,6 +90,58 @@ beforeEach(() => {
   }));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("study_only_mode_pauses_bulk_preparation_preserves_expected_moves_and_resumes", async () => {
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  studyOnlyMode = true;
+  render(<Home />);
+  await waitFor(() => expect(screen.getByText(/Study-only mode is on. Optional/)).toBeTruthy());
+  expect(lineRequests).toBe(0);
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  await play("e2e4");
+  expect(useTrainingStore.getState().getCard().backendId).toBe(card.backendId);
+  expect(responseJournal).toHaveBeenCalled();
+  studyOnlyMode = false;
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  await waitFor(() => expect(lineRequests).toBe(1));
+});
+
+it("study_only_mode_verifies_non_expected_move_from_saved_sources_without_bulk_preparation", async () => {
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  studyOnlyMode = true;
+  render(<Home />);
+  await waitFor(() => expect(screen.getByText(/Study-only mode is on. Optional/)).toBeTruthy());
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  await play("d2d4");
+  await waitFor(() => expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "alternate"));
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
+  expect(lineRequests).toBe(0);
+  expect(screen.getByText(/Valid repertoire move/)).toBeTruthy();
+});
+
+it.each(["wrong", "unavailable", "cancelled"])("study_only_move_verification_preserves_grading_and_rejects_obsolete_results (%s)", async scenario => {
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  studyOnlyMode = true;
+  let finishRead!: (response: Response) => void;
+  membershipRead = scenario === "cancelled" ? new Promise(resolve => { finishRead = resolve; })
+    : Promise.resolve(scenario === "unavailable" ? new Response("unavailable", { status: 503 })
+      : Response.json({ verified: false, next_cursor: null, source_token: "current-source" }));
+  render(<Home />);
+  await waitFor(() => expect(screen.getByText(/Study-only mode is on. Optional/)).toBeTruthy());
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  if (scenario === "cancelled") {
+    act(() => { void useBoardShellStore.getState().board.onMove?.("c2", "c4"); });
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/move-membership?'))).toBe(true));
+    act(() => useTrainingStore.getState().hydrateLocalQueue([otherCard], true));
+    await act(async () => finishRead(Response.json({ verified: false, next_cursor: null, source_token: "current-source" })));
+    expect(responseJournal).not.toHaveBeenCalled();
+  } else {
+    await play("c2c4");
+    expect(responseJournal).toHaveBeenLastCalledWith(0, "c2c4", scenario === "wrong" ? "wrong" : "unverified");
+  }
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(scenario === "wrong");
+  expect(lineRequests).toBe(0);
+});
 
 async function readyHome() {
   const prepare = vi.spyOn(study, "runStudyTask");

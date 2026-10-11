@@ -1353,6 +1353,7 @@ def initialize() -> None:
                 "defense_new_cards_per_day": "INTEGER NOT NULL DEFAULT 5",
                 "include_defensive_cards_in_daily_stack": "INTEGER NOT NULL DEFAULT 1",
                 "defensive_analysis_enabled": "INTEGER NOT NULL DEFAULT 0",
+                "study_only_mode": "INTEGER NOT NULL DEFAULT 0",
                 "discovery_window_days": "INTEGER NOT NULL DEFAULT 90",
             },
             "repertoires": {
