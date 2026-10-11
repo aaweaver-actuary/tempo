@@ -137,6 +137,22 @@ it("issue186_authoritative_empty_queue_settles_saved_progression", async () => {
     message: "Result saved. Training queue complete." });
 });
 
+it("issue186_ordinary_reconnection_replays_saved_reviews_without_replacing_active_attempt", async () => {
+  await readyHome();
+  const activeAttempt = useTrainingStore.getState().attempt;
+  reviewResponse = async url => url.includes("/api/operations/")
+    ? new Response(null, { status: 404 }) : Response.json({ persisted: true });
+  enqueuePendingReview({ backendId: "earlier-card", queueEntryId: 11,
+    attemptId: "earlier-offline-result", outcome: "correct", guided: false });
+  await act(async () => { window.dispatchEvent(new Event("online")); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(reviewPosts()).toHaveLength(1);
+  expect(String(reviewPosts()[0][0])).toContain("/api/cards/earlier-card/review");
+  expect(pendingReviews()).toEqual([]);
+  expect(useTrainingStore.getState().attempt).toEqual(activeAttempt);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
+});
+
 it.each(["fallback", "prepared"])("issue186_periodic_refresh_preserves_progression_owner: %s", async path => {
   const refreshIntervals: (() => void)[] = [];
   const originalInterval = window.setInterval.bind(window);
