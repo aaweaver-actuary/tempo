@@ -4054,3 +4054,18 @@ and unlocked edits are replaced with assertions of corrected behavior; originals
 remain in the audit. Backend `test_pr187_audit_contract.py` covers authoritative
 unknown/unavailable status and original-envelope retry 202/409/503 contracts with
 mocked seams, not database durability.
+
+- `audit187_true_reload_after_total_journal_loss_must_rediscover_original_operation`
+  in the regular prefix browser spec is an active failing **BLOCKED** acceptance
+  criterion. It admits a real PostgreSQL operation, deletes its journal, performs
+  a real page reload, and requires recovery of the original ID without redelivery.
+  No skip, expected-failure annotation or weakened assertion is used.
+- `audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity`
+  and `audit187_retry_503_checks_status_first_and_returns_actionable_controls`
+  exercise real browser storage/events/UI with deterministic transport seams.
+- `test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id`
+  is integrated into the regular PostgreSQL prefix application proof. It preserves
+  the audited native receipt/payload, rejects a fenced edit, proves broker refusal
+  leaves the receipt unchanged, verifies original-cycle recovery and one business
+  effect, and rejects blocked retry after verified completion. Diagnostic ID
+  enumeration is explicitly distinguished from full browser rediscovery.

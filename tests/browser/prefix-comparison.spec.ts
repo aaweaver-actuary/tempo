@@ -403,3 +403,73 @@ test("issue81_mobile_confirmation_and_recovery_remain_usable and issue81_confirm
   await expect(recoveryHeading).toBeFocused(); await expect(recoveryHeading).toBeInViewport();
   expect(control.operationId).toBe(operationId); expect(control.deliveries).toBe(1);
 });
+
+// Active acceptance blocker: a real navigation destroys the module's session registry.
+// This case intentionally remains failing until durable rediscovery is available.
+test("audit187_true_reload_after_total_journal_loss_must_rediscover_original_operation", async ({ page, request }) => {
+  test.setTimeout(240_000);
+  const label = "audit187-total-journal-loss";
+  const { repertoireId, source } = await importTransitionRepertoire(request, label);
+  let operationId = ""; let deliveries = 0;
+  await page.route("**/prefix-transition/apply", async route => {
+    ++deliveries; operationId = route.request().headers()["idempotency-key"];
+    await route.fetch(); // Admission is real; erase only browser recovery data below.
+    await route.abort("failed");
+  });
+  let statusReads = 0;
+  await page.route("**/api/operations/*", route => ++statusReads === 1 ? route.continue() : route.abort("failed"));
+  await openRepertoireWithoutStartingStudy(page);
+  const { dialog } = await openShortening(page, label, source);
+  await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
+  await expect.poll(() => deliveries).toBe(1);
+  await expect(dialog.getByRole("heading", { name: "Delivery unconfirmed" })).toBeVisible();
+  await expect.poll(async () => {
+    const response = await request.get(`${api}/operations/${operationId}`);
+    return response.ok() && (await response.json()).state !== "unknown";
+  }, { timeout: 30_000, message: "Original operation has a durable server receipt before browser identity loss" }).toBe(true);
+  await page.evaluate(id => localStorage.removeItem(`tempo-pending-prefix-transition-v1:${encodeURIComponent(id)}`), repertoireId);
+  await page.unroute("**/api/operations/*");
+  await page.reload(); await nav(page, "Repertoire");
+  expect(await page.evaluate(id => localStorage.getItem(`tempo-pending-prefix-transition-v1:${encodeURIComponent(id)}`), repertoireId)).toBeNull();
+  const resume = page.getByRole("button", { name: "Resume prefix transition", exact: true });
+  await expect(resume, "BLOCKED: current backend/UI cannot rediscover a durable operation by repertoire after total browser identity loss").toBeVisible();
+  await resume.click();
+  await page.getByRole("dialog").locator("summary", { hasText: "Recovery identity" }).click();
+  await expect(page.getByRole("dialog").getByText(operationId, { exact: false })).toBeVisible();
+  expect(deliveries).toBe(1);
+});
+
+test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity", async ({ page }) => {
+  const { control, dialog, card } = await mockTransitionUI(page); control.state = "blocked";
+  await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Retry publication recovery" })).toBeEnabled();
+  const originalId = control.operationId;
+  await page.evaluate(() => localStorage.removeItem("tempo-pending-prefix-transition-v1:rep"));
+  await expect(dialog.getByRole("button", { name: "Restore saved recovery record" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close window" }).click();
+  await expect(page.getByRole("button", { name: "Resume prefix transition", exact: true })).toBeVisible();
+  await card.locator("details.card-menu summary").click();
+  await expect(card.getByRole("menuitem", { name: "Rename", exact: true })).toBeDisabled();
+  await card.locator("details.card-menu summary").click();
+  await page.getByRole("button", { name: "Resume prefix transition", exact: true }).click();
+  await dialog.getByRole("button", { name: "Restore saved recovery record" }).click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-transition-v1:rep")!).operationId)).toBe(originalId);
+  expect(control.deliveries).toBe(1); expect(control.retries).toBe(0);
+});
+
+test("audit187_retry_503_checks_status_first_and_returns_actionable_controls", async ({ page }) => {
+  const { control, dialog } = await mockTransitionUI(page); control.state = "blocked";
+  await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Retry publication recovery" })).toBeEnabled();
+  const requests: string[] = [];
+  await page.route("**/api/operations/**", route => {
+    requests.push(route.request().method());
+    if (route.request().method() === "POST") return route.fulfill({ status: 503, json: { detail: "Save queue unavailable; blocked operation remains durable" } });
+    return route.fulfill({ json: { operation_id: control.operationId, state: "blocked" } });
+  });
+  await dialog.getByRole("button", { name: "Retry publication recovery" }).click();
+  await expect(dialog.getByText(/HTTP 503/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Check status" })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Retry publication recovery" })).toBeEnabled();
+  expect(requests).toEqual(["GET", "POST", "GET"]); expect(control.deliveries).toBe(1);
+});
