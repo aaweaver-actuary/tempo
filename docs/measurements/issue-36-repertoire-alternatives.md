@@ -152,11 +152,12 @@ Both runners removed their exact project-owned containers, volumes, networks and
 images; independent filtered inventories confirmed absence. Projects:
 `tempo-pg-regressions-29170-b51531aa` (recovery) and
 `tempo-pg-regressions-37865-7ae690cb` (held drag). Cleanup uses the runner's exact
-project and generated Compose inputs with `down -v --rmi local --remove-orphans`.
-Built image configuration hashes and teardown identifiers are in the preserved
-logs; the late resource audit retained one container ID, while the bounded Docker
-event history could not recover all already-removed container IDs. No claim of
-complete historical container-ID inventory or measured disk recovery is made.
+project and generated Compose inputs with `down --rmi local -v`.
+The runner's preserved `test-results/tempo-cli/<project>/ownership.json` files
+record every owned container/image ID, creation/start times, checkout/revision,
+volume identity and exact teardown arguments. The independent late audit verified
+absence; the runner's pre-teardown ownership snapshot supplies the complete
+resource inventory. No measured disk-recovery claim is made.
 Live study resources, unrelated resources, shared base images and safe build
 caches were retained.
 
