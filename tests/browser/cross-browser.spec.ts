@@ -6,8 +6,6 @@ import { prefixTransitionPlanSchema, transitionSummary } from "../../app/domain/
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
-import { prefixTransitionPlanSchema, transitionSummary } from "../../app/domain/prefix-transition";
-import { prefixSourceSchema } from "../../app/domain/prefix-comparison";
 
 const structuralFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8")) as typeof import("../fixtures/prefix-comparison/structural.json");
 const transitionFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/transition.json", "utf8")) as typeof import("../fixtures/prefix-comparison/transition.json");
