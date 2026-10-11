@@ -3,7 +3,7 @@ import { routeMovetext, type PrefixSource } from "../domain/prefix-comparison";
 import { transitionRequest, transitionSummary, type PrefixTransitionPlan, type PrefixTransitionRequest, type PrefixTransitionSummary } from "../domain/prefix-transition";
 import { planPrefixTransition, PrefixPreviewError } from "../lib/prefix-comparison";
 import { reservePrefixTransition, clearResolvedPrefixTransition, readPrefixTransition, recoverPrefixTransition,
-  prefixTransitionRecoveryIssue, knownPrefixTransitions, restorePrefixTransitionJournal, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
+  prefixTransitionRecoveryIssue, hasPrefixTransitionJournalLocks, knownPrefixTransitions, restorePrefixTransitionJournal, subscribePrefixTransitions, unresolvedPrefixTransition, type PrefixTransitionOperation } from "../lib/prefix-transition-command";
 import { Button } from "./buttons/BaseButton";
 
 function TransitionConsequences({ summary, request }: { summary: PrefixTransitionSummary; request: PrefixTransitionRequest }) {
@@ -156,7 +156,8 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
       {unresolvedPrefixTransition(operation) && <>
         <p>Conflicting structural edits remain paused. You may close this dialog and resume from the repertoire notice.</p>
         <Button disabled={busy} onClick={() => void recover()}>Check status</Button>
-        {operation.state === "blocked" && <Button disabled={busy} onClick={() => void recover(true)}>Retry publication recovery</Button>}
+        {operation.state === "blocked" && <Button disabled={busy || Boolean(operation.journalMissing) || !hasPrefixTransitionJournalLocks()
+          || Boolean(prefixTransitionRecoveryIssue(repertoireId))} onClick={() => void recover(true)}>Retry publication recovery</Button>}
       </>}
       {operation.state === "published" && <Button disabled={busy} onClick={() => void recover()}>Refresh published comparison</Button>}
       {["failed", "stale"].includes(operation.state) && <Button disabled={busy} onClick={() => {

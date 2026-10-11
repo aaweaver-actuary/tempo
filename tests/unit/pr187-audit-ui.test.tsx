@@ -101,3 +101,15 @@ it('audit187_unreadable_journal_remount_keeps_original_status_controls_and_verif
  fireEvent.click(check);await screen.findByRole('heading',{name:'Prefix transition published'});
  expect(localStorage.getItem(key)).toBe('broken');expect(fetcher).toHaveBeenCalledOnce();expect(fetcher.mock.calls[0][1]?.method).not.toBe('POST');
 });
+
+it.each(['missing','locks','unreadable'] as const)('audit187_%s_journal_mutation_unavailable_disables_retry_but_keeps_check_status',async failure=>{
+ const original=await reserve('blocked');readPrefixTransition('rep');
+ if(failure==='missing')localStorage.removeItem(key);
+ if(failure==='unreadable')localStorage.setItem(key,'broken');
+ if(failure==='locks')vi.stubGlobal('navigator',new Proxy(navigator,{get(target,property){return property==='locks'?undefined:Reflect.get(target,property,target);}}));
+ const fetcher=vi.fn<typeof fetch>(async()=>receipt(original.operationId,'blocked'));vi.stubGlobal('fetch',fetcher);panel();
+ const check=await screen.findByRole('button',{name:'Check status'});await waitFor(()=>expect((check as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByRole('button',{name:'Retry publication recovery'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(check);await waitFor(()=>expect((check as HTMLButtonElement).disabled).toBe(false));
+ expect(fetcher.mock.calls.length).toBeGreaterThan(0);expect(fetcher.mock.calls.every(([,options])=>options?.method!=='POST')).toBe(true);
+});

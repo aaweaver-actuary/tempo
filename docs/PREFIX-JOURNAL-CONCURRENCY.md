@@ -43,7 +43,8 @@ checked at runtime. Browsers/contexts without usable Web Locks cannot reserve,
 clear, or dispatch a new transition. The error identifies the required browser
 and origin. There is no read/check/write localStorage fallback or IndexedDB
 coordination subsystem. Known identities remain available for read-only status
-inspection. Study and inspection remain available independently of mutation
+inspection. Retry stays disabled while the journal or serialization is unavailable;
+Check status stays usable. Study and inspection remain available independently of mutation
 admission. See the [Web Locks API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API).
 
 ## Recovery and loss of browser data

@@ -4116,6 +4116,8 @@ Journal capability and recovery boundary follow-ups:
 - `audit187_reviewed_planner_evidence_rejects_mismatched_{snapshot_id,transition_snapshot_id,graph_generation,plan_id,candidate_depths,affected_scope}_before_identity` binds the original reviewed planner/source to the frozen request and exact scope before UUID allocation.
 - `audit187_stored_planner_evidence_rejects_valid_shape_omitted_shared_scope_after_reload` resets session memory and rejects a still-targeted summary that omits a membership present in its saved reviewed planner. The immutable approval is retained; no fresh plan reconstruction is used.
 
+- `audit187_{missing,locks,unreadable}_journal_mutation_unavailable_disables_retry_but_keeps_check_status` keeps status-only recovery truthful: Retry is disabled when persistence or serialization cannot authorize delivery, Check status remains enabled, and all observed requests remain GET. All three schedules fail against the previous enabled Retry control and pass after correction.
+
 ## #81 structural admission at final dispatch
 
 `prefix-structural-command-regressions.test.ts` registers
