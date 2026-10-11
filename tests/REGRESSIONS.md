@@ -2960,6 +2960,8 @@ Stalemate Swindles (October 5, 2026):
 
 ## PR #91 external archive cancellation — October 8, 2026
 
+- `test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children` proves both TERM-resistant stages receive one shared termination deadline and both are killed before either is reaped. PR #172 current-base CI `38097726441` exceeded the existing 20-second cancellation deadline; unchanged local reproduction passed in 16.21 seconds, and captured thread state confirmed sequential shutdown waits. The deterministic regression failed before the repair (second kill at ten seconds rather than five). Real pipe, owned-PID, output-certification and signal-status assertions remain required. Failure-only thread dumps now preserve the original shutdown boundary; exact historical CI signal timing remains unavailable.
+
 - `test_stalemate_archive_external_cancellation_reaps_owned_children` covers Ctrl-C and TERM while real archive pipes are blocked, with ordinary and TERM-resistant children. The pre-fix TERM cases failed by leaving children and inherited pipes alive. Each repaired case proves signal-appropriate exit, both owned PIDs absent, no certified final pair and no staging files.
 - `test_stalemate_cli_cancellation_restores_signal_handlers_and_defers_repeated_signals` protects one cleanup unwind and restoration after cancellation and successful commands. CLI signal handling stays outside application/runtime behavior. Timeout diagnostics clean up exact fixture-owned processes without process-group signals.
 
