@@ -21,6 +21,16 @@ async function prepareReservation(request: APIRequestContext, label: string) {
     source = prefixSourceSchema.parse(await response.json());
     return source.graph_generation > 0;
   }, { timeout: 30_000, message: "Authoritative source publication before browser reservation" }).toBe(true);
+  await expect.poll(async () => {
+    const integrityResponse = await request.get(`${api}/repertoires/${repertoireId}/integrity`);
+    expect(integrityResponse.ok()).toBe(true);
+    const integrity = await integrityResponse.json();
+    const queueResponse = await request.get(`${api}/queue/today`);
+    expect(queueResponse.ok()).toBe(true);
+    const projection = (await queueResponse.json()).projection;
+    return integrity.status === "clean" && integrity.scan_status === "idle"
+      && projection.state === "ready" && projection.refresh_pending === 0;
+  }, { timeout: 30_000, message: "Authoritative import integrity and queue settle before approved browser reservation" }).toBe(true);
   const depths = Object.fromEntries(source!.lines.map(line => [line.id, 2]));
   const response = await request.post(`${api}/repertoires/${repertoireId}/prefix-transition/plan`, {
     data: { snapshot_id: source!.snapshot_id, selected_line_ids: source!.lines.map(line => line.id), candidate_depths: depths },
