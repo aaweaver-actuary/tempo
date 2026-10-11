@@ -226,3 +226,17 @@ for (const unavailableChannel of ["missing", "constructor_error"] as const) {
     expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBeNull();
   });
 }
+
+it("issue81_immediate_transport_failure_is_handled_while_storage_commit_remains_locked", async () => {
+  localStorage.removeItem(prefixKey);
+  const unhandledRejection = vi.fn();
+  process.on("unhandledRejection", unhandledRejection);
+  const fetcher = vi.fn(() => Promise.reject(new TypeError("Immediate network failure")));
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    await expect(deleteRepertoireCommand("rep")).rejects.toThrow("Immediate network failure");
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).not.toBeNull();
+    expect(unhandledRejection).not.toHaveBeenCalled();
+  } finally { process.off("unhandledRejection", unhandledRejection); }
+});

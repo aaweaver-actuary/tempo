@@ -4174,3 +4174,7 @@ allocates no removal identity; complete canonical/deletion scopes stay eligible.
 - `issue81_legacy_summary_cannot_authorize_apparently_independent_deletion` and `issue81_corrupt_reviewed_{snapshot_id,transition_snapshot_id,plan_id,graph_generation,candidate_depths}_suppresses_structural_request_even_when_route_ids_match` in `tests/unit/prefix-structural-command-regressions.test.ts` prove legacy uncertainty and altered planner evidence cannot send an apparently independent mutation or allocate its identity.
 
 - `issue81_{missing,constructor_error}_storage_publication_channel_suppresses_request_and_identity` in `tests/unit/prefix-structural-command-regressions.test.ts` requires the storage-publication primitive to be available before any request/identity side effect; late task-barrier failure cannot masquerade as rejected admission after delivery.
+
+- `issue81_immediate_transport_failure_is_handled_while_storage_commit_remains_locked` in `tests/unit/prefix-structural-command-regressions.test.ts` requires an immediately rejected request to have a rejection handler while storage publication finishes, preserving the original pending identity without awaiting network under the lock.
+
+- `issue81_open_deletion_dialog_pauses_when_storage_publication_capability_disappears` in `tests/unit/prefix-structural-editors-regressions.test.tsx` makes an open confirmation observe lost safe serialization while preserving its learned-card choice and available cancel action.

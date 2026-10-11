@@ -112,3 +112,17 @@ it("issue81_paused_paste_editor_can_check_completed_receipt_without_erasing_unsa
   expect(fetcher.mock.calls[0]).toHaveLength(1);
   expect((screen.getByRole("button", { name: "Save selected lines" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it("issue81_open_deletion_dialog_pauses_when_storage_publication_capability_disappears", async () => {
+  const mutations = await openLibrary();
+  fireEvent.click(openMenu().getByRole("menuitem", { name: "Delete" }));
+  fireEvent.click(screen.getByLabelText("Delete learned cards"));
+  await act(async () => {
+    vi.stubGlobal("MessageChannel", undefined);
+    window.dispatchEvent(new StorageEvent("storage", { key: prefixKey }));
+  });
+  expect((screen.getByRole("button", { name: "Delete repertoire" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Delete learned cards") as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(mutations).toHaveLength(0);
+});
