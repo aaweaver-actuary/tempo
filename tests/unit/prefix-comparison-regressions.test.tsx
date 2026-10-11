@@ -128,6 +128,14 @@ it("issue81_double_click_creates_one_operation_in_confirmation", async () => {
   expect(control.planReads).toBe(2);
   expect(control.deliveries[0].body).toEqual(transitionFixture.request);
 });
+it("issue81_recovery_status_receives_focus_after_confirmation", async () => {
+  const control = transitionFetch(); control.state = "blocked"; await reviewShortening();
+  const confirm = screen.getByRole("button", { name: "Confirm shortening" });
+  confirm.focus(); fireEvent.click(confirm);
+  const recoveryHeading = await screen.findByRole("heading", { name: "Prefix transition needs recovery" });
+  await waitFor(() => expect(document.activeElement).toBe(recoveryHeading));
+  expect(control.deliveries).toHaveLength(1);
+});
 it("issue81_preflight_foreground_deferral_revalidates_the_same_plan", async () => {
   const control = transitionFetch(); await reviewShortening(); control.deferPreflight = true;
   fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));

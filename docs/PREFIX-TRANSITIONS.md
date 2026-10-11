@@ -349,7 +349,9 @@ permits at most one replay of the original identity and payload per recovery act
 Transport failure alone cannot authorize a replay or clear the journal.
 
 Pending, delivery-unconfirmed, stale, blocked, failed, and published states remain
-distinct. A blocked publication resumes through the existing operation retry endpoint;
+distinct. State changes and service errors focus the dialog heading so progress and
+recovery controls remain visible after confirming from the bottom of the dialog.
+A blocked publication resumes through the existing operation retry endpoint;
 it does not claim the activated graph was rolled back. A terminal rejection offers a
 fresh comparison. HTTP acknowledgments and receipt creation never display success.
 Success requires a matching complete operation/result and complete transition progress,

@@ -379,7 +379,7 @@ test("issue81_blocked_publication_retries_the_original_operation", async ({ page
   expect(control.retries).toBe(1); expect(control.deliveries).toBe(1); expect(control.operationId).toBe(operationId);
 });
 test("issue81_mobile_confirmation_and_recovery_remain_usable and issue81_confirmation_matches_exact_scope_and_counts", async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 }); const { dialog } = await mockTransitionUI(page);
+  await page.setViewportSize({ width: 390, height: 844 }); const { dialog, control } = await mockTransitionUI(page);
   await expect(dialog.getByRole("region", { name: "Exact transition consequences" })).toContainText("Selected source routes: 2");
   await expect(dialog.locator(".prefix-transition-counts")).toContainText("Unchanged4Reused0Added1Retired1Retained shared0");
   await expect(dialog.getByText(/b · learner-decision depth 3 → 2/)).toBeVisible();
@@ -388,5 +388,18 @@ test("issue81_mobile_confirmation_and_recovery_remain_usable and issue81_confirm
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   const screenshot = testInfo.outputPath("issue81-mobile-confirmation.png"); await page.screenshot({ path: screenshot });
   await testInfo.attach("mobile-confirmation", { path: screenshot, contentType: "image/png" });
+  control.state = "blocked";
+  await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
+  const recoveryHeading = dialog.getByRole("heading", { name: "Prefix transition needs recovery", exact: true });
+  await expect(recoveryHeading).toBeFocused(); await expect(recoveryHeading).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "Check status", exact: true })).toBeInViewport();
+  const recoveryButton = await dialog.getByRole("button", { name: "Retry publication recovery", exact: true }).boundingBox();
+  expect(recoveryButton!.height).toBeGreaterThanOrEqual(44);
+  const operationId = control.operationId; expect(operationId).not.toBe("");
+  const recoveryScreenshot = testInfo.outputPath("issue81-mobile-recovery.png"); await page.screenshot({ path: recoveryScreenshot });
+  await testInfo.attach("mobile-recovery", { path: recoveryScreenshot, contentType: "image/png" });
   await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Resume prefix transition", exact: true }).click();
+  await expect(recoveryHeading).toBeFocused(); await expect(recoveryHeading).toBeInViewport();
+  expect(control.operationId).toBe(operationId); expect(control.deliveries).toBe(1);
 });

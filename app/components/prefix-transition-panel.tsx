@@ -47,7 +47,7 @@ export function PrefixTransitionPanel({ repertoireId, repertoireName, source, se
   const [failure, setFailure] = useState<{ code: string; message: string } | null>(null);
   const [cardPage, setCardPage] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { heading.current?.focus(); }, []);
+  useEffect(() => { heading.current?.focus(); }, [operation?.state, failure?.message]);
   const controller = useRef<AbortController | null>(null);
   const submitting = useRef(false);
   const publishedCallback = useRef(onPublished);
