@@ -75,6 +75,40 @@ it("audit187_no_locks_status_only_recovery_keeps_original_identity", async () =>
   expect(fetcher.mock.calls.every(([, options]) => options?.method !== "POST")).toBe(true);
   await expect(clearResolvedPrefixTransition("rep", original.operationId)).rejects.toThrow(/Web Locks/);
 });
+it("audit187_unusable_locks_reject_before_identity_or_delivery", async () => {
+  vi.stubGlobal("navigator", { locks: { request: vi.fn().mockRejectedValue(new DOMException("Insecure context", "SecurityError")) } });
+  const allocate = vi.spyOn(crypto, "randomUUID"); const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await expect(begin()).rejects.toThrow(/Web Locks.*HTTPS or localhost/);
+  expect(allocate).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled(); expect(localStorage.getItem(key)).toBeNull();
+});
+it("audit187_unusable_locks_allow_status_only_recovery_of_known_identity", async () => {
+  const original = await begin();
+  vi.stubGlobal("navigator", { locks: { request: vi.fn().mockRejectedValue(new DOMException("Insecure context", "SecurityError")) } });
+  const fetcher = vi.fn().mockResolvedValue(completion(original.operationId)); vi.stubGlobal("fetch", fetcher);
+  expect((await recovering())?.state).toBe("published");
+  expect(JSON.parse(localStorage.getItem(key)!).state).toBe("pending");
+  expect(prefixTransitionRecoveryIssue("rep")?.code).toBe("serialization_unavailable");
+  expect(fetcher).toHaveBeenCalledOnce(); expect(fetcher.mock.calls[0][1]?.method).not.toBe("POST");
+});
+it("audit187_unreadable_storage_keeps_known_status_only_recovery_without_overwrite", async () => {
+  const original = await begin(); localStorage.setItem(key, "broken");
+  const fetcher = vi.fn().mockResolvedValue(completion(original.operationId)); vi.stubGlobal("fetch", fetcher);
+  expect((await recovering())?.state).toBe("published"); expect(localStorage.getItem(key)).toBe("broken");
+  expect(knownPrefixTransitions()[0].operationId).toBe(original.operationId);
+  expect(prefixTransitionRecoveryIssue("rep")?.code).toBe("storage_unavailable"); expect(fetcher).toHaveBeenCalledOnce();
+  expect(readPrefixStructuralAdmission({ repertoireIds: ["rep"], scopeComplete: true }).paused).toBe(true);
+});
+it("audit187_unresolved_clear_rejects_before_recovery_navigation", async () => {
+  const original = await begin();
+  await expect(clearResolvedPrefixTransition("rep", original.operationId)).rejects.toThrow(/could not be cleared/);
+  expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
+});
+it("audit187_verified_publication_recovery_starts_with_get_and_never_replays", async () => {
+  const original = await begin(); vi.stubGlobal("fetch", vi.fn().mockResolvedValue(completion(original.operationId))); await recovering();
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ operation_id: original.operationId, state: "unknown" })); vi.stubGlobal("fetch", fetcher);
+  expect((await recovering())?.state).toBe("published"); expect(fetcher).toHaveBeenCalledOnce();
+  expect(fetcher.mock.calls[0][1]?.method).not.toBe("POST");
+});
 
 it.each([false, true])("audit187_clear_between_storage_check_and_write_cannot_resurrect_old_operation_newer_%s", async createNewer => {
   const original = await begin(); const stale = deferred<Response>(); const reading = deferred<void>(); let reads = 0;

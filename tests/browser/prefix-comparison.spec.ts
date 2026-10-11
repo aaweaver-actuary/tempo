@@ -411,6 +411,7 @@ test("audit187_true_reload_after_total_journal_loss_must_rediscover_original_ope
   const label = "audit187-total-journal-loss";
   const { repertoireId, source } = await importTransitionRepertoire(request, label);
   let operationId = ""; let deliveries = 0;
+  try {
   await page.route("**/prefix-transition/apply", async route => {
     ++deliveries; operationId = route.request().headers()["idempotency-key"];
     await route.fetch(); // Admission is real; erase only browser recovery data below.
@@ -437,15 +438,36 @@ test("audit187_true_reload_after_total_journal_loss_must_rediscover_original_ope
   await page.getByRole("dialog").locator("summary", { hasText: "Recovery identity" }).click();
   await expect(page.getByRole("dialog").getByText(operationId, { exact: false })).toBeVisible();
   expect(deliveries).toBe(1);
+  } finally {
+    // Preserve the failing UI assertion, but release this test's server fence before
+    // the next disposable-product fixture tries to delete its repertoire.
+    if (operationId) {
+      let retried = false;
+      await expect.poll(async () => {
+        const response = await request.get(`${api}/operations/${operationId}`, { headers: { "X-Tempo-Work-Class": "background" } });
+        if (!response.ok()) return false;
+        const receipt = await response.json();
+        if (receipt.state === "blocked" && !retried) {
+          retried = true;
+          await request.post(`${api}/operations/${operationId}/retry`);
+        }
+        return receipt.state === "complete" || receipt.state === "failed";
+      }, { timeout: 90_000, intervals: [1000], message: "Task-owned original operation settles before fixture teardown; UI rediscovery assertion remains failing" }).toBe(true);
+    }
+  }
 });
 
-test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity", async ({ page }) => {
+test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const { control, dialog, card } = await mockTransitionUI(page); control.state = "blocked";
   await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Retry publication recovery" })).toBeEnabled();
   const originalId = control.operationId;
   await page.evaluate(() => localStorage.removeItem("tempo-pending-prefix-transition-v1:rep"));
   await expect(dialog.getByRole("button", { name: "Restore saved recovery record" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  const journalLossScreenshot = testInfo.outputPath("audit187-missing-journal-mobile.png");
+  await page.screenshot({ path: journalLossScreenshot }); await testInfo.attach("missing-journal-mobile", { path: journalLossScreenshot, contentType: "image/png" });
   await dialog.getByRole("button", { name: "Close window" }).click();
   await expect(page.getByRole("button", { name: "Resume prefix transition", exact: true })).toBeVisible();
   await card.locator("details.card-menu summary").click();
@@ -453,7 +475,10 @@ test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_iden
   await card.locator("details.card-menu summary").click();
   await page.getByRole("button", { name: "Resume prefix transition", exact: true }).click();
   await dialog.getByRole("button", { name: "Restore saved recovery record" }).click();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-transition-v1:rep")!).operationId)).toBe(originalId);
+  await expect.poll(() => page.evaluate(() => {
+    const restoredRecord = localStorage.getItem("tempo-pending-prefix-transition-v1:rep");
+    return restoredRecord === null ? null : JSON.parse(restoredRecord).operationId;
+  })).toBe(originalId);
   expect(control.deliveries).toBe(1); expect(control.retries).toBe(0);
 });
 

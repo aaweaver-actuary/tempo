@@ -101,7 +101,7 @@ it("issue81_offline_status_failure_retains_identity_without_blind_replay", async
   expect((await recover())?.state).toBe("transport_unknown");
   expect(fetcher).toHaveBeenCalledOnce();
   expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
-  await clearResolvedPrefixTransition("rep", original.operationId);
+  await expect(clearResolvedPrefixTransition("rep", original.operationId)).rejects.toThrow(/could not be cleared/);
   expect(readPrefixTransition("rep")).not.toBeNull();
 });
 

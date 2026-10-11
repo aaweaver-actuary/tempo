@@ -4055,20 +4055,6 @@ remain in the audit. Backend `test_pr187_audit_contract.py` covers authoritative
 unknown/unavailable status and original-envelope retry 202/409/503 contracts with
 mocked seams, not database durability.
 
-- `audit187_true_reload_after_total_journal_loss_must_rediscover_original_operation`
-  in the regular prefix browser spec is an active failing **BLOCKED** acceptance
-  criterion. It admits a real PostgreSQL operation, deletes its journal, performs
-  a real page reload, and requires recovery of the original ID without redelivery.
-  No skip, expected-failure annotation or weakened assertion is used.
-- `audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity`
-  and `audit187_retry_503_checks_status_first_and_returns_actionable_controls`
-  exercise real browser storage/events/UI with deterministic transport seams.
-- `test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id`
-  is integrated into the regular PostgreSQL prefix application proof. It preserves
-  the audited native receipt/payload, rejects a fenced edit, proves broker refusal
-  leaves the receipt unchanged, verifies original-cycle recovery and one business
-  effect, and rejects blocked retry after verified completion. Diagnostic ID
-  enumeration is explicitly distinguished from full browser rediscovery.
 ## PR187 journal concurrency and recovery ownership (#81, #187)
 
 `tests/unit/prefix-transition-journal-regressions.test.ts` promotes the independent
@@ -4090,6 +4076,28 @@ notice/guard, and real reload identity recovery. The separately named total-loss
 reload case documents the remaining backend-rediscovery limitation; it does not
 claim unconditional recovery. `cross-browser.spec.ts` verifies native lock
 reservation and unsupported-capability refusal across the regular browser engines.
+
+- `audit187_true_reload_after_total_journal_loss_must_rediscover_original_operation`
+  in the regular prefix browser spec is an active failing **BLOCKED** acceptance
+  criterion. It admits a real PostgreSQL operation, deletes its journal, performs
+  a real page reload, and requires recovery of the original ID without redelivery.
+  No skip, expected-failure annotation or weakened assertion is used.
+- `audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity`
+  and `audit187_retry_503_checks_status_first_and_returns_actionable_controls`
+  exercise real browser storage/events/UI with deterministic transport seams.
+- `test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id`
+  is integrated into the regular PostgreSQL prefix application proof. It preserves
+  the audited native receipt/payload, rejects a fenced edit, proves broker refusal
+  leaves the receipt unchanged, verifies original-cycle recovery and one business
+  effect, and rejects blocked retry after verified completion. Diagnostic ID
+  enumeration is explicitly distinguished from full browser rediscovery.
+
+- `audit187_storage_event_preserves_prefix_identity_and_guard across browser engines`
+  runs on Chromium, Firefox and WebKit. A second same-origin document removes the
+  journal; the active product retains identity/guard, then explicitly restores
+  under Web Locks using status-only recovery. The true-reload failing case settles
+  its task-owned server operation in `finally` so its fence cannot contaminate
+  subsequent disposable fixture setup; its original UI assertion still fails.
 
 ## #81 structural admission at final dispatch
 
