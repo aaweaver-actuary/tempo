@@ -320,8 +320,9 @@ test("audit187_storage_event_preserves_prefix_identity_and_guard across browser 
   await expect(page.getByRole("button", { name: "Resume prefix transition" })).toBeVisible();
   const storageWriter = await context.newPage();
   try {
-    // Same-origin image document avoids mounting another product or issuing study work.
-    await storageWriter.goto("/favicon.ico");
+    // A same-origin fixture document emits real storage events without mounting the product.
+    await storageWriter.route("**/audit187-storage-writer.html", route => route.fulfill({ contentType: "text/html", body: "<title>Storage-event fixture</title>" }));
+    await storageWriter.goto("/audit187-storage-writer.html");
     await storageWriter.evaluate(() => localStorage.removeItem("tempo-pending-prefix-transition-v1:rep"));
     await expect(page.getByText(/browser recovery record is missing/i)).toBeVisible();
     await page.locator("details.card-menu summary").click();

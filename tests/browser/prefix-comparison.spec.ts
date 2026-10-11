@@ -457,13 +457,17 @@ test("audit187_true_reload_after_total_journal_loss_must_rediscover_original_ope
   }
 });
 
-test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity", async ({ page }) => {
+test("audit187_same_tab_loss_keeps_guard_and_explicit_restore_uses_original_identity", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const { control, dialog, card } = await mockTransitionUI(page); control.state = "blocked";
   await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Retry publication recovery" })).toBeEnabled();
   const originalId = control.operationId;
   await page.evaluate(() => localStorage.removeItem("tempo-pending-prefix-transition-v1:rep"));
   await expect(dialog.getByRole("button", { name: "Restore saved recovery record" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  const journalLossScreenshot = testInfo.outputPath("audit187-missing-journal-mobile.png");
+  await page.screenshot({ path: journalLossScreenshot }); await testInfo.attach("missing-journal-mobile", { path: journalLossScreenshot, contentType: "image/png" });
   await dialog.getByRole("button", { name: "Close window" }).click();
   await expect(page.getByRole("button", { name: "Resume prefix transition", exact: true })).toBeVisible();
   await card.locator("details.card-menu summary").click();
