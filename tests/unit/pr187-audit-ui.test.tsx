@@ -92,3 +92,12 @@ it('audit187_same_tab_journal_deletion_is_observed_without_storage_event',async(
 });
 
 beforeEach(() => { installPrefixTransitionTestLocks(); });
+
+it('audit187_unreadable_journal_remount_keeps_original_status_controls_and_verified_result',async()=>{
+ const original=await reserve('blocked');localStorage.setItem(key,'broken');
+ const fetcher=vi.fn<typeof fetch>(async()=>receipt(original.operationId));vi.stubGlobal('fetch',fetcher);
+ panel();const check=await screen.findByRole('button',{name:'Check status'});
+ expect((check as HTMLButtonElement).disabled).toBe(false);expect(fetcher).not.toHaveBeenCalled();
+ fireEvent.click(check);await screen.findByRole('heading',{name:'Prefix transition published'});
+ expect(localStorage.getItem(key)).toBe('broken');expect(fetcher).toHaveBeenCalledOnce();expect(fetcher.mock.calls[0][1]?.method).not.toBe('POST');
+});
