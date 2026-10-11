@@ -763,3 +763,44 @@ access timeout; it ran no tests. Docker availability was then verified before
 the successful disposable runs. CI owns fresh complete candidate qualification;
 these development passes and the superseded CI passes do not qualify the new
 head for merging.
+
+### Disposable health admission and historical checkpoint follow-up
+
+CI `38131623691` captured head `66b95b3c`, base `a5171234`, and integration
+`7ae58bd6`. All 1,536 frontend cases, 2,481 backend cases, build, PostgreSQL
+durability, lifecycle, 69 pinned visual cases and three browser shards passed.
+Browser shard 2 failed only the historical opening checkpoint proof: its
+unchanged 30-second deadline expired with deferred receipts and zero consumed
+attempts, while the prepared card remained interactive. The exact deferral
+cause is unproven; worker log tails captured after cleanup lost its context.
+
+The isolated case passed (126.05-second browser stage), then the exact captured
+88-case shard context passed (360.27-second browser stage). Neither pass waives
+the CI failure. Failure-only worker and foreground-lease attachments now capture
+admission evidence before cleanup restarts the consumers.
+
+Inspection identified a structural fixture gap: the disposable API's ordinary
+health request could acquire foreground admission every three seconds. Test
+housekeeping now sends the existing background-work header, with the same URL,
+three-second request deadline and health-check interval. Product admission rules
+are unchanged. `disposable_health_probe_does_not_hold_foreground_admission`
+executes that configured probe with its transport observed; it failed before
+correction and passes afterward.
+
+Selected development evidence on `66b95b3c` plus the recorded dirty fixture patch:
+
+- `node --test tests/runner/postgres-test-speedups.test.mjs`: 67 passed in
+  3.004 seconds. A naming-edit typo was caught and repaired before this pass.
+- `make ui-file FILE=training-critical-path.spec.ts`: 1 passed (2.2 minutes);
+  browser stage 134.07 seconds, build 26.44, startup 23.32, cleanup 10.29.
+  Three reviews, completed opening attempts and completion events persisted;
+  historical partial recovery resumed with 99 remaining journals and no rejection.
+- Frontend typecheck, focused lint, conflict, migration inventory (46), and
+  whitespace guards passed.
+
+The real Docker proof retains its historical-recovery deadline and native-input,
+review, receipt, restart and exact-replay assertions. Runner ownership, timing
+and persisted proof files are hash-verified outside the clone. All three local
+projects from this investigation have no remaining containers, volumes or
+project-specific images. Fresh CI owns complete qualification of this follow-up;
+no local complete gate ran.
