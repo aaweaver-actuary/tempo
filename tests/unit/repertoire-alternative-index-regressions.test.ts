@@ -36,7 +36,11 @@ it("issue36_lookup_matches_legacy_scan", () => {
     line("promote-queen", ["a7a8q"], "4k3/P7/8/8/8/8/8/4K3 w - - 0 1"),
     line("promote-knight", ["a7a8n"], "4k3/P7/8/8/8/8/8/4K3 w - - 0 1"),
     line("empty", []),
+    line("checkmate", [], "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1"),
+    line("stalemate", [], "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"),
   ];
+  expect(new Chess(lines.at(-2)!.startingFen).isCheckmate()).toBe(true);
+  expect(new Chess(lines.at(-1)!.startingFen).isStalemate()).toBe(true);
   let randomState = 36;
   for (let gameNumber = 0; gameNumber < 12; gameNumber++) {
     const board = new Chess();
