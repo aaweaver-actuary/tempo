@@ -1,12 +1,14 @@
 import { test, expect, api, nav } from "./product-fixtures";
 
-for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, title } of [
-  ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0,
+for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedListingRefusals, title } of [
+  ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0, forcedListingRefusals: 0,
     title: `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence ${width}` })),
-  { width: 1280, forcedDatabaseRefusals: 2, forcedForegroundDeferrals: 0,
+  { width: 1280, forcedDatabaseRefusals: 2, forcedForegroundDeferrals: 0, forcedListingRefusals: 0,
     title: "PD-82 repeated database refusals require explicit read-only inspection retries" },
-  { width: 1280, forcedDatabaseRefusals: 1, forcedForegroundDeferrals: 1,
+  { width: 1280, forcedDatabaseRefusals: 1, forcedForegroundDeferrals: 1, forcedListingRefusals: 0,
     title: "PD-82 foreground deferral followed by database refusal still requires explicit retry" },
+  { width: 1280, forcedDatabaseRefusals: 2, forcedForegroundDeferrals: 0, forcedListingRefusals: 1,
+    title: "issue81_diagnostic_listing_refusal_requires_explicit_refresh_before_inspection" },
 ]) test(title, async ({ page, request }) => {
   const settings = await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`, { data: { ...settings, initial_depth: 3 } });
@@ -67,11 +69,50 @@ for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, title } o
   const card = page.locator(".repertoire-card").filter({ has: page.getByRole("heading", { name: `diagnostics-${width}`, exact: true }) });
   await expect(card).toBeVisible();
   expect(diagnosticReads).toHaveLength(0);
+  let injectedListingRefusals = 0;
+  if (forcedListingRefusals) await page.route(url => url.pathname.endsWith("/prefix-diagnostics"), async route => {
+    if (injectedListingRefusals < forcedListingRefusals) {
+      injectedListingRefusals += 1;
+      await route.fulfill({ status: 503, headers: { "Retry-After": "1" },
+        contentType: "application/json", body: JSON.stringify({ detail: "Waiting for a database section" }) });
+    } else await route.continue();
+  });
   await card.locator("details.card-menu summary").click();
-  await card.getByRole("menuitem", { name: "Prefix difficulty", exact: true }).click();
   const inspectButton = page.getByRole("button", { name: /^Inspect prefix/ });
-  await expect(inspectButton).toBeVisible();
-  await expect(inspectButton).toBeEnabled();
+  const listingDeadline = Date.now() + 5_000;
+  const remainingListingMilliseconds = () => {
+    const remaining = listingDeadline - Date.now();
+    expect(remaining, "Prefix listing succeeds within its existing five-second budget").toBeGreaterThan(0);
+    return remaining;
+  };
+  let [listingResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/prefix-diagnostics")
+      && response.request().method() === "GET", { timeout: remainingListingMilliseconds() }),
+    card.getByRole("menuitem", { name: "Prefix difficulty", exact: true }).click(),
+  ]);
+  while (listingResponse.status() === 503) {
+    expect(listingResponse.headers()["retry-after"]).toBe("1");
+    const { detail: refusal } = await listingResponse.json();
+    const listingUrl = listingResponse.url();
+    if (refusal === "Waiting for foreground activity") {
+      await expect(page.getByRole("status")).toContainText("Loading evidence", { timeout: remainingListingMilliseconds() });
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      listingResponse = await page.waitForResponse(response => response.url() === listingUrl
+        && response.request().method() === "GET", { timeout: remainingListingMilliseconds() });
+    } else {
+      expect(["Waiting for a database section", "Prefix difficulty is temporarily unavailable. Retry after study work settles."]).toContain(refusal);
+      await expect(page.getByRole("alert")).toContainText(refusal, { timeout: remainingListingMilliseconds() });
+      await expect(inspectButton).toHaveCount(0);
+      [listingResponse] = await Promise.all([
+        page.waitForResponse(response => response.url() === listingUrl
+          && response.request().method() === "GET", { timeout: remainingListingMilliseconds() }),
+        page.getByRole("button", { name: "Refresh prefixes", exact: true }).click({ timeout: remainingListingMilliseconds() }),
+      ]);
+    }
+  }
+  expect(listingResponse.status()).toBe(200);
+  await expect(inspectButton).toBeVisible({ timeout: remainingListingMilliseconds() });
+  await expect(inspectButton).toBeEnabled({ timeout: remainingListingMilliseconds() });
   let injectedDatabaseRefusals = 0;
   let injectedForegroundDeferrals = 0;
   if (forcedDatabaseRefusals) await page.route("**/prefix-diagnostics/*", async route => {
@@ -126,6 +167,7 @@ for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, title } o
   }
   if (detailResponse.status() !== 503) expect(detailResponse.status()).toBe(200);
   if (forcedDatabaseRefusals) expect(injectedDatabaseRefusals).toBe(forcedDatabaseRefusals);
+  expect(injectedListingRefusals).toBe(forcedListingRefusals);
   expect(injectedForegroundDeferrals).toBe(forcedForegroundDeferrals);
   await expect(page.getByText("Unknown", { exact: true })).toHaveCount(3, { timeout: remainingInspectionMilliseconds() });
   await expect(page.getByText("No observations for this decision.", { exact: true })).toHaveCount(3);

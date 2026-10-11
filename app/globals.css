@@ -4174,3 +4174,13 @@ button {
 .prefix-scope-results th:first-child { width: 48%; }
 .prefix-candidate { margin-top: 24px; border-top: 1px solid var(--line); }
 @media (max-width: 767px) { .prefix-comparison-dialog { padding: 16px; } .prefix-comparison-scopes { grid-template-columns: minmax(0, 1fr); } }
+.prefix-transition-panel { border-top: 1px solid var(--line); margin-top: 16px; }
+.prefix-transition-routes { padding-left: 24px; }
+.prefix-transition-routes > li { margin-block: 12px; }
+.prefix-transition-counts { display: flex; flex-wrap: wrap; gap: 12px; }
+.prefix-transition-counts > div { border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 96px; }
+.prefix-transition-counts dt { font-weight: bold; }
+.prefix-transition-counts dd { margin: 4px 0 0; font-size: 1.25rem; }
+.prefix-transition-panel button { margin: 4px 8px 4px 0; min-height: 44px; }
+.prefix-transition-notice { padding: 12px; border: 1px solid var(--line); border-radius: 8px; margin-block: 12px; overflow-wrap: anywhere; }
+.prefix-transition-notice > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
