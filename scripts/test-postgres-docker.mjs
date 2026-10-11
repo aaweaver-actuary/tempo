@@ -172,8 +172,12 @@ async function pollForReady({ requireContainerHealthy = false } = {}) {
   throw new Error("Disposable PostgreSQL Tempo did not become ready");
 }
 
-async function get(path, { background = false } = {}) {
+async function get(path, { background = false, tolerateQueueIssuancePending = false } = {}) {
   const response = await apiRequest(path, background ? { headers: { "X-Tempo-Work-Class": "background" } } : {});
+  if (tolerateQueueIssuancePending && path === "queue/today" && response.status === 503) {
+    const errorBody = await response.clone().json().catch(() => null);
+    if (errorBody?.detail === "Queue changed or attempt issuance is pending. Retry loading the queue.") return null;
+  }
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
   return response.json();
 }
@@ -216,18 +220,19 @@ async function pollForStudyableImport(repertoireId) {
   for (let attempt = 0; attempt < 180; attempt += 1) {
     measureScenario.poll();
     const [system, integrity, queue] = await Promise.all([
-      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }), get("queue/today", { background: true }),
+      get("system/tasks", { background: true }), get(`repertoires/${repertoireId}/integrity`, { background: true }),
+      get("queue/today", { background: true, tolerateQueueIssuancePending: true }),
     ]);
     assertNoCompletedFixtureConflict(integrity, repertoireId);
     const graphTask = system.tasks.find((task) => task.kind === "opening_graph_rebuild"
       && task.deduplication_key === repertoireId);
     if (graphTask?.state === "failed" || integrity.scan_status === "failed"
-      || queue.projection?.state === "failed") {
+      || queue?.projection?.state === "failed") {
       throw new Error(graphTask?.last_error ?? integrity.last_scan_error ?? integrity.last_error
-        ?? queue.projection?.last_error ?? "PostgreSQL import background work failed");
+        ?? queue?.projection?.last_error ?? "PostgreSQL import background work failed");
     }
     if (graphTask?.state === "complete" && integrity.scan_status === "idle" && integrity.status === "clean"
-      && queue.projection?.state === "ready" && !queue.projection.refresh_pending) {
+      && queue?.projection?.state === "ready" && !queue.projection.refresh_pending) {
       settledSamples += 1;
       if (settledSamples >= 3) return queue;
     } else {

@@ -26,6 +26,60 @@ const fullStages = [
 const browserStages = ["compose_config", "image_build", "startup", "service_health", "browser", "cleanup"];
 const directMeasurement = async (_name, action) => action();
 
+function importReadinessFixture(queueResponses, { graphState = "complete" } = {}) {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const getSource = source.slice(source.indexOf("async function get("), source.indexOf("\nasync function postCommand("));
+  const pollSource = source.slice(source.indexOf("async function pollForStudyableImport("), source.indexOf("\nfunction stableStudyState("));
+  const progress = { polls: 0, waits: 0, elapsed: 0, queueReads: 0 };
+  const readyQueue = { cards: [{ id: "published-card" }], projection: { state: "ready", refresh_pending: false } };
+  const context = { assert, Response, assertNoCompletedFixtureConflict,
+    measureScenario: { poll: () => { progress.polls += 1; }, wait: async milliseconds => {
+      assert.equal(milliseconds, 250); progress.waits += 1; progress.elapsed += milliseconds;
+    } },
+    apiRequest: async (path, options) => {
+      assert.equal(options.headers["X-Tempo-Work-Class"], "background");
+      if (path === "system/tasks") return Response.json({ tasks: [{ kind: "opening_graph_rebuild", deduplication_key: "fixture", state: graphState, last_error: "graph failure" }] });
+      if (path === "repertoires/fixture/integrity") return Response.json({ status: "clean", scan_status: "idle" });
+      assert.equal(path, "queue/today");
+      const pending = queueResponses[Math.min(progress.queueReads++, queueResponses.length - 1)];
+      return pending ? Response.json({ detail: pending.detail }, { status: pending.status }) : Response.json(readyQueue);
+    },
+  };
+  const methods = runInNewContext(`${getSource}\n${pollSource}\n({ get, pollForStudyableImport })`, context);
+  return { methods, progress, readyQueue };
+}
+
+const queueIssuancePending = { status: 503, detail: "Queue changed or attempt issuance is pending. Retry loading the queue." };
+
+test("PostgreSQL import readiness retries explicit queue issuance pending and resets settled samples", async () => {
+  const { methods, progress, readyQueue } = importReadinessFixture([null, null, queueIssuancePending, null, null, null]);
+  assert.deepEqual(await methods.pollForStudyableImport("fixture"), readyQueue);
+  assert.equal(progress.polls, 6); assert.equal(progress.waits, 5);
+  assert.equal(progress.elapsed, 1250, "Pending issuance resets all three required settled samples");
+});
+
+test("PostgreSQL import readiness preserves fatal service errors and strict queue reads", async () => {
+  for (const failure of [
+    { status: 503, detail: "Database unavailable" }, { status: 500, detail: queueIssuancePending.detail },
+  ]) {
+    const { methods, progress } = importReadinessFixture([failure]);
+    await assert.rejects(methods.pollForStudyableImport("fixture"), /queue\/today: HTTP/);
+    assert.equal(progress.polls, 1); assert.equal(progress.waits, 0);
+  }
+  const { methods } = importReadinessFixture([queueIssuancePending]);
+  await assert.rejects(methods.get("queue/today", { background: true }), /HTTP 503/);
+  const failedGraph = importReadinessFixture([queueIssuancePending], { graphState: "failed" });
+  await assert.rejects(failedGraph.methods.pollForStudyableImport("fixture"), /graph failure/);
+  assert.equal(failedGraph.progress.waits, 0);
+});
+
+test("PostgreSQL import readiness never fabricates completion during persistent queue issuance pending", async () => {
+  const { methods, progress } = importReadinessFixture([queueIssuancePending]);
+  await assert.rejects(methods.pollForStudyableImport("fixture"), /did not settle/);
+  assert.equal(progress.polls, 180); assert.equal(progress.waits, 180);
+  assert.equal(progress.elapsed, 45000, "The original bounded retry budget remains unchanged");
+});
+
 function temporaryDirectory(testContext) {
   const directory = mkdtempSync(join(tmpdir(), "tempo-runner-speed-"));
   testContext.after(() => rmSync(directory, { recursive: true, force: true }));

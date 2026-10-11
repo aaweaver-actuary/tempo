@@ -3908,3 +3908,20 @@ restart/idempotent delivery, refresh retention, generation-fenced publication,
 training/queue workflow proof and PostgreSQL durability remain dependency-blocked;
 these source tests do not claim those acceptance criteria. See
 [the integration boundary](../docs/maia-probability-cache.md).
+
+## Issue #110 CI — study-readiness queue issuance race
+
+`tests/runner/postgres-test-speedups.test.mjs` includes named regressions
+`PostgreSQL import readiness retries explicit queue issuance pending and resets settled samples`,
+`PostgreSQL import readiness preserves fatal service errors and strict queue reads`, and
+`PostgreSQL import readiness never fabricates completion during persistent queue issuance pending`.
+All three failed against the original runner after #181's real PostgreSQL CI
+reported HTTP 503 from `pollForStudyableImport`; the next diagnostic queue read
+succeeded after `queue.issue_head` went from `issued: false` to `issued: true`.
+The bounded readiness poll now recognizes only that exact queue-pending 503,
+resets its three-sample readiness streak and retains the existing 180 × 250 ms
+budget. Other HTTP failures and ordinary queue reads remain fatal. This repairs
+the runner's readiness observation without changing product queue behavior,
+Maia inference or inventory persistence. Regular runner tests exercise repeated
+pending responses, service failure and background failure; real candidate CI
+must freshly pass the full durability stage after this repair.

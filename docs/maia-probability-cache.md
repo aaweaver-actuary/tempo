@@ -207,3 +207,25 @@ main produced identical top-five probabilities (5.89 s original invocation /
 After diagnosis the final focused files passed without changing the timeout or
 weakening any assertion. The initial new-feature Python collection failed before
 the module existed; no claim is made that this was a pre-existing product defect.
+
+### CI readiness repair
+
+Foundation head `14b77e70` freshly passed CI's backend (2,425 tests), frontend
+(1,484 tests), build, lifecycle and pinned (67 checks) layers in run
+[38121710169](https://github.com/aaweaver-actuary/tempo/actions/runs/38121710169).
+Its PostgreSQL study-durability stage failed when `pollForStudyableImport` treated
+the explicit queue-issuance-pending HTTP 503 as a fatal service error. Logs show
+`queue.issue_head` returning `issued: false`, then `issued: true`; the next
+queue diagnostic read succeeded. Other preceding durability stages passed. This
+run does not qualify the candidate and is preserved as failure evidence.
+
+A separate coherent commit repairs only the runner's bounded readiness poll.
+It accepts that exact queue-pending 503 as an unavailable sample, resets the
+three-sample readiness streak, and retains the original 180 × 250 ms budget.
+Other HTTP failures and ordinary queue reads still throw; graph/integrity failure
+checks remain active. Product queue behavior and Maia source code are unchanged.
+Three named runner regressions first failed against the original behavior, then
+passed (0.63 s command wall time). The complete affected runner file passed
+63 cases (7.29 s suite / 7.51 s command), and targeted ESLint passed (10.39 s).
+The new head requires fresh mandatory CI execution; old passes are not relabeled
+as current-candidate qualification.
