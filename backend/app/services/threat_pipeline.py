@@ -566,8 +566,11 @@ def enqueue_candidate_validation(candidate_id: str, *, background: bool) -> None
 
 
 def claim_analysis_request() -> dict | None:
+    from .engine_scheduling import (lock_engine_scheduling_state, reserved_ordinary_game,
+                                    record_automated_selection)
     now = _now()
     with connection(background=activity_gate.in_background) as database:
+        database.execute("BEGIN IMMEDIATE")
         recommendation_filter = ("" if analysis_enabled(database) else
             "AND request.id IN (" + recommendation_request_ids_sql() + ")")
         database.execute(
@@ -606,13 +609,24 @@ def claim_analysis_request() -> dict | None:
         ).fetchone()
         if not row:
             return None
+        interactive = database.execute(
+            "SELECT 1 FROM threat_candidate_requests WHERE request_id=? AND role='attempt' LIMIT 1",
+            (row['id'],)).fetchone()
+        if not interactive:
+            automated_streak = lock_engine_scheduling_state(database)
+            if automated_streak is None or reserved_ordinary_game(database, automated_streak, now):
+                return None
         lease_id = str(uuid.uuid4())
-        database.execute(
+        changed = database.execute(
             """UPDATE threat_analysis_requests SET state='leased',lease_id=?,
                   lease_expires_at=?,attempts=attempts+1,updated_at=? WHERE id=? AND state='queued'""",
             (lease_id, (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
              now, row["id"]),
         )
+        if changed.rowcount != 1:
+            return None
+        if not interactive:
+            record_automated_selection(database)
         return {"id": row["id"], "request": json.loads(row["request_json"]),
                 "lease_id": lease_id}
 

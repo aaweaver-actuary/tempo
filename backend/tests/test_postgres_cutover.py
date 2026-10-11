@@ -441,16 +441,23 @@ def test_postgres_game_analysis_claim_uses_skip_locked_and_preserves_lease_shape
     class ClaimDatabase:
         def execute_native(self, statement, *_parameters):
             statements.append(statement)
-            return SimpleNamespace(fetchone=lambda: job)
+            if statement.startswith("SELECT automated_streak"):
+                return SimpleNamespace(fetchone=lambda: (0,))
+            if statement.startswith("SELECT request.id"):
+                return SimpleNamespace(fetchone=lambda: None)
+            return SimpleNamespace(fetchone=lambda: job, rowcount=1)
 
     result = claim_game_analysis(ClaimDatabase(), {})["job"]
     assert result["game_id"] == "game" and result["moves"] == ["e2e4"]
     assert result["lease_id"] and result["lease_expires_at"]
-    assert "FOR UPDATE OF j SKIP LOCKED" in statements[0]
-    assert "COALESCE(control.paused,0)=0" in statements[0]
-    assert "COALESCE(control.promoted,0) DESC" in statements[0]
-    assert "UPDATE game_analysis_jobs" in statements[1]
-    assert "UPDATE imported_games" in statements[2]
+    assert "FOR UPDATE SKIP LOCKED" in statements[0]
+    assert "WHERE role='attempt'" in statements[1]
+    assert "FOR UPDATE OF j,g SKIP LOCKED" in statements[2]
+    assert "COALESCE(control.paused,0)=0" in statements[2]
+    assert "COALESCE(control.promoted,0) DESC" in statements[2]
+    assert "UPDATE game_analysis_jobs" in statements[3]
+    assert "UPDATE imported_games" in statements[4]
+    assert "UPDATE engine_scheduling_state" in statements[5]
 
 
 def test_postgres_game_position_claim_dispatches_prepared_plan_to_background(monkeypatch):
@@ -463,6 +470,7 @@ def test_postgres_game_position_claim_dispatches_prepared_plan_to_background(mon
     observed = []
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
+    monkeypatch.setattr(main, "read_operation", lambda *_args, **_options: {"state": "unknown"})
     monkeypatch.setattr(game_analysis_commands, "prepare_position_claim", lambda: plan)
     monkeypatch.setattr(command_dispatch, "dispatch_command", lambda name, payload, **options:
                         observed.append((name, payload, options)) or {"job": None})
@@ -521,6 +529,10 @@ def test_postgres_game_position_claim_discards_stale_generation_before_write():
     class StaleDatabase:
         def execute_native(self, statement, *_parameters):
             statements.append(statement)
+            if statement.startswith("SELECT automated_streak"):
+                return SimpleNamespace(fetchone=lambda: (3,))
+            if statement.startswith("SELECT request.id"):
+                return SimpleNamespace(fetchone=lambda: None)
             return SimpleNamespace(fetchone=lambda: {
                 "analysis_version": 3, "analysis_evidence_version": 3,
                 "status": "queued", "lease_expires_at": None,
@@ -532,7 +544,8 @@ def test_postgres_game_position_claim_discards_stale_generation_before_write():
         "analysis_evidence_version": 3, "kind": "search",
         "scan_pass": "shallow", "position_index": 0, "request": {},
     }) == {"job": None}
-    assert len(statements) == 1
+    assert len(statements) == 3
+    assert not any(statement.startswith("UPDATE") for statement in statements)
 
 
 def test_postgres_game_position_callbacks_dispatch_with_receipts(monkeypatch):
@@ -595,7 +608,9 @@ def test_postgres_game_position_exhausted_retry_fails_parent_instead_of_repollin
     class FailedPositionDatabase:
         def execute_native(self, statement, *_parameters):
             statements.append(statement)
-            if "FROM game_analysis_jobs j" in statement:
+            if statement.startswith("SELECT automated_streak"):
+                row = (3,)
+            elif "FROM game_analysis_jobs j" in statement:
                 row = {"analysis_version": 2, "analysis_evidence_version": 3,
                        "status": "queued", "lease_expires_at": None,
                        "rated": 1, "speed": "rapid"}
@@ -614,6 +629,8 @@ def test_postgres_game_position_exhausted_retry_fails_parent_instead_of_repollin
     }) == {"job": None}
     assert any("SET status='failed'" in statement for statement in statements)
     assert any("analysis_state='failed'" in statement for statement in statements)
+
+    assert not any("UPDATE engine_scheduling_state" in statement for statement in statements)
 
 
 def test_postgres_game_parent_callbacks_dispatch_to_correct_celery_queue(monkeypatch):

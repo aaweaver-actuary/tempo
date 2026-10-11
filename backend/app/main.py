@@ -28,7 +28,7 @@ from .database import (background_read_connection, card_columns, connection, ini
                        query_only_request, read_connection)
 from . import postgres_store
 from .next_opponent_contract import NextOpponentProfileResponse, ProfileSpeed
-from .command_gateway import load_blocked_operation, read_operation
+from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
 from .study_routes import router as study_router
 from .models import TacticActivationRequest
@@ -52,6 +52,7 @@ from .models import (
     GameAnalysisRequest,
     GameAnalysisFailureRequest,
     GameAnalysisLeaseRequest,
+    GameAnalysisPositionClaimRequest,
     GameFindingDecisionRequest,
     GameFindingCurationRequest,
     GameExclusionRequest,
@@ -5017,12 +5018,15 @@ def claim_game_analysis(
     return _claim_game_analysis()
 
 
-def _claim_game_analysis():
+def _claim_game_analysis(preferred_game_id: str | None = None):
+    from .services.engine_scheduling import ordinary_selection_allowed, record_ordinary_selection
     now = datetime.now(timezone.utc)
     lease_expires_at = now + timedelta(minutes=5)
     lease_id = str(uuid.uuid4())
     with connection(background=activity_gate.in_background) as db:
         db.execute("BEGIN IMMEDIATE")
+        if not ordinary_selection_allowed(db):
+            return {"job": None}
         db.execute(
             """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,updated_at=?
                WHERE status='leased' AND lease_expires_at<?""",
@@ -5037,7 +5041,9 @@ def _claim_game_analysis():
                LEFT JOIN current_repertoire_comparisons c ON c.game_id=g.id
                WHERE j.status='queued' AND g.rated=1 AND g.speed IN ('blitz','rapid','classical')
                  AND {claimable('game_analysis', 'j.game_id')}
-               ORDER BY {control_order('game_analysis', 'j.game_id')}g.played_at DESC LIMIT 1"""
+                 AND (? IS NULL OR j.game_id=?)
+               ORDER BY {control_order('game_analysis', 'j.game_id')}g.played_at DESC LIMIT 1""",
+            (preferred_game_id, preferred_game_id),
         ).fetchone()
         if not job:
             return {"job": None}
@@ -5048,6 +5054,7 @@ def _claim_game_analysis():
         ).rowcount
         if not updated:
             return {"job": None}
+        record_ordinary_selection(db)
         db.execute(
             "UPDATE imported_games SET analysis_state='analyzing' WHERE id=?",
             (job["game_id"],),
@@ -5069,6 +5076,7 @@ def _require_docker_engine(engine_worker: str | None) -> None:
 
 @app.post("/api/games/analysis/position/claim")
 def claim_game_analysis_position(
+    request: GameAnalysisPositionClaimRequest | None = None,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -5076,14 +5084,32 @@ def claim_game_analysis_position(
     if postgres_store.configured():
         from .game_analysis_commands import prepare_position_claim
         from .command_dispatch import dispatch_command
-        plan = prepare_position_claim()
+        # A restarted journal must recover its original lease before preparing
+        # another position or treating a now-unavailable hint as an empty queue.
+        if idempotency_key:
+            try:
+                receipt = read_operation(idempotency_key,
+                    command_name="games.analysis.position.claim", background=True)
+            except CommandConflict as error:
+                raise HTTPException(409, str(error)) from error
+            if receipt["state"] == "complete":
+                return receipt["response"]
+            if receipt["state"] == "failed":
+                error = receipt["error"]
+                raise HTTPException(error.get("status_code", 500), error.get("detail", error["message"]))
+            if receipt["state"] != "unknown":
+                return JSONResponse(status_code=202,
+                    content={"operation_id": idempotency_key, "state": receipt["state"]},
+                    headers={"Location": f"/api/operations/{idempotency_key}"})
+        preferred_game_id = request.preferred_game_id if request else None
+        plan = prepare_position_claim(preferred_game_id) if preferred_game_id is not None else prepare_position_claim()
         if plan is None:
             return {"job": None}
         return dispatch_command(
             "games.analysis.position.claim", plan,
             idempotency_key=idempotency_key, background=True,
         )
-    parent_job = _claim_game_analysis()["job"]
+    parent_job = _claim_game_analysis(request.preferred_game_id if request else None)["job"]
     return {"job": claim_position(parent_job)}
 
 
