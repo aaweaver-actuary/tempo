@@ -28,6 +28,10 @@ response exists. These labels describe repertoire support, never probabilities.
 Deleting a repertoire cascades its generations/memberships/responses. Shared
 positions/replies remain; bounded cleanup collects unreferenced route artifacts
 without removing another repertoire's membership or shared legal universe.
+Deletion atomically queues collection through the existing inventory reconcile
+handler. Each delivery collects at most 64 occurrences from one orphan route;
+locked orphans remain pending. Collection invalidates a partial route cache so
+re-registration between deliveries reconstructs its complete occurrences.
 
 ## Durable publication
 
@@ -49,6 +53,8 @@ the repertoire lock before its task lock where the inventory handoff requires
 it. Inventory requests/slices use repertoire then inventory task ordering;
 terminal failure locks the task before updating generation state. Deterministic
 PostgreSQL contention proofs protect these boundaries.
+Repertoire deletion also locks the repertoire before canceling its tasks, avoiding
+a source/task lock cycle with an active inventory slice.
 
 Inventory publication is separate from queue publication and never changes
 admission, FSRS, ranking, canonical-prefix retention or scheduling policy.

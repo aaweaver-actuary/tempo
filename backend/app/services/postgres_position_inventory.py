@@ -21,10 +21,44 @@ from .repertoire_comparison import canonical_fen
 TASK_KIND = 'position_inventory'
 RECONCILE_KIND = 'position_inventory_reconcile'
 PAGE_SIZE = 64
+ORPHAN_CLEANUP_KEY = 'orphan_routes'
+
+_ORPHAN_ROUTE_SELECTION = (
+    'SELECT route.id FROM inventory_routes route WHERE NOT EXISTS('
+    'SELECT 1 FROM inventory_generation_routes membership WHERE membership.route_id=route.id) '
+    'ORDER BY route.id LIMIT 1')
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def request_orphan_cleanup_in_transaction(database):
+    """Deletion schedules collection; the foreground command does no traversal."""
+    return enqueue_task_in_transaction(database, RECONCILE_KIND, ORPHAN_CLEANUP_KEY,
+                                       {'phase': 'cleanup'}, priority=85)
+
+
+def _collect_orphan_route(database):
+    """Collect one bounded page while protecting cache reuse and memberships."""
+    orphan = database.execute_native(_ORPHAN_ROUTE_SELECTION + ' FOR UPDATE OF route SKIP LOCKED').fetchone()
+    if orphan is None:
+        # A temporarily locked orphan remains durable pending work.
+        return database.execute_native(_ORPHAN_ROUTE_SELECTION).fetchone() is not None
+    # Membership may have committed between the selection snapshot and row lock.
+    # The fresh read plus the route lock protects every subsequent FK insertion.
+    if database.execute_native('SELECT 1 FROM inventory_generation_routes WHERE route_id=%s LIMIT 1',
+                               (orphan[0],)).fetchone():
+        return True
+    # Re-registration between pages must reconstruct a partially collected cache.
+    database.execute_native('UPDATE inventory_routes SET complete=0,completed_plies=0,checkpoint_fen=start_fen WHERE id=%s',
+                            (orphan[0],))
+    deleted = database.execute_native(
+        'DELETE FROM inventory_occurrences WHERE ctid IN (SELECT ctid FROM inventory_occurrences '
+        'WHERE route_id=%s LIMIT %s) RETURNING 1', (orphan[0], PAGE_SIZE)).fetchall()
+    if not deleted:
+        database.execute_native('DELETE FROM inventory_routes WHERE id=%s', (orphan[0],))
+    return True
 
 
 def input_identity(database, repertoire_id, *, lock=False):
@@ -304,22 +338,21 @@ def execute_inventory_slice(task):
             "WHERE generation.repertoire_id=%s AND generation.state!='building' "
             'AND generation.id IS DISTINCT FROM publication.generation_id LIMIT %s)',
             (task['payload']['repertoire_id'], PAGE_SIZE))
-        orphan = database.execute_native(
-            'SELECT route.id FROM inventory_routes route WHERE NOT EXISTS('
-            'SELECT 1 FROM inventory_generation_routes membership WHERE membership.route_id=route.id) '
-            'ORDER BY route.id LIMIT 1 FOR UPDATE OF route SKIP LOCKED').fetchone()
-        if orphan:
-            deleted = database.execute_native(
-                'DELETE FROM inventory_occurrences WHERE ctid IN (SELECT ctid FROM inventory_occurrences '
-                'WHERE route_id=%s LIMIT %s) RETURNING 1', (orphan[0], PAGE_SIZE)).fetchall()
-            if not deleted:
-                database.execute_native('DELETE FROM inventory_routes WHERE id=%s', (orphan[0],))
+        if _collect_orphan_route(database):
             return _advance(database, task, 'cleanup')
         return complete_task_slice_in_transaction(database, task)
 
 
 def execute_reconcile_slice(task):
     """Upgrade sweep visits one repertoire per delivery; no startup computation."""
+    if task['payload'].get('phase') == 'cleanup':
+        with background_lease(), connection(background=True) as database:
+            if not lock_current_slice(database, task):
+                return False
+            if _collect_orphan_route(database):
+                return advance_task_slice_in_transaction(database, task, next_phase='cleanup',
+                                                        next_payload={'phase': 'cleanup'})
+            return complete_task_slice_in_transaction(database, task)
     with background_read_connection() as database:
         row = database.execute_native('SELECT id FROM repertoires WHERE id>%s ORDER BY id LIMIT 1',
                                        (task['payload'].get('after_repertoire_id', ''),)).fetchone()

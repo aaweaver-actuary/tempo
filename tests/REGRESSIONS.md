@@ -3730,6 +3730,95 @@ fixture above. The route/adoption/session implementation is unchanged.
   preserves pending history/board/anchor, blocks writes and allows a successful
   later retry. This case uses the real error-to-retry UI without initial-state
   exposure. Both cases live in `training-builder-context-regressions.test.tsx`.
+## Issue #108 — shared legal position inventory
+
+PR #117 repairs and recovery proofs (regular PostgreSQL `background_workloads`
+stage, invoked by `scripts/check_postgres_position_inventory.py`):
+
+- `test_pr117_foreground_mutation_and_graph_publication_have_no_lock_cycle`:
+  independent PostgreSQL connections, real PGN-import/branch commands, both
+  lock schedules repeated ten times each, stale delivery fencing, atomic graph
+  visibility/inventory requests, and eventual current inventory publication.
+- `test_pr117_inventory_failure_and_refresh_have_no_lock_cycle`: terminal
+  inventory failure overlapping source mutation/refresh cannot deadlock or lose
+  the replacement request.
+- `test_pr117_graph_inventory_handoff_rolls_back_atomically`: publication and
+  inventory enqueue roll back together, including generation rows and cursors;
+  a committed replay is fenced.
+- `test_pr117_inventory_manual_retry_publishes_replacement_without_stale_memberships`:
+  production claim/failure exhaustion and PostgreSQL `activity.task.retry`
+  replace failed work, publish once, reject stale delivery replay, and clean old
+  memberships/responses. This passes the original recovery implementation.
+- `test_pr117_inventory_publication_rejects_incomplete_routes`: unfinished
+  routes cannot become visible or advance the durable task; the same delivery
+  resumes and publishes only after traversal completes.
+
+Graph publication and inventory failure/refresh regressions both reproduce a
+real PostgreSQL `DeadlockDetected` on original service revision `d6e07e19f0`.
+Test synchronization uses events and `pg_blocking_pids`, with no transaction
+budget changes. The instrumented raw transactions expose row-lock cycles;
+eventual graph/inventory slices use ordinary production background budgets.
+
+- `test_issue108_uncovered_legal_replies_and_terminal_opponent_positions`: all legal replies, including missing replies and terminal opponent positions, remain represented.
+- `test_issue108_custom_fen_castling_en_passant_and_illegal_moves`: custom FENs, castling/legal en-passant identity and invalid authored moves.
+- `test_issue108_segment_checkpoint_preserves_absolute_ply_without_prefix_replay`: bounded segments equal complete traversal without repeating the prefix.
+- `test_issue108_foreground_contention_restart_and_idempotent_replay`: foreground admission, closed connections during computation, committed checkpoints and duplicate-delivery rejection.
+- `test_issue108_same_input_request_keeps_lease_and_cursor`: unchanged requests do not reset useful work.
+- `test_issue108_inventory_reads_reject_invalid_page_sizes`: bounded read contracts without querying storage.
+- `test_issue108_handlers_are_registered_in_regular_worker_dispatch`: normal worker ownership of build and upgrade reconciliation.
+
+Python cases are in `backend/tests/test_position_inventory.py` and
+`backend/tests/test_postgres_position_inventory.py`. The regular PostgreSQL
+`background_workloads` stage runs `scripts/check_postgres_position_inventory.py`:
+`verify_issue108_upgrade_restart_replay_and_coverage` and
+`verify_issue108_transpositions_duplicates_long_routes`, and
+`verify_issue108_scope_delta_and_card_authority`, and
+`verify_issue108_fresh_install_has_no_upgrade_task` cover real PostgreSQL
+upgrade, foreground contention, rollback, persisted restart/replay, source-change
+fences, removal reconciliation, exact legal counts, per-repertoire coverage,
+shared position retention on deletion, duplicate/transposed routes, supported
+transposition labels, pagination, bounded long-line work and zero unchanged replay.
+
+The fresh-install case protects migration-only sweep ownership: empty databases
+contain no upgrade task, while an upgrade with existing repertoires queues one
+bounded durable sweep. It also preserves exclusive disposable fixture claims.
+
+
+Post-#116 reconstruction adds:
+
+- `test_issue108_promotion_pinned_en_passant_and_side_to_move_legality`: promotions, prohibited castling, pinned en passant, invalid boards and learner/opponent turns.
+- `test_issue108_probability_contract_keeps_unobserved_legal_replies_unknown`: #154 complete legal universe, unknown entries and terminal state.
+- `test_issue108_cross_repertoire_transposition_policy_independence_and_deletion`: real PostgreSQL shared identity, independent provenance, unrelated-repertoire isolation and deletion safety.
+- `test_issue108_profile_changes_do_not_rebuild_inventory`: profile publication changes do not alter the inventory or durable cursor.
+
+All PostgreSQL cases run through the regular `background_workloads` stage. Migration 045 upgrades schema 44 with a populated repertoire, repeats the normal driver, and retains immutable published migrations 001–044. No cohort cache or probability fetching is introduced.
+
+- `test_issue108_newer_graph_publication_fences_computed_inventory_output`: a deterministic compute/publication hook delivers old output after replacement; newer publication remains accepted after exact stale replay.
+
+- `test_issue108_current_worker_defers_inventory_without_resetting_checkpoint`: current worker dispatch yields denied inventory before computation/failure handling and passes the unchanged checkpoint to durable deferral. The original real PostgreSQL proof's blocking-wait expectation failed on post-#116 main; it now requires immediate `BackgroundAdmissionDeferred`, zero staged writes and subsequent exact-delivery resume/replay.
+
+- `issue108 complete inventory proofs run in regular durability background workloads`: native runner regression, owned by the existing `postgres-test-speedups-regressions.test.ts` wrapper, preserves real inventory proofs in both ordinary durability and complete qualification.
+
+- `test_issue108_missing_route_checkpoint_revalidates_delivery_before_reporting_corruption[stale-replay/current-corruption]`: both cases failed with `TypeError` before repair. A stale delivery whose route was collected now revalidates its fence and returns without mutation; a current missing checkpoint raises an actionable error. The real PostgreSQL newer-generation proof also reproduced the stale cleanup replay failure before this correction.
+
+The cross-repertoire proof also runs after other transposition fixtures in the complete inventory checker. Its first combined run failed because the assertion counted unrelated generations using the same legitimate global position. The exact membership assertion is now scoped to the two tested generations; the global single-position/legal-set assertions and independent repertoire provenance remain required.
+
+The computed-stale-output proof uses a distinct legal authored route and explicitly requires a traversal checkpoint before its compute/publication hook. The combined checker initially reused a completed route from earlier fixtures, correctly bypassing computation; the fixture now preserves that reuse behavior while exercising the intended race.
+
+- `test_pr117_profile_upgrade_rehearsal_starts_at_schema43_after_readiness_advances[45/46]`: preserves #116's historical schema-43 starting point as readiness advances. Both cases failed before the fixture ceiling was pinned; published migration files and the normal upgrade driver are unchanged.
+
+- `test_pr117_inventory_proof_owns_admission_keys_and_preserves_restart_namespace`: the durability run reproduced admission interference from its API stack. The proof uses real Redis admission with owned keys, shares them with its restart worker, restores global keys and cleans only owner-created keys. The existing real foreground-contention proof still requires admission denial/resume.
+
+## PR #117 current-main reconciliation — PD-82 publication causality
+
+- `test_pr117_pd82_inspection_preserves_queue_while_independent_publication_assigns_admission` in `scripts/check_postgres_inventory_recovery.py`, selected by the regular PostgreSQL inventory checker, holds a durable pre-randomization queue checkpoint outside any transaction. Completing inventory leaves the queue and its task unchanged. Two explicitly issued database-refusal reads and the successful diagnostic GET preserve complete card/queue/projection/origin/review/task/event/receipt/inventory/evidence snapshots. Only the real `daily_queue/randomize_queue` delivery assigns `admission_kind=new`; normal bounded publication advances the projection and a settled inspection remains read-only. Timestamped snapshots, diagnostic boundaries and task/generation identity are emitted as proof evidence. The ordinary runner-registration regression requires this case.
+
+PR #117 deletion safety repair (October 11, 2026):
+
+- `test_pr117_repertoire_deletion_and_inventory_slice_have_no_lock_cycle` in `scripts/check_postgres_inventory_recovery.py` first failed with a real PostgreSQL deadlock on reconciled head `0b2c44ba`: deletion held the inventory task while inventory held the repertoire. Both foreground-first and inventory-first schedules now observe actual blocking and complete under repertoire-before-task ordering, with deletion removing the source and stale inventory rejected.
+- `test_pr117_deleted_inventory_routes_collect_with_foreground_contention_restart_replay_and_reuse` first failed on that same head because deletion left unreferenced routes without a durable collector. The actual deletion command now queues the existing reconcile handler atomically. The proof covers foreground admission denial without writes, locked-orphan deferral, at most 64 occurrences removed per delivery, partial-cache reconstruction on legitimate re-registration, shared repertoire publication, fresh-process restart, stale-generation rejection and duplicate replay. Collection preserves all canonical legal replies. Both cases run in the ordinary PostgreSQL durability inventory checker and its runner-registration guard.
+- Original #117 qualification `38088244271` captured generation 12/refreshing/pending=1/null at `2026-10-10T21:49:54.257Z`, then generation 13/ready/pending=0/new at `21:50:01.336Z`. The old card-presence precondition allowed unfinished publication. Main's separately merged PR #148 already captures complete cards from the same ready/zero-pending/target-present response; full card equality and explicit retry assertions remain unchanged. No diagnostic, scheduler, admission, or queue production behavior is changed by this reconciliation.
+
 ## GitHub issue #107 — immutable next-opponent profiles
 
 - PR #116 malformed-history upgrade: `test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently` in `scripts/check_postgres_next_opponent.py`, run by regular PostgreSQL durability. Seeds valid offset/naive, malformed text/calendar, and invalid timezone displacement rows before 044; verifies UTC parsing, NULL rejection, valid expression indexes, unchanged sources, contiguous 1–44 history and normal-driver idempotence.
@@ -3873,87 +3962,3 @@ PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2
 - `test_position_claim_identical_receipt_recovers_without_preparing_work` preserves identical hinted/unhinted replay and attachment, original lease/error/Location and no second preparation or dispatch. `test_position_claim_omitted_empty_and_null_requests_share_unhinted_identity` retains the existing model's absent/null normalization. `test_position_claim_receipt_preserves_command_identity_conflict` and `test_position_claim_receipt_recovery_preserves_explicit_hash_validation` keep normal command/hash rejection independent of shortcut validation.
 - `test_position_claim_legacy_receipt_recovery_remains_available` preserves historical receipts with or without a saved plan. Historical plans did not save the caller's hint, so their original hinted/unhinted identity cannot be verified; this compatibility exception is limited to receipts without `claim_request` metadata. New route operations retain that metadata in their ordinary persisted payload and validate against the unchanged canonical command hash. No migration or fairness-policy change.
 - `scripts/check_postgres_engine_fairness.py::test_postgres_engine_completed_position_receipt_validates_request_identity` and `test_postgres_engine_pending_position_receipt_validates_request_identity` run in regular durability. Real route/command receipts reject all three payload changes, retain identical replay across database pool recreation, and leave receipts, leases, positions and fairness state unchanged on conflicts. Queued operations still recover from their original saved payload and replay their completed receipt without spending another turn. The existing historical replay/crash/restart/concurrency proofs remain intact.
-## Issue #108 — shared legal position inventory
-
-PR #117 repairs and recovery proofs (regular PostgreSQL `background_workloads`
-stage, invoked by `scripts/check_postgres_position_inventory.py`):
-
-- `test_pr117_foreground_mutation_and_graph_publication_have_no_lock_cycle`:
-  independent PostgreSQL connections, real PGN-import/branch commands, both
-  lock schedules repeated ten times each, stale delivery fencing, atomic graph
-  visibility/inventory requests, and eventual current inventory publication.
-- `test_pr117_inventory_failure_and_refresh_have_no_lock_cycle`: terminal
-  inventory failure overlapping source mutation/refresh cannot deadlock or lose
-  the replacement request.
-- `test_pr117_graph_inventory_handoff_rolls_back_atomically`: publication and
-  inventory enqueue roll back together, including generation rows and cursors;
-  a committed replay is fenced.
-- `test_pr117_inventory_manual_retry_publishes_replacement_without_stale_memberships`:
-  production claim/failure exhaustion and PostgreSQL `activity.task.retry`
-  replace failed work, publish once, reject stale delivery replay, and clean old
-  memberships/responses. This passes the original recovery implementation.
-- `test_pr117_inventory_publication_rejects_incomplete_routes`: unfinished
-  routes cannot become visible or advance the durable task; the same delivery
-  resumes and publishes only after traversal completes.
-
-Graph publication and inventory failure/refresh regressions both reproduce a
-real PostgreSQL `DeadlockDetected` on original service revision `d6e07e19f0`.
-Test synchronization uses events and `pg_blocking_pids`, with no transaction
-budget changes. The instrumented raw transactions expose row-lock cycles;
-eventual graph/inventory slices use ordinary production background budgets.
-
-- `test_issue108_uncovered_legal_replies_and_terminal_opponent_positions`: all legal replies, including missing replies and terminal opponent positions, remain represented.
-- `test_issue108_custom_fen_castling_en_passant_and_illegal_moves`: custom FENs, castling/legal en-passant identity and invalid authored moves.
-- `test_issue108_segment_checkpoint_preserves_absolute_ply_without_prefix_replay`: bounded segments equal complete traversal without repeating the prefix.
-- `test_issue108_foreground_contention_restart_and_idempotent_replay`: foreground admission, closed connections during computation, committed checkpoints and duplicate-delivery rejection.
-- `test_issue108_same_input_request_keeps_lease_and_cursor`: unchanged requests do not reset useful work.
-- `test_issue108_inventory_reads_reject_invalid_page_sizes`: bounded read contracts without querying storage.
-- `test_issue108_handlers_are_registered_in_regular_worker_dispatch`: normal worker ownership of build and upgrade reconciliation.
-
-Python cases are in `backend/tests/test_position_inventory.py` and
-`backend/tests/test_postgres_position_inventory.py`. The regular PostgreSQL
-`background_workloads` stage runs `scripts/check_postgres_position_inventory.py`:
-`verify_issue108_upgrade_restart_replay_and_coverage` and
-`verify_issue108_transpositions_duplicates_long_routes`, and
-`verify_issue108_scope_delta_and_card_authority`, and
-`verify_issue108_fresh_install_has_no_upgrade_task` cover real PostgreSQL
-upgrade, foreground contention, rollback, persisted restart/replay, source-change
-fences, removal reconciliation, exact legal counts, per-repertoire coverage,
-shared position retention on deletion, duplicate/transposed routes, supported
-transposition labels, pagination, bounded long-line work and zero unchanged replay.
-
-The fresh-install case protects migration-only sweep ownership: empty databases
-contain no upgrade task, while an upgrade with existing repertoires queues one
-bounded durable sweep. It also preserves exclusive disposable fixture claims.
-
-
-Post-#116 reconstruction adds:
-
-- `test_issue108_promotion_pinned_en_passant_and_side_to_move_legality`: promotions, prohibited castling, pinned en passant, invalid boards and learner/opponent turns.
-- `test_issue108_probability_contract_keeps_unobserved_legal_replies_unknown`: #154 complete legal universe, unknown entries and terminal state.
-- `test_issue108_cross_repertoire_transposition_policy_independence_and_deletion`: real PostgreSQL shared identity, independent provenance, unrelated-repertoire isolation and deletion safety.
-- `test_issue108_profile_changes_do_not_rebuild_inventory`: profile publication changes do not alter the inventory or durable cursor.
-
-All PostgreSQL cases run through the regular `background_workloads` stage. Migration 045 upgrades schema 44 with a populated repertoire, repeats the normal driver, and retains immutable published migrations 001–044. No cohort cache or probability fetching is introduced.
-
-- `test_issue108_newer_graph_publication_fences_computed_inventory_output`: a deterministic compute/publication hook delivers old output after replacement; newer publication remains accepted after exact stale replay.
-
-- `test_issue108_current_worker_defers_inventory_without_resetting_checkpoint`: current worker dispatch yields denied inventory before computation/failure handling and passes the unchanged checkpoint to durable deferral. The original real PostgreSQL proof's blocking-wait expectation failed on post-#116 main; it now requires immediate `BackgroundAdmissionDeferred`, zero staged writes and subsequent exact-delivery resume/replay.
-
-- `issue108 complete inventory proofs run in regular durability background workloads`: native runner regression, owned by the existing `postgres-test-speedups-regressions.test.ts` wrapper, preserves real inventory proofs in both ordinary durability and complete qualification.
-
-- `test_issue108_missing_route_checkpoint_revalidates_delivery_before_reporting_corruption[stale-replay/current-corruption]`: both cases failed with `TypeError` before repair. A stale delivery whose route was collected now revalidates its fence and returns without mutation; a current missing checkpoint raises an actionable error. The real PostgreSQL newer-generation proof also reproduced the stale cleanup replay failure before this correction.
-
-The cross-repertoire proof also runs after other transposition fixtures in the complete inventory checker. Its first combined run failed because the assertion counted unrelated generations using the same legitimate global position. The exact membership assertion is now scoped to the two tested generations; the global single-position/legal-set assertions and independent repertoire provenance remain required.
-
-The computed-stale-output proof uses a distinct legal authored route and explicitly requires a traversal checkpoint before its compute/publication hook. The combined checker initially reused a completed route from earlier fixtures, correctly bypassing computation; the fixture now preserves that reuse behavior while exercising the intended race.
-
-- `test_pr117_profile_upgrade_rehearsal_starts_at_schema43_after_readiness_advances[45/46]`: preserves #116's historical schema-43 starting point as readiness advances. Both cases failed before the fixture ceiling was pinned; published migration files and the normal upgrade driver are unchanged.
-
-- `test_pr117_inventory_proof_owns_admission_keys_and_preserves_restart_namespace`: the durability run reproduced admission interference from its API stack. The proof uses real Redis admission with owned keys, shares them with its restart worker, restores global keys and cleans only owner-created keys. The existing real foreground-contention proof still requires admission denial/resume.
-
-## PR #117 current-main reconciliation — PD-82 publication causality
-
-- `test_pr117_pd82_inspection_preserves_queue_while_independent_publication_assigns_admission` in `scripts/check_postgres_inventory_recovery.py`, selected by the regular PostgreSQL inventory checker, holds a durable pre-randomization queue checkpoint outside any transaction. Completing inventory leaves the queue and its task unchanged. Two explicitly issued database-refusal reads and the successful diagnostic GET preserve complete card/queue/projection/origin/review/task/event/receipt/inventory/evidence snapshots. Only the real `daily_queue/randomize_queue` delivery assigns `admission_kind=new`; normal bounded publication advances the projection and a settled inspection remains read-only. Timestamped snapshots, diagnostic boundaries and task/generation identity are emitted as proof evidence. The ordinary runner-registration regression requires this case.
-- Original #117 qualification `38088244271` captured generation 12/refreshing/pending=1/null at `2026-10-10T21:49:54.257Z`, then generation 13/ready/pending=0/new at `21:50:01.336Z`. The old card-presence precondition allowed unfinished publication. Main's separately merged PR #148 already captures complete cards from the same ready/zero-pending/target-present response; full card equality and explicit retry assertions remain unchanged. No diagnostic, scheduler, admission, or queue production behavior is changed by this reconciliation.
-

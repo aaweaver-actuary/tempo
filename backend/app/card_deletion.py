@@ -122,10 +122,12 @@ def delete_repertoire_data(database, repertoire_id: str, learned_cards: str) -> 
         raise HTTPException(422, "Choose whether to keep or delete learned cards")
     if hasattr(database, "execute_native"):
         database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:main-repertoire",))
-    cancel_repertoire_tasks(database, repertoire_id)
     repertoire = database.execute("SELECT id,is_main FROM repertoires WHERE id=?" + (" FOR UPDATE" if hasattr(database, "execute_native") else ""), (repertoire_id,)).fetchone()
     if repertoire is None:
         raise HTTPException(404, "Repertoire not found")
+    # Inventory publication locks the source before its delivery. Cancellation
+    # follows the same order so deletion cannot form a task/source lock cycle.
+    cancel_repertoire_tasks(database, repertoire_id)
     if hasattr(database, "execute_native"):
         affected_card_ids = database.execute("SELECT id FROM cards WHERE repertoire_id=? UNION SELECT card_id FROM daily_queue WHERE admission_repertoire_id=? AND status='queued' ORDER BY 1", (repertoire_id, repertoire_id)).fetchall()
         for affected_card in affected_card_ids:
@@ -163,6 +165,9 @@ def delete_repertoire_data(database, repertoire_id: str, learned_cards: str) -> 
     for table in (("repertoire_comparisons_legacy", "repertoire_comparisons_staged") if hasattr(database, "execute_native") else ("repertoire_comparisons",)):
         database.execute(f"DELETE FROM {table} WHERE repertoire_id=?", (repertoire_id,))
     database.execute("DELETE FROM repertoires WHERE id=?", (repertoire_id,))
+    if hasattr(database, "execute_native"):
+        from .services.postgres_position_inventory import request_orphan_cleanup_in_transaction
+        request_orphan_cleanup_in_transaction(database)
     if repertoire["is_main"]:
         system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRE_IDS)
         replacement = database.execute(f"SELECT id FROM repertoires WHERE id NOT IN ({system_placeholders}) ORDER BY created_at DESC,id LIMIT 1", SYSTEM_REPERTOIRE_IDS).fetchone()

@@ -866,6 +866,8 @@ test("issue108 complete inventory proofs run in regular durability background wo
   assert(workloadAction.includes("check_postgres_position_inventory.py"));
   const inventoryProof = readFileSync(join(root, "scripts/check_postgres_position_inventory.py"), "utf8");
   assert(inventoryProof.includes("'test_pr117_pd82_inspection_preserves_queue_while_independent_publication_assigns_admission'"));
+  assert(inventoryProof.includes("'test_pr117_repertoire_deletion_and_inventory_slice_have_no_lock_cycle'"));
+  assert(inventoryProof.includes("'test_pr117_deleted_inventory_routes_collect_with_foreground_contention_restart_replay_and_reuse'"));
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("background_workloads"));
   assert(!postgresTestStages({ mode: "browser" }).includes("background_workloads"));
 });

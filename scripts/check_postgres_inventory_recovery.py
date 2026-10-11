@@ -661,3 +661,176 @@ def test_pr117_pd82_inspection_preserves_queue_while_independent_publication_ass
                       'queue_publication': publication_boundaries,
                       'admission_origin': 'daily_queue/randomize_queue', 'queue_task_id': queue_task['id'],
                       'receipts_unchanged_by_inspection': True}), flush=True)
+
+
+def test_pr117_repertoire_deletion_and_inventory_slice_have_no_lock_cycle(dsn):
+    from app.card_deletion import delete_repertoire_data
+    from scripts.check_postgres_position_inventory import seed, publish_graph, claim
+
+    for schedule in ('foreground_first', 'inventory_first'):
+        repertoire_id = 'pr117-delete-lock-'+schedule
+        moves = ['d2d4', 'd7d5', 'c2c4'] if schedule == 'foreground_first' else ['c2c4', 'e7e5', 'b1c3']
+        with postgres_store.connection() as database:
+            seed(database.raw, repertoire_id, [(repertoire_id+'-line', moves,
+                                                'white', chess.STARTING_FEN)])
+            publish_graph(database, repertoire_id)
+            delivery = claim(database, repertoire_id)
+        first_lock = threading.Event()
+
+        def pause_after_first_row_lock(statement, _parameters):
+            if 'FOR UPDATE' in statement and not first_lock.is_set():
+                first_lock.set()
+                wait_event(release, 'release first deletion/inventory row lock')
+
+        with concurrent_transactions(dsn) as (launch, blocked, release, outcomes):
+            if schedule == 'foreground_first':
+                launch('foreground', lambda database: delete_repertoire_data(database, repertoire_id, 'delete'),
+                       after=pause_after_first_row_lock)
+                wait_event(first_lock, 'foreground first row lock')
+                launch('inventory', lambda database: inventory._current(database, delivery))
+                blocked('inventory', 'foreground')
+            else:
+                launch('inventory', lambda database: inventory._current(database, delivery),
+                       after=pause_after_first_row_lock)
+                wait_event(first_lock, 'inventory first row lock')
+                launch('foreground', lambda database: delete_repertoire_data(database, repertoire_id, 'delete'))
+                blocked('foreground', 'inventory')
+            release.set()
+        assert outcomes['foreground'] == {'deleted': True, 'id': repertoire_id}
+        assert outcomes['inventory'] is (schedule == 'inventory_first')
+        with postgres_store.connection(read_only=True) as database:
+            assert not database.execute_native('SELECT 1 FROM repertoires WHERE id=%s', (repertoire_id,)).fetchone()
+            assert not database.execute_native('SELECT 1 FROM inventory_generations WHERE repertoire_id=%s',
+                                               (repertoire_id,)).fetchone()
+    print('PASS test_pr117_repertoire_deletion_and_inventory_slice_have_no_lock_cycle: both lock schedules', flush=True)
+
+
+def test_pr117_deleted_inventory_routes_collect_with_foreground_contention_restart_replay_and_reuse(dsn):
+    import subprocess
+    import sys
+    from pathlib import Path
+    from app.card_deletion import delete_repertoire_data
+    from app.services import redis_admission_gate
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    from scripts.check_postgres_position_inventory import seed, publish_graph, claim, run_to_completion
+
+    first, survivor, replacement = 'pr117-gc-first', 'pr117-gc-survivor', 'pr117-gc-replacement'
+    shared_moves = ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5']
+    private_moves = ['g1f3', 'g8f6', 'f3g1', 'f6g8'] * 16 + ['e2e4']
+    with postgres_store.connection() as database:
+        seed(database.raw, first, [(first+'-private', private_moves, 'white', chess.STARTING_FEN),
+                                  (first+'-shared', shared_moves, 'white', chess.STARTING_FEN)])
+        seed(database.raw, survivor, [(survivor+'-shared', shared_moves, 'white', chess.STARTING_FEN)])
+        publish_graph(database, first)
+        publish_graph(database, survivor)
+    run_to_completion(first)
+    run_to_completion(survivor)
+
+    def routes_and_occurrences():
+        with postgres_store.connection(read_only=True) as database:
+            return ([dict(row) for row in database.execute_native('SELECT * FROM inventory_routes ORDER BY id').fetchall()],
+                    [dict(row) for row in database.execute_native('SELECT * FROM inventory_occurrences ORDER BY route_id,ply').fetchall()])
+
+    with postgres_store.connection(read_only=True) as database:
+        generation_id = inventory.inventory_progress(database, first)['publication_id']
+        private_route = database.execute_native('SELECT route_id FROM inventory_generation_routes WHERE generation_id=%s AND line_id=%s',
+                                                (generation_id, first+'-private')).fetchone()[0]
+        shared_route = database.execute_native('SELECT route_id FROM inventory_generation_routes WHERE generation_id=%s AND line_id=%s',
+                                               (generation_id, first+'-shared')).fetchone()[0]
+        private_occurrences = [dict(row) for row in database.execute_native('SELECT * FROM inventory_occurrences WHERE route_id=%s ORDER BY ply',
+                                                                           (private_route,)).fetchall()]
+        survivor_before = inventory.published_positions(database, survivor)
+        legal_before = [row[0] for row in database.execute_native('SELECT to_jsonb(row) FROM inventory_legal_replies row ORDER BY fen_key,move_uci').fetchall()]
+    assert len(private_occurrences) > inventory.PAGE_SIZE
+    with postgres_store.connection() as database:
+        # Retain introduced cards under the ordinary deletion policy. Reusing
+        # their route must not bypass permanent-card recreation exclusions.
+        database.execute_native('UPDATE cards SET introduced_at=%s WHERE repertoire_id=%s',
+                                (datetime.now(timezone.utc).isoformat(), first))
+        delete_repertoire_data(database, first, 'keep')
+        collector = database.execute_native('SELECT * FROM background_tasks WHERE kind=%s AND deduplication_key=%s',
+                                            (inventory.RECONCILE_KIND, 'orphan_routes')).fetchone()
+        assert collector is not None and collector['state'] == 'queued', 'Deleting a repertoire left orphaned routes without durable collection'
+        delivered = claim(database, 'orphan_routes', kind=inventory.RECONCILE_KIND)
+    before_denial = routes_and_occurrences()
+    with redis_admission_gate.foreground_lease():
+        try:
+            inventory.execute_reconcile_slice(delivered)
+        except BackgroundAdmissionDeferred:
+            pass
+        else:
+            raise AssertionError('Orphan collection did not yield to foreground work')
+        assert routes_and_occurrences() == before_denial
+        with postgres_store.connection(read_only=True) as database:
+            current = database.execute_native('SELECT * FROM background_tasks WHERE id=%s', (delivered['id'],)).fetchone()
+            assert current['lease_token'] == delivered['lease_token'] and current['attempt_count'] == delivered['attempt_count']
+    # A locked orphan cannot make the collector falsely report completion.
+    with psycopg.connect(dsn) as locker:
+        locker.execute('SELECT id FROM inventory_routes WHERE id=%s FOR UPDATE', (private_route,))
+        inventory.execute_reconcile_slice(delivered)
+        assert [row for row in routes_and_occurrences()[1] if row['route_id'] == private_route] == private_occurrences
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute_native('SELECT state FROM background_tasks WHERE id=%s', (delivered['id'],)).fetchone()[0] == 'queued'
+    assert inventory.execute_reconcile_slice(delivered) is False, 'Consumed collector delivery replayed'
+    for _ in range(128):
+        with postgres_store.connection() as database:
+            delivered = claim(database, 'orphan_routes', kind=inventory.RECONCILE_KIND)
+        assert delivered is not None
+        _, occurrences_before = routes_and_occurrences()
+        inventory.execute_reconcile_slice(delivered)
+        _, occurrences_after = routes_and_occurrences()
+        assert 0 <= len(occurrences_before)-len(occurrences_after) <= inventory.PAGE_SIZE
+        if sum(row['route_id'] == private_route for row in occurrences_after) < len(private_occurrences):
+            break
+    else:
+        raise AssertionError('Collector did not reach the owned orphan')
+
+    # Reuse between bounded cleanup deliveries must rebuild a partial artifact,
+    # rather than treating its old completed flag as a complete cached route.
+    with postgres_store.connection() as database:
+        seed(database.raw, replacement, [(replacement+'-line', private_moves, 'white', chess.STARTING_FEN)])
+        publish_graph(database, replacement)
+    run_to_completion(replacement)
+    with postgres_store.connection(read_only=True) as database:
+        assert [dict(row) for row in database.execute_native('SELECT * FROM inventory_occurrences WHERE route_id=%s ORDER BY ply',
+                                                            (private_route,)).fetchall()] == private_occurrences
+        assert inventory.published_positions(database, survivor) == survivor_before
+        assert database.execute_native('SELECT 1 FROM inventory_routes WHERE id=%s', (shared_route,)).fetchone()
+
+    with postgres_store.connection() as database:
+        delete_repertoire_data(database, survivor, 'delete')
+        delete_repertoire_data(database, replacement, 'delete')
+    assert inventory.execute_reconcile_slice(delivered) is False, 'Replacement collector generation accepted stale output'
+    # A fresh worker process resumes only persisted state and the owned namespace.
+    postgres_store.close_pools()
+    child = subprocess.run([sys.executable, '-c', """
+from scripts.check_postgres_position_inventory import postgres_store, inventory, _owned_inventory_admission
+from app.services.durable_tasks import claim_task
+with _owned_inventory_admission():
+    delivery = claim_task(inventory.RECONCILE_KIND)
+    assert delivery and delivery['deduplication_key'] == 'orphan_routes'
+    inventory.execute_reconcile_slice(delivery)
+    postgres_store.close_pools()
+"""], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
+    assert child.returncode == 0, f'Restarted collector failed: {child.stderr}'
+    last_delivery = delivered
+    for _ in range(128):
+        with postgres_store.connection() as database:
+            delivered = claim(database, 'orphan_routes', kind=inventory.RECONCILE_KIND)
+        if delivered is None:
+            break
+        last_delivery = delivered
+        _, occurrences_before = routes_and_occurrences()
+        inventory.execute_reconcile_slice(delivered)
+        _, occurrences_after = routes_and_occurrences()
+        assert 0 <= len(occurrences_before)-len(occurrences_after) <= inventory.PAGE_SIZE
+    else:
+        raise AssertionError('Orphan collector failed to complete bounded cleanup')
+    final = routes_and_occurrences()
+    assert not any(row['id'] in (private_route, shared_route) for row in final[0])
+    assert not any(row['route_id'] in (private_route, shared_route) for row in final[1])
+    assert inventory.execute_reconcile_slice(last_delivery) is False
+    assert routes_and_occurrences() == final
+    with postgres_store.connection(read_only=True) as database:
+        assert [row[0] for row in database.execute_native('SELECT to_jsonb(row) FROM inventory_legal_replies row ORDER BY fen_key,move_uci').fetchall()] == legal_before
+    print('PASS test_pr117_deleted_inventory_routes_collect_with_foreground_contention_restart_replay_and_reuse', flush=True)
