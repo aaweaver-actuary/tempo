@@ -403,13 +403,19 @@ export default function RepertoireView({
       onBack={() => { sessionStorage.removeItem("tempo-statistics-repertoire"); setStatisticsRepertoireId(null); }}
       onShowGamesAtPosition={onShowGamesAtPosition} />;
   }
+  const comparisonRepertoires = new Map<string, { id: string; title: string }>(backendItems.map(item => [item.id, { id: item.id, title: item.title }]));
+  // Recovery must remain reachable when the current repertoire read is offline.
+  for (const operation of prefixTransitions) {
+    if (!comparisonRepertoires.has(operation.repertoireId)) comparisonRepertoires.set(operation.repertoireId,
+      { id: operation.repertoireId, title: operation.summary.repertoireName });
+  }
   return (
     <section className="library-page" id="repertoire">
       {deleteTarget && <RepertoireDeleteDialog key={deleteTarget.id} name={deleteTarget.title}
         localDemo={!deleteTarget.backend}
         pendingPolicy={pendingDeletePolicy} busy={deleteBusy} error={deleteError}
         onClose={() => setDeleteTarget(null)} onConfirm={policy => remove(deleteTarget, policy)} />}
-      {backendItems.filter(item => item.id === comparisonRepertoireId).map(item => <PrefixComparisonDialog
+      {[...comparisonRepertoires.values()].filter(item => item.id === comparisonRepertoireId).map(item => <PrefixComparisonDialog
         key={`${item.id}:${refreshRevision}`} repertoireId={item.id} repertoireName={item.title}
         editsPaused={prefixEditsPaused(item.id)}
         onClose={() => setComparisonRepertoireId(null)} onPublished={async () => {
