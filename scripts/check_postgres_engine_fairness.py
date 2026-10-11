@@ -25,6 +25,7 @@ from app.database import background_connection
 from app.services import engine_scheduling, redis_admission_gate
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 from app.services.threat_pipeline import ENGINE_VERSION, NETWORK_VERSION
+from app.schema_version import POSTGRES_SCHEMA_VERSION
 from app.services.threat_validation import AnalysisRequest, AnalysisReport, AnalysisLine, EngineScore
 
 
@@ -488,7 +489,8 @@ class EngineFairnessProof:
             with psycopg.connect(upgrade_url) as database:
                 assert database.execute('SELECT automated_streak FROM engine_scheduling_state').fetchone()[0] == 3
                 assert database.execute('SELECT id,moves_json FROM imported_games').fetchall() == [('historical', '["e2e4"]')]
-                assert database.execute('SELECT count(*),max(version) FROM tempo_schema_migrations').fetchone() == (45, 45)
+                assert [row[0] for row in database.execute(
+                    'SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()] == list(range(1, POSTGRES_SCHEMA_VERSION+1))
         finally:
             with psycopg.connect(self.database_url, autocommit=True) as parent:
                 parent.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(upgrade_name)))
@@ -501,7 +503,7 @@ class EngineFairnessProof:
         apply_migrations(self.database_url)
         assert self.streak() == 3
         assert self.sql('SELECT id,moves_json,analysis_version FROM imported_games') == before
-        assert self.sql('SELECT max(version),count(*) FROM tempo_schema_migrations')[0] == (45, 45)
+        assert [row[0] for row in self.sql('SELECT version FROM tempo_schema_migrations ORDER BY version')] == list(range(1, POSTGRES_SCHEMA_VERSION+1))
 
     def test_postgres_engine_mixed_backlog_has_bounded_service_and_inspectable_plans(self):
         self.reset()

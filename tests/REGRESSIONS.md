@@ -3795,6 +3795,8 @@ All PostgreSQL cases run through the regular `background_workloads` stage. Migra
 
 - `verify_issue108_schema45_upgrade_preserves_inventory_sources`: current-main 45 → 46 uses a separate populated database, normal-driver repetition, exact source/history preservation and restart/replay. The original `verify_issue108_upgrade_restart_replay_and_coverage` still starts at historical schema 44 and upgrades through both published 045 and inventory 046; neither historical rehearsal is replaced.
 
+- `test_postgres_engine_migration_replay_preserves_streak_and_historical_game` failed fresh qualification `38118264341` after schema 046 correctly applied: its current-ledger assertion still required `(45,45)`. That case and `test_postgres_engine_upgrade_from_schema_44_preserves_historical_data` now require the exact contiguous ledger through current readiness, retaining schema-44 input, all historical game/streak assertions and normal-driver repetition. This reconciles the newly merged engine proof with additive inventory readiness; production engine policy and published migration 045 are unchanged.
+
 - `test_issue108_newer_graph_publication_fences_computed_inventory_output`: a deterministic compute/publication hook delivers old output after replacement; newer publication remains accepted after exact stale replay.
 
 - `test_issue108_current_worker_defers_inventory_without_resetting_checkpoint`: current worker dispatch yields denied inventory before computation/failure handling and passes the unchanged checkpoint to durable deferral. The original real PostgreSQL proof's blocking-wait expectation failed on post-#116 main; it now requires immediate `BackgroundAdmissionDeferred`, zero staged writes and subsequent exact-delivery resume/replay.
