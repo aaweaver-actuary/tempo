@@ -496,6 +496,31 @@ superseded when main advanced. Current-base qualification must execute and
 aggregate consistent candidate evidence; none of these older results qualifies
 the new head. Failure traces and provenance are retained in the delivery report.
 
+Current-base CI `38117896103` on `0fef006466e7b3f749d9d8a6fa8511e000351423`
+passed backend 2,369, frontend 1,496, browser 276 and visual/performance 67, plus
+builds and lifecycle. Durability stopped during import publication on the API's
+explicit queue-head issuance-pending HTTP 503. The bounded readiness poll used
+the ordinary strict HTTP reader, so it aborted before publication could settle.
+The separate runner repair opts only that queue read into recognizing the exact
+pending response as unfinished work. It resets the three consecutive settled
+samples and retains the existing 180-poll/250 ms bound. HTTP 500, other 503s,
+malformed responses, task-service failures and completed integrity conflicts
+still fail. Product queue/error behavior and review durability are unchanged.
+
+`study_import_waits_for_pending_head_issuance_without_masking_service_failures`
+and `study_import_pending_issuance_remains_bounded_and_preserves_integrity_failures`
+both failed first (0.136 s), then passed (0.144 s). The complete affected runner
+file passed 62 cases in 2.006 s; full lint passed with ten existing warnings
+(local lint duration was not captured). They run through the regular Vitest
+runner-contract wrapper. Real PostgreSQL durability and complete current-head
+qualification remain required; the passing mocked cases do not prove them.
+
+```sh
+node --test --test-name-pattern='study_import_' tests/runner/postgres-test-speedups.test.mjs
+node --test tests/runner/postgres-test-speedups.test.mjs
+npm run lint
+```
+
 [PR #172](https://github.com/aaweaver-actuary/tempo/pull/172) records current-head/current-base
 qualification and final delivery evidence. Focused local passes and older
 measurements alone do not establish merge readiness for a newer SHA.
