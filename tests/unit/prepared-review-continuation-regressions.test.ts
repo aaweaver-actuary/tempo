@@ -6,6 +6,7 @@ import { useTrainingStore } from "../../app/state/training-store";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
 import { localDayKey } from "../../app/utils/local";
 import { enqueueTrainingFailure } from "../../app/lib/training-failure-outbox";
+import * as offlineTraining from "../../app/lib/offline-training";
 
 vi.mock("../../app/lib/background-study", async () => {
   const { createStudyPositionStore } = await import("../../app/lib/study-position-store");
@@ -124,6 +125,22 @@ it("issue186_late_body_after_deadline_cannot_install", async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(useTrainingStore.getState().attempt).toEqual(activeAttempt);
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+  expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
+});
+
+it("issue186_queue_prerequisite_is_included_in_acquisition_deadline", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("indexedDB", {});
+  vi.spyOn(offlineTraining, "readPreparedTraining").mockImplementation(() => new Promise(() => {}));
+  const fetcher = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", fetcher);
+  const activeAttempt = useTrainingStore.getState().attempt;
+  const loading = fetchAndInitializeQueue(true, { timeoutMs: 15_000, replaySavedReviews: false, expectedAttempt: activeAttempt });
+  const failure = loading.catch(error => error);
+  await vi.advanceTimersByTimeAsync(15_001);
+  expect(await failure).toBeInstanceOf(Error);
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(useTrainingStore.getState().attempt).toEqual(activeAttempt);
   expect(useTrainingStore.getState().queueReadiness).toBe("unavailable");
 });
 

@@ -137,7 +137,49 @@ it("issue186_authoritative_empty_queue_settles_saved_progression", async () => {
     message: "Result saved. Training queue complete." });
 });
 
-it("issue186_prepared_card_survives_aborted_reconciliation_and_recovers", async () => {
+it.each(["fallback", "prepared"])("issue186_periodic_refresh_preserves_progression_owner: %s", async path => {
+  const refreshIntervals: (() => void)[] = [];
+  const originalInterval = window.setInterval.bind(window);
+  const intervalSpy = vi.spyOn(window, "setInterval").mockImplementation((handler, delay, ...arguments_) => {
+    if (delay === 30_000 && typeof handler === "function") refreshIntervals.push(() => handler(...arguments_));
+    return originalInterval(handler, delay, ...arguments_) as unknown as ReturnType<typeof window.setInterval>;
+  });
+  try {
+    if (path === "prepared") queue = [queueCard("card-a", 12), queueCard("card-b", 13)];
+    await readyHome();
+    expect(refreshIntervals.length).toBeGreaterThan(0);
+    if (path === "prepared") reviewResponse = async () => Response.json({ persisted: true, prepared_continuation: {
+      card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0, local_date: new Date().toLocaleDateString("en-CA"),
+    } });
+    const originalFetcher = fetcher.getMockImplementation()!;
+    let acquisitions = 0;
+    fetcher.mockImplementation(async (input, options) => {
+      if (!String(input).includes("/api/queue/window")) return originalFetcher(input, options);
+      acquisitions++;
+      if (path === "prepared") throw new DOMException("Fetch is aborted", "AbortError");
+      return new Promise(() => {});
+    });
+    await act(async () => { await trainingProps.rateCard("correct"); });
+    const activeAttempt = useTrainingStore.getState().attempt;
+    await act(async () => { refreshIntervals.forEach(refresh => refresh()); });
+    if (path === "fallback") {
+      expect(acquisitions).toBe(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+      expect(acquisitions).toBe(2);
+      expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
+    } else {
+      expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+      expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+      expect(useTrainingStore.getState().serviceError).toBe("");
+      expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");
+    }
+    expect(useTrainingStore.getState().attempt).toEqual(activeAttempt);
+    expect(reviewPosts()).toHaveLength(1);
+    expect(notifications().find(record => record.key === "review-queue:12")?.active).toBe(false);
+  } finally { intervalSpy.mockRestore(); }
+});
+
+it.each(["abort", "deadline"])("issue186_prepared_card_survives_aborted_reconciliation_and_recovers: %s", async failure => {
   queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
   await readyHome();
   reviewResponse = async () => Response.json({ persisted: true, prepared_continuation: {
@@ -146,7 +188,10 @@ it("issue186_prepared_card_survives_aborted_reconciliation_and_recovers", async 
   const originalFetcher = fetcher.getMockImplementation()!;
   let unavailable = true;
   fetcher.mockImplementation(async (input, options) => {
-    if (unavailable && String(input).includes("/api/queue/window")) throw new DOMException("Fetch is aborted", "AbortError");
+    if (unavailable && String(input).includes("/api/queue/window")) {
+      if (failure === "deadline") return new Promise(() => {});
+      throw new DOMException("Fetch is aborted", "AbortError");
+    }
     return originalFetcher(input, options);
   });
   await act(async () => { await trainingProps.rateCard("correct"); });
@@ -155,6 +200,9 @@ it("issue186_prepared_card_survives_aborted_reconciliation_and_recovers", async 
   expect(useTrainingStore.getState().queueReadiness).toBe("ready");
   expect(useBoardShellStore.getState().board.interactionMode).not.toBe("readonly");
   expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false });
+  if (failure === "deadline") await act(async () => { await vi.advanceTimersByTimeAsync(15_001); });
+  expect(useTrainingStore.getState().attempt).toEqual(preparedAttempt);
+  expect(useTrainingStore.getState().queueReadiness).toBe("ready");
   unavailable = false;
   queue = queue.slice(1);
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue" })); });

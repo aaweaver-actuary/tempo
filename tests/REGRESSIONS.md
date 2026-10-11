@@ -3902,13 +3902,16 @@ A durable review must reach an interactive next card, authoritative queue comple
 - `issue186_healthy_fallback_does_not_wait_for_integrity` — next-card installation settles independently of an integrity read.
 - `issue186_queue_retry_recovers_without_resubmitting_saved_review` — manual progression recovery retains one original review and logical notification.
 - `issue186_authoritative_empty_queue_settles_saved_progression` — genuine exhaustion settles successfully.
-- `issue186_prepared_card_survives_aborted_reconciliation_and_recovers` — receipt-authorized B remains interactive and later reconciliation preserves its attempt.
+- `issue186_prepared_card_survives_aborted_reconciliation_and_recovers` — abort and deadline leave receipt-authorized B interactive; later reconciliation preserves its attempt.
 - `issue186_invalid_authoritative_head_requires_recovery` — completed, malformed, partial, and unusable heads cannot authorize a filtered successor.
 - `issue186_view_replacement_cannot_orphan_progression_notification` — unmount cancels acquisition and makes its notification inactive.
 - `issue186_lost_review_response_receipt_recovery_uses_queue_only_retry` — authoritative receipt recovery does not repeat review delivery.
 - `issue186_stale_progression_cannot_replace_new_attempt` — a late acquisition cannot install over a newer attempt.
 - `issue186_reconciliation_preserves_completed_prepared_attempt` — reconciliation cannot reset a just-completed prepared attempt.
 - `issue186_late_body_after_deadline_cannot_install` — cancellation revokes installation authority even if response parsing later resolves.
+- `issue186_queue_prerequisite_is_included_in_acquisition_deadline` — a held preparation-cache read cannot evade the complete acquisition deadline.
+- `issue186_periodic_refresh_preserves_progression_owner` — the existing 30-second poll cannot supersede bounded fallback or disable an authorized prepared attempt on failure.
+- `issue186_prepared_recovery_remains_visible_and_interactive` — pinned Linux rendering at 390/1280 pixels retains visible retry, native input and no horizontal overflow; screenshots are attached for inspection.
 - `issue186_completed_tactic_has_bounded_progression` — disposable PostgreSQL/native browser proof for prepared abort, fallback abort, and fallback timeout; recovery and restart/exact replay retain one durable review.
 
 Unit coverage is in `review-attempt-confirmation-regressions.test.tsx` and `prepared-review-continuation-regressions.test.ts`; real browser coverage is in `post-review-progression.spec.ts`. Existing #172 identity, guided-state, opening-evidence, FSRS, and receipt replay regressions remain in the regular gate.
