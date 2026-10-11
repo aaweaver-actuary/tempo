@@ -18,6 +18,29 @@ import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redi
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
 
+test("burial_publication_fixture_reads_do_not_hold_foreground_admission", async () => {
+  const source = readFileSync(join(root, "tests/browser/workspace-flows.spec.ts"), "utf8");
+  const publicationPolls = source.slice(source.indexOf('  await expect.poll(async () => {'), source.indexOf('  await page.goto("/");'))
+    .replace('(item: { name: string })', '(item)');
+  const paths = [];
+  await runInNewContext(`(async () => { ${publicationPolls} })()`, {
+    api: "http://owned/api",
+    request: { get: async (url, options) => {
+      assert.equal(options?.headers?.["X-Tempo-Work-Class"], "background",
+        "Fixture publication reads must not renew the foreground lease they wait to clear");
+      paths.push(url);
+      return { json: async () => url.endsWith('/repertoires')
+        ? { repertoires: [{ name: "bury-training", graph_state: "ready", integrity_status: "clean", integrity_scan_status: "idle" }] }
+        : { projection: { state: "ready", refresh_pending: false }, cards: [{}, {}] } };
+    } },
+    expect: { poll: (read, options) => ({ toEqual: async value => {
+      assert.equal(options.timeout, 20_000, "Publication keeps its existing deadline");
+      assert.equal(JSON.stringify(await read()), JSON.stringify(value));
+    } }) },
+  });
+  assert.deepEqual(paths, ["http://owned/api/repertoires", "http://owned/api/queue/today"]);
+});
+
 test("training_transition_cleanup_waits_for_restored_background_readiness", async () => {
   const source = readFileSync(join(root, "tests/browser/training-critical-path.spec.ts"), "utf8");
   const cleanupSource = source.slice(source.indexOf('    const ownedConsumers ='), source.lastIndexOf('\n  }\n});'));
