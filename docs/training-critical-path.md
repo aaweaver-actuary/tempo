@@ -415,11 +415,20 @@ readiness deadline was introduced for this fixture defect.
 The corrected ordinary browser case passed with an existing queue row in
 62.29 s (three transitions, real next-card input and durable replay); its owning
 runner's teardown passed in 4.99 s. Typecheck and selected ESLint passed.
+Queue projection can renumber positions while retaining the same order. The
+cleanup assertion now accounts for unchanged, runtime-reordered and
+runtime-removed prior entries; it restores unchanged rows and retains newer
+runtime changes. Its named three-case regression failed before the correction
+(2.14 s) and passed afterward (0.82 s). These are fixture cleanup contracts,
+separate from review durability and the measured training runtime.
+The final fixture follow-up passed its ordinary browser case in 59.89 s and
+teardown in 5.21 s; typecheck and full lint passed (ten existing warnings).
 
 ```sh
 make python-file 'FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_external_cancellation_reaps_owned_children[term_resistant_children-term]'
 make python-file FILE=backend/tests/test_stalemate_swindles.py::test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children
 make python-file FILE=backend/tests/test_stalemate_swindles.py
+make python-file FILE=backend/tests/test_training_transition_fixture.py
 make ui-file FILE=training-critical-path.spec.ts
 ```
 

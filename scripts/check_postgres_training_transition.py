@@ -28,11 +28,21 @@ def main():
         displaced_positions = json.loads(sys.argv[3]) if len(sys.argv) > 3 else []
         with psycopg.connect(DSN) as connection:
             restored = 0
+            runtime_reordered = 0
+            runtime_removed = 0
             for entry_id, original_position, displaced_position in displaced_positions:
+                current = connection.execute("SELECT position FROM daily_queue WHERE id=%s FOR UPDATE", (entry_id,)).fetchone()
+                if current is None:
+                    runtime_removed += 1
+                    continue
+                if current[0] != displaced_position:
+                    runtime_reordered += 1
+                    continue
                 # Do not overwrite a newer queue reorder during fixture cleanup.
                 restored += connection.execute("UPDATE daily_queue SET position=%s WHERE id=%s AND position=%s",
                     (original_position, entry_id, displaced_position)).rowcount
-            print(json.dumps({"restored_queue_positions": restored}))
+            print(json.dumps({"restored_queue_positions": restored, "runtime_reordered_positions": runtime_reordered,
+                "runtime_removed_entries": runtime_removed}))
         return
     if action in {"seed", "seed-small", "seed-with-existing-queue"}:
         today = sys.argv[3]

@@ -318,7 +318,8 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     docker("stop", ...ownedConsumers);
     try {
       const cleanup = JSON.parse(fixture("cleanup", JSON.stringify(displacedQueuePositions)));
-      expect(cleanup.restored_queue_positions).toBe(displacedQueuePositions.length);
+      expect(cleanup.restored_queue_positions + cleanup.runtime_reordered_positions + cleanup.runtime_removed_entries)
+        .toBe(displacedQueuePositions.length);
     }
     finally { docker("start", ...ownedConsumers); }
   }
