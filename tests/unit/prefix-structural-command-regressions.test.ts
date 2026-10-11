@@ -27,7 +27,7 @@ function reserveStructuralFixture(affectedRepertoireIds?: string[]) {
   const summary = transitionSummary(prefixTransitionPlanSchema.parse(transition.ready), prefixSourceSchema.parse(structural.source), "Combined Black");
   if (affectedRepertoireIds) summary.affectedRepertoireIds = affectedRepertoireIds;
   localStorage.setItem(prefixKey, JSON.stringify({ version: 1, operationId: "prefix-operation", repertoireId: "rep",
-    request: transition.request, summary, state: "pending" }));
+    request: transition.request, summary, state: "pending", approval: { plan: transition.ready, source: { repertoire_id: structural.source.repertoire_id, snapshot_id: structural.source.snapshot_id, graph_generation: structural.source.graph_generation, lines: structural.source.lines } } }));
 }
 beforeEach(() => { installPrefixTransitionTestLocks(); reserveStructuralFixture(); });
 afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
@@ -190,5 +190,25 @@ for (const [family, pendingKey, recover, response] of [
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher.mock.calls[0]).toHaveLength(1);
     expect(JSON.parse(localStorage.getItem(pendingKey)!).operationId).toBe("original-operation");
+  });
+}
+
+it("issue81_legacy_summary_cannot_authorize_apparently_independent_deletion", async () => {
+  const operation = JSON.parse(localStorage.getItem(prefixKey)!); delete operation.approval;
+  localStorage.setItem(prefixKey, JSON.stringify(operation));
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await expect(deleteRepertoireCommand("independent")).rejects.toThrow("Resolve the prefix transition");
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBeNull();
+});
+for (const field of ["snapshot_id", "transition_snapshot_id", "plan_id", "graph_generation", "candidate_depths"] as const) {
+  it(`issue81_corrupt_reviewed_${field}_suppresses_structural_request_even_when_route_ids_match`, async () => {
+    const operation = JSON.parse(localStorage.getItem(prefixKey)!);
+    operation.request[field] = field === "candidate_depths" ? { a: 1, b: 2 } : field === "graph_generation" ? 2 : "different-reviewed-evidence";
+    localStorage.setItem(prefixKey, JSON.stringify(operation));
+    const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+    await expect(deleteRepertoireCommand("independent")).rejects.toThrow("unreadable");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBeNull();
   });
 }

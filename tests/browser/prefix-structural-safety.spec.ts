@@ -29,7 +29,8 @@ async function prepareReservation(request: APIRequestContext, label: string) {
   const plan = prefixTransitionPlanSchema.parse(await response.json());
   expect(plan.status).toBe("ready");
   return { version: 1, operationId: crypto.randomUUID(), repertoireId,
-    request: transitionRequest(plan, depths), summary: transitionSummary(plan, source!, label), state: "pending" };
+    request: transitionRequest(plan, depths), summary: transitionSummary(plan, source!, label), state: "pending",
+    approval: { plan, source: { repertoire_id: source!.repertoire_id, snapshot_id: source!.snapshot_id, graph_generation: source!.graph_generation, lines: source!.lines.filter(line => plan.selected_line_ids.includes(line.id)) } } };
 }
 
 async function openDeletion(page: Page, label: string) {

@@ -22,7 +22,7 @@ const prefix = { moves_uci: [], san: "", ending_fen: initialFen, revision: 0 };
 const summary = transitionSummary(prefixTransitionPlanSchema.parse(transition.ready), prefixSourceSchema.parse(structural.source), "Combined Black");
 function savedReservation(affectedRepertoireIds = summary.affectedRepertoireIds) {
   localStorage.setItem(prefixKey, JSON.stringify({ version: 1, operationId: "prefix-operation", repertoireId: "rep", request: transition.request,
-    summary: { ...summary, affectedRepertoireIds }, state: "pending" }));
+    summary: { ...summary, affectedRepertoireIds }, state: "pending", approval: { plan: transition.ready, source: { repertoire_id: structural.source.repertoire_id, snapshot_id: structural.source.snapshot_id, graph_generation: structural.source.graph_generation, lines: structural.source.lines } } }));
 }
 async function openLibrary() {
   const mutations: RequestInit[] = [];

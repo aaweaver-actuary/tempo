@@ -4156,3 +4156,5 @@ allocates no removal identity; complete canonical/deletion scopes stay eligible.
 
 - `issue81_{analysis_paste,branch_save,branch_removal}_status_only_recovery_preserves_draft_and_sends_no_mutation` and `issue81_{analysis_paste,branch_save,branch_removal}_status_only_pending_recovery_never_replays` in `tests/unit/prefix-structural-command-regressions.test.ts` keep completed receipt reads available and prevent pending status checks from redelivering during a conflicting transition.
 - `issue81_paused_paste_editor_can_check_completed_receipt_without_erasing_unsaved_input` in `tests/unit/prefix-structural-editors-regressions.test.tsx` proves the separate recovery control retains the current draft while new Save remains disabled.
+
+- `issue81_legacy_summary_cannot_authorize_apparently_independent_deletion` and `issue81_corrupt_reviewed_{snapshot_id,transition_snapshot_id,plan_id,graph_generation,candidate_depths}_suppresses_structural_request_even_when_route_ids_match` in `tests/unit/prefix-structural-command-regressions.test.ts` prove legacy uncertainty and altered planner evidence cannot send an apparently independent mutation or allocate its identity.

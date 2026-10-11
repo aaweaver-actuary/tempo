@@ -26,8 +26,10 @@ Unavailable safe serialization, inaccessible/malformed storage, uncertain
 ownership and incomplete overlapping scope refuse delivery. The target
 `operation.repertoireId` always belongs to protected scope even when a summary is
 corrupt. Matching planner evidence binds request, snapshots, depths and affected
-scope; matching route IDs alone is insufficient. Historical journals are preserved;
-missing evidence never grants permission for uncertain structural effects.
+scope; matching route IDs alone is insufficient. New approvals retain their reviewed planner evidence. Historical V1 journals are
+preserved and can recover with their original identity; unresolved records without
+that evidence block apparently independent structural edits, because their summary
+cannot prove complete scope.
 
 Explicit independent repertoire scope stays editable. Shared-card producers and
 edits do not have authoritative complete membership inventories in the existing
