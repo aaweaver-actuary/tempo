@@ -3873,3 +3873,25 @@ PR #123 / issue #43 engine fairness reconstructed on current main (October 10, 2
 - `test_position_claim_identical_receipt_recovers_without_preparing_work` preserves identical hinted/unhinted replay and attachment, original lease/error/Location and no second preparation or dispatch. `test_position_claim_omitted_empty_and_null_requests_share_unhinted_identity` retains the existing model's absent/null normalization. `test_position_claim_receipt_preserves_command_identity_conflict` and `test_position_claim_receipt_recovery_preserves_explicit_hash_validation` keep normal command/hash rejection independent of shortcut validation.
 - `test_position_claim_legacy_receipt_recovery_remains_available` preserves historical receipts with or without a saved plan. Historical plans did not save the caller's hint, so their original hinted/unhinted identity cannot be verified; this compatibility exception is limited to receipts without `claim_request` metadata. New route operations retain that metadata in their ordinary persisted payload and validate against the unchanged canonical command hash. No migration or fairness-policy change.
 - `scripts/check_postgres_engine_fairness.py::test_postgres_engine_completed_position_receipt_validates_request_identity` and `test_postgres_engine_pending_position_receipt_validates_request_identity` run in regular durability. Real route/command receipts reject all three payload changes, retain identical replay across database pool recreation, and leave receipts, leases, positions and fairness state unchanged on conflicts. Queued operations still recover from their original saved payload and replay their completed receipt without spending another turn. The existing historical replay/crash/restart/concurrency proofs remain intact.
+
+## Issue #157 — durable repertoire learning-priority preferences
+
+`backend/tests/test_learning_priorities.py`:
+- `test_learning_priority_defaults_are_neutral_and_exclude_system_policies` (failed with 404 on unchanged main before implementation).
+- `test_learning_priority_zero_fractional_inactive_and_reactivation_preserve_preferences`.
+- `test_learning_priority_invalid_weights_are_rejected_without_mutation`, `test_learning_priority_nonfinite_weights_are_rejected`, `test_learning_priority_strict_contract_rejects_invalid_flags_revisions_and_unknown_fields`, `test_learning_priority_missing_update_fields_do_not_reset_preferences`.
+- `test_learning_priority_missing_and_system_policy_updates_return_not_found`.
+- `test_learning_priority_stale_writes_conflict_independent_policies_and_noops_do_not`.
+- `test_learning_priority_snapshot_is_immutable_deterministic_and_rename_independent`, `test_learning_priority_empty_workspace_snapshot_is_stable`, `test_learning_priority_integer_float_and_negative_zero_noops_are_canonical`.
+- `test_learning_priority_reimport_color_identity_restart_and_ordinary_settings_preserve_weights`, `test_learning_priority_deleted_identity_is_absent_and_new_import_is_neutral`.
+- `test_learning_priority_italian_ruy_scale_and_shared_card_preferences_preserve_conditional_models` (test-local study-benefit illustration, no production ranking).
+- `test_learning_priority_changes_leave_admissions_fsrs_graph_evidence_tasks_and_queue_unchanged`.
+- `test_learning_priority_postgres_api_dispatch_preserves_version_and_idempotency`.
+
+`scripts/check_postgres_learning_priorities.py`, registered in the regular full and durability PostgreSQL runner:
+- `test_postgres_learning_priority_populated_upgrade_defaults_and_replay_preserve_study_state`.
+- `test_postgres_learning_priority_concurrent_same_policy_stale_and_independent_policy_updates`.
+- `test_postgres_learning_priority_restart_receipt_replay_noop_and_no_derived_side_effects`.
+- `test_postgres_learning_priority_native_reimport_rename_delete_and_new_identity_defaults`.
+
+Runner coverage: `learning priority native upgrade concurrency restart and replay proofs remain in durability` in `tests/runner/postgres-test-speedups.test.mjs`. Configuration remains independent of production admission, review history, conditional reach and probability evidence. No global ranking, budget, Settings UI or production cutover is implemented.

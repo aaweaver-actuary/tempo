@@ -1351,6 +1351,9 @@ def initialize() -> None:
                 "canonical_prefix_preview_id": "TEXT",
                 "scope_source_revision": "INTEGER NOT NULL DEFAULT 0",
                 "new_cards_per_day": "INTEGER CHECK(new_cards_per_day BETWEEN 0 AND 100)",
+                "learning_priority_weight": "REAL NOT NULL DEFAULT 1 CHECK(learning_priority_weight >= 0 AND learning_priority_weight <= 1.7976931348623157e308)",
+                "learning_priority_active": "INTEGER NOT NULL DEFAULT 1 CHECK(learning_priority_active IN (0,1))",
+                "learning_priority_revision": "INTEGER NOT NULL DEFAULT 1 CHECK(learning_priority_revision >= 1)",
             },
             "repertoire_opportunities": {
                 "canonical_prefix_revision": "INTEGER NOT NULL DEFAULT 0",

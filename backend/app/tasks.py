@@ -31,6 +31,7 @@ from . import teaching_commands  # noqa: F401 - registers foreground teaching co
 from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
 from . import canonical_prefix_api  # noqa: F401 - registers canonical opening commands
 from . import account_commands  # noqa: F401 - registers foreground account command
+from . import learning_priority_commands  # noqa: F401 - registers study-preference command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes

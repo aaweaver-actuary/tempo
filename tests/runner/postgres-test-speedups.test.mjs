@@ -858,3 +858,13 @@ test("issue107 process restart and foreground profile proof runs in regular dura
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
 });
+
+test("learning priority native upgrade concurrency restart and replay proofs remain in durability", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  background_workloads: async () => {");
+  const end = source.indexOf("  priority_benchmark: async () => {", start);
+  assert.match(source.slice(start, end), /check_postgres_learning_priorities\.py/);
+  for (const mode of ["full", "durability"]) {
+    assert(postgresTestStages(parse(["--mode", mode])).includes("background_workloads"));
+  }
+});

@@ -40,6 +40,7 @@ from .services.tactical_catalog import (
     puzzle_membership,
     progress_pack_id,
 )
+from .learning_priorities import LearningPriorityUpdate
 from .models import (
     AccountSettings,
     AnalysisPasteCommitRequest,
@@ -969,6 +970,29 @@ def retry_system_task(task_id: str,
 @app.get("/api/analysis/capabilities")
 def capabilities():
     return AnalysisCapabilities()
+
+
+@app.get("/api/settings/repertoire-learning-priorities")
+def get_repertoire_learning_priorities():
+    from .learning_priorities import read_learning_priority_snapshot
+    with read_connection() as db:
+        return read_learning_priority_snapshot(db).document()
+
+
+@app.put("/api/repertoires/{identifier}/learning-priority")
+def put_repertoire_learning_priority(identifier: str, request: LearningPriorityUpdate,
+                                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.learning_priority.update",
+            {"policy_id": identifier, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
+    from .learning_priorities import update_learning_priority
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        return update_learning_priority(db, identifier, request, postgres=False)
 
 
 @app.get("/api/settings", response_model=Settings)
