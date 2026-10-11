@@ -55,11 +55,13 @@ function compareDepths(text = "2, 3") {
 
 function transitionFetch(kind: "ready" | "reused" | "shared" | "blocked" = "ready") {
   const control = { state: "complete", admitted: false, lostResponse: false, planChanged: false, sourceChanged: false,
-    refreshFailed: false, planReads: 0, deliveries: [] as { operationId: string; body: unknown }[], retries: 0 };
+    refreshFailed: false, offlineAfterDelivery: false, deferPreflight: false, planReads: 0, deliveries: [] as { operationId: string; body: unknown }[], retries: 0 };
   stubDiagnosticFetch(vi.fn(async (url, options?: RequestInit) => {
     const path = String(url);
     if (path.endsWith("/prefix-transition/plan")) {
       ++control.planReads;
+      if (control.deferPreflight && control.planReads === 2) return Response.json({ detail: { code: "evaluation_busy",
+        message: "Study work is active. Retry the diagnostic when study is idle." } }, { status: 503, headers: { "Retry-After": "1" } });
       if (control.sourceChanged && control.planReads > 1) return Response.json({ detail: { code: "stale_snapshot", message: "Source changed concurrently. Refresh the source." } }, { status: 409 });
       return Response.json(control.planChanged && control.planReads > 1 ? { ...transitionFixture[kind], plan_id: "changed" } : transitionFixture[kind]);
     }
@@ -73,6 +75,7 @@ function transitionFetch(kind: "ready" | "reused" | "shared" | "blocked" = "read
     if (path.includes("/operations/")) {
       const operationId = path.split("/").at(-1)!;
       if (!control.admitted) return Response.json({ operation_id: operationId, state: "unknown" });
+      if (control.offlineAfterDelivery) throw new TypeError("Connection offline after delivery");
       return Response.json({ operation_id: operationId, state: control.state,
         transition: { state: control.state === "complete" ? "complete" : control.state === "blocked" ? "recovery_required" : "staging",
           graph_generation: 2, queue_date: control.state === "complete" ? transitionFixture.result.queue_date : null,
@@ -123,6 +126,20 @@ it("issue81_double_click_creates_one_operation_in_confirmation", async () => {
   expect(control.planReads).toBe(2);
   expect(control.deliveries[0].body).toEqual(transitionFixture.request);
 });
+it("issue81_preflight_foreground_deferral_revalidates_the_same_plan", async () => {
+  const control = transitionFetch(); await reviewShortening(); control.deferPreflight = true;
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await waitFor(() => expect(control.planReads).toBe(2)); expect(control.deliveries).toHaveLength(0);
+  await screen.findByText(/Prefix transition published\. Graph/, {}, { timeout: 3000 });
+  expect(control.planReads).toBe(3); expect(control.deliveries).toHaveLength(1);
+  expect(control.deliveries[0].body).toEqual(transitionFixture.request);
+});
+it("issue81_plan_changed_after_foreground_deferral_requires_new_confirmation", async () => {
+  const control = transitionFetch(); await reviewShortening(); control.deferPreflight = true; control.planChanged = true;
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByText("Stale transition", {}, { timeout: 3000 });
+  expect(control.planReads).toBe(3); expect(control.deliveries).toHaveLength(0);
+});
 it("issue81_pending_survives_remount_in_confirmation", async () => {
   const control = transitionFetch(); control.state = "pending"; const mounted = await reviewShortening();
   fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
@@ -144,6 +161,17 @@ it("issue81_lost_response_reload_recovers_original_operation_in_confirmation", a
   await screen.findByText(/Prefix transition published\. Graph/);
   await screen.findByRole("region", { name: "Candidate depth 2" });
   expect(control.deliveries.map(delivery => delivery.operationId)).toEqual([operationId]);
+});
+it.each(["online", "focus"])("issue81_%s_resumes_uncertain_delivery_without_reconfirmation", async eventName => {
+  const control = transitionFetch(); control.offlineAfterDelivery = true; await reviewShortening();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm shortening" }));
+  await screen.findByRole("heading", { name: "Delivery unconfirmed" });
+  const operationId = readPrefixTransition("rep")!.operationId;
+  control.offlineAfterDelivery = false;
+  await act(async () => { window.dispatchEvent(new Event(eventName)); });
+  await screen.findByRole("region", { name: "Candidate depth 2" });
+  expect(control.deliveries.map(delivery => delivery.operationId)).toEqual([operationId]);
+  expect(readPrefixTransition("rep")).toBeNull();
 });
 it("issue81_stale_plan_never_mutates", async () => {
   const control = transitionFetch(); await reviewShortening(); control.planChanged = true;
