@@ -640,8 +640,13 @@ case correctly refused destructive fixtures while a restarted consumer had not
 regained authoritative health. Training fixture cleanup now waits on real health
 within the existing 60-second readiness bound before yielding to another case.
 The disposable-instance guard and global/test deadlines are unchanged. The exact
-predecessor/successor pair is checked separately, and full combined CI remains
-required.
+predecessor/successor pair ran on `efa56dbf`: 2 failures, 202.20 s browser stage
+(325.07 s command). The original 15,000-card fixture cleanup reached its unchanged
+60-second Docker command deadline; the following imported repertoire remained
+refreshing at its unchanged 20-second bound. The earlier disposable-instance
+refusal did not recur. Other local disposable stacks were active, but this alone
+does not prove the cause of either timeout. Logs, traces and ownership records
+are retained; full combined CI must resolve this boundary before handoff.
 
 Exact development commands include:
 
@@ -666,7 +671,10 @@ Exact filtered commands and raw logs are preserved under the root checkout's
 Earlier browser failures are retained: invalid fixture revision freezing;
 interrupted oversized fixture setup; required background-worker readiness;
 and the prepared-card periodic-poll regression. No timeout or qualification
-threshold was increased to clear those failures. The final fixture keeps CLI
+threshold was increased to clear those failures. A later local command-budget
+failure during repeated proof attachment led to consolidating three complete
+durability snapshots, preserving every original scheduling/receipt/review
+assertion while avoiding redundant database reads. The final fixture keeps CLI
 operations asynchronous so database inspection does not block browser routes.
 Conflict, migration-inventory (46), diff and executable test-plan guards are
 required before publishing. A local complete gate is not run concurrently with
