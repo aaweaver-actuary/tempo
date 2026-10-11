@@ -17,7 +17,9 @@ import * as local from "../../app/utils/local";
 import * as workspace from "../../app/lib/workspace-data";
 import { demoCards } from "../../app/samples";
 
-vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: vi.fn(), invalidateTrainingQueueCache: vi.fn() }));
+// Main ignores the result; PR #172 explicitly consumes successful installation.
+const initializeQueueMock = vi.hoisted(() => vi.fn<() => Promise<"installed">>());
+vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: initializeQueueMock, invalidateTrainingQueueCache: vi.fn() }));
 vi.mock("../../app/components/board/chessboard", () => ({ Chessboard: () => <div /> }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn(),
   moveSoundEnabled: () => false, prepareMoveSounds: vi.fn(), cancelMoveSounds: vi.fn() }));
@@ -66,10 +68,11 @@ beforeEach(() => {
   vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ response: responseJournal,
     assistance: vi.fn(), decision: vi.fn() } as unknown as journal.OpeningAttemptJournal);
-  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => {
+  initializeQueueMock.mockImplementation(async () => {
     if (!useTrainingStore.getState().isDatabaseQueueActive || !useTrainingStore.getState().practiceCards.length)
       useTrainingStore.getState().hydrateLocalQueue([card, otherCard], true);
     useTrainingStore.setState({ queueReadiness: "ready" });
+    return "installed";
   });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).includes("/repertoire/lines")) {
@@ -328,7 +331,7 @@ it("issue36_offline_missing_evidence_keeps_the_existing_practice_card_fallback",
 
 it("issue36_demo_keeps_demo_branch_membership_without_loading_an_index", async () => {
   vi.spyOn(local, "usesLocalApi").mockReturnValue(false);
-  vi.mocked(fetchAndInitializeQueue).mockResolvedValue(undefined);
+  initializeQueueMock.mockResolvedValue("installed");
   const prepare = vi.spyOn(study, "runStudyTask");
   render(<Home />);
   await waitFor(() => expect(useTrainingStore.getState().getCard().id).toBe(demoCards[0].id));
