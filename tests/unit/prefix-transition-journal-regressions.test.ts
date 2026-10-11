@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi, type MockInstance } from "vitest";
 import transition from "../fixtures/prefix-comparison/transition.json";
 import structural from "../fixtures/prefix-comparison/structural.json";
 import { prefixSourceSchema } from "../../app/domain/prefix-comparison";
@@ -255,4 +255,41 @@ it("audit187_lock_release_waits_for_storage_task_commit", async () => {
   const writing = withPrefixTransitionJournalLock(undefined, () => { storageCommit.port2.postMessage(null); });
   const reading = withPrefixTransitionJournalLock(undefined, () => committedIdentity);
   await writing; expect(await reading).toBe("original");
+});
+
+it.each(["missing", "constructor_error", "granted_constructor_error", "post_error", "granted_post_error"])(
+  "audit187_%s_storage_channel_rejects_before_identity_and_dispatch", async failureMode => {
+    const NativeChannel = MessageChannel; let constructions = 0;
+    const allocate = vi.spyOn(crypto, "randomUUID"); const dispatch = vi.fn();
+    if (failureMode === "missing") vi.stubGlobal("MessageChannel", undefined);
+    else vi.stubGlobal("MessageChannel", vi.fn(function () {
+      ++constructions;
+      if (failureMode === "constructor_error" || failureMode === "granted_constructor_error" && constructions === 2)
+        throw new Error("Channel constructor unavailable");
+      const channel = new NativeChannel();
+      if (failureMode === "post_error" || failureMode === "granted_post_error" && constructions === 2)
+        Object.defineProperty(channel.port2, "postMessage", { value: () => { throw new Error("Channel publication unavailable"); } });
+      return channel;
+    }));
+    await expect(begin()).rejects.toThrow(); expect(allocate).not.toHaveBeenCalled(); expect(localStorage.getItem(key)).toBeNull();
+    constructions = 0;
+    await expect(withPrefixTransitionJournalLock(undefined, () => ({ response: dispatch() }))).rejects.toThrow();
+    expect(dispatch).not.toHaveBeenCalled();
+    if (["missing", "constructor_error", "post_error"].includes(failureMode)) expect(readPrefixStructuralAdmission({ repertoireIds: ["rep"], scopeComplete: true }).paused).toBe(true);
+  });
+
+it("audit187_queued_abort_closes_publication_probe_ports_without_entering_callback", async () => {
+  const locks = installPrefixTransitionTestLocks(); const holder = deferred<void>(); const held = deferred<void>();
+  const holding = locks("tempo-pending-prefix-transition-v1:reservation", {}, () => { held.resolve(); return holder.promise; });
+  await held.promise;
+  const NativeChannel = MessageChannel; const portClosures: MockInstance<() => void>[] = [];
+  const channels = vi.fn(function () { const channel = new NativeChannel();
+    portClosures.push(vi.spyOn(channel.port1, "close"), vi.spyOn(channel.port2, "close")); return channel; });
+  vi.stubGlobal("MessageChannel", channels);
+  const controller = new AbortController(); const callback = vi.fn();
+  const queued = withPrefixTransitionJournalLock(controller.signal, callback); controller.abort(new Error("Caller stopped"));
+  await expect(queued).rejects.toThrow("Caller stopped");
+  holder.resolve(); await holding; await Promise.resolve();
+  expect(channels).toHaveBeenCalledOnce(); expect(portClosures).toHaveLength(2);
+  portClosures.forEach(close => expect(close).toHaveBeenCalledOnce()); expect(callback).not.toHaveBeenCalled();
 });

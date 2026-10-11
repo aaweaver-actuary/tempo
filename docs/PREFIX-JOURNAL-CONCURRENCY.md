@@ -44,8 +44,11 @@ snapshot checks, receipts, and fences.
 ## Browser compatibility
 
 Prefix journal mutations require native Web Locks in a current browser and a
-secure context: HTTPS or a browser-trusted localhost origin. The capability is
-checked at runtime. Browsers/contexts without usable Web Locks cannot reserve,
+secure context: HTTPS or a browser-trusted localhost origin. The lock and storage-publication channel capabilities are checked at runtime.
+A failed channel constructor/publication rejects before allocating identity or
+dispatching. Probe ports close immediately; the commit boundary is registered
+after lock grant and before the synchronous callback, so queued cancellation
+creates no retained boundary ports. Browsers/contexts without usable Web Locks cannot reserve,
 clear, or dispatch a new transition. The error identifies the required browser
 and origin. There is no read/check/write localStorage fallback or IndexedDB
 coordination subsystem. Known identities remain available for read-only status
