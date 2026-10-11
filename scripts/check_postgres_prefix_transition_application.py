@@ -1531,6 +1531,58 @@ def test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier():
     print('PASS test_pr102_bulk_activation_rolls_back_and_releases_reservation_barrier')
 
 
+def test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id():
+    from app import main
+    from unittest.mock import patch
+    from kombu.exceptions import OperationalError
+    from fastapi import HTTPException
+    import psycopg
+    from app.command_gateway import read_operation, record_operation_attempt, execute_command
+    from app.services.durable_tasks import list_tasks, claim_task, fail_task
+    with fixture('audit-journal-loss') as (repertoire_id,unrelated_repertoire_id,selected_lines,fixture_steps):
+        approved_plan,approved_payload=ready_plan(repertoire_id,selected_lines)
+        original_operation_id=approved_payload['operation_id']
+        execute(approved_payload);drain(application.TASK_KIND,application.execute_application_slice);execute(approved_payload)
+        graph_task=idle_call(lambda:claim_task('opening_graph_rebuild'))
+        assert graph_task and graph_task['payload']['repertoire_id']==repertoire_id
+        with postgres_store.connection(read_only=False) as database:
+            database.execute_native('UPDATE background_tasks SET attempt_count=max_attempts WHERE id=%s',(graph_task['id'],))
+        assert fail_task(graph_task['id'],graph_task['generation'],graph_task['lease_token'],RuntimeError('Audit publisher interruption'))['state']=='failed'
+        blocked_receipt=read_operation(original_operation_id)
+        assert blocked_receipt['state']=='blocked' and blocked_receipt['transition']['state']=='recovery_required'
+        application_task=next(task for task in list_tasks() if task['kind']==application.TASK_KIND and task['deduplication_key']==original_operation_id)
+        assert 'payload' not in application_task and 'payload_json' not in application_task and 'repertoire_id' not in application_task
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute_native('SELECT operation_id FROM prefix_transition_applications WHERE repertoire_id=%s AND plan_id=%s',(repertoire_id,approved_plan.plan_id)).fetchone()[0]==original_operation_id
+            saved_payload=json.loads(database.execute_native('SELECT payload_json FROM operation_receipts WHERE operation_id=%s',(original_operation_id,)).fetchone()[0])
+            assert saved_payload==approved_payload
+        try:
+            with postgres_store.connection(read_only=False) as database:
+                database.execute_native("UPDATE repertoires SET name=name||' blocked edit' WHERE id=%s",(repertoire_id,))
+        except psycopg.Error as failure:
+            assert failure.sqlstate=='P0080' and original_operation_id in str(failure)
+        else:
+            raise AssertionError('Journal loss would bypass PostgreSQL fence')
+        with patch.object(main.celery_app,'send_task',side_effect=OperationalError('Audit broker refused retry')):
+            try:main.retry_blocked_operation(original_operation_id)
+            except HTTPException as failure:
+                assert failure.status_code==503 and failure.detail=='Save queue unavailable; blocked operation remains durable'
+            else:raise AssertionError('Refused retry reported acceptance')
+        assert read_operation(original_operation_id)==blocked_receipt
+        admitted,saved_payload,attempt_token,_=record_operation_attempt(original_operation_id,application.COMMAND,approved_payload,background=False,expected_retry_cycle=blocked_receipt['retry_cycle'])
+        assert admitted and saved_payload==approved_payload
+        idle_call(lambda:execute_command(original_operation_id,application.COMMAND,saved_payload,attempt_token=attempt_token))
+        published_result=publish(approved_payload)
+        assert published_result['operation_id']==original_operation_id and published_result['plan_id']==approved_plan.plan_id and published_result['graph_generation']==2
+        assert execute(approved_payload)==published_result
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute_native('SELECT COUNT(*) FROM prefix_transition_applications WHERE operation_id=%s',(original_operation_id,)).fetchone()[0]==1
+        with patch.object(main.celery_app,'send_task',side_effect=AssertionError('Completed operation was retried')):
+            try:main.retry_blocked_operation(original_operation_id)
+            except HTTPException as failure:assert failure.status_code==409
+            else:raise AssertionError('Completed operation accepted a blocked retry')
+
+
 def main():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Prefix application proofs require the disposable runner')
@@ -1596,6 +1648,7 @@ def main():
         test_issue80_unclean_source_integrity_rejects_before_acceptance()
         test_issue80_reader_only_deployed_api_dispatches_pending_apply_and_replays_final_result()
         test_issue80_deployed_apply_recovers_original_identity_after_foreground_preemption()
+        test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id()
 
 
 if __name__ == '__main__':

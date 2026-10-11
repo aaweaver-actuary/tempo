@@ -1,9 +1,14 @@
 import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
 import { test, expect } from "./observability";
 import { readFileSync } from "node:fs";
+import { prefixSourceSchema } from "../../app/domain/prefix-comparison";
+import { prefixTransitionPlanSchema, transitionSummary } from "../../app/domain/prefix-transition";
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
+
+const structuralFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8")) as typeof import("../fixtures/prefix-comparison/structural.json");
+const transitionFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/transition.json", "utf8")) as typeof import("../fixtures/prefix-comparison/transition.json");
 
 // API route interception must remain deterministic after the app registers its shell worker.
 test.use({ serviceWorkers: "block" });
@@ -316,4 +321,37 @@ test("prefix journal unavailable Web Locks fail closed across browser engines", 
     catch (failure) { return (failure as Error).message; }
   });
   expect(refusal).toMatch(/Web Locks.*HTTPS or localhost/); expect(await persistedJournal(page)).toBeNull();
+});
+
+test("audit187_storage_event_preserves_prefix_identity_and_guard across browser engines", async ({ page, context }) => {
+  await prepareVisualUI(page);
+  const operationId = "audit187-cross-browser-original";
+  const record = { version: 1, repertoireId: "rep", operationId, state: "blocked", request: transitionFixture.request,
+    summary: transitionSummary(prefixTransitionPlanSchema.parse(transitionFixture.ready), prefixSourceSchema.parse(structuralFixture.source), "Combined Black") };
+  await page.addInitScript(saved => localStorage.setItem("tempo-pending-prefix-transition-v1:rep", JSON.stringify(saved)), record);
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{ id: "rep", name: "Combined Black", source_name: "Combined Black.pgn", line_count: 4, card_count: 5, due_count: 0, trained_color: "black" }] } }));
+  const methods: string[] = [];
+  await page.route("**/api/operations/**", route => {
+    methods.push(route.request().method());
+    return route.fulfill({ json: { operation_id: operationId, state: "blocked" } });
+  });
+  await page.goto("/"); await navigate(page, "Repertoire");
+  await expect(page.getByRole("button", { name: "Resume prefix transition" })).toBeVisible();
+  const storageWriter = await context.newPage();
+  try {
+    // A same-origin fixture document emits real storage events without mounting the product.
+    await storageWriter.route("**/audit187-storage-writer.html", route => route.fulfill({ contentType: "text/html", body: "<title>Storage-event fixture</title>" }));
+    await storageWriter.goto("/audit187-storage-writer.html");
+    await storageWriter.evaluate(() => localStorage.removeItem("tempo-pending-prefix-transition-v1:rep"));
+    await expect(page.getByText(/browser recovery record is missing/i)).toBeVisible();
+    await page.locator("details.card-menu summary").click();
+    await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toBeDisabled();
+    await page.locator("details.card-menu summary").click();
+    await page.getByRole("button", { name: "Resume prefix transition" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("button", { name: "Restore saved recovery record" })).toBeEnabled();
+    await dialog.getByRole("button", { name: "Restore saved recovery record" }).click();
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-transition-v1:rep")!).operationId)).toBe(operationId);
+    expect(methods.length).toBeGreaterThan(0); expect(methods.every(method => method === "GET")).toBe(true);
+  } finally { await storageWriter.close(); }
 });
