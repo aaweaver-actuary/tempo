@@ -75,6 +75,12 @@ it("audit187_no_locks_status_only_recovery_keeps_original_identity", async () =>
   expect(fetcher.mock.calls.every(([, options]) => options?.method !== "POST")).toBe(true);
   await expect(clearResolvedPrefixTransition("rep", original.operationId)).rejects.toThrow(/Web Locks/);
 });
+it("audit187_unusable_locks_reject_before_identity_or_delivery", async () => {
+  vi.stubGlobal("navigator", { locks: { request: vi.fn().mockRejectedValue(new DOMException("Insecure context", "SecurityError")) } });
+  const allocate = vi.spyOn(crypto, "randomUUID"); const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await expect(begin()).rejects.toThrow(/Web Locks.*HTTPS or localhost/);
+  expect(allocate).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled(); expect(localStorage.getItem(key)).toBeNull();
+});
 
 it.each([false, true])("audit187_clear_between_storage_check_and_write_cannot_resurrect_old_operation_newer_%s", async createNewer => {
   const original = await begin(); const stale = deferred<Response>(); const reading = deferred<void>(); let reads = 0;

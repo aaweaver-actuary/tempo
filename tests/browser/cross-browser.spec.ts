@@ -298,3 +298,22 @@ test("Study board promotion places the selected knight across browser engines", 
   const { fen, move } = await preparePromotionStudy(page);
   await dragStudyKnightPromotion(page, fen, move);
 });
+
+
+test("prefix journal native Web Locks preserve one same-origin identity across browser engines", async ({ context, page }) => {
+  const { openJournalHarness, reserveJournal } = await import("./support/prefix-transition-journal-browser");
+  const secondTab = await context.newPage(); await openJournalHarness(page); await openJournalHarness(secondTab);
+  expect(await page.evaluate(() => typeof navigator.locks?.request)).toBe("function");
+  const operations = await Promise.all([reserveJournal(page), reserveJournal(secondTab)]);
+  expect(operations[0].operationId).toBe(operations[1].operationId);
+});
+test("prefix journal unavailable Web Locks fail closed across browser engines", async ({ page }) => {
+  const { openJournalHarness, persistedJournal } = await import("./support/prefix-transition-journal-browser");
+  await openJournalHarness(page);
+  await page.evaluate(() => Object.defineProperty(navigator, "locks", { value: undefined, configurable: true }));
+  const refusal = await page.evaluate(async () => {
+    try { await window.prefixJournal.beginPrefixTransition("rep", window.prefixJournal.request, window.prefixJournal.summary); return "unsafe reservation"; }
+    catch (failure) { return (failure as Error).message; }
+  });
+  expect(refusal).toMatch(/Web Locks.*HTTPS or localhost/); expect(await persistedJournal(page)).toBeNull();
+});

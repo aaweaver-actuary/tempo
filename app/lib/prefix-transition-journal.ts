@@ -110,7 +110,15 @@ export function hasPrefixTransitionJournalLocks() {
 export async function withPrefixTransitionJournalLock<T>(signal: AbortSignal | undefined, criticalSection: () => T): Promise<T> {
   signal?.throwIfAborted();
   if (!hasPrefixTransitionJournalLocks()) throw new Error(lockUnavailableMessage);
-  return navigator.locks.request(journalLockName, { signal }, () => { signal?.throwIfAborted(); return criticalSection(); });
+  let enteredCriticalSection = false;
+  try {
+    return await navigator.locks.request(journalLockName, { signal }, () => {
+      enteredCriticalSection = true; signal?.throwIfAborted(); return criticalSection();
+    });
+  } catch (failure) {
+    if (enteredCriticalSection || signal?.aborted) throw failure;
+    throw new Error(lockUnavailableMessage, { cause: failure });
+  }
 }
 export class PrefixTransitionPersistenceError extends Error {}
 export function assertPrefixTransitionOwnership(current: PrefixTransitionOperation | null, owner: PrefixTransitionOperation): asserts current is PrefixTransitionOperation {
