@@ -4087,10 +4087,15 @@ reservation and unsupported-capability refusal across the regular browser engine
   exercise real browser storage/events/UI with deterministic transport seams.
 - `test_audit187_retry_503_preserves_real_receipt_and_existing_diagnostics_recover_id`
   is integrated into the regular PostgreSQL prefix application proof. It preserves
-  the audited native receipt/payload, rejects a fenced edit, proves broker refusal
-  leaves the receipt unchanged, verifies original-cycle recovery and one business
-  effect, and rejects blocked retry after verified completion. Diagnostic ID
-  enumeration is explicitly distinguished from full browser rediscovery.
+  the audited native receipt/payload and its original metadata-edit fence
+  assertion. That assertion remains an active **BLOCKED** contract requirement:
+  migration 038 explicitly permits metadata-only repertoire updates. It is not
+  skipped or replaced with the structural assertion below.
+- `test_audit187_prefix_source_fence_retry_rejection_and_replay_preserve_identity`
+  independently proves the existing source-line edit fence, real receipt/payload
+  retention after worker admission, broker refusal leaving the receipt unchanged,
+  original-cycle recovery, one business effect and completed-retry rejection.
+  Diagnostic ID enumeration is explicitly distinguished from full browser rediscovery.
 
 - `audit187_storage_event_preserves_prefix_identity_and_guard across browser engines`
   runs on Chromium, Firefox and WebKit. A second same-origin document removes the
