@@ -17,6 +17,70 @@ import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redi
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
+
+function studyImportPollingFixture(queueResponses, { integrityStatus = "clean", systemResponse } = {}) {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const getSource = source.slice(source.indexOf("async function get("), source.indexOf("async function postCommand("));
+  const pollingSource = source.slice(source.indexOf("async function pollForStudyableImport("), source.indexOf("function stableStudyState("));
+  const observed = { polls: 0, waits: [], queueReads: 0 };
+  const context = {
+    JSON, assertNoCompletedFixtureConflict, readStudyQueuePublication,
+    measureScenario: { poll: () => { observed.polls += 1; }, wait: async interval => { observed.waits.push(interval); } },
+    apiRequest: async (path, options) => {
+      assert.equal(options.headers["X-Tempo-Work-Class"], "background");
+      let status = 200, body;
+      if (path === "system/tasks") {
+        status = systemResponse?.status ?? 200;
+        body = systemResponse?.body ?? { tasks: [{ kind: "opening_graph_rebuild", deduplication_key: "fixture", state: "complete" }] };
+      } else if (path === "repertoires/fixture/integrity") {
+        body = { scan_status: "idle", status: integrityStatus };
+      } else {
+        assert.equal(path, "queue/today");
+        const response = queueResponses[Math.min(observed.queueReads++, queueResponses.length - 1)];
+        status = response.status;
+        body = response.body;
+      }
+      return { ok: status >= 200 && status < 300, status,
+        json: async () => body, text: async () => typeof body === "string" ? body : JSON.stringify(body) };
+    },
+  };
+  return { observed, run: () => runInNewContext(`${getSource}\n${pollingSource}\npollForStudyableImport("fixture")`, context) };
+}
+
+test("study_import_waits_for_pending_head_issuance_without_masking_service_failures", async () => {
+  const readyQueue = { cards: [{ id: "issued-card" }], projection: { state: "ready", refresh_pending: false } };
+  const pendingDetail = "Queue changed or attempt issuance is pending. Retry loading the queue.";
+  const fixture = studyImportPollingFixture([
+    { status: 200, body: readyQueue },
+    { status: 503, body: { detail: pendingDetail } },
+    { status: 200, body: readyQueue },
+  ]);
+  const queue = await fixture.run();
+  assert.equal(queue, readyQueue);
+  assert.equal(fixture.observed.queueReads, 5, "A pending issuance resets the three consecutive settled samples");
+  assert.deepEqual(fixture.observed.waits, [250, 250, 250, 250]);
+  for (const failure of [
+    { status: 500, body: { detail: pendingDetail } },
+    { status: 503, body: { detail: "Database unavailable" } },
+    { status: 503, body: "invalid JSON" },
+  ]) {
+    await assert.rejects(studyImportPollingFixture([failure]).run(), /queue\/today: HTTP (500|503)/);
+  }
+  await assert.rejects(studyImportPollingFixture([{ status: 200, body: readyQueue }], {
+    systemResponse: { status: 503, body: { detail: pendingDetail } },
+  }).run(), /system\/tasks: HTTP 503/);
+});
+
+test("study_import_pending_issuance_remains_bounded_and_preserves_integrity_failures", async () => {
+  const pending = { status: 503, body: { detail: "Queue changed or attempt issuance is pending. Retry loading the queue." } };
+  const fixture = studyImportPollingFixture([pending]);
+  await assert.rejects(fixture.run(), /graph, integrity, and queue work did not settle/);
+  assert.equal(fixture.observed.queueReads, 180);
+  assert.equal(fixture.observed.waits.length, 180);
+  assert.equal(fixture.observed.waits.reduce((sum, interval) => sum + interval, 0), 45_000);
+  await assert.rejects(studyImportPollingFixture([pending], { integrityStatus: "needs_repair" }).run(), /integrity|conflict/i);
+});
+
 const fullStages = [
   "compose_config", "image_build", "maintenance_cli", "startup", "service_health",
   "background_budget", "operation_recovery", "schema_migrations", "priority_recovery", "background_diagnostics", "deployment_lifecycle", "background_workloads",

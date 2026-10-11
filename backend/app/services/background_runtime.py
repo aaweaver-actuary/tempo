@@ -10,10 +10,58 @@ import redis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 import hashlib
+import json
 import logging
 import os
 import socket
 import time
+
+# Opt-in spans extend the existing diagnostics; they never write application data.
+_training_timing: ContextVar[dict | None] = ContextVar("training_timing", default=None)
+
+
+@lru_cache(maxsize=1)
+def _training_latency_logger():
+    logger = logging.getLogger("tempo.foreground_latency")
+    logger.setLevel(logging.INFO)
+    if not logger.hasHandlers():
+        # Uvicorn configures its own loggers rather than the root logger.
+        logger.addHandler(logging.StreamHandler())
+    return logger
+
+
+@contextmanager
+def measure_training_timing(label: str, identity: str = ""):
+    if os.getenv("TEMPO_TRAINING_TIMINGS") != "1":
+        yield None
+        return
+    started = time.perf_counter()
+    measurement = {"label": label, "trace": hashlib.sha256(identity.encode()).hexdigest()[:16],
+                   "started_epoch_ms": time.time() * 1000, "stages_ms": {}, "connections": [],
+                   "sql_count": 0, "sql_ms": 0.0}
+    token = _training_timing.set(measurement)
+    try:
+        yield measurement
+    finally:
+        measurement["duration_ms"] = (time.perf_counter() - started) * 1000
+        _training_timing.reset(token)
+        _training_latency_logger().info("training_timing %s", json.dumps(measurement))
+
+
+@contextmanager
+def training_timing_stage(label: str):
+    measurement = _training_timing.get()
+    started = time.perf_counter() if measurement is not None else None
+    try:
+        yield
+    finally:
+        if measurement is not None:
+            stages = measurement["stages_ms"]
+            stages[label] = stages.get(label, 0.0) + (time.perf_counter() - started) * 1000
+
+
+def current_training_timing():
+    return _training_timing.get()
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Literal

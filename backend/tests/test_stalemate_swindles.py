@@ -560,7 +560,8 @@ def run_backpressured_archive(tmp_path, downstream_mode, *, downloader_failure=F
         command += ["--stop-after-candidates", "1"]
     if suppress_interruption:
         interruption_wrapper = tmp_path / "suppressed-interruption.py"
-        interruption_wrapper.write_text(f"""import importlib.util
+        interruption_wrapper.write_text(f"""import faulthandler, importlib.util
+faulthandler.dump_traceback_later(15)
 specification = importlib.util.spec_from_file_location('cli', {str(CLI)!r})
 cli = importlib.util.module_from_spec(specification)
 specification.loader.exec_module(cli)
@@ -578,6 +579,12 @@ cli.signal.signal = install_handler
 raise SystemExit(cli.main())
 """)
         command[1] = str(interruption_wrapper)
+    else:
+        diagnostic_wrapper = tmp_path / "archive-diagnostics.py"
+        diagnostic_wrapper.write_text(f"import faulthandler, runpy\n"
+                                      f"faulthandler.dump_traceback_later(15)\n"
+                                      f"runpy.run_path({str(CLI)!r}, run_name='__main__')\n")
+        command[1] = str(diagnostic_wrapper)
     miner = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              env=environment, cwd=ROOT, start_new_session=True)
     try:
@@ -649,6 +656,47 @@ def test_stalemate_archive_downloader_failure_terminates_blocked_decompressor(tm
 
 def test_stalemate_archive_sampling_cancels_owned_pipeline_without_certifying_checksum(tmp_path):
     run_backpressured_archive(tmp_path, "sampling", sampling=True)
+
+
+def test_stalemate_archive_shutdown_grace_is_shared_by_all_owned_children(monkeypatch):
+    specification = importlib.util.spec_from_file_location("stalemate_cli_shutdown_deadline", CLI)
+    cli = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(cli)
+    elapsed = [0.0]
+    events = []
+
+    class ResistantChild:
+        def __init__(self, stage):
+            self.stage = stage
+            self.returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            events.append(("terminate", self.stage, elapsed[0]))
+
+        def wait(self, timeout):
+            if self.returncode is None:
+                elapsed[0] += timeout
+                raise subprocess.TimeoutExpired(self.stage, timeout)
+            events.append(("reap", self.stage, elapsed[0]))
+            return self.returncode
+
+        def kill(self):
+            events.append(("kill", self.stage, elapsed[0]))
+            self.returncode = -signal.SIGKILL
+
+    monkeypatch.setattr(cli, "monotonic", lambda: elapsed[0], raising=False)
+    archive = cli.ArchiveStream("fixture", "0" * 64)
+    archive.downloader = ResistantChild("curl")
+    archive.decompressor = ResistantChild("zstd")
+    archive.stop()
+    assert events[:2] == [("terminate", "curl", 0), ("terminate", "zstd", 0)]
+    assert [(stage, when) for event, stage, when in events if event == "kill"] == [
+        ("curl", archive.TERMINATION_GRACE_SECONDS), ("zstd", archive.TERMINATION_GRACE_SECONDS)]
+    assert [event for event, _, _ in events[2:]] == ["kill", "kill", "reap", "reap"]
+    assert archive.stopped.is_set()
 
 
 @pytest.mark.parametrize("cancellation_signal", [signal.SIGINT, signal.SIGTERM], ids=["ctrl_c", "term"])

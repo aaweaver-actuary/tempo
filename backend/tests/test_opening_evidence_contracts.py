@@ -278,9 +278,14 @@ def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(
     monkeypatch.setattr(command_dispatch,'dispatch_command',lambda name,payload,**options:requests.append((name,payload)) or {'persisted':True})
     request=ReviewRequest(outcome='correct',guided=False,queue_entry_id=101,attempt_id='legacy-id')
     main.review('card',request,idempotency_key='legacy-key')
-    expected={'card_id':'card','review':request.model_dump(mode='json',exclude={'opening_evidence_completion'})}
+    # The historical contract must not inherit optional fields added to today's
+    # request model. Pin the actual original payload and fingerprint independently.
+    expected={'card_id':'card','review':{'outcome':'correct','guided':False,
+        'queue_entry_id':101,'recorded_at':None,'expected_review_id':None,
+        'expected_revision':None,'attempt_id':'legacy-id'}}
     assert requests==[('cards.review',expected)]
     digest=hashlib.sha256(json.dumps(['cards.review',expected],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert digest=='5c4cc71a036f44a80f2a8fc0c9cf4d10315a3937508051487c826d9e010ae474'
     assert request_digest('cards.review',expected)==digest
     assert request_digest('cards.review',{**expected,'prepared_manifest':{'derived':True}})==digest
 

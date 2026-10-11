@@ -420,6 +420,7 @@ function StandardTrainingView({
         <section
           className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}${phoneOpening ? " phone-opening-study" : ""}`}
           id="train"
+          data-queue-entry-id={card.queueEntryId}
         >
           <div className="board-column">
             {phoneOpening && <BoardHeading>

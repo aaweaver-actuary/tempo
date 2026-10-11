@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from time import monotonic
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -167,13 +168,23 @@ class ArchiveStream:
                         process.terminate()
                     except ProcessLookupError:
                         pass
+            termination_deadline = monotonic() + self.TERMINATION_GRACE_SECONDS
+            resistant_processes = []
             for process in (self.downloader, self.decompressor):
                 if process is not None:
                     try:
-                        process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
+                        process.wait(timeout=max(0, termination_deadline - monotonic()))
                     except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
+                        resistant_processes.append(process)
+            # Both stages received TERM together. Give the pipeline one grace
+            # period, then release both pipes before waiting to reap either.
+            for process in resistant_processes:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+            for process in resistant_processes:
+                process.wait(timeout=self.TERMINATION_GRACE_SECONDS)
         finally:
             self.stopped.set()
 
