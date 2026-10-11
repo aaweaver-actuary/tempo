@@ -18,6 +18,43 @@ import { stopApplicationsAndVerifyWorkerSignals } from "../../scripts/check-redi
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
 
+test("training_transition_cleanup_waits_for_restored_background_readiness", async () => {
+  const source = readFileSync(join(root, "tests/browser/training-critical-path.spec.ts"), "utf8");
+  const cleanupSource = source.slice(source.indexOf('    const ownedConsumers ='), source.lastIndexOf('\n  }\n});'));
+  const events = [];
+  let releaseHealth;
+  const heldHealth = new Promise(resolve => { releaseHealth = resolve; });
+  let healthReads = 0;
+  let completed = false;
+  const expected = value => ({ toBe: other => assert.equal(value, other) });
+  expected.poll = (read, options) => ({ toBe: async ready => {
+    assert.equal(options.timeout, 60_000, "Restoration retains the existing readiness deadline");
+    const unavailable = await read();
+    assert.notEqual(unavailable, ready, "A worker-unavailable response cannot finish cleanup");
+    assert.equal(await read(), ready);
+  } });
+  const cleanup = runInNewContext(`(async () => { ${cleanupSource} })()`, {
+    docker: action => { events.push(action); },
+    fixture: action => { events.push(action); return JSON.stringify({ restored_queue_positions: 1, runtime_reordered_positions: 0, runtime_removed_entries: 0 }); },
+    expect: expected, displacedQueuePositions: [[1, 0, 64]], api: "http://owned/api",
+    request: { get: async url => {
+      assert.equal(url, "http://owned/api/health");
+      events.push("health");
+      return healthReads++ === 0 ? heldHealth : { ok: () => true };
+    } },
+  }).then(() => { completed = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.deepEqual(events, ["stop", "cleanup", "start", "health"]);
+    assert.equal(completed, false, "Cleanup must remain pending until restored workers are ready");
+  } finally {
+    releaseHealth({ ok: () => false, text: async () => "Required Celery workers are unavailable: background" });
+    await cleanup;
+  }
+  assert.deepEqual(events, ["stop", "cleanup", "start", "health", "health"]);
+  assert.equal(completed, true);
+});
+
 function studyImportPollingFixture(queueResponses, { integrityStatus = "clean", systemResponse } = {}) {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const getSource = source.slice(source.indexOf("async function get("), source.indexOf("async function postCommand("));
