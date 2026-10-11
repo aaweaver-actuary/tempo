@@ -4125,3 +4125,9 @@ repertoire, specifically proving cooperating-browser pre-admission protection.
 The mutation inventory and exclusions are in
 [the admission contract](../docs/PREFIX-STRUCTURAL-ADMISSION.md).
 Server durable reservation/discovery remains proposed separately; #81 is open.
+
+`issue81_structural_safety_spec_remains_in_complete_repertoire_qualification` in
+`tests/runner/ci-reliability.test.mjs` protects registration and actual collection
+of all four real structural browser cases in complete repertoire qualification.
+It first failed on the missing registration; the inventory repair retains the
+full family and does not exempt or quarantine any acceptance assertion.

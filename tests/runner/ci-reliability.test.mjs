@@ -641,3 +641,14 @@ test("documented global browser smoke count and titles match inventory and real 
   assert.equal(Number(documentedCount[1]), plan({ cases: currentBrowserCases() }).collection.filter(item => item.critical).length);
   for (const demoted of demotedCriticalCases) assert(documentation.includes(`| \`${demoted.file}\` | \`${demoted.title}\` | family |`), demoted.title);
 });
+
+test("issue81_structural_safety_spec_remains_in_complete_repertoire_qualification", () => {
+  const filename = "prefix-structural-safety.spec.ts";
+  validateInventory([filename]);
+  assert(inventory.families.repertoire.includes(filename));
+  const realCases = currentBrowserCases();
+  const structuralCases = realCases.filter(item => item.file === filename);
+  assert.equal(structuralCases.length, 4);
+  const planned = plan({ complete: true, cases: realCases });
+  assert(structuralCases.every(item => planned.collection.some(selected => selected.id === item.id && selected.selected)));
+});
