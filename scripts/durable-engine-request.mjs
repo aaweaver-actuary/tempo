@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { requestMaiaApi } from "./maia-coverage-client.mjs";
+import { startPositionClaimDelivery } from "./position-claim-diagnostics.mjs";
 
 export function createDurableEngineRequest(apiUrl, journalPath, transport = requestMaiaApi) {
   async function pending() {
@@ -31,14 +32,17 @@ export function createDurableEngineRequest(apiUrl, journalPath, transport = requ
       await writeFile(temporaryPath, `${JSON.stringify(saved)}\n`, { mode: 0o600 });
       await rename(temporaryPath, journalPath);
     }
+    const traceDelivery = startPositionClaimDelivery(path, saved.operationId);
     try {
       const result = await transport(apiUrl, path, {
         ...saved.options, ...deliveryOptions, operationId: saved.operationId,
       });
       await unlink(journalPath);
+      traceDelivery("complete");
       return result;
     } catch (error) {
       if (error.terminal) await unlink(journalPath);
+      traceDelivery(error.terminal ? "terminal_failure" : "retained_for_retry");
       throw error;
     }
   }

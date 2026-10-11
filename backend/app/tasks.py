@@ -20,6 +20,7 @@ from .command_gateway import (
     record_operation_retry, defer_operation_for_foreground,
 )
 from .database import read_connection
+from .services.position_claim_diagnostics import record_attempt_owner, trace_position_claim
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
 from . import defense_commands  # noqa: F401 - registers defensive exercise commands
@@ -220,7 +221,8 @@ def execute_background_command(
 ) -> Any:
     """Execute an external worker callback in a bounded background section."""
 
-    with measure_handler("other", (self.request.headers or {}).get("submitted_at")), \
+    with (trace_position_claim(operation_id, "command") if command_name == "games.analysis.position.claim"
+          else nullcontext()), measure_handler("other", (self.request.headers or {}).get("submitted_at")), \
             activity_gate.background_job(command_name, operation_id, yielding=True):
         # Persist the source envelope even when discretionary execution is denied.
         with activity_gate.background_control():
@@ -228,6 +230,7 @@ def execute_background_command(
                 operation_id, command_name, payload, background=True,
                 expected_retry_cycle=expected_retry_cycle,
             )
+        record_attempt_owner(attempt_token, attempt_number)
         if not should_execute:
             return None
         try:

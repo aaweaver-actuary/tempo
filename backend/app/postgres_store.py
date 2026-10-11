@@ -22,6 +22,8 @@ from typing import Any
 import psycopg
 from psycopg.rows import RowMaker
 from psycopg_pool import ConnectionPool
+
+from .services.position_claim_diagnostics import cursor_options, record_stage
 import sqlglot
 
 
@@ -210,7 +212,7 @@ def _pool(read_only: bool) -> ConnectionPool:
                 conninfo=database_url,
                 min_size=1,
                 max_size=int(os.getenv("TEMPO_POSTGRES_POOL_SIZE", "8")),
-                kwargs={"row_factory": tempo_row_factory},
+                kwargs={"row_factory": tempo_row_factory, **cursor_options()},
                 open=True,
             )
             _pools[pool_key] = pool
@@ -222,10 +224,14 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                repeatable_read: bool = False, pool_timeout_seconds: float | None = None) -> Iterator[PostgresConnection]:
     started_at = time.perf_counter()
     acquired_at = configured_at = handled_at = None
+    failure = None
+    handler_failure = None
+    backend_pid = transaction_limit = lock_limit = None
     try:
         pool_options = {} if pool_timeout_seconds is None else {"timeout": pool_timeout_seconds}
         with _pool(read_only and not authoritative).connection(**pool_options) as database:
             acquired_at = time.perf_counter()
+            backend_pid = getattr(getattr(database, "info", None), "backend_pid", None)
             if repeatable_read:
                 # Isolation must be selected before the background timeout SELECTs.
                 database.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
@@ -249,9 +255,27 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                 connection = PostgresConnection(database)
                 yield connection
                 connection.flush_background_metrics()
+            except BaseException as error:
+                handler_failure = error
+                raise
             finally:
                 handled_at = time.perf_counter()
+    except BaseException as error:
+        failure = error
+        raise
     finally:
+        finished_at = time.perf_counter()
+        record_stage("connection_acquisition", (acquired_at or finished_at) - started_at,
+                     failure if acquired_at is None else None, backend_pid=backend_pid)
+        if acquired_at is not None:
+            record_stage("connection_settings", (configured_at or finished_at) - acquired_at,
+                         failure if configured_at is None else None, transaction_timeout_ms=transaction_limit,
+                         lock_timeout_ms=lock_limit)
+        if configured_at is not None:
+            record_stage("transaction_handler", (handled_at or finished_at) - configured_at, handler_failure)
+        if handled_at is not None:
+            record_stage("commit_cleanup", finished_at - handled_at,
+                         failure if failure is not handler_failure else None)
         if background and acquired_at is not None:
             finished_at = time.perf_counter()
             _logger.info(

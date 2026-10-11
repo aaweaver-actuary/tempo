@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 from typing import Iterator
 
 from . import redis_admission_gate
+from .position_claim_diagnostics import claim_stage
 from .redis_admission_gate import BackgroundAdmissionDeferred
 
 
@@ -152,7 +153,7 @@ class ApplicationActivityGate:
         # Acquire before suppressing so admission-wait heartbeats remain visible.
         # Exit leases before telemetry suppression, including error cleanup.
         with ExitStack() as telemetry, ExitStack() as leases:
-            with admission_wait():
+            with admission_wait(), claim_stage("database_admission"):
                 leases.enter_context(shared_lease)
                 telemetry.enter_context(reserved_database_telemetry())
                 self.wait_for_foreground()

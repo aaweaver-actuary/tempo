@@ -1,12 +1,63 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { startPositionClaimDelivery } from "../../scripts/position-claim-diagnostics.mjs";
 import { createDurableEngineRequest, migrateLegacyDefenseClaimJournal } from "../../scripts/durable-engine-request.mjs";
 import { requestMaiaApi } from "../../scripts/maia-coverage-client.mjs";
 import { confirmOperationResponse, PendingOperationError } from "../../app/lib/operation-status";
 
 describe("Docker engine command journal", () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+  it("issue171 retains the position claim identity after HTTP 503 and restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "tempo-engine-journal-"));
+    const journalPath = join(directory, "pending.json");
+    const fetchImpl = vi.fn(async () => Response.json({ detail: "temporary database contention" }, { status: 503 }));
+    const transport = (api: string, path: string, options: Record<string, unknown> = {}) =>
+      requestMaiaApi(api, path, options, { fetchImpl, pause: async () => undefined });
+    try {
+      const first = createDurableEngineRequest("http://api", journalPath, transport);
+      await expect(first.send("/api/games/analysis/position/claim", { method: "POST" })).rejects.toThrow();
+      const original = JSON.parse(readFileSync(journalPath, "utf8"));
+      const recovery = vi.fn(async (_api: string, _path: string, options: { operationId?: string } = {}) => {
+        expect(options.operationId).toBe(original.operationId);
+        return { job: { lease_id: "authoritative-lease" } };
+      });
+      const restarted = createDurableEngineRequest("http://api", journalPath, recovery);
+      expect((await restarted.recover())?.result.job.lease_id).toBe("authoritative-lease");
+      expect(recovery.mock.calls[0][2]?.operationId).toBe(original.operationId);
+      expect(await restarted.pending()).toBeNull();
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("issue171 position diagnostics are disabled by default and redact journal contents", () => {
+    const logged = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubEnv("TEMPO_POSITION_CLAIM_DIAGNOSTICS", "");
+    startPositionClaimDelivery("/api/games/analysis/position/claim", "private-operation")("complete");
+    expect(logged).not.toHaveBeenCalled();
+    vi.stubEnv("TEMPO_POSITION_CLAIM_DIAGNOSTICS", "1");
+    startPositionClaimDelivery("/api/other", "private-operation")("complete");
+    startPositionClaimDelivery("/api/games/analysis/position/claim", "private-operation")("retained_for_retry");
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(logged.mock.calls[0][0]).not.toContain("private-operation");
+    expect(JSON.parse(logged.mock.calls[0][0])).toMatchObject({ role: "engine", stage: "journal_delivery",
+      outcome: "retained_for_retry", operation_digest: expect.stringMatching(/^[a-f0-9]{24}$/) });
+  });
+
+  it("issue171 diagnostic sink failure preserves the claim error and journal", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "tempo-engine-journal-"));
+    vi.stubEnv("TEMPO_POSITION_CLAIM_DIAGNOSTICS", "1");
+    vi.spyOn(console, "info").mockImplementation(() => { throw new Error("sink unavailable"); });
+    const originalError = new Error("response lost");
+    try {
+      const journal = createDurableEngineRequest("http://api", join(directory, "pending.json"),
+        async () => { throw originalError; });
+      await expect(journal.send("/api/games/analysis/position/claim", { method: "POST" })).rejects.toBe(originalError);
+      expect(await journal.pending()).not.toBeNull();
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
   it("replays the same operation ID after a pending response and process restart", async () => {
     const directory = mkdtempSync(join(tmpdir(), "tempo-engine-journal-"));
     const journalPath = join(directory, "pending.json");

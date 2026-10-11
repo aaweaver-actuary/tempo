@@ -382,6 +382,157 @@ class EngineFairnessProof:
     def test_postgres_engine_pending_position_receipt_validates_request_identity(self):
         self.assert_position_claim_request_identity(pending=True)
 
+    def test_postgres_engine_issue171_position_deadline_recovers_and_replays_after_restart(self):
+        from fastapi.testclient import TestClient
+        from app import main, command_dispatch, tasks
+        self.reset()
+        operation_id = self.identity + '-issue171-deadline'
+        headers = {'X-Tempo-Engine-Worker': 'docker', 'X-Tempo-Work-Class': 'background',
+                   'Idempotency-Key': operation_id}
+        before_jobs = self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id')
+        original_execute = postgres_store.PostgresConnection.execute_native
+        failures = []
+        def expired_candidate(database, statement, parameters=()):
+            if 'FROM game_analysis_jobs' not in statement or 'moves_json' not in statement:
+                return original_execute(database, statement, parameters)
+            try:
+                # Force the server's unchanged 250ms deadline, not a mocked exception.
+                database.raw.execute('SELECT pg_sleep(0.3)')
+            except psycopg.errors.TransactionTimeout as error:
+                failures.append(error.sqlstate)
+                raise
+            raise AssertionError('PostgreSQL failed to enforce its transaction deadline')
+        client = TestClient(main.app, raise_server_exceptions=False)
+        with patch.object(postgres_store.PostgresConnection, 'execute_native', expired_candidate):
+            response = client.post('/api/games/analysis/position/claim', headers=headers)
+        assert failures == ['25P04']
+        assert response.status_code == 503 and response.headers['Retry-After'] == '1'
+        assert self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id') == before_jobs
+        assert not self.sql('SELECT operation_id FROM operation_receipts WHERE operation_id=%s', (operation_id,))
+        assert not self.sql('SELECT id FROM game_analysis_position_reports') and self.streak() == 0
+
+        def deliver(_name, *, args, **_options):
+            result = tasks.execute_background_command.run(*args)
+            return type('CompletedTask', (), {'get': lambda _self, **_options: result})()
+        with patch.object(command_dispatch.celery_app, 'send_task', deliver):
+            accepted = client.post('/api/games/analysis/position/claim', headers=headers)
+        assert accepted.status_code == 200 and accepted.json()['job']['kind'] == 'search'
+        original_response = accepted.json()
+        original_receipt = self.sql('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,))
+        original_positions = self.sql('SELECT * FROM game_analysis_position_reports ORDER BY id')
+        original_jobs = self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id')
+        postgres_store.close_pools()
+        environment = dict(os.environ, TEMPO_ENGINE_FAIRNESS_FOREGROUND_KEY=redis_admission_gate._FOREGROUND_KEY,
+                           TEMPO_ENGINE_FAIRNESS_BACKGROUND_KEY=redis_admission_gate._BACKGROUND_KEY)
+        child_code = """import json, os, sys
+from app.services import redis_admission_gate
+redis_admission_gate._FOREGROUND_KEY = os.environ['TEMPO_ENGINE_FAIRNESS_FOREGROUND_KEY']
+redis_admission_gate._BACKGROUND_KEY = os.environ['TEMPO_ENGINE_FAIRNESS_BACKGROUND_KEY']
+from app import main
+operation_id = json.load(sys.stdin)['operation_id']
+print(json.dumps(main.claim_game_analysis_position(engine_worker='docker', idempotency_key=operation_id)))
+"""
+        child = subprocess.run([sys.executable, '-c', child_code], input=json.dumps({'operation_id': operation_id}),
+                               env=environment, capture_output=True, text=True, timeout=10)
+        assert child.returncode == 0, child.stderr
+        assert json.loads(child.stdout) == original_response
+        conflicting = client.post('/api/games/analysis/position/claim', headers=headers,
+                                  json={'preferred_game_id': 'different-game'})
+        assert conflicting.status_code == 409
+        assert self.sql('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,)) == original_receipt
+        assert self.sql('SELECT * FROM game_analysis_position_reports ORDER BY id') == original_positions
+        assert self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id') == original_jobs
+        assert self.streak() == 0
+
+    def test_postgres_engine_issue171_position_claim_lock_contention_is_retryable(self):
+        from fastapi.testclient import TestClient
+        from app import main
+        self.reset()
+        # Warm both reader and receipt paths before the controlled lock race.
+        from app.command_gateway import read_operation
+        for table in ('game_analysis_jobs', 'operation_receipts', 'game_analysis_position_reports'):
+            operation_id = self.identity + '-issue171-lock-' + table
+            read_operation(operation_id, background=True)
+            with psycopg.connect(self.database_url) as owner:
+                owner.execute(sql.SQL('LOCK TABLE {} IN ACCESS EXCLUSIVE MODE').format(sql.Identifier(table)))
+                assert owner.execute("SELECT count(*) FROM pg_locks WHERE pid=pg_backend_pid() "
+                                     "AND relation=%s::regclass AND granted "
+                                     "AND mode='AccessExclusiveLock'", (table,)).fetchone()[0] == 1
+                response = TestClient(main.app, raise_server_exceptions=False).post(
+                    '/api/games/analysis/position/claim', headers={'X-Tempo-Engine-Worker': 'docker',
+                        'X-Tempo-Work-Class': 'background', 'Idempotency-Key': operation_id})
+            assert response.status_code == 503 and response.headers['Retry-After'] == '1'
+            assert not self.sql('SELECT operation_id FROM operation_receipts WHERE operation_id=%s', (operation_id,))
+        assert not self.sql('SELECT id FROM game_analysis_position_reports')
+        assert self.sql('SELECT status,attempts FROM game_analysis_jobs')[0] == ('queued', 0)
+
+    def test_postgres_engine_issue171_position_claim_foreground_and_redis_deferral_preserve_identity(self):
+        from fastapi.testclient import TestClient
+        from app import main
+        import redis
+        self.reset(3)
+        operation_id = self.identity + '-issue171-admission'
+        headers = {'X-Tempo-Engine-Worker': 'docker', 'X-Tempo-Work-Class': 'background',
+                   'Idempotency-Key': operation_id}
+        client = TestClient(main.app, raise_server_exceptions=False)
+        with activity_gate.foreground():
+            response = client.post('/api/games/analysis/position/claim', headers=headers)
+        assert response.status_code == 503 and response.headers['Retry-After'] == '1'
+        with patch.object(redis_admission_gate, 'client', side_effect=redis.ConnectionError('synthetic outage')):
+            response = client.post('/api/games/analysis/position/claim', headers=headers)
+        assert response.status_code == 503 and response.headers['Retry-After'] == '1'
+        assert not self.sql('SELECT operation_id FROM operation_receipts WHERE operation_id=%s', (operation_id,))
+        assert not self.sql('SELECT id FROM game_analysis_position_reports') and self.streak() == 3
+
+    def test_postgres_engine_issue171_position_claim_pool_acquisition_is_retryable(self):
+        from fastapi.testclient import TestClient
+        from app import main
+        self.reset()
+        postgres_store.close_pools()
+        try:
+            with patch.dict(os.environ, {'TEMPO_POSTGRES_POOL_SIZE': '1'}):
+                pool = postgres_store._pool(True)
+                # Only this fixture's acquisition deadline is shortened. Production
+                # pool defaults and the transaction/lock budgets remain unchanged.
+                with pool.connection(timeout=5):
+                    pool.timeout = 0.05
+                    response = TestClient(main.app, raise_server_exceptions=False).post(
+                        '/api/games/analysis/position/claim', headers={'X-Tempo-Engine-Worker': 'docker',
+                            'X-Tempo-Work-Class': 'background', 'Idempotency-Key': self.identity + '-issue171-pool'})
+                assert response.status_code == 503 and response.headers['Retry-After'] == '1'
+        finally:
+            postgres_store.close_pools()
+        assert not self.sql('SELECT id FROM game_analysis_position_reports')
+        assert self.sql('SELECT status,attempts FROM game_analysis_jobs')[0] == ('queued', 0)
+
+    def test_postgres_engine_issue171_stale_generation_and_replaced_lease_do_not_spend_turn(self):
+        self.reset(3)
+        old_plan = game_analysis_commands.prepare_position_claim(self.game_id)
+        self.sql('UPDATE game_analysis_jobs SET analysis_version=2 WHERE game_id=%s', (self.game_id,))
+        before_jobs = self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id')
+        assert self.ordinary(old_plan) == {'job': None}
+        assert self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id') == before_jobs
+        assert not self.sql('SELECT id FROM game_analysis_position_reports') and self.streak() == 3
+        self.reset(3)
+        original_claim = self.ordinary()['job']
+        self.sql("UPDATE game_analysis_jobs SET lease_expires_at='2000-01-01'")
+        self.sql("UPDATE game_analysis_position_reports SET lease_expires_at='2000-01-01'")
+        replacement_claim = self.ordinary()['job']
+        assert replacement_claim['id'] == original_claim['id'] and replacement_claim['lease_id'] != original_claim['lease_id']
+        self.sql('UPDATE engine_scheduling_state SET automated_streak=3')
+        before_jobs = self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id')
+        before_positions = self.sql('SELECT * FROM game_analysis_position_reports ORDER BY id')
+        assert self.operation('games.analysis.position.release',
+            {'report_id': original_claim['id'], 'lease_id': original_claim['lease_id']}) == {'status': 'stale'}
+        assert self.operation('games.analysis.position.report',
+            {'report_id': original_claim['id'], 'lease_id': original_claim['lease_id'], 'report': self.report(original_claim['request'])}) is None
+        failed_receipt = self.sql('SELECT state,error_json FROM operation_receipts WHERE operation_id=%s',
+                                  (f'{self.identity}-operation-{self.sequence}',))[0]
+        assert failed_receipt[0] == 'failed' and json.loads(failed_receipt[1])['status_code'] == 422
+        assert self.sql('SELECT * FROM game_analysis_jobs ORDER BY game_id') == before_jobs
+        assert self.sql('SELECT * FROM game_analysis_position_reports ORDER BY id') == before_positions
+        assert self.streak() == 3
+
     def child(self, mode):
         environment = dict(os.environ, TEMPO_ENGINE_FAIRNESS_CHILD_MODE=mode,
                            TEMPO_ENGINE_FAIRNESS_FOREGROUND_KEY=redis_admission_gate._FOREGROUND_KEY,

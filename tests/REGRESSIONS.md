@@ -1,3 +1,30 @@
+## Position-claim transient failures — Issue #171 (October 11, 2026)
+
+`backend/tests/test_position_claim_failures.py` runs in the regular backend gate:
+
+- `test_issue171_position_claim_transaction_timeout_returns_retryable_503`: preparation, prior receipt and post-dispatch receipt expiry return actionable 503 + Retry-After without false empty success; dispatch preserves identity.
+- `test_issue171_position_claim_lock_and_pool_timeouts_are_retryable`: the same three boundaries preserve retryable semantics for demonstrated lock/acquisition failures.
+- `test_issue171_position_claim_foreground_denial_retains_503_without_dispatch`
+- `test_issue171_position_claim_conflicting_identity_remains_409`
+- `test_issue171_position_claim_unexpected_sql_failure_remains_500`
+- `test_issue171_position_claim_replay_preserves_existing_receipt_semantics`: complete 200, pending attachment 202 and terminal failure semantics.
+- `test_issue171_position_claim_diagnostics_are_opt_in_redacted_and_bounded`
+- `test_issue171_position_claim_diagnostics_preserve_original_failure`
+- `test_issue171_position_claim_acquisition_failure_is_traced_before_connection_exists`
+- `test_issue171_position_claim_diagnostics_emit_after_database_release`
+
+`tests/unit/durable-engine-request-regressions.test.ts` adds named cases `issue171 retains the position claim identity after HTTP 503 and restart`, `issue171 position diagnostics are disabled by default and redact journal contents`, and `issue171 diagnostic sink failure preserves the claim error and journal`. Existing uncertain-response and terminal-receipt journal cases remain required.
+
+The ordinary PostgreSQL durability runner discovers these additions in `scripts/check_postgres_engine_fairness.py`:
+
+- `test_postgres_engine_issue171_position_deadline_recovers_and_replays_after_restart`: real server-enforced 250 ms expiry, no premature receipt/lease mutation, worker execution, fresh-process exact replay and conflicting identity.
+- `test_postgres_engine_issue171_position_claim_lock_contention_is_retryable`: an observed owner holds candidate, receipt and position table locks independently; the unchanged 25 ms lock budget rejects preparation without spending a fairness turn.
+- `test_postgres_engine_issue171_position_claim_pool_acquisition_is_retryable`: the sole pooled connection is held; acquisition expiry occurs before a connection exists. Only the fixture's acquisition deadline is shortened.
+- `test_postgres_engine_issue171_position_claim_foreground_and_redis_deferral_preserve_identity`: foreground and Redis outage yield without false success or new receipt/lease/fairness state.
+- `test_postgres_engine_issue171_stale_generation_and_replaced_lease_do_not_spend_turn`: stale preparation, release and report cannot mutate the replacement lease or fairness state.
+
+Before the correction, three HTTP deadline regressions failed with 500 instead of 503 on main `964b2a3a`; six lock/pool boundary cases also failed. Real PostgreSQL deadline, candidate-lock and held-pool reproductions likewise returned 500. These controlled faults prove an exception-translation defect, not the historical cause of deadline overrun. Issue #171 remains open for that missing correlated timing evidence. No budgets, scheduling order, receipt identity or lease fences change.
+
 ## Selected-policy card valuation — Issue #174 (October 11, 2026)
 
 `backend/tests/test_opening_card_valuation.py` connects the real #154/#170/#153/#149/#155 contracts. The named regular-suite regressions are:
