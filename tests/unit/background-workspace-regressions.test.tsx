@@ -77,6 +77,26 @@ it("stale API cache waits for a live response before reporting success", async (
   invalidateWorkspaceData();
 });
 
+it.each([false, true])("issue36_line_request_invalidation_preserves_unrelated_and_newer_pending_reads (obsolete failure=%s)", async obsoleteFailure => {
+  const linesUrl = "http://localhost/api/repertoire/lines";
+  const otherUrl = "http://localhost/api/issue36-unrelated";
+  const finishReads: Array<(response: Response) => void> = [];
+  const fetcher = vi.fn(() => new Promise<Response>(resolve => { finishReads.push(resolve); }));
+  vi.stubGlobal("fetch", fetcher);
+  const oldLines = readWorkspaceData(linesUrl).catch(error => error);
+  const unrelated = readWorkspaceData(otherUrl);
+  invalidateWorkspaceData(linesUrl);
+  const freshLines = readWorkspaceData(linesUrl);
+  expect(readWorkspaceData(otherUrl)).toBe(unrelated);
+  finishReads[0](obsoleteFailure ? new Response("Unavailable", { status: 503 }) : Response.json({ lines: [] }));
+  await oldLines;
+  expect(readWorkspaceData(linesUrl)).toBe(freshLines);
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  finishReads[1](Response.json({ count: 1 }));
+  finishReads[2](Response.json({ lines: [] }));
+  await Promise.all([unrelated, freshLines]);
+});
+
 it("Builder comparison keeps covered moves and displays all source details together", () => {
   const move = { uci: asUciMove("e2e4"), san: asSanMove("e4") };
   const onPlay = vi.fn();

@@ -144,7 +144,7 @@ export function readWorkspaceData(
     .then((raw) => {
       const validated = schema ? parseData(schema, raw, url) : raw;
       entry.staleValue = undefined;
-      if (url.includes("/api/")) requests.delete(url);
+      if (url.includes("/api/") && requests.get(url) === entry) requests.delete(url);
       clearResolvedDiagnostics(url);
       persist(url, validated);
       notifyWorkspaceData("ready", url);
@@ -158,7 +158,7 @@ export function readWorkspaceData(
         operation: "load workspace data",
         endpoint: url,
       });
-      requests.delete(url);
+      if (requests.get(url) === entry) requests.delete(url);
       notifyWorkspaceData("error", url);
       throw error;
     })
@@ -179,7 +179,12 @@ export function readWorkspaceData(
   return promise;
 }
 
-export function invalidateWorkspaceData() {
+export function invalidateWorkspaceData(url?: string) {
+  if (url !== undefined) {
+    requests.delete(url);
+    if (typeof localStorage !== "undefined") localStorage.removeItem(`${WORKSPACE_CACHE_PREFIX}${url}`);
+    return;
+  }
   requests.clear();
   if (typeof localStorage !== "undefined") {
     for (let index = localStorage.length - 1; index >= 0; index--) {
