@@ -3,11 +3,12 @@ import { test, expect } from "./observability";
 import { readFileSync } from "node:fs";
 import { prefixSourceSchema } from "../../app/domain/prefix-comparison";
 import { prefixTransitionPlanSchema, transitionSummary } from "../../app/domain/prefix-transition";
-import transitionFixture from "../fixtures/prefix-comparison/transition.json";
-import structuralFixture from "../fixtures/prefix-comparison/structural.json";
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
+
+const structuralFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8")) as typeof import("../fixtures/prefix-comparison/structural.json");
+const transitionFixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/transition.json", "utf8")) as typeof import("../fixtures/prefix-comparison/transition.json");
 
 // API route interception must remain deterministic after the app registers its shell worker.
 test.use({ serviceWorkers: "block" });
