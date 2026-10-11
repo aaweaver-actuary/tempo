@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
 import chess
 
 from .cards import card_id
+from .opening_preparedness import ProbabilityEvidence
+from .opening_segmentation import decision_identity, opening_position_key
 
 if TYPE_CHECKING:
     from .opening_graph import GraphStep
+    from .opening_policy_reach import LearnerPolicy
 
 
 FrontierStatus = Literal[
     "structurally_unreachable", "prerequisite_unseen", "eligible", "already_introduced"
 ]
 FRONTIER_POLICY_VERSION = "sequence-exposure-v1"
+POLICY_FRONTIER_VERSION = "policy-sequence-frontier-v1"
 
 
 @dataclass(frozen=True)
@@ -179,6 +183,11 @@ def project_opening_frontier(snapshot: OpeningFrontierSnapshot) -> OpeningFronti
     nor certifies a live database. Duplicate conflicting card/publication/review
     records are snapshot errors rather than an arbitrary last-record-wins policy.
     """
+    return _project_opening_frontier(snapshot)
+
+
+def _project_opening_frontier(snapshot: OpeningFrontierSnapshot, *,
+                              step_blocks: dict[GraphStep, tuple[str, ...]] | None = None) -> OpeningFrontier:
     publications_by_repertoire: dict[str, OpeningFrontierPublication] = {}
     for publication in snapshot.publications:
         previous_publication = publications_by_repertoire.setdefault(publication.repertoire_id, publication)
@@ -253,6 +262,8 @@ def project_opening_frontier(snapshot: OpeningFrontierSnapshot) -> OpeningFronti
                 geometry_by_step[step] = _segment_geometry(step)
             end_key, geometry_reasons = geometry_by_step[step]
             prefix_reasons.update(geometry_reasons)
+            if step_blocks:
+                prefix_reasons.update(step_blocks.get(step, ()))
             card = cards_by_id.get(step.card_id)
             if card is None:
                 prefix_reasons.add("missing_card")
@@ -315,3 +326,163 @@ def project_opening_frontier(snapshot: OpeningFrontierSnapshot) -> OpeningFronti
         snapshot.snapshot_id, FRONTIER_POLICY_VERSION,
         tuple(sorted(publications_by_repertoire.values(), key=_publication_key)), tuple(results),
     )
+
+
+@dataclass(frozen=True)
+class OpeningPolicyRouteBinding:
+    """An existing publication/line occurrence explicitly selected by the caller."""
+
+    publication: OpeningFrontierPublication
+    line_id: str
+
+
+def _binding_key(binding: OpeningPolicyRouteBinding) -> tuple:
+    return _publication_key(binding.publication), binding.line_id
+
+
+@dataclass(frozen=True)
+class OpeningFrontierValuationInput:
+    """Already conditioned decision values; this projection does not estimate them."""
+
+    snapshot_id: str
+    policy_id: str
+    policy_version: int
+    card_id: str
+    decision_id: str
+    route_bindings: tuple[OpeningPolicyRouteBinding, ...]
+    reach: ProbabilityEvidence
+    readiness: ProbabilityEvidence
+    provenance: tuple[str, ...]
+
+    def __post_init__(self):
+        object.__setattr__(self, "route_bindings", tuple(sorted(set(self.route_bindings), key=_binding_key)))
+        object.__setattr__(self, "provenance", tuple(sorted(set(self.provenance))))
+        if not isinstance(self.reach, ProbabilityEvidence) or not isinstance(self.readiness, ProbabilityEvidence):
+            raise ValueError("Frontier valuation requires explicit probability evidence")
+
+
+@dataclass(frozen=True)
+class PolicyOpeningCardEligibility:
+    eligibility: OpeningCardEligibility
+    decisions: tuple[OpeningFrontierValuationInput, ...]
+    prerequisites: tuple[OpeningFrontierValuationInput, ...]
+
+
+@dataclass(frozen=True)
+class PolicyOpeningFrontier:
+    snapshot_id: str
+    policy: LearnerPolicy
+    publications: tuple[OpeningFrontierPublication, ...]
+    route_bindings: tuple[OpeningPolicyRouteBinding, ...]
+    cards: tuple[PolicyOpeningCardEligibility, ...]
+    version: str = POLICY_FRONTIER_VERSION
+    exposure_version: str = FRONTIER_POLICY_VERSION
+
+    @property
+    def eligible_card_ids(self) -> tuple[str, ...]:
+        return tuple(card.eligibility.card_id for card in self.cards if card.eligibility.status == "eligible")
+
+
+def _policy_step_decisions(step: GraphStep, policy: LearnerPolicy,
+                           actions: dict[str, str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Bind existing segment decisions to actions, without propagating probability."""
+    if step.trained_color != policy.trained_color:
+        return (), ("policy_trained_color_mismatch",)
+    _, geometry_reasons = _segment_geometry(step)
+    if geometry_reasons:
+        return (), ()  # The existing complete-route classifier owns structural diagnostics.
+    board = chess.Board(step.starting_fen)
+    decision_ids: list[str] = []
+    reasons: set[str] = set()
+    for move in step.moves:
+        if board.turn == (policy.trained_color == "white"):
+            selected_action = actions.get(opening_position_key(board.fen()))
+            if selected_action is None:
+                reasons.add("missing_policy_action")
+            elif selected_action != move:
+                reasons.add("policy_action_mismatch")
+            decision_ids.append(decision_identity(policy.repertoire_id, board.fen(),
+                policy.trained_color, move, policy.policy_version))
+        board.push_uci(move)
+    return tuple(sorted(set(decision_ids))), tuple(sorted(reasons))
+
+
+def project_policy_opening_frontier(snapshot: OpeningFrontierSnapshot, *, policy: LearnerPolicy,
+                                    route_bindings: tuple[OpeningPolicyRouteBinding, ...],
+                                    valuation_inputs: tuple[OpeningFrontierValuationInput, ...] = ()) -> PolicyOpeningFrontier:
+    """Select current policy routes before complete-route exposure aggregation.
+
+    Supplied values are passed through, never scored, normalized or made into
+    exposure. Sources must bind this snapshot, policy version, published route
+    and actual decision. The caller certifies durable review/game provenance.
+    """
+    selected_bindings = tuple(sorted(set(route_bindings), key=_binding_key))
+    selected_binding_set = set(selected_bindings)
+    publications = tuple(publication for publication in snapshot.publications
+                         if publication.repertoire_id == policy.repertoire_id)
+    if not isinstance(snapshot.snapshot_id, str) or not snapshot.snapshot_id.strip():
+        raise ValueError("Policy frontier requires a source snapshot identity")
+    for binding in selected_bindings:
+        if (binding.publication.repertoire_id != policy.repertoire_id
+                or binding.publication not in publications or not binding.line_id):
+            raise ValueError("Foreign or stale policy route binding")
+    selected_routes = tuple(replace(route, steps=tuple(replace(step,
+        moves=tuple(step.moves), decision_fen_keys=tuple(step.decision_fen_keys)) for step in route.steps))
+        for route in snapshot.routes if OpeningPolicyRouteBinding(route.publication, route.line_id) in selected_binding_set)
+    if selected_binding_set != {OpeningPolicyRouteBinding(route.publication, route.line_id) for route in selected_routes}:
+        raise ValueError("Missing selected published route")
+    routed_card_ids = {step.card_id for route in selected_routes for step in route.steps}
+    selected_cards = tuple(replace(card, repertoire_ids=tuple(card.repertoire_ids),
+        integrity_blocked_repertoire_ids=tuple(card.integrity_blocked_repertoire_ids))
+        for card in snapshot.cards if policy.repertoire_id in card.repertoire_ids
+        or card.card_id in routed_card_ids)
+    selected_card_ids = {card.card_id for card in selected_cards}
+    obligations = tuple(obligation for obligation in snapshot.obligations
+                        if obligation.repertoire_id == policy.repertoire_id and obligation.card_id in selected_card_ids)
+    if any(not isinstance(obligation.source_id, str) or not obligation.source_id.strip() for obligation in obligations):
+        raise ValueError("Game obligation requires durable source provenance")
+    selected_snapshot = OpeningFrontierSnapshot(snapshot.snapshot_id, publications, selected_routes,
+        selected_cards, tuple(review for review in snapshot.reviews if review.card_id in selected_card_ids), obligations)
+
+    decision_ids_by_card: dict[str, set[str]] = defaultdict(set)
+    route_bindings_by_card_decision: dict[tuple[str, str], set[OpeningPolicyRouteBinding]] = defaultdict(set)
+    policy_block_reasons_by_step = {}
+    selected_actions_by_position = {action.position_key: action.move_uci for action in policy.actions}
+    for route in selected_routes:
+        binding = OpeningPolicyRouteBinding(route.publication, route.line_id)
+        for step in route.steps:
+            decisions, policy_block_reasons_by_step[step] = _policy_step_decisions(step, policy, selected_actions_by_position)
+            decision_ids_by_card[step.card_id].update(decisions)
+            for decision_id in decisions:
+                route_bindings_by_card_decision[step.card_id, decision_id].add(binding)
+    selected_frontier = _project_opening_frontier(selected_snapshot, step_blocks=policy_block_reasons_by_step)
+    structurally_valid_bindings = {(card.card_id, OpeningPolicyRouteBinding(route.publication, route.line_id))
+        for card in selected_frontier.cards for route in card.routes if not route.blocked_reasons}
+    valuation_inputs_by_card_decision: dict[tuple[str, str], OpeningFrontierValuationInput] = {}
+    for supplied in valuation_inputs:
+        if (supplied.snapshot_id != snapshot.snapshot_id or type(supplied.policy_version) is not int
+                or (supplied.policy_id, supplied.policy_version) != (policy.policy_id, policy.policy_version)):
+            raise ValueError("Foreign or stale frontier valuation input")
+        identity = supplied.card_id, supplied.decision_id
+        if (identity not in route_bindings_by_card_decision or not supplied.route_bindings
+                or not set(supplied.route_bindings) <= route_bindings_by_card_decision[identity]
+                or any((supplied.card_id, binding) not in structurally_valid_bindings for binding in supplied.route_bindings)):
+            raise ValueError("Valuation input does not bind a valid selected card decision/route")
+        if not supplied.provenance or any(not isinstance(source, str) or not source.strip() for source in supplied.provenance):
+            raise ValueError("Supplied frontier valuation requires source provenance")
+        previous = valuation_inputs_by_card_decision.setdefault(identity, supplied)
+        if previous != supplied:
+            raise ValueError("Conflicting frontier valuation inputs")
+
+    def valuation_inputs_for_card(card_identifier: str) -> tuple[OpeningFrontierValuationInput, ...]:
+        return tuple(valuation_inputs_by_card_decision.get((card_identifier, decision_id)) or OpeningFrontierValuationInput(
+            snapshot.snapshot_id, policy.policy_id, policy.policy_version, card_identifier, decision_id,
+            tuple(route_bindings_by_card_decision[card_identifier, decision_id]), ProbabilityEvidence.unknown("missing_reach"),
+            ProbabilityEvidence.unknown("missing_readiness"), ())
+            for decision_id in sorted(decision_ids_by_card[card_identifier]))
+
+    cards = tuple(PolicyOpeningCardEligibility(card, valuation_inputs_for_card(card.card_id),
+        tuple(value for prerequisite in sorted({identifier for route in card.routes
+            for identifier in route.prerequisite_card_ids}) for value in valuation_inputs_for_card(prerequisite)))
+        for card in selected_frontier.cards)
+    return PolicyOpeningFrontier(snapshot.snapshot_id, policy, selected_frontier.publications, selected_bindings, cards)

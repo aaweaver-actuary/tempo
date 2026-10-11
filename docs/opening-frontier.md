@@ -1,11 +1,11 @@
 # Sequence-aware opening frontier (read-only)
 
-## Test plan recorded before implementation
+## Original #151 test plan (historical)
 
 Base: `4a222096f51f12d177687e97314f90a0d9063049`, October 10, 2026.
 Checkout: `.dev-copies/opening-relaxed-frontier`; branch:
-`codex/opening-relaxed-frontier`. This checkout belongs to the relaxed-frontier
-task and remains preserved until its PR merges.
+`codex/opening-relaxed-frontier`. These paths record the original task's
+validation provenance; they are not current resource ownership records.
 
 Change: a pure snapshot projection plus a runnable fixture diagnostic. Risks:
 accepting disconnected/stale routes, skipping unexposed ancestors, combining
@@ -139,10 +139,98 @@ It independently computes probability/marginal value and soft prerequisite recal
 Scoring must retain the selected learner repertoire-choice policy: shared card
 identity does not imply a shared choice denominator or cross-repertoire weight.
 This eligibility projection supplies scoped routes and never infers those weights.
-This module has no score/probability fields, ranking inputs or dependencies on
-PR #116/#117. A future live adapter must load a bounded coherent snapshot, close
+The original `project_opening_frontier` has no score/probability fields or ranking
+inputs. The policy-scoped API below carries supplied valuation evidence. Neither
+API depends on PR #116/#117. A future live adapter must load a bounded coherent snapshot, close
 its connection before computation, and separately enforce admissions/quota/attempt
 contracts at publication time; this PR adds no adapter or background handler.
+
+## Policy-scoped frontier contract (#118)
+
+`project_policy_opening_frontier(snapshot, *, policy, route_bindings,
+valuation_inputs=())` adds the missing policy boundary while retaining the
+original projection unchanged. `policy` is the existing #170 `LearnerPolicy`.
+Each `OpeningPolicyRouteBinding` selects an existing publication (repertoire,
+generation, scope digest) and line. Bindings must resolve current snapshot routes.
+
+Selection precedes complete-route exposure aggregation. A shared card eligible
+through Italian cannot become eligible under Ruy through an unseen Ruy parent.
+Within the selected policy, one valid fully exposed route still suffices; routes
+cannot splice prerequisite exposure. Real saved failed/guided practice counts,
+and introduction, queue placement, maturity and valuation never create exposure.
+
+Every learner action in selected segments is checked against the explicit policy.
+Missing actions, divergent actions and mismatched trained color create explanatory
+route blocks that propagate to descendants. Already-introduced cards retain the
+original classification and route warnings. Lifecycle, integrity and structural
+checks continue to use the existing complete-route classifier.
+
+The frozen `PolicyOpeningFrontier` retains the complete selected policy, source
+snapshot, `version=policy-sequence-frontier-v1`, `exposure_version`, publications
+and bindings. Each card has `eligibility` (the original route/review diagnostics),
+`decisions` and `prerequisites`. Decision identities use the existing
+`decision_identity` helper with the selected policy version. Stable card order
+is serialization order; `eligible_card_ids` provides no preference score.
+
+`OpeningFrontierValuationInput` carries snapshot ID, policy ID/version, card and
+decision IDs, publication/line bindings, existing `ProbabilityEvidence` reach and
+readiness, and immutable source-provenance strings. Values must be conditioned on
+the selected policy before being supplied. They must bind a structurally valid
+selected route, although its prerequisite exposure may still be incomplete.
+Foreign/stale identities, missing source references, invalid bindings and conflicting
+records raise `ValueError`; exact duplicates collapse. The caller explicitly
+selects one input per card/decision when multiple evidence sources disagree.
+
+Known values, uncertainty bounds and reasons pass through unchanged. Missing
+inputs become `ProbabilityEvidence.unknown('missing_reach')` and
+`ProbabilityEvidence.unknown('missing_readiness')`; no zero/midpoint fallback is
+used. Candidate and prerequisite readiness remain separate from sequence eligibility.
+Prerequisite rows retain their card and route bindings, so consumers must use the
+qualifying route rather than treating their union as a synthetic exposed path.
+Card-level cumulative-prefix recall is not copied into individual decisions.
+
+Use #170's already propagated decision probabilities and #153's already derived
+decision-level readiness (including its unknowns) to supply these records.
+Source-provenance strings retain their versions, context and fixed-as-of references.
+This API performs no propagation, readiness estimation, preparedness calculation or
+ranking. #149 owns that mathematics; merged #176 owns valuation orchestration.
+Its separate policy-version and publication/line inputs can consume this contract
+upstream without an import of unmerged code or a competing scoring implementation.
+A direct compatibility regression retains frontier metadata through that actual
+adapter, consumes its reach/readiness outputs, and proves an eligible candidate
+with no supplied learning effect remains unscorable. #176 merged while this task
+was in development; the final candidate is based on its current-main merge.
+
+Caller-qualified durable game obligations remain scoped annotations. A nonempty
+durable source ID is required, but the pure API does not certify raw game evidence
+or change existing gameplay admission exceptions. Snapshot callers also certify
+review validity; invalidated reviews must be marked invalidated.
+
+### Acceptance-criteria ownership
+
+| #118 criterion | Existing coverage / this change / remaining owner |
+| --- | --- |
+| Learning or failed-practice parent permits progression; queued-only parent blocks | #134 production exposure and #151 complete-route exposure already satisfy this; policy wrapper regressions retain it. |
+| One valid route; shared cards, multiple parents, transpositions, re-imports and invalidation | #151 already supplies these guards. This change fences their aggregation to explicitly selected policy routes. |
+| Deep common decisions can outrank shallow rare decisions, without equal-depth rules | #149/#170 already supply mathematics/reach. This change passes supplied values unchanged; a real-foundation fixture reverses ordering through #149 when supplied reach reverses. |
+| Weak/unknown prerequisite knowledge stays separate from maturity/exposure | #153 supplies readiness. This change exposes candidate/prerequisite decision inputs and preserves unknowns; sourced intervention assumptions and remediation valuation remain #112/#176 work. |
+| Candidate, selected policy, blocked reason, generation, evidence and valuation provenance | #151 supplied exposure provenance. This change completes the independent policy-scoped input/output contract. |
+| Deterministic, immutable and read-only | #151 already covered the original API; named regressions cover the new boundary, detached collections and forbidden storage/network/clock/scheduling access. |
+| Global capacity, actual study pauses/attempts and production migration | #158/#159/#113/#114 retain ownership; this projection applies no quotas or admissions. |
+
+The smallest future #114 cutover consumes a bounded coherent snapshot, validates
+its current publication/evidence again at admission, and retains durable queue,
+active-attempt and pause protections. #134 already changed immediate-parent
+production unlocking; it must not be rebuilt. #113 must qualify the complete
+allocation policy before #114 adopts it. This independent frontier contract does
+not close #118's remaining dependency-owned requirements.
+
+Development proof is the named cases and complete
+`make python-file FILE=backend/tests/test_opening_frontier.py`, then the affected
+reach/preparedness/readiness/progression files. CI owns current head/base/integration
+qualification. No live reads, persistence, HTTP/UI, background handler, or deployment
+is added. Diagnostics and exact timed commands are preserved outside the checkout
+under `test-results/2026-10-11-issue-118-policy-frontier/`.
 
 References: [#112](https://github.com/aaweaver-actuary/tempo/issues/112) owns
 readiness/value calculations, [#113](https://github.com/aaweaver-actuary/tempo/issues/113)

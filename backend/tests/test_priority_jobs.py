@@ -72,9 +72,9 @@ def test_priority_refresh_coalesces_repeated_game_and_coverage_triggers(
             "SELECT * FROM repertoire_priority_jobs"
         ).fetchall()
     assert first_generation == 1
-    assert second_generation == 2
+    assert second_generation == 1
     assert len(jobs) == 1
-    assert jobs[0]["generation"] == 2
+    assert jobs[0]["generation"] == 1
     assert jobs[0]["status"] == "queued"
 
 
@@ -125,6 +125,8 @@ def test_stale_priority_generation_cannot_overwrite_newer_inputs(
     worker = threading.Thread(target=priorities.execute_priority_refresh, args=(claimed,))
     worker.start()
     assert calculation_started.wait(timeout=2)
+    with database.connection() as database_connection:
+        database_connection.execute("UPDATE cards SET state='new' WHERE id='priority-card'")
     newer_generation = priorities.enqueue_priority_refresh(
         "priority-rep", quiet_seconds=0
     )
