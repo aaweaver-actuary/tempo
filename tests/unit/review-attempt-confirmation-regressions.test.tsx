@@ -246,6 +246,24 @@ it("issue186_view_replacement_cannot_orphan_progression_notification", async () 
   expect(reviewPosts()).toHaveLength(1);
 });
 
+it("issue186_cancelled_reconciliation_cannot_update_replaced_view", async () => {
+  queue = [queueCard("card-a", 12), queueCard("card-b", 13)];
+  await readyHome();
+  reviewResponse = async () => Response.json({ persisted: true, prepared_continuation: {
+    card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0, local_date: new Date().toLocaleDateString("en-CA"),
+  } });
+  const originalFetcher = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation(async (input, options) => String(input).includes("/api/queue/window")
+    ? new Promise(() => {}) : originalFetcher(input, options));
+  await act(async () => { await trainingProps.rateCard("correct"); });
+  const settledNotice = { ...notifications().find(record => record.key === "review-queue:12")! };
+  expect(settledNotice).toMatchObject({ active: false, severity: "success" });
+  cleanup();
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+  expect(notifications().find(record => record.key === "review-queue:12")).toEqual(settledNotice);
+  expect(reviewPosts()).toHaveLength(1);
+});
+
 it("issue186_lost_review_response_receipt_recovery_uses_queue_only_retry", async () => {
   await readyHome();
   let receiptReady = false;

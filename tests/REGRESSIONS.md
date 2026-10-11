@@ -3911,6 +3911,7 @@ A durable review must reach an interactive next card, authoritative queue comple
 - `issue186_late_body_after_deadline_cannot_install` — cancellation revokes installation authority even if response parsing later resolves.
 - `issue186_queue_prerequisite_is_included_in_acquisition_deadline` — a held preparation-cache read cannot evade the complete acquisition deadline.
 - `issue186_periodic_refresh_preserves_progression_owner` — the existing 30-second poll cannot supersede bounded fallback or disable an authorized prepared attempt on failure.
+- `issue186_cancelled_reconciliation_cannot_update_replaced_view` — cancellation on unmount cannot rewrite an already settled prepared-progression lifecycle.
 - `issue186_prepared_recovery_remains_visible_and_interactive` — pinned Linux rendering at 390/1280 pixels retains visible retry, native input and no horizontal overflow; screenshots are attached for inspection.
 - `issue186_completed_tactic_has_bounded_progression` — disposable PostgreSQL/native browser proof for prepared abort, fallback abort, and fallback timeout; recovery and restart/exact replay retain one durable review.
 
