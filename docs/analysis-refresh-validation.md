@@ -159,7 +159,7 @@ and proof results are not restored or reused as candidate qualification.
 | `backend/tests/test_postgres_threat_analysis_commands.py` | Superseded inherited infrastructure/fixtures; keep current main |
 | `backend/tests/test_priority_jobs.py` | Required with adaptation to current main and retained publication identity |
 | `backend/tests/test_refresh_input_coalescing.py` | Required with adaptation to current main and retained publication identity |
-| `backend/tests/test_repertoire_limit_proof_isolation.py` | Superseded inherited infrastructure/fixtures; keep current main |
+| `backend/tests/test_repertoire_limit_proof_isolation.py` | Required portable fixture adaptation: reuse initialized epoch tables and model PostgreSQL scoped triggers |
 | `backend/tests/test_scheduling_turns.py` | Superseded inherited infrastructure/fixtures; keep current main |
 | `docs/analysis-activity-repair.md` | Adapt evidence/registry; historical passes do not qualify the new candidate |
 | `docs/analysis-admission-validation.md` | Superseded inherited infrastructure/fixtures; keep current main |
@@ -190,3 +190,23 @@ and proof results are not restored or reused as candidate qualification.
 | `tests/unit/desktop-queue-regressions.test.ts` | Superseded inherited infrastructure/fixtures; keep current main |
 | `tests/unit/pgn-import-dialog-regressions.test.tsx` | Superseded inherited infrastructure/fixtures; keep current main |
 | `tests/unit/prefix-diagnostics-regressions.test.tsx` | Superseded inherited infrastructure/fixtures; keep current main |
+
+## Qualification repair
+
+Complete CI run 38118707662 on head `1c62b7dc` / integration `e36c30fc` passed
+2,376 backend cases but failed six repertoire-limit portable-fixture setups because
+SQLite initialization now creates their manually declared epoch tables. The smallest
+`test_repertoire_limit_proof_cleanup_failure_is_loud_and_atomic` reproduction fails
+locally with the same duplicate-table error (1.02 s). The original historical stack
+already contained this narrow adaptation; its necessity survives the schema change.
+The fixture now reuses those tables and replaces SQLite's broad compatibility triggers
+with its existing PostgreSQL scoped-trigger model. All cleanup/isolation assertions
+and production triggers remain unchanged; refresh regressions separately retain the
+real SQLite compatibility triggers. Fresh complete candidate CI is required after
+this test-only repair.
+
+The repaired fixture file passes all six cases in 1.75 s; its combined run with
+all 28 refresh cases passes **34 tests in 5.49 s**. No runtime/deadline/assertion
+change accompanies that test-only repair. First-candidate build, frontend, lifecycle,
+pinned visual/performance and all four browser shards passed; those passes are
+preserved as historical evidence and cannot validate the repaired head.
