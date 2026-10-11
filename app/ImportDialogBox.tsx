@@ -1,4 +1,5 @@
 "use client";
+import { usePrefixStructuralAdmission } from "./hooks/use-prefix-structural-admission";
 import { TextInput } from "./components/inputs/TextInput";
 import { Button } from "./components/buttons/BaseButton";
 import { useRef as useDialogRef } from "react";
@@ -61,6 +62,7 @@ export function ImportDialogBox({
   onViewRepertoire: () => void;
   onDatabaseUpdated: () => Promise<void>;
 }): JSX.Element {
+  const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: [], scopeComplete: false }, usesLocalApi());
   const dialogRef = useDialogRef<HTMLDivElement>(null);
   const importController = useDialogRef<AbortController | null>(null);
   const closeDialog = useCallback(() => {
@@ -383,6 +385,7 @@ export function ImportDialogBox({
             </label>
             {!settingsLoaded && !settingsError && <Notice>Loading import settings…</Notice>}
             {settingsError && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadImportSettings(); }}>{settingsError}</Notice>}
+            {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
             {error && <p className="editor-error" role="alert">{error}</p>}
             {acknowledgedImport && working && <Notice>Repertoire imported. Preparing today&apos;s queue… You can close this dialog; preparation will continue.</Notice>}
             {pendingImport && <Notice error={pendingImport.blocked}>{pendingImport.message}</Notice>}
@@ -396,7 +399,7 @@ export function ImportDialogBox({
               </span>
               <Button
                 variant="primary" className="primary-button"
-                disabled={!file || working || !settingsLoaded}
+                disabled={!file || working || !settingsLoaded || structuralAdmission.paused && !pendingImport && !acknowledgedImport}
                 onClick={() => void importFile(pendingImport?.blocked ?? false)}
               >
                 {working ? acknowledgedImport ? "Preparing queue…" : "Importing…" : acknowledgedImport ? "Check publication" : pendingImport?.blocked ? "Retry blocked import" : pendingImport ? "Check again" : "Import repertoire"}

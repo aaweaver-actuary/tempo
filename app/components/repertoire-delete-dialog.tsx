@@ -1,13 +1,15 @@
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { useState } from "react";
 import { Dialog } from "./dialog";
 import { Button } from "./buttons/BaseButton";
 import type { LearnedCardsPolicy } from "../lib/repertoire-delete-command";
 
-export function RepertoireDeleteDialog({ name, pendingPolicy, busy, error, localDemo = false, onClose, onConfirm }: {
-  name: string; pendingPolicy?: LearnedCardsPolicy; busy: boolean; error: string;
+export function RepertoireDeleteDialog({ repertoireId, name, pendingPolicy, busy, error, localDemo = false, onClose, onConfirm }: {
+  repertoireId?: string; name: string; pendingPolicy?: LearnedCardsPolicy; busy: boolean; error: string;
   localDemo?: boolean;
   onClose: () => void; onConfirm: (policy: LearnedCardsPolicy) => Promise<void>;
 }) {
+  const admission = usePrefixStructuralAdmission({ repertoireIds: repertoireId ? [repertoireId] : [], scopeComplete: Boolean(repertoireId) }, !localDemo);
   const [policy, setPolicy] = useState<LearnedCardsPolicy>(pendingPolicy ?? (localDemo ? "delete" : "keep"));
   return <Dialog className="deletion-dialog" titleId="delete-repertoire-title" onClose={() => { if (!busy) onClose(); }}>
     <h2 id="delete-repertoire-title">Delete “{name}”?</h2>
@@ -20,10 +22,11 @@ export function RepertoireDeleteDialog({ name, pendingPolicy, busy, error, local
       <p>Permanently remove exclusive learned cards and their training history.</p>
     </fieldset>}
     {pendingPolicy && <p role="status">Deletion is awaiting confirmation. Retry to check the same choice.</p>}
+    {admission.paused && <p role="alert">{admission.reason}</p>}
     {error && <p role="alert">{error}</p>}
     <div className="editor-actions">
       <Button disabled={busy} onClick={onClose}>{pendingPolicy ? "Close" : "Cancel"}</Button>
-      <Button variant="danger" pending={busy} onClick={() => void onConfirm(policy)}>{pendingPolicy ? "Check deletion" : "Delete repertoire"}</Button>
+      <Button variant="danger" pending={busy} disabled={admission.paused && !pendingPolicy} onClick={() => void onConfirm(policy)}>{pendingPolicy ? "Check deletion" : "Delete repertoire"}</Button>
     </div>
   </Dialog>;
 }

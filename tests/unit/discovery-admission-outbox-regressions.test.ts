@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { beforeEach, expect, it, vi } from "vitest";
 import { enqueuePendingDiscoveryAdmission, flushPendingDiscoveryAdmissions,
   pendingDiscoveryAdmissions, recoverUnacknowledgedDiscoveryAdmissions,
@@ -5,6 +7,7 @@ import { enqueuePendingDiscoveryAdmission, flushPendingDiscoveryAdmissions,
   "../../app/lib/discovery-admission-outbox";
 
 beforeEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });
 
 const admission = { opportunityId: "gap", selectedMoveUci: "f3e5", evidenceFingerprint: "revision" };
 const hashAdmission = { opportunityId: "a".repeat(64), selectedMoveUci: "g1f3",

@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -388,3 +390,5 @@ it("unplayed saved continuation cannot submit a training Builder branch at its l
   expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/repertoire/branches"))).toEqual([]);
   expect(storedSession().branchStart).toBe(8);
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

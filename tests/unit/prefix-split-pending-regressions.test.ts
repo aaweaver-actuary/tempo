@@ -1,3 +1,6 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });
 import { afterEach, expect, it, vi } from "vitest";
 import { acceptPrefixSplitCommand, rejectPrefixSplitCommand } from "../../app/lib/prefix-split-command";
 import { PendingOperationError } from "../../app/lib/operation-status";

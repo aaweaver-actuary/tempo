@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -48,3 +50,5 @@ it("Builder unrelated rerender does not rewrite repertoire selection or session"
     key === "tempo-active-repertoire-white" || key === "tempo-builder-session",
   )).toEqual([]);
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

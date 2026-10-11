@@ -1,3 +1,4 @@
+import { usePrefixStructuralAdmission } from "./hooks/use-prefix-structural-admission";
 import { TextArea } from "./components/ui";
 import { SelectInput } from "./components/inputs/SelectInput";
 import { TextInput } from "./components/inputs/TextInput";
@@ -34,6 +35,7 @@ export function AnalysisPasteDialog({
     conflictingRepertoireIds: string[],
   ) => void;
 }) {
+  const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: [], scopeComplete: false }, usesLocalApi());
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [text, setText] = useState("");
@@ -258,7 +260,8 @@ export function AnalysisPasteDialog({
             />
           </label>
         )}
-        {error && (
+        {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
+      {error && (
           <p className="editor-error" role="alert">
             {error}
           </p>
@@ -379,7 +382,7 @@ export function AnalysisPasteDialog({
           <Button
             variant="primary"
             className="primary-button"
-            disabled={!usesLocalApi() || !preview || working}
+            disabled={!usesLocalApi() || !preview || working || structuralAdmission.paused}
             onClick={() => void saveLines()}
           >
             {working ? "Saving…" : "Save selected lines"}

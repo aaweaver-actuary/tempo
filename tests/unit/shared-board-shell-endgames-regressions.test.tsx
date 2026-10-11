@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { beforeEach, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Chess } from "chess.js";
@@ -78,3 +80,5 @@ it("endgame shortcuts browse only actual played moves without probing or grading
   expect(useBoardShellStore.getState().board.interactionMode).toBe("legal");
   expect(vi.mocked(probeTablebase).mock.calls.length).toBe(requestCount);
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

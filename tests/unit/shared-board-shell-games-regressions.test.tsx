@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { render, waitFor } from "@testing-library/react";
 import { expect, it, vi, beforeEach } from "vitest";
 import GamesView from "../../app/views/games_view";
@@ -59,3 +61,5 @@ it("Games shared board publishes readonly state and releases ownership on unmoun
   view.unmount();
   expect(useBoardShellStore.getState().board.owner).toBe("train");
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

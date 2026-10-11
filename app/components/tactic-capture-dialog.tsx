@@ -1,3 +1,4 @@
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { useState } from "react";
 import { Chess } from "chess.js";
 import { Dialog } from "./dialog";
@@ -19,6 +20,7 @@ import { parseChessComPuzzlePgn } from "../lib/tactic-capture-pgn";
 export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }: {
   theme: BoardTheme; pieceSet: PieceSet; onClose: () => void; onQueueChanged: () => void;
 }) {
+  const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: [], scopeComplete: false }, usesLocalApi());
   const [restored] = useState(() => {
     try { return { request: pendingTacticCapture(), error: "" }; }
     catch (error) { return { request: null, error: String(error) }; }
@@ -80,6 +82,7 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
     <div className="editor-heading"><div><p className="eyebrow">Today’s training</p><h2 id="capture-tactic-title">Capture tactic</h2></div></div>
     {!usesLocalApi() ? <p>Durable tactic capture requires local Tempo. Open your local Tempo workspace to add a position to training.</p> : <>
       {pending && <p role="status">A capture is awaiting confirmation. Check its result before editing or creating another capture.</p>}
+      {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
       <fieldset disabled={locked} className="capture-editor">
         <div className="capture-pgn-input">
           <div className="capture-input-toolbar">
@@ -112,7 +115,7 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
       </fieldset>
       {(error || editor.error) && <p className="editor-error" role="alert">{error || editor.error}</p>}
       <div className="editor-actions"><Button onClick={onClose}>Cancel</Button>
-        <Button variant="primary" className="primary-button" pending={saving} disabled={saving || (!pending && (Boolean(editor.positionError) || !editor.moves.length || editor.pendingFen !== null))}
+        <Button variant="primary" className="primary-button" pending={saving} disabled={saving || structuralAdmission.paused && !pending || (!pending && (Boolean(editor.positionError) || !editor.moves.length || editor.pendingFen !== null))}
           onClick={() => void save()}>{pending ? "Check pending capture" : "Add to training"}</Button></div>
     </>}
   </Dialog>;

@@ -1,3 +1,4 @@
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { Button } from "./buttons/BaseButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
@@ -29,6 +30,7 @@ export function RepertoireIntegrityDialog({
   pieceSet: PieceSet;
   onClose: () => void;
 }) {
+  const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: [repertoireId], scopeComplete: false });
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const [payload, setPayload] =
@@ -170,6 +172,7 @@ export function RepertoireIntegrityDialog({
         <CloseButton onClose={onClose} ariaLabel="Defer repertoire repair" />
         <p className="eyebrow">Repertoire repair</p>
         <h2 id="integrity-title">Choose one response per position</h2>
+        {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
         {!payload && !error && !integrityLoadError && <p>Checking saved lines…</p>}
         {integrityLoadError && <p className="editor-error" role="alert">{integrityLoadError}</p>}
         {error && (
@@ -272,7 +275,7 @@ export function RepertoireIntegrityDialog({
                   <Button
                     variant="primary"
                     className="primary-button"
-                    disabled={!selected}
+                    disabled={!selected || structuralAdmission.paused}
                     onClick={() => void resolve()}
                   >
                     Keep this response

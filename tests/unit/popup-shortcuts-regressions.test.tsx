@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import SavedLocallyButton from "../../app/components/buttons/SavedLocallyButton";
@@ -35,3 +37,5 @@ it("Escape dismisses Builder position search despite its dialog boundary", () =>
   fireEvent.keyDown(window, { key: "Escape" });
   expect(screen.queryByRole("dialog", { name: "Position search" })).toBeNull();
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

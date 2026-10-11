@@ -1,3 +1,6 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ImportDialogBox } from "../../app/ImportDialogBox";

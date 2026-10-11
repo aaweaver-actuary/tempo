@@ -1,3 +1,6 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });
 import { writeFileSync } from "node:fs";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -490,6 +493,7 @@ it("confirmed Add and train removes the handled discovery from the review sessio
   expect(screen.getByText("2 of 2 · white to move")).toBeTruthy();
   expect(pendingDiscoveryAdmissions()).toHaveLength(1);
   feedOrder = [...feedOrder].reverse();
+  await waitFor(() => expect(finishSave).toBeTypeOf("function"));
   await act(async () => finishSave?.(Response.json({ status: "preparing", intent_id: "intent" })));
   await act(async () => { await flushPendingDiscoveryAdmissions(); });
   await waitFor(() => expect(backgroundFetch.mock.calls.length).toBeGreaterThan(1));

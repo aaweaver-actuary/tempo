@@ -1,3 +1,4 @@
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { API_URL } from "../const";
@@ -14,6 +15,7 @@ export function CanonicalPrefixDialog({ repertoireId, repertoireName, side, them
   repertoireId: string; repertoireName: string; side: "white" | "black";
   theme: BoardTheme; pieceSet: PieceSet; onClose: () => void; onSaved: () => Promise<void>;
 }) {
+  const admission = usePrefixStructuralAdmission({ repertoireIds: [repertoireId], scopeComplete: true });
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
   const generation = useRef(0);
@@ -124,8 +126,9 @@ export function CanonicalPrefixDialog({ repertoireId, repertoireName, side, them
       <ul>{preview.conflicts.map(conflict => <li key={conflict.item_id}><strong>{conflict.name}</strong>: {conflict.reason}</li>)}</ul>
       {conflictCursor && <Button onClick={() => void moreConflicts()}>Show more conflicts</Button>}</div>}
     {preview?.error && <p role="alert">{preview.error}</p>}
+    {admission.paused && <p role="alert">{admission.reason}</p>}
     {error && <div role="alert"><p>{error}</p><Button disabled={working} onClick={() => void load()}>Retry operation</Button></div>}
     {refreshError && <p role="alert">{refreshError}</p>}
-    <footer className="canonical-prefix-actions"><Button disabled={working || committed || preview?.state !== "ready"} onClick={() => void save()}>{working ? "Working…" : "Save prefix"}</Button><Button onClick={onClose}>{committed ? "Close" : "Cancel"}</Button></footer>
+    <footer className="canonical-prefix-actions"><Button disabled={working || committed || admission.paused || preview?.state !== "ready"} onClick={() => void save()}>{working ? "Working…" : "Save prefix"}</Button><Button onClick={onClose}>{committed ? "Close" : "Cancel"}</Button></footer>
   </div></div>;
 }

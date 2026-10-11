@@ -411,7 +411,7 @@ export default function RepertoireView({
   }
   return (
     <section className="library-page" id="repertoire">
-      {deleteTarget && <RepertoireDeleteDialog key={deleteTarget.id} name={deleteTarget.title}
+      {deleteTarget && <RepertoireDeleteDialog key={deleteTarget.id} repertoireId={deleteTarget.id} name={deleteTarget.title}
         localDemo={!deleteTarget.backend}
         pendingPolicy={pendingDeletePolicy} busy={deleteBusy} error={deleteError}
         onClose={() => setDeleteTarget(null)} onConfirm={policy => remove(deleteTarget, policy)} />}

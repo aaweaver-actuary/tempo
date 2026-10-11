@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import {
   act,
   fireEvent,
@@ -1726,3 +1728,5 @@ for (const { title, hasRemainingConflict, crossTab } of [
     }
 });
 }
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

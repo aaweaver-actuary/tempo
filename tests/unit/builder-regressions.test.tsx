@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import {
   fireEvent,
   render,
@@ -453,3 +455,5 @@ it("two-pass game scan preserves a bounded MultiPV set with its decision FEN", a
     ],
   });
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

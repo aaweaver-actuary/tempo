@@ -1,3 +1,4 @@
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { TextArea } from "../components/ui";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { Button } from "../components/buttons/BaseButton";
@@ -394,6 +395,8 @@ export default function BuilderView({
     repertoires.find((item) => item.id === activeRepertoire) ?? repertoires[0];
   const selectedRepertoireId = selectedRepertoire?.id;
   const selectedRepertoireSide = selectedRepertoire?.side;
+  const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: selectedRepertoireId ? [selectedRepertoireId] : [], scopeComplete: false }, usesLocalApi());
+  const removalAdmission = usePrefixStructuralAdmission({ repertoireIds: selectedRepertoireId ? [selectedRepertoireId] : [], scopeComplete: Boolean(selectedRepertoireId) }, usesLocalApi());
   const lineMatches = useMemo(
     () =>
       availableLines.filter(
@@ -1492,6 +1495,7 @@ export default function BuilderView({
             </Button>
           </div>
           <div className="branch-editor" data-task="Repertoire">
+            {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
             <span>
               <b>
                 {branchStart === null
@@ -1515,7 +1519,7 @@ export default function BuilderView({
               </Button>
             ) : (
               <>
-                <Button className="save" onClick={saveBranch} disabled={Boolean(trainingRouteToResolve) || cursor <= branchStart}>
+                <Button className="save" onClick={saveBranch} disabled={Boolean(trainingRouteToResolve) || cursor <= branchStart || structuralAdmission.paused}>
                   Save branch
                 </Button>
                 <Button
@@ -1534,7 +1538,7 @@ export default function BuilderView({
               <Button
                 className="danger"
                 onClick={() => void removeBranchFromCurrentPosition()}
-                disabled={Boolean(trainingRouteToResolve) || !selectedRepertoire || cursor === 0}
+                disabled={Boolean(trainingRouteToResolve) || !selectedRepertoire || cursor === 0 || removalAdmission.paused}
               >
                 Delete line from here
               </Button>

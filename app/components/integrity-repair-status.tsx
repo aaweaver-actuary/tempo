@@ -5,12 +5,14 @@ import { discardStaleIntegrityRepair, flushIntegrityRepairs, pendingIntegrityRep
   INTEGRITY_REPAIR_CONFIRMED, type PendingIntegrityRepair } from "../lib/integrity-repair-outbox";
 import { publishNotification, notifications, resolveNotification } from "../lib/notifications";
 import { updateBrowserActivity } from "../lib/browser-activity";
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 
 export function IntegrityRepairStatus({ onReconcile, onResume }: {
   onReconcile: (repertoireId: string) => void; onResume: (repertoireId: string) => void;
 }) {
   const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
   const [error, setError] = useState("");
+  const admission = usePrefixStructuralAdmission({ repertoireIds: repairs.map(repair => repair.repertoireId), scopeComplete: false }, usesLocalApi() && repairs.length > 0);
   const callbacks = useRef({ onReconcile, onResume });
   useEffect(() => { callbacks.current = { onReconcile, onResume }; }, [onReconcile, onResume]);
   useEffect(() => {
@@ -84,6 +86,7 @@ export function IntegrityRepairStatus({ onReconcile, onResume }: {
     {repairs.length > 0 && <div className="integrity-train-notice integrity-repair-status" role="status">
       <strong>{repairs.length} repair choice{repairs.length === 1 ? "" : "s"} awaiting confirmation</strong>
       <span>You can keep studying while these choices save.</span>
+      {admission.paused && <p role="alert">{admission.reason}</p>}
       {repairs.map(repair => <div key={repair.operationId}>
         <span>{repair.selectedMoveUci} · {repair.phase === "queued" ? "Waiting to send" : repair.phase === "saving" ? "Saving" :
           repair.phase === "validating" ? "Validating" : "Needs attention"}{repair.error ? ` · ${repair.error}` : ""}</span>
@@ -91,7 +94,7 @@ export function IntegrityRepairStatus({ onReconcile, onResume }: {
           <Button onClick={() => callbacks.current.onResume(repair.repertoireId)}>Review changed conflict</Button>
           <Button onClick={() => { try { discardStaleIntegrityRepair(repair.operationId); } catch (failure) { setError(String(failure)); } }}>Discard obsolete choice</Button>
         </> : (repair.error || ["failed", "blocked"].includes(repair.phase)) &&
-          <Button onClick={() => void retryIntegrityRepair(repair.operationId).catch(failure => setError(String(failure)))}>Retry repair</Button>}
+          <Button disabled={admission.paused} onClick={() => void retryIntegrityRepair(repair.operationId).catch(failure => setError(String(failure)))}>Retry repair</Button>}
       </div>)}
     </div>}
   </>;

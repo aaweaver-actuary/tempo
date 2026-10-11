@@ -1,3 +1,6 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -398,6 +401,7 @@ it("Chess.com puzzle controls stay locked while saving or awaiting capture confi
   fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
   for (const control of [screen.getByRole("button", { name: "Paste Chess.com puzzle PGN" }), screen.getByRole("button", { name: "Load PGN" }), screen.getByLabelText("Chess.com puzzle PGN")])
     expect(control).toHaveProperty("disabled", true);
+  await waitFor(() => expect(rejectSave).toBeTypeOf("function"));
   await act(async () => rejectSave(new Error("lost transport")));
   await waitFor(() => expect(screen.getByText(/A capture is awaiting confirmation/)).toBeTruthy());
   const originalPending = pendingTacticCapture();

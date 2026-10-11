@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { STANDARD_FEN } from "../../app/const";
@@ -98,3 +100,5 @@ it("phone save failure preserves the outbox storage warning and raw details", ()
   expect(notifications()).toHaveLength(1);
   expect(notifications()[0]).toMatchObject({ severity: "warning", details: { classification: "storage", error: "Storage denied" } });
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

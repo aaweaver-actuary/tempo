@@ -4,9 +4,46 @@ import { readFileSync } from "node:fs";
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
+import { prefixTransitionPlanSchema, transitionSummary } from "../../app/domain/prefix-transition";
+import { prefixSourceSchema } from "../../app/domain/prefix-comparison";
 
 // API route interception must remain deterministic after the app registers its shell worker.
 test.use({ serviceWorkers: "block" });
+
+test("issue81_open_deletion_dialog_observes_native_cross_tab_reservation across browser engines", async ({ page, context }) => {
+  const transition = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/transition.json", "utf8"));
+  const structural = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8"));
+  const summary = transitionSummary(prefixTransitionPlanSchema.parse(transition.ready), prefixSourceSchema.parse(structural.source), "Combined Black");
+  await prepareVisualUI(page);
+  let deletions = 0;
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [
+    { id: "rep", name: "Combined Black", source_name: "opening.pgn", line_count: 2, card_count: 5, due_count: 0 },
+  ] } }));
+  await page.route("**/api/repertoires/rep?**", route => {
+    if (route.request().method() === "DELETE") deletions++;
+    return route.fulfill({ json: { deleted: true, id: "rep" } });
+  });
+  await page.goto("/"); await navigate(page, "Repertoire");
+  await page.locator(".repertoire-card details.card-menu summary").click();
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: /Delete “Combined Black”/ });
+  const confirm = dialog.getByRole("button", { name: "Delete repertoire", exact: true });
+  await expect(confirm).toBeEnabled();
+  const writer = await context.newPage();
+  await writer.route("**/structural-storage-writer.html", route => route.fulfill({ contentType: "text/html", body: "<title>Structural storage fixture</title>" }));
+  await writer.goto("/structural-storage-writer.html");
+  await writer.evaluate(async operation => {
+    await navigator.locks.request("tempo-pending-prefix-transition-v1:reservation", () => {
+      localStorage.setItem("tempo-pending-prefix-transition-v1:rep", JSON.stringify(operation));
+    });
+  }, { version: 1, repertoireId: "rep", operationId: "browser-prefix", request: transition.request, summary, state: "pending" });
+  await expect(confirm).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toContainText("Resolve the prefix transition");
+  await expect(dialog.getByLabel("Keep learned cards")).toBeChecked();
+  expect(deletions).toBe(0);
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-repertoire-delete-v1"))).toBeNull();
+  await writer.close();
+});
 
 test("prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines", async ({ page }) => {
   const cards = ["Prepared A", "Prepared B", "Prepared C"].map((name, index) => ({ id: `prepared-${index}`,

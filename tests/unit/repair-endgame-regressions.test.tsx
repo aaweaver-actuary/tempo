@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Chess } from "chess.js";
 import { expect, it, vi } from "vitest";
@@ -120,3 +122,5 @@ it("card repair offers Lichess restoration only for explicitly packaged tactics"
   view.rerender(<CardEditor practiceCard={{ ...card, repertoireId: asRepertoireId("__tactics__") }} boardTheme="brown" pieceSet="cburnett" onClose={vi.fn()} onSave={vi.fn()} />);
   expect(screen.getByRole("button", { name: "Restore Lichess original" })).toBeTruthy();
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

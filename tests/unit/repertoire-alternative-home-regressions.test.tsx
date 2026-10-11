@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Chess, type Square } from "chess.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -345,3 +347,5 @@ it("issue36_demo_keeps_demo_branch_membership_without_loading_an_index", async (
   expect(useTrainingStore.getState()).toMatchObject({ feedback: "branch", isAttemptFailed: false });
   expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(0);
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

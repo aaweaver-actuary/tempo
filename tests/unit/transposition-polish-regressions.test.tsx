@@ -1,3 +1,5 @@
+import { beforeEach as beforeStructuralAdmissionCase } from "vitest";
+import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -120,3 +122,5 @@ it("transposition dismissal survives Builder remount and existing routes never p
   );
   expect(screen.queryByRole("button", { name: "Add as branch" })).toBeNull();
 });
+
+beforeStructuralAdmissionCase(() => { installPrefixTransitionTestLocks(); });

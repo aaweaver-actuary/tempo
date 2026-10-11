@@ -1,4 +1,5 @@
 "use client";
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { DiscoveryPreviewScheduler, DiscoveryPreviewValidationCache, type DiscoveryPreviewWork } from "../lib/discovery-preview-scheduler";
 import { historyKeyboardActions, usePopupKeyboard } from "../lib/keyboard-shortcuts";
 import { measureTempoDragPhase } from "../lib/performance";
@@ -212,6 +213,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   boardTheme?: BoardTheme; pieceSet?: PieceSet;
   openRequest?: { id: string; token: number };
 }) {
+  const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: [], scopeComplete: false }, usesLocalApi());
   const [open, setOpen] = useState(false);
   const [discoveries, setDiscoveries] = useState<DiscoveryItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -1103,7 +1105,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
           >
             {pendingAdmissions.filter((admission) => admission.state === "failed" && admission.error).map((admission) =>
               <p key={admission.opportunityId} role="alert">Discovery save failed: {admission.error}{" "}
-                <Button type="button" onClick={() => void retryPendingDiscoveryAdmission(admission.opportunityId)}>Retry save</Button>
+                <Button type="button" disabled={structuralAdmission.paused} onClick={() => {
+                  try { void retryPendingDiscoveryAdmission(admission.opportunityId).catch(cause => setError(cause instanceof Error ? cause.message : "Discovery retry is unavailable.")); }
+                  catch (cause) { setError(cause instanceof Error ? cause.message : "Discovery retry is unavailable."); }
+                }}>Retry save</Button>
               </p>)}
             <header className="tempo-discovery-header">
               <div>
@@ -1226,10 +1231,11 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                         : "Select a move in the table to see it on the board."}
                   </p>
                   <div className="tempo-discovery-actions">
+                    {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
                     {active.card_id && (
                       <Button
                         disabled={
-                          busyId === active.id ||
+                          busyId === active.id || structuralAdmission.paused ||
                           active.admission_state === "queued" ||
                           !trainingEligibility[eligibilityKey(active)]?.eligible
                         }
@@ -1257,7 +1263,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                       <Button
                         disabled={
                           !soundSelection ||
-                          busyId === active.id ||
+                          busyId === active.id || structuralAdmission.paused ||
                           active.admission_state === "preparing" ||
                           active.admission_state === "queued" ||
                           pendingAdmissions.some(

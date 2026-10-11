@@ -1,4 +1,5 @@
 "use client";
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { historyKeyboardActions } from "../lib/keyboard-shortcuts";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { ActionLink } from "../components/ui";
@@ -159,6 +160,7 @@ export default function GamesView({
     "Review",
     "tempo-games-tools",
   );
+  const structuralAdmission = usePrefixStructuralAdmission({ repertoireIds: [], scopeComplete: false }, local);
   const [loaded, setLoaded] = useState(!local);
   const [pageCursor, setPageCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
@@ -1348,12 +1350,13 @@ export default function GamesView({
                           </small>
                           <Button
                             onClick={() => void previewTacticalCard(true)}
-                            disabled={tacticalBusy}
+                            disabled={tacticalBusy || structuralAdmission.paused}
                           >
                             {tacticalPreview.existing_card_id
                               ? "Add existing puzzle"
                               : "Add to deck"}
                           </Button>
+                          {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
                         </>
                       )}
                       <Button
@@ -1519,7 +1522,7 @@ export default function GamesView({
                             Edit position in Builder
                           </Button>
                         )}
-                        <Button
+                        <Button disabled={structuralAdmission.paused}
                           onClick={() =>
                             void createFindingCard(finding.id, true)
                           }
@@ -1528,6 +1531,7 @@ export default function GamesView({
                             ? "Use existing card"
                             : "Save card due today"}
                         </Button>
+                        {structuralAdmission.paused && <p role="alert">{structuralAdmission.reason}</p>}
                       </>
                     )}
                   <Button

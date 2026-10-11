@@ -1,3 +1,4 @@
+import { usePrefixStructuralAdmission } from "../hooks/use-prefix-structural-admission";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
 import { useRef as useDialogRef } from "react";
@@ -49,6 +50,7 @@ export default function CardEditor({
   onDelete?: (card: PracticeCard) => Promise<void>;
   onOpenBuilderForLineRemoval?: (session: BuilderSession) => void;
 }) {
+  const admission = usePrefixStructuralAdmission({ repertoireIds: [], cardIds: card.backendId ? [card.backendId] : [], scopeComplete: false }, Boolean(card.backendId));
   const dialogRef = useDialogRef<HTMLDivElement>(null);
   const [deletePreview, setDeletePreview] = useState<z.infer<typeof deletionPreviewSchema>>();
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -296,9 +298,10 @@ export default function CardEditor({
           <p>Affected repertoires: {deletePreview.repertoires.map(item => item.name).join(", ") || "Current training deck"}.</p>
           {deletePending && <p role="status">Deletion is awaiting confirmation. Retry to check its result.</p>}
           {error && <p className="editor-error" role="alert">{error}</p>}
+          {admission.paused && <p role="alert">{admission.reason}</p>}
           <div className="editor-actions">
             <Button disabled={deleteBusy} onClick={closeEditor}>{deletePending ? "Close" : "Cancel"}</Button>
-            <Button variant="danger" pending={deleteBusy} onClick={() => void confirmDeletion()}>{deletePending ? "Check deletion" : "Permanently delete card"}</Button>
+            <Button variant="danger" pending={deleteBusy} disabled={admission.paused && !deletePending} onClick={() => void confirmDeletion()}>{deletePending ? "Check deletion" : "Permanently delete card"}</Button>
           </div>
         </> : <>
         <div className="editor-heading">
@@ -371,6 +374,7 @@ export default function CardEditor({
                 </label>
               </fieldset>
             )}
+            {admission.paused && <p role="alert">{admission.reason}</p>}
             {(error || deletionJournal.error) && <p className="editor-error" role="alert">{error || deletionJournal.error}</p>}
             <div className="editor-actions">
               {usesLocalApi() && card.kind === "opening" && (
@@ -378,13 +382,13 @@ export default function CardEditor({
                   Open Builder to remove line
                 </Button>
               )}
-              {usesLocalApi() && card.backendId && onDelete && <Button variant="danger" pending={deleteBusy} disabled={saveBusy} onClick={() => void previewDeletion()}>{deletePending ? "Check deletion" : "Delete card"}</Button>}
+              {usesLocalApi() && card.backendId && onDelete && <Button variant="danger" pending={deleteBusy} disabled={saveBusy || admission.paused && !deletePending} onClick={() => void previewDeletion()}>{deletePending ? "Check deletion" : "Delete card"}</Button>}
               <Button onClick={closeEditor} disabled={deleteBusy || saveBusy}>Cancel</Button>
               <Button
                 variant="primary"
                 className="primary-button"
                 onClick={save}
-                disabled={deleteBusy || deletePending}
+                disabled={deleteBusy || deletePending || admission.paused}
                 pending={saveBusy}
               >
                 {card.editingIntent === "shorten-prefix"
