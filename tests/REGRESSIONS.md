@@ -1,3 +1,37 @@
+## Selected-policy card valuation — Issue #174 (October 11, 2026)
+
+`backend/tests/test_opening_card_valuation.py` connects the real #154/#170/#153/#149/#155 contracts. The named regular-suite regressions are:
+
+- `test_valuation_italian_and_ruy_add_remove_duplicate_isolation`
+- `test_valuation_real_reach_readiness_kernel_multi_decision_hand_calculation`
+- `test_valuation_opponent_stochastic_factors_and_outside_mass_survive`
+- `test_valuation_real_fsrs_decision_readiness_used_at_fixed_timestamp`
+- `test_valuation_cumulative_prefix_card_readiness_not_copied_to_decisions`
+- `test_valuation_shared_decisions_and_duplicate_routes_not_double_counted`
+- `test_valuation_unknown_and_bounded_evidence_remain_explicit`
+- `test_valuation_partial_opponent_assignment_not_normalized`
+- `test_valuation_unresolved_policy_actions_and_missing_reach_are_unscorable`
+- `test_valuation_foreign_identity_fails_before_scoring`
+- `test_valuation_policy_version_bridge_retains_both_verified_decision_ids`
+- `test_valuation_input_permutation_is_byte_identical`
+- `test_valuation_offline_replay_is_identical_across_hash_seeds`
+- `test_valuation_no_production_queue_admission_or_network_writes`
+- `test_valuation_empty_and_all_unscorable_candidates_are_explicit`
+- `test_valuation_invalid_bindings_effects_and_baseline_are_rejected`
+- `test_valuation_conflicting_duplicate_evidence_is_rejected`
+- `test_valuation_snapshot_detaches_mutable_readiness_collections`
+- `test_valuation_policy_identity_can_differ_from_repertoire_identity`
+- `test_valuation_exports_complete_precomputed_bundles_for_independent_harness`
+- `test_valuation_rejects_ambiguous_dates_and_boolean_versions`
+- `test_valuation_black_policy_retains_white_opponent_uncertainty`
+- `test_valuation_matching_bound_decision_survives_divergent_prefix_actions`
+
+The Italian/Ruy case runs both directions and added/removed/duplicated foreign catalogs. The hand calculation uses .42 × .50 × .25 opponent reach, real #153 conservative failure evidence, and explicit projected readiness; multi-decision value .168 versus single-decision .189. Shared route representations and duplicate bindings do not inflate unique decisions. Unknown/bounded evidence receives no numeric fallback; partial and empty effects remain unscorable. Snapshot digest and cross-process hash-seed replay retain scores and diagnostics. The pure adapter cannot open storage or mutate scheduling/admissions.
+
+This is a new integration capability; no pre-existing adapter was available for an original-main failing baseline. During implementation `test_valuation_cumulative_prefix_card_readiness_not_copied_to_decisions` failed because the completeness flag ignored unknown decision recall, then passed after completeness included the kernel's incomplete result. No tests are skipped or removed. Related broader #112/#113/#156 requirements remain open.
+
+Review regression `test_valuation_matching_bound_decision_survives_divergent_prefix_actions` failed on `9ad96da2` (one case, 0.80 s): valid Nf3 decision-level failure evidence was rejected because its cumulative presentation later used Bb5. Policy-action validation now targets the bound occurrence; real #153 evidence for that occurrence survives, while binding the divergent Bb5 action still fails. Foreign policy/version/presentation/observation/game/effect checks remain required before scoring.
+
 Explicit policy-conditioned reach — #169 / related #156 (October 10, 2026):
 
 All named cases below live in `backend/tests/test_opening_policy_reach.py` and run in the regular backend gate. This new pure-library capability has no prior reach-propagation implementation for a failing baseline. No production admission changes.
