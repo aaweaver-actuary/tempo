@@ -432,7 +432,7 @@ export default function Home() {
 
   const refreshDatabaseQueue = useCallback(
     async (advance = false, replaySavedReviews = true) => {
-      invalidateWorkspaceData(`${API_URL}/api/repertoire/lines`);
+      invalidateWorkspaceData();
       await fetchAndInitializeQueue(advance, { replaySavedReviews });
       await checkPendingIntegrity();
     },
@@ -564,7 +564,7 @@ export default function Home() {
       const controller = new AbortController();
       const isCurrent = () => active && generation === repertoirePositionGeneration.current;
       repertoireAlternativeSnapshot.current = null;
-      invalidateWorkspaceData();
+      invalidateWorkspaceData(`${API_URL}/api/repertoire/lines`);
       void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
         .then(async (body) => {
           if (!isCurrent()) return;

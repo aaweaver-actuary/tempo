@@ -119,8 +119,12 @@ coverage. The initial compatibility check found only both branches appending
 regression registrations at the same end-of-file location. Moving this issue’s
 registration to its own leading section preserves both sections and the next
 virtual merge is conflict-free. This check does not merge PR #172 into the task
-branch or claim validation of its separate implementation. Current remote main
-remains `964b2a3a2ede4d9ac92288bb98a9ccba831d6b62`.
+branch or claim validation of its separate implementation. This initial check used main
+`964b2a3a2ede4d9ac92288bb98a9ccba831d6b62`. The owner subsequently merged main
+`a517123403b3324623ece020b7e2131f51cd923d` into the task branch; task production
+computation and measured sources stayed unchanged. Home still auto-merges with
+PR #172, while its separate runner/registry conflicts with newer main remain
+that workstream’s responsibility.
 
 ## Development validation
 
@@ -172,3 +176,30 @@ intermediate; required final ready qualification remains pending here. Final
 verified head and successful CI evidence belong in the PR handoff. CI owns the complete
 gate; no local `make full`, unrelated Python/FSRS change, live data reset, merge or
 deployment belongs to this task.
+
+## Final cache-boundary correction
+
+Final diff review caught the targeted cache eviction placed in ordinary queue
+refresh instead of line loading. Restore ordinary queue refresh’s existing
+workspace-wide invalidation and evict only the line request when its loader
+starts. The named regular-suite regression
+`issue36_loading_evicts_only_lines_and_review_refresh_keeps_workspace_invalidation`
+checks the invalidation arguments at the actual line fetch and a real Home
+“Retry sync” callback, and requires no evidence rebuild for that ordinary refresh.
+The benchmark functions and fixtures are unchanged. Fresh candidate CI is
+required after this correction; older successful execution is historical evidence.
+
+Correction evidence: the new named case fails against clean head `54e2b3de`
+(1 failure, 1.87 s Vitest / 2.431 s command), and passes with the corrected
+source (1 case, 3.70 s Vitest).
+`npm run test:unit -- tests/unit/repertoire-alternative-home-regressions.test.tsx tests/unit/background-workspace-regressions.test.tsx tests/unit/study-regressions.test.tsx`
+passes all 106 cases (58.64 s Vitest / 59.771 s command). These are dirty-tree
+results for the correction subsequently committed; they are not a pass of the
+previous clean head.
+
+Static correction checks: `npm run typecheck` passed (32.431 s);
+`npm run lint` passed (76.987 s, the same 10 unrelated warnings);
+`npm run check:conflicts` passed (3.160 s);
+`node scripts/check-migration-inventory.mjs` passed (46 migrations, 0.274 s);
+`git diff --check` passed (0.108 s). Current-main integration inherits migration
+46; this PR introduces no migration.

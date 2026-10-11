@@ -14,6 +14,7 @@ import type { RepertoireAlternativeSnapshot } from "../../app/lib/repertoire-alt
 import { buildRepertoireAlternativeSnapshot } from "../../app/lib/repertoire-alternative-index";
 import { computeStudyTask } from "../../app/lib/study-computation";
 import * as local from "../../app/utils/local";
+import * as workspace from "../../app/lib/workspace-data";
 import { demoCards } from "../../app/samples";
 
 vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: vi.fn(), invalidateTrainingQueueCache: vi.fn() }));
@@ -289,6 +290,24 @@ it("issue36_ordinary_queue_and_card_updates_do_not_rebuild_evidence", async () =
   act(() => useTrainingStore.getState().setReviewed(1));
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "alternate");
+  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
+});
+
+it("issue36_loading_evicts_only_lines_and_review_refresh_keeps_workspace_invalidation", async () => {
+  const invalidate = vi.spyOn(workspace, "invalidateWorkspaceData");
+  const originalFetch = fetch;
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/repertoire/lines"))
+      expect(invalidate.mock.lastCall).toEqual([String(input)]);
+    return originalFetch(input, init);
+  }));
+  await readyHome();
+  invalidate.mockClear();
+  const queueReads = vi.mocked(fetchAndInitializeQueue).mock.calls.length;
+  act(() => useTrainingStore.getState().setOfflineQueue(true));
+  act(() => screen.getByRole("button", { name: "Retry sync" }).click());
+  await waitFor(() => expect(vi.mocked(fetchAndInitializeQueue).mock.calls.length).toBeGreaterThan(queueReads));
+  expect(invalidate.mock.calls).toEqual([[]]);
   expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
 });
 
