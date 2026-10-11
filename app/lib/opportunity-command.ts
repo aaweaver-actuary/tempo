@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -72,17 +73,22 @@ export async function applyOpportunityCommand(
         throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }
-  if (!pending) {
-    pending = { operationId: crypto.randomUUID(), repertoireId, action,
-      ...(evidenceFingerprint ? { evidenceFingerprint } : {}) };
-    localStorage.setItem(key, JSON.stringify(pending));
-  }
-  let response = await fetch(
-    `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/opportunities/${encodeURIComponent(opportunityId)}/${action}`,
-    { method: "POST", headers: { "Idempotency-Key": pending.operationId,
-        ...(pending.evidenceFingerprint ? { "Content-Type": "application/json" } : {}) },
-      ...(pending.evidenceFingerprint ? { body: JSON.stringify({ evidence_fingerprint: pending.evidenceFingerprint }) } : {}) },
-  );
+  const dispatch = () => {
+    if (!pending) {
+      pending = { operationId: crypto.randomUUID(), repertoireId, action,
+        ...(evidenceFingerprint ? { evidenceFingerprint } : {}) };
+      localStorage.setItem(key, JSON.stringify(pending));
+    }
+    return fetch(
+      `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/opportunities/${encodeURIComponent(opportunityId)}/${action}`,
+      { method: "POST", headers: { "Idempotency-Key": pending.operationId,
+          ...(pending.evidenceFingerprint ? { "Content-Type": "application/json" } : {}) },
+        ...(pending.evidenceFingerprint ? { body: JSON.stringify({ evidence_fingerprint: pending.evidenceFingerprint }) } : {}) },
+    );
+  };
+  let response = await (action === "train"
+    ? admitPrefixStructuralMutation({ repertoireIds: [repertoireId], scopeComplete: false }, dispatch)
+    : dispatch());
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, z.unknown(), `${action} discovery`);
   validateResult(action, result);

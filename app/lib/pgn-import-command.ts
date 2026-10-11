@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { importResultSchema } from "../domain/schemas";
@@ -78,17 +79,30 @@ async function pausePolling(signal: AbortSignal) {
     signal.addEventListener("abort", abort, { once: true });
   });
 }
-async function submitImport(pending: PendingImport, file: File, trainedColor: "white" | "black", initialDepth: number, signal: AbortSignal): Promise<ImportResult | null> {
+async function submitImport(pending: PendingImport | null, file: File, trainedColor: "white" | "black", initialDepth: number, signal: AbortSignal, fingerprint: string, onAdmitted: (operation: PendingImport) => void): Promise<ImportResult | null> {
   const form = new FormData();
   form.append("file", file);
   form.append("trained_color", trainedColor);
   form.append("initial_depth", String(initialDepth));
   let response: Response;
+  let dispatched = false;
   try {
-    response = await fetch(`${API_URL}/api/imports/pgn`, {
+    response = await admitPrefixStructuralMutation({ repertoireIds: [], scopeComplete: false }, () => {
+      if (!pending) {
+        const newerPendingImport = readPendingPgnImport();
+        if (newerPendingImport) throw new PendingOperationError(newerPendingImport.operationId,
+          "The pending PGN import changed. Reopen the dialog to check or discard it.");
+        pending = { operationId: crypto.randomUUID(), fingerprint };
+        localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+      }
+      onAdmitted(pending);
+      dispatched = true;
+      return fetch(`${API_URL}/api/imports/pgn`, {
       method: "POST", headers: { "Idempotency-Key": pending.operationId }, body: form, signal,
-    });
-  } catch {
+      });
+    }, signal);
+  } catch (failure) {
+    if (!dispatched) throw failure;
     signal.throwIfAborted();
     return null; // Delivery is ambiguous; consult the original durable receipt.
   }
@@ -100,20 +114,20 @@ async function submitImport(pending: PendingImport, file: File, trainedColor: "w
     signal.throwIfAborted();
     const accepted = z.object({ operation_id: z.string().min(1) }).safeParse(acknowledgement);
     if (!accepted.success) return null; // Unreadable admission still needs durable confirmation.
-    if (accepted.data.operation_id !== pending.operationId)
+    if (accepted.data.operation_id !== pending!.operationId)
       throw new Error("The service returned a different import operation identity. Check the local service before retrying.");
     return null;
   }
   // The PGN route rejects these validations before command dispatch. Other
   // errors (including durable-handler 5xx) must retain identity until inspected.
   if ([400, 422].includes(response.status)) {
-    clearPendingImport(pending.operationId);
+    clearPendingImport(pending!.operationId);
     await readJsonResponse(response, importResultSchema, "PGN import", { reportHttpFailure: false });
   }
   if (response.status >= 500 || [408, 429].includes(response.status)) return null;
   const result = await readJsonResponse(response, importResultSchema, "PGN import", { reportHttpFailure: false });
   signal.throwIfAborted();
-  clearPendingImport(pending.operationId);
+  clearPendingImport(pending!.operationId);
   return result;
 }
 
@@ -144,7 +158,7 @@ export async function savePgnImportCommand(
     lastReceipt?.state === "blocked" ? blockedImport(pending!, lastReceipt)
       : lastReceipt && lastReceipt.state !== "unknown"
         ? new PendingOperationError(pending!.operationId, `Import is still processing (operation ${pending!.operationId}). Check again to confirm its result.`)
-        : unconfirmedImport(pending!.operationId),
+        : pending ? unconfirmedImport(pending.operationId) : new Error("Import admission timed out before delivery. Check browser recovery data and try again."),
   ), RESOLUTION_BUDGET_MS);
   const resolveImport = async (): Promise<ImportResult> => {
     const signal = controller.signal;
@@ -160,22 +174,25 @@ export async function savePgnImportCommand(
           `An earlier PGN import is unresolved (operation ${pending.operationId}). Select its original file and settings to resolve it before importing a different file or changing settings.`);
       }
     }
-    if (!pending) {
-      signal.throwIfAborted();
-      const newerPendingImport = readPendingPgnImport();
-      if (newerPendingImport) throw new PendingOperationError(newerPendingImport.operationId,
-        "The pending PGN import changed. Reopen the dialog to check or discard it.");
-      pending = { operationId: crypto.randomUUID(), fingerprint };
-      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-    }
-    const currentImport = pending;
     let posted = false;
+    if (!pending) {
+      posted = true;
+      const initialResult = await submitImport(null, file, trainedColor, initialDepth, signal, fingerprint,
+        admitted => { pending = admitted; });
+      if (initialResult) return initialResult;
+      lastReceipt = await inspectReceipt(pending!, signal);
+    }
+    const currentImport = pending!;
     let retryRequested = false;
     if (lastReceipt?.state === "blocked" && options.retryBlocked) {
       retryRequested = true;
+      let retryDispatched = false;
       try {
-        await fetch(`${API_URL}/api/operations/${encodeURIComponent(currentImport.operationId)}/retry`, { method: "POST", signal });
-      } catch { signal.throwIfAborted(); } // Retry delivery can also be ambiguous.
+        await admitPrefixStructuralMutation({ repertoireIds: [], scopeComplete: false }, () => {
+          retryDispatched = true;
+          return fetch(`${API_URL}/api/operations/${encodeURIComponent(currentImport.operationId)}/retry`, { method: "POST", signal });
+        }, signal);
+      } catch (failure) { signal.throwIfAborted(); if (!retryDispatched) throw failure; }
       // The accepted retry still says blocked until the worker starts its cycle.
       lastReceipt = await inspectReceipt(currentImport, signal);
     }
@@ -189,7 +206,7 @@ export async function savePgnImportCommand(
       if (!lastReceipt || lastReceipt.state === "unknown") {
         if (posted || retryRequested) throw unconfirmedImport(currentImport.operationId);
         posted = true;
-        const result = await submitImport(currentImport, file, trainedColor, initialDepth, signal);
+        const result = await submitImport(currentImport, file, trainedColor, initialDepth, signal, fingerprint, () => {});
         if (result) return result;
       } else await pausePolling(signal);
       lastReceipt = await inspectReceipt(currentImport, signal);

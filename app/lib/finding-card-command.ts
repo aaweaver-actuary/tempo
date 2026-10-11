@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -68,14 +69,16 @@ export async function prepareFindingCard(findingId: string, request: FindingCard
       if (pending.body !== body) throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }
-  if (!pending) {
-    pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(storageKey, JSON.stringify(pending));
-  }
-  let response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
-    body,
+  let response = await admitPrefixStructuralMutation({ repertoireIds: [], scopeComplete: false }, () => {
+    if (!pending) {
+      pending = { operationId: crypto.randomUUID(), body };
+      localStorage.setItem(storageKey, JSON.stringify(pending));
+    }
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
+      body,
+    });
   });
   response = await confirmOperationResponse(response);
   const result = await readCardResponse(response);

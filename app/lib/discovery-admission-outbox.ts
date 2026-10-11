@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation, readPrefixStructuralAdmission } from "./prefix-transition-command";
 import { notifications, publishNotification } from "./notifications";
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError } from "./operation-status";
@@ -75,6 +76,8 @@ function replaceAdmission(opportunityId: string, change: (admission: PendingDisc
 }
 
 export function enqueuePendingDiscoveryAdmission(admission: Omit<PendingDiscoveryAdmission, "state" | "operationId">) {
+  const admissionState = readPrefixStructuralAdmission({ repertoireIds: [], scopeComplete: false });
+  if (admissionState.paused) throw new Error(admissionState.reason);
   const current = pendingDiscoveryAdmissions();
   if (current.some((item) => item.opportunityId === admission.opportunityId))
     throw new Error("This discovery already has a pending save.");
@@ -82,6 +85,8 @@ export function enqueuePendingDiscoveryAdmission(admission: Omit<PendingDiscover
 }
 
 export function retryPendingDiscoveryAdmission(opportunityId: string) {
+  const admissionState = readPrefixStructuralAdmission({ repertoireIds: [], scopeComplete: false });
+  if (admissionState.paused) throw new Error(admissionState.reason);
   replaceAdmission(opportunityId, (admission) => ({
     ...admission, intentId: admission.state === "failed" ? undefined : admission.intentId,
     operationId: admission.state === "failed" ? crypto.randomUUID() : admission.operationId,
@@ -162,12 +167,12 @@ async function checkedResponse(response: Response): Promise<Response> {
 async function processAdmission(admission: PendingDiscoveryAdmission) {
   try {
     if (!admission.intentId) {
-      const response = await checkedResponse(await requestWithTimeout(`${API_URL}/api/discoveries/${admission.opportunityId}/accept`, {
+      const response = await checkedResponse(await admitPrefixStructuralMutation({ repertoireIds: [], scopeComplete: false }, () => requestWithTimeout(`${API_URL}/api/discoveries/${admission.opportunityId}/accept`, {
         method: "POST", headers: { "Content-Type": "application/json",
           "Idempotency-Key": admission.operationId },
         body: JSON.stringify({ selected_move_uci: admission.selectedMoveUci,
           evidence_fingerprint: admission.evidenceFingerprint }),
-      }));
+      })));
       const body = await response.json() as { intent_id?: string };
       if (!body.intent_id) throw new ConfirmedSaveError("Local service did not confirm the discovery save.");
       replaceAdmission(admission.opportunityId, (current) => ({

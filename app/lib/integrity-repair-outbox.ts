@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation, readPrefixStructuralAdmission } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { integrityRepairSubmissionSchema, repertoireIntegritySchema, repertoiresResponseSchema } from "../domain/schemas";
@@ -104,6 +105,8 @@ function updateRepair(operationId: string, change: (repair: PendingIntegrityRepa
   changed();
 }
 export function enqueueIntegrityRepair(choice: RepairChoice) {
+  const admission = readPrefixStructuralAdmission({ repertoireIds: [choice.repertoireId], scopeComplete: false });
+  if (admission.paused) throw new Error(admission.reason);
   const storedRepairs = pendingIntegrityRepairs();
   const existing = storedRepairs.find(repair => repair.repertoireId === choice.repertoireId && repair.issueId === choice.issueId);
   if (existing && existing.phase !== "stale") throw new Error("This conflict already has a saved choice. Check its progress before choosing again.");
@@ -265,7 +268,8 @@ async function processRetry(repair: PendingIntegrityRepair) {
       updateRepair(repair.operationId, current => ({ ...current, retry: undefined, retryOperationId: undefined }));
       await confirmReceipt(repair, status);
     } else if (!retry.deliveryAccepted) {
-      const response = await timedRequest(`${API_URL}/api/operations/${encodeURIComponent(repair.operationId)}/retry`, { method: "POST" }, false);
+      const response = await admitPrefixStructuralMutation({ repertoireIds: [repair.repertoireId], scopeComplete: false }, () =>
+        timedRequest(`${API_URL}/api/operations/${encodeURIComponent(repair.operationId)}/retry`, { method: "POST" }, false));
       if (!response.ok) throw new Error("Repair retry delivery is unconfirmed. Check its original receipt.");
       updateRepair(repair.operationId, current => ({ ...current, retry: { ...retry, deliveryAccepted: true } }));
     }
@@ -280,9 +284,9 @@ async function processRetry(repair: PendingIntegrityRepair) {
     } else if (receiptLifecycleCategory === "failure" || receiptLifecycleCategory === "attention") {
       fail(repair, "failed", status.error?.message ?? status.last_error?.message ?? "The validation retry needs attention."); return false;
     } else if (receiptLifecycleCategory === "absent") {
-      const response = await timedRequest(`${API_URL}/api/system/tasks/${encodeURIComponent(retry.taskId)}/retry`, {
+      const response = await admitPrefixStructuralMutation({ repertoireIds: [repair.repertoireId], scopeComplete: false }, () => timedRequest(`${API_URL}/api/system/tasks/${encodeURIComponent(retry.taskId)}/retry`, {
         method: "POST", headers: { "Idempotency-Key": repair.retryOperationId! },
-      }, false);
+      }, false));
       if (!response.ok) throw new Error("Validation retry delivery is unconfirmed. Its identity is preserved.");
       const result = z.object({ operation_id: z.string().optional(), id: z.string().optional() }).parse(await response.json());
       if (result.operation_id && result.operation_id !== repair.retryOperationId || result.id && result.id !== retry.taskId) throw new Error("Validation retry returned an unrelated identity.");
@@ -299,11 +303,11 @@ async function processRepair(repair: PendingIntegrityRepair) {
     if (repair.taskId) { await validateRepair(repair); return; }
     if (await confirmReceipt(repair) || !await stillCurrent(repair)) return;
     updateRepair(repair.operationId, current => ({ ...current, phase: "saving" }));
-    const response = await timedRequest(`${API_URL}/api/repertoires/${encodeURIComponent(repair.repertoireId)}` +
+    const response = await admitPrefixStructuralMutation({ repertoireIds: [repair.repertoireId], scopeComplete: false }, () => timedRequest(`${API_URL}/api/repertoires/${encodeURIComponent(repair.repertoireId)}` +
       `/integrity/issues/${encodeURIComponent(repair.issueId)}/resolve`, {
       method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": repair.operationId },
       body: JSON.stringify({ signature: repair.signature, selected_move_uci: repair.selectedMoveUci }),
-    }, false);
+    }, false));
     const body: unknown = await response.json();
     if (response.ok && !(body && typeof body === "object" && "operation_id" in body)) { accepted(repair, body); return; }
     // A stale endpoint response can race a successful earlier delivery. Resolve its receipt first.
@@ -351,10 +355,14 @@ export function retryIntegrityRepair(operationId: string): Promise<void> {
       updateRepair(operationId, current => ({ ...current, phase: "saving", error: undefined, nextAttemptAt: 0,
         retry: { kind: "operation", baselineRetryCycle: status.retry_cycle, baselineAttemptCount: status.attempt_count, deliveryAccepted: false } }));
     } else if (!repair.retry && repair.retryTaskId) {
+      const admission = readPrefixStructuralAdmission({ repertoireIds: [repair.repertoireId], scopeComplete: false });
+      if (admission.paused) throw new Error(admission.reason);
       updateRepair(operationId, current => ({ ...current, phase: "validating", error: undefined, nextAttemptAt: 0,
         retryOperationId: crypto.randomUUID(), retry: { kind: "task", taskId: repair.retryTaskId!, taskResetConfirmed: false } }));
     } else if (!repair.retry && repair.terminalOperationFailure) {
       if (!await stillCurrent(repair)) return;
+      const admission = readPrefixStructuralAdmission({ repertoireIds: [repair.repertoireId], scopeComplete: false });
+      if (admission.paused) throw new Error(admission.reason);
       const replacement = { ...repair, operationId: crypto.randomUUID(), phase: "queued" as const,
         terminalOperationFailure: false, error: undefined, attempts: 0, nextAttemptAt: 0 };
       persist(replacement); localStorage.removeItem(storagePrefix + operationId); changed();

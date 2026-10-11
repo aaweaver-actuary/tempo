@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
@@ -47,14 +48,17 @@ export async function deleteRepertoireCommand(repertoireId: string, learnedCards
       } else throw new PendingOperationError(pending.operationId);
     }
   }
-  if (!pending) {
-    pending = { operationId: crypto.randomUUID(), repertoireId, learnedCards };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-  }
   try {
-    const response = await confirmOperationResponse(await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}?learned_cards=${learnedCards}`, {
-      method: "DELETE", headers: { "Idempotency-Key": pending.operationId },
-    }));
+    const sent = await admitPrefixStructuralMutation({ repertoireIds: [repertoireId], scopeComplete: true }, () => {
+      if (!pending) {
+        pending = { operationId: crypto.randomUUID(), repertoireId, learnedCards };
+        localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+      }
+      return fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}?learned_cards=${learnedCards}`, {
+        method: "DELETE", headers: { "Idempotency-Key": pending.operationId },
+      });
+    });
+    const response = await confirmOperationResponse(sent);
     const result = await readJsonResponse(response, deletedRepertoireSchema, "delete repertoire");
     if (result.id !== repertoireId) throw new Error("The deletion response names a different repertoire.");
     localStorage.removeItem(PENDING_KEY);

@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { API_URL } from "../const";
 import { cardRevisionResultSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -47,17 +48,19 @@ export async function reviseCardCommand(revision: CardRevision) {
       if (pending.request !== request) throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }
-  if (!pending) {
-    pending = { operationId: crypto.randomUUID(), request };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-  }
-  let response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(revision.cardId)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
-    body: JSON.stringify({
-      starting_fen: revision.startingFen, moves: revision.moves,
-      history_mode: revision.historyMode, expected_revision: revision.expectedRevision,
-    }),
+  let response = await admitPrefixStructuralMutation({ repertoireIds: [], cardIds: [revision.cardId], scopeComplete: false }, () => {
+    if (!pending) {
+      pending = { operationId: crypto.randomUUID(), request };
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    }
+    return fetch(`${API_URL}/api/cards/${encodeURIComponent(revision.cardId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
+      body: JSON.stringify({
+        starting_fen: revision.startingFen, moves: revision.moves,
+        history_mode: revision.historyMode, expected_revision: revision.expectedRevision,
+      }),
+    });
   });
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, cardRevisionResultSchema, "card revision");

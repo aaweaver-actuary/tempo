@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { API_URL } from "../const";
 import { analysisPasteCommitSchema } from "../domain/schemas";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -49,14 +50,16 @@ export async function saveAnalysisPasteCommand(payload: AnalysisPasteCommand) {
       if (pending.body !== body) throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }
-  if (!pending) {
-    pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-  }
-  let response = await fetch(`${API_URL}/api/repertoire/paste/commit`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
-    body,
+  let response = await admitPrefixStructuralMutation({ repertoireIds: payload.selections.map(selection => selection.repertoire_id), scopeComplete: false }, () => {
+    if (!pending) {
+      pending = { operationId: crypto.randomUUID(), body };
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    }
+    return fetch(`${API_URL}/api/repertoire/paste/commit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
+      body,
+    });
   });
   response = await confirmOperationResponse(response);
   const result = await readJsonResponse(response, analysisPasteCommitSchema, "saved pasted analysis");

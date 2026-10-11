@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
@@ -50,16 +51,20 @@ export async function saveTacticCapture(draft?: TacticCaptureDraft) {
     // A pending or missing receipt can follow a lost send: resend the same ID and bytes.
     if (receipt.state !== "unknown" && receipt.state !== "pending" && receipt.state !== "queued" && receipt.state !== "executing" && receipt.state !== "retrying")
       throw new PendingOperationError(pending.capture_id);
-  } else {
-    if (!draft) throw new Error("There is no pending capture to resolve.");
-    pending = captureRequestSchema.parse({ ...draft, capture_id: crypto.randomUUID() });
-    requestBody = JSON.stringify(pending);
-    localStorage.setItem(PENDING_KEY, JSON.stringify({ body: requestBody }));
   }
-  try {
-    let response = await fetch(`${API_URL}/api/tactics/captures`, {
+  const dispatch = () => {
+    if (!pending) {
+      if (!draft) throw new Error("There is no pending capture to resolve.");
+      pending = captureRequestSchema.parse({ ...draft, capture_id: crypto.randomUUID() });
+      requestBody = JSON.stringify(pending);
+      localStorage.setItem(PENDING_KEY, JSON.stringify({ body: requestBody }));
+    }
+    return fetch(`${API_URL}/api/tactics/captures`, {
       method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.capture_id }, body: requestBody,
     });
+  };
+  try {
+    let response = await admitPrefixStructuralMutation({ repertoireIds: [], scopeComplete: false }, dispatch);
     // These terminal rejections have no queued business command. 5xx/transport errors stay unresolved.
     if ([400, 409, 422].includes(response.status)) {
       localStorage.removeItem(PENDING_KEY);
@@ -67,7 +72,7 @@ export async function saveTacticCapture(draft?: TacticCaptureDraft) {
     }
     response = await confirmOperationResponse(response);
     const result = await readJsonResponse(response, tacticCaptureResultSchema, "tactic capture");
-    if (result.capture_id !== pending.capture_id) throw new Error("The service returned a different capture identity. Retry to resolve this save.");
+    if (result.capture_id !== pending!.capture_id) throw new Error("The service returned a different capture identity. Retry to resolve this save.");
     localStorage.removeItem(PENDING_KEY);
     return result;
   } catch (error) {

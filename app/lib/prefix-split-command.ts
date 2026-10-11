@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { prefixSplitResponseSchema } from "../domain/schemas";
@@ -46,15 +47,20 @@ async function decidePrefixSplit(cardId: string, revision: number, decision: Dec
         throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }
-  if (!pending) {
-    pending = { operationId: crypto.randomUUID(), decision, cardId, revision };
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-  }
-  let response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(cardId)}/prefix-split${decision === "reject" ? "/reject" : ""}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
-    body: JSON.stringify({ expected_revision: revision }),
-  });
+  const dispatch = () => {
+    if (!pending) {
+      pending = { operationId: crypto.randomUUID(), decision, cardId, revision };
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+    }
+    return fetch(`${API_URL}/api/cards/${encodeURIComponent(cardId)}/prefix-split${decision === "reject" ? "/reject" : ""}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
+      body: JSON.stringify({ expected_revision: revision }),
+    });
+  };
+  let response = await (decision === "accept"
+    ? admitPrefixStructuralMutation({ repertoireIds: [], cardIds: [cardId], scopeComplete: false }, dispatch)
+    : dispatch());
   response = await confirmOperationResponse(response);
   const result = decision === "accept"
     ? await readJsonResponse(response, prefixSplitResponseSchema, "accepted prefix split")

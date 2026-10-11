@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import { z } from "zod";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
@@ -37,12 +38,15 @@ export async function deleteCardCommand(cardId: string, expectedRevision: number
   }
   if (!pending && (localStorage.getItem("tempo-pending-card-revision-v1") || localStorage.getItem("tempo-pending-prefix-split-v1")))
     throw new Error("Resolve the pending card edit before deleting a card.");
-  pending ??= { operationId: crypto.randomUUID(), cardId, expectedRevision };
-  localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
   try {
-    const response = await confirmOperationResponse(await fetch(`${API_URL}/api/cards/${encodeURIComponent(cardId)}?permanent=true&expected_revision=${expectedRevision}`, {
-      method: "DELETE", headers: { "Idempotency-Key": pending.operationId },
-    }));
+    const sent = await admitPrefixStructuralMutation({ repertoireIds: [], cardIds: [cardId], scopeComplete: false }, () => {
+      pending ??= { operationId: crypto.randomUUID(), cardId, expectedRevision };
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+      return fetch(`${API_URL}/api/cards/${encodeURIComponent(cardId)}?permanent=true&expected_revision=${expectedRevision}`, {
+        method: "DELETE", headers: { "Idempotency-Key": pending.operationId },
+      });
+    });
+    const response = await confirmOperationResponse(sent);
     const result = await readJsonResponse(response, resultSchema, "delete card");
     if (result.card_id !== cardId) throw new Error("The deletion response names a different card.");
     localStorage.removeItem(PENDING_KEY);

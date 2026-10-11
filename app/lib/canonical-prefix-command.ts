@@ -1,3 +1,4 @@
+import { admitPrefixStructuralMutation } from "./prefix-transition-command";
 import * as z from "zod";
 import { API_URL } from "../const";
 import { canonicalPrefixSchema, canonicalPrefixPreviewAdmissionSchema } from "../domain/canonical-prefix";
@@ -33,19 +34,24 @@ async function sendPrefixCommand(repertoireId: string, action: PrefixAction, bod
       throw new PendingOperationError(pending.operationId, "An earlier prefix operation is still pending. Retry to check its result.");
     }
   }
-  if (!pending) {
-    pending = { operationId: crypto.randomUUID(), body };
-    localStorage.setItem(key, JSON.stringify(pending));
-  }
-  try {
-    const sent = await fetch(
+  const dispatch = () => {
+    if (!pending) {
+      pending = { operationId: crypto.randomUUID(), body };
+      localStorage.setItem(key, JSON.stringify(pending));
+    }
+    return fetch(
       `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/canonical-prefix${action === "preview" ? "/preview" : ""}`, {
         method: action === "preview" ? "POST" : "PUT",
         headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
         body: JSON.stringify(pending.body),
       },
     );
-    if (sent.status >= 500) throw new PendingOperationError(pending.operationId, "The service could not confirm this prefix operation. Retry to recover its result.");
+  };
+  try {
+    const sent = await (action === "save"
+      ? admitPrefixStructuralMutation({ repertoireIds: [repertoireId], scopeComplete: true }, dispatch)
+      : dispatch());
+    if (sent.status >= 500) throw new PendingOperationError(pending!.operationId, "The service could not confirm this prefix operation. Retry to recover its result.");
     const response = await confirmOperationResponse(sent);
     localStorage.removeItem(key);
     return response;

@@ -4090,3 +4090,30 @@ notice/guard, and real reload identity recovery. The separately named total-loss
 reload case documents the remaining backend-rediscovery limitation; it does not
 claim unconditional recovery. `cross-browser.spec.ts` verifies native lock
 reservation and unsupported-capability refusal across the regular browser engines.
+
+## #81 structural admission at final dispatch
+
+`prefix-structural-command-regressions.test.ts` registers
+`issue81_<family>_final_admission_suppresses_request_and_new_identity` for
+repertoire deletion, canonical saves, branch creation/removal, card revision/deletion,
+prefix split acceptance, analysis paste, finding saves, opportunity Train, tactic
+capture and PGN import. They assert zero mutation requests and no new pending
+identity during an unresolved prefix transition. The deletion case failed before
+these integrations with one actual mocked DELETE invocation.
+
+Additional named cases cover missing-target summaries, malformed/unreadable
+storage, unavailable safe serialization, completed receipt recovery, independent
+repertoires, verified resolution/clearing, replay after an asynchronous status read,
+and conflicting repair/discovery choices before identity allocation.
+`prefix-structural-editors-regressions.test.tsx` covers already-open deletion and
+canonical dialogs, delayed notifications, corrupt target summaries and independent
+controls. Inputs remain in their mounted editor while admission pauses.
+
+`prefix-structural-safety.spec.ts` exercises same-tab and cross-tab already-open
+delete confirmations with real browser storage, native Web Locks and an
+authoritative PostgreSQL planner request. No apply request or backend fence is
+installed; the assertions observe zero DELETE requests and the surviving
+repertoire, specifically proving cooperating-browser pre-admission protection.
+The mutation inventory and exclusions are in
+[the admission contract](../docs/PREFIX-STRUCTURAL-ADMISSION.md).
+Server durable reservation/discovery remains proposed separately; #81 is open.
