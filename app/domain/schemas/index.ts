@@ -653,6 +653,11 @@ export const studyTaskSchema = z.discriminatedUnion("kind", [
     lines: z.array(analysisLineSchema),
   }),
   z.strictObject({
+    kind: z.literal("repertoireAlternatives"),
+    generation: z.number().int().positive(),
+    lines: z.array(analysisLineSchema),
+  }),
+  z.strictObject({
     kind: z.enum(["similarity", "matches"]),
     fen: fenStringSchema,
     positions: z.array(indexedPositionSchema),
