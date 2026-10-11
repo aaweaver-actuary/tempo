@@ -355,7 +355,8 @@ test("issue81_offline_repertoire_load_does_not_hide_saved_recovery", async ({ pa
   const { control, dialog } = await mockTransitionUI(page); control.state = "pending";
   await dialog.getByRole("button", { name: "Confirm shortening", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Prefix transition in progress" })).toBeVisible();
-  const operationId = control.operationId;
+  const operationId = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-transition-v1:rep")!).operationId as string);
+  expect(operationId).toBeTruthy();
   await page.route("**/api/repertoires", route => route.fulfill({ status: 503, json: { detail: "Local service unavailable" } }));
   await page.reload();
   await page.getByRole("button", { name: "Repertoire", exact: true }).click();
@@ -366,7 +367,8 @@ test("issue81_offline_repertoire_load_does_not_hide_saved_recovery", async ({ pa
   await expect(recoveredDialog.getByText("Selected source routes: 2", { exact: false })).toBeVisible();
   await recoveredDialog.locator("summary", { hasText: "Recovery identity" }).click();
   await expect(recoveredDialog.getByText(operationId, { exact: false })).toBeVisible();
-  expect(control.deliveries).toBe(1);
+  await expect.poll(() => control.deliveries, { message: "Reload retains and delivers the saved operation once" }).toBe(1);
+  expect(control.operationId).toBe(operationId);
 });
 test("issue81_blocked_publication_retries_the_original_operation", async ({ page }) => {
   const { control, dialog } = await mockTransitionUI(page); control.state = "blocked";
