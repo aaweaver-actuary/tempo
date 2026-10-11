@@ -109,8 +109,9 @@ function hostActivity() {
   for (let pass = 0; pass < processes.length; pass++) for (const candidate of processes) if (ownedPids.has(candidate.parent)) ownedPids.add(candidate.pid);
   const external = processes.filter(candidate => !ownedPids.has(candidate.pid));
   const activeOtherTestProjects = [...new Set(execFileSync('docker', ['ps', '--format', '{{.Label "com.docker.compose.project"}}'], { encoding: 'utf8' }).trim().split('\n').filter(project => /^tempo-(?:pg-)?regressions-\d+-/.test(project)))];
-  const busy = activeOtherTestProjects.length > 0 || external.some(candidate => /^(node|npm|cargo|rustc|cc1|clang)/.test(candidate.executable) && candidate.cpuPercent > 75) || external.some(candidate => candidate.executable === 'chrome-headless-shell' && candidate.cpuPercent > 5) || external.reduce((total, candidate) => total + candidate.cpuPercent, 0) > 650;
-  return { at: new Date().toISOString(), busy, activeOtherTestProjects, externalCpuPercent: external.reduce((total, candidate) => total + candidate.cpuPercent, 0), competing: external.toSorted((left,right) => right.cpuPercent-left.cpuPercent).slice(0,8), ownedProcesses: processes.filter(candidate => ownedPids.has(candidate.pid)) };
+  const locallyPaused = existsSync(join(evidence, 'pause-timing'));
+  const busy = locallyPaused || activeOtherTestProjects.length > 0 || external.some(candidate => /^(node|npm|cargo|rustc|cc1|clang)/.test(candidate.executable) && candidate.cpuPercent > 75) || external.some(candidate => candidate.executable === 'chrome-headless-shell' && candidate.cpuPercent > 5) || external.reduce((total, candidate) => total + candidate.cpuPercent, 0) > 650;
+  return { at: new Date().toISOString(), busy, locallyPaused, activeOtherTestProjects, externalCpuPercent: external.reduce((total, candidate) => total + candidate.cpuPercent, 0), competing: external.toSorted((left,right) => right.cpuPercent-left.cpuPercent).slice(0,8), ownedProcesses: processes.filter(candidate => ownedPids.has(candidate.pid)) };
 }
 async function awaitMeasurementWindow() {
   let activity = hostActivity();
@@ -140,19 +141,32 @@ try {
     const scenarios=requestedScenario==='all'?(workload.name==='actual' || workload.name==='representative-100000'?['pipeline','foreground','cancel','invalidate','failure','decode','protocol']:['pipeline','foreground']):[requestedScenario];
     for(const scenario of scenarios) {
       const count=probe?1:sampleCount;
+      let attempt = 0;
       for(let iteration=-(probe?0:3);iteration<count;iteration++) {
         const activity = await awaitMeasurementWindow();
-        const common={type:'sample',workload:workload.name,scenario,iteration,warmup:iteration<0,environmentArtifact,hostLoad:os.loadavg(),freeMemoryBytes:os.freemem(),hostActivity:activity};
+        const common={type:'sample',workload:workload.name,scenario,iteration,attempt:attempt++,warmup:iteration<0,environmentArtifact,hostLoad:os.loadavg(),freeMemoryBytes:os.freemem(),hostActivity:activity};
+        const trialRows = [];
         async function measured(operation, input) {
           const result=await page.evaluate(operation,input);
-          const first=result.requests[0]?.sentAt;
+          const first=result.startedAt ?? result.requests[0]?.sentAt;
           if (first !== undefined) result.longTasks=await page.evaluate(({first,end})=>window.investigation.collectLongTasks(first,end),{first,end:first+result.durationMs});
           return result;
         }
-        if(scenario==='pipeline') append({...common,...await measured(()=>window.investigation.pipeline())});
+        if(scenario==='pipeline') trialRows.push({...common,...await measured(()=>window.investigation.pipeline())});
         else {
           const order=iteration%2? [false,true]:[true,false];
-          for(const contended of order) append({...common,...await measured(({scenario,contended})=>window.investigation.contention(scenario,contended),{scenario,contended})});
+          for(const contended of order) trialRows.push({...common,...await measured(({scenario,contended})=>window.investigation.contention(scenario,contended),{scenario,contended})});
+        }
+        const activityAtEnd = hostActivity();
+        for (const row of trialRows) append({ ...row, hostActivityAtEnd: activityAtEnd, contaminated: activityAtEnd.busy });
+        if (activityAtEnd.busy) {
+          console.log(`Excluded contaminated ${workload.name} ${scenario} attempt; repeating the same iteration after admission clears.`);
+          iteration--;
+          continue;
+        }
+        if (memorySession && scenario === 'pipeline' && iteration >= 0) {
+          await memorySession.send('HeapProfiler.collectGarbage');
+          append({type:'renderer-memory',name:workload.name,iteration,scope:'after published pipeline and explicit main-renderer GC; retained main isolate only; not exclusive worker or peak',metrics:(await memorySession.send('Performance.getMetrics')).metrics.filter(metric=>metric.name.includes('Heap') || metric.name.includes('TaskDuration')),processMemory:hostActivity().ownedProcesses,processMemoryScope:'instantaneous RSS KiB; browser/driver processes are shared and shared pages can be counted more than once'});
         }
         if(iteration>=0 && (probe || iteration%5===0)) console.log(`${workload.name} ${scenario} ${iteration+1}/${count}`);
       }

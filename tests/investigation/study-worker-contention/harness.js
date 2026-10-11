@@ -67,6 +67,7 @@ async function call(task, signal) {
     const value = await pending;
     if (['queue', 'deck', 'resolveTrainingRoute'].includes(task.kind)) {
       if (!Array.isArray(value) || !value.length) throw new Error(`Foreground ${task.kind} produced no usable result`);
+      if (!value.every(result => result !== null && typeof result === 'object')) throw new Error(`Foreground ${task.kind} accepted a malformed result`);
       record.resultCount = value.length;
     }
     record.settledAt = now();
@@ -97,7 +98,7 @@ function summarizeSnapshot(snapshot) {
 
 function measurements(startedAt) {
   const records = [...requests.values()].filter(record => record.sentAt >= startedAt);
-  return { durationMs: now() - startedAt, requests: records, responsePhases: responsePhases.filter(phase => phase.startedAt >= startedAt), longTasks: longTasks.filter(task => task.start >= startedAt), tempoTimings: tempoPerformanceTimings().slice(-records.length * 3) };
+  return { startedAt, durationMs: now() - startedAt, requests: records, responsePhases: responsePhases.filter(phase => phase.startedAt >= startedAt), longTasks: longTasks.filter(task => task.start + task.duration >= startedAt), tempoTimings: tempoPerformanceTimings().filter(timing => timing.recordedAt >= Math.floor(startedAt) - 1) };
 }
 
 async function configure() {
@@ -129,8 +130,9 @@ async function pipeline() {
   const snapshot = await call({ kind: 'repertoireAlternatives', generation: 1, lines });
   const publishedAt = now();
   window.currentSnapshot = snapshot;
+  const publicationMs = now() - publishedAt;
   const result = measurements(startedAt);
-  result.publicationMs = now() - publishedAt;
+  result.publicationMs = publicationMs;
   result.positionCount = snapshot.positions.length;
   return result;
 }
@@ -197,5 +199,5 @@ async function contention(scenario = 'foreground', contended = true) {
   return { ...measurements(startedAt), scenario, contended, cancelAt, cancelledAt, failureAt, publishedGeneration, queuedFailureOutcomes, workerInstances: workers.length };
 }
 
-function collectLongTasks(start, end) { return longTasks.filter(task => task.start >= start && task.start <= end); }
+function collectLongTasks(start, end) { return longTasks.filter(task => task.start + task.duration >= start && task.start <= end); }
 window.investigation = { configure, pipeline, contention, collectLongTasks, workers, requests, now };

@@ -9,7 +9,7 @@ const summarize=values=>{
 const rows=readdirSync(directory).filter(name=>name.startsWith('raw-')&&name.endsWith('.jsonl')&&!name.endsWith('-probe.jsonl')).flatMap(name=>readFileSync(join(directory,name),'utf8').trim().split('\n').filter(Boolean).map(line=>({...JSON.parse(line),artifact:name})));
 const groups=new Map();
 for(const row of rows) {
-  if(row.type!=='sample'||row.warmup)continue;
+  if(row.type!=='sample'||row.warmup||row.contaminated)continue;
   const key=`${row.artifact}:${row.workload}:${row.scenario}`;
   const group=groups.get(key)??[];group.push(row);groups.set(key,group);
 }
