@@ -4047,3 +4047,27 @@ but its actual target conflict is truthful; shared state alone is not a defect.
   (persisted/terminal) subscribes inside the public storage-change callback before
   settlement publication. Both baseline cases preserve exact attribution and an
   immutable early result while unrelated delivery remains held.
+
+- `flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery`
+  starts a submitted flush synchronously from the initial owner's public conflict
+  event. On unchanged main the first owner's assignment/cleanup discards that
+  submission's ownership: a concurrent receipt confirms it, then its held POST
+  rejects the original submitted caller. Reserve the active slot before saving
+  can publish synchronously; reentrant callers share the forwarded settlement.
+  The regression proves receipt recovery cannot overtake an owned held POST and
+  preserves truthful unconfirmed failure followed by authoritative recovery.
+
+Audit CI readiness evidence (existing named browser cases):
+
+- `opening_evidence_remains_durable_during_prepared_progression: prepared` in
+  `training-critical-path.spec.ts` now deterministically fails its initial queue
+  transport once, before the timed region, and requires explicit UI recovery
+  before native progression and original durability/replay assertions. Performance
+  mode keeps the original uninjected setup. The old startup assertion fails on
+  unchanged production with this input, matching CI's network-change failure.
+- `Edit card opens Builder line-removal context and deletes the selected branch`
+  in `workspace-flows.spec.ts` first receives the observed pending-issuance 503
+  shape, then requires a real queued card belonging to the confirmed import ID.
+  The old probe throws on the error envelope; bounded polling now retains its
+  HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
+  These are fixture corrections for qualification, not additional product defects.

@@ -1,194 +1,188 @@
 # Review-outbox flush settlement audit
 
-Independent audit of merged PR #172, October 11, 2026. Baseline:
-`d4dbf28da5b6e95db8da1acfd9fecd4655821296` (tree
-`cc2ed24e7114ed755b7caea481f2a7c1caca6cfb`). The live study checkout was untouched.
+Independent audit of PR #172 on merged main
+`d4dbf28da5b6e95db8da1acfd9fecd4655821296`, October 11, 2026.
+Baseline tree: `cc2ed24e7114ed755b7caea481f2a7c1caca6cfb`.
+The isolated checkout is owned by PR #191; the live study checkout is untouched.
 
 ## Verdict
 
-**CONFIRMED DEFECTS:** follow-up aggregation loses evidence in two ways:
+**Three CONFIRMED DEFECTS**, reproduced before changing production:
 
-- A bounded owner followed by an unlimited caller discards both generations'
-  `preparedContinuations` maps on success, while preserving their confirmed IDs.
-- If the follow-up fails, both unlimited and submitted-attempt callers receive
-  only the follow-up error's partial result, losing the earlier settled IDs and
-  continuation map.
+1. A bounded owner followed by an unlimited caller drops both generations'
+   prepared-continuation maps while retaining their confirmed attempt IDs.
+2. A failing follow-up drops earlier confirmed IDs and continuation evidence
+   from unlimited and submitted-attempt callers' error results.
+3. Saving can synchronously publish a public event before `activeFlush` is
+   assigned. A reentrant submission can lose ownership, allowing concurrent
+   authoritative receipt recovery followed by an incorrect submitted rejection.
 
-The correction combines the same three result fields on success and failure.
-Failure aggregation copies the error for the caller, preserving its original
-identity/classification/message/cause/stack and leaving shared observers intact.
+The corrections combine all three settlement fields on success/failure, copy
+aggregate errors without mutating shared observers, and reserve ownership before
+saving can publish synchronously. Public signatures, storage formats, ranking,
+FSRS, scheduling, backend locking and reconciliation are unchanged. Existing
+synchronous publication and low-latency target settlement are preserved.
 
-No false persistence confirmation, incorrect conflict classification, duplicate
-advancement, unissued-successor advancement, or lost known failure evidence was
-reproduced. This does not establish a production study incident: Home's targeted
-submission path already preserves continuation maps; queue initialization ignores
-the aggregate result. The reproduced defect is loss of returned settlement/authorization
-evidence, not fabrication of authorization.
+No false persistence confirmation, terminal-conflict authorization, advancement
+to an unissued successor, duplicate advancement, or lost known failed-attempt
+marker was reproduced. The evidence does not establish an actual study incident.
+Qualification remains pending until current-candidate required CI passes.
 
-## Ownership and settlement model
+## Ownership and settlement invariants
 
-`activeFlush` serializes ordinary asynchronous delivery. Each save constructs a
-fresh cumulative result. Persistence removes the exact local envelope and adds
-its attempt ID only after an authoritative `persisted: true` response. A terminal
-reconciliation conflict instead retains the envelope and adds its ID to the
-conflicted list. Retryable conflicts and ambiguous transport outcomes reject with
-the failing attempt identity and any earlier settled evidence.
+The corrected transition is idle → reserve active ownership → save → publish
+cumulative progress → complete/reject → release ownership → waiter callbacks or
+follow-up. A reservation forwards the actual flush settlement to synchronous
+reentrant observers; ordinary observers still receive the original flush.
 
-Publication sets `currentFlushProgress` and synchronously calls listeners.
-Targeted listeners resolve only when their own ID appears in either settlement
-list, copying the cumulative arrays/map for early completion. The shared promise's
-`finally` clears `activeFlush`; promise reactions subsequently remove listeners
-or start additional work. Starting a new flush clears the current snapshot.
+- Persistence requires an authoritative `persisted: true` POST or receipt.
+  Storage absence, another attempt's success and ambiguous delivery are insufficient.
+- Terminal reconciliation conflict retains the envelope and settles its own ID;
+  it does not confirm persistence or authorize a prepared successor.
+- Progress listeners require their requested attempt ID in a settlement list and
+  copy arrays/maps for an immutable early result. Unrelated later delivery need
+  not finish before a submitted attempt becomes usable.
+- Continuation evidence must belong to the confirmed attempt and match its frozen
+  issued successor. Advancement also rechecks the current attempt/generation,
+  queue-entry/card/revision/cycle/date, readiness and known failure evidence.
+- Advancement changes logical attempt ownership, preventing duplicate observers
+  from advancing the completed attempt twice.
+- A caller's aggregate error preserves earlier settlement plus the later failure's
+  identity, classification, message, cause, prototype and stack. Direct observers'
+  error evidence remains unchanged.
 
-**Generation isolation is not an invariant.** Controlled public outbox-event
-callbacks and two explicit microtasks reproduced this ordering for both A's
-completion and rejection:
+**Flush-generation isolation is not an invariant.** For both completion and
+rejection, controlled public outbox callbacks and two explicit microtasks reach:
+A terminates → A's `finally` releases the slot → B starts and synchronously
+publishes its target conflict → A's old waiter callbacks run. The old listener
+can observe B, but resolves with genuine B terminal settlement and no persistence
+or continuation. Cross-generation observation alone is SAFE — VERIFIED in those
+executions; no generation abstraction was added for it.
 
-1. A changes its stored envelope and publishes/terminates.
-2. A's `finally` releases the active slot.
-3. B starts and synchronously settles its target as an earlier-review conflict.
-4. A's promise callbacks run; the old target listener has already observed B.
+## Classified scenario matrix
 
-The old listener resolves with B's genuine terminal settlement, without crediting
-A or supplying a continuation. This is **SAFE — VERIFIED** for those executions.
-Promise resolution is one-shot; no generation wrapper is added solely because
-cross-generation observation is possible.
+All 39 new unit cases have the `flush_settlement_audit` prefix in the four regular
+regression files listed below. Controlled fetch/body/receipt promises and explicit
+microtasks establish ordering; tests do not write private flush state or sleep.
 
-Persistence confirmation, terminal settlement, and authorization remain distinct.
-A persisted result without matching issued-successor metadata cannot advance a
-cached successor. Home rejects prepared advancement for conflicts. Cached
-advancement rechecks attempt ID/generation, queue-entry/card/revision/cycle/day,
-queue readiness, pending/conflicted reviews, and known failure evidence. Advancing
-changes the logical attempt, preventing duplicate observers from advancing again.
-
-## Adversarial scenario matrix
-
-All new unit cases use the `flush_settlement_audit` prefix in four existing regular
-suite files. Fetch/receipt gates and explicit microtasks control ordering; no
-private flush-state writes or wall-clock sleeps are used.
-
-| Scenario | Classification / observable proof |
+| Interleaving / outcome | Classification and observation |
 | --- | --- |
-| A completes/rejects; B publishes before A callbacks | SAFE — VERIFIED; genuine B conflict, no false persistence/capability |
-| Subscribe before/after publication, including synchronous public-event reentrancy; duplicate target observers | SAFE — VERIFIED; exact target attribution and immutable early snapshot |
-| Different submitted IDs; limits 1, 2, Infinity; differing retry/receipt settings | SAFE — VERIFIED for settlement; original delivery is coalesced and follow-up uses caller settings |
-| Bounded owner followed by unlimited drain | CONFIRMED DEFECT; both capability maps disappear despite confirmed IDs |
-| Unlimited/submitted follow-up rejects after earlier confirmation | CONFIRMED DEFECT; earlier IDs and capability map disappear from partial error evidence |
-| Terminal conflict, including supplied continuation metadata | SAFE — VERIFIED; conflicted only, no prepared authorization |
-| Retryable conflict; missing persistence confirmation | SAFE — VERIFIED; retained, unconfirmed target, no continuation |
-| Network failure before commit; response loss after simulated commit | SAFE — VERIFIED; both reject as ambiguous, receipt recovery alone confirms the latter |
-| Same-card persisted, suppressed, or conflicted predecessor | SAFE — VERIFIED; ordering/dependency protection, unrelated reviews retained |
-| Appended review; later unrelated success/failure | SAFE — VERIFIED by new and retained overlap cases; early target confirmation survives |
-| Replacement attempt/generation; changed entry/revision/cycle/date | SAFE — VERIFIED; no cached advancement |
-| Missing/mismatched issuance; new failure flag/marker | SAFE — VERIFIED; no cached advancement and failure evidence retained |
-| Home foreground plus another flush observer | SAFE — VERIFIED; prepared card advances once before later held delivery |
-| Idle recovery shares a flush with a later failing receipt | SAFE — VERIFIED; confirmed target/capability survives in partial error evidence |
-| Real PostgreSQL response/receipt held during reconnect | SAFE — VERIFIED on baseline; native successor interaction, restart and original receipt/replay |
+| A completes/rejects; B publishes before A callbacks | SAFE — VERIFIED; genuine B conflict, no fabricated evidence |
+| Subscription immediately before/after publication; duplicate observers | SAFE — VERIFIED; target attribution, immutable early snapshots |
+| Synchronous subscriber during target storage change | SAFE — VERIFIED; target usable before held unrelated delivery |
+| Reentrant submitted caller during initial synchronous conflict | CONFIRMED DEFECT; recovered target subsequently rejected by its original caller |
+| Same/different submitted IDs; limits 1, 2, Infinity | SAFE — VERIFIED for target settlement; coalesced delivery and caller follow-up settings |
+| Different explicit retry IDs/settings; receipt-first versus POST-first | SAFE — VERIFIED; exact original identities, suppression retained for other attempts |
+| Bounded owner followed by unlimited drain | CONFIRMED DEFECT; confirmed IDs survive but both continuation maps disappear |
+| Unlimited/submitted follow-up fails after earlier confirmation | CONFIRMED DEFECT; earlier IDs/maps disappear from partial failure evidence |
+| Success; terminal or retryable conflict; missing confirmation | SAFE — VERIFIED; persistence and terminal settlement remain distinct |
+| Network failure before persistence; lost response after simulated commit | SAFE — VERIFIED; ambiguous until authoritative receipt recovery |
+| Same-card persisted/suppressed/conflicted predecessor | SAFE — VERIFIED; dependency ordering and retained unrelated work |
+| Unrelated reviews before/after target; reviews appended during delivery | SAFE — VERIFIED by new and retained cases; early settlement survives later work |
+| Missing/mismatched issuance; replacement attempt/generation | SAFE — VERIFIED; no stale or unissued advancement |
+| Changed queue entry/revision/cycle/date; newly known failure flag/marker | SAFE — VERIFIED; no advancement, retained failure guidance |
+| Home foreground with overlapping recovery/reconnect | SAFE — VERIFIED; one prepared advance or actionable authoritative recovery |
+| Idle receipt observer plus later failure | SAFE — VERIFIED after correction; confirmed target and capability retained |
+| Real PostgreSQL confirmation held during reconnect | SAFE — VERIFIED on baseline and first correction; native successor, restart and exact durable replay |
 
-## Reproduction and smallest correction
+## Reproductions and regression protection
 
-Enqueue A, B, C; A and C have frozen prepared identities. Hold A's response, start
-`flushPendingReviews(1)` (also tested with `2`), then call unlimited
-`flushPendingReviews()`. Release A with confirmed persistence and continuation.
-The bounded owner returns its evidence, then the unlimited caller drains the
-remainder. Its merge copies only the two ID arrays, dropping both maps.
+`tests/unit/review-outbox-regressions.test.ts`:
 
-`flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities`
-fails on unchanged production for both limits with `preparedContinuations ===
-undefined`. A second named case, `flush_settlement_audit %s follow-up failure retains earlier
-settled evidence`, fails for unlimited and submitted callers: A confirmed in the
-bounded owner, B rejects before C delivery, and A disappears from the caller's
-error evidence. Duplicate callers and a direct B observer ensure the correction
-cannot mutate the underlying shared error or duplicate earlier evidence.
+- `flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities`
+  fails on baseline for limits 1 and 2. Hold A, join its bounded flush with an
+  unlimited caller, confirm A, then drain B/C. The caller loses both maps.
+- `flush_settlement_audit %s follow-up failure retains earlier settled evidence`
+  fails for unlimited and submitted callers. A confirms; follow-up B fails before
+  C. A disappears from error evidence. Duplicate aggregate and direct B observers
+  guard against shared error mutation and duplicated evidence.
+- `flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery`
+  fails on baseline. An initial same-card conflict event synchronously starts
+  target C's held POST. The first owner's assignment/cleanup discards C's active
+  ownership. Another receipt-first caller confirms C and removes its envelope;
+  the held POST then fails and rejects the original submitted caller. The ordered
+  trace confirms that recovery precedes rejection. With reserved ownership,
+  recovery cannot overtake the POST: ambiguous rejection remains truthful and
+  the explicit retry subsequently confirms C through its original receipt.
 
-Two small private helpers combine result fields and include earlier settlement
-in success or a caller-specific error. Both follow-up branches use them. No public API, persistence, queue policy, scheduling,
-backend locking, generation mechanism, or reconciliation behavior changes.
+The other audit cases live in this file and
+`tests/unit/prepared-review-continuation-regressions.test.ts`,
+`tests/unit/review-attempt-confirmation-regressions.test.tsx`, and
+`tests/unit/pending-review-recovery-regressions.test.tsx`.
+Exact expanded case names, baseline artifacts and corrected results are retained
+in `exact-audit-cases.json` in the local evidence bundle. Coverage is registered in
+`tests/REGRESSIONS.md` and remains discoverable by the regular suite.
 
-## Evidence and limitations
+`tests/browser/post-review-progression.spec.ts` adds
+`flush_settlement_audit overlapping reconnect preserves issued successor and one durable review`.
+It holds actual POST or 202/receipt confirmation during reconnect, exercises native
+successor input after authoritative queue recovery, restarts the owned services,
+and proves original review/receipt/scheduling equality and idempotent replay.
 
-Baseline final unit matrix: **29 passed, 2 failed**, 157 unselected existing cases,
-11.48 s. Both failures are the named capability-loss regression. The baseline
-has unchanged production and new tests; it is not a clean-HEAD test result.
-A separate final marker-retention assertion also passed on unchanged production.
-After the public callback/type correction, all 13 prepared/Home audit cases passed
-on baseline; the two added explicit-retry cases also passed. The two later
-follow-up-error cases failed in 1.94 s with their earlier evidence missing.
+## Execution evidence and qualification limits
 
-The final baseline browser probe passed: 1 case, 81.66 s browser stage. Runtime
-production was built from unchanged baseline before the corrected source was
-restored on the host; its source hashes and test patch are retained. The fixture
-proves both direct and 202/receipt confirmation, bounded queue recovery, native
-B interaction, restart, and original review/receipt/scheduling equality.
+- Baseline unit matrix: **39 cases; five failing assertions reproducing the three
+  defects, 34 passes**. Production was unchanged; tests were dirty additions.
+  Ordered traces and source hashes distinguish baseline from correction runs.
+- Final affected unit run: **269 passed, ten files, 18.10 s**, including all 39
+  audit cases. Runtime source is the final correction, tested while dirty on
+  `3394cd45`; it was then committed as `a35abbf0`. Final outbox file: **90 passed,
+  3.63 s**. Typecheck and lint passed (ten existing warnings); fresh static-command
+  duration was not captured. Earlier typecheck/lint timings are preserved separately.
+- Baseline real browser probe: **one passed, 81.66 s** browser stage. First
+  correction's full browser file: **four passed, 287.61 s** on clean runtime
+  `c46bc94d`. Fresh final ownership-correction browser evidence is pending.
+- Draft CI [38142379629](https://github.com/aaweaver-actuary/tempo/actions/runs/38142379629)
+  for `3394cd45` passed **1,629 frontend tests, 159 files, 270.59 s**, build and
+  pinned visual. Browser: **280/282 passed, 1,138.56 s**. Two existing startup
+  fixtures failed before review submission: `ERR_NETWORK_CHANGED` and a queue
+  probe dereferencing `cards` on pending-issuance HTTP 503. This run is failed
+  evidence and cannot qualify the new correction.
+- Both CI fixture failures were deterministically reproduced with controlled
+  inputs on unchanged production (**two failures, 100.62 s**). Test-only fixes
+  use one explicit initial UI Retry and bounded non-OK queue polling. Native
+  progression, durability/replay, deadlines and branch-deletion assertions remain.
+  Workspace passed its corrected probe. The large training fixture then exposed
+  separate failures: a 60 s cleanup timeout (isolated cleanup 25.42 s), followed
+  in a focused run by historical checkpoints remaining retrying beyond their
+  original 30 s deadline. Worker/lease/receipt traces are retained. Their cause
+  is unproven; no timeout, backend budget or product assertion is weakened.
+- Two complete local durability attempts did **not** qualify: unchanged operation
+  recovery hit a transaction timeout (focused unchanged case passed in 11.21 s);
+  the next attempt passed it but hit a daily-study refresh lock timeout (focused
+  unchanged case passed in 18.17 s). These are retained failures, not attributed
+  to the client fix. Fresh settled-correction durability and final CI remain pending.
 
-Early exploratory runs contained two fixture mistakes (a receipt GET treated as
-a POST, and a Home call attempting to grade an already queued result). Corrected
-fixtures use missing-receipt recovery and the public retry callback. Browser
-fixture iterations corrected an invalid ready-queue expectation, restarted the
-fixture proxy after the API, bounded temporary restart transport failures, and
-handled real 202/receipt confirmation. Those errors
-are preserved as diagnostics and are not classified as production defects.
-
-Local environment: macOS, Node 26.10.0, npm 11.19.1, Vitest 5.0.1/jsdom; locked
-dependencies installed once. CI uses its configured runtime and owns complete
-candidate qualification. Focused execution, actual PostgreSQL execution, and CI
-qualification are recorded separately; previous #172 CI is not audit evidence.
-
-Post-correction affected tests: **266 passed in 22.94 s**, ten files covering the
-four audit files plus desktop queue, phone preparation, readiness, offline
-training, attempt lifecycle and opening-evidence deadlines. Smallest four
-previously failing cases pass in 9.42 s. These runs have dirty task source on the
-baseline commit, not clean HEAD.
-
-Two additional synchronous public-event subscription cases passed on unchanged
-production (2.74 s), bringing the audit to **38 unit cases: 4 baseline failures,
-34 baseline passes, all passing after correction**. The final outbox file passed
-all 89 cases (2.13 s); its changed-test lint passed. The terminal fixture initially
-looked in the pending-only projection rather than the conflicted projection; that
-fixture error is retained in the diagnostics.
-
-After explicit cleanup was added to the new held-response tests, both affected
-Home/recovery files passed all 69 cases. Two follow-up-error cases also passed
-with explicit prototype, message, stack, cause and shared-observer assertions.
-Typecheck passed (30.10 s), lint passed (54.35 s, ten pre-existing warnings), and
-conflict/migration/whitespace guards passed. Subsequent changed-test lint passed
-with one pre-existing warning.
-
-The corrected browser file passed all four workflows (287.61 s browser stage)
-on clean runtime correction commit `c46bc94d1b703a53d640db972cb3b49130a85011`.
-It includes authoritative review/receipt confirmation, native board interaction,
-API/worker restart and exact original-request replay. Subsequent changes add only
-the two synchronous-subscription tests, regression registration and this report.
-
-Local `make docker-durability` did **not** pass completely: its first execution
-stopped in unchanged `operation_recovery` with a PostgreSQL transaction timeout
-(25.34 s failed stage); focused unchanged operation recovery passed (11.21 s).
-The next complete durability execution passed operation recovery (6.07 s), but
-stopped in unchanged daily-study refresh recovery with a lock timeout while
-locking `priority_source_epoch` (62.80 s failed background-workloads stage).
-The isolated unchanged refresh-recovery case passed (18.17 s stage).
-These failures are retained and are not attributed to this client correction.
-No database budget, test expectation or backend behavior is changed. Final CI
-must provide complete current-candidate durability and qualification; focused
-successes do not constitute a complete durability pass.
-
-Exact development commands (reporter/output options omitted only where cosmetic):
+Exact proving commands (reporter/output options are retained in bundle logs):
 
 ```sh
+npm run test:unit -- tests/unit/review-outbox-regressions.test.ts -t 'flush_settlement_audit reentrant submitted owner'
 npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/pending-review-recovery-regressions.test.tsx -t flush_settlement_audit
 npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/pending-review-recovery-regressions.test.tsx tests/unit/desktop-queue-regressions.test.ts tests/unit/phone-queue-preparation-regressions.test.ts tests/unit/queue-readiness-diagnostics-regressions.test.ts tests/unit/offline-training-regressions.test.ts tests/unit/attempt-lifecycle-regressions.test.ts tests/unit/opening-evidence-review-deadlines.test.ts
-npm run test:unit -- tests/unit/review-outbox-regressions.test.ts
 npm run typecheck
 npm run lint
 make ui-file FILE=post-review-progression.spec.ts
 make docker-durability
 ```
 
-Each exact audit case, its baseline artifact and corrected result are listed in
-`exact-audit-cases.json` in the local bundle. Ordered handoff and synchronous
-subscription traces are retained in the corresponding verbose logs. The PR and
-final local handoff record link current-candidate CI separately. Evidence is retained outside
-the clone under root `test-results/audits/2026-10-11-review-outbox-settlement/`.
-Mocked commit/receipt cases establish client semantics, not PostgreSQL durability.
-This finite scenario set is not exhaustive model checking and does not claim
-cross-tab serialization. No merge or deployment is authorized.
+macOS development: Node 26.10.0, npm 11.19.1, Vitest 5.0.1/jsdom, locked
+Node dependencies installed once. Docker invocations use fresh disposable
+project-isolated state. CI owns complete current-head/base/integration validation;
+[PR #191 checks](https://github.com/aaweaver-actuary/tempo/pull/191/checks) record
+its candidate qualification separately. No local `make full` duplicates CI.
+
+## Remaining uncertainty and resource ownership
+
+Mocked commit/receipt cases prove client semantics, not PostgreSQL durability.
+This finite matrix is not exhaustive model checking or cross-tab serialization.
+Raw errors without `ReviewReplayError.flushResult` keep their existing behavior;
+aggregate retention for that exceptional path is INCONCLUSIVE. No unsafe
+advancement was reproduced; this is bounded evidence, not a universal proof.
+
+Logs, traces, assertions, patches, timing, source provenance and owned-resource
+teardown records are retained outside the clone at root
+`test-results/audits/2026-10-11-review-outbox-settlement/`.
+Task-owned disposable runners are torn down after capturing diagnostics. The
+checkout remains owned by this audit while PR #191 is unmerged. Existing issue
+#186's broader requirements remain open; this PR references #172 without claiming
+that issue is completely resolved. No merge or deployment was performed.
