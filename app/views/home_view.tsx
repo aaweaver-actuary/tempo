@@ -627,7 +627,9 @@ export default function Home() {
       void reconcilePreparedQueue();
       return;
     }
-    void fetchAndInitializeQueue(false, { preparePhoneQueue, replaySavedReviews: false }).catch(() => undefined);
+    // Normal reconnection syncs saved results. Only the confirmed-review owner
+    // above performs queue-only acquisition and disables both replay paths.
+    void fetchAndInitializeQueue(false, { preparePhoneQueue }).catch(() => undefined);
   });
 
   useEffect(() => {
