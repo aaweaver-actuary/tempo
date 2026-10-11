@@ -3,6 +3,7 @@ import { prepareVisualUI } from "./visual-fixtures";
 import { test as productTest, api } from "./product-fixtures";
 import { heldDrag, prepareHeldDrag } from "./held-drag-fixtures";
 import type { Page } from "@playwright/test";
+import { expectedPieces, renderedPieces, squareCenter } from "./keyboard-fixtures";
 
 const startFen =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -219,6 +220,66 @@ test("unavailable repertoire lines do not falsely grade another legal move", asy
   await page.unroute("**/api/repertoire/lines");
   await page.getByRole("button", { name: "Retry loading lines" }).click();
   await expect(page.getByRole("button", { name: "Retry loading lines" })).toHaveCount(0);
+});
+
+test("issue36_browser_alternatives_retry_and_confirmed_edit_invalidation_preserve_the_board_and_grading", async ({ page }) => {
+  const card = { id: "issue36-card", queue_entry_id: 3601, revision: 1, start_fen: startFen,
+    moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening" as const, repertoire_id: "visual-repertoire",
+    repertoire_name: "Issue36", repertoire_source: "PGN", first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white" as const };
+  const alternative = { id: "issue36-alternative", repertoire_id: "visual-repertoire", repertoire_name: "Issue36",
+    name: "Alternative", trained_color: "white" as const, start_fen: startFen, moves: ["d2d4"] };
+  await prepareVisualUI(page, true, [card], [alternative]);
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
+  let unavailable = true;
+  let lines = [alternative];
+  let failureRequests = 0;
+  await page.route("**/api/repertoire/lines", route => route.fulfill(unavailable
+    ? { status: 503, json: { detail: "Issue36 unavailable evidence" } } : { json: { lines } }));
+  await page.route("**/api/queue/entries/3601/fail", route => {
+    failureRequests++; return route.fulfill({ json: { attempt_failed: true } });
+  });
+  await page.route("**/api/cards/issue36-card", route => {
+    // A confirmed mutation removes the alternative, and its reload fails.
+    unavailable = true; lines = [{ ...alternative, moves: ["e2e4"] }];
+    return route.fulfill({ json: { card_id: "issue36-card", revision: 2, replaced: true, history_mode: "preserve" } });
+  });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  const board = page.locator(".board-frame");
+  const playAlternative = async () => {
+    for (const square of ["d2", "d4"]) {
+      const center = await squareCenter(board, square); await page.mouse.click(center.x, center.y);
+    }
+  };
+  await expect(page.getByRole("button", { name: "Retry loading lines" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Issue36", exact: true })).toBeVisible();
+  await playAlternative();
+  await expect(page.getByText(/Cannot verify another repertoire move until lines load/)).toBeVisible();
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startFen));
+  expect(failureRequests).toBe(0);
+  unavailable = false;
+  await page.getByRole("button", { name: "Retry loading lines" }).click();
+  await expect(page.getByRole("button", { name: "Retry loading lines" })).toHaveCount(0);
+  await playAlternative();
+  await expect(page.getByText(/Valid repertoire move · follow the arrow/)).toBeVisible();
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startFen));
+  expect(failureRequests).toBe(0);
+
+  await page.getByRole("button", { name: /Edit card/ }).click();
+  await page.getByRole("button", { name: "Validate & save" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry loading lines" })).toBeVisible();
+  await playAlternative();
+  await expect(page.getByText(/Cannot verify another repertoire move until lines load/)).toBeVisible();
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startFen));
+  expect(failureRequests).toBe(0);
+  unavailable = false;
+  await page.getByRole("button", { name: "Retry loading lines" }).click();
+  await expect(page.getByRole("button", { name: "Retry loading lines" })).toHaveCount(0);
+  await playAlternative();
+  await expect.poll(() => failureRequests).toBe(1);
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startFen));
+  await expect(page.getByText(/Again recorded/)).toBeVisible();
 });
 
 test("check coverage loads adaptive settings without a validation alert", async ({ page }) => {

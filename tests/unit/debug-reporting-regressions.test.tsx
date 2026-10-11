@@ -15,7 +15,7 @@ import { TempoErrorBoundary } from "../../app/components/error-boundary";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { useTrainingStore } from "../../app/state/training-store";
 import { STANDARD_FEN } from "../../app/const";
-import { buildNotificationExport, notifications } from "../../app/lib/notifications";
+import { buildNotificationExport, clearNotificationHistory, notifications } from "../../app/lib/notifications";
 
 beforeEach(() => {
   clearDebugErrors();
@@ -91,6 +91,26 @@ describe("frontend debug reporting", () => {
       reportDebugError(new Error(`failure ${index}`), { source: "test" });
     expect(debugErrors()).toHaveLength(20);
     expect(JSON.parse(buildDebugBundle()).recentErrors).toHaveLength(10);
+  });
+
+  it.each(["same Error", "same signature"])("quiet debug evidence permits one later authoritative notification (%s)", repeat => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-11T12:00:00Z"));
+    clearNotificationHistory();
+    const failure = new Error("Quiet failure becomes authoritative");
+    const context = { kind: "data-validation" as const, source: "validated-data", endpoint: "/api/repertoires" };
+    const quietRecord = reportDebugError(failure, { ...context, notify: false });
+    expect(notifications()).toEqual([]);
+    const authoritativeFailure = repeat === "same Error" ? failure : new Error(failure.message);
+    expect(reportDebugError(authoritativeFailure, context).id).toBe(quietRecord.id);
+    expect(notifications()).toHaveLength(1);
+    expect(notifications()[0]).toMatchObject({ occurrenceCount: 1, details: { debugRecordId: quietRecord.id } });
+    const publishedHistory = notifications();
+    reportDebugError(authoritativeFailure, context);
+    reportDebugError(new Error(failure.message), context);
+    reportDebugError(new Error(failure.message), { ...context, notify: false });
+    expect(notifications()).toBe(publishedHistory);
+    expect(debugErrors()).toHaveLength(1);
   });
 
   it("does not reuse notification identity after debug module reload", async () => {

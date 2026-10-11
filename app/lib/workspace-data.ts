@@ -120,12 +120,12 @@ export function readWorkspaceData(
       ),
     15_000,
   );
-  if (persisted) notifyWorkspaceData("refreshing", url);
   const entry: { createdAt: number; promise: Promise<unknown>; staleValue?: unknown } = {
     createdAt: Date.now(),
     promise: Promise.resolve(undefined),
     staleValue: persisted?.data,
   };
+  const ownsCacheEntry = () => requests.get(url) === entry;
   const promise = fetch(url, { signal: requestController.signal })
     .then((response) => {
       recordTempoDuration("api-response", performance.now() - requestStartedAt, resource);
@@ -137,17 +137,21 @@ export function readWorkspaceData(
         .json()
         .then((raw: unknown) =>
           url.includes("/api/")
-            ? runStudyTask<unknown>({ kind: "workspace", url, payload: raw })
+            ? runStudyTask<unknown>({ kind: "workspace", url, payload: raw }, undefined, ownsCacheEntry)
             : raw,
         );
     })
     .then((raw) => {
-      const validated = schema ? parseData(schema, raw, url) : raw;
-      entry.staleValue = undefined;
-      if (url.includes("/api/")) requests.delete(url);
-      clearResolvedDiagnostics(url);
-      persist(url, validated);
-      notifyWorkspaceData("ready", url);
+      const validated = schema ? parseData(schema, raw, url, undefined, undefined, ownsCacheEntry) : raw;
+      // Publication is synchronous and authorized before successful API eviction.
+      // Invalidated callers still receive their own validated result.
+      if (ownsCacheEntry()) {
+        entry.staleValue = undefined;
+        clearResolvedDiagnostics(url);
+        persist(url, validated);
+        if (url.includes("/api/")) requests.delete(url);
+        notifyWorkspaceData("ready", url);
+      }
       recordTempoDuration("workspace-data-ready", performance.now() - requestStartedAt, resource);
       return validated;
     })
@@ -157,29 +161,38 @@ export function readWorkspaceData(
         source: "workspace-data",
         operation: "load workspace data",
         endpoint: url,
+        notify: ownsCacheEntry(),
       });
-      requests.delete(url);
-      notifyWorkspaceData("error", url);
+      if (ownsCacheEntry()) {
+        requests.delete(url);
+        notifyWorkspaceData("error", url);
+      }
       throw error;
     })
     .finally(() => clearTimeout(requestTimeout));
   entry.promise = promise;
   requests.set(url, entry);
+  if (persisted) notifyWorkspaceData("refreshing", url);
   if (persisted) {
     void promise.catch(() => undefined);
     try {
       return Promise.resolve(
-        schema ? parseData(schema, persisted.data, url) : persisted.data,
+        schema ? parseData(schema, persisted.data, url, undefined, undefined, ownsCacheEntry) : persisted.data,
       );
     } catch {
-      localStorage.removeItem(`${WORKSPACE_CACHE_PREFIX}${url}`);
+      if (ownsCacheEntry()) localStorage.removeItem(`${WORKSPACE_CACHE_PREFIX}${url}`);
       return promise;
     }
   }
   return promise;
 }
 
-export function invalidateWorkspaceData() {
+export function invalidateWorkspaceData(url?: string) {
+  if (url !== undefined) {
+    requests.delete(url);
+    if (typeof localStorage !== "undefined") localStorage.removeItem(`${WORKSPACE_CACHE_PREFIX}${url}`);
+    return;
+  }
   requests.clear();
   if (typeof localStorage !== "undefined") {
     for (let index = localStorage.length - 1; index >= 0; index--) {

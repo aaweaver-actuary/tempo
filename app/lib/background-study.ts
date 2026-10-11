@@ -5,13 +5,14 @@ import { parseData, reportDataDiagnostic } from "./validated-data";
 import { updateBrowserActivity } from "./browser-activity";
 import { reportDebugError } from "./debug-reporting";
 import { recordTempoDuration } from "./performance";
+import { validateWorkspacePayload } from "../domain/adapters/workspace-adapters";
 
 const runStudyTaskLocally = createStudyPositionStore();
 let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<
   number,
-  { title: string; queuedAt: number; startedAt?: number; resolve: (value: unknown) => void; reject: (error: Error) => void }
+  { title: string; queuedAt: number; startedAt?: number; shouldPublishDiagnostics?: () => boolean; resolve: (value: unknown) => void; reject: (error: Error) => void }
 >();
 
 function failStudyRequests(cause?: unknown): void {
@@ -30,10 +31,11 @@ function failStudyRequests(cause?: unknown): void {
 export function runStudyTask<T>(
   task: StudyTask,
   signal?: AbortSignal,
+  shouldPublishDiagnostics?: () => boolean,
 ): Promise<T> {
   const id = ++nextId;
   const activityId = `study:${id}`;
-  const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind}`;
+  const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind === "repertoireAlternatives" ? "repertoire lines" : task.kind}`;
   updateBrowserActivity(activityId, title, "queued", "Waiting for study worker");
   if (signal?.aborted) {
     updateBrowserActivity(activityId, title, "complete", "Cancelled");
@@ -50,7 +52,9 @@ export function runStudyTask<T>(
           return;
         }
         try {
-          resolve(runStudyTaskLocally(task) as T);
+          resolve((task.kind === "workspace"
+            ? validateWorkspacePayload(task.url, task.payload, shouldPublishDiagnostics)
+            : runStudyTaskLocally(task)) as T);
           updateBrowserActivity(activityId, title, "complete", "Finished");
         } catch (error) {
           updateBrowserActivity(activityId, title, "failed", "Failed", String(error));
@@ -83,13 +87,15 @@ export function runStudyTask<T>(
       updateBrowserActivity(`study:${data.id}`, request.title, "running", "Computing");
       return;
     }
-    for (const issue of data.diagnostics ?? [])
+    for (const issue of data.diagnostics ?? []) {
+      if (request.shouldPublishDiagnostics?.() === false) break;
       reportDataDiagnostic(
         issue.source,
         issue.raw,
         issue.message,
         issue.recordId,
       );
+    }
     pending.delete(data.id);
     if (data.computeMs !== undefined)
       recordTempoDuration("study-worker-compute", data.computeMs);
@@ -127,6 +133,7 @@ export function runStudyTask<T>(
     pending.set(id, {
       title,
       queuedAt: performance.now(),
+      shouldPublishDiagnostics,
       resolve: (value) => {
         signal?.removeEventListener("abort", cancel);
         resolve(value as T);
