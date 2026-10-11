@@ -1,15 +1,21 @@
 import { z } from "zod";
 import { PendingOperationError } from "./operation-status";
 import { prefixTransitionApplySchema, prefixTransitionResultSchema, prefixTransitionSummarySchema,
-  type PrefixTransitionRequest, type PrefixTransitionSummary } from "../domain/prefix-transition";
+  prefixTransitionPlanSchema, transitionRequest, transitionSummary,
+  type PrefixTransitionPlan, type PrefixTransitionRequest, type PrefixTransitionSummary } from "../domain/prefix-transition";
+import { prefixSourceSchema, type PrefixSource } from "../domain/prefix-comparison";
 
 const storagePrefix = "tempo-pending-prefix-transition-v1:";
 const journalLockName = `${storagePrefix}reservation`;
+const approvalSourceSchema = prefixSourceSchema.pick({ repertoire_id: true, snapshot_id: true, graph_generation: true, lines: true });
+const approvalSchema = z.strictObject({ plan: prefixTransitionPlanSchema, source: approvalSourceSchema });
+export type PrefixTransitionApproval = { plan: PrefixTransitionPlan; source: PrefixSource };
 const recordSchema = z.strictObject({ version: z.literal(1), operationId: z.string().min(1), repertoireId: z.string().min(1),
   request: prefixTransitionApplySchema, summary: prefixTransitionSummarySchema,
   state: z.enum(["pending", "transport_unknown", "stale", "blocked", "failed", "published"]),
   message: z.string().optional(), transitionPhase: z.string().optional(), failureCode: z.string().optional(),
   result: prefixTransitionResultSchema.optional(), journalMissing: z.boolean().optional(),
+  approval: approvalSchema.optional(),
 });
 export type PrefixTransitionOperation = z.infer<typeof recordSchema>;
 export type PrefixTransitionRecoveryIssue = { code: "journal_missing" | "storage_unavailable" | "serialization_unavailable"; message: string };
@@ -40,7 +46,34 @@ export function subscribePrefixTransitions(listener: () => void) {
 }
 function matchingIdentity(first: PrefixTransitionOperation, second: PrefixTransitionOperation) {
   return first.operationId === second.operationId && first.repertoireId === second.repertoireId
-    && JSON.stringify(first.request) === JSON.stringify(second.request) && JSON.stringify(first.summary) === JSON.stringify(second.summary);
+    && JSON.stringify(first.request) === JSON.stringify(second.request) && JSON.stringify(first.summary) === JSON.stringify(second.summary)
+    && JSON.stringify(first.approval) === JSON.stringify(second.approval);
+}
+function validateApproval(operation: PrefixTransitionOperation) {
+  if (!operation.approval) return;
+  const { plan, source } = operation.approval;
+  if (plan.status !== "ready" || plan.blockers.length || plan.repertoire_id !== operation.repertoireId
+    || source.repertoire_id !== operation.repertoireId || source.snapshot_id !== plan.snapshot_id
+    || source.graph_generation !== plan.graph_generation) throw new Error("Mismatched reviewed planner evidence");
+  const changes = new Map(plan.depth_changes.map(change => [change.line_id, change]));
+  if (changes.size !== plan.depth_changes.length || [...changes.keys()].some(id => !plan.selected_line_ids.includes(id)))
+    throw new Error("Mismatched reviewed depth changes");
+  const candidateDepths = Object.fromEntries(plan.selected_line_ids.map(id => {
+    const route = source.lines.find(line => line.id === id); const change = changes.get(id);
+    if (!route || (change && (change.before !== route.saved_depth || change.after >= change.before)))
+      throw new Error("Mismatched reviewed source depth");
+    return [id, change?.after ?? route.saved_depth];
+  }));
+  const orderedDepths = (depths: Record<string, number>) => Object.fromEntries(Object.entries(depths).sort(([first], [second]) => first.localeCompare(second)));
+  const expectedRequest = transitionRequest(plan, candidateDepths);
+  if (JSON.stringify({ ...expectedRequest, candidate_depths: orderedDepths(expectedRequest.candidate_depths) })
+    !== JSON.stringify({ ...operation.request, candidate_depths: orderedDepths(operation.request.candidate_depths) })
+    || JSON.stringify(transitionSummary(plan, source, operation.summary.repertoireName)) !== JSON.stringify(operation.summary))
+    throw new Error("The saved request or scope differs from its reviewed planner evidence");
+}
+export function hasCompletePrefixTransitionScopeEvidence(operation: PrefixTransitionOperation) {
+  if (!operation.approval) return false;
+  try { validateApproval(operation); return true; } catch { return false; }
 }
 export function verifiedPrefixPublication(operation: PrefixTransitionOperation) {
   const result = operation.result;
@@ -58,6 +91,7 @@ export function readPersistedPrefixTransition(repertoireId: string): PrefixTrans
   if (stored === null) return null;
   try {
     const operation = recordSchema.parse(JSON.parse(stored));
+    validateApproval(operation);
     if (operation.repertoireId !== repertoireId || !operation.summary.affectedRepertoireIds.includes(repertoireId)
       || JSON.stringify(operation.request.selected_line_ids) !== JSON.stringify(operation.summary.routes.map(route => route.id))) throw new Error("Mismatched scope");
     const known = knownOperations.get(repertoireId);
@@ -166,10 +200,10 @@ export async function savePrefixTransitionOperation(proposed: PrefixTransitionOp
     throw failure;
   }
 }
-export function beginPrefixTransition(repertoireId: string, request: PrefixTransitionRequest, summary: PrefixTransitionSummary, signal?: AbortSignal) {
-  return reservePrefixTransition(repertoireId, request, summary, signal);
+export function beginPrefixTransition(repertoireId: string, request: PrefixTransitionRequest, summary: PrefixTransitionSummary, signal?: AbortSignal, approval?: PrefixTransitionApproval) {
+  return reservePrefixTransition(repertoireId, request, summary, signal, approval);
 }
-export function reservePrefixTransition(repertoireId: string, request: PrefixTransitionRequest, summary: PrefixTransitionSummary, signal?: AbortSignal): Promise<PrefixTransitionOperation> {
+export function reservePrefixTransition(repertoireId: string, request: PrefixTransitionRequest, summary: PrefixTransitionSummary, signal?: AbortSignal, approval?: PrefixTransitionApproval): Promise<PrefixTransitionOperation> {
   return withPrefixTransitionJournalLock(signal, () => {
     const previous = readPrefixTransition(repertoireId);
     if (previous) {
@@ -178,10 +212,15 @@ export function reservePrefixTransition(repertoireId: string, request: PrefixTra
       return previous;
     }
     const overlapping = savedPrefixTransitions().find(operation => unresolvedPrefixTransition(operation)
-      && effectivePrefixTransitionScope(operation).some(id => [repertoireId, ...summary.affectedRepertoireIds].includes(id)));
+      && (!hasCompletePrefixTransitionScopeEvidence(operation) || effectivePrefixTransitionScope(operation).some(id => [repertoireId, ...summary.affectedRepertoireIds].includes(id))));
     if (overlapping) throw new PendingOperationError(overlapping.operationId, "Resolve the prefix transition affecting this repertoire before confirming another.");
     if (!summary.affectedRepertoireIds.includes(repertoireId)) throw new Error("The approved scope omits its target repertoire.");
-    const operation = recordSchema.parse({ version: 1, operationId: crypto.randomUUID(), repertoireId, request, summary, state: "pending" });
+    const proposed = recordSchema.parse({ version: 1, operationId: "reservation-not-yet-allocated", repertoireId, request, summary, state: "pending",
+      ...(approval ? { approval: { plan: approval.plan, source: { repertoire_id: approval.source.repertoire_id,
+        snapshot_id: approval.source.snapshot_id, graph_generation: approval.source.graph_generation,
+        lines: approval.plan.selected_line_ids.map(id => approval.source.lines.find(line => line.id === id)) } } } : {}) });
+    validateApproval(proposed);
+    const operation = { ...proposed, operationId: crypto.randomUUID() };
     // Remember an allocated identity even if browser persistence rejects it.
     knownOperations.set(repertoireId, operation);
     try { localStorage.setItem(storageKey(operation.repertoireId), JSON.stringify(operation)); }
@@ -226,7 +265,7 @@ export function readPrefixStructuralAdmission(scope: StructuralMutationScope): {
   if (!hasPrefixTransitionJournalLocks()) return { paused: true, reason: lockUnavailableMessage };
   try {
     const unresolved = savedPrefixTransitions().filter(unresolvedPrefixTransition);
-    const conflict = unresolved.find(operation => !scope.scopeComplete || !scope.repertoireIds.length
+    const conflict = unresolved.find(operation => !hasCompletePrefixTransitionScopeEvidence(operation) || !scope.scopeComplete || !scope.repertoireIds.length
       || effectivePrefixTransitionScope(operation).some(id => scope.repertoireIds.includes(id)));
     if (conflict) return { paused: true, reason: prefixTransitionRecoveryIssue(conflict.repertoireId)?.message ?? "Resolve the prefix transition affecting this repertoire before changing its structure." };
     return { paused: false };

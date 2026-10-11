@@ -8,6 +8,16 @@ persisted ownership while holding the lock; absent or replaced owners cannot
 write. Matching verified publication is absorbing and retains its exact result.
 Intermediate pending/blocked/retrying states have no arbitrary rank.
 
+New confirmations retain optional V1 `approval` evidence: the original reviewed
+planner response plus its source target/snapshot/generation and selected routes.
+Reservation validates the frozen apply request and exact summary against that
+evidence before allocating an ID. A stored request/scope mismatch is unreadable,
+including a valid-shape summary that omits shared ownership. Historical V1 records
+without evidence remain recoverable under their original ID, but their unresolved
+scope is incomplete: independent-looking structural work and new independent
+reservations remain paused. `hasCompletePrefixTransitionScopeEvidence` exposes
+this distinction. Do not populate missing approval evidence from a fresh plan.
+
 The shared interface is
 `withPrefixTransitionJournalLock<T>(signal, criticalSection): Promise<T>`.
 The callback performs bounded synchronous ownership/admission work; it must not

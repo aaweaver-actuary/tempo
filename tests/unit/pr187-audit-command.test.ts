@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import fixture from '../fixtures/prefix-comparison/transition.json';
 import structural from '../fixtures/prefix-comparison/structural.json';
 import { prefixSourceSchema } from '../../app/domain/prefix-comparison';
-import { prefixTransitionPlanSchema, prefixTransitionApplySchema, transitionSummary } from '../../app/domain/prefix-transition';
+import { prefixTransitionPlanSchema, prefixTransitionApplySchema, transitionRequest, transitionSummary } from '../../app/domain/prefix-transition';
 import { beginPrefixTransition, readPrefixTransition, recoverPrefixTransition, restorePrefixTransitionJournal, effectivePrefixTransitionScope, knownPrefixTransitions, type PrefixTransitionOperation } from '../../app/lib/prefix-transition-command';
 const request = prefixTransitionApplySchema.parse(fixture.request);
 const summary = transitionSummary(prefixTransitionPlanSchema.parse(fixture.ready), prefixSourceSchema.parse(structural.source), 'Audit repertoire');
@@ -256,10 +256,12 @@ it.each(['empty','depths','duplicate'])('audit187_invalid_%s_journal_fails_close
  expect(()=>readPrefixTransition('rep')).toThrow(/unreadable/);expect(knownPrefixTransitions()[0].operationId).toBe(original.operationId);
 });
 it('audit187_missing_journal_keeps_shared_scope_and_new_unrelated_operations_work', async () =>{
- const original=await beginPrefixTransition('rep',request,{...summary,affectedRepertoireIds:['rep','shared']});localStorage.removeItem(key);
- await expect(beginPrefixTransition('shared',request,{...summary,affectedRepertoireIds:['shared']})).rejects.toThrow(/Resolve/);
- expect((await beginPrefixTransition('rep',request,original.summary)).operationId).toBe(original.operationId);
- expect((await beginPrefixTransition('other',request,{...summary,affectedRepertoireIds:['other']})).operationId).not.toBe(original.operationId);
+ const plan=prefixTransitionPlanSchema.parse(fixture.shared);const source=prefixSourceSchema.parse(structural.source);
+ const approvedRequest=transitionRequest(plan,request.candidate_depths);const approvedSummary=transitionSummary(plan,source,'Audit repertoire');
+ const original=await beginPrefixTransition('rep',approvedRequest,approvedSummary,undefined,{plan,source});localStorage.removeItem(key);
+ await expect(beginPrefixTransition('other',request,{...summary,affectedRepertoireIds:['other']})).rejects.toThrow(/Resolve/);
+ expect((await beginPrefixTransition('rep',approvedRequest,original.summary)).operationId).toBe(original.operationId);
+ expect((await beginPrefixTransition('independent',request,{...summary,affectedRepertoireIds:['independent']})).operationId).not.toBe(original.operationId);
 });
 it('audit187_failed_completion_write_retains_verified_in_memory_evidence',async()=>{
  const original=await reserve();vi.stubGlobal('fetch',vi.fn<typeof fetch>(async()=>receipt(original)));

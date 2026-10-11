@@ -2,10 +2,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import transition from "../fixtures/prefix-comparison/transition.json";
 import structural from "../fixtures/prefix-comparison/structural.json";
 import { prefixSourceSchema } from "../../app/domain/prefix-comparison";
-import { prefixTransitionApplySchema, prefixTransitionPlanSchema, transitionSummary } from "../../app/domain/prefix-transition";
+import { prefixTransitionApplySchema, prefixTransitionPlanSchema, transitionRequest, transitionSummary } from "../../app/domain/prefix-transition";
 import { beginPrefixTransition, clearResolvedPrefixTransition, readPrefixTransition, recoverPrefixTransition, reservePrefixTransition,
   knownPrefixTransitions, prefixTransitionRecoveryIssue, readPrefixStructuralAdmission, admitPrefixStructuralMutation,
-  withPrefixTransitionJournalLock, type PrefixTransitionOperation } from "../../app/lib/prefix-transition-command";
+  withPrefixTransitionJournalLock, resetPrefixTransitionSessionForTests, type PrefixTransitionOperation } from "../../app/lib/prefix-transition-command";
 import { installPrefixTransitionTestLocks } from "./support/prefix-transition-locks";
 
 const request = prefixTransitionApplySchema.parse(transition.request);
@@ -185,3 +185,35 @@ it("audit187_all_journal_writes_share_structural_admission_lock", async () => {
   expect(lockRequests.mock.calls).toHaveLength(4);
   expect(new Set(lockRequests.mock.calls.map(([name]) => name))).toEqual(new Set(["tempo-pending-prefix-transition-v1:reservation"]));
 });
+it("audit187_legacy_scope_without_planner_evidence_blocks_independent_mutation", async () => {
+  const original = await begin();
+  expect(readPrefixStructuralAdmission({ repertoireIds: ["independent"], scopeComplete: true }).paused).toBe(true);
+  await expect(beginPrefixTransition("independent", request, { ...summary, affectedRepertoireIds: ["independent"] })).rejects.toThrow(/Resolve/);
+  expect(readPrefixTransition("rep")?.operationId).toBe(original.operationId);
+});
+it("audit187_reviewed_planner_evidence_allows_truly_independent_scope", async () => {
+  const plan = prefixTransitionPlanSchema.parse(transition.ready); const source = prefixSourceSchema.parse(structural.source);
+  await beginPrefixTransition("rep", request, summary, undefined, { plan, source });
+  expect(readPrefixStructuralAdmission({ repertoireIds: ["independent"], scopeComplete: true }).paused).toBe(false);
+  expect(readPrefixStructuralAdmission({ repertoireIds: ["rep"], scopeComplete: true }).paused).toBe(true);
+});
+it("audit187_stored_planner_evidence_rejects_valid_shape_omitted_shared_scope_after_reload", async () => {
+  const plan = prefixTransitionPlanSchema.parse(transition.shared); const source = prefixSourceSchema.parse(structural.source);
+  const approvedSummary = transitionSummary(plan, source, "Combined Black");
+  const operation = await beginPrefixTransition("rep", transitionRequest(plan, request.candidate_depths), approvedSummary, undefined, { plan, source });
+  expect(approvedSummary.affectedRepertoireIds).toContain("other");
+  localStorage.setItem(key, JSON.stringify({ ...operation, summary: { ...approvedSummary, affectedRepertoireIds: ["rep"] } }));
+  resetPrefixTransitionSessionForTests(); // A new page loses memory; the retained approval must prove its own scope.
+  expect(() => readPrefixTransition("rep")).toThrow(/unreadable/);
+  expect(readPrefixStructuralAdmission({ repertoireIds: ["independent"], scopeComplete: true }).paused).toBe(true);
+});
+it.each(["snapshot_id", "transition_snapshot_id", "graph_generation", "plan_id", "candidate_depths", "affected_scope"])(
+  "audit187_reviewed_planner_evidence_rejects_mismatched_%s_before_identity", async changed => {
+    const plan = prefixTransitionPlanSchema.parse(transition.ready); const source = prefixSourceSchema.parse(structural.source);
+    const changedRequest = { ...request, ...(changed === "candidate_depths" ? { candidate_depths: { a: 1, b: 2 } }
+      : changed === "affected_scope" ? {} : { [changed]: changed === "graph_generation" ? 3 : "different-approved-identity" }) };
+    const changedSummary = changed === "affected_scope" ? { ...summary, affectedRepertoireIds: ["rep", "unreviewed"] } : summary;
+    const allocate = vi.spyOn(crypto, "randomUUID");
+    await expect(beginPrefixTransition("rep", changedRequest, changedSummary, undefined, { plan, source })).rejects.toThrow(/reviewed|evidence/);
+    expect(allocate).not.toHaveBeenCalled(); expect(localStorage.getItem(key)).toBeNull();
+  });

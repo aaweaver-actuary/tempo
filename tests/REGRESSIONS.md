@@ -4110,3 +4110,8 @@ Journal capability and recovery boundary follow-ups:
 - `tests/runner/ci-reliability.test.mjs::audit187_native_journal_spec_is_required_in_complete_repertoire_family` reproduces the initially unclassified spec and requires its regular repertoire-family, nightly and release selection. Inventory registration adds coverage; unknown specs still fail planning.
 
 - `audit187_published_comparison_waits_for_clear_before_changing_recovery_props` queues native-style clearing after verified publication. The comparison must complete that clear before updating source/selection props that restart the recovery effect; it preserves one delivery and requires refreshed results plus an absent resolved journal. The pre-fix controlled schedule failed, matching the real phone/desktop refresh stalls.
+
+- `audit187_legacy_scope_without_planner_evidence_blocks_independent_mutation` fails on the pre-evidence journal and keeps historical unresolved V1 records status-recoverable while withholding independent-scope admission.
+- `audit187_reviewed_planner_evidence_allows_truly_independent_scope` permits a genuinely independent repertoire only with consistent original approval evidence.
+- `audit187_reviewed_planner_evidence_rejects_mismatched_{snapshot_id,transition_snapshot_id,graph_generation,plan_id,candidate_depths,affected_scope}_before_identity` binds the original reviewed planner/source to the frozen request and exact scope before UUID allocation.
+- `audit187_stored_planner_evidence_rejects_valid_shape_omitted_shared_scope_after_reload` resets session memory and rejects a still-targeted summary that omits a membership present in its saved reviewed planner. The immutable approval is retained; no fresh plan reconstruction is used.
