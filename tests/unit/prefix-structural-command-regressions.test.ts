@@ -212,3 +212,17 @@ for (const field of ["snapshot_id", "transition_snapshot_id", "plan_id", "graph_
     expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBeNull();
   });
 }
+
+for (const unavailableChannel of ["missing", "constructor_error"] as const) {
+  it(`issue81_${unavailableChannel}_storage_publication_channel_suppresses_request_and_identity`, async () => {
+    localStorage.removeItem(prefixKey);
+    vi.stubGlobal("MessageChannel", unavailableChannel === "missing" ? undefined : class {
+      constructor() { throw new Error("Browser messaging unavailable"); }
+    });
+    const fetcher = vi.fn(async () => Response.json({ deleted: true, id: "rep" }));
+    vi.stubGlobal("fetch", fetcher);
+    await deleteRepertoireCommand("rep").catch(() => undefined);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBeNull();
+  });
+}
