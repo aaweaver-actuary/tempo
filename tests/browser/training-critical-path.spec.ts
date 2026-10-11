@@ -291,6 +291,22 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       expect((await replay.json()).prepared_continuation?.card_id).toContain("-prepared-001");
       expect(JSON.parse(fixture("verify"))).toMatchObject({ reviews: transitionCount, complete_evidence: transitionCount, completion_events: expectedEvents });
     }
+  } catch (error) {
+    // The fixture closes its page before the shared failure-evidence hook runs.
+    // Capture this boundary first so setup failures retain actionable evidence.
+    const readinessBoundary = await page.evaluate(() => ({
+      activeQueueEntry: document.querySelector("#train")?.getAttribute("data-queue-entry-id"),
+      inputEnabled: document.querySelector(".board-frame")?.getAttribute("data-input-enabled"),
+      queueProcessing: performance.getEntriesByName("tempo.queue.processing").map(entry => ({ duration: entry.duration,
+        generation: Reflect.get(entry, "detail")?.generation })),
+      notifications: document.querySelectorAll(".notification-toast").length,
+      crossOriginIsolated: window.crossOriginIsolated,
+    })).catch(() => ({ pageUnavailable: true }));
+    await testInfo.attach("training-readiness-boundary", { body: JSON.stringify(readinessBoundary),
+      contentType: "application/json" }).catch(() => undefined);
+    await testInfo.attach("training-readiness-screen", { body: await page.screenshot().catch(() => Buffer.alloc(0)),
+      contentType: "image/png" }).catch(() => undefined);
+    throw error;
   } finally {
     await page.evaluate(() => (Reflect.get(window, "releaseMeasuredRecovery") as (() => void) | undefined)?.()).catch(() => undefined);
     await page.close();
