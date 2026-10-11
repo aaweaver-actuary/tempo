@@ -333,7 +333,10 @@ test("audit187_storage_event_preserves_prefix_identity_and_guard across browser 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("button", { name: "Restore saved recovery record" })).toBeEnabled();
     await dialog.getByRole("button", { name: "Restore saved recovery record" }).click();
-    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-transition-v1:rep")!).operationId)).toBe(operationId);
+    await expect.poll(() => page.evaluate(() => {
+      const restoredRecord = localStorage.getItem("tempo-pending-prefix-transition-v1:rep");
+      return restoredRecord === null ? null : JSON.parse(restoredRecord).operationId;
+    })).toBe(operationId);
     expect(methods.length).toBeGreaterThan(0); expect(methods.every(method => method === "GET")).toBe(true);
   } finally { await storageWriter.close(); }
 });
