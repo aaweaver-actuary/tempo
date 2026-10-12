@@ -88,7 +88,7 @@ test("issue190_native_bulk_abort_releases_capacity_preserves_retained_indexes_an
       first_correct_at: null, start_fen: startFen, moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening",
       repertoire_name: "Public foreground", repertoire_source: "synthetic", trained_color: "white", revision: 1 }));
     const foregroundRepertoires = Array.from({ length: 10 }, (_, index) => ({ id: `foreground-${index}`,
-      name: "Public foreground", source_name: "synthetic", created_at: "2026-09-18", line_count: 826, card_count: 100, due_count: 20 }));
+      name: "Public foreground", source_name: "synthetic", created_at: "2026-09-18T00:00:00Z", line_count: 826, card_count: 100, due_count: 20 }));
     const foregroundPuzzles = Array.from({ length: 8 }, (_, index) => ({ DeckId: "public-tactics", DeckPosition: index + 1,
       PuzzleId: `public-${index}`, FEN: startFen, Moves: "e2e4 e7e5 g1f3", Rating: 1500 }));
     const tasks = {
