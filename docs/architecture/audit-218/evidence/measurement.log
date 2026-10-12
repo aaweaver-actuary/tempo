@@ -1,0 +1,375 @@
+Starting condition cpu
+time="2026-10-12T11:55:09-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:09-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:09-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:09-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-5705d1ae23e1 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-5705d1ae23e1 Created 
+time="2026-10-12T11:55:23-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:23-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:23-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:23-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-3f9dad2c4690 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-3f9dad2c4690 Created 
+time="2026-10-12T11:55:26-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:26-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:26-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:26-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-ef5e2acbc1f2 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-ef5e2acbc1f2 Created 
+time="2026-10-12T11:55:42-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:42-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:42-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:55:42-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-acc5ad209517 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-acc5ad209517 Created 
+time="2026-10-12T11:56:13-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:13-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:13-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:13-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-00877775797d Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-00877775797d Created 
+time="2026-10-12T11:56:20-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:20-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:20-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:20-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-f34c424a0968 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-f34c424a0968 Created 
+time="2026-10-12T11:56:23-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:23-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:23-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:23-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-b07b23a8dfff Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-b07b23a8dfff Created 
+time="2026-10-12T11:56:29-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:29-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:29-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:29-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-a6b30231b991 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-a6b30231b991 Created 
+Starting condition database
+time="2026-10-12T11:56:51-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:51-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:51-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:56:51-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-5256e8656d9b Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-5256e8656d9b Created 
+time="2026-10-12T11:57:00-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:00-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:00-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:00-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-3ad709f32a5b Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-3ad709f32a5b Created 
+time="2026-10-12T11:57:03-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:03-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:03-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:03-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-b955959ad80d Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-b955959ad80d Created 
+time="2026-10-12T11:57:12-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:12-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:12-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:12-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-4ea5886734e9 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-4ea5886734e9 Created 
+time="2026-10-12T11:57:35-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:35-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:35-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:35-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-93602240ab7c Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-93602240ab7c Created 
+time="2026-10-12T11:57:44-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:44-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:44-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:44-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-4892f84456d5 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-4892f84456d5 Created 
+time="2026-10-12T11:57:47-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:47-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:47-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:47-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-e1196c14bbab Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-e1196c14bbab Created 
+time="2026-10-12T11:57:57-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:57-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:57-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:57:57-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-453e1c2a5a5a Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-453e1c2a5a5a Created 
+Starting condition optional_stopped
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Exited 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Exited 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Exited 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Exited 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Started 
+Starting condition study_only
+Starting condition redis_delayed
+Starting condition cancelled_cpu
+time="2026-10-12T12:04:05-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:05-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:05-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:05-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-bbe1b3f0523b Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-bbe1b3f0523b Created 
+time="2026-10-12T12:04:07-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:07-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:07-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:07-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-86f2b6232334 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-86f2b6232334 Created 
+time="2026-10-12T12:04:20-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:20-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:20-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:20-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-d34134729617 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-d34134729617 Created 
+time="2026-10-12T12:04:22-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:22-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:22-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:22-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-14044dbf91e5 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-14044dbf91e5 Created 
+time="2026-10-12T12:04:57-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:57-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:57-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:57-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-ad7a7af6a95f Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-ad7a7af6a95f Created 
+time="2026-10-12T12:04:58-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:58-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:58-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:04:58-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-e69b9f1bf370 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-e69b9f1bf370 Created 
+time="2026-10-12T12:05:09-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:09-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:09-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:09-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-3b0630207220 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-3b0630207220 Created 
+time="2026-10-12T12:05:10-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:10-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:10-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:10-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-6d59d2d51725 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-6d59d2d51725 Created 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Started 
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-e3418b23cf29 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-e3418b23cf29 Created 
+{"reviews": 2411, "distinct_review_cards": 2411, "logical_receipts": 2411}
+
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:35-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-2331cbe86c0e Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-2331cbe86c0e Created 
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS additive_migration_47_preserves_schema46_settings_and_replays
+PASS study_only_toggle_persists_and_omitted_field_preserves_value
+PASS study_only_mode_verifies_non_expected_move_from_saved_sources_without_bulk_preparation
+PASS superseded_queue_head_does_not_block_eligible_successor
+PASS deleted_queue_head_is_excluded_from_payload_and_count
+PASS study_only_mode_preserves_foreground_review_and_queue_progression
+PASS study_only_mode_preserves_receipts_and_idempotent_replay
+PASS study_only_mode_pauses_optional_work_and_resumes_after_restart
+
+(node:27504) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopping 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Stopped 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Stopped 
+time="2026-10-12T12:05:45-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:45-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:45-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:45-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-33e1c306dc84 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-33e1c306dc84 Created 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Exited 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Started 
+time="2026-10-12T12:05:57-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:57-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:57-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:05:57-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-58d214e7cc1f Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-58d214e7cc1f Created 
+time="2026-10-12T12:06:01-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:01-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:01-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:01-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-b6ef364ab814 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-b6ef364ab814 Created 
+time="2026-10-12T12:06:04-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:04-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:04-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:04-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-624c0bb54a7e Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-624c0bb54a7e Created 
+time="2026-10-12T12:06:07-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:07-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:07-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:07-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-06cd637936b8 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-06cd637936b8 Created 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Restarting 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Restarting 
+ Container tempo-pg-regressions-21800-a2182026-foreground-worker-1 Restarting 
+ Container tempo-pg-regressions-21800-a2182026-background-scheduler-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-foreground-worker-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Started 
+time="2026-10-12T12:06:16-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:16-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:16-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:16-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-90e07924c781 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-90e07924c781 Created 
+time="2026-10-12T12:06:21-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:21-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:21-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:21-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-275a8851c0a0 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-275a8851c0a0 Created 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-postgres-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Waiting 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-redis-1 Healthy 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Exited 
+ Container tempo-pg-regressions-21800-a2182026-schema-1 Exited 
+time="2026-10-12T12:06:29-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:29-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:29-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:29-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-1e5bd3953057 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-1e5bd3953057 Created 
+
+Running 1 test using 1 worker
+
+  ✓  1 [chromium] › tests/browser/study-only-mode.spec.ts:8:1 › study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption (1.1m)
+
+  1 passed (1.1m)
+
+time="2026-10-12T12:06:47-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:47-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:47-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:06:47-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-foreground-worker-1 Recreate 
+ Container tempo-pg-regressions-21800-a2182026-api-1 Recreate 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Recreate 
+ Container tempo-pg-regressions-21800-a2182026-api-1 Recreated 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Recreated 
+ Container tempo-pg-regressions-21800-a2182026-foreground-worker-1 Recreated 
+ Container tempo-pg-regressions-21800-a2182026-api-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-foreground-worker-1 Starting 
+ Container tempo-pg-regressions-21800-a2182026-api-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-background-worker-1 Started 
+ Container tempo-pg-regressions-21800-a2182026-foreground-worker-1 Started 
+time="2026-10-12T12:07:01-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:07:01-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:07:01-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:07:01-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-182205770a2a Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-182205770a2a Created 
+time="2026-10-12T12:07:06-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:07:06-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:07:06-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T12:07:06-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-4e2287ab64a2 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-4e2287ab64a2 Created 

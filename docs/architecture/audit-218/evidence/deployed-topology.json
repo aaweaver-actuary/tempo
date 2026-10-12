@@ -1,0 +1,153 @@
+[
+  {
+    "service": "postgres-backup",
+    "container_id": "18d25e613b1e27c4eb9ba2776578487505a0d5743c83d2d2938d376c0f1e3ce9",
+    "image_id": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+    "command": [
+      "while :; do\n  stamp=$(date -u +%Y%m%dT%H%M%SZ)\n  partial=/backups/tempo-${stamp}.dump.partial\n  finished=/backups/tempo-${stamp}.dump\n  pg_dump -h postgres -U tempo -d tempo -Fc -f \"${partial}\"\n  pg_restore -l \"${partial}\" >/dev/null\n  mv \"${partial}\" \"${finished}\"\n  sha256sum \"${finished}\" > \"${finished}.sha256\"\n  find /backups -name 'tempo-*.dump' -mtime +30 -delete\n  find /backups -name 'tempo-*.dump.sha256' -mtime +30 -delete\n  sleep 86400\ndone\n"
+    ],
+    "cpu_nanos": 0,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": null
+  },
+  {
+    "service": "defense-engine",
+    "container_id": "869a47cfafb9c3dbe3ff9f6c820addacaa94c54b0267cb72f0bd82eb2505f2ee",
+    "image_id": "sha256:64dda429b7a1e096ba95631579b01599d017fe5bc5902081c52cb04df5209804",
+    "command": [
+      "node",
+      "scripts/defense-engine-worker.mjs"
+    ],
+    "cpu_nanos": 1000000000,
+    "memory_bytes": 536870912,
+    "pool_size_override": [],
+    "revision": "81cad1cb33817484db5d5ce2d80b3286d178d021"
+  },
+  {
+    "service": "maia-worker",
+    "container_id": "ed70fb6348786006ca3c36b67ebb322ac4871c577ef744465bb07735126e80f4",
+    "image_id": "sha256:d1cc5479bda4875487465ea9cd21dc9990ec8b2d58af5600c6a0990ac098e779",
+    "command": [
+      "node",
+      "scripts/maia-coverage-worker.mjs"
+    ],
+    "cpu_nanos": 1000000000,
+    "memory_bytes": 805306368,
+    "pool_size_override": [],
+    "revision": "81cad1cb33817484db5d5ce2d80b3286d178d021"
+  },
+  {
+    "service": "web",
+    "container_id": "d42ce619c2da3a5cc89bf2f915b332015d08265eaf570015be34ec21aeceb505",
+    "image_id": "sha256:52fb2104e06eb9edbd2a3403f1503ab0a529c4867badcdaf333108803238b2e8",
+    "command": [
+      "nginx",
+      "-g",
+      "daemon off;"
+    ],
+    "cpu_nanos": 0,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": "81cad1cb33817484db5d5ce2d80b3286d178d021"
+  },
+  {
+    "service": "background-worker",
+    "container_id": "f2b5548118130e0b0caa7b6d6f2f96ce8225efb03817f16b75d8b19dc33a0a6a",
+    "image_id": "sha256:b9debf85ab9b62b96d066560568cc3c3138f988ed4da586c49e652e3cbf3d7a2",
+    "command": [
+      "celery",
+      "-A",
+      "app.celery_app:celery_app",
+      "worker",
+      "--queues=background",
+      "--concurrency=1",
+      "--prefetch-multiplier=1",
+      "--loglevel=INFO"
+    ],
+    "cpu_nanos": 1000000000,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": "81cad1cb33817484db5d5ce2d80b3286d178d021"
+  },
+  {
+    "service": "background-scheduler",
+    "container_id": "fcd48bbc494204f2cefd4c3add56c2f1b81be8836d91ebecc54034747154a13e",
+    "image_id": "sha256:c5e4dcb1402482d1490ce4ed0f489a2e98b6fcec7127e1f4537418f8ef541f8d",
+    "command": [
+      "celery",
+      "-A",
+      "app.celery_app:celery_app",
+      "beat",
+      "--loglevel=INFO"
+    ],
+    "cpu_nanos": 0,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": "81cad1cb33817484db5d5ce2d80b3286d178d021"
+  },
+  {
+    "service": "api",
+    "container_id": "f7b207b02bd00b6101a8f5c106c656c33c866b69b1625c91ae5b67e2d6b6c4b2",
+    "image_id": "sha256:7ddcdf321cb28e3d24c2e98a7719689d0c4460439744f0965e26562c8fbd1ccf",
+    "command": [
+      "uvicorn",
+      "app.main:app",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8000"
+    ],
+    "cpu_nanos": 0,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": "81cad1cb33817484db5d5ce2d80b3286d178d021"
+  },
+  {
+    "service": "foreground-worker",
+    "container_id": "469149371eed9f6332daa126c9ed3882dc82205ae78e3ca85db80e736bad5437",
+    "image_id": "sha256:80e2f2c9ebf03d623f0aec6225ff1886a2a181b796d8df09ad1bb5a664924a4d",
+    "command": [
+      "celery",
+      "-A",
+      "app.celery_app:celery_app",
+      "worker",
+      "--queues=foreground",
+      "--concurrency=2",
+      "--prefetch-multiplier=1",
+      "--loglevel=INFO"
+    ],
+    "cpu_nanos": 0,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": "81cad1cb33817484db5d5ce2d80b3286d178d021"
+  },
+  {
+    "service": "postgres",
+    "container_id": "7b1d529d856b177d920d66428ff6291a8e1dd35afb048d798e439befa8aa8562",
+    "image_id": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+    "command": [
+      "postgres"
+    ],
+    "cpu_nanos": 0,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": null
+  },
+  {
+    "service": "redis",
+    "container_id": "4c10fd56bfc39419aa3517fd6bde3b60b46382158fbfb30c20afbf44a78edd81",
+    "image_id": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+    "command": [
+      "redis-server",
+      "--appendonly",
+      "yes",
+      "--appendfsync",
+      "everysec"
+    ],
+    "cpu_nanos": 0,
+    "memory_bytes": 0,
+    "pool_size_override": [],
+    "revision": null
+  }
+]

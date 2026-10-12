@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "<local-home>/tempo/.dev-copies/audit-218-resource-isolation/docs/architecture/audit-218/runtime.py", line 122, in <module>
+    compose('down','--volumes','--remove-orphans',output='audit-down.log',check=False,timeout=180)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<local-home>/tempo/.dev-copies/audit-218-resource-isolation/docs/architecture/audit-218/runtime.py", line 113, in measure
+    if result.returncode: raise RuntimeError('Measurement failed; inspect measurement.log')
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Measurement failed; inspect measurement.log

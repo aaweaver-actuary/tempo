@@ -1,0 +1,198 @@
+api-1  | INFO:     Started server process [1]
+api-1  | INFO:     Waiting for application startup.
+api-1  | INFO:     Application startup complete.
+api-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+api-1  | INFO:     127.0.0.1:35780 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     172.19.0.1:55056 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:40520 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | training_timing {"label": "queue-window", "trace": "e3b0c44298fc1c14", "started_epoch_ms": 1791823260983.8823, "stages_ms": {"foreground_admission": 2.222457999977223}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.04187499999375177, "execution_ms": 192.4849170000016, "commit_cleanup_ms": 0.3898330000140504, "commit_observed_epoch_ms": 1791823261181.2285, "commit_epoch_ms": 1791823261181.1775, "commit_ms": 0.3352500000062264}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.028874999998151907, "execution_ms": 1.9970419999992828, "commit_cleanup_ms": 0.2182080000068254, "commit_observed_epoch_ms": 1791823261183.5168, "commit_epoch_ms": 1791823261183.4922, "commit_ms": 0.1934580000124697}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.04837500000576256, "execution_ms": 0.9424170000045251, "commit_cleanup_ms": 0.15525000000593536, "commit_observed_epoch_ms": 1791823261241.774, "commit_epoch_ms": 1791823261241.7498, "commit_ms": 0.1289580000047863}], "sql_count": 7, "sql_ms": 168.26770899999133, "duration_ms": 258.91362499999104}
+api-1  | INFO:     172.19.0.1:58868 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1  | request path=/api/cards/audit-card-00001/review class=foreground duration_ms=300.3
+api-1  | training_timing {"label": "review-request", "trace": "0eb2668dbfec4c63", "started_epoch_ms": 1791823261245.587, "stages_ms": {"foreground_admission": 0.23933299999612245}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.04400000000259752, "execution_ms": 0.4745419999778733, "commit_cleanup_ms": 0.11616600002639643, "commit_observed_epoch_ms": 1791823261545.3638, "commit_epoch_ms": 1791823261545.3428, "commit_ms": 0.09362500000520413}], "sql_count": 1, "sql_ms": 0.419375000006994, "duration_ms": 300.60975000000667}
+api-1  | INFO:     172.19.0.1:58874 - "POST /api/cards/audit-card-00001/review HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:40524 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:40534 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:37506 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:37508 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:47516 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:47520 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:47536 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:56754 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     127.0.0.1:56770 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | request path=/api/queue/window class=foreground duration_ms=148.5
+api-1  | training_timing {"label": "queue-window", "trace": "e3b0c44298fc1c14", "started_epoch_ms": 1791823294665.5566, "stages_ms": {"foreground_admission": 0.3089160000229185}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.040584000004173504, "execution_ms": 126.11745800001017, "commit_cleanup_ms": 0.2956250000067939, "commit_observed_epoch_ms": 1791823294795.5415, "commit_epoch_ms": 1791823294795.5083, "commit_ms": 0.2601670000217382}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.025583999985201444, "execution_ms": 0.5652499999939664, "commit_cleanup_ms": 0.16237500000215732, "commit_observed_epoch_ms": 1791823294796.328, "commit_epoch_ms": 1791823294796.3047, "commit_ms": 0.13895799997953873}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.03737500000511318, "execution_ms": 0.4834169999980986, "commit_cleanup_ms": 0.13904100001127517, "commit_observed_epoch_ms": 1791823294815.3918, "commit_epoch_ms": 1791823294815.371, "commit_ms": 0.11800000001471744}], "sql_count": 7, "sql_ms": 126.72383299999979, "duration_ms": 150.9045409999885}
+api-1  | INFO:     172.19.0.1:65374 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1  | request path=/api/cards/audit-card-00002/review class=foreground duration_ms=32.6
+api-1  | training_timing {"label": "review-request", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823295173.4321, "stages_ms": {"foreground_admission": 32.40099999999302}, "connections": [], "sql_count": 0, "sql_ms": 0.0, "duration_ms": 33.14174999999864}
+api-1  | INFO:     172.19.0.1:65386 - "POST /api/cards/audit-card-00002/review HTTP/1.1" 500 Internal Server Error
+api-1  | ERROR:    Exception in ASGI application
+api-1  |   + Exception Group Traceback (most recent call last):
+api-1  |   |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 79, in collapse_excgroups
+api-1  |   |     yield
+api-1  |   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 183, in __call__
+api-1  |   |     async with anyio.create_task_group() as task_group:
+api-1  |   |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   |   File "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 847, in __aexit__
+api-1  |   |     raise BaseExceptionGroup(
+api-1  |   | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+api-1  |   +-+---------------- 1 ----------------
+api-1  |     | Traceback (most recent call last):
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+api-1  |     |     result = await app(  # type: ignore[func-returns-value]
+api-1  |     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+api-1  |     |     return await self.app(scope, receive, send)
+api-1  |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/fastapi/applications.py", line 1054, in __call__
+api-1  |     |     await super().__call__(scope, receive, send)
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/applications.py", line 113, in __call__
+api-1  |     |     await self.middleware_stack(scope, receive, send)
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+api-1  |     |     raise exc
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+api-1  |     |     await self.app(scope, receive, _send)
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+api-1  |     |     with recv_stream, send_stream, collapse_excgroups():
+api-1  |     |                                    ^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+api-1  |     |     self.gen.throw(value)
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+api-1  |     |     raise exc
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+api-1  |     |     response = await self.dispatch_func(request, call_next)
+api-1  |     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/app/app/main.py", line 787, in measure_training_request
+api-1  |     |     response = await call_next(request)
+api-1  |     |                ^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 159, in call_next
+api-1  |     |     raise app_exc
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 144, in coro
+api-1  |     |     await self.app(scope, receive_or_disconnect, send_no_error)
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+api-1  |     |     with recv_stream, send_stream, collapse_excgroups():
+api-1  |     |                                    ^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+api-1  |     |     self.gen.throw(value)
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+api-1  |     |     raise exc
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+api-1  |     |     response = await self.dispatch_func(request, call_next)
+api-1  |     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/app/app/main.py", line 760, in prioritize_foreground_requests
+api-1  |     |     with activity_gate.foreground():
+api-1  |     |          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+api-1  |     |     return next(self.gen)
+api-1  |     |            ^^^^^^^^^^^^^^
+api-1  |     |   File "/app/app/services/activity_gate.py", line 54, in foreground
+api-1  |     |     with shared_lease:
+api-1  |     |          ^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+api-1  |     |     return next(self.gen)
+api-1  |     |            ^^^^^^^^^^^^^^
+api-1  |     |   File "/app/app/services/redis_admission_gate.py", line 94, in foreground_lease
+api-1  |     |     client().eval(
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5876, in eval
+api-1  |     |     return self._eval("EVAL", script, numkeys, *keys_and_args)
+api-1  |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5861, in _eval
+api-1  |     |     return self.execute_command(command, script, numkeys, *keys_and_args)
+api-1  |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 621, in execute_command
+api-1  |     |     return self._execute_command(*args, **options)
+api-1  |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 627, in _execute_command
+api-1  |     |     conn = self.connection or pool.get_connection()
+api-1  |     |                               ^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/utils.py", line 195, in wrapper
+api-1  |     |     return func(*args, **kwargs)
+api-1  |     |            ^^^^^^^^^^^^^^^^^^^^^
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 1543, in get_connection
+api-1  |     |     connection.connect()
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+api-1  |     |     self.connect_check_health(check_health=True)
+api-1  |     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+api-1  |     |     raise ConnectionError(self._error_message(e))
+api-1  |     | redis.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.
+api-1  |     +------------------------------------
+api-1  | 
+api-1  | During handling of the above exception, another exception occurred:
+api-1  | 
+api-1  | Traceback (most recent call last):
+api-1  |   File "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+api-1  |     result = await app(  # type: ignore[func-returns-value]
+api-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+api-1  |     return await self.app(scope, receive, send)
+api-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/fastapi/applications.py", line 1054, in __call__
+api-1  |     await super().__call__(scope, receive, send)
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/applications.py", line 113, in __call__
+api-1  |     await self.middleware_stack(scope, receive, send)
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+api-1  |     raise exc
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+api-1  |     await self.app(scope, receive, _send)
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+api-1  |     with recv_stream, send_stream, collapse_excgroups():
+api-1  |                                    ^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+api-1  |     self.gen.throw(value)
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+api-1  |     raise exc
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+api-1  |     response = await self.dispatch_func(request, call_next)
+api-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/app/app/main.py", line 787, in measure_training_request
+api-1  |     response = await call_next(request)
+api-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 159, in call_next
+api-1  |     raise app_exc
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 144, in coro
+api-1  |     await self.app(scope, receive_or_disconnect, send_no_error)
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+api-1  |     with recv_stream, send_stream, collapse_excgroups():
+api-1  |                                    ^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+api-1  |     self.gen.throw(value)
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+api-1  |     raise exc
+api-1  |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+api-1  |     response = await self.dispatch_func(request, call_next)
+api-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/app/app/main.py", line 760, in prioritize_foreground_requests
+api-1  |     with activity_gate.foreground():
+api-1  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+api-1  |     return next(self.gen)
+api-1  |            ^^^^^^^^^^^^^^
+api-1  |   File "/app/app/services/activity_gate.py", line 54, in foreground
+api-1  |     with shared_lease:
+api-1  |          ^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+api-1  |     return next(self.gen)
+api-1  |            ^^^^^^^^^^^^^^
+api-1  |   File "/app/app/services/redis_admission_gate.py", line 94, in foreground_lease
+api-1  |     client().eval(
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5876, in eval
+api-1  |     return self._eval("EVAL", script, numkeys, *keys_and_args)
+api-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5861, in _eval
+api-1  |     return self.execute_command(command, script, numkeys, *keys_and_args)
+api-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 621, in execute_command
+api-1  |     return self._execute_command(*args, **options)
+api-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 627, in _execute_command
+api-1  |     conn = self.connection or pool.get_connection()
+api-1  |                               ^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/utils.py", line 195, in wrapper
+api-1  |     return func(*args, **kwargs)
+api-1  |            ^^^^^^^^^^^^^^^^^^^^^
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 1543, in get_connection
+api-1  |     connection.connect()
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+api-1  |     self.connect_check_health(check_health=True)
+api-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+api-1  |     raise ConnectionError(self._error_message(e))
+api-1  | redis.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.

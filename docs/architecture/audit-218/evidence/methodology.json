@@ -1,0 +1,18 @@
+{
+  "revision": "af71f0da34fbb42412125be16d516019c4fb5652",
+  "node": "v26.10.0",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpus": 8,
+    "memory": 25769803776
+  },
+  "samples_per_condition": 200,
+  "blocks": 4,
+  "block_size": 50,
+  "warmups": 10,
+  "clock": "performance.now monotonic; epoch timestamp for correlation",
+  "transport": "HTTP to native API, real Celery and PostgreSQL; not browser rendering",
+  "fixtures": "5000 synthetic learned tactic cards",
+  "synthetic_tasks": "audit.cpu and audit.database; no production handler claims"
+}

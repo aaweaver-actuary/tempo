@@ -1,0 +1,124 @@
+node scripts/test-all.mjs --list "full"
+{
+  "tier": "full",
+  "stages": [
+    {
+      "name": "capabilities",
+      "command": "node",
+      "args": [
+        "scripts/check-test-capabilities.mjs",
+        "--docker",
+        "--loopback",
+        "--workspace-mount"
+      ]
+    },
+    {
+      "name": "unit",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:unit",
+        "--",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile.json=test-results/performance/unit-files-full.json"
+      ]
+    },
+    {
+      "name": "defense_engine",
+      "command": "node",
+      "args": [
+        "scripts/test-defense-engine.mjs"
+      ]
+    },
+    {
+      "name": "backend",
+      "command": "python3",
+      "args": [
+        "-m",
+        "pytest",
+        "backend/tests",
+        "-q",
+        "-o",
+        "cache_dir=.pytest_cache",
+        "--rootdir=."
+      ]
+    },
+    {
+      "name": "rust_format",
+      "command": "cargo",
+      "args": [
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ]
+    },
+    {
+      "name": "rust_lint",
+      "command": "cargo",
+      "args": [
+        "clippy",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ]
+    },
+    {
+      "name": "rust_test",
+      "command": "cargo",
+      "args": [
+        "test",
+        "--workspace"
+      ]
+    },
+    {
+      "name": "lint",
+      "command": "npm",
+      "args": [
+        "run",
+        "lint"
+      ]
+    },
+    {
+      "name": "typecheck",
+      "command": "npm",
+      "args": [
+        "run",
+        "typecheck"
+      ]
+    },
+    {
+      "name": "wasm_build",
+      "command": "npm",
+      "args": [
+        "run",
+        "build:wasm"
+      ]
+    },
+    {
+      "name": "local_build",
+      "command": "npm",
+      "args": [
+        "run",
+        "build:local"
+      ]
+    },
+    {
+      "name": "postgres_docker",
+      "command": "node",
+      "args": [
+        "scripts/test-postgres-docker.mjs"
+      ]
+    },
+    {
+      "name": "visual",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:visual"
+      ]
+    }
+  ]
+}

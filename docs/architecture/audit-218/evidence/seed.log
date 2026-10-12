@@ -1,0 +1,7 @@
+time="2026-10-12T11:54:49-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:54:49-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:54:49-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:54:49-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-21800-a2182026-schema-run-6ca9f2f38735 Creating 
+ Container tempo-pg-regressions-21800-a2182026-schema-run-6ca9f2f38735 Created 
+{"seeded_cards": 5000, "workspace_date": "2026-10-12"}

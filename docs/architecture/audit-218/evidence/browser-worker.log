@@ -1,0 +1,90 @@
+Configured high-distinctness-10000: 10000 positions
+high-distinctness-10000 foreground 1/200
+high-distinctness-10000 foreground 6/200
+high-distinctness-10000 foreground 11/200
+high-distinctness-10000 foreground 16/200
+Excluded contaminated high-distinctness-10000 foreground attempt; repeating the same iteration after admission clears.
+Deferred next sample for competing host activity; other tasks remain untouched.
+Excluded contaminated high-distinctness-10000 foreground attempt; repeating the same iteration after admission clears.
+Deferred next sample for competing host activity; other tasks remain untouched.
+Deferred next sample for competing host activity; other tasks remain untouched.
+Deferred next sample for competing host activity; other tasks remain untouched.
+Deferred next sample for competing host activity; other tasks remain untouched.
+high-distinctness-10000 foreground 21/200
+high-distinctness-10000 foreground 26/200
+high-distinctness-10000 foreground 31/200
+high-distinctness-10000 foreground 36/200
+high-distinctness-10000 foreground 41/200
+high-distinctness-10000 foreground 46/200
+high-distinctness-10000 foreground 51/200
+high-distinctness-10000 foreground 56/200
+high-distinctness-10000 foreground 61/200
+high-distinctness-10000 foreground 66/200
+high-distinctness-10000 foreground 71/200
+high-distinctness-10000 foreground 76/200
+high-distinctness-10000 foreground 81/200
+high-distinctness-10000 foreground 86/200
+high-distinctness-10000 foreground 91/200
+high-distinctness-10000 foreground 96/200
+high-distinctness-10000 foreground 101/200
+high-distinctness-10000 foreground 106/200
+high-distinctness-10000 foreground 111/200
+high-distinctness-10000 foreground 116/200
+high-distinctness-10000 foreground 121/200
+high-distinctness-10000 foreground 126/200
+high-distinctness-10000 foreground 131/200
+high-distinctness-10000 foreground 136/200
+high-distinctness-10000 foreground 141/200
+high-distinctness-10000 foreground 146/200
+high-distinctness-10000 foreground 151/200
+high-distinctness-10000 foreground 156/200
+high-distinctness-10000 foreground 161/200
+high-distinctness-10000 foreground 166/200
+high-distinctness-10000 foreground 171/200
+high-distinctness-10000 foreground 176/200
+high-distinctness-10000 foreground 181/200
+high-distinctness-10000 foreground 186/200
+high-distinctness-10000 foreground 191/200
+high-distinctness-10000 foreground 196/200
+high-distinctness-10000 cancel 1/200
+high-distinctness-10000 cancel 6/200
+high-distinctness-10000 cancel 11/200
+high-distinctness-10000 cancel 16/200
+high-distinctness-10000 cancel 21/200
+high-distinctness-10000 cancel 26/200
+high-distinctness-10000 cancel 31/200
+high-distinctness-10000 cancel 36/200
+high-distinctness-10000 cancel 41/200
+high-distinctness-10000 cancel 46/200
+Excluded contaminated high-distinctness-10000 cancel attempt; repeating the same iteration after admission clears.
+high-distinctness-10000 cancel 51/200
+high-distinctness-10000 cancel 56/200
+high-distinctness-10000 cancel 61/200
+high-distinctness-10000 cancel 66/200
+high-distinctness-10000 cancel 71/200
+high-distinctness-10000 cancel 76/200
+high-distinctness-10000 cancel 81/200
+high-distinctness-10000 cancel 86/200
+high-distinctness-10000 cancel 91/200
+high-distinctness-10000 cancel 96/200
+high-distinctness-10000 cancel 101/200
+high-distinctness-10000 cancel 106/200
+high-distinctness-10000 cancel 111/200
+high-distinctness-10000 cancel 116/200
+high-distinctness-10000 cancel 121/200
+high-distinctness-10000 cancel 126/200
+high-distinctness-10000 cancel 131/200
+high-distinctness-10000 cancel 136/200
+high-distinctness-10000 cancel 141/200
+high-distinctness-10000 cancel 146/200
+high-distinctness-10000 cancel 151/200
+high-distinctness-10000 cancel 156/200
+high-distinctness-10000 cancel 161/200
+high-distinctness-10000 cancel 166/200
+high-distinctness-10000 cancel 171/200
+high-distinctness-10000 cancel 176/200
+high-distinctness-10000 cancel 181/200
+high-distinctness-10000 cancel 186/200
+high-distinctness-10000 cancel 191/200
+high-distinctness-10000 cancel 196/200
+<local-home>/tempo/test-results/audit-218-2026-10-12/browser-worker/raw-untraced-audit-high-distinctness-10000.jsonl

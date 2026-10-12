@@ -1,0 +1,970 @@
+web-1  | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+web-1  | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+web-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+web-1  | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+web-1  | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
+web-1  | /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+web-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+web-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+web-1  | /docker-entrypoint.sh: Configuration complete; ready for start up
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: using the "epoll" event method
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: nginx/1.28.3
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: built by gcc 15.2.0 (Alpine 15.2.0) 
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: OS: Linux 7.0.14-linuxkit
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: getrlimit(RLIMIT_NOFILE): 1048576:1048576
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker processes
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 29
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 30
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 31
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 32
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 33
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 34
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 35
+web-1  | 2026/10/12 15:52:18 [notice] 1#1: start worker process 36
+redis-1  | 1:C 12 Oct 2026 15:52:08.789 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1  | 1:C 12 Oct 2026 15:52:08.789 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1  | 1:C 12 Oct 2026 15:52:08.789 * Configuration loaded
+redis-1  | 1:M 12 Oct 2026 15:52:08.790 * monotonic clock: POSIX clock_gettime
+redis-1  | 1:M 12 Oct 2026 15:52:08.791 * Running mode=standalone, port=6379.
+redis-1  | 1:M 12 Oct 2026 15:52:08.791 * Server initialized
+redis-1  | 1:M 12 Oct 2026 15:52:08.793 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+redis-1  | 1:M 12 Oct 2026 15:52:08.796 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+redis-1  | 1:M 12 Oct 2026 15:52:08.796 * Ready to accept connections tcp
+schema-1  | Applied 001_initial.sql
+schema-1  | Applied 002_game_sync_windows.sql
+schema-1  | Applied 003_integrity_accumulators.sql
+schema-1  | Applied 004_discovery_cursor.sql
+schema-1  | Applied 005_coverage_building.sql
+schema-1  | Applied 006_coverage_maia_claim.sql
+schema-1  | Applied 007_coverage_explorer_claim.sql
+schema-1  | Applied 008_coverage_recovery.sql
+schema-1  | Applied 009_versioned_game_analysis.sql
+schema-1  | Applied 010_game_analysis_publications.sql
+schema-1  | Applied 011_versioned_game_positions.sql
+schema-1  | Applied 012_versioned_game_repertoire.sql
+schema-1  | Applied 013_versioned_game_findings.sql
+schema-1  | Applied 014_versioned_game_events.sql
+schema-1  | Applied 015_game_finding_preparations.sql
+schema-1  | Applied 016_phone_review_receipts.sql
+schema-1  | Applied 017_operation_recovery.sql
+schema-1  | Applied 018_operation_attempt_ownership.sql
+schema-1  | Applied 019_threat_claim_lookup.sql
+schema-1  | Applied 020_ordered_threat_claim.sql
+schema-1  | Applied 021_priority_preparations.sql
+schema-1  | Applied 022_priority_preparation_ordering.sql
+schema-1  | Applied 023_priority_visible_game_positions.sql
+schema-1  | Applied 024_opening_segmentation.sql
+schema-1  | Applied 025_tactic_capture.sql
+schema-1  | Applied 026_background_diagnostics.sql
+schema-1  | Applied 027_handled_discoveries.sql
+schema-1  | Applied 028_revisioned_discovery_admissions.sql
+schema-1  | Applied 029_repertoire_daily_limits.sql
+schema-1  | Applied 030_opening_decision_evidence.sql
+schema-1  | Applied 031_defensive_analysis_pause.sql
+schema-1  | Applied 032_queue_attempt_origins.sql
+schema-1  | Applied 033_canonical_prefix.sql
+schema-1  | Applied 034_current_canonical_routes.sql
+schema-1  | Applied 035_canonical_publication_freshness.sql
+schema-1  | Applied 036_prefix_diagnostics_indexes.sql
+schema-1  | Applied 037_card_deletion.sql
+schema-1  | Applied 038_prefix_transition_application.sql
+schema-1  | Applied 039_prefix_transition_lock_budget.sql
+schema-1  | Applied 040_queue_unlock_deadlines.sql
+schema-1  | Applied 041_real_game_study_obligations.sql
+schema-1  | Applied 042_queue_attempt_issuance.sql
+schema-1  | Applied 043_background_scheduling_turns.sql
+schema-1  | Applied 044_next_opponent_profiles.sql
+schema-1  | Applied 045_engine_scheduling.sql
+schema-1  | Applied 046_refresh_input_versions.sql
+schema-1  | Applied 047_study_only_mode.sql
+schema-1  | PostgreSQL schema version 47
+postgres-1  | The files belonging to this database system will be owned by user "postgres".
+postgres-1  | This user must also own the server process.
+postgres-1  | 
+postgres-1  | The database cluster will be initialized with locale "en_US.utf8".
+postgres-1  | The default database encoding has accordingly been set to "UTF8".
+postgres-1  | The default text search configuration will be set to "english".
+postgres-1  | 
+postgres-1  | Data page checksums are enabled.
+postgres-1  | 
+postgres-1  | fixing permissions on existing directory /var/lib/postgresql/18/docker ... ok
+postgres-1  | creating subdirectories ... ok
+postgres-1  | selecting dynamic shared memory implementation ... posix
+postgres-1  | selecting default "max_connections" ... 100
+postgres-1  | selecting default "shared_buffers" ... 128MB
+postgres-1  | selecting default time zone ... Etc/UTC
+postgres-1  | creating configuration files ... ok
+postgres-1  | running bootstrap script ... ok
+postgres-1  | performing post-bootstrap initialization ... ok
+postgres-1  | syncing data to disk ... ok
+postgres-1  | 
+postgres-1  | 
+postgres-1  | Success. You can now start the database server using:
+postgres-1  | 
+postgres-1  |     pg_ctl -D /var/lib/postgresql/18/docker -l logfile start
+postgres-1  | 
+postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1  | waiting for server to start....2026-10-12 15:52:09.444 UTC [54] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-12 15:52:09.445 UTC [54] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-12 15:52:09.449 UTC [60] LOG:  database system was shut down at 2026-10-12 15:52:09 UTC
+postgres-1  | 2026-10-12 15:52:09.451 UTC [54] LOG:  database system is ready to accept connections
+postgres-1              |  done
+postgres-1              | server started
+postgres-1              | CREATE DATABASE
+postgres-1              | 
+postgres-1              | 
+postgres-1              | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1              | 
+postgres-1              | waiting for server to shut down....2026-10-12 15:52:09.667 UTC [54] LOG:  received fast shutdown request
+postgres-1              | 2026-10-12 15:52:09.668 UTC [54] LOG:  aborting any active transactions
+postgres-1              | 2026-10-12 15:52:09.669 UTC [54] LOG:  background worker "logical replication launcher" (PID 63) exited with exit code 1
+postgres-1              | 2026-10-12 15:52:09.670 UTC [58] LOG:  shutting down
+postgres-1              | 2026-10-12 15:52:09.670 UTC [58] LOG:  checkpoint starting: shutdown immediate
+background-scheduler-1  | [2026-10-12 15:52:12,624: INFO/MainProcess] beat: Starting...
+background-scheduler-1  | [2026-10-12 15:52:13,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:14,632: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:15,631: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:16,631: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+postgres-1              | 2026-10-12 15:52:09.713 UTC [58] LOG:  checkpoint complete: wrote 943 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.016 s, sync=0.025 s, total=0.044 s; sync files=303, longest=0.012 s, average=0.001 s; distance=4352 kB, estimate=4352 kB; lsn=0/1BA1BE8, redo lsn=0/1BA1BE8
+postgres-1              | 2026-10-12 15:52:09.723 UTC [54] LOG:  database system is shut down
+postgres-1              |  done
+postgres-1              | server stopped
+postgres-1              | 
+postgres-1              | PostgreSQL init process complete; ready for start up.
+postgres-1              | 
+background-scheduler-1  | [2026-10-12 15:52:17,631: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 15:52:17,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:18,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:19,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+postgres-1              | 2026-10-12 15:52:09.801 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1              | 2026-10-12 15:52:09.801 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1              | 2026-10-12 15:52:09.801 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1              | 2026-10-12 15:52:09.803 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1              | 2026-10-12 15:52:09.806 UTC [76] LOG:  database system was shut down at 2026-10-12 15:52:09 UTC
+postgres-1              | 2026-10-12 15:52:09.809 UTC [1] LOG:  database system is ready to accept connections
+background-scheduler-1  | [2026-10-12 15:52:20,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:21,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:22,631: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 15:52:22,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:23,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:24,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:25,634: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:26,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:27,631: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 15:52:27,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:28,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:29,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:30,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:31,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:32,631: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 15:52:32,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:33,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:34,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:35,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:36,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:37,631: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 15:52:37,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:38,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:39,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:40,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:41,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:42,631: INFO/MainProcess] Scheduler: Sending due task recover-active-coverage (app.tasks.recover_active_coverage)
+background-scheduler-1  | [2026-10-12 15:52:42,633: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 15:52:42,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:43,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 15:52:44,635: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   | INFO:     Started server process [1]
+api-1                   | INFO:     Waiting for application startup.
+api-1                   | INFO:     Application startup complete.
+api-1                   | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+api-1                   | INFO:     127.0.0.1:38722 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58570 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:38736 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00001/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00002/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00003/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00004/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00005/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00006/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00007/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00008/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00009/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00010/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:40124 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00011/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00011/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00011/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00012/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00013/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00014/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00015/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00016/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00017/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00018/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00019/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00020/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00021/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00022/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00023/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00024/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00025/review HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:40140 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00026/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00027/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00028/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00029/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00030/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00031/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00032/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00033/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00034/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00035/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00036/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00037/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00038/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00039/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00040/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00041/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00042/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00043/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:60090 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00044/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00045/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00046/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00047/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00048/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00049/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00050/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00051/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00052/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00053/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00054/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00055/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00056/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00057/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00058/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "POST /api/cards/audit-card-00059/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58578 - "POST /api/cards/audit-card-00060/review HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:58580 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:60104 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:60120 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:62508 - "GET /api/settings HTTP/1.1" 200 OK
+api-1                   | INFO:     172.19.0.1:62514 - "PUT /api/settings HTTP/1.1" 200 OK
+background-worker-1     | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+background-worker-1     | absolutely not recommended!
+background-worker-1     | 
+background-worker-1     | Please specify a different user using the --uid option.
+background-worker-1     | 
+background-worker-1     | User information: uid=0 euid=0 gid=0 egid=0
+background-worker-1     | 
+background-worker-1     |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+background-worker-1     |  
+background-worker-1     |  -------------- celery@1d830ac81aee v5.6.3 (recovery)
+background-worker-1     | --- ***** ----- 
+background-worker-1     | -- ******* ---- Linux-7.0.14-linuxkit-aarch64-with-glibc2.41 2026-10-12 11:52:13
+background-worker-1     | - *** --- * --- 
+background-worker-1     | - ** ---------- [config]
+background-worker-1     | - ** ---------- .> app:         tempo:0xffffb412b2c0
+background-worker-1     | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1     | - ** ---------- .> results:     redis://redis:6379/0
+background-worker-1     | - *** --- * --- .> concurrency: 1 (prefork)
+background-worker-1     | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+background-worker-1     | --- ***** ----- 
+background-worker-1     |  -------------- [queues]
+background-worker-1     |                 .> background       exchange=background(direct) key=background
+background-worker-1     |                 
+background-worker-1     | 
+background-worker-1     | [tasks]
+background-worker-1     |   . app.tasks.ensure_daily_queue
+background-worker-1     |   . app.tasks.execute_background_command
+background-worker-1     |   . app.tasks.execute_background_slice
+background-worker-1     |   . app.tasks.execute_foreground_command
+background-worker-1     |   . app.tasks.poll_background_tasks
+background-worker-1     |   . app.tasks.recover_active_coverage
+background-worker-1     |   . app.tasks.recover_operations
+background-worker-1     |   . audit.cpu
+background-worker-1     |   . audit.database
+background-worker-1     | 
+background-worker-1     | [2026-10-12 11:52:13,859: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1     | [2026-10-12 11:52:13,862: INFO/MainProcess] mingle: searching for neighbors
+background-worker-1     | [2026-10-12 11:52:14,869: INFO/MainProcess] mingle: all alone
+background-worker-1     | [2026-10-12 11:52:14,877: INFO/MainProcess] celery@1d830ac81aee ready.
+background-worker-1     | [2026-10-12 11:52:14,878: INFO/MainProcess] Task app.tasks.poll_background_tasks[4c56b40589cd4e94929d4e19ccb50127] received
+background-worker-1     | [2026-10-12 11:52:14,907: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.011 settings_seconds=0.001 handler_seconds=0.011 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:14,928: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.008 commit_cleanup_seconds=0.001
+foreground-worker-1     | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+foreground-worker-1     | absolutely not recommended!
+background-worker-1     | [2026-10-12 11:52:14,928: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.009s
+foreground-worker-1     | 
+background-worker-1     | [2026-10-12 11:52:14,929: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[4c56b40589cd4e94929d4e19ccb50127] succeeded in 0.04953904200010584s: False
+foreground-worker-1     | Please specify a different user using the --uid option.
+background-worker-1     | [2026-10-12 11:52:15,044: INFO/MainProcess] Task app.tasks.poll_background_tasks[5ed54ce5245d4dba805dcc61c3b3ef65] received
+foreground-worker-1     | 
+foreground-worker-1     | User information: uid=0 euid=0 gid=0 egid=0
+foreground-worker-1     | 
+foreground-worker-1     |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+foreground-worker-1     |  
+foreground-worker-1     |  -------------- celery@8c6ba0f2f370 v5.6.3 (recovery)
+foreground-worker-1     | --- ***** ----- 
+background-worker-1     | [2026-10-12 11:52:15,046: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | -- ******* ---- Linux-7.0.14-linuxkit-aarch64-with-glibc2.41 2026-10-12 11:52:13
+background-worker-1     | [2026-10-12 11:52:15,054: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.007 commit_cleanup_seconds=0.001
+foreground-worker-1     | - *** --- * --- 
+background-worker-1     | [2026-10-12 11:52:15,054: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.008s
+foreground-worker-1     | - ** ---------- [config]
+background-worker-1     | [2026-10-12 11:52:15,058: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+foreground-worker-1     | - ** ---------- .> app:         tempo:0xffffb5b581a0
+background-worker-1     | [2026-10-12 11:52:15,245: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1     | [2026-10-12 11:52:15,254: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.007 commit_cleanup_seconds=0.001
+foreground-worker-1     | - ** ---------- .> results:     redis://redis:6379/0
+foreground-worker-1     | - *** --- * --- .> concurrency: 2 (prefork)
+foreground-worker-1     | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+foreground-worker-1     | --- ***** ----- 
+foreground-worker-1     |  -------------- [queues]
+foreground-worker-1     |                 .> foreground       exchange=foreground(direct) key=foreground
+foreground-worker-1     |                 
+foreground-worker-1     | 
+foreground-worker-1     | [tasks]
+foreground-worker-1     |   . app.tasks.ensure_daily_queue
+foreground-worker-1     |   . app.tasks.execute_background_command
+background-worker-1     | [2026-10-12 11:52:15,254: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.009s
+background-worker-1     | [2026-10-12 11:52:15,255: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.255287+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0006607909990634653,"handler_elapsed_seconds":0.20002595900041342,"execution_seconds":0.19936516800134996,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,260: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[5ed54ce5245d4dba805dcc61c3b3ef65] succeeded in 0.2153924169997481s: True
+background-worker-1     | [2026-10-12 11:52:15,261: INFO/MainProcess] Task app.tasks.poll_background_tasks[414f6c1aa3f74b569da83e9d4c60938a] received
+background-worker-1     | [2026-10-12 11:52:15,262: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,266: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,266: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,267: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,268: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,274: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,274: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:15,274: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.274555+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0003986670008089277,"handler_elapsed_seconds":0.007588874999783002,"execution_seconds":0.007190207998974074,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,277: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[414f6c1aa3f74b569da83e9d4c60938a] succeeded in 0.015861750000112806s: True
+background-worker-1     | [2026-10-12 11:52:15,278: INFO/MainProcess] Task app.tasks.poll_background_tasks[20a2eac851ea477ca5d92b4fa6439922] received
+background-worker-1     | [2026-10-12 11:52:15,279: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,286: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+foreground-worker-1     |   . app.tasks.execute_background_slice
+background-worker-1     | [2026-10-12 11:52:15,286: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.007s
+background-worker-1     | [2026-10-12 11:52:15,287: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,288: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,292: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,292: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,292: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.292849+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.000405624999984866,"handler_elapsed_seconds":0.006074208000427461,"execution_seconds":0.005668583000442595,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,295: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[20a2eac851ea477ca5d92b4fa6439922] succeeded in 0.01697470900035114s: True
+background-worker-1     | [2026-10-12 11:52:15,296: INFO/MainProcess] Task app.tasks.poll_background_tasks[01d429f986e84e2e9d7b60c886acd08a] received
+foreground-worker-1     |   . app.tasks.execute_foreground_command
+background-worker-1     | [2026-10-12 11:52:15,297: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,303: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,303: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 11:52:15,304: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,305: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     |   . app.tasks.poll_background_tasks
+foreground-worker-1     |   . app.tasks.recover_active_coverage
+foreground-worker-1     |   . app.tasks.recover_operations
+foreground-worker-1     | 
+foreground-worker-1     | [2026-10-12 11:52:13,974: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1     | [2026-10-12 11:52:13,976: INFO/MainProcess] mingle: searching for neighbors
+foreground-worker-1     | [2026-10-12 11:52:14,987: INFO/MainProcess] mingle: all alone
+background-worker-1     | [2026-10-12 11:52:15,310: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,310: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:15,310: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.310579+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0004282489990146132,"handler_elapsed_seconds":0.007131374999516993,"execution_seconds":0.00670312600050238,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,313: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[01d429f986e84e2e9d7b60c886acd08a] succeeded in 0.016704167000170855s: True
+background-worker-1     | [2026-10-12 11:52:15,314: INFO/MainProcess] Task app.tasks.poll_background_tasks[0012ca4ca7e84ec899c4e41e28676c6b] received
+background-worker-1     | [2026-10-12 11:52:15,315: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,321: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,321: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 11:52:15,323: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,323: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,328: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:14,995: INFO/MainProcess] celery@8c6ba0f2f370 ready.
+foreground-worker-1     | [2026-10-12 11:52:14,996: INFO/MainProcess] Task app.tasks.execute_foreground_command[2fe5a6cbb354466aa2c949f11f580c69] received
+foreground-worker-1     | [2026-10-12 11:52:15,044: INFO/ForkPoolWorker-1] foreground command=queue.ensure_current queue_wait_seconds=1.304 execution_seconds=0.043
+foreground-worker-1     | [2026-10-12 11:52:15,044: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[2fe5a6cbb354466aa2c949f11f580c69] succeeded in 0.047667083000305865s: {'queue_date': '2026-10-12', 'refresh_pending': True, 'task_id': '74465a1b-333a-4d43-96b3-35630c148de0'}
+foreground-worker-1     | [2026-10-12 11:52:22,318: INFO/MainProcess] Task app.tasks.execute_foreground_command[8f7c4704b2ba4f81a2d2b61f6eebaa41] received
+background-worker-1     | [2026-10-12 11:52:15,328: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,328: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.328953+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0004962089988111984,"handler_elapsed_seconds":0.007014750000053027,"execution_seconds":0.006518541001241829,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,331: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[0012ca4ca7e84ec899c4e41e28676c6b] succeeded in 0.01719545800006017s: True
+background-worker-1     | [2026-10-12 11:52:15,332: INFO/MainProcess] Task app.tasks.poll_background_tasks[792ec135c2c84363bf644aab94ff4dbc] received
+background-worker-1     | [2026-10-12 11:52:15,333: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,339: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,339: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 11:52:15,341: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:22,340: INFO/ForkPoolWorker-1] foreground command=queue.issue_head queue_wait_seconds=0.007 execution_seconds=0.020
+foreground-worker-1     | [2026-10-12 11:52:22,340: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[8f7c4704b2ba4f81a2d2b61f6eebaa41] succeeded in 0.021575416999439767s: {'issued': True}
+foreground-worker-1     | [2026-10-12 11:52:22,366: INFO/MainProcess] Task app.tasks.execute_foreground_command[8adee0ff-e4da-4a82-b542-adfad3c98ba9] received
+background-worker-1     | [2026-10-12 11:52:15,342: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,343: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,345: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,346: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,348: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:22,603: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.236
+background-worker-1     | [2026-10-12 11:52:15,348: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:15,348: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.348648+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0011149160000059055,"handler_elapsed_seconds":0.008580042000176036,"execution_seconds":0.00746512600017013,"dispatch_wait_seconds":null}
+foreground-worker-1     | [2026-10-12 11:52:22,604: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[8adee0ff-e4da-4a82-b542-adfad3c98ba9] succeeded in 0.23689816600017366s: {'card_id': 'audit-card-00001', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 1, 'requeue_entry_id': 5001, 'review_id': 1, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 2, 'card_id': 'audit-card-00002', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+background-worker-1     | [2026-10-12 11:52:15,351: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[792ec135c2c84363bf644aab94ff4dbc] succeeded in 0.01832420800019463s: True
+foreground-worker-1     | [2026-10-12 11:52:22,813: INFO/MainProcess] Task app.tasks.execute_foreground_command[2442a143-a3ec-464a-b54e-82adf3b81f18] received
+background-worker-1     | [2026-10-12 11:52:15,351: INFO/MainProcess] Task app.tasks.poll_background_tasks[d5d8b35db619435bafa07f5e5c44d769] received
+foreground-worker-1     | [2026-10-12 11:52:22,839: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.026
+foreground-worker-1     | [2026-10-12 11:52:22,840: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[2442a143-a3ec-464a-b54e-82adf3b81f18] succeeded in 0.026903542000582092s: {'card_id': 'audit-card-00002', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 2, 'requeue_entry_id': 5002, 'review_id': 2, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 3, 'card_id': 'audit-card-00003', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:23,053: INFO/MainProcess] Task app.tasks.execute_foreground_command[ae0d9c9f-cc49-4607-8f41-8886a025fa07] received
+foreground-worker-1     | [2026-10-12 11:52:23,078: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.024
+foreground-worker-1     | [2026-10-12 11:52:23,078: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[ae0d9c9f-cc49-4607-8f41-8886a025fa07] succeeded in 0.024924958999690716s: {'card_id': 'audit-card-00003', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 3, 'requeue_entry_id': 5003, 'review_id': 3, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 4, 'card_id': 'audit-card-00004', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:23,284: INFO/MainProcess] Task app.tasks.execute_foreground_command[a33f29e2-0799-4cd5-af25-a648baa9ac00] received
+foreground-worker-1     | [2026-10-12 11:52:23,309: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.024
+foreground-worker-1     | [2026-10-12 11:52:23,310: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[a33f29e2-0799-4cd5-af25-a648baa9ac00] succeeded in 0.02542174999962299s: {'card_id': 'audit-card-00004', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 4, 'requeue_entry_id': 5004, 'review_id': 4, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 5, 'card_id': 'audit-card-00005', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:23,513: INFO/MainProcess] Task app.tasks.execute_foreground_command[5661700d-c3d0-4405-a252-c540af02c8c8] received
+foreground-worker-1     | [2026-10-12 11:52:23,575: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.062
+foreground-worker-1     | [2026-10-12 11:52:23,576: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[5661700d-c3d0-4405-a252-c540af02c8c8] succeeded in 0.06277887499982171s: {'card_id': 'audit-card-00005', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 5, 'requeue_entry_id': 5005, 'review_id': 5, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 6, 'card_id': 'audit-card-00006', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:23,777: INFO/MainProcess] Task app.tasks.execute_foreground_command[5f056ed5-527d-4601-a3b1-751663c9342d] received
+background-worker-1     | [2026-10-12 11:52:15,352: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,358: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,358: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:15,359: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,360: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,363: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,363: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:15,363: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.363680+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0003610420008044457,"handler_elapsed_seconds":0.005039958000452316,"execution_seconds":0.00467891599964787,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,365: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d5d8b35db619435bafa07f5e5c44d769] succeeded in 0.013780416999907175s: True
+background-worker-1     | [2026-10-12 11:52:15,366: INFO/MainProcess] Task app.tasks.poll_background_tasks[e1fda1718c1d42f3b836e4bd540fa80e] received
+background-worker-1     | [2026-10-12 11:52:15,367: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:23,803: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.025
+foreground-worker-1     | [2026-10-12 11:52:23,804: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[5f056ed5-527d-4601-a3b1-751663c9342d] succeeded in 0.0261214160000236s: {'card_id': 'audit-card-00006', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 6, 'requeue_entry_id': 5006, 'review_id': 6, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 7, 'card_id': 'audit-card-00007', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:24,007: INFO/MainProcess] Task app.tasks.execute_foreground_command[3a0d96ce-c6a3-40bf-bb66-1b31a05d116e] received
+background-worker-1     | [2026-10-12 11:52:15,373: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:24,031: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.023
+foreground-worker-1     | [2026-10-12 11:52:24,032: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[3a0d96ce-c6a3-40bf-bb66-1b31a05d116e] succeeded in 0.024313583000548533s: {'card_id': 'audit-card-00007', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 7, 'requeue_entry_id': 5007, 'review_id': 7, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 8, 'card_id': 'audit-card-00008', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+background-worker-1     | [2026-10-12 11:52:15,373: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+foreground-worker-1     | [2026-10-12 11:52:24,260: INFO/MainProcess] Task app.tasks.execute_foreground_command[9e4c1d26-a103-434f-9525-44b4a305d30b] received
+background-worker-1     | [2026-10-12 11:52:15,374: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,375: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,378: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,378: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:15,378: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.378753+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0003697080001074937,"handler_elapsed_seconds":0.005029041999478068,"execution_seconds":0.004659333999370574,"dispatch_wait_seconds":null}
+foreground-worker-1     | [2026-10-12 11:52:24,290: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.029
+foreground-worker-1     | [2026-10-12 11:52:24,291: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[9e4c1d26-a103-434f-9525-44b4a305d30b] succeeded in 0.031121834000259696s: {'card_id': 'audit-card-00008', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 8, 'requeue_entry_id': 5008, 'review_id': 8, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 9, 'card_id': 'audit-card-00009', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:24,511: INFO/MainProcess] Task app.tasks.execute_foreground_command[352423cd-550f-45de-9ec8-a3bda2b255b6] received
+foreground-worker-1     | [2026-10-12 11:52:24,535: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.023
+foreground-worker-1     | [2026-10-12 11:52:24,536: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[352423cd-550f-45de-9ec8-a3bda2b255b6] succeeded in 0.02401979200021742s: {'card_id': 'audit-card-00009', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 9, 'requeue_entry_id': 5009, 'review_id': 9, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 10, 'card_id': 'audit-card-00010', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:24,752: INFO/MainProcess] Task app.tasks.execute_foreground_command[1461d7ed-75eb-425f-8c2e-b7492a3987be] received
+background-worker-1     | [2026-10-12 11:52:15,381: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[e1fda1718c1d42f3b836e4bd540fa80e] succeeded in 0.014324124999802734s: True
+background-worker-1     | [2026-10-12 11:52:15,382: INFO/MainProcess] Task app.tasks.poll_background_tasks[9db0d3fa2b4f4fa4a929065d20c163e7] received
+foreground-worker-1     | [2026-10-12 11:52:24,775: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.022
+foreground-worker-1     | [2026-10-12 11:52:24,776: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[1461d7ed-75eb-425f-8c2e-b7492a3987be] succeeded in 0.023827999999411986s: {'card_id': 'audit-card-00010', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 10, 'requeue_entry_id': 5010, 'review_id': 10, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 11, 'card_id': 'audit-card-00011', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:27,116: INFO/MainProcess] Task app.tasks.execute_foreground_command[8ce60359-f618-4d9f-a4c7-f3597aaf371a] received
+foreground-worker-1     | [2026-10-12 11:52:27,142: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.025
+foreground-worker-1     | [2026-10-12 11:52:27,143: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[8ce60359-f618-4d9f-a4c7-f3597aaf371a] succeeded in 0.025887709000016912s: {'card_id': 'audit-card-00011', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 11, 'requeue_entry_id': 5011, 'review_id': 11, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 12, 'card_id': 'audit-card-00012', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:27,293: INFO/MainProcess] Task app.tasks.execute_foreground_command[8ce60359-f618-4d9f-a4c7-f3597aaf371a] received
+foreground-worker-1     | [2026-10-12 11:52:27,297: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[8ce60359-f618-4d9f-a4c7-f3597aaf371a] succeeded in 0.0036029590000907774s: None
+foreground-worker-1     | [2026-10-12 11:52:27,302: INFO/MainProcess] Task app.tasks.execute_foreground_command[c2a1d81d-d7bf-4bcc-bf3c-cf4d35d68777] received
+foreground-worker-1     | [2026-10-12 11:52:27,311: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.008
+foreground-worker-1     | [2026-10-12 11:52:27,312: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[c2a1d81d-d7bf-4bcc-bf3c-cf4d35d68777] succeeded in 0.009514542000033543s: {'card_id': 'audit-card-00011', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 11, 'requeue_entry_id': 5011, 'review_id': 11, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 12, 'card_id': 'audit-card-00012', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:27,461: INFO/MainProcess] Task app.tasks.execute_foreground_command[e8131212-6e09-417a-8fff-d992cea0e0e3] received
+foreground-worker-1     | [2026-10-12 11:52:27,496: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.034
+foreground-worker-1     | [2026-10-12 11:52:27,497: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[e8131212-6e09-417a-8fff-d992cea0e0e3] succeeded in 0.03551625000000058s: {'card_id': 'audit-card-00012', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 12, 'requeue_entry_id': 5012, 'review_id': 12, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 13, 'card_id': 'audit-card-00013', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:27,697: INFO/MainProcess] Task app.tasks.execute_foreground_command[b90fcd57-d87b-4032-8678-a71e9d05ceaf] received
+foreground-worker-1     | [2026-10-12 11:52:27,737: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.038
+foreground-worker-1     | [2026-10-12 11:52:27,739: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[b90fcd57-d87b-4032-8678-a71e9d05ceaf] succeeded in 0.04063254200082156s: {'card_id': 'audit-card-00013', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 13, 'requeue_entry_id': 5013, 'review_id': 13, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 14, 'card_id': 'audit-card-00014', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:27,998: INFO/MainProcess] Task app.tasks.execute_foreground_command[d02081da-d6cd-4eec-a356-72567f0bdf27] received
+foreground-worker-1     | [2026-10-12 11:52:28,026: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.004 execution_seconds=0.026
+foreground-worker-1     | [2026-10-12 11:52:28,027: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[d02081da-d6cd-4eec-a356-72567f0bdf27] succeeded in 0.027410541999415727s: {'card_id': 'audit-card-00014', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 14, 'requeue_entry_id': 5014, 'review_id': 14, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 15, 'card_id': 'audit-card-00015', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:28,231: INFO/MainProcess] Task app.tasks.execute_foreground_command[2acc00d1-5e47-4fd1-8437-1005f7cc0bfd] received
+foreground-worker-1     | [2026-10-12 11:52:28,348: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.116
+foreground-worker-1     | [2026-10-12 11:52:28,349: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[2acc00d1-5e47-4fd1-8437-1005f7cc0bfd] succeeded in 0.1177632499993706s: {'card_id': 'audit-card-00015', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 15, 'requeue_entry_id': 5015, 'review_id': 15, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 16, 'card_id': 'audit-card-00016', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:28,547: INFO/MainProcess] Task app.tasks.execute_foreground_command[7bba17a7-915d-41f8-aeb2-1914cd52ca17] received
+foreground-worker-1     | [2026-10-12 11:52:28,575: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.027
+foreground-worker-1     | [2026-10-12 11:52:28,576: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[7bba17a7-915d-41f8-aeb2-1914cd52ca17] succeeded in 0.028218958000252314s: {'card_id': 'audit-card-00016', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 16, 'requeue_entry_id': 5016, 'review_id': 16, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 17, 'card_id': 'audit-card-00017', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:28,782: INFO/MainProcess] Task app.tasks.execute_foreground_command[e12bebe8-b61a-41e0-9767-898e08bd7a6b] received
+foreground-worker-1     | [2026-10-12 11:52:28,811: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.028
+foreground-worker-1     | [2026-10-12 11:52:28,812: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[e12bebe8-b61a-41e0-9767-898e08bd7a6b] succeeded in 0.029059084000436997s: {'card_id': 'audit-card-00017', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 17, 'requeue_entry_id': 5017, 'review_id': 17, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 18, 'card_id': 'audit-card-00018', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:29,024: INFO/MainProcess] Task app.tasks.execute_foreground_command[61cb2dc5-570c-477e-b739-cfdc54d1087a] received
+foreground-worker-1     | [2026-10-12 11:52:29,047: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.022
+foreground-worker-1     | [2026-10-12 11:52:29,048: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[61cb2dc5-570c-477e-b739-cfdc54d1087a] succeeded in 0.0238651249992472s: {'card_id': 'audit-card-00018', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 18, 'requeue_entry_id': 5018, 'review_id': 18, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 19, 'card_id': 'audit-card-00019', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:29,267: INFO/MainProcess] Task app.tasks.execute_foreground_command[32ccda6b-32ff-4f0f-adac-56931aae5e38] received
+foreground-worker-1     | [2026-10-12 11:52:29,289: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.022
+foreground-worker-1     | [2026-10-12 11:52:29,290: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[32ccda6b-32ff-4f0f-adac-56931aae5e38] succeeded in 0.022890166000252066s: {'card_id': 'audit-card-00019', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 19, 'requeue_entry_id': 5019, 'review_id': 19, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 20, 'card_id': 'audit-card-00020', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:29,484: INFO/MainProcess] Task app.tasks.execute_foreground_command[70dc4f05-625c-400c-b017-ec0fd32ad0fd] received
+foreground-worker-1     | [2026-10-12 11:52:29,507: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.022
+foreground-worker-1     | [2026-10-12 11:52:29,508: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[70dc4f05-625c-400c-b017-ec0fd32ad0fd] succeeded in 0.022995583999545488s: {'card_id': 'audit-card-00020', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 20, 'requeue_entry_id': 5020, 'review_id': 20, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 21, 'card_id': 'audit-card-00021', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:29,711: INFO/MainProcess] Task app.tasks.execute_foreground_command[a5641dd0-e746-4c59-bdf3-6115a050fa2a] received
+foreground-worker-1     | [2026-10-12 11:52:29,736: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.024
+foreground-worker-1     | [2026-10-12 11:52:29,737: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[a5641dd0-e746-4c59-bdf3-6115a050fa2a] succeeded in 0.02511729199977708s: {'card_id': 'audit-card-00021', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 21, 'requeue_entry_id': 5021, 'review_id': 21, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 22, 'card_id': 'audit-card-00022', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:29,932: INFO/MainProcess] Task app.tasks.execute_foreground_command[2420ed93-0b1d-43d3-937b-c7f72d10c988] received
+foreground-worker-1     | [2026-10-12 11:52:29,954: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.021
+foreground-worker-1     | [2026-10-12 11:52:29,955: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[2420ed93-0b1d-43d3-937b-c7f72d10c988] succeeded in 0.02221279199966375s: {'card_id': 'audit-card-00022', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 22, 'requeue_entry_id': 5022, 'review_id': 22, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 23, 'card_id': 'audit-card-00023', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:30,146: INFO/MainProcess] Task app.tasks.execute_foreground_command[17bf61bd-f007-46a8-ad7c-b4b310bf48a5] received
+foreground-worker-1     | [2026-10-12 11:52:30,166: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+background-worker-1     | [2026-10-12 11:52:15,383: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,388: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,388: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:15,389: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,389: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,391: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,393: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,393: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:15,393: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.393781+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0005415000005086767,"handler_elapsed_seconds":0.005424583000603889,"execution_seconds":0.004883083000095212,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,396: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[9db0d3fa2b4f4fa4a929065d20c163e7] succeeded in 0.013619249999464955s: True
+background-worker-1     | [2026-10-12 11:52:15,396: INFO/MainProcess] Task app.tasks.poll_background_tasks[efae679461414fe1b104d163e071f039] received
+background-worker-1     | [2026-10-12 11:52:15,397: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,403: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,403: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:15,404: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,404: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,406: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,408: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,408: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 11:52:15,408: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.408620+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0005767079983343137,"handler_elapsed_seconds":0.0053152919999774895,"execution_seconds":0.004738584001643176,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,411: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[efae679461414fe1b104d163e071f039] succeeded in 0.013953832999504812s: True
+background-worker-1     | [2026-10-12 11:52:15,411: INFO/MainProcess] Task app.tasks.poll_background_tasks[a6ace648f8974aa3bba635ab3dd955f4] received
+foreground-worker-1     | [2026-10-12 11:52:30,166: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[17bf61bd-f007-46a8-ad7c-b4b310bf48a5] succeeded in 0.019214541999645007s: {'card_id': 'audit-card-00023', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 23, 'requeue_entry_id': 5023, 'review_id': 23, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 24, 'card_id': 'audit-card-00024', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:30,369: INFO/MainProcess] Task app.tasks.execute_foreground_command[6f66f3ca-3b44-4a85-9987-fce4fa6ca426] received
+foreground-worker-1     | [2026-10-12 11:52:30,427: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.058
+foreground-worker-1     | [2026-10-12 11:52:30,428: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[6f66f3ca-3b44-4a85-9987-fce4fa6ca426] succeeded in 0.05876320800052781s: {'card_id': 'audit-card-00024', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 24, 'requeue_entry_id': 5024, 'review_id': 24, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 25, 'card_id': 'audit-card-00025', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:30,630: INFO/MainProcess] Task app.tasks.execute_foreground_command[d5560337-7698-4d5b-ae69-313c1d7a6c63] received
+foreground-worker-1     | [2026-10-12 11:52:30,650: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:30,651: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[d5560337-7698-4d5b-ae69-313c1d7a6c63] succeeded in 0.01964558300005592s: {'card_id': 'audit-card-00025', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 25, 'requeue_entry_id': 5025, 'review_id': 25, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 26, 'card_id': 'audit-card-00026', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:30,845: INFO/MainProcess] Task app.tasks.execute_foreground_command[13e86cfa-c44c-445f-969e-78f72d5719ca] received
+foreground-worker-1     | [2026-10-12 11:52:30,865: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:30,866: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[13e86cfa-c44c-445f-969e-78f72d5719ca] succeeded in 0.02025854099974822s: {'card_id': 'audit-card-00026', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 26, 'requeue_entry_id': 5026, 'review_id': 26, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 27, 'card_id': 'audit-card-00027', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:31,061: INFO/MainProcess] Task app.tasks.execute_foreground_command[819628b7-4841-45de-b74e-2a87625c071d] received
+foreground-worker-1     | [2026-10-12 11:52:31,080: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:31,081: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[819628b7-4841-45de-b74e-2a87625c071d] succeeded in 0.01884666699970694s: {'card_id': 'audit-card-00027', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 27, 'requeue_entry_id': 5027, 'review_id': 27, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 28, 'card_id': 'audit-card-00028', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:31,278: INFO/MainProcess] Task app.tasks.execute_foreground_command[2cabdb4f-1e2a-4cae-a087-f23e1960240e] received
+background-worker-1     | [2026-10-12 11:52:15,412: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:31,297: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:31,297: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[2cabdb4f-1e2a-4cae-a087-f23e1960240e] succeeded in 0.018649292000191053s: {'card_id': 'audit-card-00028', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 28, 'requeue_entry_id': 5028, 'review_id': 28, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 29, 'card_id': 'audit-card-00029', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:31,491: INFO/MainProcess] Task app.tasks.execute_foreground_command[a3b5dc85-1769-4161-a3ee-967a2569ec9a] received
+foreground-worker-1     | [2026-10-12 11:52:31,510: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:31,510: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[a3b5dc85-1769-4161-a3ee-967a2569ec9a] succeeded in 0.018906000000242784s: {'card_id': 'audit-card-00029', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 29, 'requeue_entry_id': 5029, 'review_id': 29, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 30, 'card_id': 'audit-card-00030', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:31,714: INFO/MainProcess] Task app.tasks.execute_foreground_command[726b4076-ced5-4dfb-8381-540da3e5c61f] received
+foreground-worker-1     | [2026-10-12 11:52:31,733: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:31,734: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[726b4076-ced5-4dfb-8381-540da3e5c61f] succeeded in 0.018908125000052678s: {'card_id': 'audit-card-00030', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 30, 'requeue_entry_id': 5030, 'review_id': 30, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 31, 'card_id': 'audit-card-00031', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:31,936: INFO/MainProcess] Task app.tasks.execute_foreground_command[23329c50-539f-4b98-acef-ee870feed664] received
+foreground-worker-1     | [2026-10-12 11:52:31,958: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.020
+foreground-worker-1     | [2026-10-12 11:52:31,958: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[23329c50-539f-4b98-acef-ee870feed664] succeeded in 0.0217947910005023s: {'card_id': 'audit-card-00031', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 31, 'requeue_entry_id': 5031, 'review_id': 31, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 32, 'card_id': 'audit-card-00032', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:32,153: INFO/MainProcess] Task app.tasks.execute_foreground_command[5e45d19b-e24a-4847-b87e-515b4fe2c4ef] received
+foreground-worker-1     | [2026-10-12 11:52:32,174: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+background-worker-1     | [2026-10-12 11:52:15,417: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:32,174: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[5e45d19b-e24a-4847-b87e-515b4fe2c4ef] succeeded in 0.020562583000355517s: {'card_id': 'audit-card-00032', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 32, 'requeue_entry_id': 5032, 'review_id': 32, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 33, 'card_id': 'audit-card-00033', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+background-worker-1     | [2026-10-12 11:52:15,417: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,418: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,418: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:32,368: INFO/MainProcess] Task app.tasks.execute_foreground_command[35ba2f5e-f874-49e2-8f18-20e7dc1cebde] received
+foreground-worker-1     | [2026-10-12 11:52:32,422: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.053
+foreground-worker-1     | [2026-10-12 11:52:32,423: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[35ba2f5e-f874-49e2-8f18-20e7dc1cebde] succeeded in 0.05411983399972087s: {'card_id': 'audit-card-00033', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 33, 'requeue_entry_id': 5033, 'review_id': 33, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 34, 'card_id': 'audit-card-00034', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:32,623: INFO/MainProcess] Task app.tasks.execute_foreground_command[81193ff2-db4a-412f-8404-34cdc0675fbb] received
+foreground-worker-1     | [2026-10-12 11:52:32,646: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.022
+foreground-worker-1     | [2026-10-12 11:52:32,647: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[81193ff2-db4a-412f-8404-34cdc0675fbb] succeeded in 0.02295025000057649s: {'card_id': 'audit-card-00034', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 34, 'requeue_entry_id': 5034, 'review_id': 34, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 35, 'card_id': 'audit-card-00035', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:32,852: INFO/MainProcess] Task app.tasks.execute_foreground_command[b0f548dc-a380-4b0e-962d-eb2978fe2a4f] received
+foreground-worker-1     | [2026-10-12 11:52:32,871: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:32,871: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[b0f548dc-a380-4b0e-962d-eb2978fe2a4f] succeeded in 0.018771750000269094s: {'card_id': 'audit-card-00035', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 35, 'requeue_entry_id': 5035, 'review_id': 35, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 36, 'card_id': 'audit-card-00036', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:33,069: INFO/MainProcess] Task app.tasks.execute_foreground_command[b7bd2db0-aa67-4ae1-b604-596ae6b9e9a5] received
+foreground-worker-1     | [2026-10-12 11:52:33,088: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+background-worker-1     | [2026-10-12 11:52:15,425: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:33,089: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[b7bd2db0-aa67-4ae1-b604-596ae6b9e9a5] succeeded in 0.018892584000241186s: {'card_id': 'audit-card-00036', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 36, 'requeue_entry_id': 5036, 'review_id': 36, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 37, 'card_id': 'audit-card-00037', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:33,286: INFO/MainProcess] Task app.tasks.execute_foreground_command[57ec043e-0054-46f3-b9a7-4cc6e78aeba2] received
+foreground-worker-1     | [2026-10-12 11:52:33,305: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+background-worker-1     | [2026-10-12 11:52:15,426: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:33,305: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[57ec043e-0054-46f3-b9a7-4cc6e78aeba2] succeeded in 0.018719040999712888s: {'card_id': 'audit-card-00037', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 37, 'requeue_entry_id': 5037, 'review_id': 37, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 38, 'card_id': 'audit-card-00038', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+background-worker-1     | [2026-10-12 11:52:15,427: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,428: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,437: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,437: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:15,438: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.438231+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0011765830004151212,"handler_elapsed_seconds":0.020853916000305617,"execution_seconds":0.019677332999890496,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,440: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[a6ace648f8974aa3bba635ab3dd955f4] succeeded in 0.02851600000030885s: True
+background-worker-1     | [2026-10-12 11:52:15,441: INFO/MainProcess] Task app.tasks.poll_background_tasks[5a0d2627570848bb819675bdb49780d0] received
+background-worker-1     | [2026-10-12 11:52:15,442: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,447: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,447: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:15,449: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:33,502: INFO/MainProcess] Task app.tasks.execute_foreground_command[21ba32ee-1a0e-448d-b647-d37486fbf46f] received
+background-worker-1     | [2026-10-12 11:52:15,449: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:33,521: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:33,522: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[21ba32ee-1a0e-448d-b647-d37486fbf46f] succeeded in 0.019658249999338295s: {'card_id': 'audit-card-00038', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 38, 'requeue_entry_id': 5038, 'review_id': 38, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 39, 'card_id': 'audit-card-00039', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:33,718: INFO/MainProcess] Task app.tasks.execute_foreground_command[1f7ef71d-795b-4e0c-a557-e42c9961bdad] received
+foreground-worker-1     | [2026-10-12 11:52:33,737: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:33,737: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[1f7ef71d-795b-4e0c-a557-e42c9961bdad] succeeded in 0.018949500000417174s: {'card_id': 'audit-card-00039', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 39, 'requeue_entry_id': 5039, 'review_id': 39, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 40, 'card_id': 'audit-card-00040', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+background-worker-1     | [2026-10-12 11:52:15,450: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,451: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,452: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,455: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,455: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:15,455: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.455399+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0009797920001801685,"handler_elapsed_seconds":0.007276541000464931,"execution_seconds":0.006296749000284763,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,457: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[5a0d2627570848bb819675bdb49780d0] succeeded in 0.01579658299942821s: True
+background-worker-1     | [2026-10-12 11:52:15,458: INFO/MainProcess] Task app.tasks.poll_background_tasks[df84db942c6145fdbfccdc4b84eca9fa] received
+background-worker-1     | [2026-10-12 11:52:15,459: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,464: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,464: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,465: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,465: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:33,932: INFO/MainProcess] Task app.tasks.execute_foreground_command[4f5099dc-aaa0-4b75-ba8e-77685adb988e] received
+foreground-worker-1     | [2026-10-12 11:52:33,951: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:33,952: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[4f5099dc-aaa0-4b75-ba8e-77685adb988e] succeeded in 0.019248167000114336s: {'card_id': 'audit-card-00040', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 40, 'requeue_entry_id': 5040, 'review_id': 40, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 41, 'card_id': 'audit-card-00041', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:34,145: INFO/MainProcess] Task app.tasks.execute_foreground_command[2b6a6fd0-e609-4aca-9482-6d13e545dec8] received
+foreground-worker-1     | [2026-10-12 11:52:34,166: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:34,166: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[2b6a6fd0-e609-4aca-9482-6d13e545dec8] succeeded in 0.020374042000185s: {'card_id': 'audit-card-00041', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 41, 'requeue_entry_id': 5041, 'review_id': 41, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 42, 'card_id': 'audit-card-00042', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:34,366: INFO/MainProcess] Task app.tasks.execute_foreground_command[725a2d7a-cf58-4af6-ba17-2137839c3aa9] received
+foreground-worker-1     | [2026-10-12 11:52:34,388: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.020
+foreground-worker-1     | [2026-10-12 11:52:34,389: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[725a2d7a-cf58-4af6-ba17-2137839c3aa9] succeeded in 0.02171825000004901s: {'card_id': 'audit-card-00042', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 42, 'requeue_entry_id': 5042, 'review_id': 42, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 43, 'card_id': 'audit-card-00043', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:34,582: INFO/MainProcess] Task app.tasks.execute_foreground_command[0435af95-bed7-455f-a60d-4db0689e684d] received
+foreground-worker-1     | [2026-10-12 11:52:34,602: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:34,603: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[0435af95-bed7-455f-a60d-4db0689e684d] succeeded in 0.02004054100052599s: {'card_id': 'audit-card-00043', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 43, 'requeue_entry_id': 5043, 'review_id': 43, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 44, 'card_id': 'audit-card-00044', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:34,796: INFO/MainProcess] Task app.tasks.execute_foreground_command[d8b74fe1-fd65-42ed-9903-2da2ed63e4e3] received
+foreground-worker-1     | [2026-10-12 11:52:34,816: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:34,817: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[d8b74fe1-fd65-42ed-9903-2da2ed63e4e3] succeeded in 0.020588833000147133s: {'card_id': 'audit-card-00044', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 44, 'requeue_entry_id': 5044, 'review_id': 44, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 45, 'card_id': 'audit-card-00045', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:35,012: INFO/MainProcess] Task app.tasks.execute_foreground_command[92ef2c3e-6434-4942-95ab-0c350ae795e4] received
+background-worker-1     | [2026-10-12 11:52:15,470: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,473: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,473: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:15,473: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.473314+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0005550430005314411,"handler_elapsed_seconds":0.008900167000319925,"execution_seconds":0.008345123999788484,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,475: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[df84db942c6145fdbfccdc4b84eca9fa] succeeded in 0.016902082999877166s: True
+background-worker-1     | [2026-10-12 11:52:15,476: INFO/MainProcess] Task app.tasks.poll_background_tasks[cdb679f2ceaf491485e28f34dfa4ba9a] received
+background-worker-1     | [2026-10-12 11:52:15,477: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,481: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,481: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,482: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,482: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,483: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,488: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,488: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,488: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.488769+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0005530410007850151,"handler_elapsed_seconds":0.007209125000372296,"execution_seconds":0.006656083999587281,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,491: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[cdb679f2ceaf491485e28f34dfa4ba9a] succeeded in 0.014317666999886569s: True
+background-worker-1     | [2026-10-12 11:52:15,492: INFO/MainProcess] Task app.tasks.poll_background_tasks[d343e5b327c340fd810e84a131346887] received
+foreground-worker-1     | [2026-10-12 11:52:35,069: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.055
+background-worker-1     | [2026-10-12 11:52:15,492: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,497: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,497: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,498: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,498: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:35,069: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[92ef2c3e-6434-4942-95ab-0c350ae795e4] succeeded in 0.056569332999970356s: {'card_id': 'audit-card-00045', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 45, 'requeue_entry_id': 5045, 'review_id': 45, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 46, 'card_id': 'audit-card-00046', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:35,269: INFO/MainProcess] Task app.tasks.execute_foreground_command[453bbe2a-60e2-4fe8-9f7d-2aa1553e9d4f] received
+foreground-worker-1     | [2026-10-12 11:52:35,289: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.020
+foreground-worker-1     | [2026-10-12 11:52:35,290: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[453bbe2a-60e2-4fe8-9f7d-2aa1553e9d4f] succeeded in 0.020960709000064526s: {'card_id': 'audit-card-00046', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 46, 'requeue_entry_id': 5046, 'review_id': 46, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 47, 'card_id': 'audit-card-00047', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:35,484: INFO/MainProcess] Task app.tasks.execute_foreground_command[9fc203b3-1eb5-463f-b933-8c5d55de6c6b] received
+foreground-worker-1     | [2026-10-12 11:52:35,504: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:35,505: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[9fc203b3-1eb5-463f-b933-8c5d55de6c6b] succeeded in 0.020080082999811566s: {'card_id': 'audit-card-00047', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 47, 'requeue_entry_id': 5047, 'review_id': 47, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 48, 'card_id': 'audit-card-00048', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:35,699: INFO/MainProcess] Task app.tasks.execute_foreground_command[d6b00dee-9566-464d-9255-706f1fb09cc7] received
+foreground-worker-1     | [2026-10-12 11:52:35,718: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:35,718: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[d6b00dee-9566-464d-9255-706f1fb09cc7] succeeded in 0.01911983300033171s: {'card_id': 'audit-card-00048', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 48, 'requeue_entry_id': 5048, 'review_id': 48, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 49, 'card_id': 'audit-card-00049', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+background-worker-1     | [2026-10-12 11:52:15,499: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:35,915: INFO/MainProcess] Task app.tasks.execute_foreground_command[0c2dc37e-c90e-4b16-bb49-974a2838e998] received
+background-worker-1     | [2026-10-12 11:52:15,501: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,501: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:15,502: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.502078+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0005372080004235613,"handler_elapsed_seconds":0.004872625000643893,"execution_seconds":0.004335417000220332,"dispatch_wait_seconds":null}
+foreground-worker-1     | [2026-10-12 11:52:35,933: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+background-worker-1     | [2026-10-12 11:52:15,504: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d343e5b327c340fd810e84a131346887] succeeded in 0.012256166000042867s: True
+foreground-worker-1     | [2026-10-12 11:52:35,934: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[0c2dc37e-c90e-4b16-bb49-974a2838e998] succeeded in 0.01864629200008494s: {'card_id': 'audit-card-00049', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 49, 'requeue_entry_id': 5049, 'review_id': 49, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 50, 'card_id': 'audit-card-00050', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:36,155: INFO/MainProcess] Task app.tasks.execute_foreground_command[be9c0a43-a4d6-411e-875d-99b1461e529e] received
+foreground-worker-1     | [2026-10-12 11:52:36,177: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.021
+foreground-worker-1     | [2026-10-12 11:52:36,178: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[be9c0a43-a4d6-411e-875d-99b1461e529e] succeeded in 0.02188075000049139s: {'card_id': 'audit-card-00050', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 50, 'requeue_entry_id': 5050, 'review_id': 50, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 51, 'card_id': 'audit-card-00051', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:36,371: INFO/MainProcess] Task app.tasks.execute_foreground_command[82109919-0f86-4d67-8208-49125981dde5] received
+foreground-worker-1     | [2026-10-12 11:52:36,391: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:36,392: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[82109919-0f86-4d67-8208-49125981dde5] succeeded in 0.020163958999546594s: {'card_id': 'audit-card-00051', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 51, 'requeue_entry_id': 5051, 'review_id': 51, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 52, 'card_id': 'audit-card-00052', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:36,590: INFO/MainProcess] Task app.tasks.execute_foreground_command[9d0471cc-9da0-4493-ab0d-2ff62642e490] received
+background-worker-1     | [2026-10-12 11:52:15,505: INFO/MainProcess] Task app.tasks.poll_background_tasks[b62c70514ec547dc8295a9ff29889ace] received
+background-worker-1     | [2026-10-12 11:52:15,506: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,510: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,510: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,511: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,511: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,512: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,516: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:15,516: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:15,516: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T15:52:15.516520+00:00","process_started_at":"2026-10-12T15:52:13.239089+00:00","admission_wait_seconds":0.0005669570009558811,"handler_elapsed_seconds":0.006090791999667999,"execution_seconds":0.005523834998712118,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 11:52:15,516: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[b62c70514ec547dc8295a9ff29889ace] succeeded in 0.01103766699998232s: False
+background-worker-1     | [2026-10-12 11:52:15,633: INFO/MainProcess] Task app.tasks.poll_background_tasks[bbe34cf444ac488699e3f3236a88f251] received
+background-worker-1     | [2026-10-12 11:52:15,635: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:36,610: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+background-worker-1     | [2026-10-12 11:52:15,639: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:36,611: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[9d0471cc-9da0-4493-ab0d-2ff62642e490] succeeded in 0.020423334000042814s: {'card_id': 'audit-card-00052', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 52, 'requeue_entry_id': 5052, 'review_id': 52, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 53, 'card_id': 'audit-card-00053', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:36,805: INFO/MainProcess] Task app.tasks.execute_foreground_command[e207c82a-11e4-463e-bac6-26904447b4b4] received
+foreground-worker-1     | [2026-10-12 11:52:36,825: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:36,825: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[e207c82a-11e4-463e-bac6-26904447b4b4] succeeded in 0.02015449999998964s: {'card_id': 'audit-card-00053', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 53, 'requeue_entry_id': 5053, 'review_id': 53, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 54, 'card_id': 'audit-card-00054', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:37,018: INFO/MainProcess] Task app.tasks.execute_foreground_command[b60b4ff7-5358-4a5c-a8f7-257371a0a450] received
+foreground-worker-1     | [2026-10-12 11:52:37,038: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+background-worker-1     | [2026-10-12 11:52:15,639: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:15,640: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[bbe34cf444ac488699e3f3236a88f251] succeeded in 0.006399083999895083s: False
+background-worker-1     | [2026-10-12 11:52:16,634: INFO/MainProcess] Task app.tasks.poll_background_tasks[162ef133081b456e8ba53e02ffe2ac48] received
+foreground-worker-1     | [2026-10-12 11:52:37,039: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[b60b4ff7-5358-4a5c-a8f7-257371a0a450] succeeded in 0.020167458000287297s: {'card_id': 'audit-card-00054', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 54, 'requeue_entry_id': 5054, 'review_id': 54, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 55, 'card_id': 'audit-card-00055', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:37,235: INFO/MainProcess] Task app.tasks.execute_foreground_command[f01e313e-3f35-4283-8c7f-5d48ff85f748] received
+foreground-worker-1     | [2026-10-12 11:52:37,255: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.020
+background-worker-1     | [2026-10-12 11:52:16,638: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:16,644: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 11:52:16,644: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:16,645: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[162ef133081b456e8ba53e02ffe2ac48] succeeded in 0.009844500000326661s: False
+background-worker-1     | [2026-10-12 11:52:17,634: INFO/MainProcess] Task app.tasks.recover_operations[ed1be2a687a345c6b1e314710ea7c5d8] received
+background-worker-1     | [2026-10-12 11:52:17,637: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:17,639: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:17,639: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:17,640: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[ed1be2a687a345c6b1e314710ea7c5d8] succeeded in 0.005783416999292967s: False
+foreground-worker-1     | [2026-10-12 11:52:37,256: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[f01e313e-3f35-4283-8c7f-5d48ff85f748] succeeded in 0.0208285419994354s: {'card_id': 'audit-card-00055', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 55, 'requeue_entry_id': 5055, 'review_id': 55, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 56, 'card_id': 'audit-card-00056', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:37,453: INFO/MainProcess] Task app.tasks.execute_foreground_command[4830ef0c-eb8c-45cb-8320-8b1addc96372] received
+background-worker-1     | [2026-10-12 11:52:17,642: INFO/MainProcess] Task app.tasks.poll_background_tasks[f98da11f7e1341c29e45792defe1b040] received
+background-worker-1     | [2026-10-12 11:52:17,644: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:17,647: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:17,647: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:17,648: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[f98da11f7e1341c29e45792defe1b040] succeeded in 0.005684125000698259s: False
+background-worker-1     | [2026-10-12 11:52:18,635: INFO/MainProcess] Task app.tasks.poll_background_tasks[648db5235fcf4d548cd4bf591dbdd9b9] received
+background-worker-1     | [2026-10-12 11:52:18,637: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 11:52:37,504: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.050
+foreground-worker-1     | [2026-10-12 11:52:37,504: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[4830ef0c-eb8c-45cb-8320-8b1addc96372] succeeded in 0.05114249999951426s: {'card_id': 'audit-card-00056', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 56, 'requeue_entry_id': 5056, 'review_id': 56, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 57, 'card_id': 'audit-card-00057', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:37,706: INFO/MainProcess] Task app.tasks.execute_foreground_command[d9e632ae-448f-429e-b2e9-628f1382e6de] received
+foreground-worker-1     | [2026-10-12 11:52:37,727: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.020
+foreground-worker-1     | [2026-10-12 11:52:37,727: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[d9e632ae-448f-429e-b2e9-628f1382e6de] succeeded in 0.020969457999854058s: {'card_id': 'audit-card-00057', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 57, 'requeue_entry_id': 5057, 'review_id': 57, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 58, 'card_id': 'audit-card-00058', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:37,924: INFO/MainProcess] Task app.tasks.execute_foreground_command[3af7f2a4-dd1d-4e07-8390-fb81084e093a] received
+foreground-worker-1     | [2026-10-12 11:52:37,944: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.019
+foreground-worker-1     | [2026-10-12 11:52:37,945: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[3af7f2a4-dd1d-4e07-8390-fb81084e093a] succeeded in 0.019945000000006985s: {'card_id': 'audit-card-00058', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 58, 'requeue_entry_id': 5058, 'review_id': 58, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 59, 'card_id': 'audit-card-00059', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:38,138: INFO/MainProcess] Task app.tasks.execute_foreground_command[95e48568-c02c-43a8-8081-18435c6229cf] received
+foreground-worker-1     | [2026-10-12 11:52:38,157: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:38,157: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[95e48568-c02c-43a8-8081-18435c6229cf] succeeded in 0.019356916999640816s: {'card_id': 'audit-card-00059', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 59, 'requeue_entry_id': 5059, 'review_id': 59, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 60, 'card_id': 'audit-card-00060', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:38,351: INFO/MainProcess] Task app.tasks.execute_foreground_command[b9e2459b-e42b-4c3c-97a6-0131244ae261] received
+background-worker-1     | [2026-10-12 11:52:18,640: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:18,640: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:18,641: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[648db5235fcf4d548cd4bf591dbdd9b9] succeeded in 0.005018292000386282s: False
+background-worker-1     | [2026-10-12 11:52:19,638: INFO/MainProcess] Task app.tasks.poll_background_tasks[410c586bab534d4b8cd8df99e22bd6ca] received
+background-worker-1     | [2026-10-12 11:52:19,645: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:19,650: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 11:52:19,650: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.004s
+background-worker-1     | [2026-10-12 11:52:19,651: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[410c586bab534d4b8cd8df99e22bd6ca] succeeded in 0.00988666600005672s: False
+background-worker-1     | [2026-10-12 11:52:20,635: INFO/MainProcess] Task app.tasks.poll_background_tasks[b51f7699c13b4744ac57fe28b1d99682] received
+foreground-worker-1     | [2026-10-12 11:52:38,370: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.018
+foreground-worker-1     | [2026-10-12 11:52:38,370: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[b9e2459b-e42b-4c3c-97a6-0131244ae261] succeeded in 0.01901075000023411s: {'card_id': 'audit-card-00060', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 60, 'requeue_entry_id': 5060, 'review_id': 60, 'persisted': True, 'prepared_continuation': {'queue_entry_id': 61, 'card_id': 'audit-card-00061', 'revision': 1, 'cycle': 0, 'local_date': '2026-10-12', 'attempt_failed': False}}
+foreground-worker-1     | [2026-10-12 11:52:44,587: INFO/MainProcess] Task app.tasks.execute_foreground_command[bd2f6297-fda2-4666-a79a-8d2973d87159] received
+foreground-worker-1     | [2026-10-12 11:52:44,601: INFO/ForkPoolWorker-1] foreground command=settings.update queue_wait_seconds=0.006 execution_seconds=0.013
+background-worker-1     | [2026-10-12 11:52:20,638: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:20,641: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 11:52:20,641: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:20,641: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[b51f7699c13b4744ac57fe28b1d99682] succeeded in 0.005528916999537614s: False
+background-worker-1     | [2026-10-12 11:52:21,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[d1137bde97224a8cb93b9a0632dfaf96] received
+background-worker-1     | [2026-10-12 11:52:21,638: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:21,641: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:21,641: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:21,642: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d1137bde97224a8cb93b9a0632dfaf96] succeeded in 0.00585399999999936s: False
+background-worker-1     | [2026-10-12 11:52:22,633: INFO/MainProcess] Task app.tasks.recover_operations[8ed2870f389a4ef1b39a8244c09a09f4] received
+background-worker-1     | [2026-10-12 11:52:22,635: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:22,636: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:22,636: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 11:52:22,636: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[8ed2870f389a4ef1b39a8244c09a09f4] succeeded in 0.002842166999471374s: False
+background-worker-1     | [2026-10-12 11:52:22,637: INFO/MainProcess] Task app.tasks.poll_background_tasks[49595bc6e30b4fbab1aa0a280514b492] received
+background-worker-1     | [2026-10-12 11:52:22,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:22,639: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[49595bc6e30b4fbab1aa0a280514b492] succeeded in 0.0013778749998891726s: False
+foreground-worker-1     | [2026-10-12 11:52:44,601: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[bd2f6297-fda2-4666-a79a-8d2973d87159] succeeded in 0.01413449999927252s: {'initial_depth': 6, 'timezone': 'local', 'tactics_new_per_day': 5, 'defense_new_cards_per_day': 5, 'include_defensive_cards_in_daily_stack': True, 'defensive_analysis_enabled': False, 'study_only_mode': False, 'discovery_window_days': 90, 'new_cards_per_day': 10, 'study_new_per_day': 2, 'lichess_username': '', 'chesscom_username': '', 'auto_sync_minutes': 3, 'engine_line_window_cp': 30, 'major_mistake_cp': 100, 'light_first_interval_days': 7, 'draw_hold_user_moves': 20, 'coverage_reply_denominator': 100, 'coverage_cumulative_target': 95, 'coverage_horizon_fullmoves': 15, 'coverage_path_floor': 0.0005, 'coverage_maia_elo': 1500}
+background-worker-1     | [2026-10-12 11:52:23,635: INFO/MainProcess] Task app.tasks.poll_background_tasks[42fecceba4944de5a3d0c73f64af6c91] received
+background-worker-1     | [2026-10-12 11:52:23,637: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:23,637: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[42fecceba4944de5a3d0c73f64af6c91] succeeded in 0.0013502089996109135s: False
+background-worker-1     | [2026-10-12 11:52:24,635: INFO/MainProcess] Task app.tasks.poll_background_tasks[cb2c0d6e31364373a1d9e171f9b28d64] received
+background-worker-1     | [2026-10-12 11:52:24,637: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:24,637: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[cb2c0d6e31364373a1d9e171f9b28d64] succeeded in 0.0013787919997412246s: False
+background-worker-1     | [2026-10-12 11:52:25,635: INFO/MainProcess] Task app.tasks.poll_background_tasks[c1d9cac19d3c4d40a0130ca3ce5c6053] received
+background-worker-1     | [2026-10-12 11:52:25,637: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:25,640: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:25,640: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:25,641: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[c1d9cac19d3c4d40a0130ca3ce5c6053] succeeded in 0.004898457999843231s: False
+background-worker-1     | [2026-10-12 11:52:26,644: INFO/MainProcess] Task app.tasks.poll_background_tasks[2babcaa4b5124b74bebe80d2e57bc594] received
+background-worker-1     | [2026-10-12 11:52:26,647: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:26,651: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 11:52:26,651: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:26,652: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[2babcaa4b5124b74bebe80d2e57bc594] succeeded in 0.00737037499948201s: False
+background-worker-1     | [2026-10-12 11:52:27,633: INFO/MainProcess] Task app.tasks.recover_operations[90d028f53aa744a09e785f4e7cecadb9] received
+background-worker-1     | [2026-10-12 11:52:27,635: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:27,636: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:27,636: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 11:52:27,636: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[90d028f53aa744a09e785f4e7cecadb9] succeeded in 0.0031818339994060807s: False
+background-worker-1     | [2026-10-12 11:52:27,638: INFO/MainProcess] Task app.tasks.poll_background_tasks[e48de90b3c574195af2e0ee07f7d8ec9] received
+background-worker-1     | [2026-10-12 11:52:27,639: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:27,639: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[e48de90b3c574195af2e0ee07f7d8ec9] succeeded in 0.001293165999413759s: False
+background-worker-1     | [2026-10-12 11:52:28,638: INFO/MainProcess] Task app.tasks.poll_background_tasks[f803370a40ab417f9667606bcf315354] received
+background-worker-1     | [2026-10-12 11:52:28,640: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:28,640: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[f803370a40ab417f9667606bcf315354] succeeded in 0.001826499999879161s: False
+background-worker-1     | [2026-10-12 11:52:29,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[e84e7d6ea51c4f99aeafc576ee5335c9] received
+background-worker-1     | [2026-10-12 11:52:29,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:29,638: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[e84e7d6ea51c4f99aeafc576ee5335c9] succeeded in 0.0013182090006012004s: False
+background-worker-1     | [2026-10-12 11:52:30,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[5b706393d07a456cb9c8d587e9a655fd] received
+background-worker-1     | [2026-10-12 11:52:30,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:30,638: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[5b706393d07a456cb9c8d587e9a655fd] succeeded in 0.0014398749999600113s: False
+background-worker-1     | [2026-10-12 11:52:31,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[2eacfb0ea2ce4f7bacf8a137b0755e4c] received
+background-worker-1     | [2026-10-12 11:52:31,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:31,638: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[2eacfb0ea2ce4f7bacf8a137b0755e4c] succeeded in 0.00142733299981046s: False
+background-worker-1     | [2026-10-12 11:52:32,633: INFO/MainProcess] Task app.tasks.recover_operations[7547aac11a2f4ae0bf547154a378b79b] received
+background-worker-1     | [2026-10-12 11:52:32,637: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:32,638: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:32,638: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 11:52:32,638: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[7547aac11a2f4ae0bf547154a378b79b] succeeded in 0.0047272500005419715s: False
+background-worker-1     | [2026-10-12 11:52:32,641: INFO/MainProcess] Task app.tasks.poll_background_tasks[543bb6b7e9314c289a6903e64d2d17fe] received
+background-worker-1     | [2026-10-12 11:52:32,642: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:32,642: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[543bb6b7e9314c289a6903e64d2d17fe] succeeded in 0.0012592909997692914s: False
+background-worker-1     | [2026-10-12 11:52:33,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[0a13b6bf2496403cabf7e605b9bdb05f] received
+background-worker-1     | [2026-10-12 11:52:33,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:33,638: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[0a13b6bf2496403cabf7e605b9bdb05f] succeeded in 0.0013263749997349805s: False
+background-worker-1     | [2026-10-12 11:52:34,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[32b39dc6a51b438991531ea1342ee27e] received
+background-worker-1     | [2026-10-12 11:52:34,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:34,638: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[32b39dc6a51b438991531ea1342ee27e] succeeded in 0.0014901249996910337s: False
+background-worker-1     | [2026-10-12 11:52:35,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[1ae07798410e4c5ba13873c3c80e152a] received
+background-worker-1     | [2026-10-12 11:52:35,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:35,638: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[1ae07798410e4c5ba13873c3c80e152a] succeeded in 0.0015726660003565485s: False
+background-worker-1     | [2026-10-12 11:52:36,636: INFO/MainProcess] Task app.tasks.poll_background_tasks[8d99c4f7e24f4088b6800ea99e21999b] received
+background-worker-1     | [2026-10-12 11:52:36,638: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:36,638: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[8d99c4f7e24f4088b6800ea99e21999b] succeeded in 0.0014142090003588237s: False
+background-worker-1     | [2026-10-12 11:52:37,633: INFO/MainProcess] Task app.tasks.recover_operations[87fa9d59e24f4130a4e4271bbf6d0a08] received
+background-worker-1     | [2026-10-12 11:52:37,636: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:37,637: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:37,637: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 11:52:37,638: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[87fa9d59e24f4130a4e4271bbf6d0a08] succeeded in 0.0038803750003353343s: False
+background-worker-1     | [2026-10-12 11:52:37,639: INFO/MainProcess] Task app.tasks.poll_background_tasks[172ea4a0a2ee429fa0400fefbbba36e5] received
+background-worker-1     | [2026-10-12 11:52:37,640: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:37,641: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[172ea4a0a2ee429fa0400fefbbba36e5] succeeded in 0.0016934169998421567s: False
+background-worker-1     | [2026-10-12 11:52:38,637: INFO/MainProcess] Task app.tasks.poll_background_tasks[1e9135f42a05447dbb6a7114eb2e7ac4] received
+background-worker-1     | [2026-10-12 11:52:38,640: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:38,643: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:38,643: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:38,644: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[1e9135f42a05447dbb6a7114eb2e7ac4] succeeded in 0.006128291000095487s: False
+background-worker-1     | [2026-10-12 11:52:39,644: INFO/MainProcess] Task app.tasks.poll_background_tasks[a5d47701b26349f6a8839c8349dbe16a] received
+background-worker-1     | [2026-10-12 11:52:39,650: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:39,656: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.004 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 11:52:39,656: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.005s
+background-worker-1     | [2026-10-12 11:52:39,657: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[a5d47701b26349f6a8839c8349dbe16a] succeeded in 0.011583500000597269s: False
+background-worker-1     | [2026-10-12 11:52:40,638: INFO/MainProcess] Task app.tasks.poll_background_tasks[110d3148333544d88a09a36a58e410d3] received
+background-worker-1     | [2026-10-12 11:52:40,641: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:40,645: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 11:52:40,645: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 11:52:40,646: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[110d3148333544d88a09a36a58e410d3] succeeded in 0.007285749999937252s: False
+background-worker-1     | [2026-10-12 11:52:41,217: INFO/MainProcess] Task audit.cpu[5f1f1948-4be4-4fdd-a766-d6fea4d47a78] received
+background-worker-1     | [2026-10-12 11:52:44,259: INFO/MainProcess] Terminating 5f1f1948-4be4-4fdd-a766-d6fea4d47a78 (15)
+background-worker-1     | [2026-10-12 11:52:44,261: INFO/MainProcess] Task app.tasks.poll_background_tasks[59f42720e51e4985b007893869a80508] received
+background-worker-1     | [2026-10-12 11:52:44,355: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.011 settings_seconds=0.001 handler_seconds=0.013 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:44,382: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.011 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 11:52:44,382: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.001s transaction=0.013s
+background-worker-1     | [2026-10-12 11:52:44,383: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[59f42720e51e4985b007893869a80508] succeeded in 0.05659779100005835s: False
+background-worker-1     | [2026-10-12 11:52:44,386: INFO/MainProcess] Task app.tasks.recover_active_coverage[dc5b69594e874fb1baa90d0260751869] received
+background-worker-1     | [2026-10-12 11:52:44,390: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:44,391: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.001s transaction=0.002s
+background-worker-1     | [2026-10-12 11:52:44,391: INFO/ForkPoolWorker-2] Task app.tasks.recover_active_coverage[dc5b69594e874fb1baa90d0260751869] succeeded in 0.005295042000398098s: False
+background-worker-1     | [2026-10-12 11:52:44,394: INFO/MainProcess] Task app.tasks.recover_operations[83281e4d31d74d7a835484a3e14a1ec6] received
+background-worker-1     | [2026-10-12 11:52:44,396: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:44,397: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 11:52:44,397: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 11:52:44,397: INFO/ForkPoolWorker-2] Task app.tasks.recover_operations[83281e4d31d74d7a835484a3e14a1ec6] succeeded in 0.0033402500002921443s: False
+background-worker-1     | [2026-10-12 11:52:44,601: INFO/MainProcess] Task app.tasks.poll_background_tasks[b6647d736a2d47dea4358a1bee07e3ac] received
+background-worker-1     | [2026-10-12 11:52:44,602: INFO/ForkPoolWorker-2] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 11:52:44,607: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[b6647d736a2d47dea4358a1bee07e3ac] succeeded in 0.005739291999816487s: False
+background-worker-1     | [2026-10-12 11:52:44,608: INFO/MainProcess] Task app.tasks.poll_background_tasks[28cf5ad0613b42efa53ce5d83d68b912] received

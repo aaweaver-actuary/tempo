@@ -1,0 +1,31 @@
+{
+  "revision": "af71f0da34fbb42412125be16d516019c4fb5652",
+  "sourceFiles": {
+    "app/lib/background-study.ts": "1ddc14d40de040d26d52a168267a791f8c5936e68d10d073889db1fc3307b638",
+    "app/lib/study.worker.ts": "87d263e063157b9aa62ab0faf2516e7bed7057bed9714fc59fa573a2900955b8",
+    "app/lib/study-computation.ts": "118ff3bc8b1c7d29f0c522971ae25879286dfec37d2404e97b26cc23551e5a10",
+    "app/lib/study-position-store.ts": "aea84154f4e282648c2f0e719f205b425f84771e0773ff3a6510f598aa57f1b6",
+    "app/lib/repertoire-alternative-index.ts": "6c7e654fcf99d2ed9892244b588e804ebaca123b9d531bc54ccaa273e8448c09",
+    "app/lib/workspace-data.ts": "a55f688bbd7913220f8dc7f6c2b3d388c1e9c3f468b0519e4d935f0f81742763",
+    "app/lib/position-similarity.ts": "2f4cd0f0663ede64bc8f3ba9c0f4f515f96112937c66966a08769e2df44d1660",
+    "app/utils/canonical-line.ts": "d0de1ee5b903201e3d499db3c3b9601c52d3063c80770ea620bc8e6e3f3611b4"
+  },
+  "node": "v26.10.0",
+  "browser": "153.0.8010.12",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "cpus": "Apple M3",
+  "logicalCpus": 8,
+  "memoryBytes": 25769803776,
+  "sampleCount": 200,
+  "traced": false,
+  "fixtureSeed": 360036,
+  "createdAt": "2026-10-12T16:07:11.746Z",
+  "workerUrlBindingOnly": true,
+  "harnessSha256": "085aa7c3d72aff4694e9ec2f47e16063d4a73c6c9fb59886e165a296332928ce",
+  "driverSha256": "661192ee22219a3800dddf5e4458c5543a3de98b05042d2c70537d4f27bcd4f6",
+  "bundles": {
+    "harness.js": "e646793276ff99d7f9927a3f05cb99706022240c84009504fc8d65fd273e593d",
+    "study.worker.js": "d48ead837ede301d49db7ed28b6065e37785910415b7ad9da42a0f15a44cef02"
+  }
+}

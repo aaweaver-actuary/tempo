@@ -1,0 +1,48 @@
+{
+  "cold_publication": {
+    "initial": [
+      "refreshing",
+      1,
+      "queued",
+      0
+    ],
+    "after_30_seconds": [
+      "refreshing",
+      1,
+      "queued",
+      0
+    ],
+    "blocked_seconds": 31.672601832999135,
+    "foreground_review": {
+      "status": 200,
+      "body": "{\"card_id\":\"audit-card-00001\",\"hard_correct_streak\":0,\"idempotent\":false,\"interval_days\":0,\"next_due\":\"2026-10-12\",\"persisted\":true,\"queue_entry_id\":1,\"requeue_after_cards\":null,\"requeue_entry_id\":5001,\"requeue_today\":true,\"review_id\":1,\"scheduling_mode\":\"normal\",\"stability\":2.3065,\"state\":\"learning\",\"suggest_shorter_prefix\":false}",
+      "milliseconds": 302.9104580000421
+    },
+    "injected_task": "2f37b527-6d17-4359-9bdd-b2fb6c72aabc",
+    "classification": "Synthetic admitted CPU occupancy, real daily_queue publish slice; not attribution to a specific production handler",
+    "recovered_state": [
+      "ready",
+      0,
+      "complete",
+      1
+    ],
+    "revoke_to_ready_wall_ms": 3116.8654170014634
+  },
+  "redis_http_outage": {
+    "status": 500,
+    "body": "Internal Server Error",
+    "milliseconds": 36.927167000612826
+  },
+  "redis_recovery": {
+    "response": {
+      "status": 200,
+      "body": "{\"card_id\":\"audit-card-00002\",\"hard_correct_streak\":0,\"idempotent\":false,\"interval_days\":0,\"next_due\":\"2026-10-12\",\"persisted\":true,\"queue_entry_id\":2,\"requeue_after_cards\":null,\"requeue_entry_id\":5002,\"requeue_today\":true,\"review_id\":2,\"scheduling_mode\":\"normal\",\"stability\":2.3065,\"state\":\"learning\",\"suggest_shorter_prefix\":false}",
+      "milliseconds": 69.83416599905468
+    },
+    "logical_replay": {
+      "status": 200,
+      "body": "{\"card_id\":\"audit-card-00002\",\"hard_correct_streak\":0,\"idempotent\":false,\"interval_days\":0,\"next_due\":\"2026-10-12\",\"persisted\":true,\"queue_entry_id\":2,\"requeue_after_cards\":null,\"requeue_entry_id\":5002,\"requeue_today\":true,\"review_id\":2,\"scheduling_mode\":\"normal\",\"stability\":2.3065,\"state\":\"learning\",\"suggest_shorter_prefix\":false}",
+      "milliseconds": 10.510750000321423
+    }
+  }
+}

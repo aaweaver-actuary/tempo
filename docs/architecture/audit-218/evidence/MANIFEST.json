@@ -1,0 +1,541 @@
+[
+  {
+    "path": "raw-http.jsonl",
+    "bytes": 1653635,
+    "sha256": "d9876ac360b7110ec8f5e690319db76cb63cc842827cc7e0b3f2575f06e3d290",
+    "source_sha256": "d9876ac360b7110ec8f5e690319db76cb63cc842827cc7e0b3f2575f06e3d290",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "resource-samples.jsonl",
+    "bytes": 5744514,
+    "sha256": "8de5ca91da92624b0a70186c467389703cde9c94218e8788fbeaa1588d18c184",
+    "source_sha256": "a30282f19bd88b9f6155e931df4c6272aa6108287a98d6928021e5b2caa15c14",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "methodology.json",
+    "bytes": 568,
+    "sha256": "34be8738d2d96f444ea46e974d8ffe50cecb0b4f620596155718a0115d137b14",
+    "source_sha256": "34be8738d2d96f444ea46e974d8ffe50cecb0b4f620596155718a0115d137b14",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "summary.json",
+    "bytes": 20503,
+    "sha256": "1ebbca947038f52e167408578a5dadf3514d0b01b6de10f30ecc26798da7c1be",
+    "source_sha256": "1ebbca947038f52e167408578a5dadf3514d0b01b6de10f30ecc26798da7c1be",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "excluded-browser-pairs.json",
+    "bytes": 663,
+    "sha256": "dcfbc8dbcf4b7adad362a10705f953bfa79a97efc3f871ae89bdfe3df2247cbe",
+    "source_sha256": "dcfbc8dbcf4b7adad362a10705f953bfa79a97efc3f871ae89bdfe3df2247cbe",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "postgres-budget-snapshot.json",
+    "bytes": 347,
+    "sha256": "1dec2ade86f0aee9f46575226c92a8733b4d3d2b1a5ffe8a017c9ef49b7e79a4",
+    "source_sha256": "1dec2ade86f0aee9f46575226c92a8733b4d3d2b1a5ffe8a017c9ef49b7e79a4",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "http-runtime.log",
+    "bytes": 496863,
+    "sha256": "e1046b3c18e4bba75b33f7a9ce1bea45506f43221366128c2acfa9117ecf9985",
+    "source_sha256": "e1046b3c18e4bba75b33f7a9ce1bea45506f43221366128c2acfa9117ecf9985",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "measurement.log",
+    "bytes": 40596,
+    "sha256": "b3e6e21945afcd97e08a657dc11f088a9d0ea7cde062d3eae154d1e1db3e8acc",
+    "source_sha256": "b3e6e21945afcd97e08a657dc11f088a9d0ea7cde062d3eae154d1e1db3e8acc",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-worker.log",
+    "bytes": 4158,
+    "sha256": "6d62d3be4d84b17c2834956720c2f9dc61e1db5bf74689e158b9cbbb3c4963d9",
+    "source_sha256": "028a999502ac98a13f4390e7aad8c74d58157bc8206be9c3997af153bc584172",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "focused-python.log",
+    "bytes": 1438,
+    "sha256": "2420b6e077d8592e6bffa5bf60fbab1af2d0fba7bb68ffa69c94a7c0425d1f67",
+    "source_sha256": "37f7e4e8fb36b33436d720ca640dad1b81ba796e922e156f5b06a12b06da53c5",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "make-plan.log",
+    "bytes": 2132,
+    "sha256": "fdb262d4df6971cda72aab1b724e45fbceec84118fe67dd8109d3f8fc4d5882f",
+    "source_sha256": "fdb262d4df6971cda72aab1b724e45fbceec84118fe67dd8109d3f8fc4d5882f",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "npm-ci.log",
+    "bytes": 1218,
+    "sha256": "0ce206c64fd75fb1f90d0103bddd1d21decd0d0b834462b874590781b66d6668",
+    "source_sha256": "0ce206c64fd75fb1f90d0103bddd1d21decd0d0b834462b874590781b66d6668",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "uv-sync.log",
+    "bytes": 1228,
+    "sha256": "062517b917b672f1a2f5120e4ad303d1f0449956d2805c5ebb8f12dd1a798ad1",
+    "source_sha256": "062517b917b672f1a2f5120e4ad303d1f0449956d2805c5ebb8f12dd1a798ad1",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "build.log",
+    "bytes": 13905,
+    "sha256": "b91ac1a872b5c5c8621b3be24b2b13749880277c2663ccb52b86e899e1e22074",
+    "source_sha256": "b91ac1a872b5c5c8621b3be24b2b13749880277c2663ccb52b86e899e1e22074",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "seed.log",
+    "bytes": 882,
+    "sha256": "9b743ca452a7900458a78c7b9a1f462207be59e36c51380a2354fbd811c6b7fb",
+    "source_sha256": "9b743ca452a7900458a78c7b9a1f462207be59e36c51380a2354fbd811c6b7fb",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "test-plan.md",
+    "bytes": 658,
+    "sha256": "b7b557f2012f50c6ac9c6ce56c53d444d28aa7eb38729d48eb9e4177c18eacc2",
+    "source_sha256": "b7b557f2012f50c6ac9c6ce56c53d444d28aa7eb38729d48eb9e4177c18eacc2",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "reference-validation.json",
+    "bytes": 6203,
+    "sha256": "d8ffef4dc7617bf31f29aa152c4598fef59c29c0c0b7bd50ef5c6e3a385ec69c",
+    "source_sha256": "d8ffef4dc7617bf31f29aa152c4598fef59c29c0c0b7bd50ef5c6e3a385ec69c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "deployed-topology.json",
+    "bytes": 5014,
+    "sha256": "c4519e7d008315a7b3274509817211a1b367a9cc8f43d86cdf6d319f46acd18f",
+    "source_sha256": "c4519e7d008315a7b3274509817211a1b367a9cc8f43d86cdf6d319f46acd18f",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "interruption.json",
+    "bytes": 142,
+    "sha256": "8ff426774ba55887f500c418ec75bbbe7fb83bf69808221c418236bb9ff93382",
+    "source_sha256": "8ff426774ba55887f500c418ec75bbbe7fb83bf69808221c418236bb9ff93382",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "live-health-before.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "live-health-after.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "live-restored.json",
+    "bytes": 83,
+    "sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "source_sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "live-readiness-after.json",
+    "bytes": 44,
+    "sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "source_sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-worker/raw-untraced-audit-high-distinctness-10000.jsonl",
+    "bytes": 17233757,
+    "sha256": "ef315e8e473c0c4a50f6182a3f5ddc2ea108f085c318c52543f2c211b3c2ba5c",
+    "source_sha256": "ef315e8e473c0c4a50f6182a3f5ddc2ea108f085c318c52543f2c211b3c2ba5c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-worker/environment-untraced-audit-high-distinctness-10000-1791821231747.json",
+    "bytes": 1607,
+    "sha256": "24e6082fe4ba94225d5098884254958b33ad4647f5df1197dfa91f15bacf4fff",
+    "source_sha256": "24e6082fe4ba94225d5098884254958b33ad4647f5df1197dfa91f15bacf4fff",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-health-before.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-dependencies-stop.log",
+    "bytes": 185,
+    "sha256": "0c544c591a72c9d5846c8d6f837a0e0af960da67f0e068b5c2bec6bd8c501cc8",
+    "source_sha256": "0c544c591a72c9d5846c8d6f837a0e0af960da67f0e068b5c2bec6bd8c501cc8",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-readiness-after.json",
+    "bytes": 44,
+    "sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "source_sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-applications-stop.log",
+    "bytes": 575,
+    "sha256": "80fca2c0da1bde4be84085fc05b557a0f6b8bbaa0b3836ea9ae1c5d42e5bd7de",
+    "source_sha256": "80fca2c0da1bde4be84085fc05b557a0f6b8bbaa0b3836ea9ae1c5d42e5bd7de",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-restored.json",
+    "bytes": 83,
+    "sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "source_sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/interruption.json",
+    "bytes": 141,
+    "sha256": "ebda52c3507f27f640c02112472c513975a8cf4b970043c126114c94ed0d6625",
+    "source_sha256": "ebda52c3507f27f640c02112472c513975a8cf4b970043c126114c94ed0d6625",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/worker.log",
+    "bytes": 225,
+    "sha256": "35ebe7ab3300ea97d237776055581d95bde18fbb3a8ad2e0c37721ff522cb4fe",
+    "source_sha256": "202559ccfcd5ab2cd35ec12a6d32e1d7650907d09b5cce193c2aebceeab9f1a3",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-health-after.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-dependencies-start.log",
+    "bytes": 130,
+    "sha256": "3cbec1a5a3a7432f9a98769308492fee09cc7ff5459874d5d3d93be67d0b3ced",
+    "source_sha256": "3cbec1a5a3a7432f9a98769308492fee09cc7ff5459874d5d3d93be67d0b3ced",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/live-applications-start.log",
+    "bytes": 520,
+    "sha256": "f3536f1db59be4d39af8cb05b1c10bfbc8563b0e687fa21bf76f17403a9518fb",
+    "source_sha256": "f3536f1db59be4d39af8cb05b1c10bfbc8563b0e687fa21bf76f17403a9518fb",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/worker/raw-untraced-foreground-high-distinctness-10000.jsonl",
+    "bytes": 155819,
+    "sha256": "b5c28e521ec6c3f2e4121073e95921802a3abeccb4079cd8bb9cfaa961c81dd7",
+    "source_sha256": "b5c28e521ec6c3f2e4121073e95921802a3abeccb4079cd8bb9cfaa961c81dd7",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "browser-replacement/worker/environment-untraced-foreground-high-distinctness-10000-1791823541237.json",
+    "bytes": 1605,
+    "sha256": "b4c8fe9f38b40126e78e4128aa6b73be086d2657e005e4691003125e848c75e4",
+    "source_sha256": "b4c8fe9f38b40126e78e4128aa6b73be086d2657e005e4691003125e848c75e4",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-health-before.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-readiness-after.json",
+    "bytes": 44,
+    "sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "source_sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/verify.log",
+    "bytes": 893,
+    "sha256": "a75a4ab53683136a919e5acc95091cd2afb6c415cc464c6a7fdf490fa3230b74",
+    "source_sha256": "a75a4ab53683136a919e5acc95091cd2afb6c415cc464c6a7fdf490fa3230b74",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-restored.json",
+    "bytes": 83,
+    "sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "source_sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/interruption.json",
+    "bytes": 142,
+    "sha256": "e8e0615cf6b1ca8f249289e6fb17c0b0037d2387cf91b95ad40d1c012678461e",
+    "source_sha256": "e8e0615cf6b1ca8f249289e6fb17c0b0037d2387cf91b95ad40d1c012678461e",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/seed.log",
+    "bytes": 882,
+    "sha256": "6f74bf5d5fa97632d6f3e4101bf0cc6f3c8c337df475cbe055962013913d42be",
+    "source_sha256": "6f74bf5d5fa97632d6f3e4101bf0cc6f3c8c337df475cbe055962013913d42be",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-health-after.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/raw-refused-admission.json",
+    "bytes": 16916,
+    "sha256": "787f8f88a3c8f097cb2380b530e5d0a06fe00e432acb11da8573dd91b246b289",
+    "source_sha256": "787f8f88a3c8f097cb2380b530e5d0a06fe00e432acb11da8573dd91b246b289",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-dependencies-start.log",
+    "bytes": 130,
+    "sha256": "3cbec1a5a3a7432f9a98769308492fee09cc7ff5459874d5d3d93be67d0b3ced",
+    "source_sha256": "3cbec1a5a3a7432f9a98769308492fee09cc7ff5459874d5d3d93be67d0b3ced",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/findings.json",
+    "bytes": 2162,
+    "sha256": "49e58bec11c00d97ed4ebfc532af81e2a74ead5e0afff68ac3c030a5e9206c75",
+    "source_sha256": "49e58bec11c00d97ed4ebfc532af81e2a74ead5e0afff68ac3c030a5e9206c75",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/down.log",
+    "bytes": 2629,
+    "sha256": "da7c60a43d7abdaaf526f9c66512e926ee78311f760128c15ae0a68b4561f6aa",
+    "source_sha256": "da7c60a43d7abdaaf526f9c66512e926ee78311f760128c15ae0a68b4561f6aa",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-applications-start.log",
+    "bytes": 520,
+    "sha256": "f3536f1db59be4d39af8cb05b1c10bfbc8563b0e687fa21bf76f17403a9518fb",
+    "source_sha256": "f3536f1db59be4d39af8cb05b1c10bfbc8563b0e687fa21bf76f17403a9518fb",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/runtime.log",
+    "bytes": 157985,
+    "sha256": "b13b99499b9e3b986ee649a9f30fe17db18d345a502dc6f762f318b8649d981b",
+    "source_sha256": "b13b99499b9e3b986ee649a9f30fe17db18d345a502dc6f762f318b8649d981b",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-stop-applications.log",
+    "bytes": 575,
+    "sha256": "80fca2c0da1bde4be84085fc05b557a0f6b8bbaa0b3836ea9ae1c5d42e5bd7de",
+    "source_sha256": "80fca2c0da1bde4be84085fc05b557a0f6b8bbaa0b3836ea9ae1c5d42e5bd7de",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/redis-api-error.log",
+    "bytes": 17458,
+    "sha256": "e02af7cad9064c80d32e64f9ae573d3e1f635c48b897f286978700cfe26f8015",
+    "source_sha256": "e02af7cad9064c80d32e64f9ae573d3e1f635c48b897f286978700cfe26f8015",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/redis-stop.log",
+    "bytes": 129,
+    "sha256": "e614edded97c79f728e34f725f736e9e7c46093a81f17252a1a06e3751e654fb",
+    "source_sha256": "e614edded97c79f728e34f725f736e9e7c46093a81f17252a1a06e3751e654fb",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/live-stop-dependencies.log",
+    "bytes": 185,
+    "sha256": "0c544c591a72c9d5846c8d6f837a0e0af960da67f0e068b5c2bec6bd8c501cc8",
+    "source_sha256": "0c544c591a72c9d5846c8d6f837a0e0af960da67f0e068b5c2bec6bd8c501cc8",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/redis-start.log",
+    "bytes": 129,
+    "sha256": "e9ea6c1b265e06b10a6d7cee1db7efb3b20a8ea86370382ac9d078a6b65209f5",
+    "source_sha256": "e9ea6c1b265e06b10a6d7cee1db7efb3b20a8ea86370382ac9d078a6b65209f5",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-fault-probe/up.log",
+    "bytes": 4861,
+    "sha256": "2ff489a4978d86793ad39c2d66f1a7adcde70f74625c865f7fffb20ce5eee157",
+    "source_sha256": "2ff489a4978d86793ad39c2d66f1a7adcde70f74625c865f7fffb20ce5eee157",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-health-before.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-dependencies-stop.log",
+    "bytes": 185,
+    "sha256": "0c544c591a72c9d5846c8d6f837a0e0af960da67f0e068b5c2bec6bd8c501cc8",
+    "source_sha256": "0c544c591a72c9d5846c8d6f837a0e0af960da67f0e068b5c2bec6bd8c501cc8",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-readiness-after.json",
+    "bytes": 44,
+    "sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "source_sha256": "02b035de1c9798bb467416be97566079311308d603ca1d99c905678b7683165c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/methodology.json",
+    "bytes": 568,
+    "sha256": "1fcae50a0fae6fe63787e2a58a92400a80a7f34fbc2b72fbd02471b23b82c6ea",
+    "source_sha256": "1fcae50a0fae6fe63787e2a58a92400a80a7f34fbc2b72fbd02471b23b82c6ea",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-applications-stop.log",
+    "bytes": 575,
+    "sha256": "80fca2c0da1bde4be84085fc05b557a0f6b8bbaa0b3836ea9ae1c5d42e5bd7de",
+    "source_sha256": "80fca2c0da1bde4be84085fc05b557a0f6b8bbaa0b3836ea9ae1c5d42e5bd7de",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-restored.json",
+    "bytes": 83,
+    "sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "source_sha256": "64e25708023271a3c9b6abff7837518590678f0671a3cb40cc56d84801f5dd56",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/interruption.json",
+    "bytes": 142,
+    "sha256": "fe8adf6c85dab7973b5ccdd406c8b3e203c7f280656cb9afff589dcaca3b8b48",
+    "source_sha256": "fe8adf6c85dab7973b5ccdd406c8b3e203c7f280656cb9afff589dcaca3b8b48",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/raw-http.jsonl",
+    "bytes": 40491,
+    "sha256": "6ce09f9fb602f7a88d76c7f3c8162d9bab6bc0c0ce79ab2ea56c29398d8530f5",
+    "source_sha256": "6ce09f9fb602f7a88d76c7f3c8162d9bab6bc0c0ce79ab2ea56c29398d8530f5",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/run.log",
+    "bytes": 677,
+    "sha256": "79c74729fb7c439b285b7895bccacb332140d5d0d4eec1ff52f70995ebabcec5",
+    "source_sha256": "416a1bb4b4d4971fdd57f4c4700b893a2b2ba0e9fb21430950642653c7bc8c2f",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/seed.log",
+    "bytes": 882,
+    "sha256": "523254265e4488346360362704e8c22dbd010d7390094c8ed0a4cced687cbe96",
+    "source_sha256": "523254265e4488346360362704e8c22dbd010d7390094c8ed0a4cced687cbe96",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/resource-samples.jsonl",
+    "bytes": 192358,
+    "sha256": "59555e4f0ddc2f5a4c805fcbb2ed3669876595524e440f796eb4d3b466adb786",
+    "source_sha256": "1d53f397eab298304ddadbb2424b600906e81fecbf03e34ebc9263d8b2bd93f7",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/measurement.log",
+    "bytes": 2156,
+    "sha256": "39c6ecd9c5d20ba9f17767af223c7e484615cdeb8f5c0dab16350afae29d9673",
+    "source_sha256": "c75b72a40b61c27248f478d5a58e0502e33e453309e7ed6a649733d80701e00e",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-health-after.json",
+    "bytes": 88,
+    "sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "source_sha256": "1c77a395195c76cbe5c219ef48e4619be5804292c139677517158a609792cd7c",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-dependencies-start.log",
+    "bytes": 130,
+    "sha256": "3cbec1a5a3a7432f9a98769308492fee09cc7ff5459874d5d3d93be67d0b3ced",
+    "source_sha256": "3cbec1a5a3a7432f9a98769308492fee09cc7ff5459874d5d3d93be67d0b3ced",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/audit-up.log",
+    "bytes": 4861,
+    "sha256": "f351c2ea80d5ae565463c89a736d75b6e86184049cb24e00d130116a9be0078e",
+    "source_sha256": "f351c2ea80d5ae565463c89a736d75b6e86184049cb24e00d130116a9be0078e",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/live-applications-start.log",
+    "bytes": 520,
+    "sha256": "f3536f1db59be4d39af8cb05b1c10bfbc8563b0e687fa21bf76f17403a9518fb",
+    "source_sha256": "f3536f1db59be4d39af8cb05b1c10bfbc8563b0e687fa21bf76f17403a9518fb",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/ASSESSMENT.md",
+    "bytes": 259,
+    "sha256": "a1dd070c8f9ec099624dee7fe4015fdd5d6c53f93dd3278d011f27ffe9ab56c5",
+    "source_sha256": "a1dd070c8f9ec099624dee7fe4015fdd5d6c53f93dd3278d011f27ffe9ab56c5",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/runtime.log",
+    "bytes": 169184,
+    "sha256": "51aaac7e0a5048f441c9151eb3a989dc43c9234216de73a9067d2d4fcc9f3b52",
+    "source_sha256": "51aaac7e0a5048f441c9151eb3a989dc43c9234216de73a9067d2d4fcc9f3b52",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "failed-driver-01/audit-down.log",
+    "bytes": 2629,
+    "sha256": "f02b4064a31fd755709516eb4d259e864cbfa71dba5d25b05355a875258c9b80",
+    "source_sha256": "f02b4064a31fd755709516eb4d259e864cbfa71dba5d25b05355a875258c9b80",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-browser/.last-run.json",
+    "bytes": 45,
+    "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903",
+    "source_sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  },
+  {
+    "path": "native-browser/study-only-mode-study-only-69e41-cross-reload-and-resumption-chromium/study-only-settings.png",
+    "bytes": 94534,
+    "sha256": "95b6febf13b32d6268ac158ea4fcfe568f104ac55ebc12420232e4c5d934f2a8",
+    "source_sha256": "95b6febf13b32d6268ac158ea4fcfe568f104ac55ebc12420232e4c5d934f2a8",
+    "sanitization": "local home path replaced in UTF-8; binary unchanged"
+  }
+]

@@ -1,0 +1,1 @@
+{"max_connections" : "100", "sessions" : [{"usename":"postgres","application_name":"psql","state":"active","count":1}, {"usename":"tempo_reader","application_name":"","state":"active","count":1}, {"usename":"tempo_reader","application_name":"","state":"idle","count":1}, {"usename":"tempo_writer","application_name":"","state":"idle","count":4}]}

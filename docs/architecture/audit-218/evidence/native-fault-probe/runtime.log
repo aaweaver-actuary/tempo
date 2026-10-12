@@ -1,0 +1,1218 @@
+postgres-1  | The files belonging to this database system will be owned by user "postgres".
+postgres-1  | This user must also own the server process.
+postgres-1  | 
+postgres-1  | The database cluster will be initialized with locale "en_US.utf8".
+postgres-1  | The default database encoding has accordingly been set to "UTF8".
+postgres-1  | The default text search configuration will be set to "english".
+postgres-1  | 
+postgres-1  | Data page checksums are enabled.
+postgres-1  | 
+postgres-1  | fixing permissions on existing directory /var/lib/postgresql/18/docker ... ok
+postgres-1  | creating subdirectories ... ok
+postgres-1  | selecting dynamic shared memory implementation ... posix
+postgres-1  | selecting default "max_connections" ... 100
+postgres-1  | selecting default "shared_buffers" ... 128MB
+postgres-1  | selecting default time zone ... Etc/UTC
+postgres-1  | creating configuration files ... ok
+postgres-1  | running bootstrap script ... ok
+postgres-1  | performing post-bootstrap initialization ... ok
+postgres-1  | syncing data to disk ... ok
+postgres-1  | 
+postgres-1  | 
+postgres-1  | Success. You can now start the database server using:
+postgres-1  | 
+postgres-1  |     pg_ctl -D /var/lib/postgresql/18/docker -l logfile start
+postgres-1  | 
+web-1       | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+web-1       | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+web-1       | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+web-1       | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+web-1       | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
+web-1       | /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+web-1       | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+web-1       | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+web-1       | /docker-entrypoint.sh: Configuration complete; ready for start up
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: using the "epoll" event method
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: nginx/1.28.3
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: built by gcc 15.2.0 (Alpine 15.2.0) 
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: OS: Linux 7.0.14-linuxkit
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: getrlimit(RLIMIT_NOFILE): 1048576:1048576
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker processes
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 29
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 30
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 31
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 32
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 33
+postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 34
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 35
+web-1       | 2026/10/12 16:40:53 [notice] 1#1: start worker process 36
+postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1  | waiting for server to start....2026-10-12 16:40:44.386 UTC [53] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-12 16:40:44.387 UTC [53] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-12 16:40:44.390 UTC [59] LOG:  database system was shut down at 2026-10-12 16:40:44 UTC
+postgres-1  | 2026-10-12 16:40:44.393 UTC [53] LOG:  database system is ready to accept connections
+postgres-1  |  done
+postgres-1  | server started
+postgres-1  | CREATE DATABASE
+postgres-1  | 
+postgres-1  | 
+postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1  | 
+postgres-1  | waiting for server to shut down....2026-10-12 16:40:44.572 UTC [53] LOG:  received fast shutdown request
+postgres-1  | 2026-10-12 16:40:44.573 UTC [53] LOG:  aborting any active transactions
+postgres-1  | 2026-10-12 16:40:44.574 UTC [53] LOG:  background worker "logical replication launcher" (PID 62) exited with exit code 1
+postgres-1  | 2026-10-12 16:40:44.574 UTC [57] LOG:  shutting down
+postgres-1  | 2026-10-12 16:40:44.575 UTC [57] LOG:  checkpoint starting: shutdown immediate
+postgres-1  | 2026-10-12 16:40:44.612 UTC [57] LOG:  checkpoint complete: wrote 943 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.016 s, sync=0.021 s, total=0.039 s; sync files=303, longest=0.009 s, average=0.001 s; distance=4352 kB, estimate=4352 kB; lsn=0/1BA1BE8, redo lsn=0/1BA1BE8
+postgres-1  | 2026-10-12 16:40:44.622 UTC [53] LOG:  database system is shut down
+postgres-1  |  done
+postgres-1  | server stopped
+postgres-1  | 
+postgres-1  | PostgreSQL init process complete; ready for start up.
+postgres-1  | 
+postgres-1  | 2026-10-12 16:40:44.689 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-12 16:40:44.690 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-10-12 16:40:44.690 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-10-12 16:40:44.691 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-12 16:40:44.694 UTC [75] LOG:  database system was shut down at 2026-10-12 16:40:44 UTC
+schema-1    | Applied 001_initial.sql
+schema-1    | Applied 002_game_sync_windows.sql
+postgres-1  | 2026-10-12 16:40:44.696 UTC [1] LOG:  database system is ready to accept connections
+schema-1    | Applied 003_integrity_accumulators.sql
+schema-1    | Applied 004_discovery_cursor.sql
+schema-1    | Applied 005_coverage_building.sql
+schema-1    | Applied 006_coverage_maia_claim.sql
+schema-1    | Applied 007_coverage_explorer_claim.sql
+schema-1    | Applied 008_coverage_recovery.sql
+schema-1    | Applied 009_versioned_game_analysis.sql
+schema-1    | Applied 010_game_analysis_publications.sql
+schema-1    | Applied 011_versioned_game_positions.sql
+schema-1    | Applied 012_versioned_game_repertoire.sql
+schema-1    | Applied 013_versioned_game_findings.sql
+schema-1    | Applied 014_versioned_game_events.sql
+schema-1    | Applied 015_game_finding_preparations.sql
+schema-1    | Applied 016_phone_review_receipts.sql
+schema-1    | Applied 017_operation_recovery.sql
+schema-1    | Applied 018_operation_attempt_ownership.sql
+schema-1    | Applied 019_threat_claim_lookup.sql
+schema-1    | Applied 020_ordered_threat_claim.sql
+schema-1    | Applied 021_priority_preparations.sql
+schema-1    | Applied 022_priority_preparation_ordering.sql
+schema-1    | Applied 023_priority_visible_game_positions.sql
+schema-1    | Applied 024_opening_segmentation.sql
+schema-1             | Applied 025_tactic_capture.sql
+background-worker-1  | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+schema-1             | Applied 026_background_diagnostics.sql
+schema-1             | Applied 027_handled_discoveries.sql
+schema-1             | Applied 028_revisioned_discovery_admissions.sql
+schema-1             | Applied 029_repertoire_daily_limits.sql
+schema-1             | Applied 030_opening_decision_evidence.sql
+schema-1             | Applied 031_defensive_analysis_pause.sql
+schema-1             | Applied 032_queue_attempt_origins.sql
+schema-1             | Applied 033_canonical_prefix.sql
+schema-1             | Applied 034_current_canonical_routes.sql
+background-worker-1  | absolutely not recommended!
+background-worker-1  | 
+background-worker-1  | Please specify a different user using the --uid option.
+background-worker-1  | 
+schema-1             | Applied 035_canonical_publication_freshness.sql
+schema-1             | Applied 036_prefix_diagnostics_indexes.sql
+schema-1             | Applied 037_card_deletion.sql
+schema-1             | Applied 038_prefix_transition_application.sql
+background-worker-1  | User information: uid=0 euid=0 gid=0 egid=0
+background-worker-1  | 
+background-worker-1  |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+background-worker-1  |  
+background-worker-1  |  -------------- celery@7b9530a3447b v5.6.3 (recovery)
+background-worker-1  | --- ***** ----- 
+background-worker-1  | -- ******* ---- Linux-7.0.14-linuxkit-aarch64-with-glibc2.41 2026-10-12 12:40:48
+background-worker-1  | - *** --- * --- 
+schema-1             | Applied 039_prefix_transition_lock_budget.sql
+schema-1             | Applied 040_queue_unlock_deadlines.sql
+schema-1             | Applied 041_real_game_study_obligations.sql
+schema-1             | Applied 042_queue_attempt_issuance.sql
+schema-1             | Applied 043_background_scheduling_turns.sql
+schema-1             | Applied 044_next_opponent_profiles.sql
+schema-1             | Applied 045_engine_scheduling.sql
+schema-1             | Applied 046_refresh_input_versions.sql
+schema-1             | Applied 047_study_only_mode.sql
+schema-1             | PostgreSQL schema version 47
+background-worker-1  | - ** ---------- [config]
+background-worker-1  | - ** ---------- .> app:         tempo:0xffffb9bdb2c0
+background-worker-1  | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1  | - ** ---------- .> results:     redis://redis:6379/0
+background-worker-1  | - *** --- * --- .> concurrency: 1 (prefork)
+background-worker-1  | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+background-worker-1  | --- ***** ----- 
+background-worker-1  |  -------------- [queues]
+background-worker-1  |                 .> background       exchange=background(direct) key=background
+background-worker-1  |                 
+background-worker-1  | 
+background-worker-1  | [tasks]
+background-worker-1  |   . app.tasks.ensure_daily_queue
+background-worker-1  |   . app.tasks.execute_background_command
+background-worker-1  |   . app.tasks.execute_background_slice
+background-worker-1  |   . app.tasks.execute_foreground_command
+background-worker-1  |   . app.tasks.poll_background_tasks
+background-worker-1  |   . app.tasks.recover_active_coverage
+background-worker-1  |   . app.tasks.recover_operations
+background-worker-1  |   . audit.cpu
+background-worker-1  |   . audit.database
+background-worker-1  | 
+background-worker-1  | [2026-10-12 12:40:48,787: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1  | [2026-10-12 12:40:48,789: INFO/MainProcess] mingle: searching for neighbors
+background-worker-1  | [2026-10-12 12:40:49,798: INFO/MainProcess] mingle: all alone
+background-worker-1  | [2026-10-12 12:40:49,806: INFO/MainProcess] celery@7b9530a3447b ready.
+background-worker-1  | [2026-10-12 12:40:49,807: INFO/MainProcess] Task app.tasks.poll_background_tasks[57034a1e08d94293b212996378a218cf] received
+background-worker-1  | [2026-10-12 12:40:49,839: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.012 settings_seconds=0.001 handler_seconds=0.012 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:49,860: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.008 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 12:40:49,860: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.009s
+background-worker-1  | [2026-10-12 12:40:49,861: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[57034a1e08d94293b212996378a218cf] succeeded in 0.05317454199999361s: False
+background-worker-1  | [2026-10-12 12:40:49,969: INFO/MainProcess] Task app.tasks.poll_background_tasks[fad21eb0658a4ff9912fed0eee0be698] received
+background-worker-1  | [2026-10-12 12:40:49,971: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:49,979: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.007 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:49,979: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.008s
+background-worker-1  | [2026-10-12 12:40:49,982: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,162: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,172: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.008 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 12:40:50,172: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.009s
+background-worker-1  | [2026-10-12 12:40:50,172: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.172502+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0005255840000017997,"handler_elapsed_seconds":0.1927554579999935,"execution_seconds":0.1922298739999917,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 12:40:50,177: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[fad21eb0658a4ff9912fed0eee0be698] succeeded in 0.20701983399999335s: True
+background-worker-1  | [2026-10-12 12:40:50,178: INFO/MainProcess] Task app.tasks.poll_background_tasks[6862723ae86a4fa6aa2b8e6a45417d3e] received
+background-worker-1  | [2026-10-12 12:40:50,179: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,183: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,183: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1  | [2026-10-12 12:40:50,185: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,185: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,191: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,191: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 12:40:50,191: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.191823+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0004894999999862648,"handler_elapsed_seconds":0.0079448339999999,"execution_seconds":0.007455334000013636,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 12:40:50,194: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[6862723ae86a4fa6aa2b8e6a45417d3e] succeeded in 0.01639012499998671s: True
+background-worker-1  | [2026-10-12 12:40:50,195: INFO/MainProcess] Task app.tasks.poll_background_tasks[64f350aaa9d4447a8e379855c2c0e702] received
+background-worker-1  | [2026-10-12 12:40:50,196: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,204: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,204: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.007s
+background-worker-1  | [2026-10-12 12:40:50,205: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,206: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,210: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,210: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1  | [2026-10-12 12:40:50,211: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.211002+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0005186680000122124,"handler_elapsed_seconds":0.006532999999990352,"execution_seconds":0.00601433199997814,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 12:40:50,213: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[64f350aaa9d4447a8e379855c2c0e702] succeeded in 0.01759129100000223s: True
+background-worker-1  | [2026-10-12 12:40:50,214: INFO/MainProcess] Task app.tasks.poll_background_tasks[85688c25277a4abdb0f992f5cbd0c9b0] received
+background-worker-1  | [2026-10-12 12:40:50,215: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+redis-1              | 1:C 12 Oct 2026 16:40:43.768 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1              | 1:C 12 Oct 2026 16:40:43.768 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1              | 1:C 12 Oct 2026 16:40:43.768 * Configuration loaded
+redis-1              | 1:M 12 Oct 2026 16:40:43.768 * monotonic clock: POSIX clock_gettime
+redis-1              | 1:M 12 Oct 2026 16:40:43.771 * Running mode=standalone, port=6379.
+redis-1              | 1:M 12 Oct 2026 16:40:43.772 * Server initialized
+redis-1              | 1:M 12 Oct 2026 16:40:43.775 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+redis-1              | 1:M 12 Oct 2026 16:40:43.779 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+redis-1              | 1:M 12 Oct 2026 16:40:43.779 * Ready to accept connections tcp
+redis-1              | 1:signal-handler (1791823294) Received SIGTERM scheduling shutdown...
+redis-1              | 1:M 12 Oct 2026 16:41:35.067 * User requested shutdown...
+redis-1              | 1:M 12 Oct 2026 16:41:35.067 * Calling fsync() on the AOF file.
+redis-1              | 1:M 12 Oct 2026 16:41:35.069 * Saving the final RDB snapshot before exiting.
+redis-1              | 1:M 12 Oct 2026 16:41:35.071 * DB saved on disk
+redis-1              | 1:M 12 Oct 2026 16:41:35.071 # Redis is now ready to exit, bye bye...
+redis-1              | 1:C 12 Oct 2026 16:41:37.505 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1              | 1:C 12 Oct 2026 16:41:37.505 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1              | 1:C 12 Oct 2026 16:41:37.505 * Configuration loaded
+redis-1              | 1:M 12 Oct 2026 16:41:37.506 * monotonic clock: POSIX clock_gettime
+redis-1              | 1:M 12 Oct 2026 16:41:37.507 * Running mode=standalone, port=6379.
+redis-1              | 1:M 12 Oct 2026 16:41:37.507 * Server initialized
+redis-1              | 1:M 12 Oct 2026 16:41:37.508 * Reading RDB base file on AOF loading...
+redis-1              | 1:M 12 Oct 2026 16:41:37.508 * Loading RDB produced by version 7.4.11
+redis-1              | 1:M 12 Oct 2026 16:41:37.508 * RDB age 54 seconds
+redis-1              | 1:M 12 Oct 2026 16:41:37.508 * RDB memory usage when created 0.94 Mb
+redis-1              | 1:M 12 Oct 2026 16:41:37.508 * RDB is base AOF
+redis-1              | 1:M 12 Oct 2026 16:41:37.508 * Done loading RDB, keys loaded: 0, keys expired: 0.
+foreground-worker-1  | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+foreground-worker-1  | absolutely not recommended!
+redis-1              | 1:M 12 Oct 2026 16:41:37.508 * DB loaded from base file appendonly.aof.1.base.rdb: 0.002 seconds
+redis-1              | 1:M 12 Oct 2026 16:41:37.513 * DB loaded from incr file appendonly.aof.1.incr.aof: 0.004 seconds
+redis-1              | 1:M 12 Oct 2026 16:41:37.513 * DB loaded from append only file: 0.006 seconds
+foreground-worker-1  | 
+foreground-worker-1  | Please specify a different user using the --uid option.
+foreground-worker-1  | 
+foreground-worker-1  | User information: uid=0 euid=0 gid=0 egid=0
+foreground-worker-1  | 
+redis-1              | 1:M 12 Oct 2026 16:41:37.513 * Opening AOF incr file appendonly.aof.1.incr.aof on server start
+redis-1              | 1:M 12 Oct 2026 16:41:37.513 * Ready to accept connections tcp
+foreground-worker-1  |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+foreground-worker-1  |  
+foreground-worker-1  |  -------------- celery@c3b7ddd80c7d v5.6.3 (recovery)
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  | -- ******* ---- Linux-7.0.14-linuxkit-aarch64-with-glibc2.41 2026-10-12 12:40:48
+foreground-worker-1  | - *** --- * --- 
+foreground-worker-1  | - ** ---------- [config]
+foreground-worker-1  | - ** ---------- .> app:         tempo:0xffffb4f4c2c0
+foreground-worker-1  | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | - ** ---------- .> results:     redis://redis:6379/0
+foreground-worker-1  | - *** --- * --- .> concurrency: 2 (prefork)
+foreground-worker-1  | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  |  -------------- [queues]
+foreground-worker-1  |                 .> foreground       exchange=foreground(direct) key=foreground
+foreground-worker-1  |                 
+foreground-worker-1  | 
+foreground-worker-1  | [tasks]
+foreground-worker-1  |   . app.tasks.ensure_daily_queue
+foreground-worker-1  |   . app.tasks.execute_background_command
+foreground-worker-1  |   . app.tasks.execute_background_slice
+foreground-worker-1  |   . app.tasks.execute_foreground_command
+foreground-worker-1  |   . app.tasks.poll_background_tasks
+foreground-worker-1  |   . app.tasks.recover_active_coverage
+foreground-worker-1  |   . app.tasks.recover_operations
+foreground-worker-1  | 
+foreground-worker-1  | [2026-10-12 12:40:48,898: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | [2026-10-12 12:40:48,900: INFO/MainProcess] mingle: searching for neighbors
+foreground-worker-1  | [2026-10-12 12:40:49,915: INFO/MainProcess] mingle: all alone
+foreground-worker-1  | [2026-10-12 12:40:49,923: INFO/MainProcess] celery@c3b7ddd80c7d ready.
+foreground-worker-1  | [2026-10-12 12:40:49,924: INFO/MainProcess] Task app.tasks.execute_foreground_command[1212e93f7b6e4e2a817709467212ca31] received
+foreground-worker-1  | [2026-10-12 12:40:49,969: INFO/ForkPoolWorker-1] foreground command=queue.ensure_current queue_wait_seconds=1.253 execution_seconds=0.040
+foreground-worker-1  | [2026-10-12 12:40:49,969: INFO/ForkPoolWorker-1] training_timing {"label": "queue.ensure_current", "trace": "273526f6929483c1", "started_epoch_ms": 1791823249928.9946, "stages_ms": {"foreground_admission": 0.7719170000086706, "post_commit_wake": 5.015500000013162}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 10.39204200000654, "execution_ms": 2.6175410000064403, "commit_cleanup_ms": 0.43679199998791773, "commit_observed_epoch_ms": 1791823249943.6953, "commit_epoch_ms": 1791823249943.6677, "commit_ms": 0.40549999999939246}, {"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.017874999997502528, "execution_ms": 20.003874999986238, "commit_cleanup_ms": 0.45529100000862854, "commit_observed_epoch_ms": 1791823249964.2725, "commit_epoch_ms": 1791823249964.2478, "commit_ms": 0.4285409999909007}], "sql_count": 20, "sql_ms": 9.009831000071244, "broker_wait_ms": 1252.7406215667725, "duration_ms": 40.82904199998438}
+foreground-worker-1  | [2026-10-12 12:40:49,970: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[1212e93f7b6e4e2a817709467212ca31] succeeded in 0.04494295800000714s: {'queue_date': '2026-10-12', 'refresh_pending': True, 'task_id': 'e26dd8df-933a-41d4-a37a-d29fbe72dd67'}
+foreground-worker-1  | [2026-10-12 12:41:01,191: INFO/MainProcess] Task app.tasks.execute_foreground_command[6be4af916db7400d919ba6c1ce75c264] received
+foreground-worker-1  | [2026-10-12 12:41:01,238: INFO/ForkPoolWorker-1] foreground command=queue.issue_head queue_wait_seconds=0.011 execution_seconds=0.044
+foreground-worker-1  | [2026-10-12 12:41:01,239: INFO/ForkPoolWorker-1] training_timing {"label": "queue.issue_head", "trace": "def707f3914935dc", "started_epoch_ms": 1791823261195.0432, "stages_ms": {"foreground_admission": 0.3981670000143822}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.11062500001912667, "execution_ms": 2.3952909999991334, "commit_cleanup_ms": 0.6548339999881136, "commit_observed_epoch_ms": 1791823261199.289, "commit_epoch_ms": 1791823261199.2397, "commit_ms": 0.6049999999788724}, {"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.02745900002310009, "execution_ms": 38.146082999986675, "commit_cleanup_ms": 0.6651250000118125, "commit_observed_epoch_ms": 1791823261238.3203, "commit_epoch_ms": 1791823261238.2922, "commit_ms": 0.6370410000045013}], "sql_count": 21, "sql_ms": 14.42570700004353, "broker_wait_ms": 11.481523513793945, "duration_ms": 44.03249999998593}
+foreground-worker-1  | [2026-10-12 12:41:01,240: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[6be4af916db7400d919ba6c1ce75c264] succeeded in 0.04664545800000042s: {'issued': True}
+foreground-worker-1  | [2026-10-12 12:41:01,251: INFO/MainProcess] Task app.tasks.execute_foreground_command[013ae1932eb34fb0bde527c0343d9d54] received
+foreground-worker-1  | [2026-10-12 12:41:01,543: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.003 execution_seconds=0.291
+foreground-worker-1  | [2026-10-12 12:41:01,543: INFO/ForkPoolWorker-1] training_timing {"label": "cards.review", "trace": "0eb2668dbfec4c63", "started_epoch_ms": 1791823261252.7415, "stages_ms": {"foreground_admission": 0.218499999988353, "fsrs_review_receipt": 52.8782920000026}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.029665999988992553, "execution_ms": 1.2334170000087852, "commit_cleanup_ms": 0.48937500000079126, "commit_observed_epoch_ms": 1791823261254.975, "commit_epoch_ms": 1791823261254.954, "commit_ms": 0.4678340000054959}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.02758299999072733, "execution_ms": 1.4390420000154336, "commit_cleanup_ms": 0.1246669999943606, "commit_observed_epoch_ms": 1791823261498.2612, "commit_epoch_ms": 1791823261498.244, "commit_ms": 0.1073329999883299}, {"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.01704100000665676, "execution_ms": 287.34954199998697, "commit_cleanup_ms": 0.6373749999966094, "commit_observed_epoch_ms": 1791823261543.0405, "commit_epoch_ms": 1791823261543.0159, "commit_ms": 0.6122499999889897}], "sql_count": 50, "sql_ms": 26.523499999996147, "broker_wait_ms": 2.794504165649414, "duration_ms": 290.81745799999226}
+foreground-worker-1  | [2026-10-12 12:41:01,544: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[013ae1932eb34fb0bde527c0343d9d54] succeeded in 0.2923734169999932s: {'card_id': 'audit-card-00001', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 1, 'requeue_entry_id': 5001, 'review_id': 1, 'persisted': True}
+foreground-worker-1  | [2026-10-12 12:41:34,801: INFO/MainProcess] Task app.tasks.execute_foreground_command[2cda176cb3364c448d2520c7d64acf98] received
+foreground-worker-1  | [2026-10-12 12:41:34,813: INFO/ForkPoolWorker-1] foreground command=queue.issue_head queue_wait_seconds=0.007 execution_seconds=0.010
+foreground-worker-1  | [2026-10-12 12:41:34,813: INFO/ForkPoolWorker-1] training_timing {"label": "queue.issue_head", "trace": "9296fda0b3c4cb10", "started_epoch_ms": 1791823294803.7942, "stages_ms": {"foreground_admission": 0.25604100000009566}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.09283400001436348, "execution_ms": 1.3569159999917701, "commit_cleanup_ms": 0.6172920000153681, "commit_observed_epoch_ms": 1791823294806.484, "commit_epoch_ms": 1791823294806.4363, "commit_ms": 0.5698330000143415}, {"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.018665999988343174, "execution_ms": 6.1157500000206255, "commit_cleanup_ms": 0.4491669999993064, "commit_observed_epoch_ms": 1791823294813.132, "commit_epoch_ms": 1791823294813.1145, "commit_ms": 0.4317920000005415}], "sql_count": 21, "sql_ms": 6.94654299994113, "broker_wait_ms": 7.414102554321289, "duration_ms": 9.831625000003896}
+foreground-worker-1  | [2026-10-12 12:41:34,814: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[2cda176cb3364c448d2520c7d64acf98] succeeded in 0.011540125000010448s: {'issued': True}
+foreground-worker-1  | [2026-10-12 12:41:35,074: WARNING/MainProcess] consumer: Connection to broker lost. Trying to re-establish the connection...
+foreground-worker-1  | Traceback (most recent call last):
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 105, in call_with_retry
+foreground-worker-1  |     return do()
+foreground-worker-1  |            ^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 915, in <lambda>
+foreground-worker-1  |     lambda: command(*args, **kwargs),
+foreground-worker-1  |             ^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 936, in try_read
+foreground-worker-1  |     return conn.read_response(disconnect_on_error=False, push_request=True)
+foreground-worker-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 650, in read_response
+foreground-worker-1  |     response = self._parser.read_response(disable_decoding=disable_decoding)
+foreground-worker-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/resp2.py", line 15, in read_response
+foreground-worker-1  |     result = self._read_response(disable_decoding=disable_decoding)
+foreground-worker-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/resp2.py", line 25, in _read_response
+foreground-worker-1  |     raw = self._buffer.readline()
+foreground-worker-1  |           ^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/socket.py", line 115, in readline
+foreground-worker-1  |     self._read_from_socket()
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/socket.py", line 68, in _read_from_socket
+foreground-worker-1  |     raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+foreground-worker-1  | redis.exceptions.ConnectionError: Connection closed by server.
+foreground-worker-1  | 
+foreground-worker-1  | During handling of the above exception, another exception occurred:
+foreground-worker-1  | 
+foreground-worker-1  | Traceback (most recent call last):
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 389, in connect_check_health
+foreground-worker-1  |     sock = self.retry.call_with_retry(
+foreground-worker-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 105, in call_with_retry
+foreground-worker-1  |     return do()
+foreground-worker-1  |            ^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 390, in <lambda>
+foreground-worker-1  |     lambda: self._connect(), lambda error: self.disconnect(error)
+foreground-worker-1  |             ^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 803, in _connect
+foreground-worker-1  |     raise err
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 787, in _connect
+foreground-worker-1  |     sock.connect(socket_address)
+foreground-worker-1  | ConnectionRefusedError: [Errno 111] Connection refused
+foreground-worker-1  | 
+foreground-worker-1  | During handling of the above exception, another exception occurred:
+foreground-worker-1  | 
+foreground-worker-1  | Traceback (most recent call last):
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/celery/worker/consumer/consumer.py", line 346, in start
+foreground-worker-1  |     blueprint.start(self)
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/celery/bootsteps.py", line 116, in start
+foreground-worker-1  |     step.start(parent)
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/celery/worker/consumer/consumer.py", line 788, in start
+foreground-worker-1  |     c.loop(*c.loop_args())
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/celery/worker/loops.py", line 97, in asynloop
+foreground-worker-1  |     next(loop)
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/kombu/asynchronous/hub.py", line 377, in create_loop
+foreground-worker-1  |     cb(*cbargs)
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 1394, in on_readable
+foreground-worker-1  |     self.cycle.on_readable(fileno)
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 579, in on_readable
+foreground-worker-1  |     chan.handlers[type]()
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 931, in _receive
+foreground-worker-1  |     ret.append(self._receive_one(c))
+foreground-worker-1  |                ^^^^^^^^^^^^^^^^^^^^
+api-1                | INFO:     Started server process [1]
+api-1                | INFO:     Waiting for application startup.
+api-1                | INFO:     Application startup complete.
+api-1                | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+api-1                | INFO:     127.0.0.1:35780 - "GET /api/health HTTP/1.1" 200 OK
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 941, in _receive_one
+api-1                | INFO:     172.19.0.1:55056 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:40520 - "GET /api/health HTTP/1.1" 200 OK
+foreground-worker-1  |     response = c.parse_response()
+foreground-worker-1  |                ^^^^^^^^^^^^^^^^^^
+api-1                | training_timing {"label": "queue-window", "trace": "e3b0c44298fc1c14", "started_epoch_ms": 1791823260983.8823, "stages_ms": {"foreground_admission": 2.222457999977223}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.04187499999375177, "execution_ms": 192.4849170000016, "commit_cleanup_ms": 0.3898330000140504, "commit_observed_epoch_ms": 1791823261181.2285, "commit_epoch_ms": 1791823261181.1775, "commit_ms": 0.3352500000062264}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.028874999998151907, "execution_ms": 1.9970419999992828, "commit_cleanup_ms": 0.2182080000068254, "commit_observed_epoch_ms": 1791823261183.5168, "commit_epoch_ms": 1791823261183.4922, "commit_ms": 0.1934580000124697}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.04837500000576256, "execution_ms": 0.9424170000045251, "commit_cleanup_ms": 0.15525000000593536, "commit_observed_epoch_ms": 1791823261241.774, "commit_epoch_ms": 1791823261241.7498, "commit_ms": 0.1289580000047863}], "sql_count": 7, "sql_ms": 168.26770899999133, "duration_ms": 258.91362499999104}
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 938, in parse_response
+foreground-worker-1  |     response = self._execute(conn, try_read)
+foreground-worker-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 914, in _execute
+foreground-worker-1  |     return conn.retry.call_with_retry(
+foreground-worker-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 108, in call_with_retry
+api-1                | INFO:     172.19.0.1:58868 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+foreground-worker-1  |     fail(error)
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 916, in <lambda>
+foreground-worker-1  |     lambda _: self._reconnect(conn),
+foreground-worker-1  |               ^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 904, in _reconnect
+foreground-worker-1  |     conn.connect()
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+foreground-worker-1  |     self.connect_check_health(check_health=True)
+foreground-worker-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+foreground-worker-1  |     raise ConnectionError(self._error_message(e))
+foreground-worker-1  | redis.exceptions.ConnectionError: Error 111 connecting to redis:6379. Connection refused.
+foreground-worker-1  | [2026-10-12 12:41:35,084: WARNING/MainProcess] /usr/local/lib/python3.12/site-packages/celery/worker/consumer/consumer.py:397: CPendingDeprecationWarning: 
+api-1                | request path=/api/cards/audit-card-00001/review class=foreground duration_ms=300.3
+foreground-worker-1  | In Celery 5.1 we introduced an optional breaking change which
+foreground-worker-1  | on connection loss cancels all currently executed tasks with late acknowledgement enabled.
+api-1                | training_timing {"label": "review-request", "trace": "0eb2668dbfec4c63", "started_epoch_ms": 1791823261245.587, "stages_ms": {"foreground_admission": 0.23933299999612245}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.04400000000259752, "execution_ms": 0.4745419999778733, "commit_cleanup_ms": 0.11616600002639643, "commit_observed_epoch_ms": 1791823261545.3638, "commit_epoch_ms": 1791823261545.3428, "commit_ms": 0.09362500000520413}], "sql_count": 1, "sql_ms": 0.419375000006994, "duration_ms": 300.60975000000667}
+foreground-worker-1  | These tasks cannot be acknowledged as the connection is gone, and the tasks are automatically redelivered
+api-1                | INFO:     172.19.0.1:58874 - "POST /api/cards/audit-card-00001/review HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:40524 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:40534 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:37506 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:37508 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:47516 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:47520 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:47536 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:56754 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | INFO:     127.0.0.1:56770 - "GET /api/health HTTP/1.1" 200 OK
+api-1                | request path=/api/queue/window class=foreground duration_ms=148.5
+foreground-worker-1  | back to the queue. You can enable this behavior using the worker_cancel_long_running_tasks_on_connection_loss
+api-1                | training_timing {"label": "queue-window", "trace": "e3b0c44298fc1c14", "started_epoch_ms": 1791823294665.5566, "stages_ms": {"foreground_admission": 0.3089160000229185}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.040584000004173504, "execution_ms": 126.11745800001017, "commit_cleanup_ms": 0.2956250000067939, "commit_observed_epoch_ms": 1791823294795.5415, "commit_epoch_ms": 1791823294795.5083, "commit_ms": 0.2601670000217382}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.025583999985201444, "execution_ms": 0.5652499999939664, "commit_cleanup_ms": 0.16237500000215732, "commit_observed_epoch_ms": 1791823294796.328, "commit_epoch_ms": 1791823294796.3047, "commit_ms": 0.13895799997953873}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.03737500000511318, "execution_ms": 0.4834169999980986, "commit_cleanup_ms": 0.13904100001127517, "commit_observed_epoch_ms": 1791823294815.3918, "commit_epoch_ms": 1791823294815.371, "commit_ms": 0.11800000001471744}], "sql_count": 7, "sql_ms": 126.72383299999979, "duration_ms": 150.9045409999885}
+api-1                | INFO:     172.19.0.1:65374 - "GET /api/queue/window?limit=2 HTTP/1.1" 200 OK
+api-1                | request path=/api/cards/audit-card-00002/review class=foreground duration_ms=32.6
+api-1                | training_timing {"label": "review-request", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823295173.4321, "stages_ms": {"foreground_admission": 32.40099999999302}, "connections": [], "sql_count": 0, "sql_ms": 0.0, "duration_ms": 33.14174999999864}
+api-1                | INFO:     172.19.0.1:65386 - "POST /api/cards/audit-card-00002/review HTTP/1.1" 500 Internal Server Error
+api-1                | ERROR:    Exception in ASGI application
+api-1                |   + Exception Group Traceback (most recent call last):
+foreground-worker-1  | setting. In Celery 5.1 it is set to False by default. The setting will be set to True by default in Celery 6.0.
+foreground-worker-1  | 
+foreground-worker-1  |   warnings.warn(CANCEL_TASKS_BY_DEFAULT, CPendingDeprecationWarning)
+foreground-worker-1  | 
+foreground-worker-1  | [2026-10-12 12:41:35,087: ERROR/MainProcess] consumer: Cannot connect to app.services.background_wakes:WakeRedisTransport://redis:6379/0: Error 111 connecting to redis:6379. Connection refused..
+foreground-worker-1  | Trying again in 2.00 seconds... (1/100)
+foreground-worker-1  | 
+api-1                |   |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 79, in collapse_excgroups
+api-1                |   |     yield
+api-1                |   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 183, in __call__
+api-1                |   |     async with anyio.create_task_group() as task_group:
+api-1                |   |                ^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1  | [2026-10-12 12:41:37,097: ERROR/MainProcess] consumer: Cannot connect to app.services.background_wakes:WakeRedisTransport://redis:6379/0: Error -2 connecting to redis:6379. Name or service not known..
+foreground-worker-1  | Trying again in 4.00 seconds... (2/100)
+foreground-worker-1  | 
+foreground-worker-1  | [2026-10-12 12:41:41,126: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | [2026-10-12 12:41:41,131: INFO/MainProcess] mingle: searching for neighbors
+api-1                |   |   File "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 847, in __aexit__
+foreground-worker-1  | [2026-10-12 12:41:42,143: INFO/MainProcess] mingle: all alone
+foreground-worker-1  | [2026-10-12 12:41:42,151: INFO/MainProcess] Task app.tasks.execute_foreground_command[7b0e32698da54e86a4672e10032211b0] received
+foreground-worker-1  | [2026-10-12 12:41:42,152: INFO/MainProcess] Task app.tasks.execute_foreground_command[7b0e32698da54e86a4672e10032211b0] received
+foreground-worker-1  | [2026-10-12 12:41:42,179: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=4.631 execution_seconds=0.026
+foreground-worker-1  | [2026-10-12 12:41:42,179: INFO/ForkPoolWorker-1] training_timing {"label": "cards.review", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823302153.717, "stages_ms": {"foreground_admission": 0.5488329999820962, "fsrs_review_receipt": 19.953209000021843}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.03254200001379104, "execution_ms": 1.2813749999907031, "commit_cleanup_ms": 0.5015000000128111, "commit_observed_epoch_ms": 1791823302156.3428, "commit_epoch_ms": 1791823302156.3223, "commit_ms": 0.48058300001230236}, {"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.024249999995618055, "execution_ms": 0.3352919999883852, "commit_cleanup_ms": 0.09566600002131054, "commit_observed_epoch_ms": 1791823302161.796, "commit_epoch_ms": 1791823302161.7783, "commit_ms": 0.07708300000786039}, {"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.014375000006339178, "execution_ms": 22.33112499999379, "commit_cleanup_ms": 0.6510000000048421, "commit_observed_epoch_ms": 1791823302179.3943, "commit_epoch_ms": 1791823302179.37, "commit_ms": 0.6265000000098553}], "sql_count": 50, "sql_ms": 15.788583999977845, "broker_wait_ms": 4631.110191345215, "duration_ms": 26.151790999989544}
+foreground-worker-1  | [2026-10-12 12:41:42,180: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[7b0e32698da54e86a4672e10032211b0] succeeded in 0.02830716700000835s: {'card_id': 'audit-card-00002', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 2, 'requeue_entry_id': 5002, 'review_id': 2, 'persisted': True}
+api-1                |   |     raise BaseExceptionGroup(
+api-1                |   | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+foreground-worker-1  | [2026-10-12 12:41:42,180: INFO/ForkPoolWorker-2] training_timing {"label": "cards.review", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823302158.8674, "stages_ms": {"foreground_admission": 0.9753749999958927}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 10.533667000004243, "execution_ms": 8.442957999989176, "commit_cleanup_ms": 0.4013330000134374, "commit_observed_epoch_ms": 1791823302180.2744, "commit_epoch_ms": 1791823302180.232, "commit_ms": 0.35412500000120417}], "sql_count": 2, "sql_ms": 8.104583999994475, "broker_wait_ms": 2171.0381507873535, "duration_ms": 21.834291999994093}
+api-1                |   +-+---------------- 1 ----------------
+foreground-worker-1  | [2026-10-12 12:41:42,181: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[7b0e32698da54e86a4672e10032211b0] succeeded in 0.028186625000017784s: None
+foreground-worker-1  | [2026-10-12 12:41:42,182: INFO/MainProcess] Task app.tasks.execute_foreground_command[7b0e32698da54e86a4672e10032211b0] received
+foreground-worker-1  | [2026-10-12 12:41:42,184: INFO/ForkPoolWorker-1] training_timing {"label": "cards.review", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823302182.9485, "stages_ms": {"foreground_admission": 0.14437500001918124}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.021583999995300474, "execution_ms": 0.6070410000234006, "commit_cleanup_ms": 0.30762499997649684, "commit_observed_epoch_ms": 1791823302184.2178, "commit_epoch_ms": 1791823302184.203, "commit_ms": 0.29316699999526463}], "sql_count": 2, "sql_ms": 0.5552499999907923, "broker_wait_ms": 65.05298614501953, "duration_ms": 1.4565839999818309}
+foreground-worker-1  | [2026-10-12 12:41:42,184: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[7b0e32698da54e86a4672e10032211b0] succeeded in 0.0020506669999917904s: None
+foreground-worker-1  | [2026-10-12 12:41:42,187: INFO/MainProcess] Task app.tasks.execute_foreground_command[e79973f2931f463c8797612678598527] received
+api-1                |     | Traceback (most recent call last):
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+api-1                |     |     result = await app(  # type: ignore[func-returns-value]
+api-1                |     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+api-1                |     |     return await self.app(scope, receive, send)
+api-1                |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/fastapi/applications.py", line 1054, in __call__
+foreground-worker-1  | [2026-10-12 12:41:42,192: INFO/ForkPoolWorker-1] foreground command=cards.review queue_wait_seconds=0.002 execution_seconds=0.004
+foreground-worker-1  | [2026-10-12 12:41:42,192: INFO/ForkPoolWorker-1] training_timing {"label": "cards.review", "trace": "44d22e5ce6836c14", "started_epoch_ms": 1791823302188.634, "stages_ms": {"foreground_admission": 0.10537500000395994, "fsrs_review_receipt": 0.2802090000102453}, "connections": [{"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.014917000015657322, "execution_ms": 0.7646669999985534, "commit_cleanup_ms": 0.290624999990996, "commit_observed_epoch_ms": 1791823302189.9373, "commit_epoch_ms": 1791823302189.9238, "commit_ms": 0.27720799999997325}, {"read_only": false, "background": false, "committed": true, "acquisition_ms": 0.012625000010757503, "execution_ms": 2.386582999974962, "commit_cleanup_ms": 0.25195800000687996, "commit_observed_epoch_ms": 1791823302192.636, "commit_epoch_ms": 1791823302192.624, "commit_ms": 0.24074999998902058}], "sql_count": 17, "sql_ms": 2.820415000059029, "broker_wait_ms": 1.7161369323730469, "duration_ms": 4.248167000014291}
+foreground-worker-1  | [2026-10-12 12:41:42,193: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[e79973f2931f463c8797612678598527] succeeded in 0.00510366699998599s: {'card_id': 'audit-card-00002', 'next_due': '2026-10-12', 'interval_days': 0, 'state': 'learning', 'requeue_today': True, 'requeue_after_cards': None, 'stability': 2.3065, 'scheduling_mode': 'normal', 'hard_correct_streak': 0, 'suggest_shorter_prefix': False, 'idempotent': False, 'queue_entry_id': 2, 'requeue_entry_id': 5002, 'review_id': 2, 'persisted': True}
+api-1                |     |     await super().__call__(scope, receive, send)
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/applications.py", line 113, in __call__
+api-1                |     |     await self.middleware_stack(scope, receive, send)
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+api-1                |     |     raise exc
+background-worker-1  | [2026-10-12 12:40:50,221: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+api-1                |     |     await self.app(scope, receive, _send)
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+api-1                |     |     with recv_stream, send_stream, collapse_excgroups():
+api-1                |     |                                    ^^^^^^^^^^^^^^^^^^^^
+api-1                |     |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+api-1                |     |     self.gen.throw(value)
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+background-worker-1  | [2026-10-12 12:40:50,221: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 12:40:50,222: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,222: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,227: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 12:40:50,227: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 12:40:50,228: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.228007+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0003686670000035974,"handler_elapsed_seconds":0.006686874999985548,"execution_seconds":0.006318207999981951,"dispatch_wait_seconds":null}
+api-1                |     |     raise exc
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+api-1                |     |     response = await self.dispatch_func(request, call_next)
+api-1                |     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                |     |   File "/app/app/main.py", line 787, in measure_training_request
+api-1                |     |     response = await call_next(request)
+api-1                |     |                ^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 159, in call_next
+api-1                |     |     raise app_exc
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 144, in coro
+api-1                |     |     await self.app(scope, receive_or_disconnect, send_no_error)
+api-1                |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+background-scheduler-1  | [2026-10-12 16:40:47,545: INFO/MainProcess] beat: Starting...
+background-worker-1  | [2026-10-12 12:40:50,230: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[85688c25277a4abdb0f992f5cbd0c9b0] succeeded in 0.01575187500000652s: True
+background-scheduler-1  | [2026-10-12 16:40:48,562: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,231: INFO/MainProcess] Task app.tasks.poll_background_tasks[4af4c618c4cc43b094633106293f2be7] received
+background-scheduler-1  | [2026-10-12 16:40:49,553: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,232: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,237: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,237: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 12:40:50,239: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  | [2026-10-12 16:40:50,553: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:40:51,553: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:40:52,553: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:40:52,562: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:40:53,562: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:40:54,589: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:40:55,589: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,239: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,243: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,243: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 12:40:50,244: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.244087+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.000446457999970562,"handler_elapsed_seconds":0.005963625000021011,"execution_seconds":0.005517167000050449,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:40:50,246: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[4af4c618c4cc43b094633106293f2be7] succeeded in 0.014925666999999976s: True
+background-worker-1     | [2026-10-12 12:40:50,247: INFO/MainProcess] Task app.tasks.poll_background_tasks[4198677aeee742e3b11a5e64febf6421] received
+background-worker-1     | [2026-10-12 12:40:50,248: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  | [2026-10-12 16:40:56,589: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,254: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-scheduler-1  | [2026-10-12 16:40:57,554: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:40:57,589: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |     with recv_stream, send_stream, collapse_excgroups():
+background-scheduler-1  | [2026-10-12 16:40:58,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:40:59,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |                                    ^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  | [2026-10-12 16:41:00,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:01,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:02,554: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:41:02,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:03,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+api-1                   |     |     self.gen.throw(value)
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+api-1                   |     |     raise exc
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+api-1                   |     |     response = await self.dispatch_func(request, call_next)
+api-1                   |     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   |     |   File "/app/app/main.py", line 760, in prioritize_foreground_requests
+background-worker-1     | [2026-10-12 12:40:50,254: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-scheduler-1  | [2026-10-12 16:41:04,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,255: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  | [2026-10-12 16:41:05,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |     with activity_gate.foreground():
+background-worker-1     | [2026-10-12 12:40:50,255: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |     |          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,256: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,258: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,259: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,261: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,261: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 12:40:50,261: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.261884+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0010334579999380367,"handler_elapsed_seconds":0.007657709000000068,"execution_seconds":0.006624251000062031,"dispatch_wait_seconds":null}
+background-scheduler-1  | [2026-10-12 16:41:06,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,264: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[4198677aeee742e3b11a5e64febf6421] succeeded in 0.017022749999995312s: True
+background-scheduler-1  | [2026-10-12 16:41:07,554: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-worker-1     | [2026-10-12 12:40:50,265: INFO/MainProcess] Task app.tasks.poll_background_tasks[f8124f775a674e6195643bdbca66add1] received
+background-worker-1     | [2026-10-12 12:40:50,266: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,271: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,271: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+api-1                   |     |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+api-1                   |     |     return next(self.gen)
+background-worker-1     | [2026-10-12 12:40:50,272: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |     |            ^^^^^^^^^^^^^^
+api-1                   |     |   File "/app/app/services/activity_gate.py", line 54, in foreground
+background-scheduler-1  | [2026-10-12 16:41:07,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:08,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:09,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |     with shared_lease:
+api-1                   |     |          ^^^^^^^^^^^^
+api-1                   |     |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+api-1                   |     |     return next(self.gen)
+api-1                   |     |            ^^^^^^^^^^^^^^
+api-1                   |     |   File "/app/app/services/redis_admission_gate.py", line 94, in foreground_lease
+api-1                   |     |     client().eval(
+background-scheduler-1  | [2026-10-12 16:41:10,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:11,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:12,554: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:41:12,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:13,610: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:14,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,273: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5876, in eval
+background-worker-1     | [2026-10-12 12:40:50,276: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+api-1                   |     |     return self._eval("EVAL", script, numkeys, *keys_and_args)
+background-worker-1     | [2026-10-12 12:40:50,276: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-scheduler-1  | [2026-10-12 16:41:15,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  | [2026-10-12 16:41:16,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5861, in _eval
+api-1                   |     |     return self.execute_command(command, script, numkeys, *keys_and_args)
+api-1                   |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 621, in execute_command
+api-1                   |     |     return self._execute_command(*args, **options)
+api-1                   |     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  | [2026-10-12 16:41:17,553: INFO/MainProcess] Scheduler: Sending due task recover-active-coverage (app.tasks.recover_active_coverage)
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 627, in _execute_command
+api-1                   |     |     conn = self.connection or pool.get_connection()
+background-scheduler-1  | [2026-10-12 16:41:17,556: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:41:17,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:18,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:19,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:20,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:21,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,276: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.276503+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0003456260000120892,"handler_elapsed_seconds":0.004732875000001968,"execution_seconds":0.004387248999989879,"dispatch_wait_seconds":null}
+background-scheduler-1  | [2026-10-12 16:41:22,556: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:41:22,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:23,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:24,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:25,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:26,611: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:27,556: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:41:27,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:28,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:29,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:30,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |                               ^^^^^^^^^^^^^^^^^^^^^
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/utils.py", line 195, in wrapper
+background-scheduler-1  | [2026-10-12 16:41:31,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:32,556: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:41:32,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:33,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |     return func(*args, **kwargs)
+api-1                   |     |            ^^^^^^^^^^^^^^^^^^^^^
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 1543, in get_connection
+api-1                   |     |     connection.connect()
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+api-1                   |     |     self.connect_check_health(check_health=True)
+api-1                   |     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+background-scheduler-1  | [2026-10-12 16:41:34,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | [2026-10-12 12:40:50,278: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[f8124f775a674e6195643bdbca66add1] succeeded in 0.013497584000020879s: True
+background-scheduler-1  | [2026-10-12 16:41:35,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   |     |     raise ConnectionError(self._error_message(e))
+background-scheduler-1  | [2026-10-12 16:41:35,629: ERROR/MainProcess] Message Error: Couldn't apply scheduled task poll-durable-background-tasks: Maintenance wake queue is unavailable; durable work is retained
+api-1                   |     | redis.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.
+api-1                   |     +------------------------------------
+api-1                   | 
+background-worker-1     | [2026-10-12 12:40:50,279: INFO/MainProcess] Task app.tasks.poll_background_tasks[f25160bbc8e3434c8009b07603b7d5ac] received
+api-1                   | During handling of the above exception, another exception occurred:
+background-worker-1     | [2026-10-12 12:40:50,280: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   | 
+background-worker-1     | [2026-10-12 12:40:50,286: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-scheduler-1  | ['  File "/usr/local/bin/celery", line 8, in <module>\n    sys.exit(main())\n', '  File "/usr/local/lib/python3.12/site-packages/celery/__main__.py", line 15, in main\n    sys.exit(_main())\n', '  File "/usr/local/lib/python3.12/site-packages/celery/bin/celery.py", line 227, in main\n    return celery(auto_envvar_prefix="CELERY")\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 1631, in __call__\n    return self.main(*args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 1552, in main\n    rv = self.invoke(ctx)\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 2032, in invoke\n    return _process_result(sub_ctx.command.invoke(sub_ctx))\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 1415, in invoke\n    return ctx.invoke(self.callback, **ctx.params)\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 910, in invoke\n    return callback(*args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/click/decorators.py", line 34, in new_func\n    return f(get_current_context(), *args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/celery/bin/base.py", line 158, in caller\n    return f(ctx, *args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/celery/bin/beat.py", line 72, in beat\n    return beat().run()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/apps/beat.py", line 84, in run\n    self.start_scheduler()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/apps/beat.py", line 113, in start_scheduler\n    service.start()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 645, in start\n    interval = self.scheduler.tick()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 355, in tick\n    self.apply_entry(entry, producer=self.producer)\n', '  File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 285, in apply_entry\n    exc, traceback.format_stack(), exc_info=True)\n']
+background-scheduler-1  | Traceback (most recent call last):
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 1539, in get_connection
+background-worker-1     | [2026-10-12 12:40:50,286: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+api-1                   | Traceback (most recent call last):
+background-worker-1     | [2026-10-12 12:40:50,287: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+api-1                   |     result = await app(  # type: ignore[func-returns-value]
+api-1                   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+api-1                   |     return await self.app(scope, receive, send)
+api-1                   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,287: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/fastapi/applications.py", line 1054, in __call__
+api-1                   |     await super().__call__(scope, receive, send)
+background-worker-1     | [2026-10-12 12:40:50,291: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/applications.py", line 113, in __call__
+background-worker-1     | [2026-10-12 12:40:50,291: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:50,291: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.291595+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0003637070000195308,"handler_elapsed_seconds":0.005247832999998536,"execution_seconds":0.004884125999979005,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:40:50,295: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[f25160bbc8e3434c8009b07603b7d5ac] succeeded in 0.015191458000003877s: True
+background-worker-1     | [2026-10-12 12:40:50,296: INFO/MainProcess] Task app.tasks.poll_background_tasks[9599c3a82c88446bab62963ef447e763] received
+background-worker-1     | [2026-10-12 12:40:50,297: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |     await self.middleware_stack(scope, receive, send)
+background-worker-1     | [2026-10-12 12:40:50,302: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,302: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 12:40:50,303: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,304: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,305: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,307: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,307: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+background-worker-1     | [2026-10-12 12:40:50,308: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.308122+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0006090419999793539,"handler_elapsed_seconds":0.005381333000002542,"execution_seconds":0.004772291000023188,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:40:50,310: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[9599c3a82c88446bab62963ef447e763] succeeded in 0.01430058400001144s: True
+background-worker-1     | [2026-10-12 12:40:50,311: INFO/MainProcess] Task app.tasks.poll_background_tasks[df27c18895d4431cb9d9449c04f5b105] received
+background-worker-1     | [2026-10-12 12:40:50,312: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,317: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,317: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-scheduler-1  |     if connection.can_read() and self.cache is None:
+background-scheduler-1  |        ^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 628, in can_read
+background-scheduler-1  |     return self._parser.can_read(timeout)
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/base.py", line 140, in can_read
+background-scheduler-1  |     return self._buffer and self._buffer.can_read(timeout)
+background-scheduler-1  |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/socket.py", line 95, in can_read
+background-scheduler-1  |     return bool(self.unread_bytes()) or self._read_from_socket(
+background-scheduler-1  |                                         ^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/socket.py", line 68, in _read_from_socket
+api-1                   |     raise exc
+background-scheduler-1  |     raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+background-scheduler-1  | redis.exceptions.ConnectionError: Connection closed by server.
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+background-worker-1     | [2026-10-12 12:40:50,318: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |     await self.app(scope, receive, _send)
+background-worker-1     | [2026-10-12 12:40:50,319: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+background-worker-1     | [2026-10-12 12:40:50,321: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,322: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,322: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 12:40:50,323: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.323246+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.000587999000003947,"handler_elapsed_seconds":0.005322750000004817,"execution_seconds":0.00473475100000087,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:40:50,325: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[df27c18895d4431cb9d9449c04f5b105] succeeded in 0.013977792000019917s: True
+background-worker-1     | [2026-10-12 12:40:50,326: INFO/MainProcess] Task app.tasks.poll_background_tasks[d45e1b44b9664733b4c4a1b5c5de9e15] received
+background-worker-1     | [2026-10-12 12:40:50,327: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,331: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,332: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 12:40:50,333: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,333: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,340: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,341: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,342: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |     with recv_stream, send_stream, collapse_excgroups():
+background-scheduler-1  | 
+background-scheduler-1  | During handling of the above exception, another exception occurred:
+background-scheduler-1  | 
+background-scheduler-1  | Traceback (most recent call last):
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 389, in connect_check_health
+background-scheduler-1  |     sock = self.retry.call_with_retry(
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 105, in call_with_retry
+api-1                   |                                    ^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,343: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+api-1                   |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+background-worker-1     | [2026-10-12 12:40:50,352: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,352: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 12:40:50,352: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.352752+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0012771660000225893,"handler_elapsed_seconds":0.020591249999995398,"execution_seconds":0.01931408399997281,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:40:50,355: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d45e1b44b9664733b4c4a1b5c5de9e15] succeeded in 0.028520333000017217s: True
+background-worker-1     | [2026-10-12 12:40:50,356: INFO/MainProcess] Task app.tasks.poll_background_tasks[f8f3e15a79284037bbaf997fa21c8d4f] received
+background-worker-1     | [2026-10-12 12:40:50,357: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,362: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,362: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 12:40:50,363: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,363: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,364: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,365: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,366: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,368: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+api-1                   |     self.gen.throw(value)
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+api-1                   |     raise exc
+background-worker-1     | [2026-10-12 12:40:50,369: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 12:40:50,369: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.369250+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0009158330000218484,"handler_elapsed_seconds":0.0070019590000072185,"execution_seconds":0.00608612599998537,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:40:50,371: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[f8f3e15a79284037bbaf997fa21c8d4f] succeeded in 0.015460958999995s: True
+background-worker-1     | [2026-10-12 12:40:50,372: INFO/MainProcess] Task app.tasks.poll_background_tasks[5bc0be6c8f014449a92843aa2d53c0d4] received
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+background-scheduler-1  |     return do()
+api-1                   |     response = await self.dispatch_func(request, call_next)
+background-worker-1     | [2026-10-12 12:40:50,373: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,378: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,378: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 12:40:50,379: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,380: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,384: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+api-1                   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   |   File "/app/app/main.py", line 787, in measure_training_request
+api-1                   |     response = await call_next(request)
+background-worker-1     | [2026-10-12 12:40:50,386: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,386: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 12:40:50,387: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.387086+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0005829580000238366,"handler_elapsed_seconds":0.008360291000002462,"execution_seconds":0.007777332999978626,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:40:50,389: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[5bc0be6c8f014449a92843aa2d53c0d4] succeeded in 0.016557874999989508s: True
+api-1                   |                ^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 159, in call_next
+api-1                   |     raise app_exc
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 144, in coro
+api-1                   |     await self.app(scope, receive_or_disconnect, send_no_error)
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 182, in __call__
+api-1                   |     with recv_stream, send_stream, collapse_excgroups():
+api-1                   |                                    ^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,390: INFO/MainProcess] Task app.tasks.poll_background_tasks[465be250d91a4fa58141c56879f39dcf] received
+background-worker-1     | [2026-10-12 12:40:50,391: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,395: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,395: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 12:40:50,396: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,396: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,397: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,402: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,402: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 12:40:50,402: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.402465+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0005593749999945885,"handler_elapsed_seconds":0.007044791999987865,"execution_seconds":0.0064854169999932765,"dispatch_wait_seconds":null}
+api-1                   |   File "/usr/local/lib/python3.12/contextlib.py", line 158, in __exit__
+api-1                   |     self.gen.throw(value)
+background-worker-1     | [2026-10-12 12:40:50,404: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[465be250d91a4fa58141c56879f39dcf] succeeded in 0.014310958000010032s: True
+background-worker-1     | [2026-10-12 12:40:50,405: INFO/MainProcess] Task app.tasks.poll_background_tasks[508fb4a8d0644af49bbb9f1872ab07ca] received
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
+api-1                   |     raise exc
+background-worker-1     | [2026-10-12 12:40:50,406: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,410: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/starlette/middleware/base.py", line 184, in __call__
+background-scheduler-1  |            ^^^^
+api-1                   |     response = await self.dispatch_func(request, call_next)
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 390, in <lambda>
+background-worker-1     | [2026-10-12 12:40:50,410: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-scheduler-1  |     lambda: self._connect(), lambda error: self.disconnect(error)
+background-worker-1     | [2026-10-12 12:40:50,411: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,412: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |   File "/app/app/main.py", line 760, in prioritize_foreground_requests
+api-1                   |     with activity_gate.foreground():
+api-1                   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+background-worker-1     | [2026-10-12 12:40:50,413: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+api-1                   |     return next(self.gen)
+api-1                   |            ^^^^^^^^^^^^^^
+api-1                   |   File "/app/app/services/activity_gate.py", line 54, in foreground
+api-1                   |     with shared_lease:
+api-1                   |          ^^^^^^^^^^^^
+background-scheduler-1  |             ^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 767, in _connect
+api-1                   |   File "/usr/local/lib/python3.12/contextlib.py", line 137, in __enter__
+background-worker-1     | [2026-10-12 12:40:50,415: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+api-1                   |     return next(self.gen)
+background-worker-1     | [2026-10-12 12:40:50,415: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+api-1                   |            ^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,416: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.416128+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0005515420000108406,"handler_elapsed_seconds":0.00514283300000784,"execution_seconds":0.004591290999997,"dispatch_wait_seconds":null}
+api-1                   |   File "/app/app/services/redis_admission_gate.py", line 94, in foreground_lease
+background-worker-1     | [2026-10-12 12:40:50,418: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[508fb4a8d0644af49bbb9f1872ab07ca] succeeded in 0.01281074999999987s: True
+api-1                   |     client().eval(
+background-worker-1     | [2026-10-12 12:40:50,419: INFO/MainProcess] Task app.tasks.poll_background_tasks[7e66f1b56d2d48d094e318b7015c6818] received
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5876, in eval
+background-worker-1     | [2026-10-12 12:40:50,420: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |     return self._eval("EVAL", script, numkeys, *keys_and_args)
+background-worker-1     | [2026-10-12 12:40:50,424: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+api-1                   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,424: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5861, in _eval
+background-scheduler-1  |     for res in socket.getaddrinfo(
+api-1                   |     return self.execute_command(command, script, numkeys, *keys_and_args)
+api-1                   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 621, in execute_command
+api-1                   |     return self._execute_command(*args, **options)
+api-1                   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:50,425: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,426: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,427: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 627, in _execute_command
+api-1                   |     conn = self.connection or pool.get_connection()
+api-1                   |                               ^^^^^^^^^^^^^^^^^^^^^
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/utils.py", line 195, in wrapper
+api-1                   |     return func(*args, **kwargs)
+api-1                   |            ^^^^^^^^^^^^^^^^^^^^^
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 1543, in get_connection
+api-1                   |     connection.connect()
+background-scheduler-1  |                ^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/socket.py", line 978, in getaddrinfo
+background-scheduler-1  |     for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+api-1                   |     self.connect_check_health(check_health=True)
+api-1                   |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+api-1                   |     raise ConnectionError(self._error_message(e))
+background-scheduler-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api-1                   | redis.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.
+api-1                   | INFO:     127.0.0.1:48256 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+background-scheduler-1  | socket.gaierror: [Errno -2] Name or service not known
+api-1                   | request path=/api/cards/audit-card-00002/review class=foreground duration_ms=2345.7
+background-scheduler-1  | 
+api-1                   | training_timing {"label": "review-request", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823297519.3862, "stages_ms": {"foreground_admission": 1.6148340000086137}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.1822079999840298, "execution_ms": 2.399499999995669, "commit_cleanup_ms": 0.4391669999961323, "commit_observed_epoch_ms": 1791823299863.1208, "commit_epoch_ms": 1791823299863.068, "commit_ms": 0.381459000010409}], "sql_count": 1, "sql_ms": 2.286832999999433, "duration_ms": 2346.439793000002}
+background-worker-1     | [2026-10-12 12:40:50,430: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:50,430: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:50,430: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:40:50.430850+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.000559625000022379,"handler_elapsed_seconds":0.006149708000009468,"execution_seconds":0.005590082999987089,"dispatch_wait_seconds":null}
+api-1                   | INFO:     172.19.0.1:56744 - "POST /api/cards/audit-card-00002/review HTTP/1.1" 202 Accepted
+background-worker-1     | [2026-10-12 12:40:50,430: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[7e66f1b56d2d48d094e318b7015c6818] succeeded in 0.011095291999993151s: False
+background-worker-1     | [2026-10-12 12:40:50,554: INFO/MainProcess] Task app.tasks.poll_background_tasks[9d0848d05b2246aaacf9e19e505165ae] received
+background-scheduler-1  | During handling of the above exception, another exception occurred:
+background-worker-1     | [2026-10-12 12:40:50,556: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  | 
+background-scheduler-1  | Traceback (most recent call last):
+background-worker-1     | [2026-10-12 12:40:50,560: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-scheduler-1  |   File "/app/app/services/background_wakes.py", line 184, in send_task
+background-worker-1     | [2026-10-12 12:40:50,560: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:50,560: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[9d0848d05b2246aaacf9e19e505165ae] succeeded in 0.005646084000005658s: False
+background-worker-1     | [2026-10-12 12:40:51,561: INFO/MainProcess] Task app.tasks.poll_background_tasks[7371211699c4404caadf9ef7c3e453cb] received
+background-worker-1     | [2026-10-12 12:40:51,569: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.002 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  |     reserved, existing_token = server.eval(
+background-scheduler-1  |                                ^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:51,575: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.003 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 12:40:51,575: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.005s
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5876, in eval
+background-worker-1     | [2026-10-12 12:40:51,576: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[7371211699c4404caadf9ef7c3e453cb] succeeded in 0.013292333000009648s: False
+background-scheduler-1  |     return self._eval("EVAL", script, numkeys, *keys_and_args)
+background-worker-1     | [2026-10-12 12:40:52,564: INFO/MainProcess] Task app.tasks.recover_operations[17cba14744054f51abf059953d2b21a0] received
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:52,568: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5861, in _eval
+background-worker-1     | [2026-10-12 12:40:52,571: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:52,571: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:52,572: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[17cba14744054f51abf059953d2b21a0] succeeded in 0.0070260420000067825s: False
+background-worker-1     | [2026-10-12 12:40:52,575: INFO/MainProcess] Task app.tasks.poll_background_tasks[c9a425abdb1b421fbb7f1de8444d30c1] received
+api-1                   | INFO:     127.0.0.1:48266 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+background-worker-1     | [2026-10-12 12:40:52,578: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:52,587: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.006 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 12:40:52,587: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.008s
+background-worker-1     | [2026-10-12 12:40:52,589: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[c9a425abdb1b421fbb7f1de8444d30c1] succeeded in 0.013662167000006775s: False
+background-worker-1     | [2026-10-12 12:40:53,565: INFO/MainProcess] Task app.tasks.poll_background_tasks[53cbf329eae446d5b7035ba12884ba29] received
+background-worker-1     | [2026-10-12 12:40:53,568: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:53,572: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.001
+api-1                   | request path=/api/cards/audit-card-00002/review class=foreground duration_ms=2031.7
+background-worker-1     | [2026-10-12 12:40:53,573: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:53,573: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[53cbf329eae446d5b7035ba12884ba29] succeeded in 0.007101375000019061s: False
+background-scheduler-1  |     return self.execute_command(command, script, numkeys, *keys_and_args)
+background-worker-1     | [2026-10-12 12:40:54,592: INFO/MainProcess] Task app.tasks.poll_background_tasks[33140cd76e1046aba2ede49c67c6430d] received
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 621, in execute_command
+background-scheduler-1  |     return self._execute_command(*args, **options)
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:40:54,595: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 627, in _execute_command
+background-scheduler-1  |     conn = self.connection or pool.get_connection()
+background-scheduler-1  |                               ^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/utils.py", line 195, in wrapper
+background-scheduler-1  |     return func(*args, **kwargs)
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^
+api-1                   | training_timing {"label": "review-request", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823299979.977, "stages_ms": {"foreground_admission": 4.198165999980574}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.04112499999564534, "execution_ms": 0.5374579999966045, "commit_cleanup_ms": 0.09095900000488655, "commit_observed_epoch_ms": 1791823302011.3242, "commit_epoch_ms": 1791823302011.3071, "commit_ms": 0.07299999998622297}], "sql_count": 1, "sql_ms": 0.4969169999924361, "duration_ms": 2032.1401679999838}
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 1543, in get_connection
+api-1                   | INFO:     172.19.0.1:56760 - "POST /api/cards/audit-card-00002/review HTTP/1.1" 202 Accepted
+api-1                   | request path=/api/cards/audit-card-00002/review class=foreground duration_ms=65.8
+api-1                   | training_timing {"label": "review-request", "trace": "71520a2bf03fd076", "started_epoch_ms": 1791823302116.321, "stages_ms": {"foreground_admission": 0.2740840000114986}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.040208000001484834, "execution_ms": 0.5170000000020991, "commit_cleanup_ms": 0.11762500000145337, "commit_observed_epoch_ms": 1791823302181.7268, "commit_epoch_ms": 1791823302181.705, "commit_ms": 0.09458299999209885}], "sql_count": 1, "sql_ms": 0.4646669999885944, "duration_ms": 66.10762500000078}
+api-1                   | INFO:     172.19.0.1:56776 - "POST /api/cards/audit-card-00002/review HTTP/1.1" 200 OK
+api-1                   | request path=/api/cards/audit-card-00002/review class=foreground duration_ms=8.6
+background-scheduler-1  |     connection.connect()
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+background-scheduler-1  |     self.connect_check_health(check_health=True)
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+api-1                   | training_timing {"label": "review-request", "trace": "44d22e5ce6836c14", "started_epoch_ms": 1791823302185.9128, "stages_ms": {"foreground_admission": 0.15320800000040435}, "connections": [{"read_only": true, "background": false, "committed": true, "acquisition_ms": 0.025499999992462108, "execution_ms": 0.34595799999692645, "commit_cleanup_ms": 0.08441700001071695, "commit_observed_epoch_ms": 1791823302194.1594, "commit_epoch_ms": 1791823302194.1453, "commit_ms": 0.06937500000958607}], "sql_count": 1, "sql_ms": 0.3049999999973352, "duration_ms": 8.769459000006918}
+background-scheduler-1  |     raise ConnectionError(self._error_message(e))
+background-scheduler-1  | redis.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.
+background-worker-1     | [2026-10-12 12:40:54,598: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.001
+background-scheduler-1  | 
+background-worker-1     | [2026-10-12 12:40:54,598: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:54,599: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[33140cd76e1046aba2ede49c67c6430d] succeeded in 0.006289249999980484s: False
+background-worker-1     | [2026-10-12 12:40:55,592: INFO/MainProcess] Task app.tasks.poll_background_tasks[05cdf1f712734636a3e0b3bd00330d09] received
+background-worker-1     | [2026-10-12 12:40:55,594: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  | The above exception was the direct cause of the following exception:
+background-worker-1     | [2026-10-12 12:40:55,598: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+api-1                   | INFO:     172.19.0.1:56784 - "POST /api/cards/audit-card-00002/review HTTP/1.1" 200 OK
+background-worker-1     | [2026-10-12 12:40:55,598: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:55,599: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[05cdf1f712734636a3e0b3bd00330d09] succeeded in 0.006476958999996896s: False
+background-worker-1     | [2026-10-12 12:40:56,591: INFO/MainProcess] Task app.tasks.poll_background_tasks[9573e84a08d0449e845b33cf5319be12] received
+background-worker-1     | [2026-10-12 12:40:56,593: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:56,598: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.002
+background-worker-1     | [2026-10-12 12:40:56,598: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 12:40:56,598: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[9573e84a08d0449e845b33cf5319be12] succeeded in 0.00700249999999869s: False
+background-worker-1     | [2026-10-12 12:40:57,557: INFO/MainProcess] Task app.tasks.recover_operations[6ec541c2fd98438388a146b5c5680ea2] received
+background-worker-1     | [2026-10-12 12:40:57,560: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:57,561: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:57,561: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 12:40:57,561: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[6ec541c2fd98438388a146b5c5680ea2] succeeded in 0.003959790999999768s: False
+background-worker-1     | [2026-10-12 12:40:57,591: INFO/MainProcess] Task app.tasks.poll_background_tasks[f622992e051d47be8aeea44eaf655ab7] received
+background-scheduler-1  | 
+background-scheduler-1  | Traceback (most recent call last):
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 404, in apply_async
+background-scheduler-1  |     return task.apply_async(entry_args, entry_kwargs,
+background-worker-1     | [2026-10-12 12:40:57,593: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:57,596: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:40:57,596: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:40:57,597: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[f622992e051d47be8aeea44eaf655ab7] succeeded in 0.005469916999999214s: False
+background-worker-1     | [2026-10-12 12:40:57,676: INFO/MainProcess] Task audit.cpu[2f37b527-6d17-4359-9bdd-b2fb6c72aabc] received
+background-worker-1     | [2026-10-12 12:41:32,469: INFO/MainProcess] Terminating 2f37b527-6d17-4359-9bdd-b2fb6c72aabc (15)
+background-worker-1     | [2026-10-12 12:41:32,471: INFO/MainProcess] Task app.tasks.poll_background_tasks[f1a24194615a438faab0f0ab9dc8f835] received
+background-worker-1     | [2026-10-12 12:41:32,601: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.015 settings_seconds=0.001 handler_seconds=0.015 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:32,644: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.023 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 12:41:32,644: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.002s transaction=0.025s
+background-worker-1     | [2026-10-12 12:41:32,651: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:32,828: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:32,833: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:32,843: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.007 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 12:41:32,843: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.001s transaction=0.009s
+background-worker-1     | [2026-10-12 12:41:32,844: INFO/ForkPoolWorker-2] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T16:41:32.844488+00:00","process_started_at":"2026-10-12T16:40:48.157225+00:00","admission_wait_seconds":0.0019235000000037417,"handler_elapsed_seconds":0.19960333299999888,"execution_seconds":0.19767983299999514,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 12:41:32,845: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[f1a24194615a438faab0f0ab9dc8f835] succeeded in 0.28147270799999546s: False
+background-worker-1     | [2026-10-12 12:41:32,848: INFO/MainProcess] Task app.tasks.recover_operations[e8ca0e6999dd4bbd9a83da7ddec271b7] received
+background-worker-1     | [2026-10-12 12:41:32,851: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 627, in apply_async
+background-scheduler-1  |     return app.send_task(
+background-scheduler-1  |            ^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/app/app/services/background_wakes.py", line 188, in send_task
+background-scheduler-1  |     raise BrokerUnavailable('Maintenance wake queue is unavailable; durable work is retained') from error
+background-scheduler-1  | kombu.exceptions.OperationalError: Maintenance wake queue is unavailable; durable work is retained
+background-scheduler-1  | 
+background-scheduler-1  | During handling of the above exception, another exception occurred:
+background-scheduler-1  | 
+background-scheduler-1  | Traceback (most recent call last):
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 282, in apply_entry
+background-scheduler-1  |     result = self.apply_async(entry, producer=producer, advance=False)
+background-scheduler-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 412, in apply_async
+background-scheduler-1  |     reraise(SchedulingError, SchedulingError(
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/exceptions.py", line 109, in reraise
+background-worker-1     | [2026-10-12 12:41:32,853: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:32,853: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 12:41:32,854: INFO/ForkPoolWorker-2] Task app.tasks.recover_operations[e8ca0e6999dd4bbd9a83da7ddec271b7] succeeded in 0.004714708000022938s: False
+background-worker-1     | [2026-10-12 12:41:32,856: INFO/MainProcess] Task app.tasks.recover_active_coverage[a5a78b72550c45958bfeea77bae355dd] received
+background-worker-1     | [2026-10-12 12:41:32,861: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-scheduler-1  |     raise value.with_traceback(tb)
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 404, in apply_async
+background-scheduler-1  |     return task.apply_async(entry_args, entry_kwargs,
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 627, in apply_async
+background-scheduler-1  |     return app.send_task(
+background-worker-1     | [2026-10-12 12:41:32,862: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.001s transaction=0.003s
+background-worker-1     | [2026-10-12 12:41:32,863: INFO/ForkPoolWorker-2] Task app.tasks.recover_active_coverage[a5a78b72550c45958bfeea77bae355dd] succeeded in 0.006716541999992387s: False
+background-worker-1     | [2026-10-12 12:41:32,865: INFO/MainProcess] Task app.tasks.poll_background_tasks[119724f017e544d4b4d125985febd60d] received
+background-worker-1     | [2026-10-12 12:41:32,868: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-scheduler-1  |            ^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:41:32,879: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.008 commit_cleanup_seconds=0.001
+background-scheduler-1  |   File "/app/app/services/background_wakes.py", line 188, in send_task
+background-scheduler-1  |     raise BrokerUnavailable('Maintenance wake queue is unavailable; durable work is retained') from error
+background-scheduler-1  | celery.beat.SchedulingError: Couldn't apply scheduled task poll-durable-background-tasks: Maintenance wake queue is unavailable; durable work is retained
+background-scheduler-1  | [2026-10-12 16:41:36,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:36,619: ERROR/MainProcess] Message Error: Couldn't apply scheduled task poll-durable-background-tasks: Maintenance wake queue is unavailable; durable work is retained
+background-worker-1     | [2026-10-12 12:41:32,879: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.001s transaction=0.010s
+background-worker-1     | [2026-10-12 12:41:32,880: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[119724f017e544d4b4d125985febd60d] succeeded in 0.01484445899998832s: False
+background-scheduler-1  | ['  File "/usr/local/bin/celery", line 8, in <module>\n    sys.exit(main())\n', '  File "/usr/local/lib/python3.12/site-packages/celery/__main__.py", line 15, in main\n    sys.exit(_main())\n', '  File "/usr/local/lib/python3.12/site-packages/celery/bin/celery.py", line 227, in main\n    return celery(auto_envvar_prefix="CELERY")\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 1631, in __call__\n    return self.main(*args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 1552, in main\n    rv = self.invoke(ctx)\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 2032, in invoke\n    return _process_result(sub_ctx.command.invoke(sub_ctx))\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 1415, in invoke\n    return ctx.invoke(self.callback, **ctx.params)\n', '  File "/usr/local/lib/python3.12/site-packages/click/core.py", line 910, in invoke\n    return callback(*args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/click/decorators.py", line 34, in new_func\n    return f(get_current_context(), *args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/celery/bin/base.py", line 158, in caller\n    return f(ctx, *args, **kwargs)\n', '  File "/usr/local/lib/python3.12/site-packages/celery/bin/beat.py", line 72, in beat\n    return beat().run()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/apps/beat.py", line 84, in run\n    self.start_scheduler()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/apps/beat.py", line 113, in start_scheduler\n    service.start()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 645, in start\n    interval = self.scheduler.tick()\n', '  File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 355, in tick\n    self.apply_entry(entry, producer=self.producer)\n', '  File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 285, in apply_entry\n    exc, traceback.format_stack(), exc_info=True)\n']
+background-worker-1     | [2026-10-12 12:41:33,614: INFO/MainProcess] Task app.tasks.poll_background_tasks[12c5c314aea24be587dea82a4e941ab0] received
+background-scheduler-1  | Traceback (most recent call last):
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 389, in connect_check_health
+background-scheduler-1  |     sock = self.retry.call_with_retry(
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 105, in call_with_retry
+background-scheduler-1  |     return do()
+background-scheduler-1  |            ^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 390, in <lambda>
+background-scheduler-1  |     lambda: self._connect(), lambda error: self.disconnect(error)
+background-scheduler-1  |             ^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 767, in _connect
+background-scheduler-1  |     for res in socket.getaddrinfo(
+background-scheduler-1  |                ^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/socket.py", line 978, in getaddrinfo
+background-scheduler-1  |     for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+background-scheduler-1  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  | socket.gaierror: [Errno -2] Name or service not known
+background-scheduler-1  | 
+background-scheduler-1  | During handling of the above exception, another exception occurred:
+background-scheduler-1  | 
+background-scheduler-1  | Traceback (most recent call last):
+background-scheduler-1  |   File "/app/app/services/background_wakes.py", line 184, in send_task
+background-worker-1     | [2026-10-12 12:41:33,616: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:33,622: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-scheduler-1  |     reserved, existing_token = server.eval(
+background-scheduler-1  |                                ^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:41:33,622: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.000s transaction=0.006s
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5876, in eval
+background-scheduler-1  |     return self._eval("EVAL", script, numkeys, *keys_and_args)
+background-worker-1     | [2026-10-12 12:41:33,623: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[12c5c314aea24be587dea82a4e941ab0] succeeded in 0.008682625000005828s: False
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 12:41:34,614: INFO/MainProcess] Task app.tasks.poll_background_tasks[ae8b59d36e824950a213984dca4af546] received
+background-worker-1     | [2026-10-12 12:41:34,617: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:34,622: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:34,622: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 12:41:34,622: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[ae8b59d36e824950a213984dca4af546] succeeded in 0.007277958000003082s: False
+background-worker-1     | [2026-10-12 12:41:35,074: WARNING/MainProcess] consumer: Connection to broker lost. Trying to re-establish the connection...
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/commands/core.py", line 5861, in _eval
+background-scheduler-1  |     return self.execute_command(command, script, numkeys, *keys_and_args)
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 621, in execute_command
+background-worker-1     | Traceback (most recent call last):
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 105, in call_with_retry
+background-worker-1     |     return do()
+background-worker-1     |            ^^^^
+background-scheduler-1  |     return self._execute_command(*args, **options)
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 915, in <lambda>
+background-worker-1     |     lambda: command(*args, **kwargs),
+background-worker-1     |             ^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 936, in try_read
+background-worker-1     |     return conn.read_response(disconnect_on_error=False, push_request=True)
+background-worker-1     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 650, in read_response
+background-worker-1     |     response = self._parser.read_response(disable_decoding=disable_decoding)
+background-worker-1     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/resp2.py", line 15, in read_response
+background-worker-1     |     result = self._read_response(disable_decoding=disable_decoding)
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 627, in _execute_command
+background-worker-1     |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/resp2.py", line 25, in _read_response
+background-worker-1     |     raw = self._buffer.readline()
+background-worker-1     |           ^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/socket.py", line 115, in readline
+background-worker-1     |     self._read_from_socket()
+background-scheduler-1  |     conn = self.connection or pool.get_connection()
+background-scheduler-1  |                               ^^^^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/utils.py", line 195, in wrapper
+background-scheduler-1  |     return func(*args, **kwargs)
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/_parsers/socket.py", line 68, in _read_from_socket
+background-worker-1     |     raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+background-worker-1     | redis.exceptions.ConnectionError: Connection closed by server.
+background-worker-1     | 
+background-worker-1     | During handling of the above exception, another exception occurred:
+background-worker-1     | 
+background-worker-1     | Traceback (most recent call last):
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 1533, in get_connection
+background-scheduler-1  |     connection.connect()
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+background-scheduler-1  |     self.connect_check_health(check_health=True)
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 389, in connect_check_health
+background-worker-1     |     sock = self.retry.call_with_retry(
+background-worker-1     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 105, in call_with_retry
+background-worker-1     |     return do()
+background-worker-1     |            ^^^^
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+background-scheduler-1  |     raise ConnectionError(self._error_message(e))
+background-scheduler-1  | redis.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.
+background-scheduler-1  | 
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 390, in <lambda>
+background-worker-1     |     lambda: self._connect(), lambda error: self.disconnect(error)
+background-worker-1     |             ^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 803, in _connect
+background-worker-1     |     raise err
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 787, in _connect
+background-worker-1     |     sock.connect(socket_address)
+background-worker-1     | ConnectionRefusedError: [Errno 111] Connection refused
+background-worker-1     | 
+background-worker-1     | During handling of the above exception, another exception occurred:
+background-scheduler-1  | The above exception was the direct cause of the following exception:
+background-scheduler-1  | 
+background-scheduler-1  | Traceback (most recent call last):
+background-worker-1     | 
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 404, in apply_async
+background-scheduler-1  |     return task.apply_async(entry_args, entry_kwargs,
+background-worker-1     | Traceback (most recent call last):
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/celery/worker/consumer/consumer.py", line 346, in start
+background-worker-1     |     blueprint.start(self)
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/celery/bootsteps.py", line 116, in start
+background-worker-1     |     step.start(parent)
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/celery/worker/consumer/consumer.py", line 788, in start
+background-worker-1     |     c.loop(*c.loop_args())
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/celery/worker/loops.py", line 97, in asynloop
+background-worker-1     |     next(loop)
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/kombu/asynchronous/hub.py", line 377, in create_loop
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 627, in apply_async
+background-worker-1     |     cb(*cbargs)
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 1394, in on_readable
+background-scheduler-1  |     return app.send_task(
+background-scheduler-1  |            ^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/app/app/services/background_wakes.py", line 188, in send_task
+background-scheduler-1  |     raise BrokerUnavailable('Maintenance wake queue is unavailable; durable work is retained') from error
+background-scheduler-1  | kombu.exceptions.OperationalError: Maintenance wake queue is unavailable; durable work is retained
+background-scheduler-1  | 
+background-scheduler-1  | During handling of the above exception, another exception occurred:
+background-worker-1     |     self.cycle.on_readable(fileno)
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 579, in on_readable
+background-worker-1     |     chan.handlers[type]()
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 931, in _receive
+background-scheduler-1  | 
+background-scheduler-1  | Traceback (most recent call last):
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 282, in apply_entry
+background-scheduler-1  |     result = self.apply_async(entry, producer=producer, advance=False)
+background-scheduler-1  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |     ret.append(self._receive_one(c))
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 412, in apply_async
+background-scheduler-1  |     reraise(SchedulingError, SchedulingError(
+background-worker-1     |                ^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/kombu/transport/redis.py", line 941, in _receive_one
+background-worker-1     |     response = c.parse_response()
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/exceptions.py", line 109, in reraise
+background-scheduler-1  |     raise value.with_traceback(tb)
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/beat.py", line 404, in apply_async
+background-worker-1     |                ^^^^^^^^^^^^^^^^^^
+background-scheduler-1  |     return task.apply_async(entry_args, entry_kwargs,
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 938, in parse_response
+background-scheduler-1  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |     response = self._execute(conn, try_read)
+background-worker-1     |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 914, in _execute
+background-worker-1     |     return conn.retry.call_with_retry(
+background-worker-1     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/retry.py", line 108, in call_with_retry
+background-scheduler-1  |   File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 627, in apply_async
+background-worker-1     |     fail(error)
+background-scheduler-1  |     return app.send_task(
+background-scheduler-1  |            ^^^^^^^^^^^^^^
+background-scheduler-1  |   File "/app/app/services/background_wakes.py", line 188, in send_task
+background-scheduler-1  |     raise BrokerUnavailable('Maintenance wake queue is unavailable; durable work is retained') from error
+background-scheduler-1  | celery.beat.SchedulingError: Couldn't apply scheduled task poll-durable-background-tasks: Maintenance wake queue is unavailable; durable work is retained
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 916, in <lambda>
+background-scheduler-1  | [2026-10-12 16:41:37,556: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-worker-1     |     lambda _: self._reconnect(conn),
+background-scheduler-1  | [2026-10-12 16:41:37,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     |               ^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/client.py", line 904, in _reconnect
+background-worker-1     |     conn.connect()
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 380, in connect
+background-worker-1     |     self.connect_check_health(check_health=True)
+background-worker-1     |   File "/usr/local/lib/python3.12/site-packages/redis/connection.py", line 397, in connect_check_health
+background-worker-1     |     raise ConnectionError(self._error_message(e))
+background-worker-1     | redis.exceptions.ConnectionError: Error 111 connecting to redis:6379. Connection refused.
+background-worker-1     | [2026-10-12 12:41:35,085: WARNING/MainProcess] /usr/local/lib/python3.12/site-packages/celery/worker/consumer/consumer.py:397: CPendingDeprecationWarning: 
+background-worker-1     | In Celery 5.1 we introduced an optional breaking change which
+background-worker-1     | on connection loss cancels all currently executed tasks with late acknowledgement enabled.
+background-scheduler-1  | [2026-10-12 16:41:38,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:39,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:40,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:41,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 16:41:42,556: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 16:41:42,612: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-worker-1     | These tasks cannot be acknowledged as the connection is gone, and the tasks are automatically redelivered
+background-worker-1     | back to the queue. You can enable this behavior using the worker_cancel_long_running_tasks_on_connection_loss
+background-worker-1     | setting. In Celery 5.1 it is set to False by default. The setting will be set to True by default in Celery 6.0.
+background-worker-1     | 
+background-worker-1     |   warnings.warn(CANCEL_TASKS_BY_DEFAULT, CPendingDeprecationWarning)
+background-worker-1     | 
+background-worker-1     | [2026-10-12 12:41:35,088: ERROR/MainProcess] consumer: Cannot connect to app.services.background_wakes:WakeRedisTransport://redis:6379/0: Error 111 connecting to redis:6379. Connection refused..
+background-worker-1     | Trying again in 2.00 seconds... (1/100)
+background-worker-1     | 
+background-worker-1     | [2026-10-12 12:41:37,097: ERROR/MainProcess] consumer: Cannot connect to app.services.background_wakes:WakeRedisTransport://redis:6379/0: Error -2 connecting to redis:6379. Name or service not known..
+background-worker-1     | Trying again in 4.00 seconds... (2/100)
+background-worker-1     | 
+background-worker-1     | [2026-10-12 12:41:41,126: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1     | [2026-10-12 12:41:41,131: INFO/MainProcess] mingle: searching for neighbors
+background-worker-1     | [2026-10-12 12:41:42,143: INFO/MainProcess] mingle: all alone
+background-worker-1     | [2026-10-12 12:41:42,151: INFO/MainProcess] Task app.tasks.recover_operations[436416025db7445aa94e87c81d8efac9] received
+background-worker-1     | [2026-10-12 12:41:42,155: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:42,156: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:42,156: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.000s transaction=0.001s
+background-worker-1     | [2026-10-12 12:41:42,157: INFO/ForkPoolWorker-2] Task app.tasks.recover_operations[436416025db7445aa94e87c81d8efac9] succeeded in 0.004832208000010496s: False
+background-worker-1     | [2026-10-12 12:41:42,158: INFO/MainProcess] Task app.tasks.poll_background_tasks[39cc5ef511ed43baad0597f3c4f71342] received
+background-worker-1     | [2026-10-12 12:41:42,160: INFO/ForkPoolWorker-2] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 12:41:42,160: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[39cc5ef511ed43baad0597f3c4f71342] succeeded in 0.0019291250000037508s: False
+background-worker-1     | [2026-10-12 12:41:42,560: INFO/MainProcess] Task app.tasks.recover_operations[649b60e7b8584d0aa5a6c590b252e22d] received
+background-worker-1     | [2026-10-12 12:41:42,565: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:42,567: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.002 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:42,568: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 12:41:42,569: INFO/ForkPoolWorker-2] Task app.tasks.recover_operations[649b60e7b8584d0aa5a6c590b252e22d] succeeded in 0.008025082999978395s: False
+background-worker-1     | [2026-10-12 12:41:42,615: INFO/MainProcess] Task app.tasks.poll_background_tasks[09d76e967f4e47628da058a84590d2fa] received
+background-worker-1     | [2026-10-12 12:41:42,619: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 12:41:42,628: INFO/ForkPoolWorker-2] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.007 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 12:41:42,628: INFO/ForkPoolWorker-2] postgres background section foreground_wait=0.001s transaction=0.008s
+background-worker-1     | [2026-10-12 12:41:42,630: INFO/ForkPoolWorker-2] Task app.tasks.poll_background_tasks[09d76e967f4e47628da058a84590d2fa] succeeded in 0.013748083999985283s: False

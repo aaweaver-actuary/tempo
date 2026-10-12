@@ -1,0 +1,1 @@
+Driver failure before the API request; server logs show no matching request or server failure. Cannot attribute this to production. Fresh-connection follow-up required. Original sample cohorts remain separate. Live restoration verified after 109.894 seconds.

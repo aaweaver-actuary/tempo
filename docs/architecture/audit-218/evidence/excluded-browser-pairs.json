@@ -1,0 +1,20 @@
+[
+  {
+    "scenario": "foreground",
+    "iteration": 65,
+    "unaccounted_wall_ms": 130917.32983398438,
+    "reason": "Wall/monotonic discontinuity exceeds 5 s, inconsistent with active execution; retained, not pooled"
+  },
+  {
+    "scenario": "foreground",
+    "iteration": 78,
+    "unaccounted_wall_ms": 993476.2849121094,
+    "reason": "Wall/monotonic discontinuity exceeds 5 s, inconsistent with active execution; retained, not pooled"
+  },
+  {
+    "scenario": "foreground",
+    "iteration": 83,
+    "unaccounted_wall_ms": 11026.53515625,
+    "reason": "Wall/monotonic discontinuity exceeds 5 s, inconsistent with active execution; retained, not pooled"
+  }
+]

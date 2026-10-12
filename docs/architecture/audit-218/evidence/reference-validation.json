@@ -1,0 +1,188 @@
+[
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "docker-compose.yml",
+    "line": 1,
+    "source": "# PostgreSQL/Celery product stack. Migrate and verify data before starting it."
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "app/lib/study.worker.ts",
+    "line": 11,
+    "source": "self.onmessage = ({ data: raw }: MessageEvent<unknown>) => {"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "app/lib/background-study.ts",
+    "line": 122,
+    "source": "    const error = new Error(\"Study worker response could not be decoded\");"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "app/views/home_view.tsx",
+    "line": 688,
+    "source": "  useEffect(() => {"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "scripts/engine-search.mjs",
+    "line": 72,
+    "source": "      const foregroundPoll = process.env.TEMPO_ENGINE_SMOKE === \"1\" ? undefined : setInterval(async () => {"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "scripts/engine-worker-cycle.mjs",
+    "line": 66,
+    "source": "      const preempted = engineSearchWasPreempted(error);"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "scripts/maia-coverage-worker.mjs",
+    "line": 97,
+    "source": "    const admission = await request(\"/api/system/foreground-active\");"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/celery_app.py",
+    "line": 23,
+    "source": "    task_acks_late=True,"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/tasks.py",
+    "line": 299,
+    "source": "def poll_background_tasks(self) -> bool:"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/queue_refresh_wakeup.py",
+    "line": 37,
+    "source": "def wake_queue_refresh(*, eligible_at: datetime | None = None) -> None:"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/durable_tasks.py",
+    "line": 242,
+    "source": "def claim_task("
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/durable_tasks.py",
+    "line": 424,
+    "source": "            \"SELECT attempt_count,max_attempts,kind,payload_json FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'\","
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/durable_tasks.py",
+    "line": 519,
+    "source": "def defer_task_for_foreground(task: dict) -> bool:"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/command_gateway.py",
+    "line": 157,
+    "source": "def record_operation_retry("
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/postgres_store.py",
+    "line": 226,
+    "source": "def _pool(read_only: bool) -> ConnectionPool:"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/postgres_store.py",
+    "line": 248,
+    "source": "def connection(*, read_only: bool = False, background: bool = False, authoritative: bool = False,"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/database.py",
+    "line": 55,
+    "source": "def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/database_executor.py",
+    "line": 229,
+    "source": "    operation: WriteOperation[Result], *, label: str"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/study_mode.py",
+    "line": 9,
+    "source": "STUDY_TASK_KINDS = ('daily_queue',)"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/defensive_analysis.py",
+    "line": 18,
+    "source": "def task_admission_sql(kind_expression: str) -> str:"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/tasks.py",
+    "line": 192,
+    "source": "    submitted_at = (self.request.headers or {}).get(\"submitted_at\")"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/tasks.py",
+    "line": 235,
+    "source": ""
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/tasks.py",
+    "line": 379,
+    "source": "    handler = background_handlers.get(claimed_task[\"kind\"])"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/postgres_queue_refresh.py",
+    "line": 784,
+    "source": "                 WHERE block.card_id=card.id"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "app/hooks/use-game-sync.ts",
+    "line": 85,
+    "source": "      if (settings.study_only_mode) {"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "app/views/home_view.tsx",
+    "line": 1084,
+    "source": "      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && studyOnlyMode === true && card.repertoireId) {"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/main.py",
+    "line": 759,
+    "source": "                return await call_next(request)"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/activity_gate.py",
+    "line": 46,
+    "source": "    @contextmanager"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/services/redis_admission_gate.py",
+    "line": 93,
+    "source": "    with training_timing_stage(\"foreground_admission\"):"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/command_dispatch.py",
+    "line": 37,
+    "source": "            headers={\"submitted_at\": time.time()},"
+  },
+  {
+    "sha": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+    "path": "backend/app/main.py",
+    "line": 2164,
+    "source": "        saved_depth = settings_database.execute("
+  }
+]
