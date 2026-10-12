@@ -4145,3 +4145,15 @@ Existing `emergency_base_only_advancement_preserves_FAST_and_STUDY_head_evidence
 `emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases` remain
 in the regular gate. FAST/STUDY commands, ownership and smoke inventories are
 unchanged by this correction.
+
+## #204 — A1 scheduling store in the existing owned transaction
+
+- `test_scheduling_application_uses_original_completion_clock_without_database` proves explicit completion time/date and ordered store calls without a database.
+- `test_scheduling_application_source_replay_preserves_current_result_contract` preserves current-card source replay, distinct from frozen logical receipt replay.
+- `test_scheduling_application_maturity_uses_valid_reviews_and_seed_facts` preserves seed padding and valid-history maturity; `test_scheduling_store_maturity_filters_invalidated_history_and_preserves_seed_and_ties` proves SQL filtering/date/order.
+- `test_scheduling_store_never_commits_outside_command_owner` proves borrowed-connection writes remain rollbackable by the owner.
+- `test_scheduling_application_import_does_not_load_infrastructure` rejects HTTP/database/worker/broker imports in a fresh interpreter.
+- `test_scheduling_wrapper_preserves_history_clock_update_and_result`, source-replay, missing/archived, invalid-input and same-connection follow-up cases retain wrapper behavior characterized before extraction.
+- Native `test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure` injects logical and operation receipt failures after adapter writes and verifies rollback of schedule/history/queue/origin effects without wake.
+- Native `test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect` observes real operation/card lock contention, concurrent logical replay, connection restart, lost-response replay, conflicting identities and exactly-once history/queue/snapshot receipts.
+- Native proofs run through the regular `scripts/check_postgres_queue_attempt_recovery.py` durability/study hook. Existing evidence, reconciliation/savepoint and prepared-continuation proofs remain unchanged. #224 broader orchestration extraction remains separate and incomplete.

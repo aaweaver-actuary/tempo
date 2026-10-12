@@ -703,7 +703,183 @@ def test_retained_command_retry_preserves_immutable_identity():
                 database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
         postgres_store.close_pools()
 
+@contextmanager
+def _scheduling_adapter_fixture():
+    """Own one tactic, its queue rows and receipts; restore shifted positions."""
+    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
+        raise RuntimeError("Scheduling adapter proof requires a disposable PostgreSQL instance")
+    dsn = "postgresql://postgres@postgres:5432/tempo"
+    os.environ["TEMPO_DATABASE_WRITE_URL"] = dsn
+    os.environ["TEMPO_DATABASE_READ_URL"] = dsn
+    postgres_store.close_pools()
+    identifier = f"scheduling-store-{uuid.uuid4()}"
+    card_id = identifier + "-card"
+    operation_ids = []
+    saved_positions = []
+    try:
+        with postgres_store.connection() as database:
+            saved_positions = [tuple(row) for row in database.execute(
+                "SELECT id,position FROM daily_queue WHERE queue_date=?", (date.today().isoformat(),))]
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)",
+                             (identifier, "Scheduling store proof", date.today().isoformat()))
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix','tactic',?,'[\"e2e4\"]','learning',?)",
+                             (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", date.today().isoformat()))
+            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier, card_id))
+            entry_id = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,-100000,'due',?) RETURNING id",
+                                        (date.today().isoformat(), card_id, identifier)).fetchone()[0]
+        issue_operation = str(uuid.uuid4())
+        operation_ids.append(issue_operation)
+        assert execute_command(issue_operation, "queue.issue_head", {
+            "queue_date": date.today().isoformat(), "entry_id": entry_id,
+            "card_id": card_id, "expected_revision": 1})["issued"]
+        payload = {"card_id": card_id, "review": {"outcome": "correct", "guided": False,
+                   "queue_entry_id": entry_id, "attempt_id": identifier,
+                   "expected_revision": 1, "recorded_at": datetime.now(timezone.utc).isoformat()}}
+        yield card_id, entry_id, payload, operation_ids
+    finally:
+        postgres_store.close_pools()
+        with postgres_store.connection() as database:
+            for operation_id in operation_ids:
+                database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
+            database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)", (card_id,))
+            database.execute("DELETE FROM review_attempt_receipts WHERE card_id=?", (card_id,))
+            database.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
+            database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
+            for entry_id, position in saved_positions:
+                database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
+            assert database.execute("SELECT COUNT(*) FROM cards WHERE id=?", (card_id,)).fetchone()[0] == 0
+            assert database.execute("SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=?", (card_id,)).fetchone()[0] == 0
+        postgres_store.close_pools()
+
+
+def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
+    """Fail after schedule/history/queue writes, inside and outside the savepoint."""
+    from app.services.review_reconciliation import card_schedule_state
+    from app.services.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+
+    with _scheduling_adapter_fixture() as (card_id, entry_id, payload, operations):
+        with postgres_store.connection(read_only=True) as database:
+            original_schedule = card_schedule_state(database, card_id)
+        original_execute = postgres_store.PostgresConnection.execute
+        original_raw_execute = postgres_store._TimingConnection.execute
+        original_save = OwnedConnectionSchedulingReviewStore.save_card_state
+        saved_connections = []
+        def observe_save(store, saved_card_id, state):
+            assert saved_card_id == card_id
+            assert store._database.raw.info.transaction_status == psycopg.pq.TransactionStatus.INTRANS
+            saved_connections.append(store._database)
+            return original_save(store, saved_card_id, state)
+        def fail_logical_receipt(database, statement, parameters=()):
+            if "INSERT INTO review_attempt_receipts" in statement and parameters[1] == card_id:
+                assert database is saved_connections[-1]
+                raise RuntimeError("injected logical receipt failure")
+            return original_execute(database, statement, parameters)
+        def fail_operation_receipt(database, statement, parameters=None, *args, **kwargs):
+            if "UPDATE operation_receipts SET state='complete'" in statement and parameters[-1] == operation:
+                assert database is saved_connections[-1].raw
+                raise RuntimeError("injected operation receipt failure")
+            return original_raw_execute(database, statement, parameters, *args, **kwargs)
+        for boundary in ("logical", "operation"):
+            operation = str(uuid.uuid4())
+            operations.append(operation)
+            with patch.object(OwnedConnectionSchedulingReviewStore, "save_card_state", observe_save), \
+                 patch.object(postgres_store.PostgresConnection, "execute", fail_logical_receipt if boundary == "logical" else original_execute), \
+                 patch.object(postgres_store._TimingConnection, "execute", fail_operation_receipt if boundary == "operation" else original_raw_execute), \
+                 patch("app.services.queue_refresh_wakeup.wake_queue_refresh") as wake:
+                if boundary == "logical":
+                    assert execute_command(operation, "cards.review", payload) is None
+                    assert read_operation(operation)["state"] == "failed"
+                else:
+                    try:
+                        execute_command(operation, "cards.review", payload)
+                    except RuntimeError as error:
+                        assert "injected operation receipt" in str(error)
+                    else:
+                        raise AssertionError("Operation receipt failure did not escape to transaction owner")
+                    assert read_operation(operation) is None
+                wake.assert_not_called()
+            with postgres_store.connection(read_only=True) as observer:
+                assert card_schedule_state(observer, card_id) == original_schedule
+                assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 0
+                assert observer.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card_id,)).fetchone()[0] == 0
+                assert observer.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=?", (card_id,)).fetchone()[0] == 1
+                assert tuple(observer.execute("SELECT status,review_result_json FROM daily_queue WHERE id=?", (entry_id,)).fetchone()) == ("queued", None)
+                assert observer.execute("SELECT last_status FROM queue_attempt_origins WHERE queue_entry_id=?", (entry_id,)).fetchone()[0] == "queued"
+        assert len(saved_connections) == 2
+        print("PASS test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure")
+
+
+def test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect():
+    """Native card/operation locks serialize deliveries; restart returns receipts."""
+    from app.services.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    saved = Event()
+    release = Event()
+    original_save = OwnedConnectionSchedulingReviewStore.save_card_state
+    with _scheduling_adapter_fixture() as (card_id, entry_id, payload, operations):
+        operation, logical_replay_operation = str(uuid.uuid4()), str(uuid.uuid4())
+        operations.extend((operation, logical_replay_operation))
+        save_count = []
+        def hold_first_save(store, saved_card_id, state):
+            result = original_save(store, saved_card_id, state)
+            save_count.append(saved_card_id)
+            saved.set()
+            if not release.wait(10):
+                raise AssertionError("Concurrent scheduling proof was not released")
+            return result
+        executor = ThreadPoolExecutor(max_workers=3)
+        try:
+            with patch.object(OwnedConnectionSchedulingReviewStore,"save_card_state",hold_first_save):
+                first = executor.submit(execute_command, operation, "cards.review", payload)
+                assert saved.wait(5), "First delivery did not reach the scheduling adapter"
+                duplicate = executor.submit(execute_command, operation, "cards.review", payload)
+                logical_replay = executor.submit(execute_command, logical_replay_operation, "cards.review", payload)
+                deadline = time.monotonic() + 5
+                with psycopg.connect("postgresql://postgres@postgres:5432/tempo",autocommit=True) as observer:
+                    while observer.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND (query LIKE 'SELECT pg_advisory_xact_lock%' OR query LIKE 'SELECT id FROM cards%FOR UPDATE%')").fetchone()[0] < 2:
+                        assert not duplicate.done() and not logical_replay.done(), "Replay completed before owner released locks"
+                        if time.monotonic() >= deadline:
+                            raise AssertionError("Duplicate operation and logical replay did not reach native locks")
+                    assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card_id,)).fetchone()[0] == 0
+                release.set()
+                result = first.result(timeout=10)
+                assert result["persisted"] and duplicate.result(timeout=10) == result
+                assert logical_replay.result(timeout=10) == result
+        finally:
+            release.set()
+            executor.shutdown(wait=True)
+        assert save_count == [card_id]
+        postgres_store.close_pools()
+        # Drop the first response and reconnect: both receipt layers stay exact.
+        assert execute_command(operation, "cards.review", payload) == result
+        restarted_operation = str(uuid.uuid4())
+        operations.append(restarted_operation)
+        assert execute_command(restarted_operation, "cards.review", payload) == result
+        conflicting = {**payload,"review": {**payload["review"],"outcome":"again"}}
+        try:
+            execute_command(operation,"cards.review",conflicting)
+        except CommandConflict:
+            pass
+        else:
+            raise AssertionError("Operation identity accepted conflicting review")
+        conflicting_operation = str(uuid.uuid4())
+        operations.append(conflicting_operation)
+        assert execute_command(conflicting_operation,"cards.review",conflicting) is None
+        assert read_operation(conflicting_operation)["error"]["code"] == "review_attempt_reused"
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 1
+            history = database.execute("SELECT rating,internal_rating,guided,reviewed_at,previous_interval,next_interval,source_kind,source_ref FROM reviews WHERE card_id=?", (card_id,)).fetchone()
+            assert tuple(history) == ("correct","good",0,payload["review"]["recorded_at"],0,0,"study",f"attempt:{payload['review']['attempt_id']}")
+            assert database.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card_id,)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND status='complete'", (card_id,)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND cycle=1 AND status='queued'", (card_id,)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM review_schedule_snapshots WHERE review_id=?", (result["review_id"],)).fetchone()[0] == 1
+            assert json.loads(database.execute("SELECT review_result_json FROM queue_attempt_origins WHERE queue_entry_id=?", (entry_id,)).fetchone()[0])["review_id"] == result["review_id"]
+        print("PASS test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect")
+
+
 if __name__ == "__main__":
+    test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure()
+    test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect()
     test_retained_command_retry_preserves_immutable_identity()
     test_postgres_real_game_obligation_admission_restart_publication_and_remediation()
     test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe()
