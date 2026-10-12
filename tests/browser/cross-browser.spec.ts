@@ -1,9 +1,10 @@
+import type { Page } from "@playwright/test";
 import { preparePromotionStudy, dragStudyKnightPromotion } from "./study-promotion-fixtures";
 import { test, expect } from "./observability";
 import { readFileSync } from "node:fs";
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
-import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
+import { expectedPieces, renderedPieces, playMove, squareCenter } from "./keyboard-fixtures";
 
 // API route interception must remain deterministic after the app registers its shell worker.
 test.use({ serviceWorkers: "block" });
@@ -39,6 +40,54 @@ test("prepared_next_card_advances_after_durable_review_without_queue_refresh acr
   } finally { releaseAncillary(); }
 });
 
+async function prepareInitialBuilderMove(page: Page) {
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+  // Initial repertoire publication changes the board identity and clears selection.
+  await expect(page.getByRole("combobox", { name: "Active repertoire" })).toHaveValue("visual-repertoire");
+}
+
+test("B00 Builder input waits for delayed initial repertoire binding across browser engines", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await prepareVisualUI(page);
+  let releaseRepertoireLines!: () => void;
+  const repertoireLinesReleased = new Promise<void>(resolve => { releaseRepertoireLines = resolve; });
+  let requestedRepertoireLines = false;
+  await page.route("**/api/repertoire/lines", async route => {
+    requestedRepertoireLines = true;
+    await repertoireLinesReleased;
+    await route.fallback();
+  });
+  let initialMovePrepared = false;
+  let preparation: Promise<void> | undefined;
+  try {
+    await page.reload();
+    await navigate(page, "Builder");
+    await expect(page.locator(".persistent-board-shell")).toHaveAttribute("data-board-owner", "builder");
+    await expect.poll(() => requestedRepertoireLines).toBe(true);
+    await expect(page.getByRole("combobox", { name: "Active repertoire" })).toHaveValue("");
+    preparation = prepareInitialBuilderMove(page).then(() => { initialMovePrepared = true; });
+    // The board can accept input before its initial position owner is published.
+    await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+    expect(initialMovePrepared).toBe(false);
+    const board = page.locator(".board-frame");
+    const initialFen = await board.getAttribute("data-fen");
+    const e2 = await squareCenter(board, "e2");
+    await page.mouse.click(e2.x, e2.y);
+    await expect(board.locator("square.selected")).toBeVisible();
+    releaseRepertoireLines();
+    await preparation;
+    await expect(board.locator("square.selected")).toBeHidden();
+    const e4 = await squareCenter(board, "e4");
+    await page.mouse.click(e4.x, e4.y);
+    await expect(board).toHaveAttribute("data-fen", initialFen!);
+    await playMove(page, board, "e2", "e4");
+    await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4P3/);
+  } finally {
+    releaseRepertoireLines();
+    await preparation;
+  }
+});
+
 test("critical navigation, board input, split and dialogs work across browser engines", async ({
   page,
 }) => {
@@ -46,7 +95,7 @@ test("critical navigation, board input, split and dialogs work across browser en
   await prepareVisualUI(page);
   await navigate(page, "Builder");
   const board = page.locator(".board-frame");
-  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  await prepareInitialBuilderMove(page);
   const surface = await page.locator(".cg-wrap").boundingBox();
   if (!surface) throw new Error("Board has no visible surface");
   for (const [file, rank] of [
