@@ -1,0 +1,13 @@
+{
+  "head": "2940aeffdc670a7bb8ae5031122e9ba0a2f547f6",
+  "github_pr_base_metadata": "d4dbf28da5b6e95db8da1acfd9fecd4655821296",
+  "actual_main": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+  "integration": "229b7ee03fbce556da9db9478e6c0d945a255190",
+  "integration_parents": [
+    "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+    "2940aeffdc670a7bb8ae5031122e9ba0a2f547f6"
+  ],
+  "integration_tree": "3a13d6b34f2be07d97b98a7e8ac09317b340918d",
+  "local_tree": "3a13d6b34f2be07d97b98a7e8ac09317b340918d",
+  "note": "GitHub PR base metadata retains original d4dbf28d; authoritative main ref and actual merge parent are 3f733239. Complete plan qualifies actual integration commit."
+}

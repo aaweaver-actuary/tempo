@@ -1,0 +1,10 @@
+{
+  "project": "tempo-pg-regressions-49585-521d73fd",
+  "verified_absent": {
+    "containers": [],
+    "volumes": [],
+    "networks": [],
+    "images": []
+  },
+  "secret_directory_removed": true
+}

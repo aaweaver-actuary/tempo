@@ -1,0 +1,197 @@
+[
+  {
+    "file": "unit/pending-review-recovery-regressions.test.tsx",
+    "name": "flush_settlement_audit idle receipt observer retains target evidence after later success",
+    "status": "passed"
+  },
+  {
+    "file": "unit/pending-review-recovery-regressions.test.tsx",
+    "name": "flush_settlement_audit idle receipt observer retains target evidence after later failure",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve none authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve missing authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve mismatch authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve attempt authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve generation authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve entry authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve revision authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve cycle authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve date authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve failed-flag authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/prepared-review-continuation-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping continuation observers preserve failed-marker authorization boundary",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-attempt-confirmation-regressions.test.tsx",
+    "name": "flush_settlement_audit Home foreground settlement and idle observer retain ownership during reconnect=false",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-attempt-confirmation-regressions.test.tsx",
+    "name": "flush_settlement_audit Home foreground settlement and idle observer retain ownership during reconnect=true",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit synchronous outbox subscriber observes subsequent persisted publication",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit synchronous outbox subscriber observes subsequent terminal publication",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit unlimited follow-up failure retains earlier settled evidence",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit submitted follow-up failure retains earlier settled evidence",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit different explicit retry identities retain suppression after persisted owner",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit different explicit retry identities retain suppression after failed owner",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit next generation publishes before previous waiter callbacks: completion",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit next generation publishes before previous waiter callbacks: rejection",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit bounded 1 then unlimited preserves all continuation capabilities",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit bounded 2 then unlimited preserves all continuation capabilities",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit submitted identities coalesce with limit 1 and retain immutable early snapshots",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit submitted identities coalesce with limit 2 and retain immutable early snapshots",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit submitted identities coalesce with limit Infinity and retain immutable early snapshots",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping submitted outcome remains truthful: terminal",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping submitted outcome remains truthful: retryable",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping submitted outcome remains truthful: network-before",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping submitted outcome remains truthful: network-after",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit overlapping submitted outcome remains truthful: missing-confirmation",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit unrelated rejection attributes its own attempt and explicit retry=false",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit unrelated rejection attributes its own attempt and explicit retry=true",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit target cannot bypass same-card persisted predecessor",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit target cannot bypass same-card suppressed predecessor",
+    "status": "passed"
+  },
+  {
+    "file": "unit/review-outbox-regressions.test.ts",
+    "name": "flush_settlement_audit target cannot bypass same-card conflicted predecessor",
+    "status": "passed"
+  }
+]

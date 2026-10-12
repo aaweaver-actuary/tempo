@@ -1,0 +1,28 @@
+{
+  "command": [
+    "npm",
+    "run",
+    "test:unit",
+    "--",
+    "tests/unit/review-outbox-regressions.test.ts",
+    "tests/unit/prepared-review-continuation-regressions.test.ts",
+    "tests/unit/review-attempt-confirmation-regressions.test.tsx",
+    "tests/unit/pending-review-recovery-regressions.test.tsx",
+    "tests/unit/desktop-queue-regressions.test.ts",
+    "tests/unit/phone-queue-preparation-regressions.test.ts",
+    "tests/unit/queue-readiness-diagnostics-regressions.test.ts",
+    "tests/unit/offline-training-regressions.test.ts",
+    "tests/unit/attempt-lifecycle-regressions.test.ts",
+    "tests/unit/opening-evidence-review-deadlines.test.ts",
+    "tests/unit/training-failure-outbox-regressions.test.ts",
+    "tests/unit/repertoire-alternative-home-regressions.test.tsx",
+    "tests/unit/repertoire-move-verification.test.ts",
+    "tests/unit/study-only-settings-regressions.test.tsx",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/Users/andy/tempo/test-results/audits/2026-10-12-pr191-integration/affected-units.json"
+  ],
+  "seconds": 13.585107874998357,
+  "exit_code": 0,
+  "head": "2940aeffdc670a7bb8ae5031122e9ba0a2f547f6"
+}

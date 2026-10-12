@@ -1,0 +1,13 @@
+{
+  "head": "2940aeffdc670a7bb8ae5031122e9ba0a2f547f6",
+  "main_home_unchanged": true,
+  "pr_outbox_unchanged": true,
+  "both_registry_sections_preserved": true,
+  "conflicts": [
+    "tests/REGRESSIONS.md"
+  ],
+  "environment": {
+    "node": "v26.10.0",
+    "npm": "11.19.1"
+  }
+}

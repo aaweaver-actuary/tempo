@@ -1,0 +1,19 @@
+{
+  "command": [
+    "npm",
+    "run",
+    "test:unit",
+    "--",
+    "tests/unit/review-outbox-regressions.test.ts",
+    "tests/unit/prepared-review-continuation-regressions.test.ts",
+    "tests/unit/review-attempt-confirmation-regressions.test.tsx",
+    "tests/unit/pending-review-recovery-regressions.test.tsx",
+    "-t",
+    "flush_settlement_audit",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/Users/andy/tempo/test-results/audits/2026-10-12-pr191-integration/audit-cases.json"
+  ],
+  "seconds": 4.766255791000731,
+  "exit_code": 0
+}
