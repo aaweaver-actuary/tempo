@@ -1,12 +1,19 @@
 # GitHub workflows
 
-Workflow files define CI and the limited GitHub Pages practice-demo publishing
-path. Keep the published runtime clearly separate from Docker Tempo and keep
-the quality runner aligned with the baseline environment.
+`pages.yml` classifies PRs into FAST, STUDY or FULL and reports the required
+`merge-gate`. FAST/STUDY use exact-head focused execution; FULL delegates to the
+existing verification layers and `quality` integration validator. The selected
+manifest, evidence policy, coverage gaps and required GitHub protection settings
+are documented in `docs/testing.md`.
 
-`pages.yml` creates an explicit immutable plan, calls `verify-layer.yml` for
-independent layers and aggregates required results into stable `quality`.
-Complete verification runs nightly at 07:00 UTC and before practice-demo
-publishing; schedules and verification-only manual runs cannot deploy.
-The source/spec inventory, quarantine rules, baseline and owner settings
-recommendations are in `docs/testing.md`. Repository settings are unchanged.
+Complete verification runs nightly at 07:00 UTC, on manual dispatch, release,
+merge-group and main publishing boundaries. Schedules and verification-only
+manual runs cannot deploy. GitHub Pages remains a practice demo, separate from
+local Docker Tempo. No CI runner uses live study data.
+
+All tiers reject draft PRs and draft-selected plans. FULL merge aggregation binds
+the same-run immutable complete plan to the current integration SHA; `quality`
+retains responsibility for complete layer/evidence validation. Sensitive Markdown
+prose remains FAST; executable security and qualification changes retain FULL.
+See [testing policy](../../docs/testing.md#emergency-merge-qualification) for
+ownership limitations, base-advancement risk, rollout status and rollback.

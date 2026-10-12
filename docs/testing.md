@@ -1,4 +1,4 @@
-# Test scopes and exact full coverage
+# Test scopes and emergency merge qualification
 
 `npm run check:conflicts` checks tracked text files for unresolved merge-conflict
 artifacts without installing dependencies. It also runs before local gate execution
@@ -11,6 +11,83 @@ Use one Make target for the question you are answering. `make plan` prints the e
 Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.
 
 **Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`, plus `make docker-lifecycle`. The default sandbox can deny `127.0.0.1` binding or Docker access. Full, UI, visual, and performance scopes also verify that the pinned container can read the checkout through its Docker bind mount, including `package-lock.json`, before tests begin. This catches isolated checkouts under paths Docker Desktop cannot share. `make preflight` checks all three capabilities alone when diagnosing the environment. This preflight is a capability check, not another test family.
+
+## Emergency merge qualification
+
+The emergency policy accepts increased regression risk in inactive subsystems.
+The required PR check is `merge-gate`; `quality` remains the complete-proof check.
+This policy supersedes the selective-CI prerequisites in issues #202 and #203;
+those broader architecture issues remain open.
+
+| Tier | Selection | Required proof | Target |
+| --- | --- | --- | --- |
+| FAST | Reviewed isolated sources and prose | Relevant unit/contract files, applicable lint/typecheck; prose uses conflict, migration inventory and diff checks without dependencies | Under 5 minutes |
+| STUDY | Queue, reviews, grading, admissions, quotas, scheduling, FSRS consumers, offline recovery and study-only mode | Relevant unit/backend files, bounded PostgreSQL study durability and ten named Chromium cases | Under 10 minutes |
+| FULL | Schema/migrations, shared persistence, executable authentication/security, qualification infrastructure, explicit global invariants, unknown ownership/history, or `ci:full` | Existing complete units, builds, PostgreSQL, lifecycle, browser and pinned checks | Measured per candidate |
+
+`scripts/ci-fast-lane-inventory.json` contains exact source ownership and browser
+file/title/project identities. Multiple changed paths use the union of selected
+files and the highest tier. Renames classify both paths. Missing tests, ambiguous
+ownership and unavailable history select FULL. A large file or shared frontend
+module does not by itself imply FULL. New unmapped functionality requires an
+explicit ownership review before it can use the fast lane. This inventory asserts
+reviewed ownership; it is not certified reverse dependency closure (#202).
+Documentation-only Markdown, including security and CI documentation, remains
+FAST. Executable configuration, validators, workflows and security code retain
+FULL; changing their documentation does not change the executable policy.
+
+FAST/STUDY execute the exact PR head and verify selected collection against actual
+passing results. Zero, skipped, retried, missing, failed, cancelled, stale-head or
+other-run evidence cannot pass. Their results remain valid if only main advances;
+there is no cross-run fast-lane evidence reuse. FULL still qualifies the captured
+head/base/integration candidate. Its merge gate reads the same-run immutable
+FULL plan and compares the qualified integration SHA with the fresh PR state,
+while the successful same-run `quality` dependency validates all required layers
+and evidence provenance. Every tier rejects drafts and draft-selected plans;
+becoming ready requires a fresh ready selection and successful qualification.
+
+The PostgreSQL `study` runner uses fresh owned databases, credentials and ports.
+It proves queue/attempt receipt recovery, study-only foreground review and
+idempotent replay, real foreground review durability, canonical admission,
+burial quota and blocked-burial recovery. It then recreates fresh volumes before
+the selected browser smoke. Cleanup and missing capabilities remain failures.
+The ten browser identities are recorded in the manifest, covering reload,
+unconfirmed review blocking, wrong-move grading, offline replay/conflicts,
+study-only mode, post-review progression, tactics and opening admission.
+
+FULL remains available via `ci:full`, manual workflow dispatch, nightly at 07:00
+UTC, merge-group, release and main practice-demo publishing boundaries. Its
+failures remain visible in Actions and artifacts; an unrelated FAST/STUDY PR
+has no dependency on those runs. No existing tests or assertions are removed.
+
+**GitHub settings:** after validating the new check, set main's required GitHub
+Actions status to `merge-gate` (app ID 15368), remove required `quality`, and
+uncheck **Require branches to be up to date before merging**. Preserve all other
+protections. Read back the required-status-check configuration. Until this change
+is confirmed, the fast lane is implemented but is not operational.
+
+On 2026-10-12, main protection already requires non-strict `merge-gate` and has
+removed required `quality`; at that readback main did not yet contain the new
+workflow. Existing
+PRs with older workflows cannot satisfy that check until they include the new
+workflow. Do not treat this rollout gap as permission to bypass qualification.
+
+Rollback procedure (settings changes require explicit authorization):
+1. Add `ci:full` to each ordinary PR and obtain complete current-candidate quality.
+2. Update only main's required-status-checks endpoint, using this payload:
+   `{"strict":true,"checks":[{"context":"quality","app_id":15368}]}`.
+3. Read back that endpoint, verify `quality` and strict=true, and compare all other
+   branch protection fields with the pre-change snapshot. Confirm a current PR's
+   required checks; do not merge using an old candidate's success.
+The rollback payload can be validated locally without applying it. No rollback
+or protection mutation is performed as part of the PR214 correction.
+
+Omitted FAST/STUDY coverage includes unrelated analysis/import/model suites,
+full durability and backup/restore, deployment lifecycle, full browser inventory,
+Rust/build inventories and pinned visual/performance. Inactive failures may reach
+main before periodic FULL detects them. Disabling strict freshness also accepts
+interaction risk between individually qualified PR heads; high-risk changes
+retain exact-integration FULL proof. Targets are budgets, not guaranteed timings.
 
 ## Full gate
 
@@ -147,31 +224,34 @@ ARM64, Node 26.3.0, Python 3.14.5). `make plan` retains its 13-stage inventory.
 This is inventory proof, not a completed runtime gate; final candidate CI owns
 complete verification. Selection changes follow in a separate commit.
 
-## Development evidence and merge qualification
+## Complete evidence and merge qualification
 
-Draft PRs default to `development`, independently of coverage `scope`. The version-3 immutable hashed plan records repository name/ID, PR number, tier, draft state, head SHA, base SHA, tested integration SHA, inventory revision and required runner/tool versions. All verification and aggregation checkouts use that integration SHA. `development` reports the selected evidence; `quality` always runs and fails for development or any draft, including a draft requesting complete execution. Never require `development` as a merge gate or treat a skipped/neutral check as qualification.
+The version-3 complete plan records repository name/ID, PR number, draft state,
+head/base/integration SHAs, inventory revision and runner/tool versions. All FULL
+layer and quality checkouts are pinned to that integration SHA. The emergency
+workflow invokes this planner with `--complete`, including for draft FULL PRs;
+its older reduced `development` selection remains available to existing callers
+and contract tests, but does not govern FAST/STUDY qualification.
 
-New test-named files must belong to the regular collection or have explicit runner ownership. The planner rejects misplaced tests; unrelated passing suites cannot prove that a new regression executed.
+FULL drafts report execution through `development`; `quality` rejects any draft.
+Ready FULL PRs require all complete layers and refreshed PR metadata. Changed
+head/base/draft/integration context invalidates full qualification. FAST/STUDY
+have their separate exact-head validator described above and do not run these
+complete-report jobs. GitHub itself prevents merging draft PRs.
 
-| Draft change | Selected development evidence |
-| --- | --- |
-| Reviewed prose | Conflict-artifact and migration-inventory guards; runtime explicitly inapplicable |
-| Standalone regression files | Changed Vitest/pytest files and declared regular-suite runner wrappers; frontend lint/typecheck when applicable |
-| Product frontend | Whole frontend plus build, critical browser cases and reviewed families; unknown interaction sources expand browser coverage |
-| Reviewed network-only backend leaves | Chess.com/Lichess clients: `test_game_sync.py`, `test_postgres_game_sync_windows.py`, critical browsers and complete games/defense families |
-| Other backend/persistence/concurrency | Whole backend plus complete durability, critical browser cases and reviewed families; shared storage/API boundaries expand browser/lifecycle |
-| CI policy harness | Actual planner, quality and PostgreSQL runner regression wrappers plus lint/typecheck |
-| PostgreSQL fixture | Harness evidence plus complete durability |
-| Unknown/shared runner or infrastructure | Broad subsystem/boundary coverage, including affected real runtime modes |
+New test-named files must belong to the regular collection or declare runner
+wrapper ownership. Missing collection, skipped/failed cases and zero execution
+cannot qualify. Vitest uses `--no-static-parse` to expand dynamic/parameterized
+cases before execution; the actual result identities must match collection.
+PostgreSQL evidence remains real disposable-database proof, with migration,
+isolation and cleanup guards preserved. Collection and capability checks alone
+are not execution evidence.
 
-Changed regressions join selected subsystem coverage, and every changed file must report nonzero execution even when the whole subsystem runs. Native runner regressions declare their regular-suite wrapper owners in the inventory; missing ownership fails planning. Deleted/unavailable test files expand to the full subsystem. Missing comparison history expands every layer. A new unclassified browser spec fails planning until ownership is registered. Persistence is never proven by mocks alone. Migration guards reject duplicate/gapped versions and disagreement with `POSTGRES_SCHEMA_VERSION`; they do not rewrite applied history.
-
-Ready PRs run all frontend/backend/build and durability layers, six critical browser cases plus source-selected complete families, and applicable lifecycle/pinned checks. `ready_for_review`, `converted_to_draft`, `synchronize`, `edited` (including base changes), reopened and label changes are explicitly subscribed. Title/body or unrelated label edits recapture qualification; identical completed suites can use the bounded evidence rule below. `ci:full` requests complete execution on a draft. Manual verification, main, merge-group, nightly and published release events retain complete coverage. Manual execution on a feature branch reports execution evidence and cannot qualify a PR; promote the PR to qualify its actual integration revision. Current PR metadata is checked again during aggregation; changed head/base/draft/integration state invalidates the plan. A new integration candidate needs fresh qualification.
-
-Main protection must require **quality from GitHub Actions**, branches up to date, administrator enforcement, and prohibit force pushes/deletion. Existing stacked feature-base branches can retain their old workflow: freeze them, then create each consolidation candidate from updated main. Do not update every downstream head to distribute this policy.
-
-The complete gate remains mandatory at the merge/release boundary. Locally run the smallest defect regression, affected files after edits, and the subsystem when coherent. Let CI own complete qualification; do not launch an equivalent local full gate concurrently. Diagnose the failed stage before expanding again. Dependency and build caches are reusable; test results from another revision are not. Frontend and backend runners collect test identities before execution, then require the exact collected identities and passing statuses in their execution reports. Vitest collection uses `--no-static-parse` to expand parameterized/dynamic cases; static source listing cannot establish complete runtime inventory. Nonzero counts, changed-file counts, collection, capability checks and successful diagnostics cannot replace those results.
-
+Local development uses the smallest relevant proof; CI owns the selected final
+candidate gate. Do not run an equivalent local full gate concurrently. The
+required GitHub protection is `merge-gate` with strict=false under this emergency
+policy; the prior recommendation to require strict `quality` is superseded.
+FULL still owns complete release/publishing qualification.
 
 ### Bounded same-PR suite evidence
 
@@ -182,11 +262,12 @@ Before expensive setup, `scripts/ci-evidence.mjs` inspects at most 20 recent sam
 The current layer must successfully validate reuse. Aggregation independently validates the original report and refreshes its job, latest attempt and artifact metadata, as well as current PR identity/state/head/base/integration. Missing, cancelled, skipped, filtered, retried, failed, expired or diagnostic-only evidence blocks qualification. Main, merge groups, releases, nightly and manual full requests always execute freshly. No reuse crosses a changed candidate or bypasses migration/schema guards.
 
 
-## CI verification tiers and reliability evidence
+## Existing complete-verification infrastructure and reliability evidence
 
-The CI workflow preserves local `make full` and uses separate frontend,
+The following describes the retained complete validator, not the ordinary
+FAST/STUDY merge gate. The CI workflow preserves local `make full` and uses separate frontend,
 backend/engine, Rust/WASM/build, PostgreSQL durability, source-selected deployment lifecycle, browser, and pinned
-visual/performance jobs. Every ready-for-review PR runs all units and build checks, all
+visual/performance jobs. Every FULL PR runs all units and build checks, all
 ordinary PostgreSQL durability scenarios, deployment lifecycle when selected,
 and the global browser smoke below. Each
 PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
@@ -200,7 +281,7 @@ protects a shared browser invariant needed on ordinary PRs. A family case stays
 unchanged and required whenever its complete family is selected, and at every
 complete boundary. Lower-level coverage is complementary; it does not replace
 the retained browser proof. All listed unit/backend files remain in mandatory
-PR verification.
+FULL verification. FAST/STUDY use the emergency selections above.
 
 | Spec | Exact case title | Required tier | Unique browser invariant and decision | Complete family | Existing lower-level coverage |
 | --- | --- | --- | --- | --- | --- |
@@ -238,7 +319,7 @@ planning. New executable paths do not inherit coverage from a directory prefix.
 Ordinary Markdown under `docs/`, repository README files, explicitly listed
 root prose and `tests/REGRESSIONS.md` in qualification retain mandatory core/durability checks
 and the global smoke. Standalone `tests/unit/*.test.ts(x)` and
-`backend/tests/test_*.py` likewise retain the always-complete core tests without
+`backend/tests/test_*.py` likewise retain the FULL core tests without
 adding browser families. Consequently, adding a feature's regression and
 registration cannot erase its reviewed source selection. Shared helpers,
 fixtures, executable examples/data and runner configuration do not receive
@@ -283,13 +364,11 @@ before practice-demo publishing. Scheduled runs and manual runs with the
 (default) **verification only** option cannot deploy. Publishing additionally
 requires complete scope and successful `quality` on main. Same-PR runs
 supersede each other; deployment concurrency remains non-cancelling. No
-repository settings were changed. Owner recommendation: require stable
-`quality`, require the branch to be current or use a merge queue, and retain
-complete verification on the actual merge candidate. Do not directly require
-optionally inapplicable `visual` or nonblocking `quarantine`; require their
-planned outcomes through `quality`. Inspection found no
-main protection (API 404) and no repository rulesets; record this as an
-observed baseline, not an assurance about future settings.
+repository settings were changed by the historical browser-selection work. At
+emergency-policy inspection on October 12, main required `quality` with
+strict=true. The replacement settings and rollback are specified in the
+emergency section above; do not use the historical recommendation as the
+current merge policy.
 
 CI pins demonstrated Node **22.23.3**, Python **3.12.14**, Rust **1.99.0** and
 host wasm-pack **0.15.0**. The existing pinned Playwright Linux ARM64 image and

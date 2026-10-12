@@ -35,7 +35,108 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  selection:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      tier: ${{ steps.select.outputs.tier }}
+      node: ${{ steps.select.outputs.node }}
+      python: ${{ steps.select.outputs.python }}
+      head: ${{ steps.select.outputs.head }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+      - name: Classify emergency qualification
+        id: select
+        run: node scripts/ci-fast-lane.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fast-lane-plan
+          path: test-results/fast-lane/plan.json
+          if-no-files-found: error
+  fast:
+    needs: selection
+    if: needs.selection.outputs.tier != 'FULL'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.head }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: fast-lane-plan
+          path: test-results/fast-lane
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - uses: actions/setup-python@v5
+        if: needs.selection.outputs.python == 'true'
+        with:
+          python-version: '3.12.14'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Selected Python prerequisites
+        if: needs.selection.outputs.python == 'true'
+        run: pip install -r backend/requirements.txt pytest
+      - run: npm ci
+        if: needs.selection.outputs.node == 'true'
+      - name: Study browser prerequisites
+        if: needs.selection.outputs.tier == 'STUDY'
+        run: npx playwright install --with-deps chromium
+      - name: Run selected head qualification
+        run: node scripts/ci-fast-run.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fast-lane-results
+          path: test-results/
+          if-no-files-found: error
+  merge-gate:
+    if: always()
+    needs: [selection, fast, quality]
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.head || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: fast-lane-plan
+          path: test-results/fast-lane
+      - uses: actions/download-artifact@v4
+        if: needs.selection.outputs.tier != 'FULL'
+        with:
+          name: fast-lane-results
+          path: test-results
+      - uses: actions/download-artifact@v4
+        if: needs.selection.outputs.tier == 'FULL'
+        with:
+          name: ci-plan
+          path: test-results/ci
+      - name: Validate selected qualification and current PR head
+        env:
+          TEMPO_CI_NEEDS: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
+          TEMPO_PR: ${{ github.event.pull_request.number }}
+        run: node scripts/ci-merge-gate.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: merge-gate-verdict
+          path: test-results/fast-lane/
+          if-no-files-found: error
   plan:
+    needs: selection
+    if: needs.selection.outputs.tier == 'FULL'
     runs-on: ubuntu-24.04-arm
     outputs:
       visual: ${{ steps.inventory.outputs.visual }}
@@ -70,7 +171,7 @@ jobs:
           TEMPO_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ "$TEMPO_EVENT" = pull_request ]; then
-            node scripts/ci-verification-plan.mjs --base "$TEMPO_BASE"
+            node scripts/ci-verification-plan.mjs --base "$TEMPO_BASE" --complete
           else
             node scripts/ci-verification-plan.mjs --complete
           fi
@@ -144,7 +245,7 @@ jobs:
       candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: quarantine
   development:
-    if: always() && (needs.plan.outputs.tier == 'development' || github.event.pull_request.draft == true || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'))
+    if: always() && needs.plan.result == 'success' && (needs.plan.outputs.tier == 'development' || github.event.pull_request.draft == true || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'))
     needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]
     runs-on: ubuntu-24.04-arm
     steps:
@@ -182,7 +283,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-quality.mjs --development
   quality:
-    if: always()
+    if: always() && needs.plan.result == 'success'
     needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]
     runs-on: ubuntu-24.04-arm
     steps:
