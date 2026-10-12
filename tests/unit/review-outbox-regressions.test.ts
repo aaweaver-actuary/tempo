@@ -6,6 +6,409 @@ import { openingEvidenceCheckpointSchema } from "../../app/domain/opening-eviden
 import * as notificationModule from "../../app/lib/notifications";
 import * as openingEvidenceJournal from "../../app/lib/opening-evidence-journal";
 
+function auditDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((accept, decline) => { resolve = accept; reject = decline; });
+  return { promise, resolve, reject };
+}
+const auditReview = (attemptId: string, queueEntryId: number, backendId = attemptId) => ({
+  backendId, queueEntryId, attemptId, outcome: "correct" as const, guided: false,
+});
+const auditSuccessor = { card_id: "audit-successor", queue_entry_id: 9999, revision: 1, cycle: 0, local_date: "2026-10-11" };
+
+it("flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery", async () => {
+  enqueuePendingReview({ ...auditReview("startup-predecessor", 10001, "startup-conflict-card"), state: "conflicted",
+    conflict: { code: "retired", message: "Needs attention", retryable: false } });
+  enqueuePendingReview(auditReview("startup-conflict", 10002, "startup-conflict-card"));
+  enqueuePendingReview({ ...auditReview("startup-target", 10003), preparedNext: auditSuccessor });
+  const heldPost = auditDeferred<Response>();
+  const postRequested = auditDeferred<void>();
+  const heldReceipt = auditDeferred<Response>();
+  const receiptRequested = auditDeferred<void>();
+  const trace: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    if (String(input).includes("/api/operations/")) {
+      trace.push("receipt requested"); receiptRequested.resolve(); return heldReceipt.promise;
+    }
+    expect(JSON.parse(options!.body as string).attempt_id).toBe("startup-target");
+    trace.push("submitted POST started"); postRequested.resolve(); return heldPost.promise;
+  }));
+  let enteredReentrantCall = false;
+  let submittedOutcome: Promise<{ result?: Awaited<ReturnType<typeof flushPendingReviews>>; error?: ReviewReplayError }> | undefined;
+  const submitFromInitialConflict = () => {
+    if (enteredReentrantCall || !conflictedReviews().some(review => review.attemptId === "startup-conflict")) return;
+    enteredReentrantCall = true;
+    trace.push("initial conflict storage event");
+    submittedOutcome = flushPendingReviews(Infinity, false, undefined, undefined, "startup-target")
+      .then(result => ({ result }), error => { trace.push("submitted owner rejected"); return { error }; });
+  };
+  window.addEventListener("tempo:review-outbox", submitFromInitialConflict);
+  const firstFlush = flushPendingReviews(1, false, undefined, undefined, "startup-conflict");
+  let recoveredOutcome: ReturnType<typeof flushPendingReviews> | undefined;
+  try {
+    expect((await firstFlush).conflictedAttemptIds).toEqual(["startup-conflict"]);
+    await postRequested.promise;
+    expect(enteredReentrantCall).toBe(true);
+    recoveredOutcome = flushPendingReviews(Infinity, true, "startup-target", undefined, "startup-target")
+      .then(result => { trace.push("authoritative recovery confirmed"); return result; });
+    // Receipt-first delivery begins synchronously only if the initial owner's
+    // cleanup discarded the reentrant submission's active ownership.
+    const concurrentRecoveryStarted = trace.includes("receipt requested");
+    const confirmedReceipt = Response.json({ state: "complete", response: { persisted: true,
+      prepared_continuation: auditSuccessor } });
+    if (concurrentRecoveryStarted) {
+      heldReceipt.resolve(confirmedReceipt);
+      expect((await recoveredOutcome).persistedAttemptIds).toEqual(["startup-target"]);
+      expect(pendingReviews().some(review => review.attemptId === "startup-target")).toBe(false);
+      heldPost.reject(new Error("Lost POST response after the authoritative receipt"));
+      const submitted = await submittedOutcome!;
+      console.info("flush_settlement_audit initial ownership", { concurrentRecoveryStarted, trace, submitted });
+      expect(submitted).toMatchObject({ result: { persistedAttemptIds: ["startup-target"] } });
+    } else {
+      expect(pendingReviews().some(review => review.attemptId === "startup-target")).toBe(true);
+      heldPost.reject(new Error("Lost POST response before any receipt observation"));
+      expect((await submittedOutcome!).error).toMatchObject({ attemptId: "startup-target", classification: "transient" });
+      await receiptRequested.promise;
+      heldReceipt.resolve(confirmedReceipt);
+      const recovered = await recoveredOutcome;
+      expect(recovered.persistedAttemptIds).toEqual(["startup-target"]);
+      expect(recovered.preparedContinuations?.["startup-target"]).toEqual(auditSuccessor);
+      expect(trace.indexOf("submitted owner rejected")).toBeLessThan(trace.indexOf("authoritative recovery confirmed"));
+    }
+    console.info("flush_settlement_audit initial ownership", { concurrentRecoveryStarted, trace });
+  } finally {
+    window.removeEventListener("tempo:review-outbox", submitFromInitialConflict);
+    heldPost.reject(new Error("Release held POST"));
+    heldReceipt.resolve(Response.json({ state: "complete", response: { persisted: true, prepared_continuation: auditSuccessor } }));
+    await firstFlush; await submittedOutcome; await recoveredOutcome;
+  }
+});
+
+it.each(["persisted", "terminal"])("flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication", async outcome => {
+  enqueuePendingReview({ ...auditReview("reentrant-a", 9901), preparedNext: auditSuccessor });
+  enqueuePendingReview(auditReview("reentrant-b", 9902));
+  const heldA = auditDeferred<Response>();
+  const requestedA = auditDeferred<void>();
+  const heldB = auditDeferred<Response>();
+  const requestedB = auditDeferred<void>();
+  const trace: string[] = [];
+  const deliveries: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    const attempt = JSON.parse(options!.body as string).attempt_id;
+    deliveries.push(attempt);
+    if (attempt === "reentrant-b") { requestedB.resolve(); return heldB.promise; }
+    if (String(input).endsWith("/reconcile")) return Response.json({ persisted: false,
+      conflict: { code: "retired", message: "Needs attention", retryable: false } });
+    requestedA.resolve(); return heldA.promise;
+  }));
+  let ownerCompleted = false;
+  const owner = flushPendingReviews().then(result => { ownerCompleted = true; return result; });
+  await requestedA.promise;
+  let reentrant: ReturnType<typeof flushPendingReviews> | undefined;
+  const subscribeDuringStorageChange = () => {
+    const target = [...pendingReviews(), ...conflictedReviews()].find(review => review.attemptId === "reentrant-a");
+    if (reentrant || (outcome === "persisted" ? !!target : target?.state !== "conflicted")) return;
+    trace.push("target storage transition");
+    reentrant = flushPendingReviews(Infinity, false, undefined, undefined, "reentrant-a")
+      .then(result => { trace.push("target observer settled"); return result; });
+    trace.push("synchronous subscriber returned");
+  };
+  window.addEventListener("tempo:review-outbox", subscribeDuringStorageChange);
+  try {
+    heldA.resolve(outcome === "persisted" ? Response.json({ persisted: true, prepared_continuation: auditSuccessor })
+      : Response.json({ detail: "Conflict", retryable: false }, { status: 409 }));
+    await requestedB.promise;
+    expect(reentrant).toBeDefined();
+    const result = await reentrant!;
+    expect(ownerCompleted).toBe(false);
+    expect(result.persistedAttemptIds).toEqual(outcome === "persisted" ? ["reentrant-a"] : []);
+    expect(result.conflictedAttemptIds).toEqual(outcome === "terminal" ? ["reentrant-a"] : []);
+    expect(result.preparedContinuations).toEqual(outcome === "persisted" ? { "reentrant-a": auditSuccessor } : {});
+    expect(trace).toEqual(["target storage transition", "synchronous subscriber returned", "target observer settled"]);
+    heldB.resolve(Response.json({ persisted: true }));
+    await owner;
+    expect(result.persistedAttemptIds).not.toContain("reentrant-b");
+    expect(deliveries).toEqual(outcome === "persisted" ? ["reentrant-a", "reentrant-b"] : ["reentrant-a", "reentrant-a", "reentrant-b"]);
+    console.info("flush_settlement_audit synchronous subscriber", outcome, trace);
+  } finally {
+    window.removeEventListener("tempo:review-outbox", subscribeDuringStorageChange);
+    heldA.resolve(Response.json({ persisted: true })); heldB.resolve(Response.json({ persisted: true }));
+    await owner; await reentrant;
+  }
+});
+
+it.each(["unlimited", "submitted"])("flush_settlement_audit %s follow-up failure retains earlier settled evidence", async caller => {
+  enqueuePendingReview({ ...auditReview("partial-a", 9801, "partial-card"), preparedNext: auditSuccessor });
+  enqueuePendingReview(auditReview("partial-b", 9802, "partial-card"));
+  enqueuePendingReview(auditReview("partial-c", 9803, "partial-card"));
+  const responseA = auditDeferred<Response>();
+  const requestedA = auditDeferred<void>();
+  const responseB = auditDeferred<Response>();
+  const requestedB = auditDeferred<void>();
+  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
+    const attempt = JSON.parse(options!.body as string).attempt_id;
+    if (attempt === "partial-a") { requestedA.resolve(); return responseA.promise; }
+    requestedB.resolve(); return responseB.promise;
+  }));
+  const owner = flushPendingReviews(1);
+  await requestedA.promise;
+  const joinedOutcome = flushPendingReviews(Infinity, false, undefined, undefined, caller === "submitted" ? "partial-c" : undefined)
+    .catch(error => error);
+  const duplicateOutcome = flushPendingReviews(Infinity, false, undefined, undefined, caller === "submitted" ? "partial-c" : undefined)
+    .catch(error => error);
+  responseA.resolve(Response.json({ persisted: true, prepared_continuation: auditSuccessor }));
+  expect((await owner).persistedAttemptIds).toEqual(["partial-a"]);
+  await requestedB.promise;
+  const originalBOutcome = flushPendingReviews(1).catch(error => error);
+  responseB.reject(new Error("B failed before C delivery"));
+  const error = await joinedOutcome;
+  const duplicateError = await duplicateOutcome;
+  const originalError = await originalBOutcome;
+  expect(error).toBeInstanceOf(ReviewReplayError);
+  expect(error.message).toBe(originalError.message);
+  expect(error.stack).toBe(originalError.stack);
+  expect(error.cause).toBe(originalError.cause);
+  expect(error).toMatchObject({ attemptId: "partial-b", classification: "transient" });
+  expect(pendingReviews().map(item => item.attemptId)).toEqual(["partial-b", "partial-c"]);
+  expect(error.flushResult).toMatchObject({ persistedAttemptIds: ["partial-a"], conflictedAttemptIds: [],
+    preparedContinuations: { "partial-a": auditSuccessor } });
+  expect(duplicateError.flushResult).toEqual(error.flushResult);
+  expect(originalError.flushResult).toEqual({ persistedAttemptIds: [], conflictedAttemptIds: [] });
+  expect(error).not.toBe(originalError);
+});
+
+it.each(["persisted", "failed"])("flush_settlement_audit different explicit retry identities retain suppression after %s owner", async outcome => {
+  enqueuePendingReview({ ...auditReview("retry-a", 9701), automaticRecoverySuppressed: "failed" });
+  enqueuePendingReview({ ...auditReview("retry-b", 9702), automaticRecoverySuppressed: "failed" });
+  const heldA = auditDeferred<Response>();
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    if (String(input).includes("/api/operations/")) { requests.push(String(input).split("/").at(-1)!); return new Response(null, { status: 404 }); }
+    const attempt = JSON.parse(options!.body as string).attempt_id;
+    requests.push(attempt);
+    return attempt === "retry-a" ? heldA.promise : Response.json({ persisted: true });
+  }));
+  const retryA = flushPendingReviews(1, false, "retry-a").catch(error => error);
+  const retryB = flushPendingReviews(Infinity, false, "retry-b");
+  heldA.resolve(outcome === "persisted" ? Response.json({ persisted: true })
+    : Response.json({ detail: "Failed retry", retryable: false }, { status: 422 }));
+  const [resultA, resultB] = await Promise.all([retryA, retryB]);
+  if (outcome === "persisted") expect(resultA.persistedAttemptIds).toEqual(["retry-a"]);
+  else expect(resultA).toMatchObject({ attemptId: "retry-a", classification: "failed" });
+  expect(resultB.persistedAttemptIds).toEqual(["retry-b"]);
+  expect(requests).toEqual(["review-attempt%3Aretry-a", "retry-a", "review-attempt%3Aretry-b", "retry-b"]);
+  expect(pendingReviews().map(item => [item.attemptId, item.automaticRecoverySuppressed])).toEqual(outcome === "persisted" ? [] : [["retry-a", "failed"]]);
+});
+
+it.each(["completion", "rejection"])("flush_settlement_audit next generation publishes before previous waiter callbacks: %s", async outcome => {
+  const trace: string[] = [];
+  const initialResponse = auditDeferred<Response>();
+  const initialRequested = auditDeferred<void>();
+  enqueuePendingReview(auditReview("handoff-a", 9601));
+  enqueuePendingReview({ ...auditReview("handoff-predecessor", 9602, "handoff-card"), state: "conflicted",
+    conflict: { code: "retired", message: "Needs attention", retryable: false } });
+  enqueuePendingReview(auditReview("handoff-b", 9603, "handoff-card"));
+  vi.stubGlobal("fetch", vi.fn(() => { initialRequested.resolve(); return initialResponse.promise; }));
+  const owner = flushPendingReviews(1).then(result => { trace.push("A caller completion"); return { result }; },
+    error => { trace.push("A caller rejection"); return { error }; });
+  await initialRequested.promise;
+  const oldWaiter = flushPendingReviews(Infinity, false, undefined, undefined, "handoff-b")
+    .then(result => { trace.push("old B waiter completion"); return { result }; }, error => { trace.push("old B waiter rejection"); return { error }; });
+  let nextFlush: ReturnType<typeof flushPendingReviews> | undefined;
+  let scheduled = false;
+  const scheduleNext = () => {
+    if (scheduled) return;
+    const remaining = pendingReviews().find(item => item.attemptId === "handoff-a");
+    if (outcome === "completion" ? !!remaining : remaining?.automaticRecoverySuppressed !== "failed") return;
+    scheduled = true;
+    trace.push("A storage transition");
+    queueMicrotask(() => {
+      trace.push("first microtask");
+      queueMicrotask(() => {
+        trace.push("B starts");
+        nextFlush = flushPendingReviews(Infinity, false, undefined, undefined, "handoff-b");
+        trace.push(conflictedReviews().some(item => item.attemptId === "handoff-b") ? "B published terminal settlement" : "B did not publish synchronously");
+      });
+    });
+  };
+  window.addEventListener("tempo:review-outbox", scheduleNext);
+  try {
+    initialResponse.resolve(outcome === "completion" ? Response.json({ persisted: true })
+      : Response.json({ detail: "Invalid request", retryable: false }, { status: 422 }));
+    const [ownerResult, submittedResult] = await Promise.all([owner, oldWaiter]);
+    expect(scheduled).toBe(true);
+    expect(nextFlush).toBeDefined();
+    const nextResult = await nextFlush!;
+    expect(trace.indexOf("B published terminal settlement")).toBeGreaterThan(trace.indexOf("B starts"));
+    expect(trace.indexOf("B published terminal settlement")).toBeLessThan(trace.indexOf(`A caller ${outcome}`));
+    expect(submittedResult).toMatchObject({ result: { persistedAttemptIds: [], conflictedAttemptIds: ["handoff-b"] } });
+    expect(nextResult).toMatchObject({ persistedAttemptIds: [], conflictedAttemptIds: ["handoff-b"] });
+    expect(nextResult.preparedContinuations).toBeUndefined();
+    if (outcome === "completion") expect(ownerResult).toMatchObject({ result: { persistedAttemptIds: ["handoff-a"] } });
+    else expect(ownerResult).toMatchObject({ error: { attemptId: "handoff-a" } });
+    console.info("flush_settlement_audit handoff", outcome, trace);
+  } finally { window.removeEventListener("tempo:review-outbox", scheduleNext); await owner; await nextFlush; }
+});
+
+it.each([1, 2])("flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities", async maximum => {
+  const response = auditDeferred<Response>();
+  const firstRequested = auditDeferred<void>();
+  enqueuePendingReview({ ...auditReview("bounded-a", 9101), preparedNext: auditSuccessor });
+  enqueuePendingReview(auditReview("bounded-b", 9102));
+  enqueuePendingReview({ ...auditReview("bounded-c", 9103), preparedNext: auditSuccessor });
+  const deliveries: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
+    const attempt = JSON.parse(options!.body as string).attempt_id;
+    deliveries.push(attempt);
+    if (attempt === "bounded-a") { firstRequested.resolve(); return response.promise; }
+    return Response.json({ persisted: true, prepared_continuation: auditSuccessor });
+  }));
+  const bounded = flushPendingReviews(maximum);
+  await firstRequested.promise;
+  const unlimited = flushPendingReviews();
+  response.resolve(Response.json({ persisted: true, prepared_continuation: auditSuccessor }));
+  const [firstResult, completeResult] = await Promise.all([bounded, unlimited]);
+  expect(firstResult.persistedAttemptIds).toHaveLength(maximum);
+  expect(completeResult.persistedAttemptIds).toEqual(["bounded-a", "bounded-b", "bounded-c"]);
+  expect(deliveries).toEqual(completeResult.persistedAttemptIds);
+  expect(pendingReviews()).toEqual([]);
+  expect(completeResult.preparedContinuations).toEqual({ "bounded-a": auditSuccessor, "bounded-c": auditSuccessor });
+});
+
+it.each([1, 2, Infinity])("flush_settlement_audit submitted identities coalesce with limit %s and retain immutable early snapshots", async maximum => {
+  enqueuePendingReview({ ...auditReview("identity-a", 9201), preparedNext: auditSuccessor });
+  enqueuePendingReview(auditReview("identity-b", 9202));
+  const responseA = auditDeferred<Response>();
+  const responseB = auditDeferred<Response>();
+  const requestedA = auditDeferred<void>();
+  const requestedB = auditDeferred<void>();
+  const fetcher = vi.fn(async (input, options) => {
+    if (String(input).includes("/api/operations/")) return new Response(null, { status: 404 });
+    const attempt = JSON.parse(options!.body as string).attempt_id;
+    if (attempt === "identity-a") { requestedA.resolve(); return responseA.promise; }
+    requestedB.resolve(); return responseB.promise;
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const owner = flushPendingReviews(maximum);
+  await requestedA.promise;
+  const a1 = flushPendingReviews(Infinity, false, undefined, undefined, "identity-a");
+  const a2 = flushPendingReviews(1, true, "identity-a", undefined, "identity-a");
+  const b = flushPendingReviews(Infinity, true, undefined, undefined, "identity-b");
+  responseA.resolve(Response.json({ persisted: true, prepared_continuation: auditSuccessor }));
+  const [settledA1, settledA2] = await Promise.all([a1, a2]);
+  expect(settledA1.persistedAttemptIds).toEqual(["identity-a"]);
+  expect(settledA2).toEqual(settledA1);
+  if (maximum > 1) expect(await flushPendingReviews(Infinity, false, undefined, undefined, "identity-a")).toEqual(settledA1);
+  await requestedB.promise;
+  responseB.resolve(Response.json({ persisted: true }));
+  expect((await b).persistedAttemptIds).toContain("identity-b");
+  await owner;
+  expect(settledA1.persistedAttemptIds).toEqual(["identity-a"]);
+  expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(2);
+});
+
+it.each(["terminal", "retryable", "network-before", "network-after", "missing-confirmation"])(
+  "flush_settlement_audit overlapping submitted outcome remains truthful: %s", async outcome => {
+    const attempt = "outcome-attempt";
+    enqueuePendingReview({ ...auditReview(attempt, 9301), preparedNext: auditSuccessor });
+    const response = auditDeferred<Response>();
+    const requested = auditDeferred<void>();
+    let committed = false;
+    let posts = 0;
+    const fetcher = vi.fn(async (input, options) => {
+      if (String(input).includes("/api/operations/")) return Response.json(committed
+        ? { state: "complete", response: { persisted: true, prepared_continuation: auditSuccessor } }
+        : { state: "queued" });
+      posts++;
+      if (String(input).endsWith("/reconcile")) return Response.json({ persisted: false,
+        conflict: { code: "queue_attempt_unprovable", message: "Needs attention", retryable: false }, prepared_continuation: auditSuccessor });
+      requested.resolve();
+      expect(JSON.parse(options!.body as string).attempt_id).toBe(attempt);
+      return response.promise;
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const ownerOutcome = flushPendingReviews().then(result => ({ result }), error => ({ error }));
+    await requested.promise;
+    const waiterOutcome = flushPendingReviews(Infinity, false, undefined, undefined, attempt)
+      .then(result => ({ result }), error => ({ error }));
+    if (outcome.startsWith("network")) {
+      committed = outcome === "network-after";
+      response.reject(new Error("Lost transport"));
+    } else if (outcome === "missing-confirmation") response.resolve(Response.json({ prepared_continuation: auditSuccessor }));
+    else response.resolve(Response.json({ detail: "Conflict", retryable: outcome === "retryable" }, { status: 409 }));
+    const [ownerResult, waiterResult] = await Promise.all([ownerOutcome, waiterOutcome]);
+    if (outcome === "terminal") {
+      expect(waiterResult).toMatchObject({ result: { persistedAttemptIds: [], conflictedAttemptIds: [attempt], preparedContinuations: {} } });
+      expect(conflictedReviews()[0].attemptId).toBe(attempt);
+      expect(posts).toBe(2);
+    } else {
+      expect(waiterResult).toEqual(ownerResult);
+      expect(waiterResult).toMatchObject({ error: { attemptId: attempt, flushResult: { persistedAttemptIds: [], conflictedAttemptIds: [] } } });
+      expect(pendingReviews()[0].attemptId).toBe(attempt);
+      expect(posts).toBe(1);
+      if (committed) {
+        const recovered = await flushPendingReviews(Infinity, true, undefined, undefined, attempt);
+        expect(recovered.persistedAttemptIds).toEqual([attempt]);
+        expect(recovered.preparedContinuations?.[attempt]).toEqual(auditSuccessor);
+        expect(posts).toBe(1);
+        expect(pendingReviews()).toEqual([]);
+      }
+    }
+  });
+
+it.each([false, true])("flush_settlement_audit unrelated rejection attributes its own attempt and explicit retry=%s", async explicitRetry => {
+  enqueuePendingReview(auditReview("reject-a", 9401));
+  enqueuePendingReview(auditReview("waiting-b", 9402));
+  const rejectedResponse = auditDeferred<Response>();
+  const requested = auditDeferred<void>();
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    if (String(input).includes("/api/operations/")) return new Response(null, { status: 404 });
+    const attempt = JSON.parse(options!.body as string).attempt_id;
+    requests.push(attempt);
+    if (attempt === "reject-a") { requested.resolve(); return rejectedResponse.promise; }
+    return Response.json({ persisted: true });
+  }));
+  const owner = flushPendingReviews().catch(error => error);
+  await requested.promise;
+  const waiting = flushPendingReviews(Infinity, false, explicitRetry ? "waiting-b" : undefined, undefined, "waiting-b").catch(error => error);
+  rejectedResponse.reject(new Error("A failed"));
+  expect(await owner).toMatchObject({ attemptId: "reject-a" });
+  const result = await waiting;
+  if (explicitRetry) {
+    expect(result.persistedAttemptIds).toEqual(["waiting-b"]);
+    expect(requests).toEqual(["reject-a", "waiting-b"]);
+    expect(pendingReviews().map(item => item.attemptId)).toEqual(["reject-a"]);
+  } else {
+    expect(result).toMatchObject({ attemptId: "reject-a", flushResult: { persistedAttemptIds: [] } });
+    expect(pendingReviews().map(item => item.attemptId)).toEqual(["reject-a", "waiting-b"]);
+  }
+});
+
+it.each(["persisted", "suppressed", "conflicted"])("flush_settlement_audit target cannot bypass same-card %s predecessor", async predecessor => {
+  enqueuePendingReview(auditReview("independent-before", 9500));
+  enqueuePendingReview({ ...auditReview("same-earlier", 9501, "same-card"),
+    ...(predecessor === "suppressed" ? { automaticRecoverySuppressed: "failed" as const } : {}),
+    ...(predecessor === "conflicted" ? { state: "conflicted" as const, conflict: { code: "retired", message: "Needs review", retryable: false } } : {}) });
+  enqueuePendingReview(auditReview("same-target", 9502, "same-card"));
+  enqueuePendingReview(auditReview("independent-after", 9503));
+  const deliveries: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
+    deliveries.push(JSON.parse(options!.body as string).attempt_id);
+    return Response.json({ persisted: true });
+  }));
+  const result = await flushPendingReviews(Infinity, false, undefined, undefined, "same-target");
+  if (predecessor === "persisted") expect(result.persistedAttemptIds).toEqual(["same-earlier", "same-target"]);
+  else {
+    expect(result.persistedAttemptIds).toEqual([]);
+    expect(result.conflictedAttemptIds).toEqual(predecessor === "conflicted" ? ["same-target"] : []);
+  }
+  expect(deliveries).toEqual(predecessor === "persisted" ? ["same-earlier", "same-target"] : []);
+  expect(pendingReviews().map(item => item.attemptId)).toContain("independent-before");
+  expect(pendingReviews().map(item => item.attemptId)).toContain("independent-after");
+});
+
 function heldReviewResponse() {
   let resolveResponse!: (response: Response) => void;
   let rejectResponse!: (error: Error) => void;

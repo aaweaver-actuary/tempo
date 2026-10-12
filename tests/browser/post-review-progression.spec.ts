@@ -3,12 +3,15 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { APIResponse, Route } from "@playwright/test";
 import { test, expect } from "./observability";
 import { api } from "./product-fixtures";
 import { prepareUI, boardBounds } from "./ui-fixtures";
 
-for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] as const) {
-  test(`issue186_completed_tactic_has_bounded_progression: ${failure}`, async ({ page, request }, testInfo) => {
+for (const failure of ["prepared abort", "fallback abort", "fallback timeout", "overlapping confirmation"] as const) {
+  test(failure === "overlapping confirmation"
+    ? "flush_settlement_audit overlapping reconnect preserves issued successor and one durable review"
+    : `issue186_completed_tactic_has_bounded_progression: ${failure}`, async ({ page, request }, testInfo) => {
     test.setTimeout(180_000);
     const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
     if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("An owning disposable runner is required");
@@ -23,6 +26,10 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
     let reviewPosts = 0;
     let delivery: { url: string; key: string; body: string } | undefined;
     const heldRequests: (() => Promise<void>)[] = [];
+    const prepared = failure === "prepared abort" || failure === "overlapping confirmation";
+    let releaseReview!: () => void;
+    const reviewRelease = new Promise<void>(resolve => { releaseReview = resolve; });
+    let persistedResponseHeld = false;
     const consumers = ["background-worker", "background-scheduler", "defense-engine", "maia-worker"];
     try {
       const todayResponse = await request.get(`${api}/queue/window?limit=20`);
@@ -46,13 +53,34 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
           return;
         }
         const response = await route.fetch();
-        if (failure !== "prepared abort" && reviewPosts === 0) {
+        if (!prepared && reviewPosts === 0) {
           const body = await response.json();
           // Only A is cached. Authoritative issuance and total count remain real;
           // no prepared candidate can be sent in the durable review envelope.
           await route.fulfill({ response, json: { ...body, cards: body.cards.slice(0, 1) } });
         } else await route.fulfill({ response });
       });
+      if (failure === "overlapping confirmation") {
+        const holdConfirmation = async (route: Route, response: APIResponse, persisted: unknown) => {
+          if (persisted === true) {
+            persistedResponseHeld = true;
+            await reviewRelease;
+          }
+          await route.fulfill({ response });
+        };
+        await page.route("**/api/cards/*/review", async route => {
+          const response = await route.fetch();
+          const result = await response.json();
+          // A slow real transaction can return 202 before its durable receipt.
+          if (result.persisted !== true) expect(response.status()).toBe(202);
+          await holdConfirmation(route, response, result.persisted);
+        });
+        await page.route("**/api/operations/review-attempt%3A*", async route => {
+          const response = await route.fetch();
+          const receipt = await response.json();
+          await holdConfirmation(route, response, receipt.state === "complete" && receipt.response?.persisted);
+        });
+      }
       page.on("request", submitted => {
         if (submitted.method() === "POST" && /\/api\/cards\/[^/]+\/review$/.test(new URL(submitted.url()).pathname)) reviewPosts++;
         if (submitted.url().endsWith(`/cards/${identifier}-prepared-000/review`)) {
@@ -68,6 +96,15 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       const board = await boardBounds(page);
       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
+      if (failure === "overlapping confirmation") {
+        await expect.poll(() => persistedResponseHeld).toBe(true);
+        // The real transaction committed, but its response is still unavailable
+        // to the foreground flush. Reconnect starts a second consumer.
+        await page.evaluate(() => window.dispatchEvent(new Event("online")));
+        await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", completedEntry!);
+        expect(reviewPosts).toBe(1);
+        releaseReview();
+      }
       // Completion normally schedules its review after the feedback pause.
       if (failure === "fallback timeout") await page.clock.runFor(1_000);
       await expect.poll(() => queueFailures).toBeGreaterThan(0);
@@ -82,7 +119,7 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
           await page.clock.fastForward(15_001);
         }
         await expect(page.getByRole("button", { name: "Retry loading the queue", exact: true })).toBeVisible();
-        expect(queueFailures).toBe(2);
+        if (failure !== "overlapping confirmation") expect(queueFailures).toBe(2);
         await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", completedEntry!);
       }
       const lifecycle = await page.evaluate(entry => JSON.parse(localStorage.getItem("tempo-notifications-v1") ?? "[]")
@@ -97,7 +134,7 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       blockQueue = false;
       for (const abortRequest of heldRequests) await abortRequest();
       await page.getByRole("button", { name: "Retry loading the queue", exact: true }).click();
-      if (failure === "prepared abort") await expect(page.getByRole("button", { name: "Retry loading the queue", exact: true })).toHaveCount(0);
+      if (prepared) await expect(page.getByRole("button", { name: "Retry loading the queue", exact: true })).toHaveCount(0);
       await expect(page.locator("#train")).not.toHaveAttribute("data-queue-entry-id", completedEntry!);
       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
       const nextBoard = await boardBounds(page);
@@ -109,9 +146,17 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
       await page.close();
       await docker("start", ...consumers);
       await docker("restart", "api", "foreground-worker");
+      // The fixture stops/restarts consumers around the API. Nginx resolves its
+      // upstream at startup; refresh that address after this overlap rehearsal.
+      if (failure === "overlapping confirmation") await docker("restart", "web");
       await expect.poll(async () => {
-        const response = await request.get(`${api}/health`);
-        return response.ok() ? "ready" : await response.text();
+        try {
+          const response = await request.get(`${api}/health`);
+          return response.ok() ? "ready" : await response.text();
+        } catch (error) {
+          if (failure !== "overlapping confirmation") throw error;
+          return String(error); // Transport can close while the fixture's proxy restarts.
+        }
       }, { timeout: 60_000 }).toBe("ready");
       expect(delivery).toBeDefined();
       const replay = await request.post(delivery!.url, { headers: { "Idempotency-Key": delivery!.key,
@@ -132,14 +177,20 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
         contentType: "image/png" }).catch(() => undefined);
       throw error;
     } finally {
+      releaseReview();
       await page.close();
       await docker("stop", ...consumers);
       try { await fixture("cleanup", JSON.stringify(displaced)); }
       finally {
         await docker("start", ...consumers);
         await expect.poll(async () => {
-          const restoredHealth = await request.get(`${api}/health`);
-          return restoredHealth.ok() ? "ready" : await restoredHealth.text();
+          try {
+            const restoredHealth = await request.get(`${api}/health`);
+            return restoredHealth.ok() ? "ready" : await restoredHealth.text();
+          } catch (error) {
+            if (failure !== "overlapping confirmation") throw error;
+            return String(error);
+          }
         }, { timeout: 60_000, message: "Progression fixture cleanup must restore service readiness before the next test" }).toBe("ready");
       }
     }

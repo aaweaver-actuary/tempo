@@ -5,7 +5,8 @@ import { fetchAndInitializeQueue, rememberConfirmedQueueEntry } from "../../app/
 import { useTrainingStore } from "../../app/state/training-store";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
 import { localDayKey } from "../../app/utils/local";
-import { enqueueTrainingFailure } from "../../app/lib/training-failure-outbox";
+import { asQueueEntryId } from "../../app/types";
+import { enqueueTrainingFailure, pendingTrainingFailureContexts } from "../../app/lib/training-failure-outbox";
 import * as offlineTraining from "../../app/lib/offline-training";
 
 vi.mock("../../app/lib/background-study", async () => {
@@ -24,6 +25,51 @@ beforeEach(() => {
   useTrainingStore.setState({ queueReadiness: "ready", queueLocalDate: localDayKey(), isDatabaseQueueActive: true });
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it.each(["none", "missing", "mismatch", "attempt", "generation", "entry", "revision", "cycle", "date", "failed-flag", "failed-marker"])(
+  "flush_settlement_audit overlapping continuation observers preserve %s authorization boundary", async invalidation => {
+    const submitted = useTrainingStore.getState().attempt;
+    const preparedNext = capturePreparedNext()!;
+    const candidate = { ...preparedNext, attempt_failed: false };
+    enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: submitted.attemptId!,
+      outcome: "correct", guided: false, expectedRevision: 1, preparedNext });
+    let release!: (response: Response) => void;
+    const response = new Promise<Response>(resolve => { release = resolve; });
+    const fetcher = vi.fn(() => response);
+    vi.stubGlobal("fetch", fetcher);
+    const owner = flushPendingReviews();
+    const first = flushPendingReviews(Infinity, false, undefined, undefined, submitted.attemptId);
+    const second = flushPendingReviews(Infinity, true, submitted.attemptId, undefined, submitted.attemptId);
+    if (invalidation === "attempt") useTrainingStore.setState({ attempt: { ...submitted, attemptId: "replacement-attempt" } });
+    if (invalidation === "generation") useTrainingStore.setState({ attempt: { ...submitted, generation: submitted.generation + 1 } });
+    if (["entry", "revision", "cycle", "failed-flag"].includes(invalidation)) {
+      const next = { ...cards[1],
+        ...(invalidation === "entry" ? { queueEntryId: asQueueEntryId(777) } : {}),
+        ...(invalidation === "revision" ? { revision: 2 } : {}),
+        ...(invalidation === "cycle" ? { queueCycle: 1 } : {}),
+        ...(invalidation === "failed-flag" ? { attemptFailed: true } : {}) };
+      useTrainingStore.setState({ practiceCards: [cards[0], next, cards[2]] });
+    }
+    if (invalidation === "date") useTrainingStore.setState({ queueLocalDate: "1999-01-01" });
+    if (invalidation === "failed-marker") enqueueTrainingFailure(502, "b", 1);
+    const before = useTrainingStore.getState();
+    release(Response.json({ persisted: true, ...(invalidation === "missing" ? {} : {
+      prepared_continuation: invalidation === "mismatch" ? { ...candidate, queue_entry_id: 777 } : candidate }) }));
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    await owner;
+    const advances = [firstResult, secondResult].map(result => advancePreparedContinuation(
+      result.preparedContinuations?.[submitted.attemptId!], submitted.attemptId!, submitted.generation));
+    expect(advances).toEqual(invalidation === "none" ? [true, false] : [false, false]);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(invalidation === "none" ? 502 : 501);
+    if (invalidation !== "none") {
+      expect(useTrainingStore.getState().attempt).toEqual(before.attempt);
+      expect(useTrainingStore.getState().practiceCards).toEqual(before.practiceCards);
+    }
+    if (invalidation === "failed-flag") expect(useTrainingStore.getState().practiceCards[1].attemptFailed).toBe(true);
+    if (invalidation === "failed-marker") expect(pendingTrainingFailureContexts()).toContainEqual(expect.objectContaining({ queueEntryId: 502, backendId: "b" }));
+    expect(firstResult.persistedAttemptIds).toEqual([submitted.attemptId]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 
 it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unresolved authoritative head cannot issue a filtered successor (advance=%s)", async advance => {
   const activeAttempt = useTrainingStore.getState().attempt;

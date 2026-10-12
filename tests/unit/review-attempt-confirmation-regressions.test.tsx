@@ -351,6 +351,62 @@ const snapshotActive = () => {
   const state = useTrainingStore.getState();
   return { card: state.getCard(), attempt: state.attempt, fen: state.currentFenString, step: state.step };
 };
+
+it.each([false, true])("flush_settlement_audit Home foreground settlement and idle observer retain ownership during reconnect=%s", async reconnect => {
+  queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
+  await readyHome();
+  const attempt = useTrainingStore.getState().attempt;
+  const preparedNext = { card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0,
+    local_date: new Date().toLocaleDateString("en-CA") };
+  enqueuePendingReview({ backendId: "card-a", queueEntryId: 12, attemptId: attempt.attemptId!, outcome: "correct", guided: false, preparedNext });
+  enqueuePendingReview({ backendId: "unrelated-later", queueEntryId: 999, attemptId: "audit-later", outcome: "correct", guided: false });
+  let releaseSubmitted!: (response: Response) => void;
+  let releaseLater!: (response: Response) => void;
+  const submitted = new Promise<Response>(resolve => { releaseSubmitted = resolve; });
+  const later = new Promise<Response>(resolve => { releaseLater = resolve; });
+  let laterRequested!: () => void;
+  const laterStarted = new Promise<void>(resolve => { laterRequested = resolve; });
+  reviewResponse = async (_url, options) => {
+    if (JSON.parse(options!.body as string).attempt_id === "audit-later") { laterRequested(); return later; }
+    return submitted;
+  };
+  const idleOwner = flushPendingReviews();
+  act(() => { trainingProps.retryReviewSave!(); });
+  const foreground = flushPendingReviews(Infinity, false, undefined, undefined, attempt.attemptId);
+  const idleOutcome = idleOwner.catch(error => error);
+  try {
+    if (reconnect) {
+      const originalFetcher = fetcher.getMockImplementation()!;
+      fetcher.mockImplementation(async (input, options) => {
+        if (String(input).includes("/api/queue/window")) throw new Error("Audit reconnect queue unavailable");
+        return originalFetcher(input, options);
+      });
+      act(() => window.dispatchEvent(new Event("online")));
+      expect(useTrainingStore.getState().queueReadiness).toBe("loading");
+    }
+    releaseSubmitted(Response.json({ persisted: true, prepared_continuation: preparedNext }));
+    await act(async () => { await foreground; await laterStarted; });
+    const advancedAttempt = useTrainingStore.getState().attempt;
+    if (reconnect) {
+      expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
+      expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
+      expect(screen.getByRole("button", { name: "Retry loading the queue" })).toBeTruthy();
+    } else {
+      expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
+      expect(advancedAttempt.attemptId).not.toBe(attempt.attemptId);
+      expect(trainingProps.reviewPersistenceState).toBe("idle");
+    }
+    expect(pendingReviews().map(item => item.attemptId)).toEqual(["audit-later"]);
+    await act(async () => { releaseLater(Response.json({ persisted: true })); await idleOwner; });
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(reconnect ? 12 : 13);
+    expect(useTrainingStore.getState().attempt).toEqual(advancedAttempt);
+    expect(reviewPosts()).toHaveLength(2);
+  } finally {
+    releaseSubmitted(Response.json({ persisted: true, prepared_continuation: preparedNext }));
+    releaseLater(Response.json({ persisted: true }));
+    await act(async () => { await idleOutcome; await foreground.catch(() => undefined); });
+  }
+});
 function pendingThenConflict() {
   reviewResponse = async (url) => {
     if (url.includes("review-reconcile%3A")) return new Response(null, { status: 404 });

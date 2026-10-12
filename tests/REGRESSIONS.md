@@ -4156,3 +4156,75 @@ unchanged by this correction.
 - `tests/browser/repertoire-worker-isolation.spec.ts`: `issue190_native_bulk_abort_releases_capacity_preserves_retained_indexes_and_restarts` uses actual product dispatcher/computation in real browser workers, a public 8,268-line input, foreground requests during running bulk computation, three cancellations, retained index parity and fresh worker recovery. Registered in training and Chromium/Firefox/WebKit collection.
 - `tests/browser/study-only-mode.spec.ts`: `restoration_repertoire_only_preserves_foreground_review_receipts_and_progression_under_bulk_load` preserves real board moves, reload, worker restart, replay and disabling under public bulk load.
 - `tests/browser/repertoire-restoration-qualification.spec.ts`: regular smoke proves the native measurement/replay workflow; explicit `TEMPO_RESTORATION_QUALIFICATION=1` records 1,000-sample calibration/control/restoration cohorts and 50 navigation pairs against frozen baseline-derived acceptance limits. Small smoke cohorts are not statistical qualification.
+
+## PR #172 independent flush-settlement audit
+
+`flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities`
+in `tests/unit/review-outbox-regressions.test.ts` fails on merged main
+`d4dbf28d` for limits 1 and 2: overlapping unlimited drain retains confirmed IDs
+but discards both prepared-continuation maps. Merge both maps in the existing
+aggregation return; do not change generation tracking, APIs, persistence or queue
+policy. See `docs/review-outbox-settlement-audit.md` for baseline evidence and limits.
+
+Other named audit cases in the same file verify `next generation publishes before
+previous waiter callbacks` (completion/rejection), `submitted identities coalesce
+with limit` (1/2/Infinity), `overlapping submitted outcome remains truthful`
+(terminal/retryable conflict, network before/after simulated commit, missing
+confirmation), `unrelated rejection attributes its own attempt and explicit
+retry` (false/true), and `target cannot bypass same-card` predecessors
+(persisted/suppressed/conflicted). Cross-generation observation is reproduced,
+but its actual target conflict is truthful; shared state alone is not a defect.
+
+- `flush_settlement_audit overlapping continuation observers preserve %s authorization boundary`
+  in `tests/unit/prepared-review-continuation-regressions.test.ts`: none, missing,
+  mismatch, attempt, generation, entry, revision, cycle, date, failed-flag,
+  failed-marker; duplicate observers advance once or not at all and preserve
+  known failure evidence.
+- `flush_settlement_audit Home foreground settlement and idle observer retain ownership during reconnect=%s`
+  in `tests/unit/review-attempt-confirmation-regressions.test.tsx`: early prepared
+  advancement without reconnect; actionable authoritative recovery after
+  reconnect invalidates readiness; later delivery cannot advance again.
+- `flush_settlement_audit idle receipt observer retains target evidence after later %s`
+  in `tests/unit/pending-review-recovery-regressions.test.tsx`: shared-flush
+  success/failure retains original receipt and continuation evidence.
+- `flush_settlement_audit overlapping reconnect preserves issued successor and one durable review`
+  in `tests/browser/post-review-progression.spec.ts`: real PostgreSQL commits
+  while its response is held; concurrent reconnect cannot authorize an unready
+  cached successor, and queue recovery/restart/replay retain one original review.
+
+- `flush_settlement_audit %s follow-up failure retains earlier settled evidence`
+  (unlimited/submitted) proves A's confirmed IDs/continuation must survive a later
+  B failure before C. Both cases fail on unchanged main with an empty partial
+  result. Duplicate aggregate observers and a direct B observer guard original
+  error ownership and diagnostic identity.
+- `flush_settlement_audit different explicit retry identities retain suppression after %s owner`
+  (persisted/failed) proves separate explicit retries perform original-key receipt
+  reads and cannot release another attempt's terminal suppression.
+- `flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication`
+  (persisted/terminal) subscribes inside the public storage-change callback before
+  settlement publication. Both baseline cases preserve exact attribution and an
+  immutable early result while unrelated delivery remains held.
+
+- `flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery`
+  starts a submitted flush synchronously from the initial owner's public conflict
+  event. On unchanged main the first owner's assignment/cleanup discards that
+  submission's ownership: a concurrent receipt confirms it, then its held POST
+  rejects the original submitted caller. Reserve the active slot before saving
+  can publish synchronously; reentrant callers share the forwarded settlement.
+  The regression proves receipt recovery cannot overtake an owned held POST and
+  preserves truthful unconfirmed failure followed by authoritative recovery.
+
+Audit CI readiness evidence (existing named browser cases):
+
+- `opening_evidence_remains_durable_during_prepared_progression: prepared` in
+  `training-critical-path.spec.ts` now deterministically fails its initial queue
+  transport once, before the timed region, and requires explicit UI recovery
+  before native progression and original durability/replay assertions. Performance
+  mode keeps the original uninjected setup. The old startup assertion fails on
+  unchanged production with this input, matching CI's network-change failure.
+- `Edit card opens Builder line-removal context and deletes the selected branch`
+  in `workspace-flows.spec.ts` first receives the observed pending-issuance 503
+  shape, then requires a real queued card belonging to the confirmed import ID.
+  The old probe throws on the error envelope; bounded polling now retains its
+  HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
+  These are fixture corrections for qualification, not additional product defects.
