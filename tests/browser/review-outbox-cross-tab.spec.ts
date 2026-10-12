@@ -35,7 +35,7 @@ async function completeCorrect(page: Page) {
 }
 async function flushOnly(page: Page, attemptId: string, receiptFirst = true, deferredAttemptIds: string[] = []) {
   return page.evaluate(({ attemptId, receiptFirst, deferredAttemptIds }) => window.tempoReviewOutbox.flushPendingReviews(1, receiptFirst,
-    undefined, new Set(deferredAttemptIds), attemptId), { attemptId, receiptFirst, deferredAttemptIds });
+    attemptId, new Set(deferredAttemptIds), attemptId), { attemptId, receiptFirst, deferredAttemptIds });
 }
 
 for (const order of ["A-B", "B-A"] as const) {
@@ -106,9 +106,13 @@ for (const accepted of ["correct", "again"] as const) {
       await page.unroute("**/api/cards/*/review"); await other.unroute("**/api/cards/*/review");
       const winner = originals.find(review => review.outcome === accepted)!;
       const competitor = originals.find(review => review.outcome !== accepted)!;
-      const first = await flushOnly(page, winner.attemptId!, true, [competitor.attemptId!]);
+      const first = await flushOnly(page, winner.attemptId!, true, [competitor.attemptId!]).catch(error => ({ error: String(error) }));
+      await expect.poll(async () => (await fixture.observe()).receipts.some(receipt => receipt[1] === winner.attemptId),
+        { timeout: 30_000, message: "First original attempt must reach authoritative settlement before competing delivery" }).toBe(true);
       const acceptedHistory = await fixture.observe();
-      const second = await flushOnly(other, competitor.attemptId!).catch(error => ({ error: String(error) }));
+      const second = await flushOnly(other, competitor.attemptId!, true, [winner.attemptId!]).catch(error => ({ error: String(error) }));
+      await expect.poll(async () => (await fixture.observe()).receipts.some(receipt => receipt[1] === competitor.attemptId),
+        { timeout: 30_000, message: "Competing original attempt must receive its own authoritative receipt" }).toBe(true);
       const conflictingHistory = await fixture.observe();
       await page.reload(); await other.reload();
       const retained = await readReviews(other);
@@ -129,7 +133,7 @@ for (const accepted of ["correct", "again"] as const) {
         expect(new Date(String(receipts[0][8])).toISOString()).toBe(original.completedAt);
       }
       expect(finalHistory.receipts.find(receipt => receipt[1] === winner.attemptId)).toEqual(acceptedHistory.receipts.find(receipt => receipt[1] === winner.attemptId));
-      expect(first.preparedContinuations).toBeUndefined();
+      expect("preparedContinuations" in first ? first.preparedContinuations : undefined).toBeUndefined();
       // A competing outcome is either explicitly retained by reconciliation or
       // attributed by its own logical receipt under the existing server policy.
       expect(retained.some(review => review.attemptId === competitor.attemptId) ||
