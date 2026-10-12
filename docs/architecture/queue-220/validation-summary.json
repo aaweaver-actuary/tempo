@@ -2,12 +2,12 @@
   "repository": "aaweaver-actuary/tempo",
   "issue": 220,
   "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/227",
-  "head": "b4007e70c50cd631ac35d0eafc00ea7ce028d60d",
-  "base": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
-  "integration": "58d86c960b19b0d0f884ef5d5e5d5cd50e8ad631",
+  "head": "e2a630a2e77f29b6a0e83f77e94539bf05e3f9b2",
+  "base": "25363aa0bc7073646ff8a00b94857d4f3127f694",
+  "integration": "b114dd26946bd9d326cb8c51f496cbc55ebcfc64",
   "audit_source": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
   "audit_report": "076e101474b5227189a98fa280d65c9d80d373fb",
-  "status": "implemented; complete and ready-state qualification pending",
+  "status": "qualified; ready for review; clean and mergeable; not merged",
   "ownership": {
     "queue_application": [
       "reconcile_unseen_queue",
@@ -31,7 +31,66 @@
       "_plan_daily_queue_order"
     ]
   },
-  "validation": [
+  "failure_record": "Initial missing prioritization import repaired. Initial durability run stopped at a singleton barrier patching the old owner; mock retargeted with original assertions/deadlines preserved; focused native reproduction passed. No complete durability pass claimed from that failed run.",
+  "environments": {
+    "python": "CPython 3.14.8 with repository requirements",
+    "native": "disposable PostgreSQL 18.6, Redis 7, Python 3.12 product images",
+    "ci": "repository pinned ubuntu-24.04-arm runtime"
+  },
+  "performance": {
+    "method": "same-process alternating sequential hot planner comparison; 10 warmups and 200 samples per version; identical fixtures",
+    "rows": [
+      12,
+      1200
+    ],
+    "baseline_p50_ms": [
+      0.1025,
+      1.420521
+    ],
+    "extracted_p50_ms": [
+      0.1024795,
+      1.4201875
+    ],
+    "results_identical": true,
+    "limits": "Excludes imports, database, locks, network and foreground latency; no speedup claim"
+  },
+  "ci": "https://github.com/aaweaver-actuary/tempo/actions/runs/38287290965",
+  "preserved_contracts": [
+    "gateway transaction ownership",
+    "locks",
+    "receipts",
+    "issuance",
+    "generation/lease/task/phase fences",
+    "checkpoint shapes",
+    "Study-only resume",
+    "prepared continuation",
+    "SQLite compatibility",
+    "HTTP and schema"
+  ],
+  "remaining_risks": [
+    "#146 authoritative enqueue identity remains separate",
+    "#223 unbounded preparation remains separate",
+    "#224 broader review-root extraction remains separate"
+  ],
+  "rollback": "Revert four extraction/regression commits in reverse order; no schema or persisted format change.",
+  "cleanup": {
+    "completed_local_projects_removed": [
+      "tempo-pg-regressions-54729-82ee7e5f",
+      "tempo-queue220-proof-62f805b847",
+      "tempo-pg-regressions-57381-512130bf",
+      "tempo-queue220-proof-c3fc70bf9f"
+    ],
+    "raw_diagnostics": "Retained locally outside the checkout; not published",
+    "checkout": "Remote preservation verified before removal; final issue update records completed removal.",
+    "live_and_other_task_resources": "untouched"
+  },
+  "previous_candidate": {
+    "head": "b4007e70c50cd631ac35d0eafc00ea7ce028d60d",
+    "base": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+    "integration": "58d86c960b19b0d0f884ef5d5e5d5cd50e8ad631",
+    "ci": "https://github.com/aaweaver-actuary/tempo/actions/runs/38282710771"
+  },
+  "validation_before_rebase": [
     {
       "scope": "affected Python queue/planner/Study/receipt files",
       "passed": 411,
@@ -65,57 +124,320 @@
       ]
     }
   ],
-  "failure_record": "Initial missing prioritization import repaired. Initial durability run stopped at a singleton barrier patching the old owner; mock retargeted with original assertions/deadlines preserved; focused native reproduction passed. No complete durability pass claimed from that failed run.",
-  "environments": {
-    "python": "CPython 3.14.8 with repository requirements",
-    "native": "disposable PostgreSQL 18.6, Redis 7, Python 3.12 product images",
-    "ci": "repository pinned ubuntu-24.04-arm runtime"
-  },
-  "performance": {
-    "method": "same-process alternating sequential hot planner comparison; 10 warmups and 200 samples per version; identical fixtures",
-    "rows": [
-      12,
-      1200
-    ],
-    "baseline_p50_ms": [
-      0.1025,
-      1.420521
-    ],
-    "extracted_p50_ms": [
-      0.1024795,
-      1.4201875
-    ],
-    "results_identical": true,
-    "limits": "Excludes imports, database, locks, network and foreground latency; no speedup claim"
-  },
-  "ci": "https://github.com/aaweaver-actuary/tempo/actions/runs/38282710771",
-  "preserved_contracts": [
-    "gateway transaction ownership",
-    "locks",
-    "receipts",
-    "issuance",
-    "generation/lease/task/phase fences",
-    "checkpoint shapes",
-    "Study-only resume",
-    "prepared continuation",
-    "SQLite compatibility",
-    "HTTP and schema"
+  "validation": [
+    {
+      "command": "PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_queue_application_extraction.py backend/tests/test_opening_ranking_evaluation.py backend/tests/test_prepared_review_continuation.py -q --rootdir=. -o cache_dir=.pytest_cache",
+      "passed": 107,
+      "seconds": 6.75
+    },
+    {
+      "scope": "native ranking read-only and priority recovery proof",
+      "passed": true,
+      "proof_invocation_seconds": 8.45,
+      "source": "previous HEAD plus native proof repair overlay; committed as e2a630a2"
+    }
   ],
-  "remaining_risks": [
-    "#146 authoritative enqueue identity remains separate",
-    "#191 settlement remains separate",
-    "#223 unbounded preparation remains separate",
-    "#224 broader review-root extraction remains separate"
+  "rebase": "Merged #191 settlement corrections incorporated; no backend/script source differences against previous candidate. Regression registry conflict retained both entries.",
+  "prior_draft_qualification": {
+    "head": "7c4447cd643895c4ad5e5bbac5bfdc22a1d753db",
+    "integration": "730c4632b9974c9d1d554db483e823339665968e",
+    "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/38284400576",
+    "all_execution_layers": "passed",
+    "development": "passed",
+    "quality": "expected draft rejection",
+    "backend_tests": 2579,
+    "frontend_tests": 1643,
+    "browser_tests": 283,
+    "durability_seconds": 626.52,
+    "lifecycle_seconds": 300.83
+  },
+  "review_repair": "Native snapshot proof now patches frontier planner and asserts two calls per capture after connection closure.",
+  "final_ci": {
+    "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/38287290965",
+    "status": "success",
+    "quality": "success",
+    "merge_gate": "success",
+    "draft": false,
+    "mergeable": "MERGEABLE",
+    "merge_state": "CLEAN"
+  },
+  "ci_layers": [
+    {
+      "name": "backend",
+      "status": "success",
+      "tests": 2579,
+      "commands": [
+        {
+          "name": "backend_inventory",
+          "command": "python3",
+          "args": [
+            "scripts/ci-collect-backend.py",
+            "test-results/ci/backend-inventory.json",
+            "backend/tests",
+            "-q",
+            "-o",
+            "cache_dir=.pytest_cache",
+            "--rootdir=."
+          ],
+          "duration_seconds": 7.4,
+          "exit_code": 0
+        },
+        {
+          "name": "defense_engine",
+          "command": "node",
+          "args": [
+            "scripts/test-defense-engine.mjs"
+          ],
+          "duration_seconds": 0.21,
+          "exit_code": 0
+        },
+        {
+          "name": "backend",
+          "command": "python3",
+          "args": [
+            "-m",
+            "pytest",
+            "backend/tests",
+            "-q",
+            "-o",
+            "cache_dir=.pytest_cache",
+            "--rootdir=.",
+            "--junitxml=test-results/ci/backend-tests.xml"
+          ],
+          "duration_seconds": 331.31,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "name": "frontend",
+      "status": "success",
+      "tests": 1643,
+      "commands": [
+        {
+          "name": "unit_inventory",
+          "command": "npx",
+          "args": [
+            "vitest",
+            "list",
+            "--no-static-parse",
+            "--includeTaskLocation",
+            "--json=test-results/ci/frontend-inventory.json"
+          ],
+          "duration_seconds": 68.64,
+          "exit_code": 0
+        },
+        {
+          "name": "unit",
+          "command": "npm",
+          "args": [
+            "run",
+            "test:unit",
+            "--",
+            "--reporter=default",
+            "--reporter=json",
+            "--outputFile.json=test-results/performance/unit-files-ci-frontend.json",
+            "--includeTaskLocation"
+          ],
+          "duration_seconds": 288.87,
+          "exit_code": 0
+        },
+        {
+          "name": "lint",
+          "command": "npm",
+          "args": [
+            "run",
+            "lint"
+          ],
+          "duration_seconds": 26.06,
+          "exit_code": 0
+        },
+        {
+          "name": "typecheck",
+          "command": "npm",
+          "args": [
+            "run",
+            "typecheck"
+          ],
+          "duration_seconds": 17.15,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "name": "postgres",
+      "status": "success",
+      "tests": 0,
+      "commands": [
+        {
+          "name": "capabilities",
+          "command": "node",
+          "args": [
+            "scripts/check-test-capabilities.mjs",
+            "--docker",
+            "--loopback",
+            "--workspace-mount"
+          ],
+          "duration_seconds": 28.2,
+          "exit_code": 0
+        },
+        {
+          "name": "durability",
+          "command": "node",
+          "args": [
+            "scripts/test-postgres-docker.mjs",
+            "--mode",
+            "durability"
+          ],
+          "duration_seconds": 657.65,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "name": "lifecycle",
+      "status": "success",
+      "tests": 0,
+      "commands": [
+        {
+          "name": "capabilities",
+          "command": "node",
+          "args": [
+            "scripts/check-test-capabilities.mjs",
+            "--docker",
+            "--loopback",
+            "--workspace-mount"
+          ],
+          "duration_seconds": 25.4,
+          "exit_code": 0
+        },
+        {
+          "name": "lifecycle",
+          "command": "node",
+          "args": [
+            "scripts/test-postgres-docker.mjs",
+            "--mode",
+            "lifecycle"
+          ],
+          "duration_seconds": 312.32,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "name": "browser",
+      "status": "success",
+      "tests": 283,
+      "commands": [
+        {
+          "name": "browser_aggregate",
+          "command": "node",
+          "args": [
+            "scripts/ci-aggregate-browser.mjs"
+          ],
+          "duration_seconds": 2.39,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "name": "visual",
+      "status": "success",
+      "tests": 69,
+      "commands": [
+        {
+          "name": "capabilities",
+          "command": "node",
+          "args": [
+            "scripts/check-test-capabilities.mjs",
+            "--docker",
+            "--workspace-mount"
+          ],
+          "duration_seconds": 27.77,
+          "exit_code": 0
+        },
+        {
+          "name": "visual",
+          "command": "npm",
+          "args": [
+            "run",
+            "test:visual"
+          ],
+          "duration_seconds": 268.02,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "name": "build",
+      "status": "success",
+      "tests": 0,
+      "commands": [
+        {
+          "name": "rust_format",
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "duration_seconds": 0.03,
+          "exit_code": 0
+        },
+        {
+          "name": "rust_lint",
+          "command": "cargo",
+          "args": [
+            "clippy",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "duration_seconds": 0.4,
+          "exit_code": 0
+        },
+        {
+          "name": "rust_test",
+          "command": "cargo",
+          "args": [
+            "test",
+            "--workspace"
+          ],
+          "duration_seconds": 0.87,
+          "exit_code": 0
+        },
+        {
+          "name": "wasm_build",
+          "command": "npm",
+          "args": [
+            "run",
+            "build:wasm"
+          ],
+          "duration_seconds": 1.18,
+          "exit_code": 0
+        },
+        {
+          "name": "local_build",
+          "command": "npm",
+          "args": [
+            "run",
+            "build:local"
+          ],
+          "duration_seconds": 2.11,
+          "exit_code": 0
+        }
+      ]
+    }
   ],
-  "rollback": "Revert the three extraction/regression commits; no schema or persisted format change.",
-  "cleanup": {
-    "completed_local_projects_removed": [
-      "tempo-pg-regressions-54729-82ee7e5f",
-      "tempo-queue220-proof-62f805b847",
-      "tempo-pg-regressions-57381-512130bf"
-    ],
-    "raw_diagnostics": "Retained locally outside the checkout; not published",
-    "checkout": "Retain until CI/final preservation checks finish; then remove",
-    "live_and_other_task_resources": "untouched"
+  "issue_freshness": {
+    "204": "PR226 separately ready; interface untouched",
+    "191": "merged into base",
+    "146": "open and conflicting",
+    "192": "PR228 restoration remains separate",
+    "217": "pinned specification followed",
+    "223": "measurement/bounded work remains separate",
+    "224": "review extraction remains separate"
   }
 }
