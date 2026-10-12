@@ -522,4 +522,3 @@ Generated from AST SQL literals and SQL migration syntax. This is an exhaustive 
 | script: fixture/maintenance | `test_issue80_retired_queued_active_partial_pending_and_offline_presentations_never_grade_replacements` | study_attempts | [scripts/check_postgres_prefix_transition_application.py:1037–1105](https://github.com/aaweaver-actuary/tempo/blob/02b65f229aaccc91ae7c03fd11efc8f3aedd2883/scripts/check_postgres_prefix_transition_application.py#L1037-L1105) | [scripts/check_postgres_prefix_transition_application.py:1073–1073](https://github.com/aaweaver-actuary/tempo/blob/02b65f229aaccc91ae7c03fd11efc8f3aedd2883/scripts/check_postgres_prefix_transition_application.py#L1073-L1073) |
 
 ### Migration SQL mutation sites
-

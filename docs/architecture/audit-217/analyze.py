@@ -138,4 +138,4 @@ for label, tables in state_groups.items():
     for writer in sql:
         if writer['table'] in tables:
             writer_lines.append('- ' + source_link(writer['file'], writer['line']) + ' — `' + writer['table'] + '`')
-(output / 'state-writers.md').write_text('\n'.join(writer_lines) + '\n')
+(output / 'state-writers.md').write_text('\n'.join(writer_lines).rstrip() + '\n')
