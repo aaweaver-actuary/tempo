@@ -4079,3 +4079,17 @@ proof. These partial roadmap references do not close the broader issues.
 - `test_capacity_configuration_enables_only_explicit_one`
 - `test_capacity_worker_full_allowance_avoids_frontier_queries`
 - `test_capacity_ready_publication_checks_translate_to_postgres_without_new_storage_contract`
+
+PR #197 independent native PostgreSQL qualification (October 12, 2026):
+
+`scripts/check_postgres_opening_capacity.py` runs in the regular PostgreSQL
+full/durability runner with consumers stopped. Each case owns a fresh database
+copied from the current migrated empty schema; real production writers, card/day
+locks and independent connections establish admission behavior.
+
+- `test_postgres_capacity_concurrent_refreshes_preserve_quota_and_nonrecursive_frontier`: two overlapping plans admit two prefixes and eight children exactly once; repeated refresh with spare capacity cannot introduce grandchildren.
+- `test_postgres_capacity_competing_cards_share_last_quota_slot`: distinct candidates competing for the last repertoire slot cannot exceed its authoritative limit.
+- `test_postgres_capacity_stale_proposal_rejected_without_side_effects`: committed generation/publication/parent/candidate lifecycle/membership/introduction/quota invalidation, flag rollback and study-only suppress stale proposals without queue or scheduling writes.
+- `test_postgres_capacity_duplicate_rollback_and_worker_checkpoint_replay`: concurrent and sequential duplicate delivery, rollback/retry and actual durable queue-slice lease replay preserve exactly one admission.
+- `test_postgres_capacity_background_lock_denial_is_atomic_and_retryable`: the unchanged production background lock budget rolls back contention atomically and allows a later retry.
+- `test_postgres_capacity_flag_rollback_shared_owner_and_game_miss_exception`: baseline prefixes, enabled residual filling, shared membership charging, disabling after admission, unchanged FSRS/reviews and ordinary real-game miss quota exceptions.
