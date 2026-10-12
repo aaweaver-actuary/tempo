@@ -4224,3 +4224,5 @@ Audit CI readiness evidence (existing named browser cases):
 - `test_queue_application_requeue_preserves_origin_cycle_and_issuance` covers retained origins, insert position, caller rollback and unissued repeat identity.
 - `test_essential_queue_study_only_resumes_every_legacy_phase` and `test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint` preserve historical optional-phase skips and capacity checkpoint payloads.
 - `test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay` in the regular native queue-attempt proof exercises real foreground contention, interruption rollback, pool restart/persisted checkpoint reload, replay and generation/lease fencing. Existing native issuance/receipt and prepared-transition proofs remain required.
+
+- #220 native `test_postgres_shadow_opening_ranking_is_read_only` patches the frontier owner and asserts both planning calls after each capture, preventing a stale compatibility seam from silently bypassing its connection-closure proof.
