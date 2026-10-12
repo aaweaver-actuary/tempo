@@ -1,0 +1,173 @@
+{
+  "timestamp": "2026-10-12T17:00:09.286166+00:00",
+  "project": "tempo-pg-regressions-21800-a2182026",
+  "checkout": "/Users/andy/tempo/.dev-copies/audit-218-resource-isolation",
+  "baseline": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "branch": "codex/audit-218-resource-isolation",
+  "audit_containers_volumes_network_absent": true,
+  "images": [
+    {
+      "tag": "tempo-pg-regressions-21800-a2182026-background-worker:latest",
+      "id": "sha256:1598782915f7e91d17f5374975bd0cc076377e010df62f795daf41628497a143",
+      "created": "2026-10-12T15:42:17.543898053Z",
+      "virtual_bytes": 369453274,
+      "last_meaningful_activity": "audit windows through 2026-10-12; this task released ownership",
+      "remove_command": [
+        "docker",
+        "image",
+        "rm",
+        "tempo-pg-regressions-21800-a2182026-background-worker:latest"
+      ],
+      "removal_exit": 0,
+      "removal_output": "Untagged: tempo-pg-regressions-21800-a2182026-background-worker:latest\nDeleted: sha256:1598782915f7e91d17f5374975bd0cc076377e010df62f795daf41628497a143\n"
+    },
+    {
+      "tag": "tempo-pg-regressions-21800-a2182026-schema:latest",
+      "id": "sha256:a90e4a0f3c3ed1576ae0c18e0e6346c6831a594ce81188229e7cd143c8629b45",
+      "created": "2026-10-12T15:42:17.543898053Z",
+      "virtual_bytes": 369453263,
+      "last_meaningful_activity": "audit windows through 2026-10-12; this task released ownership",
+      "remove_command": [
+        "docker",
+        "image",
+        "rm",
+        "tempo-pg-regressions-21800-a2182026-schema:latest"
+      ],
+      "removal_exit": 0,
+      "removal_output": "Untagged: tempo-pg-regressions-21800-a2182026-schema:latest\nDeleted: sha256:a90e4a0f3c3ed1576ae0c18e0e6346c6831a594ce81188229e7cd143c8629b45\n"
+    },
+    {
+      "tag": "tempo-pg-regressions-21800-a2182026-background-scheduler:latest",
+      "id": "sha256:347d0786c92f7bbd314f8e3ac7c60727ba838da2f06844bea851c63c0f506183",
+      "created": "2026-10-12T15:42:17.543898053Z",
+      "virtual_bytes": 369453277,
+      "last_meaningful_activity": "audit windows through 2026-10-12; this task released ownership",
+      "remove_command": [
+        "docker",
+        "image",
+        "rm",
+        "tempo-pg-regressions-21800-a2182026-background-scheduler:latest"
+      ],
+      "removal_exit": 0,
+      "removal_output": "Untagged: tempo-pg-regressions-21800-a2182026-background-scheduler:latest\nDeleted: sha256:347d0786c92f7bbd314f8e3ac7c60727ba838da2f06844bea851c63c0f506183\n"
+    },
+    {
+      "tag": "tempo-pg-regressions-21800-a2182026-foreground-worker:latest",
+      "id": "sha256:dad72e34c2d7e9498cad64fde0f3cf6e7c10eb62ef2723998a3a8d67a98d1fce",
+      "created": "2026-10-12T15:42:17.543898053Z",
+      "virtual_bytes": 369453274,
+      "last_meaningful_activity": "audit windows through 2026-10-12; this task released ownership",
+      "remove_command": [
+        "docker",
+        "image",
+        "rm",
+        "tempo-pg-regressions-21800-a2182026-foreground-worker:latest"
+      ],
+      "removal_exit": 0,
+      "removal_output": "Untagged: tempo-pg-regressions-21800-a2182026-foreground-worker:latest\nDeleted: sha256:dad72e34c2d7e9498cad64fde0f3cf6e7c10eb62ef2723998a3a8d67a98d1fce\n"
+    },
+    {
+      "tag": "tempo-pg-regressions-21800-a2182026-api:latest",
+      "id": "sha256:0d1295e5a20b90582b9f595f73e3ecf370354b0539874d0951a102c673f9daf5",
+      "created": "2026-10-12T15:42:17.543898053Z",
+      "virtual_bytes": 369453260,
+      "last_meaningful_activity": "audit windows through 2026-10-12; this task released ownership",
+      "remove_command": [
+        "docker",
+        "image",
+        "rm",
+        "tempo-pg-regressions-21800-a2182026-api:latest"
+      ],
+      "removal_exit": 0,
+      "removal_output": "Untagged: tempo-pg-regressions-21800-a2182026-api:latest\nDeleted: sha256:0d1295e5a20b90582b9f595f73e3ecf370354b0539874d0951a102c673f9daf5\n"
+    },
+    {
+      "tag": "tempo-pg-regressions-21800-a2182026-web:latest",
+      "id": "sha256:f49a7ade93ea9a45dd06668251ac5c345185c94ac4334c900168bc4f6cdc718a",
+      "created": "2026-10-11T17:26:34.417421051Z",
+      "virtual_bytes": 271528383,
+      "last_meaningful_activity": "audit windows through 2026-10-12; this task released ownership",
+      "remove_command": [
+        "docker",
+        "image",
+        "rm",
+        "tempo-pg-regressions-21800-a2182026-web:latest"
+      ],
+      "removal_exit": 0,
+      "removal_output": "Untagged: tempo-pg-regressions-21800-a2182026-web:latest\nDeleted: sha256:f49a7ade93ea9a45dd06668251ac5c345185c94ac4334c900168bc4f6cdc718a\n"
+    }
+  ],
+  "live_services": [
+    {
+      "name": "/tempo-postgres-backup-1",
+      "id": "18d25e613b1e27c4eb9ba2776578487505a0d5743c83d2d2938d376c0f1e3ce9",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+      "status": "running",
+      "health": null
+    },
+    {
+      "name": "/tempo-defense-engine-1",
+      "id": "869a47cfafb9c3dbe3ff9f6c820addacaa94c54b0267cb72f0bd82eb2505f2ee",
+      "image": "sha256:64dda429b7a1e096ba95631579b01599d017fe5bc5902081c52cb04df5209804",
+      "status": "running",
+      "health": null
+    },
+    {
+      "name": "/tempo-maia-worker-1",
+      "id": "ed70fb6348786006ca3c36b67ebb322ac4871c577ef744465bb07735126e80f4",
+      "image": "sha256:d1cc5479bda4875487465ea9cd21dc9990ec8b2d58af5600c6a0990ac098e779",
+      "status": "running",
+      "health": null
+    },
+    {
+      "name": "/tempo-web-1",
+      "id": "d42ce619c2da3a5cc89bf2f915b332015d08265eaf570015be34ec21aeceb505",
+      "image": "sha256:52fb2104e06eb9edbd2a3403f1503ab0a529c4867badcdaf333108803238b2e8",
+      "status": "running",
+      "health": null
+    },
+    {
+      "name": "/tempo-background-worker-1",
+      "id": "f2b5548118130e0b0caa7b6d6f2f96ce8225efb03817f16b75d8b19dc33a0a6a",
+      "image": "sha256:b9debf85ab9b62b96d066560568cc3c3138f988ed4da586c49e652e3cbf3d7a2",
+      "status": "running",
+      "health": null
+    },
+    {
+      "name": "/tempo-background-scheduler-1",
+      "id": "fcd48bbc494204f2cefd4c3add56c2f1b81be8836d91ebecc54034747154a13e",
+      "image": "sha256:c5e4dcb1402482d1490ce4ed0f489a2e98b6fcec7127e1f4537418f8ef541f8d",
+      "status": "running",
+      "health": null
+    },
+    {
+      "name": "/tempo-api-1",
+      "id": "f7b207b02bd00b6101a8f5c106c656c33c866b69b1625c91ae5b67e2d6b6c4b2",
+      "image": "sha256:7ddcdf321cb28e3d24c2e98a7719689d0c4460439744f0965e26562c8fbd1ccf",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "name": "/tempo-foreground-worker-1",
+      "id": "469149371eed9f6332daa126c9ed3882dc82205ae78e3ca85db80e736bad5437",
+      "image": "sha256:80e2f2c9ebf03d623f0aec6225ff1886a2a181b796d8df09ad1bb5a664924a4d",
+      "status": "running",
+      "health": null
+    },
+    {
+      "name": "/tempo-postgres-1",
+      "id": "7b1d529d856b177d920d66428ff6291a8e1dd35afb048d798e439befa8aa8562",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "name": "/tempo-redis-1",
+      "id": "4c10fd56bfc39419aa3517fd6bde3b60b46382158fbfb30c20afbf44a78edd81",
+      "image": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "status": "running",
+      "health": "healthy"
+    }
+  ],
+  "image_tags_removed_verified": true
+}

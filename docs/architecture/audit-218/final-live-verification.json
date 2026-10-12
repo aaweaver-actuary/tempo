@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-12T17:01:39.847997+00:00",
+  "deployed_revision": "81cad1cb33817484db5d5ce2d80b3286d178d021",
+  "identical_container_ids": true,
+  "identical_image_ids": true,
+  "all_ten_running": true,
+  "health": {
+    "status": "ok",
+    "storage": "postgresql",
+    "scheduler": "FSRS 6",
+    "test_instance": false
+  },
+  "read_only_queue": {
+    "queue_read_ok": true,
+    "queue_rows": 9435
+  },
+  "audit_images_remaining": ""
+}

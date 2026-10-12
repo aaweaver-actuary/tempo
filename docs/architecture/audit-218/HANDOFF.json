@@ -1,0 +1,45 @@
+{
+  "owner": "audit #218 current chat",
+  "baseline": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "measurement_tooling": "af71f0da",
+  "native_probe_tooling": "e5e88cbd",
+  "measurement_report_revision": "4404bfdca472180a728d75014f56c4db106ae8f1",
+  "branch": "codex/audit-218-resource-isolation",
+  "github_updates": {
+    "218": "https://github.com/aaweaver-actuary/tempo/issues/218#issuecomment-6128821073",
+    "190": "https://github.com/aaweaver-actuary/tempo/issues/190#issuecomment-6128821748",
+    "192": "https://github.com/aaweaver-actuary/tempo/issues/192#issuecomment-6128822536",
+    "redis_followup": "https://github.com/aaweaver-actuary/tempo/issues/225",
+    "bounded_queue_followup": "https://github.com/aaweaver-actuary/tempo/issues/223"
+  },
+  "evidence_path": "/Users/andy/tempo/test-results/audit-218-2026-10-12",
+  "checkout": "/Users/andy/tempo/.dev-copies/audit-218-resource-isolation",
+  "checkout_kib_before_removal": 1255728,
+  "deletion_gate": {
+    "tracked_work_committed": true,
+    "remote_measurement_ref_verified": true,
+    "stashes_absent": true,
+    "no_process_cwd_in_checkout": true,
+    "no_audit_docker_containers_or_mounts": true,
+    "source_evidence_retained_outside_checkout": true,
+    "public_manifest_hashes_verified": true,
+    "untracked_files": "generated task-owned credentials/configuration, intentionally discarded; never published",
+    "ignored_files": "reproducible npm/uv environments, Python/pytest caches and two generated worker bundles; not unique source or diagnostics",
+    "remaining_requirement": "verify this handoff commit on remote before removing this classified standalone clone"
+  },
+  "retained_resources": [
+    {
+      "path": "/Users/andy/tempo/test-results/audit-218-2026-10-12",
+      "owner": "audit #218",
+      "reason": "restricted original diagnostics, deployed restore manifests and public measurement provenance; durable sanitized evidence published",
+      "next_cleanup_condition": "retain as audit record; private originals remain local"
+    },
+    {
+      "resource": "shared base images and build caches",
+      "reason": "safe reusable resources; not exclusively audit-owned"
+    }
+  ],
+  "qualification": "focused/native audit evidence only; no repair or complete release gate; unavailable matrix in REPORT/RESULTS",
+  "cleanup_status": "six audit image tags removed; audit containers/volumes/network absent; checkout removal pending final remote verification",
+  "created_at": "2026-10-12T17:02:22.745175+00:00"
+}
