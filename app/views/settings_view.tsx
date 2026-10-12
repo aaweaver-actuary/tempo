@@ -35,6 +35,8 @@ type SettingsValues = {
   include_defensive_cards_in_daily_stack: boolean;
   defensive_analysis_enabled: boolean;
   study_only_mode: boolean;
+  repertoire_preparation_enabled: boolean;
+  optional_analysis_and_imports_enabled: boolean;
   discovery_window_days: 30 | 90;
   lichess_username: string;
   chesscom_username: string;
@@ -86,6 +88,8 @@ export default function SettingsView({
     include_defensive_cards_in_daily_stack: true,
     defensive_analysis_enabled: false,
     study_only_mode: false,
+    repertoire_preparation_enabled: true,
+    optional_analysis_and_imports_enabled: true,
     discovery_window_days: 90,
     lichess_username: "",
     chesscom_username: "",
@@ -244,6 +248,8 @@ export default function SettingsView({
         include_defensive_cards_in_daily_stack: values.include_defensive_cards_in_daily_stack,
         defensive_analysis_enabled: values.defensive_analysis_enabled,
         study_only_mode: values.study_only_mode,
+        repertoire_preparation_enabled: values.repertoire_preparation_enabled,
+        optional_analysis_and_imports_enabled: values.optional_analysis_and_imports_enabled,
         discovery_window_days: values.discovery_window_days,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
@@ -446,10 +452,22 @@ export default function SettingsView({
           </label>
           {usesLocalApi() && <label>
             <span>Study-only mode<small>Pause optional analysis and imports. Existing cards, review saves, and the daily queue remain available. Pending work resumes when turned off.</small></span>
-            <TextInput disabled={!settingsLoaded} type="checkbox"
+            <TextInput aria-label="Study-only mode" disabled={!settingsLoaded} type="checkbox"
               checked={values.study_only_mode}
               onChange={(event) => update("study_only_mode", event.target.checked)} />
           </label>}
+          {usesLocalApi() && <>
+            <label>
+              <span>Repertoire preparation<small>Recognize alternative moves using an independent worker. Study-only mode pauses this too.</small></span>
+              <TextInput aria-label="Repertoire preparation" disabled={!settingsLoaded} type="checkbox" checked={values.repertoire_preparation_enabled}
+                onChange={event => update("repertoire_preparation_enabled", event.target.checked)} />
+            </label>
+            <label>
+              <span>Optional analysis and imports<small>Allow game imports, engine analysis and derived updates. Turn off to study with only repertoire preparation enabled. Pending work is preserved.</small></span>
+              <TextInput aria-label="Optional analysis and imports" disabled={!settingsLoaded} type="checkbox" checked={values.optional_analysis_and_imports_enabled}
+                onChange={event => update("optional_analysis_and_imports_enabled", event.target.checked)} />
+            </label>
+          </>}
           <label>
             <span>Defensive analysis<small>Generate defensive exercises in the background. Turning off preserves your work; game analysis and repertoire recommendations continue.</small></span>
             <TextInput disabled={!settingsLoaded} type="checkbox"

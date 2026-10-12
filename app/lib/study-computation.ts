@@ -25,6 +25,7 @@ export type PureStudyTask =
   | { kind: "deck"; records: unknown[]; deckId: string }
   | { kind: "lines"; lines: AnalysisLine[] }
   | { kind: "index"; lines: AnalysisLine[] }
+  | { kind: "repertoirePreparation"; generation: number; payload: unknown }
   | { kind: "repertoireAlternatives"; generation: number; lines: AnalysisLine[] }
   | {
       kind: "similarity" | "matches";
@@ -83,6 +84,10 @@ export function computeStudyTask(task: PureStudyTask) {
       ];
     case "index":
       return indexRepertoirePositions(task.lines.map(canonicalizeLine));
+    case "repertoirePreparation":
+      return buildRepertoireAlternativeSnapshot(task.generation,
+        indexRepertoirePositions(repertoireLinesFromPayload(
+          validateWorkspacePayload("/api/repertoire/lines", task.payload)).map(canonicalizeLine)));
     case "repertoireAlternatives":
       return buildRepertoireAlternativeSnapshot(task.generation,
         indexRepertoirePositions(task.lines.map(canonicalizeLine)));

@@ -242,9 +242,9 @@ def capacity_route_still_valid(database, planned: dict, day: str) -> bool:
     """Revalidate the exact proposed route through the existing admission transaction."""
     if not capacity_expansion_enabled():
         return False
-    from .study_mode import study_only_enabled
+    from .study_mode import optional_work_paused
 
-    if study_only_enabled(database):
+    if optional_work_paused(database):
         return False
     route = planned["capacity_route"]
     if route["repertoire_id"] != planned["repertoire_id"]:

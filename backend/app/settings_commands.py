@@ -36,13 +36,15 @@ def update_settings(database: PostgresConnection, payload: dict[str, Any]) -> di
            for column_name in _DEFERRED_REFRESH_COLUMNS):
         raise HTTPException(503, "Coverage and discovery settings await the analysis-worker cutover")
     values = settings.model_dump(mode="json")
-    for boolean_field in ("include_defensive_cards_in_daily_stack", "defensive_analysis_enabled", "study_only_mode"):
+    for boolean_field in ("include_defensive_cards_in_daily_stack", "defensive_analysis_enabled", "study_only_mode", "repertoire_preparation_enabled", "optional_analysis_and_imports_enabled"):
         if boolean_field not in supplied_fields:
             values[boolean_field] = bool(existing[boolean_field])
     stored_values = {**values,
         "include_defensive_cards_in_daily_stack": int(values["include_defensive_cards_in_daily_stack"]),
         "defensive_analysis_enabled": int(values["defensive_analysis_enabled"]),
         "study_only_mode": int(values["study_only_mode"]),
+        "repertoire_preparation_enabled": int(values["repertoire_preparation_enabled"]),
+        "optional_analysis_and_imports_enabled": int(values["optional_analysis_and_imports_enabled"]),
     }
     database.execute(
         "UPDATE settings SET " + ",".join(f"{column_name}=?" for column_name in _SETTINGS_COLUMNS)
@@ -62,7 +64,7 @@ def update_settings(database: PostgresConnection, payload: dict[str, Any]) -> di
         else:
             database.execute("DELETE FROM game_accounts WHERE provider=?", (provider,))
     from .services.postgres_next_opponent import request_profile_refresh
-    if not values['study_only_mode']:
+    if not values['study_only_mode'] and values['optional_analysis_and_imports_enabled']:
         request_profile_refresh(database)
     request_queue_refresh_in_transaction(database, date.today().isoformat())
     return {**values, "include_defensive_cards_in_daily_stack": bool(

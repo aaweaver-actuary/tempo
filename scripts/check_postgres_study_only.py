@@ -18,7 +18,7 @@ from app.services import durable_tasks, study_mode
 from apply_postgres_migrations import MIGRATIONS, apply_migrations
 
 
-def proof():
+def proof(*, restoration_only=False):
     if os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Study-only proof requires an explicitly disposable PostgreSQL runner')
     parent_url = 'postgresql://postgres@postgres:5432/tempo'
@@ -38,9 +38,9 @@ def proof():
         apply_migrations(owned_url)
         apply_migrations(owned_url)
         with psycopg.connect(owned_url) as upgraded:
-            assert upgraded.execute('SELECT * FROM settings').fetchone() == (*settings_before, 0)
-            assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (47, 47)
-        print('PASS additive_migration_47_preserves_schema46_settings_and_replays')
+            assert upgraded.execute('SELECT * FROM settings').fetchone() == (*settings_before, 0, 1, 1)
+            assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (48, 48)
+        print('PASS additive_migration_48_preserves_schema46_settings_and_replays')
         postgres_store.close_pools()
         # This exclusive database executes synchronously; its wake must not be
         # delivered to the parent runner's workers connected to another database.
@@ -60,6 +60,24 @@ def proof():
             assert execute_command(uuid4().hex, 'settings.update',
                 {'settings': omitted, 'supplied_fields': sorted(omitted)})['study_only_mode'] is True
             print('PASS study_only_toggle_persists_and_omitted_field_preserves_value')
+
+            if restoration_only:
+                restoration = main.get_settings().model_dump(mode='json')
+                restoration.update(study_only_mode=False, repertoire_preparation_enabled=True,
+                                   optional_analysis_and_imports_enabled=False)
+                execute_command(uuid4().hex, 'settings.update',
+                    {'settings': restoration, 'supplied_fields': sorted(restoration)})
+                postgres_store.close_pools()
+                assert not study_mode.study_only_enabled()
+                assert study_mode.optional_work_paused()
+                omitted_controls = main.get_settings().model_dump(mode='json')
+                omitted_controls.pop('repertoire_preparation_enabled')
+                omitted_controls.pop('optional_analysis_and_imports_enabled')
+                updated = execute_command(uuid4().hex, 'settings.update',
+                    {'settings': omitted_controls, 'supplied_fields': sorted(omitted_controls)})
+                assert updated['repertoire_preparation_enabled'] is True
+                assert updated['optional_analysis_and_imports_enabled'] is False
+                print('PASS restoration_controls_persist_and_legacy_writes_preserve_independent_flags')
 
             optional = durable_tasks.enqueue_task('opening_graph_rebuild', 'preserved-mode-work', {'cursor': 7})
             assert durable_tasks.claim_task(kind='opening_graph_rebuild') is None
@@ -127,7 +145,12 @@ def proof():
             print('PASS deleted_queue_head_is_excluded_from_payload_and_count')
             print('PASS study_only_mode_preserves_foreground_review_and_queue_progression')
             print('PASS study_only_mode_preserves_receipts_and_idempotent_replay')
-            save_mode(False)
+            if restoration_only:
+                print('PASS restoration_optional_pause_preserves_postgres_reviews_receipts_and_authorized_successor')
+            resume_settings = main.get_settings().model_dump(mode='json')
+            resume_settings['optional_analysis_and_imports_enabled'] = True
+            resume_settings['study_only_mode'] = False
+            execute_command(uuid4().hex, 'settings.update', {'settings': resume_settings, 'supplied_fields': sorted(resume_settings)})
             resumed = durable_tasks.claim_task(kind='opening_graph_rebuild')
             assert (resumed['id'], resumed['generation'], resumed['payload']) == (optional['id'], optional['generation'], {'cursor': 7})
             print('PASS study_only_mode_pauses_optional_work_and_resumes_after_restart')
@@ -140,3 +163,4 @@ def proof():
 
 if __name__ == '__main__':
     proof()
+    proof(restoration_only=True)

@@ -95,7 +95,7 @@ while (true) {
   let job;
   try {
     const admission = await request("/api/system/foreground-active");
-    if (admission.study_only_mode) { await sleep(5_000); continue; }
+    if (admission.study_only_mode || admission.optional_work_paused) { await sleep(5_000); continue; }
     if (admission.active) { await sleep(1_000); continue; }
     if (!(await request("/api/repertoire-coverage/maia/available")).available) {
       await sleep(5_000); continue;

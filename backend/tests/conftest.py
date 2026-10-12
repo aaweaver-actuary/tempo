@@ -13,4 +13,5 @@ def normal_study_mode(monkeypatch):
     from app.services import study_mode
 
     monkeypatch.setattr(study_mode, "study_only_enabled", lambda database=None: False)
-    monkeypatch.setattr(tasks, "study_only_enabled", lambda database=None: False)
+    monkeypatch.setattr(study_mode, "optional_work_paused", lambda database=None: False)
+    monkeypatch.setattr(tasks, "optional_work_paused", lambda database=None: False)

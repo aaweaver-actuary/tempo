@@ -37,7 +37,8 @@ def normal_study_mode_for_protocol_doubles(monkeypatch):
     from app import tasks
     from app.services import study_mode
     monkeypatch.setattr(study_mode, 'study_only_enabled', lambda database=None: False)
-    monkeypatch.setattr(tasks, 'study_only_enabled', lambda database=None: False)
+    monkeypatch.setattr(study_mode, 'optional_work_paused', lambda database=None: False)
+    monkeypatch.setattr(tasks, 'optional_work_paused', lambda database=None: False)
 
 
 @pytest.fixture
@@ -4617,8 +4618,8 @@ def test_postgres_cutover_background_claim_fairly_orders_only_supported_kinds(mo
         database.row_factory = sqlite3.Row
         database.executescript(BACKGROUND_METRIC_SCHEMA)
         database.executescript("""
-            CREATE TABLE settings(id INTEGER PRIMARY KEY,defensive_analysis_enabled INTEGER,study_only_mode INTEGER);
-            INSERT INTO settings VALUES(1,1,0);
+            CREATE TABLE settings(id INTEGER PRIMARY KEY,defensive_analysis_enabled INTEGER,study_only_mode INTEGER,optional_analysis_and_imports_enabled INTEGER DEFAULT 1);
+            INSERT INTO settings(id,defensive_analysis_enabled,study_only_mode) VALUES(1,1,0);
             CREATE TABLE background_tasks(
                 id TEXT PRIMARY KEY,kind TEXT,deduplication_key TEXT,replaced_pending_generation INTEGER DEFAULT 0,
                 generation INTEGER,priority INTEGER,state TEXT,phase TEXT,

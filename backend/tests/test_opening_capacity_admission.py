@@ -420,7 +420,7 @@ def test_capacity_worker_preparation_preserves_normal_plan_and_returns_parent_de
 
     connection, day, steps = capacity_database
     monkeypatch.setenv("OPENING_CAPACITY_FRONTIER_EXPANSION", "1")
-    monkeypatch.setattr(study_mode, "study_only_enabled", lambda database=None: False)
+    monkeypatch.setattr(study_mode, "optional_work_paused", lambda database=None: False)
     pages = []
 
     def read(statement, parameters=(), *, native=False):
@@ -564,7 +564,7 @@ def test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease(
     connection, day, _ = capacity_database
     introduce_prefixes(connection, day, monkeypatch)
     planned = capacity_plan(connection, day)
-    monkeypatch.setattr(study_mode, "study_only_enabled", lambda database=None: False)
+    monkeypatch.setattr(study_mode, "optional_work_paused", lambda database=None: False)
     monkeypatch.setattr(worker.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(worker.activity_gate, "wait_for_foreground", lambda: None)
     monkeypatch.setattr(worker, "lock_queue_date_for_position", lambda *_: None)
@@ -634,7 +634,7 @@ def test_capacity_worker_full_allowance_avoids_frontier_queries(
     connection, day, _ = capacity_database
     introduce_prefixes(connection, day, monkeypatch)
     connection.execute("UPDATE settings SET new_cards_per_day=2 WHERE id=1")
-    monkeypatch.setattr(study_mode, "study_only_enabled", lambda database=None: False)
+    monkeypatch.setattr(study_mode, "optional_work_paused", lambda database=None: False)
     monkeypatch.setattr(
         capacity,
         "read_capacity_routes",

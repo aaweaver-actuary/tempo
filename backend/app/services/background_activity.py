@@ -37,7 +37,7 @@ def control_order(source: str, id_expression: str) -> str:
 
 
 def claimable(source: str, id_expression: str) -> str:
-    mode_clause = "" if source == 'durable' else " AND (SELECT study_only_mode FROM settings WHERE id=1)=0"
+    mode_clause = "" if source == 'durable' else " AND ((SELECT study_only_mode FROM settings WHERE id=1)=0 AND (SELECT optional_analysis_and_imports_enabled FROM settings WHERE id=1)=1)"
     return ("(COALESCE((SELECT paused FROM background_activity a WHERE "
             f"a.source='{source}' AND a.work_id={id_expression}),0)=0{mode_clause})")
 

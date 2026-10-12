@@ -1,6 +1,6 @@
 export type TempoTiming = {
   operation: "board-ready" | "move-to-paint" | "view-switch" |
-    "study-worker-queue" | "study-worker-compute" | "study-worker-roundtrip" |
+    "study-worker-queue" | "study-worker-compute" | "study-worker-roundtrip" | "repertoire-worker-queue" | "repertoire-worker-compute" | "repertoire-worker-roundtrip" |
     "study-match-coalesced-wait" | "api-response" | "workspace-data-ready";
   duration: number;
   recordedAt: number;

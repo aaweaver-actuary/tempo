@@ -15,7 +15,7 @@ export async function engineSearchAllowed(job, kind, request) {
     const control = await request(engineControlPath(job, kind), { signal: AbortSignal.timeout(1_500) });
     return kind === "engine_defense"
       ? control.search_allowed === true && control.foreground_active === false
-      : control.active === false && control.study_only_mode !== true;
+      : control.active === false && control.study_only_mode !== true && control.optional_work_paused !== true;
   } catch {
     // A control outage cannot authorize continuing a background search.
     return false;

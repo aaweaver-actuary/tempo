@@ -4145,3 +4145,14 @@ Existing `emergency_base_only_advancement_preserves_FAST_and_STUDY_head_evidence
 `emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases` remain
 in the regular gate. FAST/STUDY commands, ownership and smoke inventories are
 unchanged by this correction.
+
+## Isolated repertoire restoration (#190, #192)
+
+- `tests/unit/repertoire-worker-isolation-regressions.test.ts`: `issue190_bulk_cancellation_terminates_only_bulk_worker_and_preserves_foreground_capacity` failed against source main's shared worker. Three invalidations reject stale callbacks; runtime/decoding/protocol/generation failures settle callers and retry independently.
+- `tests/unit/repertoire-alternative-index-regressions.test.ts`: `issue190_complete_bulk_pipeline_preserves_snapshot_and_diagnostics_parity` verifies the combined validation/adaptation/index/snapshot pipeline against existing output.
+- `tests/unit/repertoire-alternative-home-regressions.test.tsx`: `restoration_independent_controls_prepare_while_server_work_is_paused_and_disable_cancels` and existing generation/grading/invalidation/reuse cases cover Home admission, cancellation, verification and resumption.
+- `backend/tests/test_restoration_controls.py`: named persistence/omission and raced-delivery/essential-admission/restart/generation-resume cases failed against main before the controls were implemented.
+- `scripts/check_postgres_study_only.py`: regular PostgreSQL schema/durability proof covers both emergency and independent optional pause, additive defaults, omitted flags, accepted/import envelope retention, review receipts and authorized progression after reconnect.
+- `tests/browser/repertoire-worker-isolation.spec.ts`: `issue190_native_bulk_abort_releases_capacity_preserves_retained_indexes_and_restarts` uses actual product dispatcher/computation in real browser workers, a public 8,268-line input, foreground requests during running bulk computation, three cancellations, retained index parity and fresh worker recovery. Registered in training and Chromium/Firefox/WebKit collection.
+- `tests/browser/study-only-mode.spec.ts`: `restoration_repertoire_only_preserves_foreground_review_receipts_and_progression_under_bulk_load` preserves real board moves, reload, worker restart, replay and disabling under public bulk load.
+- `tests/browser/repertoire-restoration-qualification.spec.ts`: regular smoke proves the native measurement/replay workflow; explicit `TEMPO_RESTORATION_QUALIFICATION=1` records 1,000-sample calibration/control/restoration cohorts and 50 navigation pairs against frozen baseline-derived acceptance limits. Small smoke cohorts are not statistical qualification.

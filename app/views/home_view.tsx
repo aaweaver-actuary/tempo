@@ -1,5 +1,5 @@
 import { usePendingReviewRecovery } from "../hooks/use-pending-review-recovery";
-import { useStudyOnlyMode } from "../hooks/use-study-only-mode";
+import { useStudyControls } from "../hooks/use-study-only-mode";
 import { verifySavedRepertoireMove } from "../lib/repertoire-move-verification";
 import { PendingOperationError, readOperationResponse } from "../lib/operation-status";
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
@@ -128,7 +128,10 @@ import { reportReviewSaveFailure } from "../lib/review-save-notice";
 import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
 export default function Home() {
-  const studyOnlyMode = useStudyOnlyMode();
+  const studyControls = useStudyControls();
+  const studyOnlyMode = studyControls?.studyOnlyMode ?? null;
+  const repertoirePreparationEnabled = studyControls ? !studyControls.studyOnlyMode && studyControls.repertoirePreparationEnabled : false;
+  const optionalWorkPaused = studyControls ? studyControls.studyOnlyMode || !studyControls.optionalAnalysisAndImportsEnabled : true;
   const gameSync = useGameSync();
   useEffect(() => prepareMoveSounds(), []);
   useEffect(() => {
@@ -686,26 +689,23 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (usesLocalApi() && currentView === "train" && studyOnlyMode === false) {
+    if (usesLocalApi() && currentView === "train" && repertoirePreparationEnabled) {
       let active = true;
       const generation = ++repertoirePositionGeneration.current;
       const controller = new AbortController();
       const isCurrent = () => active && generation === repertoirePositionGeneration.current;
       repertoireAlternativeSnapshot.current = null;
       invalidateWorkspaceData(`${API_URL}/api/repertoire/lines`);
-      void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
-        .then(async (body) => {
-          if (!isCurrent()) return;
-          const lines = await runStudyTask<AnalysisLine[]>({
-            kind: "transportLines",
-            payload: body,
-          }, controller.signal);
+      void fetch(`${API_URL}/api/repertoire/lines`, {
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+        headers: { "X-Tempo-Work-Class": "background" },
+      }).then(async response => {
+          if (!response.ok) throw new Error(`Could not load repertoire lines (HTTP ${response.status}).`);
+          const payload: unknown = await response.json();
           if (!isCurrent()) return;
           const indexedPositions = await runStudyTask<RepertoireAlternativeSnapshot>({
-            kind: "repertoireAlternatives",
-            generation,
-            lines,
-          }, controller.signal);
+            kind: "repertoirePreparation", generation, payload,
+          }, controller.signal, isCurrent);
           if (isCurrent()) {
             if (indexedPositions.generation !== generation)
               throw new Error("Repertoire lines have an obsolete generation. Retry loading lines.");
@@ -731,7 +731,7 @@ export default function Home() {
         }
       };
     }
-  }, [currentView, branchIndexRetry, studyOnlyMode]);
+  }, [currentView, branchIndexRetry, repertoirePreparationEnabled]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
@@ -1081,7 +1081,7 @@ export default function Home() {
         ? lookupRepertoireAlternative(repertoireAlternativeSnapshot.current, repertoirePositionGeneration.current,
             card.repertoireId, currentFenString, responseUci)
         : undefined;
-      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && studyOnlyMode === true && card.repertoireId) {
+      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && (!repertoirePreparationEnabled || branchIndexLoadError !== "") && card.repertoireId) {
         const verification = new AbortController();
         pendingMoveVerification.current = verification;
         const capturedAttempt = useTrainingStore.getState().attempt;
@@ -1795,7 +1795,7 @@ export default function Home() {
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
           <NotificationCenter />
-          <ServiceStatusPanel studyOnlyMode={studyOnlyMode} />
+          <ServiceStatusPanel studyOnlyMode={studyOnlyMode} optionalWorkPaused={optionalWorkPaused} />
           <DiscoveriesTray
             safeToOpen={
               !(["train", "tactics", "endgames", "builder"] as View[]).includes(

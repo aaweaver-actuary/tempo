@@ -44,8 +44,11 @@ def main():
             print(json.dumps({"restored_queue_positions": restored, "runtime_reordered_positions": runtime_reordered,
                 "runtime_removed_entries": runtime_removed}))
         return
-    if action in {"seed", "seed-small", "seed-with-existing-queue", "seed-progression"}:
+    if action in {"seed", "seed-small", "seed-with-existing-queue", "seed-progression", "seed-restoration"}:
         today = sys.argv[3]
+        prepared_count = int(sys.argv[4]) if action == "seed-restoration" and len(sys.argv) > 4 else 64
+        if not 4 <= prepared_count <= 10000:
+            raise ValueError("Prepared fixture count must be between 4 and 10000")
         # Progression needs a small real queue, not the independent 15,000-card
         # backlog measurement. Its projection is settled below before issuance.
         seed(identifier, request_refresh=action in {"seed-small", "seed-progression"}, queue_date=today)
@@ -62,7 +65,7 @@ def main():
                 connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,0,'due',%s)",
                     (today, identifier+'-due', identifier))
             existing_positions = connection.execute("SELECT id,position,card_id FROM daily_queue WHERE queue_date=%s ORDER BY position,id", (today,)).fetchall()
-            displacement = 64 - min(0, min((row[1] for row in existing_positions), default=0))
+            displacement = prepared_count - min(0, min((row[1] for row in existing_positions), default=0))
             # Queue positions are nonnegative client ordinals. Shift preceding
             # entries together, preserving their relative order, and restore
             # unchanged surviving rows during cleanup after owned rows retire.
@@ -71,11 +74,13 @@ def main():
                 connection.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (position+displacement, entry_id))
                 if not card_id.startswith(identifier):
                     displaced_positions.append([entry_id, position, position+displacement])
-            for index in range(64):
+            for index in range(prepared_count):
                 card_id = f"{identifier}-prepared-{index:03}"
                 connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,trained_color,introduced_at) VALUES(%s,%s,'prefix',%s,'[\"e2e4\",\"e7e5\",\"g1f3\"]','learning','2000-01-01','white','2000-01-01')", (card_id, identifier, FEN))
                 # Established cards isolate A→B progression from first-pass reinforcement.
                 connection.execute("UPDATE cards SET first_correct_at='2000-01-01T00:00:00+00:00',interval_days=1 WHERE id=%s", (card_id,))
+                if action == "seed-restoration":
+                    connection.execute("UPDATE cards SET moves_json='[\"e2e4\"]' WHERE id=%s", (card_id,))
                 if action == "seed-progression" and index == 0:
                     # Freeze the tactic presentation before the queue insertion
                     # binds its immutable origin and expected revision.

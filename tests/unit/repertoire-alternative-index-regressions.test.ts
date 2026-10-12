@@ -136,3 +136,11 @@ it.each([1_000, 10_000, 100_000])("issue36_query_work_is_independent_of_record_c
   expect(legacyScan(positions, repertoireId, startFen, "d2d4")).toBe(false);
   expect(canonicalize).toHaveBeenCalledTimes(2 * recordCount);
 });
+
+it("issue190_complete_bulk_pipeline_preserves_snapshot_and_diagnostics_parity", () => {
+  const payload = { lines: [{ id: "parity", repertoire_id: "parity", repertoire_name: "Parity",
+    name: "Parity", trained_color: "white", start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", moves: ["e2e4", "e7e5"] }] };
+  const adapted = computeStudyTask({ kind: "transportLines", payload }) as import("../../app/types").AnalysisLine[];
+  expect(computeStudyTask({ kind: "repertoirePreparation", generation: 190, payload }))
+    .toEqual(computeStudyTask({ kind: "repertoireAlternatives", generation: 190, lines: adapted }));
+});

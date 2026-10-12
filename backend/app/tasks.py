@@ -104,7 +104,7 @@ from .services.postgres_coverage_recovery import recover_one_explorer_run
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
-from .services.study_mode import study_only_enabled, STUDY_TASK_KINDS, STUDY_BACKGROUND_COMMANDS, PAUSED_IMPORT_COMMANDS
+from .services.study_mode import optional_work_paused, STUDY_TASK_KINDS, STUDY_BACKGROUND_COMMANDS, PAUSED_IMPORT_COMMANDS
 # Only bounded accepted results/releases may bypass foreground admission.
 # These handlers publish bounded receipts; none starts a search or traversal.
 # Maia submit aggregates a whole run; threat report fans out to all candidates.
@@ -202,7 +202,7 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
         if not should_execute:
             return None
         try:
-            if command_name in PAUSED_IMPORT_COMMANDS and study_only_enabled():
+            if command_name in PAUSED_IMPORT_COMMANDS and optional_work_paused():
                 defer_operation_for_foreground(operation_id, attempt_token)
                 return None
             result = execute_command(operation_id, command_name, saved_payload,
@@ -244,7 +244,7 @@ def execute_background_command(
         if not should_execute:
             return None
         try:
-            if study_only_enabled() and command_name not in STUDY_BACKGROUND_COMMANDS:
+            if optional_work_paused() and command_name not in STUDY_BACKGROUND_COMMANDS:
                 defer_operation_for_foreground(operation_id, attempt_token)
                 return None
             with (activity_gate.background_control() if command_name in _CONTROL_BACKGROUND_COMMANDS
@@ -276,7 +276,7 @@ def execute_background_command(
 def recover_operations() -> bool:
     with activity_gate.background_job("operation_recovery", "one-run", yielding=True), \
             activity_gate.background_control():
-        study_only_mode = study_only_enabled()
+        study_only_mode = optional_work_paused()
         operation = claim_recoverable_operation(
             allowed_background_commands=STUDY_BACKGROUND_COMMANDS if study_only_mode else None,
             paused_commands=PAUSED_IMPORT_COMMANDS if study_only_mode else (),
@@ -303,7 +303,7 @@ def poll_background_tasks(self) -> bool:
     try:
         activity_gate.check_background_admission()
         with activity_gate.background_job('dispatch', 'one-run', yielding=True):
-            claimed_task = claim_task(allowed_kinds=(STUDY_TASK_KINDS if study_only_enabled()
+            claimed_task = claim_task(allowed_kinds=(STUDY_TASK_KINDS if optional_work_paused()
                                                    else _SUPPORTED_BACKGROUND_KINDS))
     except BackgroundAdmissionDeferred as error:
         _LOGGER.info('background admission deferred: %s', error)
@@ -320,7 +320,7 @@ def poll_background_tasks(self) -> bool:
 
 @celery_app.task(name="app.tasks.recover_active_coverage", base=CoalescedWakeTask)
 def recover_active_coverage() -> bool:
-    if study_only_enabled():
+    if optional_work_paused():
         return False
     try:
         with activity_gate.background_job("coverage_recovery", "one-run", yielding=True):
@@ -383,7 +383,7 @@ def _execute_claimed_background_slice(
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"], yielding=True):
         try:
             activity_gate.check_background_admission()
-            if claimed_task['kind'] not in STUDY_TASK_KINDS and study_only_enabled():
+            if claimed_task['kind'] not in STUDY_TASK_KINDS and optional_work_paused():
                 defer_task_for_foreground(claimed_task)
                 return False
             if defer_paused_defensive_task(claimed_task):

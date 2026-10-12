@@ -5,7 +5,8 @@ import { api } from "./product-fixtures";
 import { assertDisposableTarget } from "./disposable-target";
 import { boardBounds, navigate, prepareUI, noPageOverflow } from "./ui-fixtures";
 
-test("study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption", async ({ page, request }, testInfo) => {
+for (const restorationOnly of [false, true])
+test(restorationOnly ? "restoration_repertoire_only_preserves_foreground_review_receipts_and_progression_under_bulk_load" : "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption", async ({ page, request }, testInfo) => {
   test.setTimeout(180_000);
   assertDisposableTarget(await (await request.get(`${api}/health`)).json());
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
@@ -25,19 +26,36 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
     await prepareUI(page);
     await navigate(page, "Settings");
     await expect(page.getByRole("button", { name: "Save settings" })).toBeEnabled();
-    await page.getByRole("checkbox", { name: /Study-only mode/ }).check();
+    if (restorationOnly) {
+      await page.getByRole("checkbox", { name: "Repertoire preparation", exact: true }).check();
+      await page.getByRole("checkbox", { name: "Optional analysis and imports", exact: true }).uncheck();
+    } else await page.getByRole("checkbox", { name: /Study-only mode/ }).check();
     expect((await (await request.get(`${api}/settings`)).json()).study_only_mode).toBe(false);
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect.poll(async () => (await (await request.get(`${api}/settings`)).json()).study_only_mode).toBe(true);
+    await expect.poll(async () => {
+      const saved = await (await request.get(`${api}/settings`)).json();
+      return restorationOnly ? saved.optional_analysis_and_imports_enabled === false && saved.study_only_mode === false : saved.study_only_mode === true;
+    }).toBe(true);
     await noPageOverflow(page);
     await page.screenshot({ path: testInfo.outputPath("study-only-settings.png") });
     docker("stop", "background-worker", "background-scheduler");
     const today = (await (await request.get(`${api}/queue/window?limit=20`)).json()).local_date;
     displacedPositions = fixture("seed-with-existing-queue", today).displaced_queue_positions;
     docker("start", "background-worker", "background-scheduler");
+    if (restorationOnly) {
+      await page.route("**/api/repertoire/lines", async route => {
+        const response = await route.fetch();
+        const body = await response.json();
+        const publicLines = Array.from({ length: 8268 }, (_, index) => ({ id: `public-${index}`, repertoire_id: `public-${index % 10}`,
+          repertoire_name: "Public synthetic", name: `Line ${index}`, trained_color: "white",
+          start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          moves: Array.from({ length: 8 }, () => ["g1f3", "g8f6", "f3g1", "f6g8"]).flat() }));
+        await route.fulfill({ json: { lines: [...body.lines, ...publicLines] } });
+      });
+    }
     await page.reload();
     await navigate(page, "Train");
-    await expect(page.getByText(/Study-only mode is on. Optional/)).toBeVisible();
+    if (!restorationOnly) await expect(page.getByText(/Study-only mode is on. Optional/)).toBeVisible();
     await page.getByRole("button", { name: "Analysis activity" }).click();
     await expect(page.getByText(/pending work is preserved/)).toBeVisible();
     await page.getByRole("button", { name: "Close", exact: true }).click();
@@ -72,8 +90,19 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
     await request.post(first.url, { headers: { "Idempotency-Key": first.key }, data: first.body });
     await expect.poll(() => fixture("verify").reviews).toBe(3);
     await navigate(page, "Settings");
-    await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeChecked();
-    await page.getByRole("checkbox", { name: /Study-only mode/ }).uncheck();
+    if (restorationOnly) {
+      await expect(page.getByRole("checkbox", { name: "Optional analysis and imports", exact: true })).not.toBeChecked();
+      await page.getByRole("checkbox", { name: "Repertoire preparation", exact: true }).uncheck();
+      await page.getByRole("button", { name: "Save settings" }).click();
+      await expect.poll(async () => (await (await request.get(`${api}/settings`)).json()).repertoire_preparation_enabled).toBe(false);
+      await navigate(page, "Train");
+      await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(nextHead.queue_entry_id));
+      await navigate(page, "Settings");
+      await page.getByRole("checkbox", { name: "Optional analysis and imports", exact: true }).check();
+    } else {
+      await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeChecked();
+      await page.getByRole("checkbox", { name: /Study-only mode/ }).uncheck();
+    }
     await page.getByRole("button", { name: "Save settings" }).click();
     await expect.poll(async () => (await (await request.get(`${api}/settings`)).json()).study_only_mode).toBe(false);
     await expect.poll(() => fixture("verify").pending_maintenance, { timeout: 60_000 }).toBeLessThan(3000);

@@ -316,6 +316,8 @@ export const settingsResponseSchema = z.strictObject({
   include_defensive_cards_in_daily_stack: z.boolean().default(true),
   defensive_analysis_enabled: z.boolean().default(false),
   study_only_mode: z.boolean().default(false),
+  repertoire_preparation_enabled: z.boolean().default(true),
+  optional_analysis_and_imports_enabled: z.boolean().default(true),
   discovery_window_days: z.union([z.literal(30), z.literal(90)]).default(90),
   lichess_username: z.string(),
   chesscom_username: z.string(),
@@ -652,6 +654,11 @@ export const studyTaskSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("index"),
     lines: z.array(analysisLineSchema),
+  }),
+  z.strictObject({
+    kind: z.literal("repertoirePreparation"),
+    generation: z.number().int().positive(),
+    payload: z.unknown(),
   }),
   z.strictObject({
     kind: z.literal("repertoireAlternatives"),

@@ -16,6 +16,8 @@ class Settings(BaseModel):
     include_defensive_cards_in_daily_stack: bool = True
     defensive_analysis_enabled: bool = False
     study_only_mode: bool = False
+    repertoire_preparation_enabled: bool = True
+    optional_analysis_and_imports_enabled: bool = True
     discovery_window_days: Literal[30, 90] = 90
     new_cards_per_day: int = Field(default=10, ge=0, le=100)
     study_new_per_day: int = Field(default=2, ge=0, le=100)

@@ -60,13 +60,15 @@ let lineRequests: number;
 let nextLineRead: Promise<Response> | undefined;
 let responseJournal: ReturnType<typeof vi.fn>;
 let studyOnlyMode: boolean;
+let preparationEnabled: boolean;
+let optionalAnalysisEnabled: boolean;
 let membershipRead: Promise<Response> | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   sourceLines = [line("alternative")]; lineRequests = 0; nextLineRead = undefined;
-  studyOnlyMode = false;
+  studyOnlyMode = false; preparationEnabled = true; optionalAnalysisEnabled = true;
   membershipRead = undefined;
   responseJournal = vi.fn();
   vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
@@ -79,8 +81,8 @@ beforeEach(() => {
     return "installed";
   });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/api/settings")) return Response.json({ study_only_mode: studyOnlyMode });
-    if (String(input).includes("/move-membership?")) return membershipRead ?? Response.json({ verified: true, next_cursor: null, source_token: "saved-source-1" });
+    if (String(input).endsWith("/api/settings")) return Response.json({ study_only_mode: studyOnlyMode, repertoire_preparation_enabled: preparationEnabled, optional_analysis_and_imports_enabled: optionalAnalysisEnabled });
+    if (String(input).includes("/move-membership?")) return membershipRead ?? (studyOnlyMode ? Response.json({ verified: true, next_cursor: null, source_token: "saved-source-1" }) : new Response("Unavailable", { status: 503 }));
     if (String(input).includes("/repertoire/lines")) {
       lineRequests++;
       const heldRead = nextLineRead; nextLineRead = undefined;
@@ -101,7 +103,7 @@ it("study_only_mode_pauses_bulk_preparation_preserves_expected_moves_and_resumes
   await play("e2e4");
   expect(useTrainingStore.getState().getCard().backendId).toBe(card.backendId);
   expect(responseJournal).toHaveBeenCalled();
-  studyOnlyMode = false;
+  studyOnlyMode = false; preparationEnabled = true; optionalAnalysisEnabled = true;
   act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
   await waitFor(() => expect(lineRequests).toBe(1));
 });
@@ -146,9 +148,9 @@ it.each(["wrong", "unavailable", "cancelled"])("study_only_move_verification_pre
 async function readyHome() {
   const prepare = vi.spyOn(study, "runStudyTask");
   const mounted = render(<Home />);
-  await waitFor(() => expect(prepare.mock.calls.some(([task]) => task.kind === "index" || task.kind === "repertoireAlternatives")).toBe(true));
+  await waitFor(() => expect(prepare.mock.calls.some(([task]) => task.kind === "index" || task.kind === "repertoirePreparation")).toBe(true));
   await act(async () => {
-    const indexCall = prepare.mock.calls.findIndex(([task]) => task.kind === "index" || task.kind === "repertoireAlternatives");
+    const indexCall = prepare.mock.calls.findIndex(([task]) => task.kind === "index" || task.kind === "repertoirePreparation");
     const prepared = await prepare.mock.results[indexCall].value;
     expect(Array.isArray(prepared) ? prepared.length : prepared.positions.length).toBeGreaterThan(0);
   });
@@ -161,8 +163,8 @@ async function play(uci: string) {
 }
 async function finishPreparation(count: number) {
   const prepare = vi.mocked(study.runStudyTask);
-  await waitFor(() => expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(count));
-  const preparationCalls = prepare.mock.calls.flatMap(([task], index) => task.kind === "repertoireAlternatives" ? [index] : []);
+  await waitFor(() => expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(count));
+  const preparationCalls = prepare.mock.calls.flatMap(([task], index) => task.kind === "repertoirePreparation" ? [index] : []);
   await act(async () => { await prepare.mock.results[preparationCalls.at(-1)!].value; });
 }
 async function mutate(kind: string) {
@@ -217,12 +219,12 @@ it.each([
   ["e2e5", "illegal", "wrong", true],
 ] as const)("issue36_move_classification_preserves_attempt_grading (%s)", async (uci, classification, feedback, failed) => {
   await readyHome();
-  const prepareCalls = vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives").length;
+  const prepareCalls = vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation").length;
   await play(uci);
   expect(responseJournal).toHaveBeenLastCalledWith(0, uci, classification);
   expect(useTrainingStore.getState()).toMatchObject({ feedback, isAttemptFailed: failed });
   expect(Boolean(localStorage.getItem("tempo-pending-training-failures-v1"))).toBe(failed);
-  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(prepareCalls);
+  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(prepareCalls);
   if (classification !== "expected") expect(useTrainingStore.getState().currentFenString).toBe(startFen);
 });
 
@@ -242,7 +244,7 @@ it("issue36_failed_loading_never_grades_unverified_moves_wrong", async () => {
   expect(useTrainingStore.getState().feedback).toBe("correct");
   await act(async () => { screen.getByRole("button", { name: "Retry loading lines" }).click(); });
   await finishPreparation(1);
-  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
+  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Retry loading lines" })).toBeNull();
 });
 
@@ -256,7 +258,7 @@ it.each(["fetch", "preparation"] as const)("issue36_late_loads_cannot_replace_cu
   let heldGeneration = 0;
   if (stage === "fetch") nextLineRead = heldOld as Promise<Response>;
   const prepare = vi.spyOn(study, "runStudyTask").mockImplementation((task, signal) => {
-    if (stage === "preparation" && task.kind === "repertoireAlternatives" && !heldGeneration) {
+    if (stage === "preparation" && task.kind === "repertoirePreparation" && !heldGeneration) {
       heldGeneration = task.generation;
       return heldOld;
     }
@@ -283,7 +285,7 @@ it.each(["fetch", "preparation"] as const)("issue36_late_loads_cannot_replace_cu
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "wrong");
   expect(lineReadyEvents()).toHaveLength(currentReadyCount);
-  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(stage === "fetch" ? 1 : 2);
+  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(stage === "fetch" ? 1 : 2);
 });
 
 it("issue36_obsolete_preparation_failure_cannot_hide_a_new_success", async () => {
@@ -292,7 +294,7 @@ it("issue36_obsolete_preparation_failure_cannot_hide_a_new_success", async () =>
   const originalRun = study.runStudyTask;
   let held = false;
   vi.spyOn(study, "runStudyTask").mockImplementation((task, signal) => {
-    if (task.kind === "repertoireAlternatives" && !held) { held = true; return obsoletePreparation; }
+    if (task.kind === "repertoirePreparation" && !held) { held = true; return obsoletePreparation; }
     return originalRun(task, signal);
   });
   render(<Home />);
@@ -328,7 +330,7 @@ it("issue36_unmount_cancels_preparation_and_ignores_its_late_failure", async () 
   const originalRun = study.runStudyTask;
   let heldSignal: AbortSignal | undefined;
   vi.spyOn(study, "runStudyTask").mockImplementation((task, signal) => {
-    if (task.kind === "repertoireAlternatives") { heldSignal = signal; return obsoletePreparation; }
+    if (task.kind === "repertoirePreparation") { heldSignal = signal; return obsoletePreparation; }
     return originalRun(task, signal);
   });
   const mounted = render(<Home />);
@@ -356,7 +358,7 @@ it("issue36_ordinary_queue_and_card_updates_do_not_rebuild_evidence", async () =
   act(() => useTrainingStore.getState().setReviewed(1));
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "alternate");
-  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
+  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(1);
 });
 
 it("issue36_loading_evicts_only_lines_and_review_refresh_keeps_workspace_invalidation", async () => {
@@ -374,7 +376,7 @@ it("issue36_loading_evicts_only_lines_and_review_refresh_keeps_workspace_invalid
   act(() => screen.getByRole("button", { name: "Retry sync" }).click());
   await waitFor(() => expect(vi.mocked(fetchAndInitializeQueue).mock.calls.length).toBeGreaterThan(queueReads));
   expect(invalidate.mock.calls).toEqual([[]]);
-  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(1);
+  expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(1);
 });
 
 it("issue36_offline_missing_evidence_keeps_the_existing_practice_card_fallback", async () => {
@@ -401,5 +403,28 @@ it("issue36_demo_keeps_demo_branch_membership_without_loading_an_index", async (
   await waitFor(() => expect(useTrainingStore.getState().step).toBe(1));
   await play("e7e6");
   expect(useTrainingStore.getState()).toMatchObject({ feedback: "branch", isAttemptFailed: false });
-  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(0);
+  expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(0);
+});
+
+
+it("restoration_independent_controls_prepare_while_server_work_is_paused_and_disable_cancels", async () => {
+  optionalAnalysisEnabled = false;
+  const originalRun = study.runStudyTask;
+  const prepare = vi.spyOn(study, "runStudyTask");
+  let activeSignal: AbortSignal | undefined;
+  prepare.mockImplementation((task, signal) => {
+    if (task.kind === "repertoirePreparation") activeSignal = signal;
+    return originalRun(task, signal);
+  });
+  await readyHome();
+  expect(lineRequests).toBe(1);
+  preparationEnabled = false;
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  await waitFor(() => expect(activeSignal?.aborted).toBe(true));
+  membershipRead = Promise.resolve(Response.json({ verified: true, next_cursor: null, source_token: "saved-source-disabled" }));
+  await play("d2d4");
+  await waitFor(() => expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "alternate"));
+  preparationEnabled = true;
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  await finishPreparation(2);
 });

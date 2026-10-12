@@ -20,12 +20,12 @@ export default defineConfig({
     { name: "chromium", use: { browserName: "chromium" } },
     {
       name: "firefox",
-      testMatch: "cross-browser.spec.ts",
+      testMatch: ["cross-browser.spec.ts", "repertoire-worker-isolation.spec.ts"],
       use: { browserName: "firefox" },
     },
     {
       name: "webkit",
-      testMatch: "cross-browser.spec.ts",
+      testMatch: ["cross-browser.spec.ts", "repertoire-worker-isolation.spec.ts"],
       use: { browserName: "webkit" },
     },
   ],

@@ -861,8 +861,10 @@ def foreground_active():
     """Allow the isolated engine worker to yield without acquiring SQLite."""
     if activity_gate.foreground_waiting:
         return {"active": True}
+    from .services.study_mode import optional_work_paused
     from .services.study_mode import study_only_enabled
-    return {"active": activity_gate.foreground_waiting, "study_only_mode": study_only_enabled()}
+    return {"active": activity_gate.foreground_waiting, "study_only_mode": study_only_enabled(),
+            "optional_work_paused": optional_work_paused()}
 
 
 @app.get("/api/system/foreground-requests-active")
@@ -1002,7 +1004,7 @@ def capabilities():
 def get_settings():
     with read_connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,repertoire_preparation_enabled,optional_analysis_and_imports_enabled,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -1026,16 +1028,18 @@ def put_settings(s: Settings,
     )
     def persist_settings(db):
         previous_settings = db.execute(
-            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,study_only_mode,repertoire_preparation_enabled,optional_analysis_and_imports_enabled,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,defensive_analysis_enabled=?,study_only_mode=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,defensive_analysis_enabled=?,study_only_mode=?,repertoire_preparation_enabled=?,optional_analysis_and_imports_enabled=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
                 s.defense_new_cards_per_day,
                 int(s.include_defensive_cards_in_daily_stack) if "include_defensive_cards_in_daily_stack" in s.model_fields_set else previous_settings["include_defensive_cards_in_daily_stack"],
                 int(s.defensive_analysis_enabled) if "defensive_analysis_enabled" in s.model_fields_set else previous_settings["defensive_analysis_enabled"],
                 int(s.study_only_mode) if "study_only_mode" in s.model_fields_set else previous_settings["study_only_mode"],
+                int(s.repertoire_preparation_enabled) if "repertoire_preparation_enabled" in s.model_fields_set else previous_settings["repertoire_preparation_enabled"],
+                int(s.optional_analysis_and_imports_enabled) if "optional_analysis_and_imports_enabled" in s.model_fields_set else previous_settings["optional_analysis_and_imports_enabled"],
                 s.discovery_window_days,
                 s.initial_depth,
                 s.timezone,
@@ -1226,8 +1230,8 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
         CAPACITY_READ_BATCH_SIZE,
     )
     if capacity_expansion_enabled():
-        from .services.study_mode import study_only_enabled
-        if not study_only_enabled(db):
+        from .services.study_mode import optional_work_paused
+        if not optional_work_paused(db):
             limits = limit if isinstance(limit, dict) else {
                 row[0]: limit for row in db.execute('SELECT id FROM repertoires').fetchall()
             }
@@ -2148,9 +2152,9 @@ async def import_pgn(
     initial_depth: int | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    from .services.study_mode import study_only_enabled
-    if study_only_enabled():
-        raise HTTPException(409, "Imports are paused by Study-only mode. Turn it off in Settings to import this PGN.")
+    from .services.study_mode import optional_work_paused
+    if optional_work_paused():
+        raise HTTPException(409, "Imports are paused in Settings. Disable Study-only mode and enable optional analysis and imports to import this PGN.")
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(400, "Choose a .pgn file")
     if trained_color not in {"white", "black"}:
@@ -4305,8 +4309,8 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str,
 
 @app.get("/api/repertoire-coverage/maia/available")
 def coverage_maia_available():
-    from .services.study_mode import study_only_enabled
-    if study_only_enabled():
+    from .services.study_mode import optional_work_paused
+    if optional_work_paused():
         return {"available": False, "paused_reason": "study_only_mode"}
     from .services.canonical_scope_freshness import coverage_scope_predicate, latest_coverage_attempt_predicate
     if not postgres_store.configured():
@@ -5116,8 +5120,8 @@ def claim_game_analysis_position(
                 return JSONResponse(status_code=202,
                     content={"operation_id": idempotency_key, "state": receipt["state"]},
                     headers={"Location": f"/api/operations/{idempotency_key}"})
-        from .services.study_mode import study_only_enabled
-        if study_only_enabled():
+        from .services.study_mode import optional_work_paused
+        if optional_work_paused():
             return {"job": None, "paused_reason": "study_only_mode"}
         plan = prepare_position_claim(preferred_game_id) if preferred_game_id is not None else prepare_position_claim()
         if plan is None:

@@ -28,3 +28,17 @@ def study_only_enabled(database=None) -> bool:
     if setting is None:
         raise HTTPException(503, 'Study mode settings are unavailable; restore the database and retry')
     return bool(setting[0])
+
+
+def optional_work_paused(database=None) -> bool:
+    """Emergency pause overrides the independent optional server-work control."""
+    if study_only_enabled(database):
+        return True
+    if database is None:
+        reader = background_read_connection if activity_gate.in_background else read_connection
+        with (activity_gate.background_control() if activity_gate.in_background else nullcontext()), reader() as settings_database:
+            return optional_work_paused(settings_database)
+    setting = database.execute('SELECT optional_analysis_and_imports_enabled FROM settings WHERE id=1').fetchone()
+    if setting is None:
+        raise HTTPException(503, 'Optional work settings are unavailable; restore the database and retry')
+    return not bool(setting[0])

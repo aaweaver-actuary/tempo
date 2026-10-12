@@ -402,8 +402,8 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
     )
     if not capacity_expansion_enabled():
         return planned_items
-    from .study_mode import study_only_enabled
-    if study_only_enabled():
+    from .study_mode import optional_work_paused
+    if optional_work_paused():
         return planned_items
     remaining = remaining_opening_allowances(plan, dict(counts), daily_limit)
     if not any(remaining.values()):
@@ -812,8 +812,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                      "admit_study", "real_game_misses", "randomize_queue", "quarantine",
                      "publish_projection"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
-    from .study_mode import study_only_enabled
-    minimal_study = study_only_enabled()
+    from .study_mode import optional_work_paused
+    minimal_study = optional_work_paused()
     # Resume existing checkpoints without traversing optional admission/ranking.
     skipped_phases = {"prioritized_openings": "admit_study",
                       "prioritized_opening_item": "admit_study",

@@ -1,3 +1,4 @@
+import { runRepertoirePreparation } from "./repertoire-preparation";
 import type { StudyTask } from "./study-computation";
 import { createStudyPositionStore } from "./study-position-store";
 import { studyReplySchema } from "../domain/schemas";
@@ -33,6 +34,13 @@ export function runStudyTask<T>(
   signal?: AbortSignal,
   shouldPublishDiagnostics?: () => boolean,
 ): Promise<T> {
+  if ((task.kind === "repertoirePreparation" || task.kind === "repertoireAlternatives") && typeof Worker !== "undefined")
+    return runRepertoirePreparation(task, signal, shouldPublishDiagnostics) as Promise<T>;
+  if ((task.kind === "repertoirePreparation" || task.kind === "repertoireAlternatives") && typeof window !== "undefined" && import.meta.env.MODE !== "test") {
+    const error = new Error("Repertoire workers are unavailable. Disable repertoire preparation in Settings and continue studying with saved-source verification.");
+    reportDebugError(error, { kind: "uncaught-exception", source: "repertoire-worker" });
+    return Promise.reject(error);
+  }
   const id = ++nextId;
   const activityId = `study:${id}`;
   const title = `Preparing ${task.kind === "workspace" ? "workspace data" : task.kind === "deck" ? "tactics" : task.kind === "repertoireAlternatives" ? "repertoire lines" : task.kind}`;
