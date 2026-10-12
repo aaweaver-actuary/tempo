@@ -28,8 +28,8 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   if (options.browserFile && options.browserGrep) {
     throw new Error("Choose one browser focus: --browser-file or --browser-grep");
   }
-  if (options.mode !== null && !["full", "browser", "durability", "lifecycle", "priority-benchmark"].includes(options.mode)) {
-    throw new Error("--mode must be full, browser, durability, lifecycle, or priority-benchmark");
+  if (options.mode !== null && !["full", "browser", "study", "durability", "lifecycle", "priority-benchmark"].includes(options.mode)) {
+    throw new Error("--mode must be full, browser, study, durability, lifecycle, or priority-benchmark");
   }
   if (options.skipBrowser && options.mode !== null && options.mode !== "durability") {
     throw new Error("--skip-browser cannot be combined with a mode other than durability");
@@ -37,7 +37,7 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   const hasBrowserFocus = Boolean(options.browserFile || options.browserGrep);
   options.mode ??= options.skipBrowser ? "durability" : hasBrowserFocus ? "browser" : "full";
   options.skipBrowser = ["durability", "lifecycle"].includes(options.mode);
-  if (hasBrowserFocus && options.mode !== "browser") {
+  if (hasBrowserFocus && !["browser", "study"].includes(options.mode)) {
     throw new Error("Browser focus cannot be combined with non-browser mode or --skip-browser; use --mode browser");
   }
   if (options.browserFile) {
@@ -52,6 +52,7 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
     try { new RegExp(options.browserGrep); }
     catch { throw new Error("--browser-grep must be a valid regular expression"); }
   }
+  if (options.mode === "study" && !options.browserGrep) throw new Error("Study mode requires an explicit browser smoke selection");
   return options;
 }
 

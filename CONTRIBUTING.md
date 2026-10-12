@@ -6,12 +6,22 @@ Use a frontend test for state transitions and timing, a backend integration test
 
 All background analysis is foreground-preemptible. Treat ordinary API requests as foreground by default; browser workers must explicitly mark background requests. Background jobs must be durable and idempotent, process one bounded slice, close the database connection before computation or network work, and use only short background database sections. Never perform a sweep or derived-data rebuild in startup, a queue read, or an interactive request transaction. Add a foreground-concurrency regression whenever a new background handler is introduced.
 
-`make plan` prints the exact ordered test plan, and `make full` runs the same complete local gate as `npm test`. CI decomposes that inventory into independently reported layers and conservative verification tiers described in `docs/testing.md`. It runs frontend regressions, backend integration tests, Rust checks, lint, the production build, one PostgreSQL-backed Playwright matrix with durability coverage, and pinned visual/performance checks. The old SQLite full runtime runner is available as `make legacy-sqlite`; focused SQLite compatibility tests remain in the regular suite. Every ready-for-review PR requires all units/builds, PostgreSQL durability and critical browser cases, plus source-selected deployment lifecycle, complete browser families and pinned rendering checks. Nightly, on-demand and pre-publishing runs require complete coverage. CI does not silently skip unavailable prerequisites. Use the focused targets in [docs/testing.md](docs/testing.md) during development; run the complete suite on the final checkout before a release.
+`make plan` prints the complete local test plan. Ordinary PR qualification uses
+FAST, STUDY or FULL through the required `merge-gate` check, as described in
+[docs/testing.md](docs/testing.md). FAST selects relevant unit/contract tests and
+static checks; STUDY adds bounded PostgreSQL durability and ten named browser
+cases. Schema, shared persistence, security, CI qualification infrastructure and
+unknown changes select FULL. This emergency policy accepts regression risk in
+inactive functionality and supersedes the older complete-core requirement for
+all ready PRs and the prerequisites in issues #202/#203.
 
-
-Draft PRs default to development evidence: reviewed prose runs conflict/migration guards; changed regression files run directly; product changes expand the affected subsystem and relevant boundaries. Persistence changes retain complete PostgreSQL durability. Unknown/shared paths expand coverage. `ci:full` requests complete execution on a draft, but a draft never qualifies for merging. `development` reports selected evidence; mandatory `quality` fails for development or draft state. Becoming ready for review starts complete applicable qualification; new heads/base candidates require fresh revision-bound evidence. Main, merge-group, nightly, release and manual requests retain complete coverage. Every layer and aggregation checkout is pinned to the captured integration SHA. See `docs/testing.md`.
-
-During iteration run the smallest failing regression, then affected files/subsystem once coherent. CI owns the complete candidate gate. Do not run an equivalent local `make full` concurrently; after complete failure reproduce the failed stage. Reuse dependencies/build caches. CI may reuse a verified original suite only for the exact same repository, PR, head/base/integration revisions, inventory, commands and runtime; a fresh successful verification layer and aggregation must validate its provenance. Complete non-PR boundaries always execute freshly.
+FAST/STUDY verify the exact PR head and selected test execution, allowing base-only
+advancement. FULL preserves exact integration qualification. Complete CI remains
+available through `ci:full`, manual dispatch, nightly, release, merge-group and
+main publishing boundaries. CI owns final required candidate validation; local
+work uses the smallest relevant proof. Never bypass failed or missing selected
+checks, discard existing tests, or substitute mock/SQLite proof for PostgreSQL
+study durability. Full release qualification remains mandatory.
 
 The full gate and focused Docker/browser Make targets check their required Docker access or loopback bind before running tests. From Codex, start the complete `make full` command with `sandbox_permissions: "require_escalated"`; the same applies to Docker and browser focused targets. Do not run the first stages in the default sandbox and discover a permissions failure at the Docker stage.
 

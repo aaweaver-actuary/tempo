@@ -162,7 +162,7 @@ test('workflow subscribes to state and base events and pins every verification c
   const workflow=readFileSync('.github/workflows/pages.yml','utf8');
   for (const action of ['opened','synchronize','reopened','ready_for_review','converted_to_draft','edited','labeled','unlabeled']) assert(workflow.includes(action));
   assert(workflow.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
-  assert(workflow.includes("  quality:\n    if: always()"));
+  assert(workflow.includes("  quality:\n    if: always() && needs.plan.result == 'success'"));
   assert(workflow.includes('node scripts/ci-quality.mjs --development'));
   assert(workflow.includes('gh api "repos/$TEMPO_REPOSITORY/pulls/$TEMPO_PR"'));
   assert.equal((workflow.match(/candidate_sha: \$\{\{ needs.plan.outputs.commit \}\}/g)??[]).length,allLayers.length);

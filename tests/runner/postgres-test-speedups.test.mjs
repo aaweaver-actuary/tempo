@@ -1030,7 +1030,7 @@ test("pr102 background restoration recovers API health before starting dependent
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     ["defense-engine"], "verified all running"]);
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 2);
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
 });
 
 
