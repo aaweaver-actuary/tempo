@@ -4030,6 +4030,7 @@ rollover and replay cannot turn speculative admission into exposure. Native
 PostgreSQL qualification remains with existing CI; adapters are not durability
 proof. These partial roadmap references do not close the broader issues.
 
+
 `backend/tests/test_opening_capacity_frontier.py` (regular backend suite):
 
 - `test_capacity_flag_disabled_preserves_normal_frontier`
@@ -4058,6 +4059,8 @@ proof. These partial roadmap references do not close the broader issues.
 - `test_capacity_inadmissible_card_and_conflicting_duplicates_are_explicit`
 - `test_capacity_inputs_are_frozen_and_policy_is_idempotent`
 - `test_capacity_pure_module_has_no_database_network_clock_chess_or_fsrs_dependency`
+- `test_capacity_route_permutations_and_duplicate_occurrences_are_deterministic`
+
 `backend/tests/test_opening_capacity_admission.py` (regular backend suite):
 
 - `test_capacity_two_prefixes_fill_ten_without_maturity_or_recursive_unlock`
@@ -4076,5 +4079,3 @@ proof. These partial roadmap references do not close the broader issues.
 - `test_capacity_configuration_enables_only_explicit_one`
 - `test_capacity_worker_full_allowance_avoids_frontier_queries`
 - `test_capacity_ready_publication_checks_translate_to_postgres_without_new_storage_contract`
-
-- `test_capacity_route_permutations_and_duplicate_occurrences_are_deterministic` (`test_opening_capacity_frontier.py`)
