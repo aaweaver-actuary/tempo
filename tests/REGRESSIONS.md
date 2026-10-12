@@ -4093,3 +4093,32 @@ locks and independent connections establish admission behavior.
 - `test_postgres_capacity_duplicate_rollback_and_worker_checkpoint_replay`: concurrent and sequential duplicate delivery, rollback/retry and actual durable queue-slice lease replay preserve exactly one admission.
 - `test_postgres_capacity_background_lock_denial_is_atomic_and_retryable`: the unchanged production background lock budget rolls back contention atomically and allows a later retry.
 - `test_postgres_capacity_flag_rollback_shared_owner_and_game_miss_exception`: baseline prefixes, enabled residual filling, shared membership charging, disabling after admission, unchanged FSRS/reviews and ordinary real-game miss quota exceptions.
+
+## Emergency CI fast lane
+
+Regular ownership: `tests/unit/ci-fast-lane-regressions.test.ts` executes
+`tests/runner/ci-fast-lane.test.mjs`. Named protections:
+
+- `emergency_docs_only_changes_do_not_trigger_full_qualification`
+- `emergency_isolated_frontend_change_selects_FAST`
+- `emergency_tactics_grading_change_selects_STUDY`
+- `emergency_queue_persistence_change_selects_STUDY`
+- `emergency_database_migration_selects_FULL`
+- `emergency_qualification_validator_change_selects_FULL`
+- `emergency_unknown_or_ambiguous_change_fails_closed_to_FULL`
+- `emergency_missing_required_test_evidence_fails_merge_gate`
+- `emergency_failed_selected_tests_cannot_report_success`
+- `emergency_stale_other_head_evidence_cannot_qualify`
+- `emergency_rename_deletion_and_mixed_changes_preserve_highest_risk`
+- `emergency_zero_skipped_duplicate_and_cancelled_selected_evidence_fails`
+- `emergency_base_only_advancement_preserves_FAST_and_STUDY_head_evidence`
+- `emergency_FULL_requires_existing_complete_quality`
+- `emergency_cross_run_and_attempt_evidence_is_rejected`
+- `emergency_study_mode_is_bounded_explicit_and_cleans_up_after_failure`
+- `emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases`
+- `emergency_workflow_runs_full_only_when_selected_and_pins_fast_head`
+- `emergency_wrong_runtime_and_late_full_request_cannot_qualify`
+
+The prior ready-PR planner intentionally required complete core/durability for
+prose and isolated changes. New policy regressions therefore replace that
+qualification expectation; existing full-validator assertions remain intact.
