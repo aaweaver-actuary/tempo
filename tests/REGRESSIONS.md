@@ -4145,3 +4145,11 @@ Existing `emergency_base_only_advancement_preserves_FAST_and_STUDY_head_evidence
 `emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases` remain
 in the regular gate. FAST/STUDY commands, ownership and smoke inventories are
 unchanged by this correction.
+
+### Issue #220 — essential queue application ownership
+
+- `test_queue_application_import_does_not_load_http_or_worker_root` parses direct/deferred/dynamic imports of queue owners, their eager dependency closure, and imports in a fresh interpreter. The sole broker-publication adapter exception retains post-commit wakes.
+- `test_queue_ordering_matches_pinned_pre_extraction_fixture` and `test_queue_application_sql_matches_pinned_pre_extraction_literals` preserve main `3f7332399796366eb32f9fcb5e1b5c678a5b1562` ordering/SQL fixtures.
+- `test_queue_application_requeue_preserves_origin_cycle_and_issuance` covers retained origins, insert position, caller rollback and unissued repeat identity.
+- `test_essential_queue_study_only_resumes_every_legacy_phase` and `test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint` preserve historical optional-phase skips and capacity checkpoint payloads.
+- `test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay` in the regular native queue-attempt proof exercises real foreground contention, interruption rollback, pool restart/persisted checkpoint reload, replay and generation/lease fencing. Existing native issuance/receipt and prepared-transition proofs remain required.

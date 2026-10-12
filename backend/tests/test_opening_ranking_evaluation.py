@@ -237,7 +237,8 @@ def raw_capture_fixture():
 
 
 def test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closure(monkeypatch):
-    from app import main, postgres_store
+    from app import postgres_store
+    from app.services import opening_capacity_frontier
     from app.services import opening_ranking_snapshot as snapshot
     state = {"open": False}
     captured = raw_capture_fixture()
@@ -277,11 +278,11 @@ def test_shadow_capture_is_readonly_and_decodes_and_plans_after_connection_closu
         assert not state["open"], "Evidence decoded inside database transaction"
         return original_loads(*args, **kwargs)
     monkeypatch.setattr(json, "loads", outside_transaction_loads)
-    original_planner = main._plan_prioritized_opening_admissions
-    def outside_transaction_plan(*args):
+    original_planner = opening_capacity_frontier.plan_prioritized_opening_admissions
+    def outside_transaction_plan(*args, **kwargs):
         assert not state["open"], "Ranking retained database connection"
-        return original_planner(*args)
-    monkeypatch.setattr(main, "_plan_prioritized_opening_admissions", outside_transaction_plan)
+        return original_planner(*args, **kwargs)
+    monkeypatch.setattr(opening_capacity_frontier, "plan_prioritized_opening_admissions", outside_transaction_plan)
     document = snapshot.capture_snapshot()
     assert len(document["candidates"]) == 1
     assert len(document["candidates"][0]["metadata"]["memberships"]) == 2
