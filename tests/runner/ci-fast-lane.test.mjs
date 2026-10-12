@@ -109,6 +109,7 @@ test('emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases'
 test('emergency_workflow_runs_full_only_when_selected_and_pins_fast_head', () => {
   const workflow = readFileSync('.github/workflows/pages.yml','utf8');
   assert(workflow.includes("if: needs.selection.outputs.tier == 'FULL'"));
+  assert(workflow.includes("if: always() && needs.plan.result == 'success' && (needs.plan.outputs.tier"));
   assert(workflow.includes('  merge-gate:\n    if: always()'));
   assert(workflow.includes('ref: ${{ needs.selection.outputs.head }}'));
   assert(workflow.includes('ci-verification-plan.mjs --base "$TEMPO_BASE" --complete'));
