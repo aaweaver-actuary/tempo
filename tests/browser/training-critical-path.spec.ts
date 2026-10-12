@@ -90,8 +90,24 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       expect(prepared.cards?.every((card: { position: number }) => Number.isInteger(card.position) && card.position >= 0)).toBe(true);
       return prepared.cards?.[0]?.id ?? "No authoritative prepared head";
     }, { timeout: 60_000, message: "The seeded authoritative prepared head must be readable before timing training" }).toBe(`${identifier}-prepared-000`);
+    // CI observed ERR_NETWORK_CHANGED before any review submission. Exercise
+    // the initial user recovery boundary outside the measured progression.
+    let injectedInitialQueueFailure = false;
+    if (condition === "prepared" && process.env.TEMPO_TRAINING_TIMINGS !== "1") {
+      await page.route("**/api/queue/window?*", route => {
+        if (injectedInitialQueueFailure) return route.continue();
+        injectedInitialQueueFailure = true;
+        return route.abort("connectionfailed");
+      });
+    }
     if (condition === "lines-held") await page.route("**/api/repertoire/lines", () => new Promise(() => {}));
     await prepareUI(page);
+    if (condition === "prepared" && process.env.TEMPO_TRAINING_TIMINGS !== "1")
+      await expect.poll(() => injectedInitialQueueFailure).toBe(true);
+    const initialQueueRetry = page.getByRole("alert").filter({ hasText: "local queue could not be loaded" })
+      .getByRole("button", { name: "Retry", exact: true });
+    await expect(page.locator("#train").or(initialQueueRetry).first()).toBeVisible();
+    if (await initialQueueRetry.isVisible()) await initialQueueRetry.click();
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", /\d+/);
     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
     const playPreparedMove = async () => {

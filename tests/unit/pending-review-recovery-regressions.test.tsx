@@ -13,6 +13,43 @@ function Harness({ blocked = false, confirmed }: { blocked?: boolean; confirmed:
 }
 const advance = async (milliseconds: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds); }); };
 
+it.each(["success", "failure"])("flush_settlement_audit idle receipt observer retains target evidence after later %s", async laterOutcome => {
+  const continuation = { card_id: "next", queue_entry_id: 103, revision: 1, cycle: 0, local_date: "2026-10-11" };
+  enqueuePendingReview({ ...review, preparedNext: continuation });
+  enqueuePendingReview({ ...review, backendId: "other", queueEntryId: 102, attemptId: "other-attempt" });
+  let releaseReceipt!: (response: Response) => void;
+  let releaseOther!: (response: Response) => void;
+  let rejectOther!: (error: Error) => void;
+  const receipt = new Promise<Response>(resolve => { releaseReceipt = resolve; });
+  const other = new Promise<Response>((resolve, reject) => { releaseOther = resolve; rejectOther = reject; });
+  vi.stubGlobal("fetch", vi.fn(input => String(input).includes("original-attempt") ? receipt : other));
+  const foregroundOwner = flushPendingReviews(Infinity, true).catch(error => error);
+  const confirmed = vi.fn();
+  try {
+    render(<Harness confirmed={confirmed} />);
+    await advance(1000);
+    const targetWaiter = flushPendingReviews(Infinity, true, undefined, undefined, review.attemptId);
+    await act(async () => {
+      releaseReceipt(Response.json({ state: "complete", response: { persisted: true, prepared_continuation: continuation } }));
+      expect((await targetWaiter).preparedContinuations?.[review.attemptId]).toEqual(continuation);
+    });
+    expect(confirmed).not.toHaveBeenCalled();
+    await act(async () => {
+      if (laterOutcome === "success") releaseOther(Response.json({ state: "complete", response: { persisted: true } }));
+      else rejectOther(new Error("Other transport failure"));
+      await foregroundOwner;
+    });
+    expect(confirmed).toHaveBeenCalledOnce();
+    expect(confirmed.mock.calls[0][0]).toMatchObject({ persistedAttemptIds: expect.arrayContaining([review.attemptId]),
+      preparedContinuations: { [review.attemptId]: continuation } });
+    expect(pendingReviews().map(item => item.attemptId)).toEqual(laterOutcome === "success" ? [] : ["other-attempt"]);
+  } finally {
+    releaseReceipt(Response.json({ state: "complete", response: { persisted: true, prepared_continuation: continuation } }));
+    releaseOther(Response.json({ state: "complete", response: { persisted: true } }));
+    await act(async () => { await foregroundOwner; });
+  }
+});
+
 it("phone review recovery confirms the original receipt after reload without another POST", async () => {
   enqueuePendingReview(review);
   const fetcher = vi.fn().mockResolvedValue(Response.json({ state: "complete", response: { persisted: true, review_id: 77 } }));
