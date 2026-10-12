@@ -1,6 +1,7 @@
 import type { APIRequestContext, APIResponse } from "@playwright/test";
 import { test, expect, api, nav, move } from "./product-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
+import { readDeletionFixturePublication } from "./content-deletion-publication";
 
 async function confirmed(response: APIResponse, request: APIRequestContext) {
   expect(response.ok(), await response.text()).toBe(true);
@@ -59,16 +60,25 @@ test("permanently deleting the active training card clears its attempt and survi
   const imported = await confirmed(await request.post(`${api}/imports/pgn`, { multipart: {
     file: { name: "individual-delete.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(pgn) }, trained_color: "white", initial_depth: "2",
   } }), request) as { repertoire_id: string };
-  await expect.poll(async () => (await (await request.get(`${api}/queue/today`)).json()).cards.length, { timeout: 20_000 }).toBeGreaterThan(0);
+  let fixturePublication: Awaited<ReturnType<typeof readDeletionFixturePublication>> | undefined;
+  await expect.poll(async () => {
+    fixturePublication = await readDeletionFixturePublication(request, api, [imported.repertoire_id]);
+    return fixturePublication.ready ? fixturePublication.queue.cards.length : 0;
+  }, { timeout: 20_000 }).toBeGreaterThan(0);
   const nextPgn = '[Event "Next proof"]\n\n1. h3 a6 2. h4 b6 3. g3 *';
   const nextImported = await confirmed(await request.post(`${api}/imports/pgn`, { multipart: {
     file: { name: "next-delete.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(nextPgn) }, trained_color: "white", initial_depth: "2",
   } }), request) as { repertoire_id: string };
   try {
-    await expect.poll(async () => (await (await request.get(`${api}/queue/today`)).json()).cards.length, { timeout: 20_000 }).toBeGreaterThan(1);
+    await expect.poll(async () => {
+      fixturePublication = await readDeletionFixturePublication(request, api, [imported.repertoire_id, nextImported.repertoire_id]);
+      return fixturePublication.ready ? fixturePublication.queue.cards.length : 0;
+    }, { timeout: 20_000 }).toBeGreaterThan(1);
   } catch (failure) {
-    console.log("Deletion fixture repertoire", await (await request.get(`${api}/repertoires`)).json());
-    console.log("Deletion fixture integrity", await (await request.get(`${api}/repertoires/${imported.repertoire_id}/integrity`)).json());
+    console.log("Deletion fixture publication", {
+      repertoireIds: [imported.repertoire_id, nextImported.repertoire_id],
+      workClass: "background", ...fixturePublication,
+    });
     throw failure;
   }
   await page.goto("/"); await nav(page, "Train");
