@@ -769,7 +769,7 @@ def test_issue135_postgres_first_ensure_calls_preserve_singleton_creation():
             return ensure_current_queue(database, {'queue_date': queue_date})
 
     with _queue_lock_order_fixture(leased=False), \
-            patch('app.queue_commands.enqueue_task_in_transaction', pause_first_insert), \
+            patch('app.services.queue_application.enqueue_task_in_transaction', pause_first_insert), \
             ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(ensure, first_pid)
         try:

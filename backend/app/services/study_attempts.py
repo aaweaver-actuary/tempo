@@ -41,7 +41,7 @@ def finish_study_attempt(database, attempt, rating: str) -> dict:
             light_first_interval_days=setting[0], reviewed_at=datetime.fromisoformat(now),
             review_day=date.today(),
         )
-        from ..main import requeue
+        from .queue_application import requeue
         repeated_entry = (
             requeue(database, queue["queue_date"], card["id"],
                     review_result["requeue_after_cards"] or 0,
