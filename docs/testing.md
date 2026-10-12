@@ -202,31 +202,34 @@ ARM64, Node 26.3.0, Python 3.14.5). `make plan` retains its 13-stage inventory.
 This is inventory proof, not a completed runtime gate; final candidate CI owns
 complete verification. Selection changes follow in a separate commit.
 
-## Development evidence and merge qualification
+## Complete evidence and merge qualification
 
-Draft PRs default to `development`, independently of coverage `scope`. The version-3 immutable hashed plan records repository name/ID, PR number, tier, draft state, head SHA, base SHA, tested integration SHA, inventory revision and required runner/tool versions. All verification and aggregation checkouts use that integration SHA. `development` reports the selected evidence; `quality` always runs and fails for development or any draft, including a draft requesting complete execution. Never require `development` as a merge gate or treat a skipped/neutral check as qualification.
+The version-3 complete plan records repository name/ID, PR number, draft state,
+head/base/integration SHAs, inventory revision and runner/tool versions. All FULL
+layer and quality checkouts are pinned to that integration SHA. The emergency
+workflow invokes this planner with `--complete`, including for draft FULL PRs;
+its older reduced `development` selection remains available to existing callers
+and contract tests, but does not govern FAST/STUDY qualification.
 
-New test-named files must belong to the regular collection or have explicit runner ownership. The planner rejects misplaced tests; unrelated passing suites cannot prove that a new regression executed.
+FULL drafts report execution through `development`; `quality` rejects any draft.
+Ready FULL PRs require all complete layers and refreshed PR metadata. Changed
+head/base/draft/integration context invalidates full qualification. FAST/STUDY
+have their separate exact-head validator described above and do not run these
+complete-report jobs. GitHub itself prevents merging draft PRs.
 
-| Draft change | Selected development evidence |
-| --- | --- |
-| Reviewed prose | Conflict-artifact and migration-inventory guards; runtime explicitly inapplicable |
-| Standalone regression files | Changed Vitest/pytest files and declared regular-suite runner wrappers; frontend lint/typecheck when applicable |
-| Product frontend | Whole frontend plus build, critical browser cases and reviewed families; unknown interaction sources expand browser coverage |
-| Reviewed network-only backend leaves | Chess.com/Lichess clients: `test_game_sync.py`, `test_postgres_game_sync_windows.py`, critical browsers and complete games/defense families |
-| Other backend/persistence/concurrency | Whole backend plus complete durability, critical browser cases and reviewed families; shared storage/API boundaries expand browser/lifecycle |
-| CI policy harness | Actual planner, quality and PostgreSQL runner regression wrappers plus lint/typecheck |
-| PostgreSQL fixture | Harness evidence plus complete durability |
-| Unknown/shared runner or infrastructure | Broad subsystem/boundary coverage, including affected real runtime modes |
+New test-named files must belong to the regular collection or declare runner
+wrapper ownership. Missing collection, skipped/failed cases and zero execution
+cannot qualify. Vitest uses `--no-static-parse` to expand dynamic/parameterized
+cases before execution; the actual result identities must match collection.
+PostgreSQL evidence remains real disposable-database proof, with migration,
+isolation and cleanup guards preserved. Collection and capability checks alone
+are not execution evidence.
 
-Changed regressions join selected subsystem coverage, and every changed file must report nonzero execution even when the whole subsystem runs. Native runner regressions declare their regular-suite wrapper owners in the inventory; missing ownership fails planning. Deleted/unavailable test files expand to the full subsystem. Missing comparison history expands every layer. A new unclassified browser spec fails planning until ownership is registered. Persistence is never proven by mocks alone. Migration guards reject duplicate/gapped versions and disagreement with `POSTGRES_SCHEMA_VERSION`; they do not rewrite applied history.
-
-Ready PRs run all frontend/backend/build and durability layers, six critical browser cases plus source-selected complete families, and applicable lifecycle/pinned checks. `ready_for_review`, `converted_to_draft`, `synchronize`, `edited` (including base changes), reopened and label changes are explicitly subscribed. Title/body or unrelated label edits recapture qualification; identical completed suites can use the bounded evidence rule below. `ci:full` requests complete execution on a draft. Manual verification, main, merge-group, nightly and published release events retain complete coverage. Manual execution on a feature branch reports execution evidence and cannot qualify a PR; promote the PR to qualify its actual integration revision. Current PR metadata is checked again during aggregation; changed head/base/draft/integration state invalidates the plan. A new integration candidate needs fresh qualification.
-
-Main protection must require **quality from GitHub Actions**, branches up to date, administrator enforcement, and prohibit force pushes/deletion. Existing stacked feature-base branches can retain their old workflow: freeze them, then create each consolidation candidate from updated main. Do not update every downstream head to distribute this policy.
-
-The complete gate remains mandatory at the merge/release boundary. Locally run the smallest defect regression, affected files after edits, and the subsystem when coherent. Let CI own complete qualification; do not launch an equivalent local full gate concurrently. Diagnose the failed stage before expanding again. Dependency and build caches are reusable; test results from another revision are not. Frontend and backend runners collect test identities before execution, then require the exact collected identities and passing statuses in their execution reports. Vitest collection uses `--no-static-parse` to expand parameterized/dynamic cases; static source listing cannot establish complete runtime inventory. Nonzero counts, changed-file counts, collection, capability checks and successful diagnostics cannot replace those results.
-
+Local development uses the smallest relevant proof; CI owns the selected final
+candidate gate. Do not run an equivalent local full gate concurrently. The
+required GitHub protection is `merge-gate` with strict=false under this emergency
+policy; the prior recommendation to require strict `quality` is superseded.
+FULL still owns complete release/publishing qualification.
 
 ### Bounded same-PR suite evidence
 
