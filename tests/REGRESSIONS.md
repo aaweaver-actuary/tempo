@@ -4118,6 +4118,8 @@ Regular ownership: `tests/unit/ci-fast-lane-regressions.test.ts` executes
 - `emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases`
 - `emergency_workflow_runs_full_only_when_selected_and_pins_fast_head`
 - `emergency_wrong_runtime_and_late_full_request_cannot_qualify`
+- `emergency_inactive_provider_adapter_selects_FAST_without_durability`
+- `emergency_FULL_base_advancement_requires_fresh_integration`
 
 The prior ready-PR planner intentionally required complete core/durability for
 prose and isolated changes. New policy regressions therefore replace that

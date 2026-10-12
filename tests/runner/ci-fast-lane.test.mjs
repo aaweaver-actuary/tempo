@@ -119,3 +119,14 @@ test('emergency_wrong_runtime_and_late_full_request_cannot_qualify', () => {
   const evidence = fixture(); evidence.report.runtime.architecture = 'x64'; assert(failures(evidence).length);
   const late = fixture(); assert(validateFastGate(late.plan,late.report,late.needs,{...pr,labels:[{name:'ci:full'}]},execution).length);
 });
+
+test('emergency_inactive_provider_adapter_selects_FAST_without_durability', () => {
+  const selection = selectFastLane(['backend/app/services/lichess_client.py']);
+  assert.equal(selection.tier,'FAST'); assert(selection.backend.includes('backend/tests/test_game_sync.py'));
+  assert.equal(selection.browser.length,0); assert.equal(selection.python,true);
+});
+
+test('emergency_FULL_base_advancement_requires_fresh_integration', () => {
+  const plan = makeFastPlan(['backend/migrations/999_new.sql'],context);
+  assert(validateFastGate(plan,null,{selection:{result:'success'},quality:{result:'success'}},{...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution).length);
+});
