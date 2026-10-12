@@ -221,6 +221,7 @@ test("unavailable repertoire lines do not falsely grade another legal move", asy
   // Initial service worker activation can reload the page; finish it before injecting the failure.
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await page.route("**/api/repertoire/lines", (route) => route.fulfill({ status: 503, json: { detail: "Temporarily unavailable" } }));
+  await page.route("**/api/repertoires/*/move-membership?*", route => route.fulfill({ status: 503, json: { detail: "Saved-source verification unavailable" } }));
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.getByRole("button", { name: "Retry loading lines" })).toBeVisible();
@@ -247,6 +248,7 @@ test("issue36_browser_alternatives_retry_and_confirmed_edit_invalidation_preserv
   let unavailable = true;
   let lines = [alternative];
   let failureRequests = 0;
+  await page.route("**/api/repertoires/*/move-membership?*", route => route.fulfill({ status: 503, json: { detail: "Saved-source verification unavailable" } }));
   await page.route("**/api/repertoire/lines", route => route.fulfill(unavailable
     ? { status: 503, json: { detail: "Issue36 unavailable evidence" } } : { json: { lines } }));
   await page.route("**/api/queue/entries/3601/fail", route => {
@@ -268,7 +270,7 @@ test("issue36_browser_alternatives_retry_and_confirmed_edit_invalidation_preserv
   await expect(page.getByRole("button", { name: "Retry loading lines" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Issue36", exact: true })).toBeVisible();
   await playAlternative();
-  await expect(page.getByText(/Cannot verify another repertoire move until lines load/)).toBeVisible();
+  await expect(page.getByText(/Could not verify this move/)).toBeVisible();
   await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startFen));
   expect(failureRequests).toBe(0);
   unavailable = false;
@@ -284,7 +286,7 @@ test("issue36_browser_alternatives_retry_and_confirmed_edit_invalidation_preserv
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Retry loading lines" })).toBeVisible();
   await playAlternative();
-  await expect(page.getByText(/Cannot verify another repertoire move until lines load/)).toBeVisible();
+  await expect(page.getByText(/Could not verify this move/)).toBeVisible();
   await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startFen));
   expect(failureRequests).toBe(0);
   unavailable = false;

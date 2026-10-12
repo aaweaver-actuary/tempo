@@ -98,13 +98,17 @@ test(restorationOnly ? "restoration_repertoire_only_preserves_foreground_review_
       await navigate(page, "Train");
       await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(nextHead.queue_entry_id));
       await navigate(page, "Settings");
+      await expect(page.getByRole("button", { name: "Save settings" })).toBeEnabled();
       await page.getByRole("checkbox", { name: "Optional analysis and imports", exact: true }).check();
     } else {
       await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeChecked();
       await page.getByRole("checkbox", { name: /Study-only mode/ }).uncheck();
     }
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect.poll(async () => (await (await request.get(`${api}/settings`)).json()).study_only_mode).toBe(false);
+    await expect.poll(async () => {
+      const saved = await (await request.get(`${api}/settings`)).json();
+      return saved.study_only_mode === false && saved.optional_analysis_and_imports_enabled === true;
+    }).toBe(true);
     await expect.poll(() => fixture("verify").pending_maintenance, { timeout: 60_000 }).toBeLessThan(3000);
   } finally {
     await request.put(`${api}/settings`, { data: originalSettings });

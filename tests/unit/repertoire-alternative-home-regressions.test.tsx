@@ -121,6 +121,18 @@ it("study_only_mode_verifies_non_expected_move_from_saved_sources_without_bulk_p
   expect(screen.getByText(/Valid repertoire move/)).toBeTruthy();
 });
 
+it("restoration_loading_bulk_preparation_verifies_alternatives_against_saved_sources", async () => {
+  vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
+  nextLineRead = new Promise(() => undefined);
+  membershipRead = Promise.resolve(Response.json({ verified: true, next_cursor: null, source_token: "saved-source-1" }));
+  render(<Home />);
+  await waitFor(() => expect(lineRequests).toBe(1));
+  await waitFor(() => expect(useBoardShellStore.getState().board.onMove).toBeTypeOf("function"));
+  await play("d2d4");
+  expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "alternate");
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
+});
+
 it.each(["wrong", "unavailable", "cancelled"])("study_only_move_verification_preserves_grading_and_rejects_obsolete_results (%s)", async scenario => {
   vi.spyOn(local, "usesLocalApi").mockReturnValue(true);
   studyOnlyMode = true;
@@ -202,7 +214,7 @@ it.each(["import", "re-import", "edit", "delete", "reconcile"])("issue36_authori
   await play("d2d4");
   expect(responseJournal).toHaveBeenLastCalledWith(0, "d2d4", "unverified");
   expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
-  expect(screen.getByText(/Cannot verify another repertoire move until lines load/)).toBeTruthy();
+  expect(screen.getByText(/Could not verify this move/)).toBeTruthy();
   await waitFor(() => expect(lineRequests).toBe(2));
   await act(async () => { finishRead(Response.json({ lines: sourceLines })); });
   // Wait for worker preparation, without a wall-clock sleep or a grading probe.
@@ -245,6 +257,21 @@ it("issue36_failed_loading_never_grades_unverified_moves_wrong", async () => {
   await act(async () => { screen.getByRole("button", { name: "Retry loading lines" }).click(); });
   await finishPreparation(1);
   expect(prepare.mock.calls.filter(([task]) => task.kind === "repertoirePreparation")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Retry loading lines" })).toBeNull();
+});
+
+it("restoration_retry_keeps_unavailable_evidence_visible_until_worker_publication", async () => {
+  nextLineRead = Promise.resolve(new Response("Unavailable", { status: 503 }));
+  vi.spyOn(study, "runStudyTask");
+  render(<Home />);
+  await screen.findByRole("button", { name: "Retry loading lines" });
+  let finishRead!: (response: Response) => void;
+  nextLineRead = new Promise(resolve => { finishRead = resolve; });
+  await act(async () => screen.getByRole("button", { name: "Retry loading lines" }).click());
+  await waitFor(() => expect(lineRequests).toBe(2));
+  expect(screen.getByRole("button", { name: "Retry loading lines" })).toBeTruthy();
+  await act(async () => finishRead(Response.json({ lines: sourceLines })));
+  await finishPreparation(1);
   expect(screen.queryByRole("button", { name: "Retry loading lines" })).toBeNull();
 });
 

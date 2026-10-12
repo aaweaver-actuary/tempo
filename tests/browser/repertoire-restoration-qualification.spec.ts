@@ -1,7 +1,8 @@
 import { randomUUID, createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { arch, cpus, platform, totalmem } from "node:os";
 import { test, expect } from "./observability";
 import { api } from "./product-fixtures";
 import { assertDisposableTarget } from "./disposable-target";
@@ -21,10 +22,12 @@ function upperBootstrapBound(values: number[], fraction: number) {
   return percentile(estimates, .95);
 }
 
-test("restoration_native_review_latency_and_navigation_are_qualified_against_frozen_baseline", async ({ page, request }, testInfo) => {
+test("restoration_native_review_latency_and_navigation_are_qualified_against_frozen_baseline", async ({ page, request, browser }, testInfo) => {
   const samples = process.env.TEMPO_RESTORATION_QUALIFICATION === "1" ? 1000 : 4;
   const navigationPairs = samples === 1000 ? 50 : 2;
-  test.setTimeout(samples === 1000 ? 3_600_000 : 180_000);
+  // The measured workflow retains its real 750 ms opening-completion pause.
+  // Four 1000-review cohorts need over 50 minutes before navigation/setup.
+  test.setTimeout(samples === 1000 ? 7_200_000 : 180_000);
   assertDisposableTarget(await (await request.get(`${api}/health`)).json());
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("Owning disposable runner required");
@@ -33,21 +36,33 @@ test("restoration_native_review_latency_and_navigation_are_qualified_against_fro
   const docker = (...args: string[]) => execFileSync("docker", [...compose, ...args], { encoding: "utf8", timeout: 60_000 });
   const fixture = (action: string, ...args: string[]) => JSON.parse(docker("run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_training_transition.py", action, identifier, ...args));
   const originalSettings = await (await request.get(`${api}/settings`)).json();
-  const publicLines = Array.from({ length: 8268 }, (_, index) => ({ id: `public-${index}`, repertoire_id: `public-${index % 10}`,
+  const capacityLines = Array.from({ length: 8268 }, (_, index) => ({ id: `public-${index}`, repertoire_id: `public-${index % 10}`,
     repertoire_name: "Public synthetic", name: `Line ${index}`, trained_color: "white", start_fen: startFen,
     moves: Array.from({ length: 8 }, () => ["g1f3", "g8f6", "f3g1", "f6g8"]).flat() }));
+  const workloadPath = process.env.TEMPO_RESTORATION_WORKLOAD;
+  if (samples === 1000 && !workloadPath) throw new Error("Qualification requires the generated diverse public workload");
+  const publicLines: typeof capacityLines = workloadPath ? JSON.parse(readFileSync(workloadPath, "utf8")).lines : capacityLines;
+  expect(publicLines).toHaveLength(8268);
+  const indexedPositions = publicLines.reduce((total, line) => total + line.moves.length + 1, 0);
+  if (samples === 1000) expect(indexedPositions).toBe(250503);
   const provenance = { project, fixtureSha256: createHash("sha256").update(JSON.stringify(publicLines)).digest("hex"),
+    head: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+    host: { platform: platform(), arch: arch(), cpu: cpus()[0]?.model, logicalCpus: cpus().length, memory: totalmem() },
+    indexedPositions, workload: workloadPath ? "diverse-public-legal" : "repeated-capacity-smoke",
     publicLines: publicLines.length, transportMoves: publicLines.reduce((total, line) => total + line.moves.length, 0),
-    samples, navigationPairs, warmups: 10, quantile: "nearest rank", confidence: "95% upper bootstrap bound, 1000 resamples, fixed seed 190",
+    samples, navigationPairs, warmups: 10, navigationWarmupPairs: 3, quantile: "nearest rank", confidence: "95% upper bootstrap bound, 1000 resamples, fixed seed 190",
     liveServicesRemainRunning: true, sharedHost: true };
   const observations: { condition: string; reviewMs: number; visibleNextMs: number; index: number }[] = [];
   const navigations: { loaded: boolean; milliseconds: number }[] = [];
-  const resourceSamples: { at: string; value: string }[] = [];
+  const resourceSamples: { at: string; value: string; database: unknown; browser: unknown }[] = [];
+  const failures: { index: number; message: string }[] = [];
+  let pendingAcknowledgements = 0;
   let displaced: number[][] = [];
   let currentIndex = 0;
   let firstDelivery: { url: string; key: string; body: unknown } | undefined;
   let thresholds: { review95: number; review99: number; next95: number; next99: number } | undefined;
-  const evidence = () => ({ provenance, thresholds, observations, navigations, resourceSamples });
+  const evidence = () => ({ provenance, thresholds, observations, navigations, resourceSamples, failures, pendingAcknowledgements });
+  const browserDiagnostics = await browser.newBrowserCDPSession();
   await page.addInitScript(() => {
     const NativeWorker = window.Worker;
     Object.assign(window, { tempoBulkProbe: { running: false, starts: 0 } });
@@ -91,14 +106,24 @@ test("restoration_native_review_latency_and_navigation_are_qualified_against_fro
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(head.cards[0].queue_entry_id));
     const bounds = await boardBounds(page);
     await page.mouse.click(bounds.x + bounds.width * 4.5 / 8, bounds.y + bounds.height * 6.5 / 8);
-    await page.mouse.click(bounds.x + bounds.width * 4.5 / 8, bounds.y + bounds.height * 4.5 / 8);
-    await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
-    const confirmed = page.waitForResponse(response => response.url().endsWith("/review") && response.request().method() === "POST");
+    // Opening completion submits automatically. A manual grade click can wait
+    // through the transition and accidentally grade the authorized successor.
+    const confirmed = page.waitForResponse(response => response.url().endsWith(`/cards/${expectedId}/review`) && response.request().method() === "POST");
     const started = performance.now();
-    await page.getByRole("button", { name: "Correct", exact: true }).click();
+    await page.mouse.click(bounds.x + bounds.width * 4.5 / 8, bounds.y + bounds.height * 4.5 / 8);
     const response = await confirmed;
-    const payload = await response.json();
+    let payload = await response.json();
     expect(response.ok()).toBe(true);
+    if (response.status() === 202) {
+      pendingAcknowledgements++;
+      const operationId = payload.operation_id;
+      expect(typeof operationId).toBe("string");
+      await expect.poll(async () => {
+        const receipt = await (await request.get(`${api}/operations/${encodeURIComponent(operationId)}`)).json();
+        if (receipt.state === "complete") payload = receipt.response;
+        return receipt.state;
+      }, { timeout: 30_000 }).toBe("complete");
+    }
     expect(payload.persisted).toBe(true);
     const reviewMs = performance.now() - started;
     const continuation = payload.prepared_continuation;
@@ -108,6 +133,10 @@ test("restoration_native_review_latency_and_navigation_are_qualified_against_fro
     if (!firstDelivery) firstDelivery = { url: response.url(), key: response.request().headers()["idempotency-key"], body: response.request().postDataJSON() };
     if (measured) observations.push({ condition, reviewMs, visibleNextMs: performance.now() - started, index: currentIndex });
     currentIndex++;
+    if (samples === 1000 && currentIndex % 100 === 0) {
+      writeFileSync(testInfo.outputPath("qualification-progress.json"), JSON.stringify(evidence(), null, 2));
+      console.log(`Restoration qualification: ${currentIndex} durable reviews, cohort ${condition}`);
+    }
   };
   try {
     await request.put(`${api}/settings`, { data: { ...originalSettings, study_only_mode: true, optional_analysis_and_imports_enabled: false } });
@@ -129,20 +158,29 @@ test("restoration_native_review_latency_and_navigation_are_qualified_against_fro
       for (const loaded of block % 2 ? [true, false] : [false, true]) {
         await switchMode(loaded);
         const ownedContainers = docker("ps", "-q").trim().split(/\s+/).filter(Boolean);
-        resourceSamples.push({ at: new Date().toISOString(), value: execFileSync("docker", ["stats", "--no-stream", "--format", "{{.Name}} {{.CPUPerc}} {{.MemUsage}}", ...ownedContainers], { encoding: "utf8" }) });
+        const browserProcesses = await browserDiagnostics.send("SystemInfo.getProcessInfo");
+        const processIds = browserProcesses.processInfo.map(process => process.id).join(",");
+        resourceSamples.push({ at: new Date().toISOString(), value: execFileSync("docker", ["stats", "--no-stream", "--format", "{{.Name}} {{.CPUPerc}} {{.MemUsage}}", ...ownedContainers], { encoding: "utf8" }),
+          database: fixture("resource-sample"), browser: { processes: browserProcesses,
+            residentMemory: execFileSync("ps", ["-o", "pid=,rss=,pcpu=,comm=", "-p", processIds], { encoding: "utf8" }),
+            page: await page.evaluate(() => ({ userAgent: navigator.userAgent,
+              hardwareConcurrency: navigator.hardwareConcurrency, memory: Reflect.get(performance, "memory") })) } });
         for (let index = 0; index < samples / 4; index++) {
           if (loaded) await ensureBulkRunning();
           await reviewOne(loaded ? "restored" : "control");
         }
       }
     }
-    for (let pair = 0; pair < navigationPairs; pair++) for (const loaded of pair % 2 ? [true, false] : [false, true]) {
+    for (let pair = -3; pair < navigationPairs; pair++) for (const loaded of pair % 2 ? [true, false] : [false, true]) {
       await navigate(page, "Train"); await switchMode(loaded);
       if (loaded) await ensureBulkRunning();
       const started = performance.now();
       await navigate(page, "Games");
       await expect(page.locator(".games-page")).toBeVisible();
-      navigations.push({ loaded, milliseconds: performance.now() - started });
+      await expect(page.getByText("Loading games…", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("No games imported", { exact: true })).toBeVisible();
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      if (pair >= 0) navigations.push({ loaded, milliseconds: performance.now() - started });
     }
     const verify = fixture("verify");
     expect(verify.reviews).toBe(currentIndex);
@@ -162,8 +200,12 @@ test("restoration_native_review_latency_and_navigation_are_qualified_against_fro
     const navDifferences = navLoaded.map((row, index) => row.milliseconds - navControls[index].milliseconds);
     if (navigationPairs >= 50) expect(percentile(navDifferences, .95)).toBeLessThan(50);
     expect(Math.max(...navDifferences)).toBeLessThan(500);
+  } catch (error) {
+    failures.push({ index: currentIndex, message: error instanceof Error ? error.message : String(error) });
+    throw error;
   } finally {
     writeFileSync(testInfo.outputPath("qualification.json"), JSON.stringify(evidence(), null, 2));
+    await browserDiagnostics.detach().catch(() => undefined);
     await request.put(`${api}/settings`, { data: originalSettings });
     docker("start", "foreground-worker", "background-worker", "background-scheduler");
     fixture("cleanup", JSON.stringify(displaced));

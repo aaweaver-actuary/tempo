@@ -15,6 +15,16 @@ def main():
     if not re.fullmatch(r"training-transition-[a-f0-9-]+", identifier):
         raise ValueError("An invocation-owned synthetic identifier is required")
     configure()
+    if action == "resource-sample":
+        with psycopg.connect(DSN) as connection:
+            waits = connection.execute("SELECT wait_event_type,wait_event,count(*) FROM pg_stat_activity "
+                "WHERE datname=current_database() AND pid<>pg_backend_pid() GROUP BY wait_event_type,wait_event").fetchall()
+            counters = connection.execute("SELECT deadlocks,conflicts,temp_bytes,blk_read_time,blk_write_time "
+                "FROM pg_stat_database WHERE datname=current_database()").fetchone()
+            pending = connection.execute("SELECT state,count(*),min(created_at)::text "
+                "FROM operation_receipts GROUP BY state").fetchall()
+        print(json.dumps({"postgres_waits": waits, "database_counters": counters, "command_admission": pending}))
+        return
     if action == "proof":
         sys.argv = [sys.argv[0], "seed-small", identifier, date.today().isoformat()]
         main()

@@ -105,6 +105,8 @@ for (const viewport of [
       if (workspace === "Settings") {
         await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeVisible();
         await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).not.toBeChecked();
+        await expect(page.getByRole("checkbox", { name: "Repertoire preparation", exact: true })).toBeChecked();
+        await expect(page.getByRole("checkbox", { name: "Optional analysis and imports", exact: true })).toBeChecked();
         await expect(page.getByRole("group", { name: "Spanish opening — tournament preparation daily limit" })).toBeVisible();
         await expect(page.getByText("Current limit: 10/day")).toBeVisible();
       }

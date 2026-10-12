@@ -84,10 +84,15 @@ export function computeStudyTask(task: PureStudyTask) {
       ];
     case "index":
       return indexRepertoirePositions(task.lines.map(canonicalizeLine));
-    case "repertoirePreparation":
-      return buildRepertoireAlternativeSnapshot(task.generation,
-        indexRepertoirePositions(repertoireLinesFromPayload(
-          validateWorkspacePayload("/api/repertoire/lines", task.payload)).map(canonicalizeLine)));
+    case "repertoirePreparation": {
+      const validatedPayload = validateWorkspacePayload("/api/repertoire/lines", task.payload);
+      const lines = repertoireLinesFromPayload(validatedPayload).map(canonicalizeLine);
+      const suppliedLineCount = (task.payload as { lines: unknown[] }).lines.length;
+      if (suppliedLineCount > 0 && (lines.length === 0 || lines.every(line =>
+        !line.validation.isValid && line.moves.length === 0)))
+        throw new Error("No usable repertoire evidence was returned. Repair the reported lines or retry loading them.");
+      return buildRepertoireAlternativeSnapshot(task.generation, indexRepertoirePositions(lines));
+    }
     case "repertoireAlternatives":
       return buildRepertoireAlternativeSnapshot(task.generation,
         indexRepertoirePositions(task.lines.map(canonicalizeLine)));

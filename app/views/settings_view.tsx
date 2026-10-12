@@ -458,7 +458,7 @@ export default function SettingsView({
           </label>}
           {usesLocalApi() && <>
             <label>
-              <span>Repertoire preparation<small>Recognize alternative moves using an independent worker. Study-only mode pauses this too.</small></span>
+              <span>Repertoire preparation<small>Prepare saved repertoire lines to recognize alternative moves. Study-only mode pauses this too.</small></span>
               <TextInput aria-label="Repertoire preparation" disabled={!settingsLoaded} type="checkbox" checked={values.repertoire_preparation_enabled}
                 onChange={event => update("repertoire_preparation_enabled", event.target.checked)} />
             </label>

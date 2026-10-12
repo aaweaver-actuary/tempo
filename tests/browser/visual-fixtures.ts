@@ -49,6 +49,9 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
     }
     const settings = {
       initial_depth: 6,
+      study_only_mode: false,
+      repertoire_preparation_enabled: true,
+      optional_analysis_and_imports_enabled: true,
       timezone: "America/New_York",
       new_cards_per_day: 10,
       lichess_username: "",

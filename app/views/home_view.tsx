@@ -27,7 +27,6 @@ import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from
 import {
   invalidateWorkspaceData,
   preloadView,
-  readWorkspaceData,
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
 import { ImportDialogBox } from "../ImportDialogBox";
@@ -47,7 +46,6 @@ import {
   View,
   BuilderSession,
   LocalRepertoire,
-  AnalysisLine,
   CardId,
   asRepertoireId,
   asFenString,
@@ -1081,7 +1079,7 @@ export default function Home() {
         ? lookupRepertoireAlternative(repertoireAlternativeSnapshot.current, repertoirePositionGeneration.current,
             card.repertoireId, currentFenString, responseUci)
         : undefined;
-      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && (!repertoirePreparationEnabled || branchIndexLoadError !== "") && card.repertoireId) {
+      if (usesLocalApi() && !offlineQueue && indexedAlternative === undefined && card.repertoireId) {
         const verification = new AbortController();
         pendingMoveVerification.current = verification;
         const capturedAttempt = useTrainingStore.getState().attempt;
@@ -1887,7 +1885,6 @@ export default function Home() {
                 </span>
                 <Button
                   onClick={() => {
-                    setBranchIndexLoadError("");
                     invalidateBranchEvidence();
                   }}
                 >

@@ -144,3 +144,13 @@ it("issue190_complete_bulk_pipeline_preserves_snapshot_and_diagnostics_parity", 
   expect(computeStudyTask({ kind: "repertoirePreparation", generation: 190, payload }))
     .toEqual(computeStudyTask({ kind: "repertoireAlternatives", generation: 190, lines: adapted }));
 });
+
+it.each(["transport", "moves"])("restoration_unusable_evidence_never_becomes_successful_empty_snapshot (%s)", failure => {
+  const payload = { lines: failure === "transport" ? [{ id: "invalid" }] : [{ id: "invalid", repertoire_id: "parity",
+    repertoire_name: "Parity", name: "Invalid", trained_color: "white",
+    start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", moves: ["e2e5"] }] };
+  expect(() => computeStudyTask({ kind: "repertoirePreparation", generation: 1, payload }))
+    .toThrow("No usable repertoire evidence");
+  const empty = computeStudyTask({ kind: "repertoirePreparation", generation: 2, payload: { lines: [] } });
+  expect(empty).toMatchObject({ generation: 2, positions: [] });
+});

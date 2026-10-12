@@ -314,7 +314,7 @@ function StandardTrainingView({
           {badge}
         </span>
       ))}
-      {!phoneOpening && !offlineQueue && /^(Again|Valid repertoire move|Cannot verify)/.test(queueNotice) && <em>{queueNotice}</em>}
+      {!phoneOpening && !offlineQueue && /^(Again|Valid repertoire move|Cannot verify|Checking this move|Could not verify)/.test(queueNotice) && <em>{queueNotice}</em>}
     </div>
   );
   const moveTrail = (
@@ -484,7 +484,7 @@ function StandardTrainingView({
                 body={attemptFailed && feedback === "ready" ? "Follow the highlighted move to finish this line." : feedbackCopy.body}
               />
             </div>
-            {phoneOpening && !offlineQueue && /^(Again|Valid repertoire move|Cannot verify)/.test(queueNotice) && <em className="training-queue-notice">{queueNotice}</em>}
+            {phoneOpening && !offlineQueue && /^(Again|Valid repertoire move|Cannot verify|Checking this move|Could not verify)/.test(queueNotice) && <em className="training-queue-notice">{queueNotice}</em>}
             {isFailedPosition && failureAnnotation?.comment && (
               <FailureNote failureAnnotation={failureAnnotation} />
             )}

@@ -4157,6 +4157,15 @@ unchanged by this correction.
 - `tests/browser/study-only-mode.spec.ts`: `restoration_repertoire_only_preserves_foreground_review_receipts_and_progression_under_bulk_load` preserves real board moves, reload, worker restart, replay and disabling under public bulk load.
 - `tests/browser/repertoire-restoration-qualification.spec.ts`: regular smoke proves the native measurement/replay workflow; explicit `TEMPO_RESTORATION_QUALIFICATION=1` records 1,000-sample calibration/control/restoration cohorts and 50 navigation pairs against frozen baseline-derived acceptance limits. Small smoke cohorts are not statistical qualification.
 
+- `restoration_unknown_settings_never_authorize_preparation` and `restoration_confirmed_disable_during_settings_read_refetches_without_publishing_stale_controls` — authoritative browser controls stay unknown for malformed settings and immediately refetch a confirmed save that races an older read.
+- `restoration_loading_bulk_preparation_verifies_alternatives_against_saved_sources` — unavailable in-flight snapshot evidence uses authoritative saved-source verification without marking a valid alternative wrong.
+
+- `restoration_unusable_evidence_never_becomes_successful_empty_snapshot` — malformed transport or wholly unusable moves fail preparation; authoritative empty responses remain valid.
+
+- `issue190_native_cancelled_bulk_releases_foreground_capacity_within_500ms` — actual workers compiled from pinned main reproduce 12.4–16.0 seconds of residual foreground blockage after cancellation; the current dispatcher must release capacity in all three browsers.
+
+- `restoration_retry_keeps_unavailable_evidence_visible_until_worker_publication` — retry does not claim recovered evidence before its worker snapshot is ready.
+
 ## PR #172 independent flush-settlement audit
 
 `flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities`
