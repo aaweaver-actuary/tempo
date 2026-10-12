@@ -1077,7 +1077,8 @@ export default function Home() {
       return;
     }
     if (move.san !== card.moves[step]) {
-      let indexedAlternative = usesLocalApi()
+      // Puzzle solutions are authoritative without opening repertoire evidence.
+      let indexedAlternative = card.kind !== "opening" ? false : usesLocalApi()
         ? lookupRepertoireAlternative(repertoireAlternativeSnapshot.current, repertoirePositionGeneration.current,
             card.repertoireId, currentFenString, responseUci)
         : undefined;
@@ -1111,7 +1112,7 @@ export default function Home() {
         );
         return;
       }
-      const alternateBranch = usesLocalApi() && indexedAlternative !== undefined
+      const alternateBranch = card.kind === "opening" && (usesLocalApi() && indexedAlternative !== undefined
         ? indexedAlternative
         : (usesLocalApi() ? practiceCards : demoCards).some(
             (other) =>
@@ -1122,7 +1123,7 @@ export default function Home() {
                 .slice(0, step)
                 .every((san, index) => san === card.moves[index]) &&
               other.moves[step] === move?.san,
-          );
+          ));
       if (alternateBranch) {
         openingJournal()?.response(step, responseUci, "alternate");
         setBoardAttempt((value) => value + 1);

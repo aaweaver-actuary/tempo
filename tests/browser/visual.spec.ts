@@ -259,6 +259,41 @@ test("board-unavailable", async ({ page }) => {
   ).toBeVisible();
   await expect(page).toHaveScreenshot("board-unavailable.png");
 });
+for (const width of [390, 1280]) {
+  test(`guided-tactic-completion-${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await prepareVisualUI(page);
+    await page.route("**/api/queue/window?**", route => route.fulfill({ json: { count: 1, cards: [{
+      id: "guided-tactic", queue_entry_id: 9701, revision: 1,
+      start_fen: "q5nr/1ppknQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 w - - 1 18",
+      moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic", repertoire_name: "Tactics",
+      repertoire_source: "test", first_correct_at: "2026-09-17T12:00:00Z",
+    }] } }));
+    await page.reload();
+    const play = async (from: string, to: string) => {
+      await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+      const bounds = await boardBounds(page);
+      for (const square of [from, to]) await page.mouse.click(bounds.x + (square.charCodeAt(0) - 97 + 0.5) * bounds.width / 8,
+        bounds.y + (8 - Number(square[1]) + 0.5) * bounds.height / 8);
+    };
+    await play("a3", "b4");
+    await expect(page.locator(".feedback.wrong")).toBeVisible();
+    await page.clock.install({ time: new Date("2026-09-18T16:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-09-18T16:00:01Z"));
+    await play("a2", "e6");
+    await page.clock.runFor(450);
+    await play("f7", "f8");
+    await page.clock.runFor(20);
+    await expect(page.locator(".feedback.wrong")).toContainText("Guided line complete");
+    await expect(page.locator(".feedback-icon")).toHaveText("×");
+    await expect(page.locator(".feedback.wrong")).toContainText("This attempt counts as Again.");
+    await expect(page.locator(".feedback.wrong")).toHaveCSS("background-color", "rgb(248, 239, 235)");
+    await noPageOverflow(page);
+    await page.locator(".feedback.wrong").evaluate(panel => panel.scrollIntoView({ block: "center" }));
+    await expect(page.locator(".feedback.wrong")).toHaveScreenshot(`guided-tactic-completion-${width}.png`, { animations: "disabled" });
+  });
+}
+
 test("training-feedback-phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareVisualUI(page);

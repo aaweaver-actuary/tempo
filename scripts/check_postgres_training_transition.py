@@ -44,12 +44,17 @@ def main():
             print(json.dumps({"restored_queue_positions": restored, "runtime_reordered_positions": runtime_reordered,
                 "runtime_removed_entries": runtime_removed}))
         return
-    if action in {"seed", "seed-small", "seed-with-existing-queue", "seed-progression"}:
+    if action in {"seed", "seed-small", "seed-with-existing-queue", "seed-progression", "seed-tactics"}:
         today = sys.argv[3]
         # Progression needs a small real queue, not the independent 15,000-card
         # backlog measurement. Its projection is settled below before issuance.
-        seed(identifier, request_refresh=action in {"seed-small", "seed-progression"}, queue_date=today)
+        if action != "seed-tactics":
+            seed(identifier, request_refresh=action in {"seed-small", "seed-progression"}, queue_date=today)
         with psycopg.connect(DSN) as connection:
+            if action == "seed-tactics":
+                # Two clean tactics and no opening sources reproduce the actual
+                # grading boundary without creating the performance backlog.
+                connection.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,'Study-only tactics proof','synthetic','2000-01-01',0)", (identifier,))
             connection.execute("UPDATE repertoire_lines SET moves_json='[\"e2e4\",\"e7e5\",\"g1f3\"]' WHERE repertoire_id=%s", (identifier,))
             # Regular browser suites share only their invocation's disposable
             # database. Earlier tests may leave priority-promoted queue entries.
@@ -62,7 +67,8 @@ def main():
                 connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,0,'due',%s)",
                     (today, identifier+'-due', identifier))
             existing_positions = connection.execute("SELECT id,position,card_id FROM daily_queue WHERE queue_date=%s ORDER BY position,id", (today,)).fetchall()
-            displacement = 64 - min(0, min((row[1] for row in existing_positions), default=0))
+            prepared_card_count = 2 if action == "seed-tactics" else 64
+            displacement = prepared_card_count - min(0, min((row[1] for row in existing_positions), default=0))
             # Queue positions are nonnegative client ordinals. Shift preceding
             # entries together, preserving their relative order, and restore
             # unchanged surviving rows during cleanup after owned rows retire.
@@ -71,7 +77,7 @@ def main():
                 connection.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (position+displacement, entry_id))
                 if not card_id.startswith(identifier):
                     displaced_positions.append([entry_id, position, position+displacement])
-            for index in range(64):
+            for index in range(prepared_card_count):
                 card_id = f"{identifier}-prepared-{index:03}"
                 connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,trained_color,introduced_at) VALUES(%s,%s,'prefix',%s,'[\"e2e4\",\"e7e5\",\"g1f3\"]','learning','2000-01-01','white','2000-01-01')", (card_id, identifier, FEN))
                 # Established cards isolate A→B progression from first-pass reinforcement.
@@ -80,6 +86,11 @@ def main():
                     # Freeze the tactic presentation before the queue insertion
                     # binds its immutable origin and expected revision.
                     connection.execute("UPDATE cards SET kind='checkpoint',content_type='tactic',moves_json='[\"e2e4\"]' WHERE id=%s", (card_id,))
+                if action == "seed-tactics":
+                    tactic_fen = "q5nr/1ppknQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 w - - 1 18"
+                    connection.execute("UPDATE cards SET kind='checkpoint',content_type='tactic',start_fen=%s,moves_json=%s WHERE id=%s",
+                        (tactic_fen if index == 0 else FEN,
+                         json.dumps(['a2e6', 'd7d8', 'f7f8'] if index == 0 else ['e2e4']), card_id))
                 connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (identifier, card_id))
                 connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'due',%s)", (today, card_id, index, identifier))
             connection.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(%s,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
@@ -95,6 +106,15 @@ def main():
             print(json.dumps({"sha256": hashlib.sha256(json.dumps(snapshot, default=str, sort_keys=True).encode()).hexdigest(),
                 "displaced_queue_positions": displaced_positions,
                 "description": "Canonical ordered source rows; identical fixed IDs/date/scheduling/eligible jobs in each fresh invocation. Runtime attempt IDs, leases and clocks are deliberately excluded."}))
+        return
+    if action == "verify-tactics":
+        with psycopg.connect(DSN) as connection:
+            first_card = identifier+'-prepared-000'
+            reviews = connection.execute("SELECT id,rating,guided FROM reviews WHERE card_id=%s ORDER BY id", (first_card,)).fetchall()
+            receipts = connection.execute("SELECT attempt_id,queue_entry_id,review_id,outcome,guided FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id", (first_card,)).fetchall()
+            queue = connection.execute("SELECT id,status,attempt_failed FROM daily_queue WHERE card_id=%s ORDER BY id", (first_card,)).fetchall()
+            source_count = connection.execute("SELECT count(*) FROM repertoire_lines WHERE repertoire_id=%s", (identifier,)).fetchone()[0]
+            print(json.dumps({"reviews": reviews, "receipts": receipts, "queue": queue, "source_count": source_count}))
         return
     if action == "verify-progression":
         with psycopg.connect(DSN) as connection:

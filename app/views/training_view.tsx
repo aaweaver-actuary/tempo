@@ -172,6 +172,7 @@ function StandardTrainingView({
   const trainingMutationBlocked = liveQueueBlocked || reviewBlocked || burialPending;
   const isEndgame = card.kind === "endgame";
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
+  const feedbackPresentation = feedback === "complete" && attemptFailed ? "wrong" : feedback;
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
   const showTeachingArrow =
@@ -474,11 +475,11 @@ function StandardTrainingView({
               <OpeningTitle card={card} />
             </>}
             <div
-              className={`feedback ${feedback}`}
+              className={`feedback ${feedbackPresentation}`}
               role="status"
               aria-live="polite"
             >
-              <FeedbackIcon feedback={feedback} />
+              <FeedbackIcon feedback={feedbackPresentation} />
               <FeedbackText
                 title={attemptFailed && feedback === "ready" ? "Guided attempt resumed" : feedbackCopy.title}
                 body={attemptFailed && feedback === "ready" ? "Follow the highlighted move to finish this line." : feedbackCopy.body}

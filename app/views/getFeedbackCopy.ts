@@ -20,11 +20,13 @@ export function getFeedbackCopy(isAttemptFailed: boolean, card: PracticeCard) {
     },
     wrong: {
       title: "Try that position again",
-      body: "That move is legal, but it isn't in this repertoire.",
+      body: card.kind === "puzzle"
+        ? "That move is not the puzzle solution. Follow the highlighted move to finish."
+        : "That move is legal, but it isn't in this repertoire.",
     },
     complete: {
       title: isAttemptFailed ? "Guided line complete" : "Line recalled",
-      body: "",
+      body: isAttemptFailed ? "This attempt counts as Again." : "",
     },
   };
 }
