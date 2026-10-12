@@ -24,7 +24,7 @@ Exact expanded 39 passing audit identities are in exact-audit-cases.json. Whole-
 
 ## Fresh local execution
 
-macOS arm64, Node 26.10.0, npm 11.19.1; locked npm ci once (18s). No Python environment needed by these selected local unit files. All source/test execution uses the clean committed integration tree; generated secrets/build outputs are task-owned runner artifacts.
+macOS arm64, Node 26.10.0, npm 11.19.1; locked npm ci once (18s). No Python environment needed by these selected local unit files. The initial 39-case run used the staged, resolved merge tree, subsequently committed unchanged as 2940aeff. The 313-case whole-file run (including all 39 audit cases), static checks and native browser suite used the clean committed candidate. Generated secrets/build outputs are task-owned runner artifacts.
 
 - 39 selected audit cases: 3.22s Vitest. Selection excludes 157 other cases; the subsequent unfiltered run executes all selected files.
 - 313 cases / 14 whole files: 12.81s Vitest, 13.59s invocation.
@@ -36,8 +36,16 @@ macOS arm64, Node 26.10.0, npm 11.19.1; locked npm ci once (18s). No Python envi
 
 Run https://github.com/aaweaver-actuary/tempo/actions/runs/38281438557 is selected FULL via ci:full. CI owns complete qualification including PostgreSQL durability and native queue-attempt recovery/prepared-transition proofs. No redundant local full/durability execution. Plan binds exact head and integration above, qualification/complete scope, ready state. GitHub base metadata retains the original common-base SHA; independent main-ref and integration-parent verification establishes actual main 3f733239. Integration tree matches the locally tested head tree.
 
-Final results pending. No merge readiness is claimed until mandatory layers, quality, merge-gate, fresh PR identity and mergeability are verified.
+**MERGE READY.** All mandatory jobs passed in the same successful run, including quality and merge-gate. Frontend: 1,643 cases, unit execution 288.03s; backend: 2,563 cases, execution 316.70s; native browser aggregation: 283 passing identities. Complete PostgreSQL durability: 635.95s (capability check 28.30s separately), with native queue-attempt recovery, prepared-transition proof, operation receipt/recreation, guidance markers, backup/restore and foreground study durability. Lifecycle: 296.93s; pinned visual/performance: 293.98s. All Rust/WASM/build commands passed. Exact commands, selected identities and successful reports are preserved locally and in CI artifacts.
+
+Expected skips are fast (FULL selected), quarantine (not applicable), development (ready qualification selected), pages-build/deploy (PR, no publication). Browser reuse planning success is not substituted for execution: all four fresh shards and aggregation passed. No failed/cancelled required jobs or retries were used. Fresh GitHub readback: ready, MERGEABLE, CLEAN; head and actual main/integration unchanged. No review blocker or inline correctness finding. No merge or deployment performed.
 
 ## Scope and remaining limits
 
 This is narrow integration/qualification. No architecture refactoring, queue redesign, session extraction, cross-tab migration, specialized recovery or live study modification. Finite deterministic cases are not exhaustive model checking. Raw errors lacking ReviewReplayError.flushResult retain existing behavior; no additional defect is asserted. Broader #186/#193/#217/#219/#221/#222 work remains separate.
+
+## Preservation and cleanup
+
+Raw logs, reports, screenshots, downloaded complete CI artifacts, source provenance and resource records remain in root `test-results/audits/2026-10-12-pr191-integration/`. Reviewed report, expanded regression names, exact commands and qualification summary are on separate durable ref `codex/pr191-qualification-evidence-20261012`; PR #191 contains only the integration commit. The initial whole-directory publication was rejected by automatic review; the smaller explicitly reviewed payload excludes raw logs and secret-bearing files. No evidence is discarded.
+
+The native runner removed all its containers/images/volumes/networks and generated credentials; independent inspection verified absence. The isolated clone contains only remote-preserved commits, reproducible node_modules and already-preserved runner ownership output. It has no dirty/untracked/stashed/unpushed work or active process/container consumers. It will be removed after final evidence publication; the dated cleanup receipt records measured recovery. Original settlement-audit and all other-task resources remain retained under their existing owners. No unique state is lost.

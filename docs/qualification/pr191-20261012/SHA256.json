@@ -1,15 +1,16 @@
 {
-  "REPORT.md": "5f2b9e888ecb9add77dc66829e31d802feb46208f8242cda25b80b4c2a497988",
-  "test-plan.md": "3af37b7c8d981ce6f89bbcddde6eed7fdc05c674ca7ccca2aa8b297d5ce4132a",
-  "exact-audit-cases.json": "476f83b3e722db57e182fb53ed80ef1036388689b1fd231ba90de157846ab6b9",
   "candidate-provenance.json": "c31a933fb406bb0ba0ba3b05e5db854e6ea3dcb256d0a0cc4004a7ef9ce143a0",
-  "integration-static.json": "b98a04cb15ae09026db34b2b495b4e0de8723724aebdfd8609a3254afb95d398",
-  "audit-cases-command.json": "b8f354fd40914d48dbaa23c63a72c02a7ae78575b3272e58905b729b4e88961c",
-  "affected-units-command.json": "be33a9d4473801ae90befd32c8c42ea598dd0aef874a98fe75f56be00f2bb609",
+  "REPORT.md": "4bbbbc065338ca8727300549f8b8159c47724392521ed702f2a086e5583c4aa2",
+  "qualification-summary.json": "201376b3f3d4dcfa90a095471c16d786a71ffd6d5b156d4da07b889806517c48",
   "typecheck-command.json": "3d6c8722f48d5271b4a6fe365b4033f459ed17706b1f41c1b8a6e54123016421",
-  "lint-command.json": "421963d8717b04d8cd8df34565d7f5c26ad97d2982856a939ab03ed277b77b8e",
-  "conflicts-command.json": "19cb834f40a4cca4164db85235936c8960f40c77a0db8198f64d5b8aea3b2ac4",
-  "diff-check-command.json": "386de875fc422c3aa009a9f2a32091bbd70322036bd618fe00b71d85db9bee88",
+  "exact-audit-cases.json": "476f83b3e722db57e182fb53ed80ef1036388689b1fd231ba90de157846ab6b9",
   "native-browser-command.json": "144f4e753e4380fd9930b55a367d02a938dbf56cebcda799763e5b8f73e587e7",
-  "native-cleanup-verification.json": "bb8048c88f9ee0f8c6b9fa8f61098e72485bb61e1a7227e694dbe80234238291"
+  "diff-check-command.json": "386de875fc422c3aa009a9f2a32091bbd70322036bd618fe00b71d85db9bee88",
+  "native-cleanup-verification.json": "bb8048c88f9ee0f8c6b9fa8f61098e72485bb61e1a7227e694dbe80234238291",
+  "audit-cases-command.json": "b8f354fd40914d48dbaa23c63a72c02a7ae78575b3272e58905b729b4e88961c",
+  "conflicts-command.json": "19cb834f40a4cca4164db85235936c8960f40c77a0db8198f64d5b8aea3b2ac4",
+  "lint-command.json": "421963d8717b04d8cd8df34565d7f5c26ad97d2982856a939ab03ed277b77b8e",
+  "integration-static.json": "b98a04cb15ae09026db34b2b495b4e0de8723724aebdfd8609a3254afb95d398",
+  "test-plan.md": "3af37b7c8d981ce6f89bbcddde6eed7fdc05c674ca7ccca2aa8b297d5ce4132a",
+  "affected-units-command.json": "be33a9d4473801ae90befd32c8c42ea598dd0aef874a98fe75f56be00f2bb609"
 }
