@@ -174,9 +174,11 @@ def test_postgres_capacity_stale_proposal_rejected_without_side_effects(rejectio
             database.execute("UPDATE opening_graph_publications SET state='failed'")
         elif rejection == 'parent':
             database.execute('UPDATE cards SET archived=1 WHERE id=?', (parent,))
-        elif rejection in ('archived', 'blocked'):
-            column = 'archived' if rejection == 'archived' else 'pending_validation'
-            database.execute(f'UPDATE cards SET {column}=1 WHERE id=?', (candidate,))
+        elif rejection == 'archived':
+            database.execute('UPDATE cards SET archived=1 WHERE id=?', (candidate,))
+        elif rejection == 'blocked':
+            database.execute("INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,signature,created_at,updated_at) VALUES('block','rep','invalid_source','proof',?,?)", (DAY, DAY))
+            database.execute("INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at) VALUES('rep',?,'block','proof',?)", (candidate, DAY))
         elif rejection == 'introduced':
             worker._admit_one_prioritized_opening(database, DAY, proposal)
         elif rejection == 'membership':
