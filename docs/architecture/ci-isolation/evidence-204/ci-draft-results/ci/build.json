@@ -1,0 +1,89 @@
+{
+  "version": 2,
+  "layer": "build",
+  "planHash": "0a40375cc201d8bc7d2f853bfb2f6dbef8bc1cd2a2eda1f3eecbb5ed002d097b",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "executionKey": "ad723fca43da273aa9c9a2ba53662dd49fd467977719673db9490032f4ce1d3b",
+  "execution": {
+    "kind": "executed",
+    "runId": 38282616369,
+    "attempt": 1
+  },
+  "completed": true,
+  "status": "success",
+  "commands": [
+    {
+      "name": "rust_format",
+      "command": "cargo",
+      "args": [
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 0.03
+    },
+    {
+      "name": "rust_lint",
+      "command": "cargo",
+      "args": [
+        "clippy",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 0.44
+    },
+    {
+      "name": "rust_test",
+      "command": "cargo",
+      "args": [
+        "test",
+        "--workspace"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 0.81
+    },
+    {
+      "name": "wasm_build",
+      "command": "npm",
+      "args": [
+        "run",
+        "build:wasm"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 1.15
+    },
+    {
+      "name": "local_build",
+      "command": "npm",
+      "args": [
+        "run",
+        "build:local"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 2.06
+    }
+  ],
+  "tests": [],
+  "timestamp": "2026-10-12T17:16:19.013Z",
+  "environment": {
+    "node": "v22.23.3",
+    "platform": "linux",
+    "architecture": "arm64",
+    "python": "Python 3.12.3",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "cpuCount": 4,
+    "memoryBytes": 16722046976,
+    "wasmPack": "wasm-pack 0.15.0"
+  },
+  "diagnostics": []
+}

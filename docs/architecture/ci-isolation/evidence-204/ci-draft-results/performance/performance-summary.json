@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "timestamp": "2026-10-12T17:17:51.838Z",
+  "environment": {
+    "platform": "linux",
+    "architecture": "arm64",
+    "dockerCpus": "",
+    "dockerMemoryBytes": null,
+    "host": {
+      "platform": "linux",
+      "architecture": "arm64",
+      "cpuModel": "unknown",
+      "logicalCpus": 4,
+      "memoryBytes": 16722010112
+    },
+    "runner": "linux-pinned",
+    "buildMode": "production-local"
+  },
+  "metrics": [],
+  "staleArtifacts": [
+    "held-drag-chromium.json",
+    "browser-chromium.json",
+    "training-card-chromium.json",
+    "builder-similarity-chromium.json"
+  ],
+  "slowestUnitFiles": [],
+  "baselineCommit": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+  "regressions": []
+}

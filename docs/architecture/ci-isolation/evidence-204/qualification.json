@@ -1,6 +1,6 @@
 {
   "source_sha": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
-  "head_sha": "8200e096d6a2b3475dba34f55c7ff381785be0a0",
+  "head_sha": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
   "draft_integration_sha": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
   "ci_run": 38282616369,
   "status": "implementation complete; qualification in progress",
@@ -85,11 +85,18 @@
     {
       "name": "phone browser",
       "command": "make ui-file FILE=phone-offline-training.spec.ts",
-      "result": "running"
+      "result": "passed Chromium",
+      "cases": 15,
+      "wall_seconds": 74.29
     },
     {
-      "name": "FULL CI",
-      "result": "running; mandatory draft rejection is expected, ready-state full qualification still required"
+      "name": "draft FULL CI",
+      "head_sha": "8200e096d6a2b3475dba34f55c7ff381785be0a0",
+      "result": "all mandatory execution/verification layers passed; quality and merge-gate rejected draft state as designed; does not qualify current ready head"
+    },
+    {
+      "name": "ready FULL CI",
+      "result": "pending after integrating merged #191; current head/base require fresh candidate evidence"
     }
   ],
   "limitations": [
@@ -99,5 +106,17 @@
     "#224 remains separate and incomplete."
   ],
   "rollback": "Revert A1 commits; no API/schema/persisted changes.",
-  "cleanup": "All completed native projects report no containers/volumes/networks remaining; completed runner teardown verified. Active phone resources will be verified after completion; no live or other-task cleanup."
+  "cleanup": "All local qualification runs finished and owning runners/harnesses tore down their resources; baseline checkout removed after verified preservation (123036 KiB). Final Docker identifier verification and primary checkout cleanup pending CI completion.",
+  "base_sha": "25363aa0bc7073646ff8a00b94857d4f3127f694",
+  "ready_ci_run": 38284546174,
+  "ready_integration_sha": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "ci_environment": {
+    "runner": "ubuntu-24.04-arm",
+    "platform": "linux",
+    "architecture": "arm64",
+    "node": "22.23.3",
+    "python": "3.12.14",
+    "rust": "1.99.0",
+    "wasmPack": "0.15.0"
+  }
 }

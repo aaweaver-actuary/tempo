@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "root": "/home/runner/work/tempo/tempo",
+  "project": "tempo-pg-regressions-2630-1abdd266-cli",
+  "context": "default",
+  "daemonId": "8f974b14-0723-4083-a0b5-27c58db25a6f",
+  "composeFiles": [
+    "/home/runner/work/tempo/tempo/docker-compose.postgres.test.yml",
+    "/home/runner/work/tempo/tempo/.tempo-pg-test-secrets-qpoYs1/image-labels.json"
+  ],
+  "envFile": null,
+  "disposable": true,
+  "volumes": {
+    "engine-test-operations": {
+      "name": "tempo-pg-regressions-2630-1abdd266-cli_engine-test-operations",
+      "external": false
+    },
+    "postgres-test-backups": {
+      "name": "tempo-pg-regressions-2630-1abdd266-cli_postgres-test-backups",
+      "external": false
+    },
+    "postgres-test-data": {
+      "name": "tempo-pg-regressions-2630-1abdd266-cli_postgres-test-data",
+      "external": false
+    },
+    "redis-test-data": {
+      "name": "tempo-pg-regressions-2630-1abdd266-cli_redis-test-data",
+      "external": false
+    }
+  },
+  "ports": [
+    {
+      "service": "web",
+      "host": "127.0.0.1",
+      "port": "42299",
+      "target": 80
+    }
+  ],
+  "postgresVolumeKey": "postgres-test-data",
+  "postgresMajor": 18,
+  "postgresImage": "postgres:18.6-trixie",
+  "webUrl": "http://127.0.0.1:42299"
+}

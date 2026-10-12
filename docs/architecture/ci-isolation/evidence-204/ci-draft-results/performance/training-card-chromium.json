@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-10-12T17:17:11.128Z",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "fixture": {
+    "name": "six prepared single-move opening cards",
+    "cards": 6
+  },
+  "samples": [
+    {
+      "from": "Transition card 1",
+      "to": "Transition card 2",
+      "clickToPaintMs": 56.345000000001164
+    },
+    {
+      "from": "Transition card 2",
+      "to": "Transition card 3",
+      "clickToPaintMs": 46.39999999999418
+    },
+    {
+      "from": "Transition card 3",
+      "to": "Transition card 4",
+      "clickToPaintMs": 45.05999999999767
+    },
+    {
+      "from": "Transition card 4",
+      "to": "Transition card 5",
+      "clickToPaintMs": 44.054999999993015
+    },
+    {
+      "from": "Transition card 5",
+      "to": "Transition card 6",
+      "clickToPaintMs": 44.40999999997439
+    }
+  ],
+  "summary": {
+    "p50": 45.05999999999767,
+    "p95": 56.345000000001164
+  }
+}

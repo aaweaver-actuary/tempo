@@ -1,0 +1,13 @@
+{
+  "services": {
+    "redis": {
+      "command": [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "always"
+      ]
+    }
+  }
+}

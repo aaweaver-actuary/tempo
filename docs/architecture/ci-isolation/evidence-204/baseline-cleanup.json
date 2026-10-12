@@ -1,0 +1,9 @@
+{
+  "checkout": "/Users/andy/tempo/.dev-copies/issue-204-main-baseline",
+  "source_sha": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+  "durable_source": "origin/main on aaweaver-actuary/tempo",
+  "evidence_commit": "3d27f7066a1123b2a7730349b77c1503a30ef6fa",
+  "checks": "clean tracked/untracked/ignored/stash; no unique commits; no process/mount owner; completed native remaining resources empty; evidence preserved and remote ref verified",
+  "recovered_kib": 123036,
+  "status": "removed"
+}

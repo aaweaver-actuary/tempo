@@ -1,0 +1,855 @@
+foreground-worker-1  | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+foreground-worker-1  | absolutely not recommended!
+foreground-worker-1  | 
+foreground-worker-1  | Please specify a different user using the --uid option.
+foreground-worker-1  | 
+foreground-worker-1  | User information: uid=0 euid=0 gid=0 egid=0
+foreground-worker-1  | 
+foreground-worker-1  |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+foreground-worker-1  |  
+foreground-worker-1  |  -------------- celery@43e67382b447 v5.6.3 (recovery)
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  | -- ******* ---- Linux-6.17.0-1022-azure-aarch64-with-glibc2.41 2026-10-12 13:26:02
+foreground-worker-1  | - *** --- * --- 
+foreground-worker-1  | - ** ---------- [config]
+foreground-worker-1  | - ** ---------- .> app:         tempo:0xff68cd6c65a0
+foreground-worker-1  | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | - ** ---------- .> results:     redis://redis:6379/0
+foreground-worker-1  | - *** --- * --- .> concurrency: 2 (prefork)
+foreground-worker-1  | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  |  -------------- [queues]
+foreground-worker-1  |                 .> foreground       exchange=foreground(direct) key=foreground
+foreground-worker-1  |                 
+foreground-worker-1  | 
+foreground-worker-1  | [tasks]
+foreground-worker-1  |   . app.tasks.ensure_daily_queue
+foreground-worker-1  |   . app.tasks.execute_background_command
+foreground-worker-1  |   . app.tasks.execute_background_slice
+foreground-worker-1  |   . app.tasks.execute_foreground_command
+foreground-worker-1  |   . app.tasks.poll_background_tasks
+foreground-worker-1  |   . app.tasks.recover_active_coverage
+foreground-worker-1  |   . app.tasks.recover_operations
+foreground-worker-1  | 
+postgres-1           | 
+postgres-1           | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1           | 
+postgres-1           | 2026-10-12 17:25:58.096 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1           | 2026-10-12 17:25:58.096 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1           | 2026-10-12 17:25:58.096 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1           | 2026-10-12 17:25:58.096 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1           | 2026-10-12 17:25:58.099 UTC [33] LOG:  database system was shut down at 2026-10-12 17:25:57 UTC
+postgres-1           | 2026-10-12 17:25:58.102 UTC [1] LOG:  database system is ready to accept connections
+background-scheduler-1  | [2026-10-12 17:26:01,817: INFO/MainProcess] beat: Starting...
+background-scheduler-1  | [2026-10-12 17:26:02,850: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:03,847: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:04,847: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:05,847: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:06,847: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:06,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:07,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:08,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:09,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:10,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:11,847: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:11,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:12,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:13,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:14,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:15,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:16,847: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:16,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:17,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:18,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:19,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:20,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:21,847: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:21,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:22,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:23,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:24,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:25,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:26,847: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:26,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:27,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:28,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:29,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:30,849: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:31,847: INFO/MainProcess] Scheduler: Sending due task recover-active-coverage (app.tasks.recover_active_coverage)
+background-scheduler-1  | [2026-10-12 17:26:31,849: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:31,850: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:32,850: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:33,850: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:34,850: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:35,850: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:36,849: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:36,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:37,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:38,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:39,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:40,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:41,849: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:41,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:42,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:43,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:44,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:45,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:46,849: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:26:46,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:47,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:48,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:26:49,851: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:23 +0000] "GET /api/system/tasks HTTP/1.1" 200 23370 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:23 +0000] "GET /api/queue/today HTTP/1.1" 200 1626 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/system/tasks HTTP/1.1" 200 23374 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/queue/today HTTP/1.1" 200 1626 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 292 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/system/tasks HTTP/1.1" 200 23372 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/queue/today HTTP/1.1" 200 1626 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/system/tasks HTTP/1.1" 200 23372 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 292 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/queue/today HTTP/1.1" 200 1626 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/system/tasks HTTP/1.1" 200 23372 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 292 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:24 +0000] "GET /api/queue/today HTTP/1.1" 200 1626 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/system/tasks HTTP/1.1" 200 23377 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/queue/today HTTP/1.1" 200 1626 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/system/tasks HTTP/1.1" 200 23787 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/queue/today HTTP/1.1" 200 1626 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/system/tasks HTTP/1.1" 200 23786 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/queue/today HTTP/1.1" 200 1631 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/system/tasks HTTP/1.1" 200 23793 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:25 +0000] "GET /api/queue/today HTTP/1.1" 200 1631 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/system/tasks HTTP/1.1" 200 23798 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/queue/today HTTP/1.1" 200 1631 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/system/tasks HTTP/1.1" 200 23798 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/queue/today HTTP/1.1" 200 1631 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/system/tasks HTTP/1.1" 200 23798 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/queue/today HTTP/1.1" 200 1631 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/system/tasks HTTP/1.1" 200 23803 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:26 +0000] "GET /api/queue/today HTTP/1.1" 200 1631 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/system/tasks HTTP/1.1" 200 23802 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/queue/today HTTP/1.1" 200 2993 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/system/tasks HTTP/1.1" 200 23791 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/system/tasks HTTP/1.1" 200 23791 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:27 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/system/tasks HTTP/1.1" 200 23790 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 250 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:28 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 440 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview/b202647d-a4ba-4d3b-8517-c1ad2bdaa790 HTTP/1.1" 200 534 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:29 +0000] "POST /api/repertoire/branches HTTP/1.1" 200 315 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/system/tasks HTTP/1.1" 200 24198 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/system/tasks HTTP/1.1" 200 24200 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/system/tasks HTTP/1.1" 200 24200 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/system/tasks HTTP/1.1" 200 24200 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:30 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/system/tasks HTTP/1.1" 200 24203 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/system/tasks HTTP/1.1" 200 24203 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/system/tasks HTTP/1.1" 200 24203 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/system/tasks HTTP/1.1" 200 24203 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+maia-worker-1           | [0;93m2026-10-12 17:26:28.320690 [W:onnxruntime:Default, cpuid_info.cc:91 LogEarlyWarning] Unknown CPU vendor. cpuinfo_vendor value: 0[m
+maia-worker-1           | Maia coverage failed: Error: /api/repertoire-coverage/maia/submit: HTTP 409 {"detail":"Coverage lease is no longer active"}
+maia-worker-1           |     at requestMaiaApi (file:///app/scripts/maia-coverage-client.mjs:35:19)
+maia-worker-1           |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+maia-worker-1           |     at async file:///app/scripts/maia-coverage-worker.mjs:112:7 {
+maia-worker-1           |   terminal: true
+maia-worker-1           | }
+maia-worker-1           | Could not report Maia failure: Error: /api/repertoire-coverage/maia/failure: HTTP 409 {"detail":"Coverage lease is no longer active"}
+maia-worker-1           |     at requestMaiaApi (file:///app/scripts/maia-coverage-client.mjs:35:19)
+maia-worker-1           |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+maia-worker-1           |     at async file:///app/scripts/maia-coverage-worker.mjs:121:9 {
+maia-worker-1           |   terminal: true
+maia-worker-1           | }
+background-worker-1     | [2026-10-12 13:26:49,856: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 13:26:02,545: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+redis-1                 | 1:C 12 Oct 2026 17:25:58.069 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+redis-1                 | 1:C 12 Oct 2026 17:25:58.071 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+api-1                   | INFO:     172.18.0.10:60044 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60072 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60098 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60082 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.8:36492 - "POST /api/repertoire-coverage/maia/submit HTTP/1.1" 409 Conflict
+api-1                   | INFO:     172.18.0.8:36494 - "POST /api/repertoire-coverage/maia/failure HTTP/1.1" 409 Conflict
+api-1                   | INFO:     172.18.0.10:60108 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60114 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60110 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60124 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60132 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60142 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60156 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60154 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60164 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60182 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+background-worker-1     | [2026-10-12 13:26:49,860: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 13:26:49,860: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 13:26:49,862: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,863: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,868: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,868: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 13:26:49,868: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:49.868869+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0007273610000311237,"handler_elapsed_seconds":0.008149981000087791,"execution_seconds":0.007422620000056668,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:49,870: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[4cfc921cf6e04edea123d386d65f5c4a] succeeded in 0.016517218999979377s: True
+background-worker-1     | [2026-10-12 13:26:49,872: INFO/MainProcess] Task app.tasks.poll_background_tasks[49c5554ea076412c8cb340198d7536d4] received
+background-worker-1     | [2026-10-12 13:26:49,874: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,879: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,879: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.004s
+background-worker-1     | [2026-10-12 13:26:49,881: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,882: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,886: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,886: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:49,886: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:49.886942+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.000740990999929636,"handler_elapsed_seconds":0.007329267000045547,"execution_seconds":0.006588276000115911,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:49,888: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[49c5554ea076412c8cb340198d7536d4] succeeded in 0.01613594100001592s: True
+background-worker-1     | [2026-10-12 13:26:49,890: INFO/MainProcess] Task app.tasks.poll_background_tasks[6ca7e3892c0944a2b6c0d16f818c5b37] received
+background-worker-1     | [2026-10-12 13:26:49,892: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:31 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+schema-1                | PostgreSQL schema version 47
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+foreground-worker-1     | [2026-10-12 13:26:02,547: INFO/MainProcess] mingle: searching for neighbors
+foreground-worker-1     | [2026-10-12 13:26:03,553: INFO/MainProcess] mingle: all alone
+foreground-worker-1     | [2026-10-12 13:26:03,563: INFO/MainProcess] celery@43e67382b447 ready.
+foreground-worker-1     | [2026-10-12 13:26:03,565: INFO/MainProcess] Task app.tasks.execute_foreground_command[7c1ea1c651dd409dbf8ea6e141310b16] received
+foreground-worker-1     | [2026-10-12 13:26:03,608: INFO/ForkPoolWorker-2] foreground command=queue.ensure_current queue_wait_seconds=1.076 execution_seconds=0.038
+foreground-worker-1     | [2026-10-12 13:26:03,609: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[7c1ea1c651dd409dbf8ea6e141310b16] succeeded in 0.04259310400004779s: {'queue_date': '2026-10-12', 'refresh_pending': False}
+foreground-worker-1     | [2026-10-12 13:26:11,214: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-pgn-3c3084f0526018a74b2c734e] received
+foreground-worker-1     | [2026-10-12 13:26:11,218: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-pgn-3c3084f0526018a74b2c734e] succeeded in 0.0031646319999936168s: None
+foreground-worker-1     | [2026-10-12 13:26:11,278: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-discard-c4af0226de19b0db6bdd8635] received
+foreground-worker-1     | [2026-10-12 13:26:11,285: ERROR/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-discard-c4af0226de19b0db6bdd8635] raised unexpected: CommandConflict('Operation ID was already used for another request')
+foreground-worker-1     | Traceback (most recent call last):
+foreground-worker-1     |   File "/usr/local/lib/python3.12/site-packages/celery/app/trace.py", line 585, in trace_task
+foreground-worker-1     |     R = retval = fun(*args, **kwargs)
+foreground-worker-1     |                  ^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1     |   File "/usr/local/lib/python3.12/site-packages/celery/app/trace.py", line 858, in __protected_call__
+foreground-worker-1     |     return self.run(*args, **kwargs)
+foreground-worker-1     |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+redis-1                 | 1:C 12 Oct 2026 17:25:58.071 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1                 | 1:C 12 Oct 2026 17:25:58.071 * Configuration loaded
+redis-1                 | 1:M 12 Oct 2026 17:25:58.071 * monotonic clock: POSIX clock_gettime
+redis-1                 | 1:M 12 Oct 2026 17:25:58.071 * Running mode=standalone, port=6379.
+background-worker-1     | [2026-10-12 13:26:49,898: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+api-1                   | INFO:     172.18.0.10:60180 - "GET /api/system/tasks HTTP/1.0" 200 OK
+background-worker-1     | [2026-10-12 13:26:49,898: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:49,900: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,901: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,905: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * Server initialized
+background-worker-1     | [2026-10-12 13:26:49,905: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:49,906: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:49.906016+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.000776540000060777,"handler_elapsed_seconds":0.007050142000025517,"execution_seconds":0.00627360199996474,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:49,907: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[6ca7e3892c0944a2b6c0d16f818c5b37] succeeded in 0.016926608000062515s: True
+background-worker-1     | [2026-10-12 13:26:49,909: INFO/MainProcess] Task app.tasks.poll_background_tasks[4528b4addd7a4a618c083fc5f31fcb68] received
+background-worker-1     | [2026-10-12 13:26:49,911: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,917: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,917: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 13:26:49,919: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,920: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,924: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,924: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:49,925: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:49.925360+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0007725809999783451,"handler_elapsed_seconds":0.007641871000032552,"execution_seconds":0.006869290000054207,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:49,927: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[4528b4addd7a4a618c083fc5f31fcb68] succeeded in 0.01762113900008444s: True
+background-worker-1     | [2026-10-12 13:26:49,928: INFO/MainProcess] Task app.tasks.poll_background_tasks[e7c1ed04877140d69fb1b10ac06be49a] received
+background-worker-1     | [2026-10-12 13:26:49,930: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,936: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,936: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:49,938: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,939: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,944: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * Reading RDB base file on AOF loading...
+foreground-worker-1     |   File "/app/app/tasks.py", line 188, in execute_foreground_command
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * Loading RDB produced by version 7.4.11
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * RDB age 445 seconds
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * RDB memory usage when created 0.94 Mb
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * RDB is base AOF
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * Done loading RDB, keys loaded: 0, keys expired: 0.
+redis-1                 | 1:M 12 Oct 2026 17:25:58.072 * DB loaded from base file appendonly.aof.1.base.rdb: 0.000 seconds
+redis-1                 | 1:M 12 Oct 2026 17:25:58.694 * DB loaded from incr file appendonly.aof.1.incr.aof: 0.623 seconds
+redis-1                 | 1:M 12 Oct 2026 17:25:58.694 * DB loaded from append only file: 0.623 seconds
+redis-1                 | 1:M 12 Oct 2026 17:25:58.694 * Opening AOF incr file appendonly.aof.1.incr.aof on server start
+redis-1                 | 1:M 12 Oct 2026 17:25:58.694 * Ready to accept connections tcp
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/system/tasks HTTP/1.1" 200 24206 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/system/tasks HTTP/1.1" 200 24206 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/system/tasks HTTP/1.1" 200 24206 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/system/tasks HTTP/1.1" 200 24206 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:32 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+background-worker-1     | [2026-10-12 13:26:49,944: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/system/tasks HTTP/1.1" 200 24212 "-" "node" "-"
+background-worker-1     | [2026-10-12 13:26:49,944: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:49.944795+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0008139620000520154,"handler_elapsed_seconds":0.007824131000006673,"execution_seconds":0.007010168999954658,"dispatch_wait_seconds":null}
+foreground-worker-1     |     return _execute_foreground_command(self, operation_id, command_name, payload, expected_retry_cycle)
+background-worker-1     | [2026-10-12 13:26:49,946: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[e7c1ed04877140d69fb1b10ac06be49a] succeeded in 0.01766911100003199s: True
+foreground-worker-1     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+background-worker-1     | [2026-10-12 13:26:49,948: INFO/MainProcess] Task app.tasks.poll_background_tasks[c64793dea8ff42a9bdb0c45f78a0a078] received
+foreground-worker-1     |   File "/app/app/tasks.py", line 198, in _execute_foreground_command
+background-worker-1     | [2026-10-12 13:26:49,950: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     |     should_execute, saved_payload, attempt_token, _attempt_number = record_operation_attempt(
+defense-engine-1        | {"event":"engine_waiting","kind":"engine","stage":"idle","observed_at":"2026-10-12T17:26:08.260Z"}
+defense-engine-1        | {"event":"engine_waiting","kind":"engine","stage":"foreground_admission","observed_at":"2026-10-12T17:26:41.444Z"}
+defense-engine-1        | {"event":"engine_waiting","kind":"engine","stage":"idle","observed_at":"2026-10-12T17:26:43.503Z"}
+foreground-worker-1     |                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+foreground-worker-1     |   File "/app/app/command_gateway.py", line 102, in record_operation_attempt
+foreground-worker-1     |     raise CommandConflict("Operation ID was already used for another request")
+foreground-worker-1     | app.command_gateway.CommandConflict: Operation ID was already used for another request
+foreground-worker-1     | [2026-10-12 13:26:11,332: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-review-3188b1238d16fb1e85c64229] received
+foreground-worker-1     | [2026-10-12 13:26:11,336: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-review-3188b1238d16fb1e85c64229] succeeded in 0.0029608930000222244s: None
+foreground-worker-1     | [2026-10-12 13:26:11,398: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-prefix-save-3880f3fdcb93e2dd84b2] received
+foreground-worker-1     | [2026-10-12 13:26:11,403: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-prefix-save-3880f3fdcb93e2dd84b2] succeeded in 0.003726819999997133s: None
+foreground-worker-1     | [2026-10-12 13:26:11,463: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-bury-0c8d331c174b6709b41766d6] received
+foreground-worker-1     | [2026-10-12 13:26:11,467: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-bury-0c8d331c174b6709b41766d6] succeeded in 0.0034873949999791876s: None
+foreground-worker-1     | [2026-10-12 13:26:11,478: INFO/MainProcess] Task app.tasks.execute_foreground_command[7ccb8a5ff07647edae9e6d323db9bf5b] received
+foreground-worker-1     | [2026-10-12 13:26:11,567: INFO/ForkPoolWorker-2] foreground command=repertoires.delete queue_wait_seconds=0.002 execution_seconds=0.089
+foreground-worker-1     | [2026-10-12 13:26:11,568: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[7ccb8a5ff07647edae9e6d323db9bf5b] succeeded in 0.0902831820000074s: {'deleted': True, 'id': '920c56d6-a3c4-40fe-b985-32d6067c7c48'}
+foreground-worker-1     | [2026-10-12 13:26:11,576: INFO/MainProcess] Task app.tasks.execute_foreground_command[b74a524a5ec04b2497372bd1d3a78a0f] received
+foreground-worker-1     | [2026-10-12 13:26:11,600: INFO/ForkPoolWorker-2] foreground command=repertoires.delete queue_wait_seconds=0.002 execution_seconds=0.024
+background-worker-1     | [2026-10-12 13:26:49,956: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+api-1                   | INFO:     172.18.0.10:60204 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60212 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60214 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60234 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     127.0.0.1:51510 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60240 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60242 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60260 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60270 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60280 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60268 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.8:36492 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:36494 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60288 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60290 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60302 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60312 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60336 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60324 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60344 - "GET /api/system/tasks HTTP/1.0" 200 OK
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+foreground-worker-1     | [2026-10-12 13:26:11,601: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[b74a524a5ec04b2497372bd1d3a78a0f] succeeded in 0.025040548999982093s: {'deleted': True, 'id': '4a0d4e9a-2acb-48a0-811a-be0e612180b9'}
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 254 "-" "node" "-"
+background-worker-1     | [2026-10-12 13:26:49,956: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.005s
+foreground-worker-1     | [2026-10-12 13:26:11,734: INFO/MainProcess] Task app.tasks.execute_foreground_command[2e0ec12ee54a4ebcb472ac46cd7494c5] received
+background-worker-1     | [2026-10-12 13:26:49,958: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 13:26:11,762: INFO/ForkPoolWorker-2] foreground command=imports.pgn.admit queue_wait_seconds=0.003 execution_seconds=0.026
+background-worker-1     | [2026-10-12 13:26:49,959: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,961: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,962: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,964: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 13:26:11,762: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[2e0ec12ee54a4ebcb472ac46cd7494c5] succeeded in 0.02749517199993079s: {'repertoire_id': 'd8a19b29-4897-41d2-b5c7-c431f1c8b27d', 'source_name': 'current-canonical-routes.pgn', 'games_found': 1, 'unique_lines': 1, 'cards_created': 1, 'duplicates_merged': 0, 'cards_admitted_today': 0, 'integrity': {'status': 'unchecked', 'issue_count': 0, 'first_issue_id': None, 'checked_at': None, 'scan_status': 'idle', 'scan_generation': None, 'scan_progress': {'completed': 0, 'total': 0}, 'last_scan_error': None}, 'decision_cards_created': 0, 'shared_decisions_reused': 0, 'prefix_cards_created': 1, 'shared_prefixes_reused': 0, 'descendant_decision_cards_created': 0, 'graph_state': 'refreshing'}
+api-1                   | INFO:     172.18.0.10:60348 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+foreground-worker-1     | [2026-10-12 13:26:14,121: INFO/MainProcess] Task app.tasks.execute_foreground_command[651456fbc7784ad6835f7884db3fc8e9] received
+api-1                   | INFO:     172.18.0.10:60352 - "GET /api/queue/today HTTP/1.0" 200 OK
+background-worker-1     | [2026-10-12 13:26:49,967: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,968: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:49,968: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:49.968691+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0019496460000709703,"handler_elapsed_seconds":0.012163282999949843,"execution_seconds":0.010213636999878872,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:49,970: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[c64793dea8ff42a9bdb0c45f78a0a078] succeeded in 0.021919117999914306s: True
+background-worker-1     | [2026-10-12 13:26:49,971: INFO/MainProcess] Task app.tasks.poll_background_tasks[ecb5b3003cf34486a0edaa87f154b0b5] received
+background-worker-1     | [2026-10-12 13:26:49,974: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,980: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,980: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:49,982: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:49,983: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+foreground-worker-1     | [2026-10-12 13:26:14,146: INFO/ForkPoolWorker-2] foreground command=queue.issue_head queue_wait_seconds=0.003 execution_seconds=0.024
+foreground-worker-1     | [2026-10-12 13:26:14,146: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[651456fbc7784ad6835f7884db3fc8e9] succeeded in 0.025126600000021426s: {'issued': True}
+foreground-worker-1     | [2026-10-12 13:26:18,879: INFO/MainProcess] Task app.tasks.execute_foreground_command[2a963b8551e947a9bde428a321f35149] received
+foreground-worker-1     | [2026-10-12 13:26:18,896: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.006 execution_seconds=0.016
+foreground-worker-1     | [2026-10-12 13:26:18,897: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[2a963b8551e947a9bde428a321f35149] succeeded in 0.017150005999951645s: {'preview_id': 'fd75b9bc-e17a-47d9-82a3-e928a07f7b3c', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4', 'ending_fen': 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3', 'revision': 0}
+foreground-worker-1     | [2026-10-12 13:26:19,978: INFO/MainProcess] Task app.tasks.execute_foreground_command[eb243f968037410db71b210591654408] received
+foreground-worker-1     | [2026-10-12 13:26:20,022: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.save queue_wait_seconds=0.003 execution_seconds=0.043
+foreground-worker-1     | [2026-10-12 13:26:20,023: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[eb243f968037410db71b210591654408] succeeded in 0.04423225800007913s: {'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4', 'ending_fen': 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:20,032: INFO/MainProcess] Task app.tasks.execute_foreground_command[ea50aa6a2e764f5a867c920d1e1dddcf] received
+foreground-worker-1     | [2026-10-12 13:26:20,057: INFO/ForkPoolWorker-2] foreground command=repertoire.branch.add queue_wait_seconds=0.003 execution_seconds=0.025
+foreground-worker-1     | [2026-10-12 13:26:20,058: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[ea50aa6a2e764f5a867c920d1e1dddcf] succeeded in 0.026032048999923063s: {'id': 'de9a65a8ab1bf1ddccce9d330575193ec67cf0c526bd0574ecbf44e6d97c09d7', 'duplicate': False, 'moves': ['g8f6', 'd2d3'], 'integrity': {'status': 'unchecked', 'issue_count': 0, 'first_issue_id': None, 'checked_at': None, 'scan_status': 'idle', 'scan_generation': None, 'scan_progress': {'completed': 0, 'total': 0}, 'last_scan_error': None}}
+foreground-worker-1     | [2026-10-12 13:26:20,066: INFO/MainProcess] Task app.tasks.execute_foreground_command[7e06b05a6e354b92b35fe80f7964c8d6] received
+foreground-worker-1     | [2026-10-12 13:26:20,086: INFO/ForkPoolWorker-2] foreground command=repertoire.branch.remove queue_wait_seconds=0.003 execution_seconds=0.019
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/system/tasks HTTP/1.1" 200 24211 "-" "node" "-"
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 292 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/system/tasks HTTP/1.1" 200 24210 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/system/tasks HTTP/1.1" 200 24208 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:33 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/system/tasks HTTP/1.1" 200 24208 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/system/tasks HTTP/1.1" 200 24218 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/system/tasks HTTP/1.1" 200 24218 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/system/tasks HTTP/1.1" 200 24218 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:34 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60354 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60356 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60362 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60374 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60364 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60382 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60384 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60390 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60406 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60434 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60416 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60432 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60466 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60450 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60470 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60480 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60472 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60490 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60508 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60500 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60506 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60510 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 293 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/system/tasks HTTP/1.1" 200 24215 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/queue/today HTTP/1.1" 200 2989 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/system/tasks HTTP/1.1" 200 24215 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/queue/today HTTP/1.1" 200 2994 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/system/tasks HTTP/1.1" 200 24215 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:35 +0000] "GET /api/queue/today HTTP/1.1" 200 2994 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/system/tasks HTTP/1.1" 200 24224 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/queue/today HTTP/1.1" 200 2994 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/system/tasks HTTP/1.1" 200 24220 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/queue/today HTTP/1.1" 200 4356 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/system/tasks HTTP/1.1" 200 24214 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/queue/today HTTP/1.1" 200 4352 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/system/tasks HTTP/1.1" 200 24214 "-" "node" "-"
+api-1                   | INFO:     172.18.0.10:60512 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60528 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+background-worker-1     | [2026-10-12 13:26:49,989: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 13:26:49,989: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:49,989: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:49.989804+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.00076945400007844,"handler_elapsed_seconds":0.009277523000037036,"execution_seconds":0.008508068999958596,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:49,991: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[ecb5b3003cf34486a0edaa87f154b0b5] succeeded in 0.0192215849999684s: True
+background-worker-1     | [2026-10-12 13:26:49,993: INFO/MainProcess] Task app.tasks.poll_background_tasks[798e9c9f25cc450bbed91eea728635f2] received
+background-worker-1     | [2026-10-12 13:26:49,995: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,001: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,001: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 13:26:50,004: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,005: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,009: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,009: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,009: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.009901+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0007647889999589097,"handler_elapsed_seconds":0.007534540999927231,"execution_seconds":0.006769751999968321,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,011: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[798e9c9f25cc450bbed91eea728635f2] succeeded in 0.017951380999988942s: True
+background-worker-1     | [2026-10-12 13:26:50,013: INFO/MainProcess] Task app.tasks.poll_background_tasks[d6f120b970a940d0b110c0b8ac0a1751] received
+background-worker-1     | [2026-10-12 13:26:50,015: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,021: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,021: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,024: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,025: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,027: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,029: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,034: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,034: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 13:26:50,035: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.035236+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0014775590001363526,"handler_elapsed_seconds":0.012835750000022017,"execution_seconds":0.011358190999885664,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,037: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d6f120b970a940d0b110c0b8ac0a1751] succeeded in 0.02299027100002604s: True
+background-worker-1     | [2026-10-12 13:26:50,038: INFO/MainProcess] Task app.tasks.poll_background_tasks[4cfb6b72456e45429c8a4341d7e67b37] received
+background-worker-1     | [2026-10-12 13:26:50,040: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,047: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,047: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 13:26:50,049: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,050: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,052: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,057: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,057: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 13:26:50,058: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.058020+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0010417710001320302,"handler_elapsed_seconds":0.010278063999976439,"execution_seconds":0.009236292999844409,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,059: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[4cfb6b72456e45429c8a4341d7e67b37] succeeded in 0.020808239999951184s: True
+background-worker-1     | [2026-10-12 13:26:50,061: INFO/MainProcess] Task app.tasks.poll_background_tasks[3e7cae66191d43f2829d904f827be73b] received
+background-worker-1     | [2026-10-12 13:26:50,063: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,069: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 13:26:50,069: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,071: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,072: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,074: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,078: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,078: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,078: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.078919+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0010941519999505545,"handler_elapsed_seconds":0.009109373999990567,"execution_seconds":0.008015222000040012,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,080: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[3e7cae66191d43f2829d904f827be73b] succeeded in 0.018872582999961196s: True
+background-worker-1     | [2026-10-12 13:26:50,082: INFO/MainProcess] Task app.tasks.poll_background_tasks[1b2d68663fb84f29b71ab55d3188ff0c] received
+background-worker-1     | [2026-10-12 13:26:50,084: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,089: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,090: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,092: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,093: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,095: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,099: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,099: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,100: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.100218+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0012196950000316065,"handler_elapsed_seconds":0.009801735999985794,"execution_seconds":0.008582040999954188,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,101: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[1b2d68663fb84f29b71ab55d3188ff0c] succeeded in 0.019416980000073636s: True
+background-worker-1     | [2026-10-12 13:26:50,103: INFO/MainProcess] Task app.tasks.poll_background_tasks[448bd4569726496ea3a29fcdf897374d] received
+background-worker-1     | [2026-10-12 13:26:50,105: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,111: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,111: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,113: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,114: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,117: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,119: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,121: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,123: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,126: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,127: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,127: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.127630+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0023639639998691564,"handler_elapsed_seconds":0.01579272399999354,"execution_seconds":0.013428760000124385,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,129: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[448bd4569726496ea3a29fcdf897374d] succeeded in 0.025679870000089977s: True
+background-worker-1     | [2026-10-12 13:26:50,131: INFO/MainProcess] Task app.tasks.poll_background_tasks[9e1a8b4e6158428eb8a8c66c4e856249] received
+background-worker-1     | [2026-10-12 13:26:50,133: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,139: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,139: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,141: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,142: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,144: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,145: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,147: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,151: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,151: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,152: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.152237+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0018096080000304937,"handler_elapsed_seconds":0.012655938999955652,"execution_seconds":0.010846330999925158,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,154: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[9e1a8b4e6158428eb8a8c66c4e856249] succeeded in 0.022583425999982865s: True
+background-worker-1     | [2026-10-12 13:26:50,155: INFO/MainProcess] Task app.tasks.poll_background_tasks[06d2ce8270854725a8c6b173f88d4e49] received
+background-worker-1     | [2026-10-12 13:26:50,157: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,163: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,163: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,165: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,167: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,170: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,173: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,173: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,174: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.174431+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0011359409999158743,"handler_elapsed_seconds":0.01019964500005699,"execution_seconds":0.009063704000141115,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,176: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[06d2ce8270854725a8c6b173f88d4e49] succeeded in 0.020243013000026622s: True
+background-worker-1     | [2026-10-12 13:26:50,177: INFO/MainProcess] Task app.tasks.poll_background_tasks[ef49284372e04bde85069f707c959600] received
+background-worker-1     | [2026-10-12 13:26:50,179: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,186: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,186: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.006s
+background-worker-1     | [2026-10-12 13:26:50,188: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,189: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,191: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,193: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,194: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,201: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,201: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,202: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.202068+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0021161239999401005,"handler_elapsed_seconds":0.015527285000075608,"execution_seconds":0.013411161000135507,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,203: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[ef49284372e04bde85069f707c959600] succeeded in 0.025662007000050835s: True
+background-worker-1     | [2026-10-12 13:26:50,205: INFO/MainProcess] Task app.tasks.poll_background_tasks[c3169f9da499401098d16d00d746af11] received
+background-worker-1     | [2026-10-12 13:26:50,207: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,213: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,214: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.006s
+background-worker-1     | [2026-10-12 13:26:50,216: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,217: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,219: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,223: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,223: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,223: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.223615+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.0010963519999904747,"handler_elapsed_seconds":0.0092237890000888,"execution_seconds":0.008127437000098325,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,225: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[c3169f9da499401098d16d00d746af11] succeeded in 0.019406851999974606s: True
+background-worker-1     | [2026-10-12 13:26:50,226: INFO/MainProcess] Task app.tasks.poll_background_tasks[b5d5c20614124e4d9d39ec194a74fe49] received
+background-worker-1     | [2026-10-12 13:26:50,229: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,234: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,234: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:26:50,236: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,237: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,240: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,243: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:26:50,243: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:26:50,244: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:26:50.244420+00:00","process_started_at":"2026-10-12T17:26:01.935051+00:00","admission_wait_seconds":0.001147532000004503,"handler_elapsed_seconds":0.009179144999961864,"execution_seconds":0.00803161299995736,"dispatch_wait_seconds":null}
+background-worker-1     | [2026-10-12 13:26:50,245: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[b5d5c20614124e4d9d39ec194a74fe49] succeeded in 0.017873425000061616s: False
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:36 +0000] "GET /api/queue/today HTTP/1.1" 200 4352 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.1" 200 316 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "GET /api/system/tasks HTTP/1.1" 200 24214 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "GET /api/queue/today HTTP/1.1" 200 4352 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 181 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 194 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 206 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 222 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 235 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 250 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 263 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 278 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 290 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:37 +0000] "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.1" 200 302 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:40 +0000] "GET /api/settings HTTP/1.1" 200 596 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:41 +0000] "GET /api/queue/today HTTP/1.1" 200 4352 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:41 +0000] "PUT /api/settings HTTP/1.1" 200 594 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:41 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:41 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:41 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:42 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:42 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:42 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:43 +0000] "GET /api/queue/today HTTP/1.1" 200 4352 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:43 +0000] "PUT /api/settings HTTP/1.1" 200 596 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:43 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:43 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:43 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:43 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:44 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:44 +0000] "GET /api/queue/today HTTP/1.1" 200 4357 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:44 +0000] "GET /api/queue/today HTTP/1.1" 200 5593 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:44 +0000] "GET /api/queue/today HTTP/1.1" 200 5593 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:45 +0000] "GET /api/queue/today HTTP/1.1" 200 5593 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:45 +0000] "GET /api/queue/today HTTP/1.1" 200 5593 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:45 +0000] "GET /api/queue/today HTTP/1.1" 200 5593 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:45 +0000] "GET /api/queue/today HTTP/1.1" 200 5593 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:46 +0000] "GET /api/queue/today HTTP/1.1" 200 5588 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:46 +0000] "GET /api/migration/snapshot HTTP/1.1" 200 315361 "-" "node" "-"
+web-1                   | 2026/10/12 17:26:46 [warn] 31#31: *46 an upstream response is buffered to a temporary file /var/cache/nginx/proxy_temp/2/00/0000000002 while reading upstream, client: 172.18.0.1, server: , request: "GET /api/migration/snapshot HTTP/1.1", upstream: "http://172.18.0.6:8000/api/migration/snapshot", host: "127.0.0.1:37141"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:46 +0000] "POST /api/queue/entries/539/bury HTTP/1.1" 202 183 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:46 +0000] "POST /api/operations/pg-study-blocked-bury/retry HTTP/1.1" 202 135 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:46 +0000] "GET /api/operations/pg-study-blocked-bury HTTP/1.1" 200 333 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:47 +0000] "GET /api/operations/pg-study-blocked-bury HTTP/1.1" 200 257 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:47 +0000] "GET /api/operations/pg-study-blocked-bury HTTP/1.1" 200 257 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:47 +0000] "GET /api/queue/today HTTP/1.1" 200 4225 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:47 +0000] "GET /api/migration/snapshot HTTP/1.1" 200 315361 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:47 +0000] "POST /api/queue/entries/539/bury HTTP/1.1" 200 36 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:26:47 +0000] "GET /api/queue/today HTTP/1.1" 200 4225 "-" "node" "-"
+foreground-worker-1     | [2026-10-12 13:26:20,087: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[7e06b05a6e354b92b35fe80f7964c8d6] succeeded in 0.020470181000064258s: {'deleted_line_count': 1, 'deleted_card_count': 0, 'retained_line_count': 1, 'integrity': {'status': 'unchecked', 'issue_count': 0, 'first_issue_id': None, 'checked_at': None, 'scan_status': 'idle', 'scan_generation': None, 'scan_progress': {'completed': 0, 'total': 0}, 'last_scan_error': None}}
+foreground-worker-1     | [2026-10-12 13:26:20,095: INFO/MainProcess] Task app.tasks.execute_foreground_command[4199234424e1478ca23f4f93dd066fb7] received
+foreground-worker-1     | [2026-10-12 13:26:20,102: INFO/ForkPoolWorker-2] foreground command=repertoire.branch.add queue_wait_seconds=0.003 execution_seconds=0.006
+foreground-worker-1     | [2026-10-12 13:26:20,102: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[4199234424e1478ca23f4f93dd066fb7] succeeded in 0.007147412999984226s: None
+foreground-worker-1     | [2026-10-12 13:26:20,111: INFO/MainProcess] Task app.tasks.execute_foreground_command[c7a1073fc344401db5d4ca555dceef7b] received
+foreground-worker-1     | [2026-10-12 13:26:20,135: INFO/ForkPoolWorker-2] foreground command=repertoire.branch.add queue_wait_seconds=0.003 execution_seconds=0.023
+foreground-worker-1     | [2026-10-12 13:26:20,136: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[c7a1073fc344401db5d4ca555dceef7b] succeeded in 0.024770634999981667s: {'id': 'ff07e8c47189cc9dc7a698fc92042e56809fef46008e4134fbf854cc1ce41f10', 'duplicate': False, 'moves': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'c2c3'], 'integrity': {'status': 'unchecked', 'issue_count': 0, 'first_issue_id': None, 'checked_at': None, 'scan_status': 'idle', 'scan_generation': None, 'scan_progress': {'completed': 0, 'total': 0}, 'last_scan_error': None}}
+foreground-worker-1     | [2026-10-12 13:26:27,469: INFO/MainProcess] Task app.tasks.execute_foreground_command[b8cbedfd753942e0aa81477525fe272f] received
+foreground-worker-1     | [2026-10-12 13:26:27,481: INFO/ForkPoolWorker-2] foreground command=queue.issue_head queue_wait_seconds=0.003 execution_seconds=0.010
+foreground-worker-1     | [2026-10-12 13:26:27,482: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[b8cbedfd753942e0aa81477525fe272f] succeeded in 0.011585570000079315s: {'issued': True}
+foreground-worker-1     | [2026-10-12 13:26:28,012: INFO/MainProcess] Task app.tasks.execute_foreground_command[1d2c99fecf5b435794fa315b7b6b515b] received
+foreground-worker-1     | [2026-10-12 13:26:28,024: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.011
+foreground-worker-1     | [2026-10-12 13:26:28,025: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[1d2c99fecf5b435794fa315b7b6b515b] succeeded in 0.012370014999987688s: {'preview_id': 'b202647d-a4ba-4d3b-8517-c1ad2bdaa790', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4', 'ending_fen': 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:29,971: INFO/MainProcess] Task app.tasks.execute_foreground_command[644761ff2b264cc09c5b4cc0ac7e3e58] received
+foreground-worker-1     | [2026-10-12 13:26:29,994: INFO/ForkPoolWorker-2] foreground command=repertoire.branch.add queue_wait_seconds=0.003 execution_seconds=0.022
+foreground-worker-1     | [2026-10-12 13:26:29,995: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[644761ff2b264cc09c5b4cc0ac7e3e58] succeeded in 0.02382132200000342s: {'id': 'e8ec4f1fcd9109e35d3a3a67e0b5a518b07ced485d34324072a21428a59150fc', 'duplicate': False, 'moves': ['d7d6', 'd2d3'], 'integrity': {'status': 'unchecked', 'issue_count': 0, 'first_issue_id': None, 'checked_at': None, 'scan_status': 'idle', 'scan_generation': None, 'scan_progress': {'completed': 0, 'total': 0}, 'last_scan_error': None}}
+foreground-worker-1     | [2026-10-12 13:26:37,077: INFO/MainProcess] Task app.tasks.execute_foreground_command[13c176110ed44644938790fc8d95d126] received
+foreground-worker-1     | [2026-10-12 13:26:37,087: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.010
+foreground-worker-1     | [2026-10-12 13:26:37,088: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[13c176110ed44644938790fc8d95d126] succeeded in 0.011153507000017271s: {'preview_id': 'ede2df52-bd8b-4e93-ad32-2c503a8d0cbf', 'state': 'checking', 'moves_uci': [], 'san': '', 'ending_fen': 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,096: INFO/MainProcess] Task app.tasks.execute_foreground_command[9593802597fb4bd6aa92703c58b32d4b] received
+foreground-worker-1     | [2026-10-12 13:26:37,107: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,107: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[9593802597fb4bd6aa92703c58b32d4b] succeeded in 0.010831975999963106s: {'preview_id': 'aefe0df1-56c3-4052-bdf9-a35e805c9d83', 'state': 'checking', 'moves_uci': ['e2e4'], 'san': '1. e4', 'ending_fen': 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,115: INFO/MainProcess] Task app.tasks.execute_foreground_command[606df4af53364acb9e2042c87019005a] received
+foreground-worker-1     | [2026-10-12 13:26:37,125: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,126: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[606df4af53364acb9e2042c87019005a] succeeded in 0.010283748000006199s: {'preview_id': 'e5bc83f8-c6b0-4aa9-bce9-b918e666fba5', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5'], 'san': '1. e4 e5', 'ending_fen': 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,134: INFO/MainProcess] Task app.tasks.execute_foreground_command[fea22927f1d14853804a34de1e2323bc] received
+foreground-worker-1     | [2026-10-12 13:26:37,145: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,146: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[fea22927f1d14853804a34de1e2323bc] succeeded in 0.010841568000046209s: {'preview_id': '1391be0e-e8ac-4c0b-be8d-e7fc9eebd3b5', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3'], 'san': '1. e4 e5 2. Nf3', 'ending_fen': 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,154: INFO/MainProcess] Task app.tasks.execute_foreground_command[c9bff1f74f594e2eaf6ec3dd44292804] received
+foreground-worker-1     | [2026-10-12 13:26:37,164: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,165: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[c9bff1f74f594e2eaf6ec3dd44292804] succeeded in 0.010742717999960405s: {'preview_id': 'ee2e6037-e867-4b53-bf64-2e29619fc858', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6'], 'san': '1. e4 e5 2. Nf3 Nc6', 'ending_fen': 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,173: INFO/MainProcess] Task app.tasks.execute_foreground_command[893c3792143d41baa1048763ef078a3d] received
+foreground-worker-1     | [2026-10-12 13:26:37,183: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.010
+foreground-worker-1     | [2026-10-12 13:26:37,184: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[893c3792143d41baa1048763ef078a3d] succeeded in 0.01093808899997839s: {'preview_id': 'fd4e648a-10e4-4c72-8bcc-0ab0545825b8', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4', 'ending_fen': 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,192: INFO/MainProcess] Task app.tasks.execute_foreground_command[4a9c1fc4dfc34211a93f9197a9b9d792] received
+foreground-worker-1     | [2026-10-12 13:26:37,202: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,203: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[4a9c1fc4dfc34211a93f9197a9b9d792] succeeded in 0.010697912999944492s: {'preview_id': 'a0b6c66d-c39b-4750-b449-4e69300fbca3', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5', 'ending_fen': 'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,212: INFO/MainProcess] Task app.tasks.execute_foreground_command[8fb972028f8d491182c30f315f84e97b] received
+foreground-worker-1     | [2026-10-12 13:26:37,222: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,223: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[8fb972028f8d491182c30f315f84e97b] succeeded in 0.010568424999974013s: {'preview_id': '7c0e7d9a-7e0a-42be-9dea-805b5691c804', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'c2c3'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3', 'ending_fen': 'r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq - 0 4', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,231: INFO/MainProcess] Task app.tasks.execute_foreground_command[5cfb506864f94e448d04497709a71140] received
+foreground-worker-1     | [2026-10-12 13:26:37,241: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,242: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[5cfb506864f94e448d04497709a71140] succeeded in 0.010679234000008364s: {'preview_id': '3bd70dcc-4075-4212-b56b-15350b5d230a', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'c2c3', 'g8f6'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6', 'ending_fen': 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R w KQkq - 1 5', 'revision': 1}
+foreground-worker-1     | [2026-10-12 13:26:37,250: INFO/MainProcess] Task app.tasks.execute_foreground_command[c433dd7ae8cc42bd872dd552a991f0b7] received
+foreground-worker-1     | [2026-10-12 13:26:37,261: INFO/ForkPoolWorker-2] foreground command=repertoire.canonical_prefix.preview queue_wait_seconds=0.003 execution_seconds=0.009
+foreground-worker-1     | [2026-10-12 13:26:37,261: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[c433dd7ae8cc42bd872dd552a991f0b7] succeeded in 0.010696033000044736s: {'preview_id': 'f6e3b40f-5f4a-45fd-9277-b79cd43a9e70', 'state': 'checking', 'moves_uci': ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'c2c3', 'g8f6', 'd2d3'], 'san': '1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3', 'ending_fen': 'r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2PP1N2/PP3PPP/RNBQK2R b KQkq - 0 5', 'revision': 1}
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60536 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60534 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60564 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60580 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60590 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60578 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     127.0.0.1:51520 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:60616 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60618 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60614 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60644 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60642 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60652 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60666 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60668 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60686 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60702 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60704 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60700 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60730 - "GET /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/integrity HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60732 - "GET /api/system/tasks HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60734 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60756 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60772 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60788 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60792 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60804 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60818 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60824 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60834 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60848 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:60852 - "POST /api/repertoires/d8a19b29-4897-41d2-b5c7-c431f1c8b27d/canonical-prefix/preview HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "POST /api/repertoire-coverage/maia/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "POST /api/repertoire-coverage/maia/submit HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "POST /api/repertoire-coverage/maia/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "POST /api/repertoire-coverage/maia/submit HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "POST /api/repertoire-coverage/maia/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "POST /api/repertoire-coverage/maia/submit HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "POST /api/repertoire-coverage/maia/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "POST /api/repertoire-coverage/maia/submit HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35676 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:35688 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:51532 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:34764 - "GET /api/settings HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34774 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:34786 - "PUT /api/settings HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34796 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34798 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34800 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34814 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34820 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34834 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34840 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34848 - "PUT /api/settings HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34856 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34864 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+foreground-worker-1     | [2026-10-12 13:26:41,432: INFO/MainProcess] Task app.tasks.execute_foreground_command[cc4770b9e8b54d22a6897b02e096a420] received
+foreground-worker-1     | [2026-10-12 13:26:41,449: INFO/ForkPoolWorker-2] foreground command=settings.update queue_wait_seconds=0.003 execution_seconds=0.015
+foreground-worker-1     | [2026-10-12 13:26:41,450: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[cc4770b9e8b54d22a6897b02e096a420] succeeded in 0.01679575500008923s: {'initial_depth': 6, 'timezone': 'local', 'tactics_new_per_day': 5, 'defense_new_cards_per_day': 5, 'include_defensive_cards_in_daily_stack': True, 'defensive_analysis_enabled': False, 'study_only_mode': False, 'discovery_window_days': 90, 'new_cards_per_day': 100, 'study_new_per_day': 1, 'lichess_username': '', 'chesscom_username': '', 'auto_sync_minutes': 3, 'engine_line_window_cp': 30, 'major_mistake_cp': 100, 'light_first_interval_days': 7, 'draw_hold_user_moves': 20, 'coverage_reply_denominator': 100, 'coverage_cumulative_target': 95, 'coverage_horizon_fullmoves': 15, 'coverage_path_floor': 0.0005, 'coverage_maia_elo': 1500}
+foreground-worker-1     | [2026-10-12 13:26:43,110: INFO/MainProcess] Task app.tasks.execute_foreground_command[6f42ae5ff67246399515594f4490e337] received
+foreground-worker-1     | [2026-10-12 13:26:43,125: INFO/ForkPoolWorker-2] foreground command=settings.update queue_wait_seconds=0.003 execution_seconds=0.013
+foreground-worker-1     | [2026-10-12 13:26:43,126: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[6f42ae5ff67246399515594f4490e337] succeeded in 0.014811685000040598s: {'initial_depth': 6, 'timezone': 'local', 'tactics_new_per_day': 5, 'defense_new_cards_per_day': 5, 'include_defensive_cards_in_daily_stack': True, 'defensive_analysis_enabled': False, 'study_only_mode': False, 'discovery_window_days': 90, 'new_cards_per_day': 100, 'study_new_per_day': 100, 'lichess_username': '', 'chesscom_username': '', 'auto_sync_minutes': 3, 'engine_line_window_cp': 30, 'major_mistake_cp': 100, 'light_first_interval_days': 7, 'draw_hold_user_moves': 20, 'coverage_reply_denominator': 100, 'coverage_cumulative_target': 95, 'coverage_horizon_fullmoves': 15, 'coverage_path_floor': 0.0005, 'coverage_maia_elo': 1500}
+foreground-worker-1     | [2026-10-12 13:26:46,816: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-blocked-bury] received
+foreground-worker-1     | [2026-10-12 13:26:46,820: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-blocked-bury] succeeded in 0.0029878100000360064s: None
+foreground-worker-1     | [2026-10-12 13:26:46,827: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-blocked-bury] received
+foreground-worker-1     | [2026-10-12 13:26:46,844: INFO/ForkPoolWorker-2] foreground command=queue.bury queue_wait_seconds=0.003 execution_seconds=0.016
+foreground-worker-1     | [2026-10-12 13:26:46,845: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-blocked-bury] succeeded in 0.01692040900002212s: {'buried': True, 'queue_entry_id': 539}
+foreground-worker-1     | [2026-10-12 13:26:47,097: INFO/MainProcess] Task app.tasks.execute_foreground_command[efd04e2ec6d84c4bb691c7f1e3f5a501] received
+foreground-worker-1     | [2026-10-12 13:26:47,109: INFO/ForkPoolWorker-2] foreground command=queue.issue_head queue_wait_seconds=0.003 execution_seconds=0.011
+foreground-worker-1     | [2026-10-12 13:26:47,109: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[efd04e2ec6d84c4bb691c7f1e3f5a501] succeeded in 0.012070082000036564s: {'issued': True}
+foreground-worker-1     | [2026-10-12 13:26:47,151: INFO/MainProcess] Task app.tasks.execute_foreground_command[pg-study-blocked-bury] received
+foreground-worker-1     | [2026-10-12 13:26:47,154: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[pg-study-blocked-bury] succeeded in 0.002951123999991978s: None
+api-1                   | INFO:     172.18.0.8:44232 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:44246 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:34872 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34884 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     127.0.0.1:39388 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:34896 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34910 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34912 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34918 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34934 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34938 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.10:34952 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34968 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34978 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34986 - "GET /api/migration/snapshot HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:34994 - "POST /api/queue/entries/539/bury HTTP/1.0" 202 Accepted
+api-1                   | INFO:     172.18.0.10:34996 - "POST /api/operations/pg-study-blocked-bury/retry HTTP/1.0" 202 Accepted
+api-1                   | INFO:     172.18.0.10:35000 - "GET /api/operations/pg-study-blocked-bury HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:35016 - "GET /api/operations/pg-study-blocked-bury HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:35028 - "GET /api/operations/pg-study-blocked-bury HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:35042 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:35048 - "GET /api/migration/snapshot HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:35052 - "POST /api/queue/entries/539/bury HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.10:35062 - "GET /api/queue/today HTTP/1.0" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:39398 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:44258 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.8:44270 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.18.0.9:40192 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+

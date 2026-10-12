@@ -433,6 +433,25 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
   return result;
 }
 
+function combineReviewFlushResults(earlier: ReviewFlushResult, later: ReviewFlushResult): ReviewFlushResult {
+  return { persistedAttemptIds: [...earlier.persistedAttemptIds, ...later.persistedAttemptIds],
+    conflictedAttemptIds: [...earlier.conflictedAttemptIds, ...later.conflictedAttemptIds],
+    preparedContinuations: { ...earlier.preparedContinuations, ...later.preparedContinuations } };
+}
+
+function includeEarlierFlushSettlement(earlier: ReviewFlushResult, later: Promise<ReviewFlushResult>): Promise<ReviewFlushResult> {
+  return later.then(result => combineReviewFlushResults(earlier, result), error => {
+    if (!(error instanceof ReviewReplayError) || !error.flushResult) throw error;
+    // The underlying flush may have other observers. Only this caller's error
+    // includes the earlier generation; keep the original failure evidence intact.
+    const combinedError = Object.assign(new Error(error.message, { cause: error.cause }), error) as ReviewReplayError;
+    Object.setPrototypeOf(combinedError, Object.getPrototypeOf(error));
+    combinedError.stack = error.stack;
+    combinedError.flushResult = combineReviewFlushResults(earlier, error.flushResult);
+    throw combinedError;
+  });
+}
+
 // Only the Retry save action supplies an explicit attempt identity. Incidental
 // queue refreshes and saving another card must never release terminal suppression.
 export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false,
@@ -440,21 +459,18 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
   if (activeFlush && stopAfterAttemptId) return waitForSubmittedAttempt(activeFlush, stopAfterAttemptId).catch(error => {
     if (!explicitRetryAttemptId) throw error;
     return { persistedAttemptIds: [], conflictedAttemptIds: [] } as ReviewFlushResult;
-  }).then(async result => {
+  }).then(result => {
     if (attemptSettled(result, stopAfterAttemptId)) return result;
-    const remainder = await flushPendingReviews(maximumReviews, verifyReceiptFirst, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId);
-    return { persistedAttemptIds: [...result.persistedAttemptIds, ...remainder.persistedAttemptIds],
-      conflictedAttemptIds: [...result.conflictedAttemptIds, ...remainder.conflictedAttemptIds],
-      preparedContinuations: { ...result.preparedContinuations, ...remainder.preparedContinuations } };
+    return includeEarlierFlushSettlement(result,
+      flushPendingReviews(maximumReviews, verifyReceiptFirst, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId));
   });
   if (activeFlush && explicitRetryAttemptId) {
     return activeFlush.catch(() => undefined).then(() => flushPendingReviews(maximumReviews, true, explicitRetryAttemptId, deferredAttemptIds));
   }
-  if (activeFlush && activeFlushMaximumReviews !== Infinity && maximumReviews === Infinity) return activeFlush.then(async result => {
+  if (activeFlush && activeFlushMaximumReviews !== Infinity && maximumReviews === Infinity) return activeFlush.then(result => {
     if (!recoverableReviews(undefined, deferredAttemptIds).length) return result;
-    const remainder = await flushPendingReviews(maximumReviews, verifyReceiptFirst, undefined, deferredAttemptIds);
-    return { persistedAttemptIds: [...result.persistedAttemptIds, ...remainder.persistedAttemptIds],
-      conflictedAttemptIds: [...result.conflictedAttemptIds, ...remainder.conflictedAttemptIds] };
+    return includeEarlierFlushSettlement(result,
+      flushPendingReviews(maximumReviews, verifyReceiptFirst, undefined, deferredAttemptIds));
   });
   if (!activeFlush) {
     currentFlushProgress = undefined;
@@ -462,8 +478,17 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
     if (retainedRetry && !recoverableReviews(explicitRetryAttemptId).some(review => logicalAttemptId(review) === explicitRetryAttemptId))
       return Promise.reject(new Error("An earlier result for this card needs attention before this result can retry."));
     activeFlushMaximumReviews = maximumReviews;
+    // Reserve ownership before saving can synchronously emit a public event.
+    // Reentrant callers observe this reservation's forwarded settlement.
+    let resolveFlushReservation!: (result: ReviewFlushResult | PromiseLike<ReviewFlushResult>) => void;
+    const flushReservation = new Promise<ReviewFlushResult>(resolve => { resolveFlushReservation = resolve; });
+    // Ordinary callers receive the actual flush below; an unused reservation
+    // must not create a second unhandled rejection when that flush fails.
+    void flushReservation.catch(() => undefined);
+    activeFlush = flushReservation;
     activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst || !!explicitRetryAttemptId, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId)
       .finally(() => { activeFlush = undefined; });
+    resolveFlushReservation(activeFlush);
   }
   return activeFlush;
 }

@@ -1,5 +1,5 @@
 {
-  "feature_head": "8200e096d6a2b3475dba34f55c7ff381785be0a0",
+  "feature_head": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
   "files": [
     {
       "path": "COMMANDS.md",
@@ -17,9 +17,19 @@
       "sha256": "21eb120b07c8ae798bd47804c6167c8bf6c2af4748762bd197f85bbfd4fbdd6f"
     },
     {
+      "path": "baseline-cleanup.json",
+      "bytes": 494,
+      "sha256": "7ce65e11d16949787e69bd9027ca996656a04abbd082fb76b494a7a2c6e5c10d"
+    },
+    {
       "path": "browser-critical.log",
       "bytes": 40385,
       "sha256": "e87b81fb18aa81524484832cbaf7eb9ecd916b80093d4fcc07e50497b49e7ecd"
+    },
+    {
+      "path": "browser-phone.log",
+      "bytes": 28405,
+      "sha256": "5ecde697d3b912dc235bddb6b345842be3b29bbe96896003a117d3679effd261"
     },
     {
       "path": "browser-progression.log",
@@ -40,6 +50,771 @@
       "path": "ci-38282616369-plan/plan.json",
       "bytes": 334448,
       "sha256": "f6ba9f866c438b954716af27506ff99317c05ce48c01c38a83a0400e18abec0f"
+    },
+    {
+      "path": "ci-draft-complete.log",
+      "bytes": 3472019,
+      "sha256": "58b5209eb0740bc3e29917e1808476929fa4d1665b18f38790c4b2b34675e8ef"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/ci/browser-shards/1/report.json",
+      "bytes": 39396,
+      "sha256": "4e4f2ea8ff8a442549757262a1fff400bd5471f69e98f9216d178ca3a6840ae6"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/ci/browser-shards/1/runner.log",
+      "bytes": 95962,
+      "sha256": "fe6355cc8cdaa17b37b164f7a1ffda0bdc89a7376b169b127335d0cb530f56b3"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/ci/browser-shards/1/tests.json",
+      "bytes": 342122,
+      "sha256": "a2ac459d36aa235c4609aace2dd0abdaef4c2f7d61dc1647907d27efe499744b"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/ci/browser-shards/1/tests.json.spans.json",
+      "bytes": 360381,
+      "sha256": "6612b18629a81a0042501516b5a982eada3d6fd16a3d21816fcca8aac4c0d71d"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/ci/browser-tempo-pg-regressions-5392-7c1925e8-services.log",
+      "bytes": 224720,
+      "sha256": "178bf8c36fb1675ee169ed69c735417e19901949279cca6848f1a73e74b6868d"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/ci/collection.json",
+      "bytes": 209035,
+      "sha256": "918bfca3a9256a910e456d7b51712378d2a240325a5603c43179dcd266b5d64b"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/ci/plan.json",
+      "bytes": 334448,
+      "sha256": "f6ba9f866c438b954716af27506ff99317c05ce48c01c38a83a0400e18abec0f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/performance/held-drag-board-updates.json",
+      "bytes": 942,
+      "sha256": "7483837515cbcd669c8edc822c3d8f52c5ab79a59abb61c0cbce676a18b5affe"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/performance/postgres-scenarios-browser-tempo-pg-regressions-5392-7c1925e8.json",
+      "bytes": 13226,
+      "sha256": "5ff3bc20efcac0989de4c1ea174e0c5b1500282c2ba21d6c68a2dba98142b611"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-1/tempo-cli/tempo-pg-regressions-5392-7c1925e8/ownership.json",
+      "bytes": 5361,
+      "sha256": "a94b271da7d7dbce612cd476076e66ef8b5b806cc0fdc654e802aafef7fd36d9"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--2ad10-mparison-remain-usable-1280-chromium/attachments/prefix-comparison-1280-693c940e4ca8ae7d5da108a53e788aae187528d3.png",
+      "bytes": 121743,
+      "sha256": "05368e88970d91c68a455fd3748f23ef70716c2b8eae0dce03422fda3df9f48f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--2ad10-mparison-remain-usable-1280-chromium/attachments/prefix-comparison-whole-1280-e755c5e2a25e5fe518f38f06b56ac0134ac00a62.png",
+      "bytes": 122689,
+      "sha256": "78d56a25bf07458964040a3e9aedd4f8431d425b09469005bd95f6732eeae9b4"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--2ad10-mparison-remain-usable-1280-chromium/prefix-comparison-1280.png",
+      "bytes": 121743,
+      "sha256": "05368e88970d91c68a455fd3748f23ef70716c2b8eae0dce03422fda3df9f48f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--2ad10-mparison-remain-usable-1280-chromium/prefix-comparison-whole-1280.png",
+      "bytes": 122689,
+      "sha256": "78d56a25bf07458964040a3e9aedd4f8431d425b09469005bd95f6732eeae9b4"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--bd236-omparison-remain-usable-390-chromium/attachments/prefix-comparison-390-5177db1692f23269e224fb6973bc2ac5fe565f03.png",
+      "bytes": 65564,
+      "sha256": "40e257f8238dcb3cac9bffe967b5290a8a4873dbd8ed390913e1ea63b5fb27c2"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--bd236-omparison-remain-usable-390-chromium/attachments/prefix-comparison-whole-390-ad857891ce4286ae8a6168b017d2acf9e4fea469.png",
+      "bytes": 71194,
+      "sha256": "4a476b4265e53eef2c01a2179210c6f35a7080d92ecb84e36330512bde9d2364"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--bd236-omparison-remain-usable-390-chromium/prefix-comparison-390.png",
+      "bytes": 65564,
+      "sha256": "40e257f8238dcb3cac9bffe967b5290a8a4873dbd8ed390913e1ea63b5fb27c2"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/prefix-comparison-issue78--bd236-omparison-remain-usable-390-chromium/prefix-comparison-whole-390.png",
+      "bytes": 71194,
+      "sha256": "4a476b4265e53eef2c01a2179210c6f35a7080d92ecb84e36330512bde9d2364"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/settings-defense-toggle-co-b76ff-me-until-Settings-allows-it-chromium/combined-defensive-pauses.png",
+      "bytes": 18067,
+      "sha256": "d7b6872432f4fc0f1e6c76c105ef738948c66d99b265a993a6c7588758e8804e"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/browser-postgres-5480/study-only-mode-study-only-69e41-cross-reload-and-resumption-chromium/study-only-settings.png",
+      "bytes": 85919,
+      "sha256": "27eb90074c0fe8c17cccb222ebc161c19f5a6fe4f9506a9a4276af474c4aee1e"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/ci/browser-shards/2/report.json",
+      "bytes": 23871,
+      "sha256": "3d1d47cbd64753a17546449663d8aa7e28eb05c75a93ccdecb8102a857912cfa"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/ci/browser-shards/2/runner.log",
+      "bytes": 89644,
+      "sha256": "6019f54b07df901b2822ecabdcf0aab1d6ff791991a1d1f3babb84f2192a09c2"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/ci/browser-shards/2/tests.json",
+      "bytes": 356445,
+      "sha256": "ccfcd5e96d17bc650efe7896e2caf525339a37fddafdb0c8c738bcd4fd07536a"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/ci/browser-shards/2/tests.json.spans.json",
+      "bytes": 186190,
+      "sha256": "a352dd376ff61f0152ef6344c640353d7efdd6c6f9094c447d15254cc139bceb"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/ci/browser-tempo-pg-regressions-5480-3f445277-services.log",
+      "bytes": 209519,
+      "sha256": "53a4909c40eb92a04980de7be04f96b6c3c10ca83179b874c0024b2d9cec84c2"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/ci/collection.json",
+      "bytes": 209035,
+      "sha256": "918bfca3a9256a910e456d7b51712378d2a240325a5603c43179dcd266b5d64b"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/ci/plan.json",
+      "bytes": 334448,
+      "sha256": "f6ba9f866c438b954716af27506ff99317c05ce48c01c38a83a0400e18abec0f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/performance/postgres-scenarios-browser-tempo-pg-regressions-5480-3f445277.json",
+      "bytes": 8731,
+      "sha256": "c75f35ba5bb6e3035a486e68813c145d7a9d755c8faecd2c57da78dd34632f3e"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/pgn-import-recovery/pending-executing-320.png",
+      "bytes": 52512,
+      "sha256": "18710d3c17b1275928962ba93f7c51e64633c533dc8b147f3a7bda3740aae5ae"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/pgn-import-recovery/pending-retrying-320.png",
+      "bytes": 51837,
+      "sha256": "1205998f2420185e0743bf0fda9bde98f78188731e1fc4d3155fdaaf38bea5fb"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-2/tempo-cli/tempo-pg-regressions-5480-3f445277/ownership.json",
+      "bytes": 5363,
+      "sha256": "d7053f357f5e2612d574eb6390a1f90da0188338ad87d93fa4b3aca95936fcc1"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/browser-postgres-5392/prefix-diagnostics-PD-82-P-9658a--show-unknown-evidence-1280-chromium/prefix-diagnostics-1280.png",
+      "bytes": 162879,
+      "sha256": "61646844c1ab1531af4e1ad3e5a8045c96553e7e475d8ffdab376a5859d7b9b9"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/browser-postgres-5392/prefix-diagnostics-PD-82-P-de448-d-show-unknown-evidence-390-chromium/prefix-diagnostics-390.png",
+      "bytes": 143695,
+      "sha256": "303511b88dfdceb4d3cf9bbc5fc42c878350acad3d53b42d7c44ac8dd3695e90"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/browser-postgres-5392/prefix-diagnostics-PD-82-f-2f375-ill-requires-explicit-retry-chromium/prefix-diagnostics-1280.png",
+      "bytes": 161510,
+      "sha256": "3068f3452176523830066b68d7ce2f9c09241f5840a833e355231c133ba1c652"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/browser-postgres-5392/prefix-diagnostics-PD-82-r-5ee48-ead-only-inspection-retries-chromium/prefix-diagnostics-1280.png",
+      "bytes": 161510,
+      "sha256": "3068f3452176523830066b68d7ce2f9c09241f5840a833e355231c133ba1c652"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/ci/browser-shards/3/report.json",
+      "bytes": 24674,
+      "sha256": "d4f32ee4d7dcc68f655c4b3f79a11612ac97116f50e6f4757d4c3a2b85587272"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/ci/browser-shards/3/runner.log",
+      "bytes": 90583,
+      "sha256": "e2e0f76717792acc0308ae7bc444f134ccd80bb4f1c399aff2793b6a3d783f09"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/ci/browser-shards/3/tests.json",
+      "bytes": 651860,
+      "sha256": "2c8e58b5d15624e26f3edb4dd697f05422a1e8957d00a43ac15f3e71b9604889"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/ci/browser-shards/3/tests.json.spans.json",
+      "bytes": 210573,
+      "sha256": "00689ddbb56686df687f916f2099d7dd880fca4e09adacef2a74f13661e65c01"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/ci/browser-tempo-pg-regressions-5392-a418a9d1-services.log",
+      "bytes": 219337,
+      "sha256": "08fefed3da7f6098ccc6b61617dc059c58195d8623f0a914669bd1cb13aa93b6"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/ci/collection.json",
+      "bytes": 209035,
+      "sha256": "918bfca3a9256a910e456d7b51712378d2a240325a5603c43179dcd266b5d64b"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/ci/plan.json",
+      "bytes": 334448,
+      "sha256": "f6ba9f866c438b954716af27506ff99317c05ce48c01c38a83a0400e18abec0f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/performance/issue186-progression-fallback-abort.json",
+      "bytes": 2560,
+      "sha256": "ae3875770fe088c3cc0c9927bdc4bbe9bb2238852d4467d7a792541328190b12"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/performance/issue186-progression-fallback-timeout.json",
+      "bytes": 2620,
+      "sha256": "1aa2eb3578b9564fb1ec27b634de9b230138f44c898e57f9080f333f4fa3d488"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/performance/issue186-progression-prepared-abort.json",
+      "bytes": 3176,
+      "sha256": "1ce4ec9bb87868a4dd9abfc6bc8bbfe87d3270f68f39f6f1f75d758d64c74e35"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/performance/postgres-scenarios-browser-tempo-pg-regressions-5392-a418a9d1.json",
+      "bytes": 9010,
+      "sha256": "20a5095a31c50119c99c9b02af26ec0cf5087ae5172106b82ef949f67b4288db"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/performance/training-transition-prepared.json",
+      "bytes": 5735,
+      "sha256": "5613f60336824dc24a000eace74d1646532e24e2709cb4e27246b5767f846625"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/stalemate-swindles/promotion-control-desktop.png",
+      "bytes": 56905,
+      "sha256": "fa011783e0f383c6a9c63de7ce4c029bfeb295cc2a886fde6b2d752d460f9576"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/stalemate-swindles/promotion-control-phone.png",
+      "bytes": 36859,
+      "sha256": "bc5e37f2eb83c1aa9696c754d405abf8d735b67d17fe8c2996db33616e0cbb74"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-3/tempo-cli/tempo-pg-regressions-5392-a418a9d1/ownership.json",
+      "bytes": 5364,
+      "sha256": "a4f320e4f9328a8eb0e2e131103b34cb1eb90c347f9be85e06b7c84e567b598a"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/browser-postgres-5365/activity-tray-notification-52d8f--count-new-arrivals-at-1280-chromium/cleared-notifications-1280.png",
+      "bytes": 149726,
+      "sha256": "3c04aa5281e9abf40058f98ca0c200f260ec9ce5972ee795207a64a6efdd3de7"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/browser-postgres-5365/activity-tray-notification-d498d-d-count-new-arrivals-at-320-chromium/cleared-notifications-320.png",
+      "bytes": 61086,
+      "sha256": "7360f47f4ed0674a1064e3c5c0fa5273539d7dd38464113a8ce2653072480b8f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/browser-postgres-5365/activity-tray-phone-notifi-bcecd-nd-opens-to-needs-attention-chromium/notification-all-history.png",
+      "bytes": 36662,
+      "sha256": "456a36d052034859b5957a6778c81b3a2341a09e946ded66132fe3798cad123c"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/browser-postgres-5365/activity-tray-phone-notifi-bcecd-nd-opens-to-needs-attention-chromium/notification-needs-attention.png",
+      "bytes": 30940,
+      "sha256": "85d21b04fadcd1b0937c27e3d8f088f2a306900e6659934fd4b7f018356238df"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/browser-postgres-5365/canonical-repertoire-prefi-b677e-cts-Philidor-additions-1280-chromium/canonical-prefix.png",
+      "bytes": 153991,
+      "sha256": "12989ebf43a12f3806a24c6f1647e4f02cb50592aa8bcd0dd384b3bf845aa241"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/browser-postgres-5365/canonical-repertoire-prefi-bb8f3-ects-Philidor-additions-390-chromium/canonical-prefix.png",
+      "bytes": 74420,
+      "sha256": "58561082ffe37ba037e23df11e094ee33d056e2bde055365bc27860ece19747f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/ci/browser-shards/4/report.json",
+      "bytes": 28033,
+      "sha256": "87eedb8d4857aabbd3de6af25ac699f1b1f27019c0d42417bcbe979264381cca"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/ci/browser-shards/4/runner.log",
+      "bytes": 87063,
+      "sha256": "31f1f8a4a35cc841cbf34e4ea4e4b27b40efdc397a1efdb43f4b355de7c63acd"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/ci/browser-shards/4/tests.json",
+      "bytes": 380084,
+      "sha256": "8f1d26159ebf03320c806a473f2b3a3b3ca26c32a7a32a1e65d00523643173ad"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/ci/browser-shards/4/tests.json.spans.json",
+      "bytes": 242972,
+      "sha256": "279eecc6da35c880c55113629650bf93d945992e8a3c2f503e9fcefbac2802d7"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/ci/browser-tempo-pg-regressions-5365-2b17f2fa-services.log",
+      "bytes": 217599,
+      "sha256": "8514fd36ac65307d600f5e8e515c0c37ade322d032342393a9654ae9a383d232"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/ci/collection.json",
+      "bytes": 209035,
+      "sha256": "918bfca3a9256a910e456d7b51712378d2a240325a5603c43179dcd266b5d64b"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/ci/plan.json",
+      "bytes": 334448,
+      "sha256": "f6ba9f866c438b954716af27506ff99317c05ce48c01c38a83a0400e18abec0f"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/performance/postgres-scenarios-browser-tempo-pg-regressions-5365-2b17f2fa.json",
+      "bytes": 10120,
+      "sha256": "dea436ad05715a679ddbcd8bceb3adea4099628772151e82a7666e8f98139358"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/tempo-cli/tempo-pg-regressions-5365-2b17f2fa/ownership.json",
+      "bytes": 5362,
+      "sha256": "4a2c2797795e1550b2dfe86025c2a7b7399a28236ff72ae1ad305fc25e999cfc"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/training-builder/route-choice-1470.png",
+      "bytes": 203728,
+      "sha256": "539f92fa52db72d54bd90ee6d9e4027fa4a4d286660b204e411f603589dac266"
+    },
+    {
+      "path": "ci-draft-results/browser-shards/ci-browser-shard-4/training-builder/route-choice-390.png",
+      "bytes": 147973,
+      "sha256": "ddb127aa52a550fe301922325810980356fd86f354da666e675cb73e13b70e8b"
+    },
+    {
+      "path": "ci-draft-results/ci/backend-inventory.json",
+      "bytes": 497055,
+      "sha256": "b08ac7be99146426f5db75a12c10a8d94c4139abae44257eb5e5e9756917d62b"
+    },
+    {
+      "path": "ci-draft-results/ci/backend-tests.xml",
+      "bytes": 438126,
+      "sha256": "a4f018a03b65af82458b9b9ebc78fe744a8a278a3dc80a4180987a1c225d56fc"
+    },
+    {
+      "path": "ci-draft-results/ci/backend.json",
+      "bytes": 1071269,
+      "sha256": "1941a2d25cb155ca5f2b000a0ff24e18dd2270f26c69be411a206fdb4945cf57"
+    },
+    {
+      "path": "ci-draft-results/ci/backend.log",
+      "bytes": 339523,
+      "sha256": "8cbceae31da334fb2772641946e2e2bea3bb673cfc4bb8507d20cbd4a83bcd41"
+    },
+    {
+      "path": "ci-draft-results/ci/browser-aggregate.json",
+      "bytes": 219438,
+      "sha256": "0d2232f6312a4f2400a89997d78c991b7ed83ba4fa85d2e9569a02c7345dd1c3"
+    },
+    {
+      "path": "ci-draft-results/ci/browser.json",
+      "bytes": 220388,
+      "sha256": "e8b74777cca3ad9273346a0c05cf9db30648ef96e1825c44ec877ea4d7d74ad9"
+    },
+    {
+      "path": "ci-draft-results/ci/browser.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ci-draft-results/ci/build.json",
+      "bytes": 1855,
+      "sha256": "7bcf1d63512dc0bb82331a28dc3830ec32173f49ee836ff400bf4fb3572860a2"
+    },
+    {
+      "path": "ci-draft-results/ci/build.log",
+      "bytes": 4885,
+      "sha256": "8a1809bd75708f8e26e6def8225ce62486bbfe7a93a0e3fc808d964f38fdbedc"
+    },
+    {
+      "path": "ci-draft-results/ci/collection.json",
+      "bytes": 209035,
+      "sha256": "918bfca3a9256a910e456d7b51712378d2a240325a5603c43179dcd266b5d64b"
+    },
+    {
+      "path": "ci-draft-results/ci/current-pr.json",
+      "bytes": 21479,
+      "sha256": "59daae9e1308078bb36c4e1003a41079a26a2038dc90ec29bedd1c4aa5d5e513"
+    },
+    {
+      "path": "ci-draft-results/ci/durability-tempo-pg-regressions-2606-1a85e1d9-services.log",
+      "bytes": 135444,
+      "sha256": "511f03b3f3a9015fd1fa9acb73c7bff7a3a1dd155fd0039c4352f2925659dd7a"
+    },
+    {
+      "path": "ci-draft-results/ci/frontend-inventory.json",
+      "bytes": 429197,
+      "sha256": "e5050b679e32d1df3b07d4273f7272aff30b7dc3159fe1836d80e62008d5a614"
+    },
+    {
+      "path": "ci-draft-results/ci/frontend.json",
+      "bytes": 851725,
+      "sha256": "612470a3c9f851fe2af18f296b56678ec761765b8045bb10674f450b026040df"
+    },
+    {
+      "path": "ci-draft-results/ci/frontend.log",
+      "bytes": 42587,
+      "sha256": "1aa307f69c48af8c8381b752c735242cef3945016cf1c54eaac744924cb2771b"
+    },
+    {
+      "path": "ci-draft-results/ci/lifecycle-tempo-pg-regressions-2630-1abdd266-services.log",
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "ci-draft-results/ci/lifecycle.json",
+      "bytes": 220693,
+      "sha256": "1070d6d9357370023546f352f06be06c48f45dc893ac869855abe46bde9012b6"
+    },
+    {
+      "path": "ci-draft-results/ci/lifecycle.log",
+      "bytes": 153687,
+      "sha256": "8efaf07f1b32ddae051899b68d54ad2da8c229b7a8eea2192e02be60b062c17b"
+    },
+    {
+      "path": "ci-draft-results/ci/plan.json",
+      "bytes": 334448,
+      "sha256": "f6ba9f866c438b954716af27506ff99317c05ce48c01c38a83a0400e18abec0f"
+    },
+    {
+      "path": "ci-draft-results/ci/postgres.json",
+      "bytes": 44829,
+      "sha256": "fc4c6228e9f90192a1cfbd68d978df6bb4be8a1626f9550d898e87a95c8fdde8"
+    },
+    {
+      "path": "ci-draft-results/ci/postgres.log",
+      "bytes": 599696,
+      "sha256": "65fe4aedaa1507296edc8305910591a43e68367472ed2f05f2c1c11ec2b0814c"
+    },
+    {
+      "path": "ci-draft-results/ci/visual-tests.json",
+      "bytes": 5293649,
+      "sha256": "093255553dd2e6d5a44ff42a910d0138183ea1db18c392c6b153414c0acd7470"
+    },
+    {
+      "path": "ci-draft-results/ci/visual.json",
+      "bytes": 15309,
+      "sha256": "c46db390332f628cfa6d960979dc338bac5b199a4bc7f63bfde2d65923983c98"
+    },
+    {
+      "path": "ci-draft-results/ci/visual.log",
+      "bytes": 8316,
+      "sha256": "e0cc29491657ab06649657015673d58e292fd224c0d8176280e889ff29f0b4e6"
+    },
+    {
+      "path": "ci-draft-results/performance/browser-chromium.json",
+      "bytes": 8989,
+      "sha256": "3cc750c371ac2faadee4bbf70502ff191043250bbef0b86ca983bbf5f76cd0ba"
+    },
+    {
+      "path": "ci-draft-results/performance/builder-similarity-chromium.json",
+      "bytes": 1907,
+      "sha256": "e48dded22c42f6da0e8f619678c645f624a2d7d8a21564da2dca1e4d7cf8869d"
+    },
+    {
+      "path": "ci-draft-results/performance/held-drag-chromium.json",
+      "bytes": 3716604,
+      "sha256": "cc4a454ffbac64ab4d3423f84b2038cffaf64a983504e27b2677b0b51b1c06b8"
+    },
+    {
+      "path": "ci-draft-results/performance/issue186-prepared-recovery-1280.png",
+      "bytes": 116056,
+      "sha256": "04cb4656dbac22ce903ade03c0870fa9512bf70bd5c922227b76050d87acbb98"
+    },
+    {
+      "path": "ci-draft-results/performance/issue186-prepared-recovery-390.png",
+      "bytes": 71146,
+      "sha256": "72f171945d68e110663941450e47ae058d984917160b1fd76a57bd56cc345941"
+    },
+    {
+      "path": "ci-draft-results/performance/performance-run.json",
+      "bytes": 503,
+      "sha256": "cc61fcdb921d5c6d245c7877dfc9213ba209d5c580f2a030f2e7473fd3968ac6"
+    },
+    {
+      "path": "ci-draft-results/performance/performance-summary.json",
+      "bytes": 776,
+      "sha256": "56fe759d1e4660b0c1371325d509e519deb4f9b156183f2cbac4cfcc1aa70898"
+    },
+    {
+      "path": "ci-draft-results/performance/performance-summary.md",
+      "bytes": 464,
+      "sha256": "056fc9dd5f0faedbf8048302572fb832707c7f62f6aa76dd40ff55a588c4934c"
+    },
+    {
+      "path": "ci-draft-results/performance/postgres-scenarios-durability-tempo-pg-regressions-2606-1a85e1d9.json",
+      "bytes": 40245,
+      "sha256": "991db5390089fbdcaafd965941058501231f42f011673858f0326a74ad7ec12a"
+    },
+    {
+      "path": "ci-draft-results/performance/postgres-scenarios-lifecycle-tempo-pg-regressions-2630-1abdd266.json",
+      "bytes": 203099,
+      "sha256": "14bb727c53a47fb089f5a98a6289e3aeb12c41a21bae4d37a812dd3ea085c72e"
+    },
+    {
+      "path": "ci-draft-results/performance/repeat-fixture/performance-run.json",
+      "bytes": 503,
+      "sha256": "24069264228bc09a9d81550a2cd6abe7325390ddaab6d6d5f1e16a44fb253283"
+    },
+    {
+      "path": "ci-draft-results/performance/training-card-chromium.json",
+      "bytes": 929,
+      "sha256": "3fe62b4956bde72dc7a47b4a3e3b0ee08e483f5578032fb6bcb53c812814b43d"
+    },
+    {
+      "path": "ci-draft-results/performance/unit-files-ci-frontend.json",
+      "bytes": 608064,
+      "sha256": "56405a1f17b1870494b9d29ff16e3fc7ebba2249fe8310f245e9919ba195a9b0"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2606-1a85e1d9/ownership.json",
+      "bytes": 5576,
+      "sha256": "96d63a6025fe70f2d1781d34e399f1b1290158b34dc5e430ae736958713f1c55"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266/ownership.json",
+      "bytes": 862,
+      "sha256": "9c24be08dcc51f39d1dd7e38bb66d4a3ca329f53fdc53ecf895e10839477ec88"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/cleanup.json",
+      "bytes": 115,
+      "sha256": "646863ae43f61e82ca81bb9a5875cd760a1befd8c6fbd694c38806d1bcd1f8ad"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/fixture-images.json",
+      "bytes": 1423,
+      "sha256": "df0f2b73d22bd335535b4a39307be8b138cc8d115f7b75a58761d3236fddf4a4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/interrupted-lifecycle.mjs",
+      "bytes": 1048,
+      "sha256": "6c0bac890e3ba94790baec3eb9ef7653509dd7538126d6fc326e9e05e8d29ff2"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/lifecycle.log",
+      "bytes": 97332,
+      "sha256": "14da7dee59bf9fa251be9bd0b10d45b42b62fb30ed522c4c67b1cfa9ffa4e91c"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/ownership.json",
+      "bytes": 7818,
+      "sha256": "3427cb5a4e7b2c1a38da5e1457eaac30dfa513a1f99607019fbcde8f9ffd1792"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-legacy/redis.json",
+      "bytes": 409,
+      "sha256": "6670ee12d539bf6ea02c1883ec216038664b2f316301e8821c6ff2eb5aeab6c8"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-legacy/state/deployment.json",
+      "bytes": 2487,
+      "sha256": "0d45c73e87d3e70887683abd48eaeb12cde71b095d8aa9eb72d849b4966b8ca6"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-legacy/state/operation.json",
+      "bytes": 251,
+      "sha256": "8024166dc08a71ad0049dad3f66b783a9c796d046f851fa9ea6e57dd5dc9657f"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-legacy/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-85f51dc7-045e-421d-87dc-963e9c90eb91/0-docker-compose.postgres.test.yml",
+      "bytes": 6956,
+      "sha256": "4701bc122256a12f64da428c07ca6e8bcd1ff0f05ad0201243526de52b334427"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-legacy/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-85f51dc7-045e-421d-87dc-963e9c90eb91/1-image-labels.json",
+      "bytes": 945,
+      "sha256": "220e303d2bb785f0b8c35f286bff07ad22e19ad2df2271bd76d697d35056a9ac"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-legacy/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-85f51dc7-045e-421d-87dc-963e9c90eb91/2-redis.json",
+      "bytes": 409,
+      "sha256": "6670ee12d539bf6ea02c1883ec216038664b2f316301e8821c6ff2eb5aeab6c8"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-legacy/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-85f51dc7-045e-421d-87dc-963e9c90eb91/images.json",
+      "bytes": 1423,
+      "sha256": "df0f2b73d22bd335535b4a39307be8b138cc8d115f7b75a58761d3236fddf4a4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-strict/redis.json",
+      "bytes": 425,
+      "sha256": "d4143029ded739df61eac765b2e78253db7c4d026dc121cd74b40d9a7fc03e1d"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-strict/state/deployment.json",
+      "bytes": 2487,
+      "sha256": "aa9eedebeb66dea2ead07825f4b09928ba692da21b062961b7f4e53c352bc79b"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-strict/state/operation.json",
+      "bytes": 251,
+      "sha256": "b9bdecd4eb4cb67d88e301faf4de0b194d1ca880a898ad09a0241564427eb295"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-strict/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-8d503182-fcef-41b4-8e90-4eed8e6f3042/0-docker-compose.postgres.test.yml",
+      "bytes": 6956,
+      "sha256": "4701bc122256a12f64da428c07ca6e8bcd1ff0f05ad0201243526de52b334427"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-strict/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-8d503182-fcef-41b4-8e90-4eed8e6f3042/1-image-labels.json",
+      "bytes": 945,
+      "sha256": "220e303d2bb785f0b8c35f286bff07ad22e19ad2df2271bd76d697d35056a9ac"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-strict/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-8d503182-fcef-41b4-8e90-4eed8e6f3042/2-redis.json",
+      "bytes": 425,
+      "sha256": "d4143029ded739df61eac765b2e78253db7c4d026dc121cd74b40d9a7fc03e1d"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/redis-loading-strict/state/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-8d503182-fcef-41b4-8e90-4eed8e6f3042/images.json",
+      "bytes": 1423,
+      "sha256": "df0f2b73d22bd335535b4a39307be8b138cc8d115f7b75a58761d3236fddf4a4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/registration.json",
+      "bytes": 1250,
+      "sha256": "60d03ceb90ee70f26b9ebbea47145dd670aa3a3815a64cf797ef6d82282b4468"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/deployment.json",
+      "bytes": 2582,
+      "sha256": "c5b463c44edc7929f2f3a9a64a4557bc9d4a320a1fe6c0eb91b03d297fb16f8d"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/failure-02101637-52e8-46ec-b045-f32cbee55931.log",
+      "bytes": 1678,
+      "sha256": "b4d4f0d3fb096886633215226b78242864c6ab70b77966dbc0ca17cf146a832a"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/failure-ada59e6b-a90d-419e-9b48-ce40b5102421.log",
+      "bytes": 2102,
+      "sha256": "a7bceb7b1f120d4290a174964b73ef1986729d8392fe1e58902f55b70937ec90"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/failure-aed8e00a-1617-4f0b-abd9-f4abd147434a.log",
+      "bytes": 1061,
+      "sha256": "a85ec702f3ffd26629c711968a6bcdf8c6cf3b3c5a5c575eb6a58d0fc5b01cc4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/failure-b5c2d8e3-2325-40ec-be16-cb958fe3ee18.log",
+      "bytes": 3205,
+      "sha256": "01987facfda48590a8a97dfe8126deb355b080cd0b7e80dc244f0216edda7649"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/migration-guard.json",
+      "bytes": 2412,
+      "sha256": "8d2708fc083cf104e737014e438f84b16f5c7d6b486994c270df4c553e09cd69"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/operation.json",
+      "bytes": 2852,
+      "sha256": "fd518837752c1c85daae5bb96edc8681139589fd2f9a73ec16299db93362b5f9"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-02101637-52e8-46ec-b045-f32cbee55931/0-docker-compose.postgres.test.yml",
+      "bytes": 6956,
+      "sha256": "4701bc122256a12f64da428c07ca6e8bcd1ff0f05ad0201243526de52b334427"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-02101637-52e8-46ec-b045-f32cbee55931/1-image-labels.json",
+      "bytes": 945,
+      "sha256": "220e303d2bb785f0b8c35f286bff07ad22e19ad2df2271bd76d697d35056a9ac"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-02101637-52e8-46ec-b045-f32cbee55931/images.json",
+      "bytes": 1423,
+      "sha256": "df0f2b73d22bd335535b4a39307be8b138cc8d115f7b75a58761d3236fddf4a4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-7bf121c0-2804-4787-bd40-d94d8cfdc6c9/0-docker-compose.postgres.test.yml",
+      "bytes": 6956,
+      "sha256": "4701bc122256a12f64da428c07ca6e8bcd1ff0f05ad0201243526de52b334427"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-7bf121c0-2804-4787-bd40-d94d8cfdc6c9/1-image-labels.json",
+      "bytes": 945,
+      "sha256": "220e303d2bb785f0b8c35f286bff07ad22e19ad2df2271bd76d697d35056a9ac"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-7bf121c0-2804-4787-bd40-d94d8cfdc6c9/2-uncommitted-applications.json",
+      "bytes": 387,
+      "sha256": "537eaba3d3ef0d5221eebca63f43c1707af54f639b965ce879fa552058923b9b"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-7bf121c0-2804-4787-bd40-d94d8cfdc6c9/images.json",
+      "bytes": 1423,
+      "sha256": "df0f2b73d22bd335535b4a39307be8b138cc8d115f7b75a58761d3236fddf4a4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-ada59e6b-a90d-419e-9b48-ce40b5102421/0-docker-compose.postgres.test.yml",
+      "bytes": 6956,
+      "sha256": "4701bc122256a12f64da428c07ca6e8bcd1ff0f05ad0201243526de52b334427"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-ada59e6b-a90d-419e-9b48-ce40b5102421/1-image-labels.json",
+      "bytes": 945,
+      "sha256": "220e303d2bb785f0b8c35f286bff07ad22e19ad2df2271bd76d697d35056a9ac"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-ada59e6b-a90d-419e-9b48-ce40b5102421/images.json",
+      "bytes": 1423,
+      "sha256": "df0f2b73d22bd335535b4a39307be8b138cc8d115f7b75a58761d3236fddf4a4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-c5ebd2f8-f5a0-4d00-aec7-ce6c86ed4356/0-docker-compose.postgres.test.yml",
+      "bytes": 6956,
+      "sha256": "4701bc122256a12f64da428c07ca6e8bcd1ff0f05ad0201243526de52b334427"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-c5ebd2f8-f5a0-4d00-aec7-ce6c86ed4356/1-image-labels.json",
+      "bytes": 945,
+      "sha256": "220e303d2bb785f0b8c35f286bff07ad22e19ad2df2271bd76d697d35056a9ac"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/state/2c0cba0a6095274d71862662/releases/10994073fa5dcf885d807d9d2dc5b6a508a8cd36-c5ebd2f8-f5a0-4d00-aec7-ce6c86ed4356/images.json",
+      "bytes": 1423,
+      "sha256": "df0f2b73d22bd335535b4a39307be8b138cc8d115f7b75a58761d3236fddf4a4"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/uncommitted-applications.json",
+      "bytes": 387,
+      "sha256": "537eaba3d3ef0d5221eebca63f43c1707af54f639b965ce879fa552058923b9b"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/uncommitted-dependencies.json",
+      "bytes": 177,
+      "sha256": "37c67ab8a15fe6a5d95eab29df9ec673a428d0039bcb4f9501993fa4c525d11f"
+    },
+    {
+      "path": "ci-draft-results/tempo-cli/tempo-pg-regressions-2630-1abdd266-cli/uncommitted-prepared-images.json",
+      "bytes": 1294,
+      "sha256": "d1040781534905591dcb6cf1114245c5f754b86074ace91d7feee7b5ffa80f16"
+    },
+    {
+      "path": "ci-ready-plan/collection.json",
+      "bytes": 209762,
+      "sha256": "1988d8e63206c50994d093c660bcbd0922743e845535f5d9abf6abc7b10c3604"
+    },
+    {
+      "path": "ci-ready-plan/plan.json",
+      "bytes": 335666,
+      "sha256": "597a99137e5d4326e706a79682e83ae043ac54f1343b67ecabd9907e7f80afd5"
+    },
+    {
+      "path": "ci-watch-draft.log",
+      "bytes": 127929,
+      "sha256": "30c0c30ed94c5a0904ed569eedab9a474a83baddd006703314f2b086c22c9b1d"
     },
     {
       "path": "compare-original.py",
@@ -68,8 +843,8 @@
     },
     {
       "path": "issue-204-current.json",
-      "bytes": 7950,
-      "sha256": "ba968e3d637ae8bd07a028e324d0b45782dd089f039cdffff03afbf879d7753a"
+      "bytes": 5416,
+      "sha256": "928ac9e0a9801ba19371964a916cc8e6fd943fd844f4f2fe4fdf0500ab5509ed"
     },
     {
       "path": "local-performance/issue186-progression-fallback-abort.json",
@@ -97,6 +872,11 @@
       "sha256": "0fededd3b64e10393f486ff328183e846152cc2115480230d1b5b1ac9500344f"
     },
     {
+      "path": "local-performance/postgres-scenarios-browser-tempo-pg-regressions-62292-dd3c1ae6.json",
+      "bytes": 2076,
+      "sha256": "f8ae7ea882694599f21aa7e21863ebf20da06210eb62bbf775365b1cf5791516"
+    },
+    {
       "path": "local-performance/postgres-scenarios-durability-tempo-pg-regressions-54986-da1082fb.json",
       "bytes": 7394,
       "sha256": "046e512eb41f5f0ad7e11f075142b6ff3f973d4d7d6ec5ab477c22a38ee73bec"
@@ -120,6 +900,11 @@
       "path": "local-resources/tempo-pg-regressions-60701-96164a79/ownership.json",
       "bytes": 5446,
       "sha256": "ebc6e7d8f1b1df8bdce7098fa768153e3c7aeb323fad1765cb0ba33da9993566"
+    },
+    {
+      "path": "local-resources/tempo-pg-regressions-62292-dd3c1ae6/ownership.json",
+      "bytes": 5448,
+      "sha256": "8b701166abde53c9fedde0ef469bbc4238ae88621adc14cc5e43d1e01eafb1a2"
     },
     {
       "path": "make-plan.txt",
@@ -157,6 +942,11 @@
       "sha256": "b7602b4386522c79e1430a7d29195942dff3f36f8531d1042dec323c42c27ea5"
     },
     {
+      "path": "open-issues-current.json",
+      "bytes": 275846,
+      "sha256": "2c1a1a4e66f848f2b42e815ddac79b36952530ff9f88dfb6998dbd202f49c373"
+    },
+    {
       "path": "open-issues.json",
       "bytes": 6223,
       "sha256": "9f13f1f21bf236388c9100be60346c3be95932091edbab0414f20dd9e5ff8789"
@@ -178,8 +968,8 @@
     },
     {
       "path": "qualification.json",
-      "bytes": 3839,
-      "sha256": "d627d4c99308e3696f07035f179f298fcdbcd867445a5374381be988aaf56fe0"
+      "bytes": 4583,
+      "sha256": "34341b69e45615bbb9e6ce9bbfd9b94d9f4708f6e5fd4b384881b3d1309a1ab1"
     },
     {
       "path": "refresh-baseline-native.py",
@@ -202,6 +992,11 @@
       "sha256": "b769c682d96e902dad381b08bf00724fc307deb7d58c36108452088f2feb1f8d"
     },
     {
+      "path": "resource-cleanup-verification.json",
+      "bytes": 1344,
+      "sha256": "478fe9634d3b1fdb60a8fb93c61c30ccc45c2fed6e63e2183da9dbd48951bc90"
+    },
+    {
       "path": "runner.log",
       "bytes": 7355,
       "sha256": "b029ded48ea7a5a34c57c6761c61d5703440503f65d6ceec40ce63d86d77f73c"
@@ -210,6 +1005,11 @@
       "path": "test-plan.txt",
       "bytes": 774,
       "sha256": "1b65968ee7abd58dd818c6dbcf3d32b81bf68590cb1f39d836c8d8186c236e37"
+    },
+    {
+      "path": "verify-resources.py",
+      "bytes": 1582,
+      "sha256": "a3a3cb554e4e6a9bdb55317ebf62a6786e72dbc4b38817d1fe269f7b4cfd45ef"
     }
   ]
 }

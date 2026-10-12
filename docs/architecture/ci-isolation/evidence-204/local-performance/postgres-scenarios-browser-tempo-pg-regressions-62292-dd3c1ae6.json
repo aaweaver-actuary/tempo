@@ -1,0 +1,95 @@
+{
+  "runner": "postgres",
+  "mode": "browser",
+  "commit": "8200e096d6a2b3475dba34f55c7ff381785be0a0",
+  "plan_hash": null,
+  "browser_file": "phone-offline-training.spec.ts",
+  "browser_grep": null,
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "startup",
+    "service_health",
+    "browser",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:21:46.643Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.29,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 4.13,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 15,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.24,
+      "exit_code": 0
+    },
+    "browser": {
+      "duration_seconds": 48.28,
+      "exit_code": 0
+    },
+    "cleanup": {
+      "duration_seconds": 5.15,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.29,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 4.13,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 4.42,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 12.93,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 17.36,
+      "completed": true,
+      "poll_count": 2,
+      "waiting_seconds": 1.0011189169999999,
+      "duration_seconds": 2.06,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "browser",
+      "parent_id": null,
+      "label": "resource_inspection",
+      "category": "inspection",
+      "start_seconds": 19.67,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 48.28,
+      "exit_code": 0
+    }
+  ]
+}

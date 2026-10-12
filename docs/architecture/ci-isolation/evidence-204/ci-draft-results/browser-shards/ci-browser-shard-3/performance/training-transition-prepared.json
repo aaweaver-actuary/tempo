@@ -1,0 +1,206 @@
+{
+  "condition": "prepared",
+  "revision": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "dirtyPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fixture": {
+    "prepared": 64,
+    "moves": [
+      "e4",
+      "e5",
+      "Nf3"
+    ],
+    "establishedScheduling": true,
+    "competingJobs": 3000,
+    "lockedCards": 15000,
+    "journals": 100,
+    "warmup": 0,
+    "samples": 3,
+    "snapshot": {
+      "sha256": "13958f9d6e0a555d746345d6d6a38f18d52f51657c1eeed8eef87490acd8e75b",
+      "displaced_queue_positions": [
+        [
+          207,
+          0,
+          64
+        ],
+        [
+          206,
+          1,
+          65
+        ]
+      ],
+      "description": "Canonical ordered source rows; identical fixed IDs/date/scheduling/eligible jobs in each fresh invocation. Runtime attempt IDs, leases and clocks are deliberately excluded."
+    }
+  },
+  "clock": {
+    "description": "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Commit-to-input time includes test-driver scheduling; nativeInputProcessingMs uses browser event/mutation clocks.",
+    "offsetMs": 0,
+    "uncertaintyMs": 0,
+    "starting": {
+      "offsetMs": 0,
+      "uncertaintyMs": 0
+    },
+    "ending": {
+      "offsetMs": 0,
+      "uncertaintyMs": 0
+    },
+    "driftMs": 0
+  },
+  "measured": [
+    {
+      "clickEpochMs": 1791825950750,
+      "submissionEpochMs": 1791825950776,
+      "responseEpochMs": 1791825950862,
+      "interactiveEpochMs": 1791825950871.17,
+      "operationId": "review-attempt:0eecc1ba-c715-4460-8419-39b1fed74844",
+      "receiptObservationEpochMs": 1791825950862.825,
+      "nextInputAcceptedEpochMs": 1791825950993,
+      "nativeInputDispatchEpochMs": 1791825950947.09,
+      "nativeInputAcceptedEpochMs": 1791825950968.915,
+      "queueNetworkMs": [
+        48.717
+      ],
+      "queueProcessingMs": [
+        42.47499999997672
+      ],
+      "network": [
+        {
+          "label": "review",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "integrity",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "queue",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "recovery",
+          "sqlCount": 0,
+          "transactions": 0
+        }
+      ],
+      "commitEpochMs": null,
+      "commitToInteractiveMs": null,
+      "commitToInputAcceptedMs": null,
+      "nativeInputProcessingMs": 21.824951171875,
+      "clickToInteractiveMs": 121.169921875
+    },
+    {
+      "clickEpochMs": 1791825951839,
+      "submissionEpochMs": 1791825951871,
+      "responseEpochMs": 1791825951925,
+      "interactiveEpochMs": 1791825951943.02,
+      "operationId": "review-attempt:fcd2e72f-4e06-493a-91f9-c78c38cabadb",
+      "receiptObservationEpochMs": 1791825951925.57,
+      "nextInputAcceptedEpochMs": 1791825952068,
+      "nativeInputDispatchEpochMs": 1791825952032.405,
+      "nativeInputAcceptedEpochMs": 1791825952048.555,
+      "queueNetworkMs": [
+        43.635000000000005
+      ],
+      "queueProcessingMs": [
+        17.01500000001397
+      ],
+      "network": [
+        {
+          "label": "recovery",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "review",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "integrity",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "queue",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "recovery",
+          "sqlCount": 0,
+          "transactions": 0
+        }
+      ],
+      "commitEpochMs": null,
+      "commitToInteractiveMs": null,
+      "commitToInputAcceptedMs": null,
+      "nativeInputProcessingMs": 16.14990234375,
+      "clickToInteractiveMs": 104.02001953125
+    },
+    {
+      "clickEpochMs": 1791825952929,
+      "submissionEpochMs": 1791825952953,
+      "responseEpochMs": 1791825953016,
+      "interactiveEpochMs": 1791825953025.885,
+      "operationId": "review-attempt:f84c1034-75cd-4040-b70f-f1ed5c6b2276",
+      "receiptObservationEpochMs": 1791825953016.4849,
+      "nextInputAcceptedEpochMs": 1791825953163,
+      "nativeInputDispatchEpochMs": 1791825953122.635,
+      "nativeInputAcceptedEpochMs": 1791825953140.9849,
+      "queueNetworkMs": [
+        57.986
+      ],
+      "queueProcessingMs": [
+        20.104999999981374
+      ],
+      "network": [
+        {
+          "label": "recovery",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "review",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "integrity",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "queue",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "recovery",
+          "sqlCount": 0,
+          "transactions": 0
+        }
+      ],
+      "commitEpochMs": null,
+      "commitToInteractiveMs": null,
+      "commitToInputAcceptedMs": null,
+      "nativeInputProcessingMs": 18.349853515625,
+      "clickToInteractiveMs": 96.885009765625
+    }
+  ],
+  "recoveryRequests": 20,
+  "historicalRecoveryRequests": 20,
+  "historicalJournalState": {
+    "remaining": 96,
+    "rejected": []
+  },
+  "persisted": {
+    "reviews": 3,
+    "complete_evidence": 3,
+    "completion_events": 3,
+    "pending_maintenance": 2995,
+    "historical_partials": 4
+  }
+}

@@ -1,0 +1,843 @@
+{
+  "version": 2,
+  "layer": "browser",
+  "planHash": "0a40375cc201d8bc7d2f853bfb2f6dbef8bc1cd2a2eda1f3eecbb5ed002d097b",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "executionKey": "619c033ecb3c0da00905e206fa9ec89eedb939336555248396cd0eeb4dfac441",
+  "shardId": 1,
+  "assignmentHash": "95718d7274a8899a9da1412fe5ab597416b513a5e5f5409d036506b7baa59b30",
+  "execution": {
+    "kind": "executed",
+    "runId": 38282616369,
+    "attempt": 1
+  },
+  "completed": true,
+  "status": "success",
+  "commands": [
+    {
+      "name": "capabilities",
+      "command": "node",
+      "args": [
+        "scripts/check-test-capabilities.mjs",
+        "--docker",
+        "--loopback",
+        "--workspace-mount"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 29.81
+    },
+    {
+      "name": "browser",
+      "command": "node",
+      "args": [
+        "scripts/test-postgres-docker.mjs",
+        "--mode",
+        "browser",
+        "--browser-grep",
+        "^chromium product-fixture-reset\\.spec\\.ts Issue136 fixture reset stops at its contention deadline and retains exclusions$|^chromium product-fixture-reset\\.spec\\.ts Issue136 fixture reset rejects unexpected real database errors without retry$|^chromium product-fixture-reset\\.spec\\.ts Issue136 fixture reset yields to a held writer and succeeds after release$|^chromium held-drag-preservation\\.spec\\.ts held training drag survives sync, service, notification and parent updates and drops once$|^chromium held-drag-preservation\\.spec\\.ts a read-only transition interrupts a real held drag and prevents a stale drop$|^chromium games-board-context\\.spec\\.ts selecting another game changes piece placement and move highlights together$|^chromium games-board-context\\.spec\\.ts Games shows loading until the selected game's full moves arrive$|^chromium games-board-context\\.spec\\.ts Games selection and move navigation keep the board on the selected game$|^chromium training-queue-contention\\.spec\\.ts daily study opens on the workspace date while background analysis remains queued$|^chromium training-queue-contention\\.spec\\.ts discovery preview backlog leaves a prompt foreground training queue refresh$|^chromium board-state\\.spec\\.ts shared toolbar flip persists while stepping through a game$|^chromium board-state\\.spec\\.ts owner changes clear an unfinished square selection at the same position$|^chromium board-state\\.spec\\.ts every directed workspace transition isolates annotations and board input$|^chromium board-state\\.spec\\.ts pointer resizing persists and clamps without horizontal overflow$|^chromium board-state\\.spec\\.ts builder annotations never appear in games$|^firefox cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through storage events$|^firefox cross-browser\\.spec\\.ts capture modal keeps incomplete setup draggable and restores focus across browser engines$|^webkit cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^firefox cross-browser\\.spec\\.ts Study board promotion places the selected knight across browser engines$|^chromium cross-browser\\.spec\\.ts critical navigation, board input, split and dialogs work across browser engines$|^chromium cross-browser\\.spec\\.ts capture accepts SAN from Black's perspective across browser engines$|^chromium cross-browser\\.spec\\.ts capture modal keeps incomplete setup draggable and restores focus across browser engines$|^chromium cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through storage events$|^firefox cross-browser\\.spec\\.ts queue retirement during a held opening drag preserves active board and accepts one drop$|^webkit cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through storage events$|^chromium cross-browser\\.spec\\.ts tablet menu Escape restores the visible navigation trigger$|^firefox cross-browser\\.spec\\.ts capture accepts SAN from Black's perspective across browser engines$|^chromium cross-browser\\.spec\\.ts WebKit desktop prepared queue outage preserves the position and blocks grading until Retry$|^webkit cross-browser\\.spec\\.ts Study board promotion places the selected knight across browser engines$|^chromium cross-browser\\.spec\\.ts Chess\\.com puzzle import starts at the solver position across browser engines$|^chromium cross-browser\\.spec\\.ts prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines$|^firefox cross-browser\\.spec\\.ts prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines$|^webkit cross-browser\\.spec\\.ts contextual board keys and nested popup Escape work across browser engines$|^webkit cross-browser\\.spec\\.ts capture modal keeps incomplete setup draggable and restores focus across browser engines$|^webkit cross-browser\\.spec\\.ts queue retirement during a held opening drag preserves active board and accepts one drop$|^firefox cross-browser\\.spec\\.ts contextual board keys and nested popup Escape work across browser engines$|^webkit cross-browser\\.spec\\.ts prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines$|^webkit cross-browser\\.spec\\.ts Chess\\.com puzzle import starts at the solver position across browser engines$|^webkit cross-browser\\.spec\\.ts tablet menu Escape restores the visible navigation trigger$|^webkit cross-browser\\.spec\\.ts critical navigation, board input, split and dialogs work across browser engines$|^firefox cross-browser\\.spec\\.ts WebKit desktop prepared queue outage preserves the position and blocks grading until Retry$|^webkit cross-browser\\.spec\\.ts capture accepts SAN from Black's perspective across browser engines$|^chromium cross-browser\\.spec\\.ts queue retirement during a held opening drag preserves active board and accepts one drop$|^chromium cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^firefox cross-browser\\.spec\\.ts tablet menu Escape restores the visible navigation trigger$|^chromium cross-browser\\.spec\\.ts contextual board keys and nested popup Escape work across browser engines$|^chromium cross-browser\\.spec\\.ts phone opening identity and move input work across browser engines$|^firefox cross-browser\\.spec\\.ts critical navigation, board input, split and dialogs work across browser engines$|^firefox cross-browser\\.spec\\.ts Chess\\.com puzzle import starts at the solver position across browser engines$|^chromium cross-browser\\.spec\\.ts Study board promotion places the selected knight across browser engines$|^webkit cross-browser\\.spec\\.ts phone opening identity and move input work across browser engines$|^webkit cross-browser\\.spec\\.ts WebKit desktop prepared queue outage preserves the position and blocks grading until Retry$|^firefox cross-browser\\.spec\\.ts phone opening identity and move input work across browser engines$|^firefox cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^chromium layout\\.spec\\.ts application navigation retains one Chessground instance$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1440x900$|^chromium layout\\.spec\\.ts desktop workspace panels do not clip controls or content$|^chromium layout\\.spec\\.ts phone board controls provide 44px touch targets with every pointer type$|^chromium layout\\.spec\\.ts tactical catalog groups and activation controls remain reachable on phones$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1100x800$|^chromium layout\\.spec\\.ts endgame study actions remain reachable on narrow screens$|^chromium layout\\.spec\\.ts shared split supports keyboard reset and persistence without changing workspace preference$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 320x568$|^chromium layout\\.spec\\.ts board controls retain consistent placement across workspaces$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 769x844$|^chromium layout\\.spec\\.ts hover feedback covers controls outside the chessboard without changing the board$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1920x1080$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 844x390$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1101x800$|^chromium layout\\.spec\\.ts tablet section menu stays inside the header and never overlaps the board$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1280x720$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 390x844$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1099x800$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1024x768$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 767x844$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 768x1024$|^chromium layout\\.spec\\.ts layout fixture starts with an empty disposable queue regardless of preceding specs$|^chromium board-geometry\\.spec\\.ts high-DPI board geometry stays aligned through narrow resize and orientation flips$|^chromium board-geometry\\.spec\\.ts shared board shell keeps board region fixed left on desktop and top on mobile across board workspaces$|^chromium tactic-capture\\.spec\\.ts Chess\\.com Puzzle Rush PGN reaches ordinary Training through tactic capture$|^chromium tactic-capture\\.spec\\.ts manual capture places and removes pieces and freely drags an incomplete setup on the real board$|^chromium tactic-capture\\.spec\\.ts FEN capture records a real-board solution and is reviewed through ordinary Training$|^chromium tactic-capture\\.spec\\.ts Black-first capture keeps its orientation while typed SAN and real-board moves save one solution$|^chromium phone-offline-training\\.spec\\.ts yesterday's prepared phone queue never becomes today's training$|^chromium phone-offline-training\\.spec\\.ts prepared phone queue validates study metadata beyond the live window and keeps offline exercises$|^chromium phone-offline-training\\.spec\\.ts iphone offline fallback excludes a conflicted card across revision and queue changes$|^chromium phone-offline-training\\.spec\\.ts competing computer review credits the saved phone result and explains the schedule fallback$|^chromium phone-offline-training\\.spec\\.ts local Tempo shell opens after the network drops$|^chromium phone-offline-training\\.spec\\.ts phone reconnect retains its active card before advancing into the refreshed 241-card queue$|^chromium phone-offline-training\\.spec\\.ts prepared phone queue and study worker survive full offline reload and sync one review per attempt$|^chromium phone-offline-training\\.spec\\.ts phone projection refresh retains its saved queue and coalesces preparation notices across reloads$|^chromium phone-offline-training\\.spec\\.ts pending phone review remains saved while live training opens and a conflict remains recorded after reconciliation$|^chromium phone-offline-training\\.spec\\.ts offline guided failure stays guided after reopening the phone app$|^chromium phone-offline-training\\.spec\\.ts complete queue reconciliation keeps a removed phone attempt playable and retains its completed conflict$|^chromium phone-offline-training\\.spec\\.ts service worker update during an active phone attempt waits for a safe reopen$|^chromium phone-offline-training\\.spec\\.ts an older prepared response cannot replace a newer saved phone queue$|^chromium phone-offline-training\\.spec\\.ts older computer API blocks phone preparation with an update instruction$|^chromium phone-offline-training\\.spec\\.ts nine phone conflicts can be inspected and discarded individually without changing computer reviews$"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 400.91
+    }
+  ],
+  "tests": [
+    {
+      "id": "aa15e1284a16deff7a77-cb1da582997732727a4f:chromium",
+      "title": "high-DPI board geometry stays aligned through narrow resize and orientation flips",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3183
+    },
+    {
+      "id": "aa15e1284a16deff7a77-eb500a40ed0ef2c4d452:chromium",
+      "title": "shared board shell keeps board region fixed left on desktop and top on mobile across board workspaces",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3896
+    },
+    {
+      "id": "8ba3f905aa2418b346a8-eca6c50ad277ee4c4102:chromium",
+      "title": "every directed workspace transition isolates annotations and board input",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 5080
+    },
+    {
+      "id": "8ba3f905aa2418b346a8-fd25f3f3840b6fcd3c46:chromium",
+      "title": "builder annotations never appear in games",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1082
+    },
+    {
+      "id": "8ba3f905aa2418b346a8-f5948be316781d1e4723:chromium",
+      "title": "pointer resizing persists and clamps without horizontal overflow",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1067
+    },
+    {
+      "id": "8ba3f905aa2418b346a8-466563f8919a77d26a8b:chromium",
+      "title": "shared toolbar flip persists while stepping through a game",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 819
+    },
+    {
+      "id": "8ba3f905aa2418b346a8-8e072087e493719a1ae6:chromium",
+      "title": "owner changes clear an unfinished square selection at the same position",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 878
+    },
+    {
+      "id": "988e5ab7a922d34581e7-5fd99ace54101dc73d23:chromium",
+      "title": "prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1928
+    },
+    {
+      "id": "988e5ab7a922d34581e7-18a93b41af10594a99ef:chromium",
+      "title": "critical navigation, board input, split and dialogs work across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1885
+    },
+    {
+      "id": "988e5ab7a922d34581e7-48bf9dbea6757d6b1717:chromium",
+      "title": "tablet menu Escape restores the visible navigation trigger",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 621
+    },
+    {
+      "id": "988e5ab7a922d34581e7-56c91ce5b134e44a3cad:chromium",
+      "title": "WebKit desktop prepared queue outage preserves the position and blocks grading until Retry",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 892
+    },
+    {
+      "id": "988e5ab7a922d34581e7-2dc3c373c86228033c09:chromium",
+      "title": "capture modal keeps incomplete setup draggable and restores focus across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1704
+    },
+    {
+      "id": "988e5ab7a922d34581e7-2366ba4fa6d82785ec4b:chromium",
+      "title": "capture accepts SAN from Black's perspective across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1152
+    },
+    {
+      "id": "988e5ab7a922d34581e7-5b17aa343a7d7ba831e9:chromium",
+      "title": "Chess.com puzzle import starts at the solver position across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1248
+    },
+    {
+      "id": "988e5ab7a922d34581e7-bee8423f83f1ff6f9da3:chromium",
+      "title": "contextual board keys and nested popup Escape work across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1619
+    },
+    {
+      "id": "988e5ab7a922d34581e7-b8a0ec55eaa9e68452c2:chromium",
+      "title": "queue retirement during a held opening drag preserves active board and accepts one drop",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1617
+    },
+    {
+      "id": "988e5ab7a922d34581e7-c13bf1483c99d0f2e60f:chromium",
+      "title": "phone opening identity and move input work across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1004
+    },
+    {
+      "id": "988e5ab7a922d34581e7-2f48869b0598133bf741:chromium",
+      "title": "cross-tab opening completion wakes reconciliation through storage events",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1855
+    },
+    {
+      "id": "988e5ab7a922d34581e7-b91482fad71fa704216f:chromium",
+      "title": "cross-tab opening completion wakes reconciliation through BroadcastChannel fallback",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1897
+    },
+    {
+      "id": "988e5ab7a922d34581e7-de54474baa1de19dfc03:chromium",
+      "title": "Study board promotion places the selected knight across browser engines",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1423
+    },
+    {
+      "id": "988e5ab7a922d34581e7-61b5efa3cc4ef2ce6d6b:firefox",
+      "title": "prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3334
+    },
+    {
+      "id": "988e5ab7a922d34581e7-cf0b23b27e8c61d5b811:firefox",
+      "title": "critical navigation, board input, split and dialogs work across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2110
+    },
+    {
+      "id": "988e5ab7a922d34581e7-bcbe5de5debefdfb0ac4:firefox",
+      "title": "tablet menu Escape restores the visible navigation trigger",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 980
+    },
+    {
+      "id": "988e5ab7a922d34581e7-b4548d9e40c250d03abd:firefox",
+      "title": "WebKit desktop prepared queue outage preserves the position and blocks grading until Retry",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1256
+    },
+    {
+      "id": "988e5ab7a922d34581e7-06fb57308a58635878ea:firefox",
+      "title": "capture modal keeps incomplete setup draggable and restores focus across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1701
+    },
+    {
+      "id": "988e5ab7a922d34581e7-556ace308b9ea3c74286:firefox",
+      "title": "capture accepts SAN from Black's perspective across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1658
+    },
+    {
+      "id": "988e5ab7a922d34581e7-d90b7844cdd6e381db92:firefox",
+      "title": "Chess.com puzzle import starts at the solver position across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1665
+    },
+    {
+      "id": "988e5ab7a922d34581e7-8208bc4e782bb15fb45c:firefox",
+      "title": "contextual board keys and nested popup Escape work across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2143
+    },
+    {
+      "id": "988e5ab7a922d34581e7-3096397fc816cbc14dc1:firefox",
+      "title": "queue retirement during a held opening drag preserves active board and accepts one drop",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2178
+    },
+    {
+      "id": "988e5ab7a922d34581e7-e343ec4680d24c56e501:firefox",
+      "title": "phone opening identity and move input work across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2008
+    },
+    {
+      "id": "988e5ab7a922d34581e7-029bd4703b7efb1e227e:firefox",
+      "title": "cross-tab opening completion wakes reconciliation through storage events",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2848
+    },
+    {
+      "id": "988e5ab7a922d34581e7-fa6eda57fc2824e0055c:firefox",
+      "title": "cross-tab opening completion wakes reconciliation through BroadcastChannel fallback",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2713
+    },
+    {
+      "id": "988e5ab7a922d34581e7-16679031244c1d9f6b0f:firefox",
+      "title": "Study board promotion places the selected knight across browser engines",
+      "project": "firefox",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1357
+    },
+    {
+      "id": "988e5ab7a922d34581e7-86d0c9f6a45e56d2573d:webkit",
+      "title": "prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 9335
+    },
+    {
+      "id": "988e5ab7a922d34581e7-a0900e7151b5dc937ece:webkit",
+      "title": "critical navigation, board input, split and dialogs work across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 5130
+    },
+    {
+      "id": "988e5ab7a922d34581e7-91588e101da7eee3a0fb:webkit",
+      "title": "tablet menu Escape restores the visible navigation trigger",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1625
+    },
+    {
+      "id": "988e5ab7a922d34581e7-e26d54a09bec05a93ef4:webkit",
+      "title": "WebKit desktop prepared queue outage preserves the position and blocks grading until Retry",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2209
+    },
+    {
+      "id": "988e5ab7a922d34581e7-72a3f6d5e08d4e27fb22:webkit",
+      "title": "capture modal keeps incomplete setup draggable and restores focus across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 4184
+    },
+    {
+      "id": "988e5ab7a922d34581e7-b63d1c831963df66bdc7:webkit",
+      "title": "capture accepts SAN from Black's perspective across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3298
+    },
+    {
+      "id": "988e5ab7a922d34581e7-89cf1261f2b7854560cf:webkit",
+      "title": "Chess.com puzzle import starts at the solver position across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3484
+    },
+    {
+      "id": "988e5ab7a922d34581e7-668ab30c567988b7e9ae:webkit",
+      "title": "contextual board keys and nested popup Escape work across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 4490
+    },
+    {
+      "id": "988e5ab7a922d34581e7-81d5584ef640f108b3bf:webkit",
+      "title": "queue retirement during a held opening drag preserves active board and accepts one drop",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2352
+    },
+    {
+      "id": "988e5ab7a922d34581e7-df4c9a858e30c056f04e:webkit",
+      "title": "phone opening identity and move input work across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1863
+    },
+    {
+      "id": "988e5ab7a922d34581e7-3aab97f7cdd8dcb39568:webkit",
+      "title": "cross-tab opening completion wakes reconciliation through storage events",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3376
+    },
+    {
+      "id": "988e5ab7a922d34581e7-078e541f6d52cb97ac0e:webkit",
+      "title": "cross-tab opening completion wakes reconciliation through BroadcastChannel fallback",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3267
+    },
+    {
+      "id": "988e5ab7a922d34581e7-58f86e8df5542998f272:webkit",
+      "title": "Study board promotion places the selected knight across browser engines",
+      "project": "webkit",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1469
+    },
+    {
+      "id": "713d5585e9db58c104c3-9e4c7beff03ce7797698:chromium",
+      "title": "Games selection and move navigation keep the board on the selected game",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 935
+    },
+    {
+      "id": "713d5585e9db58c104c3-25962907f6154ddec484:chromium",
+      "title": "Games shows loading until the selected game's full moves arrive",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 690
+    },
+    {
+      "id": "713d5585e9db58c104c3-07791ff74d40f940a38e:chromium",
+      "title": "selecting another game changes piece placement and move highlights together",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 890
+    },
+    {
+      "id": "53d2a509fd77a7305032-7e0156dcdb636cdc8319:chromium",
+      "title": "held training drag survives sync, service, notification and parent updates and drops once",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2772
+    },
+    {
+      "id": "53d2a509fd77a7305032-ab59e58b05dd52fb4167:chromium",
+      "title": "a read-only transition interrupts a real held drag and prevents a stale drop",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1620
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-f415abb15f25bd3d777d:chromium",
+      "title": "layout fixture starts with an empty disposable queue regardless of preceding specs",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1766
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-6d2d52745bef63ffb09f:chromium",
+      "title": "board bounds remain identical across workspace navigation 320x568",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2310
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-bf4b9869e265cc1cb2c8:chromium",
+      "title": "board bounds remain identical across workspace navigation 390x844",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2327
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-9f42acfb342e5adff0d3:chromium",
+      "title": "board bounds remain identical across workspace navigation 844x390",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2537
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-e5a755b5942e8b9b9b10:chromium",
+      "title": "board bounds remain identical across workspace navigation 768x1024",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2569
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-de3d8c3dca46f6a2b6ef:chromium",
+      "title": "board bounds remain identical across workspace navigation 1024x768",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2484
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-ba9aaa11f3934ace2396:chromium",
+      "title": "board bounds remain identical across workspace navigation 1280x720",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2297
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-1c8accc7111082c51c81:chromium",
+      "title": "board bounds remain identical across workspace navigation 1440x900",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2379
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-98f893a8a0bd353ea28d:chromium",
+      "title": "board bounds remain identical across workspace navigation 1920x1080",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2339
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-e0bd318e6d8ff0d435a4:chromium",
+      "title": "board bounds remain identical across workspace navigation 767x844",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2398
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-743e31a25ef643f2a822:chromium",
+      "title": "board bounds remain identical across workspace navigation 769x844",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2553
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-c40c6b95712ee0a61075:chromium",
+      "title": "board bounds remain identical across workspace navigation 1099x800",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2613
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-39f86162f4e5fd7c7781:chromium",
+      "title": "board bounds remain identical across workspace navigation 1100x800",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2353
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-9fba1c2d0ed8f383923b:chromium",
+      "title": "board bounds remain identical across workspace navigation 1101x800",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2342
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-1501d09bd25856f72fc2:chromium",
+      "title": "application navigation retains one Chessground instance",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2703
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-6dcf286303e3f37cc544:chromium",
+      "title": "board controls retain consistent placement across workspaces",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2323
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-813fa68d2317b8547ec5:chromium",
+      "title": "hover feedback covers controls outside the chessboard without changing the board",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2285
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-53eaf5c45778783fe489:chromium",
+      "title": "endgame study actions remain reachable on narrow screens",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2013
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-2d13fb7b149a8c37cadd:chromium",
+      "title": "desktop workspace panels do not clip controls or content",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2942
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-6aedb11ca76dd88d113f:chromium",
+      "title": "shared split supports keyboard reset and persistence without changing workspace preference",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2280
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-a1ddc4e2d14d9c813746:chromium",
+      "title": "tablet section menu stays inside the header and never overlaps the board",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1676
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-33d64b18a744d4cde1f2:chromium",
+      "title": "phone board controls provide 44px touch targets with every pointer type",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2477
+    },
+    {
+      "id": "9f98fd8c8d1538f5ebbb-3553dc5d355574ad7964:chromium",
+      "title": "tactical catalog groups and activation controls remain reachable on phones",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2411
+    },
+    {
+      "id": "f98190989370c1fed841-3db8b499ddb8c9b8b21f:chromium",
+      "title": "local Tempo shell opens after the network drops",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 874
+    },
+    {
+      "id": "f98190989370c1fed841-7340494a1cd21d601a7e:chromium",
+      "title": "phone projection refresh retains its saved queue and coalesces preparation notices across reloads",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2534
+    },
+    {
+      "id": "f98190989370c1fed841-7126ed6b1e5c2baab3ae:chromium",
+      "title": "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2002
+    },
+    {
+      "id": "f98190989370c1fed841-64a00593dc94ca972ec5:chromium",
+      "title": "phone reconnect retains its active card before advancing into the refreshed 241-card queue",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 8618
+    },
+    {
+      "id": "f98190989370c1fed841-7947ceecd65f00d941ec:chromium",
+      "title": "pending phone review remains saved while live training opens and a conflict remains recorded after reconciliation",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1348
+    },
+    {
+      "id": "f98190989370c1fed841-317de60e0d4dcda38834:chromium",
+      "title": "competing computer review credits the saved phone result and explains the schedule fallback",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1380
+    },
+    {
+      "id": "f98190989370c1fed841-c168d5ebcd8a47fbc866:chromium",
+      "title": "nine phone conflicts can be inspected and discarded individually without changing computer reviews",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 10080
+    },
+    {
+      "id": "f98190989370c1fed841-94f2fe302abb6d9d56b8:chromium",
+      "title": "an older prepared response cannot replace a newer saved phone queue",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 882
+    },
+    {
+      "id": "f98190989370c1fed841-824766f9fbea2c73bc06:chromium",
+      "title": "complete queue reconciliation keeps a removed phone attempt playable and retains its completed conflict",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 9604
+    },
+    {
+      "id": "f98190989370c1fed841-14b46aecba3b58729c37:chromium",
+      "title": "prepared phone queue validates study metadata beyond the live window and keeps offline exercises",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1179
+    },
+    {
+      "id": "f98190989370c1fed841-0cdafcf8476f199fcdd2:chromium",
+      "title": "yesterday's prepared phone queue never becomes today's training",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1002
+    },
+    {
+      "id": "f98190989370c1fed841-7a7cceb53e642a538a35:chromium",
+      "title": "offline guided failure stays guided after reopening the phone app",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1789
+    },
+    {
+      "id": "f98190989370c1fed841-b2639fa548f218abad18:chromium",
+      "title": "older computer API blocks phone preparation with an update instruction",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 633
+    },
+    {
+      "id": "f98190989370c1fed841-9442d418e01d04c78008:chromium",
+      "title": "service worker update during an active phone attempt waits for a safe reopen",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 700
+    },
+    {
+      "id": "f98190989370c1fed841-14d1464e9861a39d82b4:chromium",
+      "title": "iphone offline fallback excludes a conflicted card across revision and queue changes",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1586
+    },
+    {
+      "id": "4f8dabf13087bcd20bb9-d6c385367451b5d30c5c:chromium",
+      "title": "Issue136 fixture reset yields to a held writer and succeeds after release",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2019
+    },
+    {
+      "id": "4f8dabf13087bcd20bb9-04f742f810f2a8fc8329:chromium",
+      "title": "Issue136 fixture reset stops at its contention deadline and retains exclusions",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 11562
+    },
+    {
+      "id": "4f8dabf13087bcd20bb9-3c69f2fd282d1dd8fa6d:chromium",
+      "title": "Issue136 fixture reset rejects unexpected real database errors without retry",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1182
+    },
+    {
+      "id": "b63e98a17a462c077827-c7b940953dcfd3b67cbe:chromium",
+      "title": "FEN capture records a real-board solution and is reviewed through ordinary Training",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3951
+    },
+    {
+      "id": "b63e98a17a462c077827-9148a10078babcc8228f:chromium",
+      "title": "manual capture places and removes pieces and freely drags an incomplete setup on the real board",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 4169
+    },
+    {
+      "id": "b63e98a17a462c077827-ccc45b30e8c85826c9f8:chromium",
+      "title": "Black-first capture keeps its orientation while typed SAN and real-board moves save one solution",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2675
+    },
+    {
+      "id": "b63e98a17a462c077827-6bb65fae18c3394bc6d0:chromium",
+      "title": "Chess.com Puzzle Rush PGN reaches ordinary Training through tactic capture",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2761
+    },
+    {
+      "id": "77a10ef87008123eb01e-539bdc990f47f98b5a53:chromium",
+      "title": "daily study opens on the workspace date while background analysis remains queued",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 16660
+    },
+    {
+      "id": "77a10ef87008123eb01e-d5b09d41fe67d80b400e:chromium",
+      "title": "discovery preview backlog leaves a prompt foreground training queue refresh",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 5014
+    }
+  ],
+  "timestamp": "2026-10-12T17:17:12.432Z",
+  "environment": {
+    "node": "v22.23.3",
+    "platform": "linux",
+    "architecture": "arm64",
+    "python": "Python 3.12.3",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "cpuCount": 4,
+    "memoryBytes": 16722010112,
+    "wasmPack": null
+  },
+  "diagnostics": []
+}

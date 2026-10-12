@@ -1,0 +1,89 @@
+{
+  "revision": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "project": "tempo-pg-regressions-5392-a418a9d1",
+  "failure": "prepared abort",
+  "completedEntry": "7",
+  "reviewPosts": 1,
+  "queueFailures": 1,
+  "lifecycle": {
+    "id": "notification-88a8fdaa-d9d0-41ca-b8b5-26e69fd8d583",
+    "key": "review-queue:7",
+    "occurredAt": "2026-10-12T17:21:38.569Z",
+    "updatedAt": "2026-10-12T17:21:38.584Z",
+    "occurrenceCount": 1,
+    "resolvedAt": "2026-10-12T17:21:38.569Z",
+    "clearedAt": null,
+    "active": false,
+    "severity": "warning",
+    "source": "training review",
+    "message": "Result saved. The prepared card is ready; retry loading the queue to reconcile upcoming cards.",
+    "details": {
+      "cardId": "training-transition-96c223df-b0c6-4946-885e-741ebb96195c-prepared-000",
+      "queueEntryId": 7,
+      "attemptId": "4c059b56-ea11-4fde-b90a-d7f92b1c71fc",
+      "phase": "prepared reconciliation requires recovery",
+      "reconciliationAttemptId": "cb2ad91a-274f-42f6-8243-d8d7e994e5c1",
+      "error": "TypeError: Failed to fetch"
+    }
+  },
+  "receipt": {
+    "card_id": "training-transition-96c223df-b0c6-4946-885e-741ebb96195c-prepared-000",
+    "hard_correct_streak": 0,
+    "idempotent": false,
+    "interval_days": 2,
+    "next_due": "2026-10-14",
+    "persisted": true,
+    "prepared_continuation": {
+      "attempt_failed": false,
+      "card_id": "training-transition-96c223df-b0c6-4946-885e-741ebb96195c-prepared-001",
+      "cycle": 0,
+      "local_date": "2026-10-12",
+      "queue_entry_id": 8,
+      "revision": 1
+    },
+    "queue_entry_id": 7,
+    "requeue_after_cards": null,
+    "requeue_entry_id": null,
+    "requeue_today": false,
+    "review_id": 2,
+    "scheduling_mode": "normal",
+    "stability": 2.3065,
+    "state": "learning",
+    "suggest_shorter_prefix": false
+  },
+  "persisted": {
+    "scheduling": [
+      "2026-10-14",
+      2,
+      0,
+      0,
+      "{\"card_id\": 1791825698528, \"state\": 2, \"step\": null, \"stability\": 2.3065, \"difficulty\": 2.118103970459016, \"due\": \"2026-10-14T12:00:00+00:00\", \"last_review\": \"2026-10-12T17:21:37.740000+00:00\"}",
+      2.3065,
+      0
+    ],
+    "reviews": [
+      [
+        2,
+        "correct",
+        1,
+        2
+      ]
+    ],
+    "receipts": [
+      [
+        "4c059b56-ea11-4fde-b90a-d7f92b1c71fc",
+        7,
+        2,
+        "canonical",
+        "{\"card_id\": \"training-transition-96c223df-b0c6-4946-885e-741ebb96195c-prepared-000\", \"next_due\": \"2026-10-14\", \"interval_days\": 2, \"state\": \"learning\", \"requeue_today\": false, \"requeue_after_cards\": null, \"stability\": 2.3065, \"scheduling_mode\": \"normal\", \"hard_correct_streak\": 0, \"suggest_shorter_prefix\": false, \"idempotent\": false, \"queue_entry_id\": 7, \"requeue_entry_id\": null, \"review_id\": 2, \"persisted\": true, \"prepared_continuation\": {\"queue_entry_id\": 8, \"card_id\": \"training-transition-96c223df-b0c6-4946-885e-741ebb96195c-prepared-001\", \"revision\": 1, \"cycle\": 0, \"local_date\": \"2026-10-12\", \"attempt_failed\": false}}"
+      ]
+    ],
+    "queue": [
+      [
+        7,
+        "complete"
+      ]
+    ],
+    "review_count": 1
+  }
+}

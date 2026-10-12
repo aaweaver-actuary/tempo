@@ -1,0 +1,25 @@
+{
+  "services": {
+    "redis": {
+      "command": [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--key-load-delay",
+        "250000",
+        "--loading-process-events-interval-bytes",
+        "1024"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "redis-cli",
+          "-e",
+          "ping"
+        ]
+      }
+    }
+  }
+}

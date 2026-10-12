@@ -1,0 +1,34 @@
+{
+  "checkout": "/home/runner/work/tempo/tempo",
+  "revision": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "project": "tempo-pg-regressions-2630-1abdd266",
+  "context": "default",
+  "containers": [],
+  "maintenance_image": [
+    {
+      "id": "sha256:f3cdefd6db8bd9de66f227b2bd372dea263fdd2d3697556bd24634cdfac7d38b",
+      "created": "2026-10-12T17:18:37.307224236Z",
+      "tag": "tempo-pg-regressions-2630-1abdd266-maintenance"
+    }
+  ],
+  "teardown": [
+    "docker",
+    "compose",
+    "-p",
+    "tempo-pg-regressions-2630-1abdd266",
+    "-f",
+    "docker-compose.postgres.test.yml",
+    "-f",
+    "/home/runner/work/tempo/tempo/.tempo-pg-test-secrets-qpoYs1/image-labels.json",
+    "down",
+    "--rmi",
+    "local",
+    "-v"
+  ],
+  "maintenance_teardown": [
+    "docker",
+    "image",
+    "rm",
+    "tempo-pg-regressions-2630-1abdd266-maintenance"
+  ]
+}

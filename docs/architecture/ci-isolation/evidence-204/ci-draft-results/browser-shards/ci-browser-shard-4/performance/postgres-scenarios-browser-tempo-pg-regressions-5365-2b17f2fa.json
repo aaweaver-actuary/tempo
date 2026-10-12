@@ -1,0 +1,94 @@
+{
+  "runner": "postgres",
+  "mode": "browser",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "plan_hash": "0a40375cc201d8bc7d2f853bfb2f6dbef8bc1cd2a2eda1f3eecbb5ed002d097b",
+  "browser_file": null,
+  "browser_grep": "^chromium canonical-repertoire-prefix\\.spec\\.ts canonical Italian prefix persists without changing training and rejects Philidor additions 1280$|^chromium canonical-repertoire-prefix\\.spec\\.ts canonical Italian prefix persists without changing training and rejects Philidor additions 390$|^chromium opening-evidence\\.spec\\.ts cross-tab completion cross-tab opening completion wakes reconciliation through storage events$|^chromium opening-evidence\\.spec\\.ts AS-16 offline parent fallback retains rejected journal after queue refresh and reconciles repeat evidence$|^chromium opening-evidence\\.spec\\.ts AS-16 offline evidence quota saves a compact phone review and retains its journal after sync$|^chromium opening-evidence\\.spec\\.ts AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt$|^chromium opening-evidence\\.spec\\.ts AS-16 offline compact quota failure blocks advancement until durable retry$|^chromium opening-evidence\\.spec\\.ts AS-15 orphaned completion without an aggregate outbox retains partial work instead of inventing a review$|^chromium opening-evidence\\.spec\\.ts AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work$|^chromium opening-evidence\\.spec\\.ts AS-16 offline repeats retain independent attempts and reconcile their parent before completion$|^chromium opening-evidence\\.spec\\.ts AS-09 actual teaching arrows manual Again and revealed correction retain first response context$|^chromium opening-evidence\\.spec\\.ts AS-15 crash recovery seals committed work as partial and starts a new board identity$|^chromium opening-evidence\\.spec\\.ts AS-15 a real tab lease releases stranded evidence into a later idle slice$|^chromium opening-evidence\\.spec\\.ts AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity$|^chromium opening-evidence\\.spec\\.ts AS-16 restarted opening board records guided arrows and retains the prior partial attempt$|^chromium opening-evidence\\.spec\\.ts cross-tab completion cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^chromium opening-evidence\\.spec\\.ts AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive$|^chromium board-input\\.spec\\.ts touch board input and rotation preserve legal position at DPR 1$|^chromium board-input\\.spec\\.ts drag input and promotion retain the established queen-promotion behavior$|^chromium board-input\\.spec\\.ts touch board input and rotation preserve legal position at DPR 2$|^chromium workspace-flows\\.spec\\.ts sample deletion uses repertoire identity and does not delete its same-filename sibling$|^chromium workspace-flows\\.spec\\.ts partial training Builder route chooser keeps the board fixed at 1470$|^chromium workspace-flows\\.spec\\.ts training Builder restores the viewed mid-line position and durably saves Bg4 on the original route$|^chromium workspace-flows\\.spec\\.ts partial training Builder route chooser keeps the board fixed at 390$|^chromium workspace-flows\\.spec\\.ts Builder exact transposition confirms a conflicting trained move then saves the route$|^chromium workspace-flows\\.spec\\.ts Edit card opens Builder line-removal context and deletes the selected branch$|^chromium workspace-flows\\.spec\\.ts review position opens consistently in analysis builder and games$|^chromium workspace-flows\\.spec\\.ts training Bury hides the card for today across reload and reports a failed bury$|^chromium defense-preview\\.spec\\.ts reported Rc4 defensive preview stays readable and returns to the decision at 1440px$|^chromium defense-preview\\.spec\\.ts reported Rc4 defensive preview stays readable and returns to the decision at 390px$|^chromium keyboard-context\\.spec\\.ts incorrect study answers retain their live board while Home End and R browse the revealed reference$|^chromium keyboard-context\\.spec\\.ts training arrows never uncover the next answer and R restores the decision without grading$|^chromium keyboard-context\\.spec\\.ts Builder shortcuts cancel a held piece and preserve notes, selection and splitter keys$|^chromium keyboard-context\\.spec\\.ts Settings letter preference takes effect immediately and persists while arrows and help work$|^chromium keyboard-context\\.spec\\.ts Escape closes Builder search and header popups one at a time and restores their openers$|^chromium phone-opening-study\\.spec\\.ts Long phone repertoire names wrap without hiding the board or overflowing$|^chromium phone-opening-study\\.spec\\.ts Phone opening study shows repertoire identity above the board 320$|^chromium phone-opening-study\\.spec\\.ts Phone skipped same-card result stays paused with actionable earlier-result status$|^chromium phone-opening-study\\.spec\\.ts Phone terminal review stays retained through idle recovery until explicit retry reload=false$|^chromium phone-opening-study\\.spec\\.ts Phone opening study shows repertoire identity above the board 767$|^chromium phone-opening-study\\.spec\\.ts Phone study heading follows London-to-Ruy-Lopez card transitions$|^chromium phone-opening-study\\.spec\\.ts Phone opening More supports keyboard help, restart, and edit without resetting on resize$|^chromium phone-opening-study\\.spec\\.ts Phone reload consumes a retained completed review receipt without another review POST$|^chromium phone-opening-study\\.spec\\.ts Phone actionable save warning keeps its severity and dismiss control readable$|^chromium phone-opening-study\\.spec\\.ts Phone idle review conflict releases Check save and permits the next real board move$|^chromium phone-opening-study\\.spec\\.ts Phone pending review keeps one inline status until its original receipt confirms$|^chromium phone-opening-study\\.spec\\.ts Phone terminal review stays retained through idle recovery until explicit retry reload=true$|^chromium phone-opening-study\\.spec\\.ts Phone opening study shows repertoire identity above the board 390$|^chromium opening-segmentation\\.spec\\.ts AS-01/19 real PostgreSQL segmentation preview preserves practice 1280$|^chromium opening-segmentation\\.spec\\.ts AS-01/19 real PostgreSQL segmentation preview preserves practice 390$|^chromium activity-tray\\.spec\\.ts analysis activity count growth keeps desktop navigation anchored$|^chromium activity-tray\\.spec\\.ts notifications tray remains inside a 320px phone viewport$|^chromium activity-tray\\.spec\\.ts status_recovery_during_training_preserves_held_drag_and_command_execution$|^chromium activity-tray\\.spec\\.ts activity tray stays reachable and controls queued work 1280$|^chromium activity-tray\\.spec\\.ts activity tray stays reachable and controls queued work 320$|^chromium activity-tray\\.spec\\.ts issue137_notification_geometry_waits_for_training_heading_after_delayed_reload$|^chromium activity-tray\\.spec\\.ts activity tray stays reachable and controls queued work 390$|^chromium activity-tray\\.spec\\.ts analysis activity count fits header controls at 1280$|^chromium activity-tray\\.spec\\.ts analysis activity count fits header controls at 390$|^chromium activity-tray\\.spec\\.ts phone notification history groups retries and opens to needs attention$|^chromium activity-tray\\.spec\\.ts notification clear controls preserve history across reload and count new arrivals at 1280$|^chromium activity-tray\\.spec\\.ts notification clear controls preserve history across reload and count new arrivals at 320$|^chromium real-game-feedback\\.spec\\.ts Games shows reanalysis without repeatedly fetching its own summary$|^chromium real-game-feedback\\.spec\\.ts Games prioritizes a canonical miss and explains the targeted study card$|^chromium real-game-feedback\\.spec\\.ts previously studied game-miss priority card starts without a teaching arrow$|^chromium real-game-feedback\\.spec\\.ts Games loads every page of pending findings for the selected game$|^chromium real-game-feedback\\.spec\\.ts connected completion fetches a new real-game obligation before cached ordinary work$",
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "startup",
+    "service_health",
+    "browser",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:17:58.292Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.33,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 97.59,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 17.02,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.08,
+      "exit_code": 0
+    },
+    "browser": {
+      "duration_seconds": 238.31,
+      "exit_code": 0
+    },
+    "cleanup": {
+      "duration_seconds": 3.3,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.33,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 97.59,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 97.93,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 15.97,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 113.9,
+      "completed": true,
+      "poll_count": 1,
+      "duration_seconds": 1.04,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "browser",
+      "parent_id": null,
+      "label": "resource_inspection",
+      "category": "inspection",
+      "start_seconds": 115.03,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 238.31,
+      "exit_code": 0
+    }
+  ]
+}

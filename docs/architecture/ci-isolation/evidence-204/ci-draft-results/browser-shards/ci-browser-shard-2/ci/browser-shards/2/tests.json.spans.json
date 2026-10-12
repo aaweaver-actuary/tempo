@@ -1,0 +1,6852 @@
+{
+  "version": 1,
+  "accounting": "Per-test unions of overlapping hook/fixture and named polling/wait assertion spans; nested in test duration. Uninstrumented work remains unclassified.",
+  "tests": [
+    {
+      "id": "b2808dd7bbe50ec74904-1c689813ba5c71455d9b",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/board-interactions.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "board-interactions.spec.ts",
+        "delayed startup audio never replays earlier board moves and the next move sounds normally"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 4700,
+      "fixtureHookMs": 2400,
+      "pollWaitMs": 923,
+      "overlapMs": 0,
+      "observedMs": 3323,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"browser\"",
+          "start": 1791825596474,
+          "end": 1791825597272
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825597273,
+          "end": 1791825597289
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825597289,
+          "end": 1791825597320
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825597320,
+          "end": 1791825597321
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825597322,
+          "end": 1791825597326
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825597326,
+          "end": 1791825598641
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825596461,
+          "end": 1791825598641
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825598913,
+          "end": 1791825598917
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825598919,
+          "end": 1791825598958
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825599089,
+          "end": 1791825599128
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825599216,
+          "end": 1791825599226
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825599227,
+          "end": 1791825599243
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825599578,
+          "end": 1791825599595
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825600049,
+          "end": 1791825600070
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825600123,
+          "end": 1791825600140
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825600141,
+          "end": 1791825600358
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825600434,
+          "end": 1791825600457
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825600626,
+          "end": 1791825601047
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825601410,
+          "end": 1791825601417
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825601438,
+          "end": 1791825601446
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825601447,
+          "end": 1791825601457
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825601514,
+          "end": 1791825601537
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825601693,
+          "end": 1791825601744
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825601759,
+          "end": 1791825601759
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825601759,
+          "end": 1791825601778
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825601778,
+          "end": 1791825601778
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825601778,
+          "end": 1791825601778
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825601778,
+          "end": 1791825601974
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825601758,
+          "end": 1791825601978
+        }
+      ]
+    },
+    {
+      "id": "b2808dd7bbe50ec74904-3a52c03f31814e55569b",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/board-interactions.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "board-interactions.spec.ts",
+        "checked king gets a persistent translucent red cue that clears when the position changes"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 5795,
+      "fixtureHookMs": 1336,
+      "pollWaitMs": 1766,
+      "overlapMs": 0,
+      "observedMs": 3102,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825601985,
+          "end": 1791825601991
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825601991,
+          "end": 1791825602023
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825602023,
+          "end": 1791825602023
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825602023,
+          "end": 1791825602027
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825602027,
+          "end": 1791825603191
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825601980,
+          "end": 1791825603191
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825603486,
+          "end": 1791825603556
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825603693,
+          "end": 1791825603735
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825603840,
+          "end": 1791825603901
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825603902,
+          "end": 1791825603917
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825604129,
+          "end": 1791825604377
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825604670,
+          "end": 1791825604954
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825604956,
+          "end": 1791825604971
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825605185,
+          "end": 1791825605200
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825605200,
+          "end": 1791825605208
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825605294,
+          "end": 1791825605308
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825605397,
+          "end": 1791825605471
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825605472,
+          "end": 1791825605486
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825605556,
+          "end": 1791825605584
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825605585,
+          "end": 1791825605605
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825605700,
+          "end": 1791825605713
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825605823,
+          "end": 1791825605849
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825605850,
+          "end": 1791825605870
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825605922,
+          "end": 1791825605933
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825605933,
+          "end": 1791825606026
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825606077,
+          "end": 1791825606093
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825606163,
+          "end": 1791825606206
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825606207,
+          "end": 1791825606214
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825606269,
+          "end": 1791825606285
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825606286,
+          "end": 1791825606389
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825606468,
+          "end": 1791825606483
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825606602,
+          "end": 1791825606637
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825606638,
+          "end": 1791825606663
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825606713,
+          "end": 1791825606725
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825606726,
+          "end": 1791825606850
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825606926,
+          "end": 1791825606955
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825607069,
+          "end": 1791825607113
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825607114,
+          "end": 1791825607170
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825607226,
+          "end": 1791825607234
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825607234,
+          "end": 1791825607275
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825607314,
+          "end": 1791825607339
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825607400,
+          "end": 1791825607438
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825607439,
+          "end": 1791825607447
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825607535,
+          "end": 1791825607542
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825607543,
+          "end": 1791825607552
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825607622,
+          "end": 1791825607631
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825607637,
+          "end": 1791825607662
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825607663,
+          "end": 1791825607663
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825607663,
+          "end": 1791825607666
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825607666,
+          "end": 1791825607666
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825607667,
+          "end": 1791825607667
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825607667,
+          "end": 1791825607782
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825607663,
+          "end": 1791825607788
+        }
+      ]
+    },
+    {
+      "id": "b2808dd7bbe50ec74904-65c96e448d9f53671ce0",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/board-interactions.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "board-interactions.spec.ts",
+        "local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 17562,
+      "fixtureHookMs": 1405,
+      "pollWaitMs": 9815,
+      "overlapMs": 0,
+      "observedMs": 11220,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825607794,
+          "end": 1791825607803
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825607803,
+          "end": 1791825607831
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825607831,
+          "end": 1791825607831
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825607831,
+          "end": 1791825607836
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825607837,
+          "end": 1791825609003
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825607790,
+          "end": 1791825609003
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825612199,
+          "end": 1791825612258
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825612586,
+          "end": 1791825621503
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825621534,
+          "end": 1791825621539
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveText\"",
+          "start": 1791825621622,
+          "end": 1791825621636
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825621637,
+          "end": 1791825621657
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825621658,
+          "end": 1791825621671
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825621700,
+          "end": 1791825621705
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825621705,
+          "end": 1791825621885
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825621924,
+          "end": 1791825621933
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825621945,
+          "end": 1791825621950
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"not toHaveValue\"",
+          "start": 1791825622040,
+          "end": 1791825622069
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825622094,
+          "end": 1791825622106
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825622160,
+          "end": 1791825622169
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825622169,
+          "end": 1791825622319
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825622826,
+          "end": 1791825622841
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825623146,
+          "end": 1791825623198
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveValue\"",
+          "start": 1791825623248,
+          "end": 1791825623260
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825623260,
+          "end": 1791825623270
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825623410,
+          "end": 1791825623452
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveValue\"",
+          "start": 1791825623583,
+          "end": 1791825623607
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825623608,
+          "end": 1791825623624
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825623913,
+          "end": 1791825623954
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveValue\"",
+          "start": 1791825624112,
+          "end": 1791825624183
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825624184,
+          "end": 1791825624236
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825624416,
+          "end": 1791825624438
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825624438,
+          "end": 1791825624452
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825624882,
+          "end": 1791825624899
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825625170,
+          "end": 1791825625170
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825625171,
+          "end": 1791825625172
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825625172,
+          "end": 1791825625172
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825625173,
+          "end": 1791825625173
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825625173,
+          "end": 1791825625357
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825625169,
+          "end": 1791825625361
+        }
+      ]
+    },
+    {
+      "id": "b2808dd7bbe50ec74904-68ddbcf679e9127054ec",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/board-interactions.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "board-interactions.spec.ts",
+        "Black Train prompt remains playable with a fully visible narrow board"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 13394,
+      "fixtureHookMs": 1313,
+      "pollWaitMs": 9128,
+      "overlapMs": 0,
+      "observedMs": 10441,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825625367,
+          "end": 1791825625372
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825625372,
+          "end": 1791825625397
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825625397,
+          "end": 1791825625398
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825625398,
+          "end": 1791825625400
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825625400,
+          "end": 1791825626631
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825625363,
+          "end": 1791825626631
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825628806,
+          "end": 1791825628866
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825629234,
+          "end": 1791825638145
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825638167,
+          "end": 1791825638172
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825638285,
+          "end": 1791825638296
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825638297,
+          "end": 1791825638303
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825638347,
+          "end": 1791825638352
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825638353,
+          "end": 1791825638432
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825638477,
+          "end": 1791825638485
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825638532,
+          "end": 1791825638537
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825638579,
+          "end": 1791825638585
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825638585,
+          "end": 1791825638590
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825638618,
+          "end": 1791825638627
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825638703,
+          "end": 1791825638721
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825638721,
+          "end": 1791825638722
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825638722,
+          "end": 1791825638724
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825638724,
+          "end": 1791825638724
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825638724,
+          "end": 1791825638724
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825638724,
+          "end": 1791825638762
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825638721,
+          "end": 1791825638766
+        }
+      ]
+    },
+    {
+      "id": "b2808dd7bbe50ec74904-a7aa63950f69a89f22dc",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/board-interactions.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "board-interactions.spec.ts",
+        "Builder source comparison is immediately reachable beside the board"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 3048,
+      "fixtureHookMs": 1309,
+      "pollWaitMs": 1137,
+      "overlapMs": 0,
+      "observedMs": 2446,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825638771,
+          "end": 1791825638776
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825638777,
+          "end": 1791825638802
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825638802,
+          "end": 1791825638802
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825638802,
+          "end": 1791825638804
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825638805,
+          "end": 1791825639999
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825638767,
+          "end": 1791825639999
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825640276,
+          "end": 1791825640353
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825640471,
+          "end": 1791825640499
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825640499,
+          "end": 1791825640551
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825640552,
+          "end": 1791825640603
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825640603,
+          "end": 1791825640633
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825640634,
+          "end": 1791825640647
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825640647,
+          "end": 1791825641034
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825641062,
+          "end": 1791825641189
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825641276,
+          "end": 1791825641466
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825641467,
+          "end": 1791825641475
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825641475,
+          "end": 1791825641482
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825641498,
+          "end": 1791825641504
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825641504,
+          "end": 1791825641644
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825641705,
+          "end": 1791825641726
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825641748,
+          "end": 1791825641748
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825641748,
+          "end": 1791825641750
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825641750,
+          "end": 1791825641750
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825641750,
+          "end": 1791825641751
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825641751,
+          "end": 1791825641820
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825641748,
+          "end": 1791825641825
+        }
+      ]
+    },
+    {
+      "id": "b2808dd7bbe50ec74904-7c1a4b6d3c03607e18a5",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/board-interactions.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "board-interactions.spec.ts",
+        "Builder right-click annotation saves the exact clicked square"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 11112,
+      "fixtureHookMs": 1277,
+      "pollWaitMs": 141,
+      "overlapMs": 0,
+      "observedMs": 1418,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825641829,
+          "end": 1791825641835
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825641835,
+          "end": 1791825641861
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825641861,
+          "end": 1791825641862
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825641862,
+          "end": 1791825641864
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825641864,
+          "end": 1791825643029
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825641826,
+          "end": 1791825643029
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825643304,
+          "end": 1791825643351
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825651467,
+          "end": 1791825651472
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"not toHaveValue\"",
+          "start": 1791825651695,
+          "end": 1791825651712
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825651933,
+          "end": 1791825651942
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825652131,
+          "end": 1791825652138
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825652138,
+          "end": 1791825652144
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825652417,
+          "end": 1791825652431
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825652774,
+          "end": 1791825652787
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toContain\"",
+          "start": 1791825652848,
+          "end": 1791825652863
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll not toContain\"",
+          "start": 1791825652864,
+          "end": 1791825652872
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825652872,
+          "end": 1791825652872
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825652872,
+          "end": 1791825652874
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825652874,
+          "end": 1791825652874
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825652874,
+          "end": 1791825652874
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825652875,
+          "end": 1791825652942
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825652872,
+          "end": 1791825652946
+        }
+      ]
+    },
+    {
+      "id": "1527c5282365ebf82a2f-90c7aed060b6999c69e6",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/opening-progression.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "opening-progression.spec.ts",
+        "one real short-prefix practice admits its child while parent is learning 390"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 11571,
+      "fixtureHookMs": 1290,
+      "pollWaitMs": 6943,
+      "overlapMs": 0,
+      "observedMs": 8233,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825652956,
+          "end": 1791825652961
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825652961,
+          "end": 1791825652988
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825652988,
+          "end": 1791825652989
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825652989,
+          "end": 1791825652991
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825652991,
+          "end": 1791825654204
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825652952,
+          "end": 1791825654204
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825654245,
+          "end": 1791825660176
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825660497,
+          "end": 1791825660651
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825660699,
+          "end": 1791825660707
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825660707,
+          "end": 1791825660712
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825660752,
+          "end": 1791825660760
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825660837,
+          "end": 1791825661651
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825661652,
+          "end": 1791825661657
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825661678,
+          "end": 1791825661683
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825661683,
+          "end": 1791825661688
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825661715,
+          "end": 1791825661723
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825664494,
+          "end": 1791825664494
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825664495,
+          "end": 1791825664496
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825664496,
+          "end": 1791825664496
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825664496,
+          "end": 1791825664497
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825664497,
+          "end": 1791825664527
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825664494,
+          "end": 1791825664532
+        }
+      ]
+    },
+    {
+      "id": "1527c5282365ebf82a2f-3409f2b0f068dcafd8d5",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/opening-progression.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "opening-progression.spec.ts",
+        "one real short-prefix practice admits its child while parent is learning 1280"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 14625,
+      "fixtureHookMs": 1287,
+      "pollWaitMs": 9009,
+      "overlapMs": 0,
+      "observedMs": 10296,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825664537,
+          "end": 1791825664543
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825664543,
+          "end": 1791825664567
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825664567,
+          "end": 1791825664567
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825664567,
+          "end": 1791825664569
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825664569,
+          "end": 1791825665768
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825664533,
+          "end": 1791825665768
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825665806,
+          "end": 1791825673777
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825674087,
+          "end": 1791825674266
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825674324,
+          "end": 1791825674333
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825674334,
+          "end": 1791825674340
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825674386,
+          "end": 1791825674395
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825674470,
+          "end": 1791825675281
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825675282,
+          "end": 1791825675287
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825675311,
+          "end": 1791825675316
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825675316,
+          "end": 1791825675321
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825675349,
+          "end": 1791825675358
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825679114,
+          "end": 1791825679114
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825679114,
+          "end": 1791825679116
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825679116,
+          "end": 1791825679116
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825679116,
+          "end": 1791825679116
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825679116,
+          "end": 1791825679163
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825679114,
+          "end": 1791825679166
+        }
+      ]
+    },
+    {
+      "id": "445961fc9f04904f1014-e5287e491314ac2506a8",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/paste-analysis.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "paste-analysis.spec.ts",
+        "paste SAN from a repertoire gap previews its destination and saves the continuation"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 2276,
+      "fixtureHookMs": 1298,
+      "pollWaitMs": 149,
+      "overlapMs": 0,
+      "observedMs": 1447,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825679177,
+          "end": 1791825679184
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825679184,
+          "end": 1791825679209
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825679209,
+          "end": 1791825679209
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825679209,
+          "end": 1791825679211
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825679211,
+          "end": 1791825680421
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825679172,
+          "end": 1791825680421
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825680760,
+          "end": 1791825680791
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825680902,
+          "end": 1791825680918
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveValue\"",
+          "start": 1791825681205,
+          "end": 1791825681212
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"not toBeVisible\"",
+          "start": 1791825681313,
+          "end": 1791825681402
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825681402,
+          "end": 1791825681408
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeGreaterThan\"",
+          "start": 1791825681409,
+          "end": 1791825681409
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825681409,
+          "end": 1791825681409
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825681410,
+          "end": 1791825681411
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825681411,
+          "end": 1791825681411
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825681412,
+          "end": 1791825681412
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825681412,
+          "end": 1791825681454
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"serviceWorkers\"",
+          "start": 1791825681455,
+          "end": 1791825681455
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825681409,
+          "end": 1791825681458
+        }
+      ]
+    },
+    {
+      "id": "445961fc9f04904f1014-14108f3139c5f6cd3bd8",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/paste-analysis.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "paste-analysis.spec.ts",
+        "paste analysis reports a preview service failure without claiming a save"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1926,
+      "fixtureHookMs": 1361,
+      "pollWaitMs": 37,
+      "overlapMs": 0,
+      "observedMs": 1398,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825681463,
+          "end": 1791825681468
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825681468,
+          "end": 1791825681492
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825681492,
+          "end": 1791825681492
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825681492,
+          "end": 1791825681494
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825681494,
+          "end": 1791825682709
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825681460,
+          "end": 1791825682709
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825682995,
+          "end": 1791825683032
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825683285,
+          "end": 1791825683285
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825683285,
+          "end": 1791825683287
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825683287,
+          "end": 1791825683287
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825683287,
+          "end": 1791825683287
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825683287,
+          "end": 1791825683390
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"serviceWorkers\"",
+          "start": 1791825683392,
+          "end": 1791825683392
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825683285,
+          "end": 1791825683397
+        }
+      ]
+    },
+    {
+      "id": "96ddfb035ced28cd29c5-1c633df2af20cf8b7184",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/prefix-comparison.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "prefix-comparison.spec.ts",
+        "issue78_phone_and_desktop_comparison_remain_usable 390"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 13325,
+      "fixtureHookMs": 1236,
+      "pollWaitMs": 8078,
+      "overlapMs": 0,
+      "observedMs": 9314,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825683463,
+          "end": 1791825683468
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825683468,
+          "end": 1791825683491
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825683491,
+          "end": 1791825683492
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825683492,
+          "end": 1791825683494
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825683494,
+          "end": 1791825684661
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825683460,
+          "end": 1791825684661
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeGreaterThan\"",
+          "start": 1791825684689,
+          "end": 1791825688599
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825688906,
+          "end": 1791825688981
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825692363,
+          "end": 1791825692363
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825692376,
+          "end": 1791825692396
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825692448,
+          "end": 1791825692456
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825692539,
+          "end": 1791825696498
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825692494,
+          "end": 1791825696507
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825696507,
+          "end": 1791825696517
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825696518,
+          "end": 1791825696518
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825696532,
+          "end": 1791825696545
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825696545,
+          "end": 1791825696556
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825696664,
+          "end": 1791825696677
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825696746,
+          "end": 1791825696751
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825696758,
+          "end": 1791825696759
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825696759,
+          "end": 1791825696760
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825696760,
+          "end": 1791825696760
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825696760,
+          "end": 1791825696760
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825696761,
+          "end": 1791825696790
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825696758,
+          "end": 1791825696793
+        }
+      ]
+    },
+    {
+      "id": "96ddfb035ced28cd29c5-b5ba3a334c32e715e411",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/prefix-comparison.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "prefix-comparison.spec.ts",
+        "issue78_phone_and_desktop_comparison_remain_usable 1280"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 15639,
+      "fixtureHookMs": 1308,
+      "pollWaitMs": 10210,
+      "overlapMs": 0,
+      "observedMs": 11518,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825696797,
+          "end": 1791825696803
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825696803,
+          "end": 1791825696826
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825696826,
+          "end": 1791825696827
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825696827,
+          "end": 1791825696829
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825696829,
+          "end": 1791825698037
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825696794,
+          "end": 1791825698037
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeGreaterThan\"",
+          "start": 1791825698064,
+          "end": 1791825702973
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825703291,
+          "end": 1791825703350
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825706695,
+          "end": 1791825706696
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825706704,
+          "end": 1791825706722
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825706777,
+          "end": 1791825706784
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825706950,
+          "end": 1791825706967
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825708017,
+          "end": 1791825711973
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825706820,
+          "end": 1791825711982
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825711983,
+          "end": 1791825711992
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825711993,
+          "end": 1791825711993
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825712007,
+          "end": 1791825712020
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825712020,
+          "end": 1791825712030
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825712218,
+          "end": 1791825712234
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825712363,
+          "end": 1791825712369
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825712376,
+          "end": 1791825712376
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825712376,
+          "end": 1791825712378
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825712378,
+          "end": 1791825712378
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825712378,
+          "end": 1791825712378
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825712378,
+          "end": 1791825712438
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825712376,
+          "end": 1791825712441
+        }
+      ]
+    },
+    {
+      "id": "3803ee334d90d9e3910e-c23eac57e4c5c2b3d790",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/prefix-split-training.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "prefix-split-training.spec.ts",
+        "accepting a prefix split skips preview and advances to the next queued card"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 858,
+      "fixtureHookMs": 88,
+      "pollWaitMs": 154,
+      "overlapMs": 0,
+      "observedMs": 242,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825712450,
+          "end": 1791825712456
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825712456,
+          "end": 1791825712480
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825712480,
+          "end": 1791825712480
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825712447,
+          "end": 1791825712480
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825713026,
+          "end": 1791825713160
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825713237,
+          "end": 1791825713257
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825713258,
+          "end": 1791825713258
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825713258,
+          "end": 1791825713258
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825713258,
+          "end": 1791825713309
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825713258,
+          "end": 1791825713313
+        }
+      ]
+    },
+    {
+      "id": "3803ee334d90d9e3910e-fc7b0b02485d8aeae57b",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/prefix-split-training.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "prefix-split-training.spec.ts",
+        "rejecting a prefix split remains dismissed after queue reload"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1207,
+      "fixtureHookMs": 125,
+      "pollWaitMs": 289,
+      "overlapMs": 0,
+      "observedMs": 414,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825713318,
+          "end": 1791825713336
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825713336,
+          "end": 1791825713369
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825713369,
+          "end": 1791825713369
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825713314,
+          "end": 1791825713369
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825713890,
+          "end": 1791825714032
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825714095,
+          "end": 1791825714110
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825714327,
+          "end": 1791825714450
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825714450,
+          "end": 1791825714459
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825714460,
+          "end": 1791825714460
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825714460,
+          "end": 1791825714460
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825714460,
+          "end": 1791825714525
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825714459,
+          "end": 1791825714529
+        }
+      ]
+    },
+    {
+      "id": "3fefd0f84eb1598500b3-61f0079ef9dde9058fea",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/provider-integration.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "provider-integration.spec.ts",
+        "Docker Games shows actual empty records and actionable sync errors, never sample success"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1857,
+      "fixtureHookMs": 1294,
+      "pollWaitMs": 89,
+      "overlapMs": 0,
+      "observedMs": 1383,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825714541,
+          "end": 1791825714547
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825714547,
+          "end": 1791825714572
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825714572,
+          "end": 1791825714572
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825714573,
+          "end": 1791825714575
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825714575,
+          "end": 1791825715783
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825714535,
+          "end": 1791825715783
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825716074,
+          "end": 1791825716128
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825716231,
+          "end": 1791825716254
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825716254,
+          "end": 1791825716266
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825716356,
+          "end": 1791825716356
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825716356,
+          "end": 1791825716359
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825716359,
+          "end": 1791825716359
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825716359,
+          "end": 1791825716359
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825716359,
+          "end": 1791825716399
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825716356,
+          "end": 1791825716402
+        }
+      ]
+    },
+    {
+      "id": "3fefd0f84eb1598500b3-1314165f2cc78aa48b82",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/provider-integration.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "provider-integration.spec.ts",
+        "automatic game sync has a visible spinner and reports provider failure"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 3096,
+      "fixtureHookMs": 1261,
+      "pollWaitMs": 61,
+      "overlapMs": 0,
+      "observedMs": 1322,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825716406,
+          "end": 1791825716413
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825716413,
+          "end": 1791825716436
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825716436,
+          "end": 1791825716436
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825716437,
+          "end": 1791825716440
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825716440,
+          "end": 1791825717604
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825716403,
+          "end": 1791825717604
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825717926,
+          "end": 1791825717976
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825718116,
+          "end": 1791825718127
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825719450,
+          "end": 1791825719450
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825719450,
+          "end": 1791825719452
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825719452,
+          "end": 1791825719452
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825719452,
+          "end": 1791825719452
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825719452,
+          "end": 1791825719504
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825719449,
+          "end": 1791825719509
+        }
+      ]
+    },
+    {
+      "id": "3fefd0f84eb1598500b3-f9abfba0ecb1fecf1958",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/provider-integration.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "provider-integration.spec.ts",
+        "production Stockfish returns playable engine moves without clipping the board"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 2162,
+      "fixtureHookMs": 1255,
+      "pollWaitMs": 440,
+      "overlapMs": 0,
+      "observedMs": 1695,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825719514,
+          "end": 1791825719518
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825719519,
+          "end": 1791825719542
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825719542,
+          "end": 1791825719543
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825719543,
+          "end": 1791825719545
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825719545,
+          "end": 1791825720711
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825719511,
+          "end": 1791825720711
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825720995,
+          "end": 1791825721047
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825721160,
+          "end": 1791825721525
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825721544,
+          "end": 1791825721550
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825721550,
+          "end": 1791825721557
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825721600,
+          "end": 1791825721610
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825721626,
+          "end": 1791825721626
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825721626,
+          "end": 1791825721628
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825721628,
+          "end": 1791825721628
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825721628,
+          "end": 1791825721628
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825721628,
+          "end": 1791825721678
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825721626,
+          "end": 1791825721681
+        }
+      ]
+    },
+    {
+      "id": "3fefd0f84eb1598500b3-788e6a1434cb30a6be3d",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/provider-integration.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "provider-integration.spec.ts",
+        "Maia initializes matching runtime assets and returns legal playable probabilities"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 4142,
+      "fixtureHookMs": 1265,
+      "pollWaitMs": 2293,
+      "overlapMs": 0,
+      "observedMs": 3558,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825721685,
+          "end": 1791825721691
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825721691,
+          "end": 1791825721714
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825721714,
+          "end": 1791825721715
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825721715,
+          "end": 1791825721717
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825721717,
+          "end": 1791825722893
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825721682,
+          "end": 1791825722893
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825723181,
+          "end": 1791825723226
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825723347,
+          "end": 1791825725455
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"not toHaveAttribute\"",
+          "start": 1791825725518,
+          "end": 1791825725534
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825725586,
+          "end": 1791825725599
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825725599,
+          "end": 1791825725700
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825725752,
+          "end": 1791825725762
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825725777,
+          "end": 1791825725778
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825725778,
+          "end": 1791825725779
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825725779,
+          "end": 1791825725779
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825725779,
+          "end": 1791825725779
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825725780,
+          "end": 1791825725828
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825725777,
+          "end": 1791825725831
+        }
+      ]
+    },
+    {
+      "id": "3fefd0f84eb1598500b3-c0970792d05436e6a2a2",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/provider-integration.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "provider-integration.spec.ts",
+        "real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 2018,
+      "fixtureHookMs": 1265,
+      "pollWaitMs": 299,
+      "overlapMs": 0,
+      "observedMs": 1564,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825725836,
+          "end": 1791825725840
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825725840,
+          "end": 1791825725865
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825725865,
+          "end": 1791825725866
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825725866,
+          "end": 1791825725869
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825725869,
+          "end": 1791825727046
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825725832,
+          "end": 1791825727046
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825727049,
+          "end": 1791825727049
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825727336,
+          "end": 1791825727437
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825727438,
+          "end": 1791825727461
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825727539,
+          "end": 1791825727556
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825727556,
+          "end": 1791825727618
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825727661,
+          "end": 1791825727666
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825727667,
+          "end": 1791825727750
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825727787,
+          "end": 1791825727795
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825727807,
+          "end": 1791825727807
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825727807,
+          "end": 1791825727808
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825727808,
+          "end": 1791825727808
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825727809,
+          "end": 1791825727809
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825727809,
+          "end": 1791825727855
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825727807,
+          "end": 1791825727858
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-54cfc84b4d63dd154434",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "training startup does not preload unrelated workspace requests"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 938,
+      "fixtureHookMs": 80,
+      "pollWaitMs": 156,
+      "overlapMs": 0,
+      "observedMs": 236,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825727886,
+          "end": 1791825727890
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825727891,
+          "end": 1791825727915
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825727915,
+          "end": 1791825727915
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825727882,
+          "end": 1791825727915
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825728214,
+          "end": 1791825728370
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825728781,
+          "end": 1791825728781
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825728781,
+          "end": 1791825728781
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825728781,
+          "end": 1791825728825
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825728781,
+          "end": 1791825728828
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-2ecdbce3ac16b080b6ff",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "reopening a saved guided card without input does not record a new failure or show a red X"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 760,
+      "fixtureHookMs": 107,
+      "pollWaitMs": 152,
+      "overlapMs": 0,
+      "observedMs": 259,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825728832,
+          "end": 1791825728839
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825728839,
+          "end": 1791825728862
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825728862,
+          "end": 1791825728862
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825728829,
+          "end": 1791825728862
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825729369,
+          "end": 1791825729498
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825729498,
+          "end": 1791825729513
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825729513,
+          "end": 1791825729521
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825729522,
+          "end": 1791825729522
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825729522,
+          "end": 1791825729522
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825729522,
+          "end": 1791825729593
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825729522,
+          "end": 1791825729596
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-03fc53423d89baeb2602",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "intentional training failure is saved once and reload resumes it without another failure"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1162,
+      "fixtureHookMs": 101,
+      "pollWaitMs": 266,
+      "overlapMs": 0,
+      "observedMs": 367,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825729601,
+          "end": 1791825729605
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825729605,
+          "end": 1791825729629
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825729629,
+          "end": 1791825729629
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825729597,
+          "end": 1791825729629
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825730154,
+          "end": 1791825730283
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825730365,
+          "end": 1791825730366
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825730366,
+          "end": 1791825730372
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825730573,
+          "end": 1791825730694
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825730694,
+          "end": 1791825730703
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825730703,
+          "end": 1791825730703
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825730703,
+          "end": 1791825730703
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825730704,
+          "end": 1791825730764
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825730703,
+          "end": 1791825730772
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-a14e7a4cf1cdebff1633",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "unresolved guided review keeps its card paused while other training opens"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 810,
+      "fixtureHookMs": 86,
+      "pollWaitMs": 150,
+      "overlapMs": 0,
+      "observedMs": 236,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825730779,
+          "end": 1791825730784
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825730784,
+          "end": 1791825730808
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825730808,
+          "end": 1791825730808
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825730773,
+          "end": 1791825730808
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825731375,
+          "end": 1791825731504
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825731505,
+          "end": 1791825731517
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825731518,
+          "end": 1791825731527
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825731542,
+          "end": 1791825731542
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825731542,
+          "end": 1791825731542
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825731542,
+          "end": 1791825731543
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825731543,
+          "end": 1791825731589
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825731542,
+          "end": 1791825731593
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-bc06783ac5257a10d761",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "unconfirmed_review_does_not_advance_prepared_card: filtering an issued unresolved head does not enable its successor"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 792,
+      "fixtureHookMs": 97,
+      "pollWaitMs": 149,
+      "overlapMs": 0,
+      "observedMs": 246,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825731600,
+          "end": 1791825731604
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825731605,
+          "end": 1791825731628
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825731628,
+          "end": 1791825731629
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825731595,
+          "end": 1791825731629
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825732174,
+          "end": 1791825732298
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825732298,
+          "end": 1791825732306
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825732307,
+          "end": 1791825732316
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825732316,
+          "end": 1791825732324
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825732333,
+          "end": 1791825732333
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825732333,
+          "end": 1791825732333
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825732334,
+          "end": 1791825732334
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825732334,
+          "end": 1791825732393
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825732333,
+          "end": 1791825732396
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-adb98dd63f8d400e4e92",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "legacy discovery timeout reopens as an unconfirmed save and retries the same choice"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 4234,
+      "fixtureHookMs": 84,
+      "pollWaitMs": 3417,
+      "overlapMs": 0,
+      "observedMs": 3501,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825732400,
+          "end": 1791825732405
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825732405,
+          "end": 1791825732428
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825732428,
+          "end": 1791825732428
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825732397,
+          "end": 1791825732428
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825733167,
+          "end": 1791825733177
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825733177,
+          "end": 1791825733184
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825733185,
+          "end": 1791825733195
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825733195,
+          "end": 1791825733196
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825733196,
+          "end": 1791825736585
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825736585,
+          "end": 1791825736585
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825736585,
+          "end": 1791825736586
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825736586,
+          "end": 1791825736635
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825736585,
+          "end": 1791825736638
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-266793a5cdfacb96d90d",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "legacy long discovery save key recovers and queues the saved choice"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 636,
+      "fixtureHookMs": 79,
+      "pollWaitMs": 31,
+      "overlapMs": 0,
+      "observedMs": 110,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825736642,
+          "end": 1791825736648
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825736648,
+          "end": 1791825736672
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825736672,
+          "end": 1791825736672
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825736639,
+          "end": 1791825736672
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825737205,
+          "end": 1791825737206
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825737206,
+          "end": 1791825737236
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825737237,
+          "end": 1791825737237
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825737237,
+          "end": 1791825737237
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825737237,
+          "end": 1791825737279
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825737237,
+          "end": 1791825737283
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-d910767343c5401b0692",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "reloaded prefetched guided card waits for the earlier review before marking failure"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1172,
+      "fixtureHookMs": 115,
+      "pollWaitMs": 347,
+      "overlapMs": 0,
+      "observedMs": 462,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825737287,
+          "end": 1791825737293
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825737293,
+          "end": 1791825737316
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825737316,
+          "end": 1791825737317
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825737283,
+          "end": 1791825737317
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825737845,
+          "end": 1791825737947
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825737947,
+          "end": 1791825738049
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825738049,
+          "end": 1791825738072
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825738261,
+          "end": 1791825738381
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825738382,
+          "end": 1791825738382
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825738382,
+          "end": 1791825738382
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825738382,
+          "end": 1791825738459
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825738382,
+          "end": 1791825738463
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-1d8704e6fce1fc9aa909",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "unavailable repertoire lines do not falsely grade another legal move"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1057,
+      "fixtureHookMs": 103,
+      "pollWaitMs": 173,
+      "overlapMs": 0,
+      "observedMs": 276,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825738468,
+          "end": 1791825738473
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825738473,
+          "end": 1791825738500
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825738500,
+          "end": 1791825738500
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825738463,
+          "end": 1791825738500
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825739180,
+          "end": 1791825739223
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825739223,
+          "end": 1791825739276
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825739276,
+          "end": 1791825739291
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825739342,
+          "end": 1791825739389
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825739390,
+          "end": 1791825739395
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825739453,
+          "end": 1791825739463
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825739463,
+          "end": 1791825739463
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825739463,
+          "end": 1791825739463
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825739464,
+          "end": 1791825739525
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825739463,
+          "end": 1791825739529
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-00cef3224c59ca05e12c",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "issue36_browser_alternatives_retry_and_confirmed_edit_invalidation_preserve_the_board_and_grading"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 8690,
+      "fixtureHookMs": 85,
+      "pollWaitMs": 830,
+      "overlapMs": 0,
+      "observedMs": 915,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825739534,
+          "end": 1791825739539
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825739539,
+          "end": 1791825739563
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825739563,
+          "end": 1791825739563
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825739531,
+          "end": 1791825739564
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825740250,
+          "end": 1791825740288
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825740289,
+          "end": 1791825740346
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825740430,
+          "end": 1791825740451
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825740452,
+          "end": 1791825740581
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825740635,
+          "end": 1791825740647
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825740697,
+          "end": 1791825740741
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825740742,
+          "end": 1791825740866
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825747618,
+          "end": 1791825747639
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825747639,
+          "end": 1791825747651
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825747698,
+          "end": 1791825747706
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825747706,
+          "end": 1791825747830
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825747886,
+          "end": 1791825747897
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825747946,
+          "end": 1791825748047
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825748048,
+          "end": 1791825748171
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825748171,
+          "end": 1791825748176
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825748177,
+          "end": 1791825748177
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825748177,
+          "end": 1791825748177
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825748177,
+          "end": 1791825748225
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825748177,
+          "end": 1791825748229
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-2e30a5ada24d89d53c95",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "check coverage loads adaptive settings without a validation alert"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 733,
+      "fixtureHookMs": 93,
+      "pollWaitMs": 120,
+      "overlapMs": 0,
+      "observedMs": 213,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825748233,
+          "end": 1791825748239
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825748239,
+          "end": 1791825748268
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825748268,
+          "end": 1791825748269
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825748230,
+          "end": 1791825748269
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825748578,
+          "end": 1791825748646
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825748864,
+          "end": 1791825748911
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825748911,
+          "end": 1791825748916
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825748917,
+          "end": 1791825748917
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825748917,
+          "end": 1791825748917
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825748917,
+          "end": 1791825748967
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825748917,
+          "end": 1791825748971
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-0ed3b59760cdd90868da",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "fractional priority evidence loads both repertoires without a diagnostic"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 906,
+      "fixtureHookMs": 82,
+      "pollWaitMs": 253,
+      "overlapMs": 0,
+      "observedMs": 335,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825748976,
+          "end": 1791825748983
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825748983,
+          "end": 1791825749007
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825749007,
+          "end": 1791825749008
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825748972,
+          "end": 1791825749008
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825749509,
+          "end": 1791825749539
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825749616,
+          "end": 1791825749825
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825749826,
+          "end": 1791825749833
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825749833,
+          "end": 1791825749840
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825749840,
+          "end": 1791825749840
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825749840,
+          "end": 1791825749840
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825749841,
+          "end": 1791825749883
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825749840,
+          "end": 1791825749886
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-2adfa8175c3bb070e844",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "unaffected opening reviews remain mixed with tactics during repertoire repair"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 816,
+      "fixtureHookMs": 88,
+      "pollWaitMs": 158,
+      "overlapMs": 0,
+      "observedMs": 246,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825749891,
+          "end": 1791825749898
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825749898,
+          "end": 1791825749922
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825749922,
+          "end": 1791825749922
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825749888,
+          "end": 1791825749922
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveText\"",
+          "start": 1791825750499,
+          "end": 1791825750617
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825750618,
+          "end": 1791825750633
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825750634,
+          "end": 1791825750650
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825750650,
+          "end": 1791825750659
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825750659,
+          "end": 1791825750660
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825750660,
+          "end": 1791825750660
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825750660,
+          "end": 1791825750708
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825750659,
+          "end": 1791825750713
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-19cd196f205402218996",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "failed initial loads never display empty records or zero statistics"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 718,
+      "fixtureHookMs": 86,
+      "pollWaitMs": 121,
+      "overlapMs": 0,
+      "observedMs": 207,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825750718,
+          "end": 1791825750723
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825750723,
+          "end": 1791825750751
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825750751,
+          "end": 1791825750751
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825750714,
+          "end": 1791825750751
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825751041,
+          "end": 1791825751076
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825751182,
+          "end": 1791825751202
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825751202,
+          "end": 1791825751218
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825751219,
+          "end": 1791825751228
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825751228,
+          "end": 1791825751235
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825751235,
+          "end": 1791825751242
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825751363,
+          "end": 1791825751369
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825751369,
+          "end": 1791825751378
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825751379,
+          "end": 1791825751385
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825751385,
+          "end": 1791825751391
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825751391,
+          "end": 1791825751391
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825751392,
+          "end": 1791825751392
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825751392,
+          "end": 1791825751436
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825751391,
+          "end": 1791825751440
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-347e69a7ce003abddb00",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "failed settings reads cannot overwrite authoritative settings with defaults"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 544,
+      "fixtureHookMs": 95,
+      "pollWaitMs": 65,
+      "overlapMs": 0,
+      "observedMs": 160,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825751444,
+          "end": 1791825751449
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825751449,
+          "end": 1791825751474
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825751474,
+          "end": 1791825751475
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825751440,
+          "end": 1791825751475
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825751757,
+          "end": 1791825751788
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825751888,
+          "end": 1791825751913
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825751924,
+          "end": 1791825751933
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825751934,
+          "end": 1791825751934
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825751934,
+          "end": 1791825751934
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825751934,
+          "end": 1791825751989
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825751934,
+          "end": 1791825751994
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-92fc672b3a49024f3e4a",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "malformed progress is unavailable and retry recovers real measurements"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 703,
+      "fixtureHookMs": 89,
+      "pollWaitMs": 85,
+      "overlapMs": 0,
+      "observedMs": 174,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825752002,
+          "end": 1791825752006
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825752006,
+          "end": 1791825752029
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825752029,
+          "end": 1791825752030
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825751997,
+          "end": 1791825752030
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825752322,
+          "end": 1791825752391
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825752567,
+          "end": 1791825752577
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825752578,
+          "end": 1791825752584
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825752653,
+          "end": 1791825752653
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825752653,
+          "end": 1791825752653
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825752654,
+          "end": 1791825752706
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825752653,
+          "end": 1791825752709
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-a626a0ebbbf8357c0b13",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "frontend errors show a redacted copyable debug bundle"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 756,
+      "fixtureHookMs": 86,
+      "pollWaitMs": 66,
+      "overlapMs": 0,
+      "observedMs": 152,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825752713,
+          "end": 1791825752719
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825752719,
+          "end": 1791825752743
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825752743,
+          "end": 1791825752743
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825752709,
+          "end": 1791825752743
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825753062,
+          "end": 1791825753103
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825753264,
+          "end": 1791825753272
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825753333,
+          "end": 1791825753342
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825753398,
+          "end": 1791825753406
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825753421,
+          "end": 1791825753421
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825753421,
+          "end": 1791825753421
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825753421,
+          "end": 1791825753470
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825753421,
+          "end": 1791825753473
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-193fda161ea23c252f4b",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "import waits for saved settings before writing a repertoire"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 698,
+      "fixtureHookMs": 134,
+      "pollWaitMs": 46,
+      "overlapMs": 0,
+      "observedMs": 180,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825753479,
+          "end": 1791825753484
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825753484,
+          "end": 1791825753507
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825753507,
+          "end": 1791825753507
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825753474,
+          "end": 1791825753507
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825753789,
+          "end": 1791825753830
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825754074,
+          "end": 1791825754079
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825754080,
+          "end": 1791825754080
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825754080,
+          "end": 1791825754080
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825754080,
+          "end": 1791825754178
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825754080,
+          "end": 1791825754181
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-332aa852d0c8cc009b33",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "unknown PGN receipt recovers the same operation after reload and matching file reselection"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1512,
+      "fixtureHookMs": 152,
+      "pollWaitMs": 136,
+      "overlapMs": 0,
+      "observedMs": 288,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825754185,
+          "end": 1791825754190
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825754190,
+          "end": 1791825754213
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825754213,
+          "end": 1791825754214
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825754182,
+          "end": 1791825754214
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825754524,
+          "end": 1791825754567
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825754919,
+          "end": 1791825754924
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825755225,
+          "end": 1791825755256
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825755516,
+          "end": 1791825755573
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825755574,
+          "end": 1791825755574
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825755583,
+          "end": 1791825755583
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825755583,
+          "end": 1791825755583
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825755583,
+          "end": 1791825755698
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825755583,
+          "end": 1791825755703
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-5bba97889bc4c8d8751b",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "legacy pending PGN import promptly shows its diagnostic and Check again only inspects the original operation"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1013,
+      "fixtureHookMs": 127,
+      "pollWaitMs": 83,
+      "overlapMs": 0,
+      "observedMs": 210,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825755708,
+          "end": 1791825755711
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825755712,
+          "end": 1791825755734
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825755734,
+          "end": 1791825755735
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825755704,
+          "end": 1791825755735
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825756060,
+          "end": 1791825756096
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveText\"",
+          "start": 1791825756383,
+          "end": 1791825756391
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveText\"",
+          "start": 1791825756582,
+          "end": 1791825756588
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825756589,
+          "end": 1791825756595
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825756596,
+          "end": 1791825756600
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveJSProperty\"",
+          "start": 1791825756601,
+          "end": 1791825756618
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825756619,
+          "end": 1791825756625
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825756630,
+          "end": 1791825756630
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825756630,
+          "end": 1791825756630
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825756630,
+          "end": 1791825756721
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825756630,
+          "end": 1791825756726
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-90b38a40df9e6e9cbb2a",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "durably executing PGN import waits informationally and Check again never resends"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1174,
+      "fixtureHookMs": 84,
+      "pollWaitMs": 262,
+      "overlapMs": 0,
+      "observedMs": 346,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825756731,
+          "end": 1791825756734
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825756735,
+          "end": 1791825756757
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825756757,
+          "end": 1791825756758
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825756727,
+          "end": 1791825756758
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825757047,
+          "end": 1791825757087
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeGreaterThan\"",
+          "start": 1791825757346,
+          "end": 1791825757447
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825757461,
+          "end": 1791825757466
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825757645,
+          "end": 1791825757653
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825757660,
+          "end": 1791825757665
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825757748,
+          "end": 1791825757851
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825757857,
+          "end": 1791825757857
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825757857,
+          "end": 1791825757857
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825757857,
+          "end": 1791825757905
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825757856,
+          "end": 1791825757909
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-e64a3445dd89c6bd64f1",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "durably retrying PGN import waits informationally and Check again never resends"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1206,
+      "fixtureHookMs": 88,
+      "pollWaitMs": 205,
+      "overlapMs": 0,
+      "observedMs": 293,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825757916,
+          "end": 1791825757920
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825757920,
+          "end": 1791825757943
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825757943,
+          "end": 1791825757944
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825757912,
+          "end": 1791825757944
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825758282,
+          "end": 1791825758319
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeGreaterThan\"",
+          "start": 1791825758614,
+          "end": 1791825758715
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825758730,
+          "end": 1791825758735
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825758915,
+          "end": 1791825758923
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825758929,
+          "end": 1791825758934
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825759014,
+          "end": 1791825759063
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825759069,
+          "end": 1791825759069
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825759069,
+          "end": 1791825759069
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825759069,
+          "end": 1791825759122
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825759069,
+          "end": 1791825759125
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-c592038d59913da5a973",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "discarding an unknown PGN import permits a different file after reload"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1092,
+      "fixtureHookMs": 77,
+      "pollWaitMs": 141,
+      "overlapMs": 0,
+      "observedMs": 218,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825759129,
+          "end": 1791825759135
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825759135,
+          "end": 1791825759159
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825759159,
+          "end": 1791825759159
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825759126,
+          "end": 1791825759159
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825759679,
+          "end": 1791825759708
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveValue\"",
+          "start": 1791825759926,
+          "end": 1791825759937
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825760080,
+          "end": 1791825760181
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825760181,
+          "end": 1791825760181
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825760182,
+          "end": 1791825760182
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825760182,
+          "end": 1791825760182
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825760182,
+          "end": 1791825760222
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825760182,
+          "end": 1791825760226
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-071cdc3574e6820a7198",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "repair choices advance before a delayed save and survive reload through real PostgreSQL receipts"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 26483,
+      "fixtureHookMs": 1271,
+      "pollWaitMs": 23854,
+      "overlapMs": 0,
+      "observedMs": 25125,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825760230,
+          "end": 1791825760234
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825760234,
+          "end": 1791825760259
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825760259,
+          "end": 1791825760259
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825760260,
+          "end": 1791825760263
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825760263,
+          "end": 1791825761444
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825760226,
+          "end": 1791825761444
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825761733,
+          "end": 1791825761779
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825761944,
+          "end": 1791825769887
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825770578,
+          "end": 1791825773432
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825773432,
+          "end": 1791825773432
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825773440,
+          "end": 1791825773440
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825773639,
+          "end": 1791825773675
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825773676,
+          "end": 1791825786651
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825786651,
+          "end": 1791825786651
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825786668,
+          "end": 1791825786668
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825786668,
+          "end": 1791825786670
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825786670,
+          "end": 1791825786670
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825786670,
+          "end": 1791825786670
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825786670,
+          "end": 1791825786714
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825786668,
+          "end": 1791825786721
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-f812ddc46dfc3637a09f",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "repair confirmation during a held training piece preserves the drag and active attempt"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 2416,
+      "fixtureHookMs": 113,
+      "pollWaitMs": 157,
+      "overlapMs": 0,
+      "observedMs": 270,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825786726,
+          "end": 1791825786730
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825786730,
+          "end": 1791825786753
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825786753,
+          "end": 1791825786754
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825786722,
+          "end": 1791825786754
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825787276,
+          "end": 1791825787397
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825787398,
+          "end": 1791825787410
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825787410,
+          "end": 1791825787410
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825787506,
+          "end": 1791825787512
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeNull\"",
+          "start": 1791825788444,
+          "end": 1791825788449
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825789046,
+          "end": 1791825789053
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825789053,
+          "end": 1791825789059
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825789066,
+          "end": 1791825789066
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825789066,
+          "end": 1791825789066
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825789067,
+          "end": 1791825789143
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825789066,
+          "end": 1791825789147
+        }
+      ]
+    },
+    {
+      "id": "ef78f3da5c9c24fceacf-5f2f2ad14bebcd7b733c",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/recovery.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "recovery.spec.ts",
+        "asynchronous repair validation retry survives reload without repeating the retry command"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 8270,
+      "fixtureHookMs": 88,
+      "pollWaitMs": 5874,
+      "overlapMs": 0,
+      "observedMs": 5962,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825789151,
+          "end": 1791825789158
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825789158,
+          "end": 1791825789182
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825789182,
+          "end": 1791825789183
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825789148,
+          "end": 1791825789183
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825791201,
+          "end": 1791825791302
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeGreaterThan\"",
+          "start": 1791825791302,
+          "end": 1791825793156
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeGreaterThan\"",
+          "start": 1791825793400,
+          "end": 1791825793401
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825793447,
+          "end": 1791825793458
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeNull\"",
+          "start": 1791825793466,
+          "end": 1791825797367
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825797367,
+          "end": 1791825797373
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825797373,
+          "end": 1791825797373
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825797374,
+          "end": 1791825797374
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825797374,
+          "end": 1791825797422
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825797373,
+          "end": 1791825797426
+        }
+      ]
+    },
+    {
+      "id": "71eb7a62b00b42512d8d-c51cb53bd5fa3bb5f521",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/settings-defense-toggle.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "settings-defense-toggle.spec.ts",
+        "defensive daily stack setting persists across navigation and reload"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1313,
+      "fixtureHookMs": 94,
+      "pollWaitMs": 119,
+      "overlapMs": 0,
+      "observedMs": 213,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825797436,
+          "end": 1791825797443
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825797443,
+          "end": 1791825797468
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825797468,
+          "end": 1791825797472
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825797432,
+          "end": 1791825797472
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825798131,
+          "end": 1791825798243
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825798244,
+          "end": 1791825798251
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825798699,
+          "end": 1791825798702
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825798702,
+          "end": 1791825798702
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825798703,
+          "end": 1791825798750
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825798699,
+          "end": 1791825798753
+        }
+      ]
+    },
+    {
+      "id": "71eb7a62b00b42512d8d-ebd5a47e465169643cb9",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/settings-defense-toggle.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "settings-defense-toggle.spec.ts",
+        "defensive analysis pause persists independently of defensive cards"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1936,
+      "fixtureHookMs": 83,
+      "pollWaitMs": 232,
+      "overlapMs": 0,
+      "observedMs": 315,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825798759,
+          "end": 1791825798765
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825798765,
+          "end": 1791825798789
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825798789,
+          "end": 1791825798791
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825798756,
+          "end": 1791825798791
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825799514,
+          "end": 1791825799630
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825800130,
+          "end": 1791825800246
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825800652,
+          "end": 1791825800654
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825800654,
+          "end": 1791825800654
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825800654,
+          "end": 1791825800696
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825800652,
+          "end": 1791825800700
+        }
+      ]
+    },
+    {
+      "id": "71eb7a62b00b42512d8d-0cdd42b83ac5cf252a0f",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/settings-defense-toggle.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "settings-defense-toggle.spec.ts",
+        "combined defensive pauses retain individual Resume until Settings allows it"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 3311,
+      "fixtureHookMs": 69,
+      "pollWaitMs": 208,
+      "overlapMs": 0,
+      "observedMs": 277,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825800705,
+          "end": 1791825800710
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825800710,
+          "end": 1791825800735
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825800736,
+          "end": 1791825800738
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825800702,
+          "end": 1791825800738
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toMatchObject\"",
+          "start": 1791825801802,
+          "end": 1791825801812
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825802318,
+          "end": 1791825802344
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825802344,
+          "end": 1791825802359
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825802359,
+          "end": 1791825802372
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825802650,
+          "end": 1791825802656
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825803730,
+          "end": 1791825803844
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toMatchObject\"",
+          "start": 1791825803844,
+          "end": 1791825803856
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toMatchObject\"",
+          "start": 1791825803951,
+          "end": 1791825803963
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825803989,
+          "end": 1791825803991
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825803991,
+          "end": 1791825803991
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825803991,
+          "end": 1791825804018
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825803989,
+          "end": 1791825804022
+        }
+      ]
+    },
+    {
+      "id": "52fb7dc55224a2af314f-799def5c1a48c2c0ca31",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/settings-repertoire-limits.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "settings-repertoire-limits.spec.ts",
+        "repertoire limits update today's queue, persist after reload, and reset to default"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 18580,
+      "fixtureHookMs": 1313,
+      "pollWaitMs": 15112,
+      "overlapMs": 0,
+      "observedMs": 16425,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825804031,
+          "end": 1791825804035
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825804035,
+          "end": 1791825804060
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825804060,
+          "end": 1791825804060
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825804060,
+          "end": 1791825804062
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825804062,
+          "end": 1791825805289
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825804027,
+          "end": 1791825805289
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825806321,
+          "end": 1791825806328
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825806360,
+          "end": 1791825811270
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825811276,
+          "end": 1791825813197
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825813482,
+          "end": 1791825813538
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toContain\"",
+          "start": 1791825813899,
+          "end": 1791825814039
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825814039,
+          "end": 1791825817971
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825818175,
+          "end": 1791825818212
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveValue\"",
+          "start": 1791825818358,
+          "end": 1791825818391
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toContain\"",
+          "start": 1791825818446,
+          "end": 1791825818582
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825818582,
+          "end": 1791825822522
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"disposableProduct\"",
+          "start": 1791825822566,
+          "end": 1791825822566
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825822566,
+          "end": 1791825822568
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825822568,
+          "end": 1791825822568
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825822568,
+          "end": 1791825822568
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825822568,
+          "end": 1791825822613
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825822566,
+          "end": 1791825822617
+        }
+      ]
+    },
+    {
+      "id": "cfaa7aee8833fc36f0b0-9ec34b728ab0045a64b0",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/study-only-mode.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "study-only-mode.spec.ts",
+        "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 54080,
+      "fixtureHookMs": 110,
+      "pollWaitMs": 14737,
+      "overlapMs": 0,
+      "observedMs": 14847,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825822625,
+          "end": 1791825822630
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825822630,
+          "end": 1791825822654
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825822654,
+          "end": 1791825822655
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825822655,
+          "end": 1791825822657
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825822622,
+          "end": 1791825822657
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825823966,
+          "end": 1791825824005
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825824262,
+          "end": 1791825824375
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825835790,
+          "end": 1791825835827
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825835909,
+          "end": 1791825835921
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825836011,
+          "end": 1791825836031
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825836577,
+          "end": 1791825836674
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825836674,
+          "end": 1791825836681
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825836725,
+          "end": 1791825836773
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825836773,
+          "end": 1791825836778
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825837705,
+          "end": 1791825839456
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825840242,
+          "end": 1791825840560
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825840561,
+          "end": 1791825840567
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825841464,
+          "end": 1791825843074
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825843893,
+          "end": 1791825844207
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825844208,
+          "end": 1791825844213
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825845098,
+          "end": 1791825846738
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825847573,
+          "end": 1791825847889
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825852301,
+          "end": 1791825855690
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825855706,
+          "end": 1791825857279
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825857279,
+          "end": 1791825857288
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825857461,
+          "end": 1791825857581
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBeLessThan\"",
+          "start": 1791825857581,
+          "end": 1791825860889
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"request\"",
+          "start": 1791825876640,
+          "end": 1791825876649
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"failureEvidence\"",
+          "start": 1791825876649,
+          "end": 1791825876649
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825876649,
+          "end": 1791825876649
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825876650,
+          "end": 1791825876709
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825876639,
+          "end": 1791825876714
+        }
+      ]
+    },
+    {
+      "id": "5395cebf3b5870b72f23-df20af6900b10af871e8",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/training-prefetch.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "training-prefetch.spec.ts",
+        "prepared_reconciliation_failure_preserves_native_play_and_blocks_unissued_successor_until_retry"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 8203,
+      "fixtureHookMs": 92,
+      "pollWaitMs": 952,
+      "overlapMs": 0,
+      "observedMs": 1044,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825876730,
+          "end": 1791825876735
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825876736,
+          "end": 1791825876761
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825876725,
+          "end": 1791825876761
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825877475,
+          "end": 1791825877495
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825877495,
+          "end": 1791825877495
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825877496,
+          "end": 1791825877510
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825877656,
+          "end": 1791825877694
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825877695,
+          "end": 1791825878493
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825884557,
+          "end": 1791825884583
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825884584,
+          "end": 1791825884589
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825884590,
+          "end": 1791825884595
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825884595,
+          "end": 1791825884602
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825884603,
+          "end": 1791825884603
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825884843,
+          "end": 1791825884876
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825884876,
+          "end": 1791825884882
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825884882,
+          "end": 1791825884882
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825884882,
+          "end": 1791825884882
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825884883,
+          "end": 1791825884934
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825884882,
+          "end": 1791825884938
+        }
+      ]
+    },
+    {
+      "id": "5395cebf3b5870b72f23-d094281774933b0b671b",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/training-prefetch.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "training-prefetch.spec.ts",
+        "connected next training card waits for review confirmation and fresh queue"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 856,
+      "fixtureHookMs": 92,
+      "pollWaitMs": 216,
+      "overlapMs": 0,
+      "observedMs": 308,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825884943,
+          "end": 1791825884948
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825884948,
+          "end": 1791825884971
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825884939,
+          "end": 1791825884971
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825885465,
+          "end": 1791825885609
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825885672,
+          "end": 1791825885673
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825885673,
+          "end": 1791825885683
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825885683,
+          "end": 1791825885689
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825885689,
+          "end": 1791825885744
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825885744,
+          "end": 1791825885744
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825885744,
+          "end": 1791825885800
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825885744,
+          "end": 1791825885804
+        }
+      ]
+    },
+    {
+      "id": "5395cebf3b5870b72f23-855ad1062ecad3d742dd",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/training-prefetch.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "training-prefetch.spec.ts",
+        "review saves stay quiet without moving the board or card"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 980,
+      "fixtureHookMs": 87,
+      "pollWaitMs": 60,
+      "overlapMs": 0,
+      "observedMs": 147,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825885808,
+          "end": 1791825885813
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825885813,
+          "end": 1791825885836
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825885805,
+          "end": 1791825885836
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825886553,
+          "end": 1791825886554
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825886554,
+          "end": 1791825886565
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825886575,
+          "end": 1791825886617
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825886618,
+          "end": 1791825886624
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825886737,
+          "end": 1791825886737
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825886737,
+          "end": 1791825886789
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825886737,
+          "end": 1791825886793
+        }
+      ]
+    },
+    {
+      "id": "5395cebf3b5870b72f23-cb329fe9fc94bccff915",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/training-prefetch.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "training-prefetch.spec.ts",
+        "completed tactic follows the authoritative queue after the earlier save"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 2673,
+      "fixtureHookMs": 91,
+      "pollWaitMs": 1684,
+      "overlapMs": 0,
+      "observedMs": 1775,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825886797,
+          "end": 1791825886803
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825886803,
+          "end": 1791825886826
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825886794,
+          "end": 1791825886826
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toBe\"",
+          "start": 1791825887494,
+          "end": 1791825887495
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825887495,
+          "end": 1791825887504
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825887505,
+          "end": 1791825887554
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825887689,
+          "end": 1791825888485
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825888585,
+          "end": 1791825889414
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825889414,
+          "end": 1791825889414
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825889415,
+          "end": 1791825889415
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825889415,
+          "end": 1791825889471
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825889415,
+          "end": 1791825889474
+        }
+      ]
+    },
+    {
+      "id": "5395cebf3b5870b72f23-879f25af58224d3b5e17",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/training-prefetch.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "training-prefetch.spec.ts",
+        "poisoned online A becomes inspectable while B and C save and conflict retry survives reload"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1172,
+      "fixtureHookMs": 93,
+      "pollWaitMs": 156,
+      "overlapMs": 0,
+      "observedMs": 249,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825889479,
+          "end": 1791825889485
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825889486,
+          "end": 1791825889508
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825889475,
+          "end": 1791825889508
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825890038,
+          "end": 1791825890139
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825890140,
+          "end": 1791825890177
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825890178,
+          "end": 1791825890189
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825890586,
+          "end": 1791825890593
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveLength\"",
+          "start": 1791825890593,
+          "end": 1791825890593
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825890594,
+          "end": 1791825890594
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825890594,
+          "end": 1791825890651
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825890594,
+          "end": 1791825890654
+        }
+      ]
+    },
+    {
+      "id": "5395cebf3b5870b72f23-eabca9dedc45ff29fd67",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/training-prefetch.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "training-prefetch.spec.ts",
+        "legacy numeric guided marker blocks clean grading across reload until authoritative replay"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1425,
+      "fixtureHookMs": 98,
+      "pollWaitMs": 388,
+      "overlapMs": 0,
+      "observedMs": 486,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825890658,
+          "end": 1791825890663
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825890663,
+          "end": 1791825890688
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825890655,
+          "end": 1791825890688
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825891199,
+          "end": 1791825891324
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825891528,
+          "end": 1791825891658
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825891659,
+          "end": 1791825891668
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825891668,
+          "end": 1791825891674
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825891688,
+          "end": 1791825891696
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825891898,
+          "end": 1791825891995
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825892009,
+          "end": 1791825892022
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825892023,
+          "end": 1791825892023
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825892023,
+          "end": 1791825892084
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825892023,
+          "end": 1791825892088
+        }
+      ]
+    },
+    {
+      "id": "5395cebf3b5870b72f23-6362fcecd022608c998c",
+      "project": "chromium",
+      "file": "/home/runner/work/tempo/tempo/tests/browser/training-prefetch.spec.ts",
+      "title": [
+        "",
+        "chromium",
+        "training-prefetch.spec.ts",
+        "legacy object guided marker blocks clean grading across reload until authoritative replay"
+      ],
+      "status": "passed",
+      "retry": 0,
+      "durationMs": 1394,
+      "fixtureHookMs": 90,
+      "pollWaitMs": 363,
+      "overlapMs": 0,
+      "observedMs": 453,
+      "spans": [
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825892092,
+          "end": 1791825892096
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825892096,
+          "end": 1791825892121
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Before Hooks",
+          "start": 1791825892088,
+          "end": 1791825892121
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825892637,
+          "end": 1791825892761
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825892972,
+          "end": 1791825893090
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveCount\"",
+          "start": 1791825893090,
+          "end": 1791825893098
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825893098,
+          "end": 1791825893103
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"poll toEqual\"",
+          "start": 1791825893117,
+          "end": 1791825893124
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toBeVisible\"",
+          "start": 1791825893317,
+          "end": 1791825893409
+        },
+        {
+          "kind": "poll_wait",
+          "title": "Expect \"toHaveAttribute\"",
+          "start": 1791825893423,
+          "end": 1791825893432
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"page\"",
+          "start": 1791825893432,
+          "end": 1791825893432
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "Fixture \"context\"",
+          "start": 1791825893433,
+          "end": 1791825893486
+        },
+        {
+          "kind": "fixture_hook",
+          "title": "After Hooks",
+          "start": 1791825893432,
+          "end": 1791825893489
+        }
+      ]
+    }
+  ]
+}

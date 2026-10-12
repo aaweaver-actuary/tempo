@@ -1,0 +1,94 @@
+{
+  "runner": "postgres",
+  "mode": "browser",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "plan_hash": "0a40375cc201d8bc7d2f853bfb2f6dbef8bc1cd2a2eda1f3eecbb5ed002d097b",
+  "browser_file": null,
+  "browser_grep": "^chromium opening-progression\\.spec\\.ts one real short-prefix practice admits its child while parent is learning 1280$|^chromium opening-progression\\.spec\\.ts one real short-prefix practice admits its child while parent is learning 390$|^chromium prefix-split-training\\.spec\\.ts accepting a prefix split skips preview and advances to the next queued card$|^chromium prefix-split-training\\.spec\\.ts rejecting a prefix split remains dismissed after queue reload$|^chromium provider-integration\\.spec\\.ts automatic game sync has a visible spinner and reports provider failure$|^chromium provider-integration\\.spec\\.ts Docker Games shows actual empty records and actionable sync errors, never sample success$|^chromium provider-integration\\.spec\\.ts Maia initializes matching runtime assets and returns legal playable probabilities$|^chromium provider-integration\\.spec\\.ts real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics$|^chromium provider-integration\\.spec\\.ts production Stockfish returns playable engine moves without clipping the board$|^chromium paste-analysis\\.spec\\.ts paste analysis reports a preview service failure without claiming a save$|^chromium paste-analysis\\.spec\\.ts paste SAN from a repertoire gap previews its destination and saves the continuation$|^chromium settings-repertoire-limits\\.spec\\.ts repertoire limits update today's queue, persist after reload, and reset to default$|^chromium training-prefetch\\.spec\\.ts legacy object guided marker blocks clean grading across reload until authoritative replay$|^chromium training-prefetch\\.spec\\.ts review saves stay quiet without moving the board or card$|^chromium training-prefetch\\.spec\\.ts poisoned online A becomes inspectable while B and C save and conflict retry survives reload$|^chromium training-prefetch\\.spec\\.ts completed tactic follows the authoritative queue after the earlier save$|^chromium training-prefetch\\.spec\\.ts connected next training card waits for review confirmation and fresh queue$|^chromium training-prefetch\\.spec\\.ts prepared_reconciliation_failure_preserves_native_play_and_blocks_unissued_successor_until_retry$|^chromium training-prefetch\\.spec\\.ts legacy numeric guided marker blocks clean grading across reload until authoritative replay$|^chromium settings-defense-toggle\\.spec\\.ts combined defensive pauses retain individual Resume until Settings allows it$|^chromium settings-defense-toggle\\.spec\\.ts defensive daily stack setting persists across navigation and reload$|^chromium settings-defense-toggle\\.spec\\.ts defensive analysis pause persists independently of defensive cards$|^chromium prefix-comparison\\.spec\\.ts issue78_phone_and_desktop_comparison_remain_usable 390$|^chromium prefix-comparison\\.spec\\.ts issue78_phone_and_desktop_comparison_remain_usable 1280$|^chromium board-interactions\\.spec\\.ts delayed startup audio never replays earlier board moves and the next move sounds normally$|^chromium board-interactions\\.spec\\.ts checked king gets a persistent translucent red cue that clears when the position changes$|^chromium board-interactions\\.spec\\.ts local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh$|^chromium board-interactions\\.spec\\.ts Black Train prompt remains playable with a fully visible narrow board$|^chromium board-interactions\\.spec\\.ts Builder right-click annotation saves the exact clicked square$|^chromium board-interactions\\.spec\\.ts Builder source comparison is immediately reachable beside the board$|^chromium study-only-mode\\.spec\\.ts study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$|^chromium recovery\\.spec\\.ts issue36_browser_alternatives_retry_and_confirmed_edit_invalidation_preserve_the_board_and_grading$|^chromium recovery\\.spec\\.ts intentional training failure is saved once and reload resumes it without another failure$|^chromium recovery\\.spec\\.ts repair choices advance before a delayed save and survive reload through real PostgreSQL receipts$|^chromium recovery\\.spec\\.ts fractional priority evidence loads both repertoires without a diagnostic$|^chromium recovery\\.spec\\.ts import waits for saved settings before writing a repertoire$|^chromium recovery\\.spec\\.ts failed initial loads never display empty records or zero statistics$|^chromium recovery\\.spec\\.ts unavailable repertoire lines do not falsely grade another legal move$|^chromium recovery\\.spec\\.ts legacy long discovery save key recovers and queues the saved choice$|^chromium recovery\\.spec\\.ts unaffected opening reviews remain mixed with tactics during repertoire repair$|^chromium recovery\\.spec\\.ts check coverage loads adaptive settings without a validation alert$|^chromium recovery\\.spec\\.ts reopening a saved guided card without input does not record a new failure or show a red X$|^chromium recovery\\.spec\\.ts unknown PGN receipt recovers the same operation after reload and matching file reselection$|^chromium recovery\\.spec\\.ts failed settings reads cannot overwrite authoritative settings with defaults$|^chromium recovery\\.spec\\.ts training startup does not preload unrelated workspace requests$|^chromium recovery\\.spec\\.ts legacy pending PGN import promptly shows its diagnostic and Check again only inspects the original operation$|^chromium recovery\\.spec\\.ts asynchronous repair validation retry survives reload without repeating the retry command$|^chromium recovery\\.spec\\.ts durably executing PGN import waits informationally and Check again never resends$|^chromium recovery\\.spec\\.ts malformed progress is unavailable and retry recovers real measurements$|^chromium recovery\\.spec\\.ts unresolved guided review keeps its card paused while other training opens$|^chromium recovery\\.spec\\.ts frontend errors show a redacted copyable debug bundle$|^chromium recovery\\.spec\\.ts legacy discovery timeout reopens as an unconfirmed save and retries the same choice$|^chromium recovery\\.spec\\.ts unconfirmed_review_does_not_advance_prepared_card: filtering an issued unresolved head does not enable its successor$|^chromium recovery\\.spec\\.ts discarding an unknown PGN import permits a different file after reload$|^chromium recovery\\.spec\\.ts reloaded prefetched guided card waits for the earlier review before marking failure$|^chromium recovery\\.spec\\.ts durably retrying PGN import waits informationally and Check again never resends$|^chromium recovery\\.spec\\.ts repair confirmation during a held training piece preserves the drag and active attempt$",
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "startup",
+    "service_health",
+    "browser",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:17:55.047Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.4,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 98.59,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 16.66,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.08,
+      "exit_code": 0
+    },
+    "browser": {
+      "duration_seconds": 302.88,
+      "exit_code": 0
+    },
+    "cleanup": {
+      "duration_seconds": 2.96,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.4,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 98.59,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 98.99,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 15.62,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 114.61,
+      "completed": true,
+      "poll_count": 1,
+      "duration_seconds": 1.04,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "browser",
+      "parent_id": null,
+      "label": "resource_inspection",
+      "category": "inspection",
+      "start_seconds": 115.74,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 302.88,
+      "exit_code": 0
+    }
+  ]
+}

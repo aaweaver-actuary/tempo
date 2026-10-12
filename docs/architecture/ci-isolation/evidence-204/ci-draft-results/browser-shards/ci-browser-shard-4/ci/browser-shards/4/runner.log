@@ -1,0 +1,1459 @@
+Test capability preflight passed: Docker daemon and Docker checkout bind mount and 127.0.0.1 loopback bind available.
+PostgreSQL browser timings: test-results/performance/postgres-scenarios-browser-tempo-pg-regressions-5365-2b17f2fa.json
+PASS PostgreSQL API has reader credentials and no SQLite mount
+PASS recurring PostgreSQL backup loop has valid shell syntax
+PASS default Compose selects PostgreSQL and keeps SQLite isolated
+PostgreSQL scenario compose_config: 0.33s (exit 0)
+#1 [internal] load local bake definitions
+#1 reading from stdin 3.60kB done
+#1 DONE 0.0s
+
+#2 [web internal] load build definition from Dockerfile.web
+#2 transferring dockerfile: 720B 0.0s done
+#2 DONE 0.0s
+
+#3 [defense-engine internal] load build definition from Dockerfile.engine
+#3 transferring dockerfile: 798B done
+#3 DONE 0.0s
+
+#4 [schema internal] load build definition from Dockerfile
+#4 transferring dockerfile: 431B done
+#4 DONE 0.0s
+
+#5 [maia-worker internal] load build definition from Dockerfile.maia
+#5 transferring dockerfile: 459B done
+#5 DONE 0.0s
+
+#6 [foreground-worker internal] load metadata for docker.io/library/python:3.12-slim
+#6 ...
+
+#7 [auth] library/python:pull token for registry-1.docker.io
+#7 DONE 0.0s
+
+#8 [auth] library/node:pull token for registry-1.docker.io
+#8 DONE 0.0s
+
+#9 [auth] library/rust:pull token for registry-1.docker.io
+#9 DONE 0.0s
+
+#10 [auth] library/nginx:pull token for registry-1.docker.io
+#10 DONE 0.0s
+
+#11 [maia-worker internal] load metadata for docker.io/library/node:22-slim
+#11 DONE 0.9s
+
+#12 [schema internal] load .dockerignore
+#12 transferring context: 374B done
+#12 DONE 0.0s
+
+#6 [api internal] load metadata for docker.io/library/python:3.12-slim
+#6 DONE 0.9s
+
+#13 [web internal] load metadata for docker.io/library/rust:1.91-slim
+#13 DONE 0.9s
+
+#14 [defense-engine internal] load build context
+#14 transferring context: 1.74MB 0.0s done
+#14 DONE 0.0s
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 resolve docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 0.0s done
+#15 ...
+
+#12 [web internal] load .dockerignore
+#12 transferring context: 374B done
+#12 DONE 0.0s
+
+#16 [web internal] load metadata for docker.io/library/nginx:1.28-alpine
+#16 DONE 1.1s
+
+#17 [background-scheduler internal] load build context
+#17 transferring context: 9.90MB 0.2s done
+#17 DONE 0.2s
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 sha256:16bf2b5c59a08523519d3c8589deca849285dee1d62a3653e124c3dba340f15e 1.75kB / 1.75kB done
+#15 sha256:ce9a404c2c0138e747a43e6ea022d2f7e670ed868df35d627a663ba7fb940ea9 5.68kB / 5.68kB done
+#15 sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 10.37kB / 10.37kB done
+#15 ...
+
+#18 [maia-worker internal] load build context
+#18 transferring context: 46.21MB 0.2s done
+#18 DONE 0.3s
+
+#19 [web  1/11] FROM docker.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+#19 resolve docker.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 0.0s done
+#19 sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 5.22kB / 5.22kB done
+#19 sha256:b20fe038d9592822dd534600a1ddf467e985178aa3fed60ec441a056c2cc45bd 1.93kB / 1.93kB done
+#19 sha256:cd2df7ff65c5fce1f8a18ce89e3aac24a80c1db3776d5842a4cf86bc27f300a2 6.79kB / 6.79kB done
+#19 sha256:c75f989a229d12b2d2613a5997de9ff3546f664c22da9248720033a2410220f6 28.14MB / 28.14MB 0.3s done
+#19 sha256:8d752b15e16356e3c5fddfe9c08b5cd27a091835fe465cdef26dd30d3d856171 3.31kB / 3.31kB 0.2s done
+#19 sha256:a7d3259c055657a65a0815a6a5d07333f0b859c90cb197f4c7853941f77e78f2 49.96MB / 49.96MB 0.4s
+#19 sha256:aa7268e3e147e6faaf14f99734d2c8565bb9080ec0f292ae2aae65879bfd2727 1.71MB / 1.71MB 0.3s done
+#19 sha256:a8e3f40b26e8ab8419b3b90a177118d69162cdcd4799bd0c6bae541309993590 0B / 447B 0.4s
+#19 sha256:c75f989a229d12b2d2613a5997de9ff3546f664c22da9248720033a2410220f6 28.14MB / 28.14MB 0.3s done
+#19 sha256:aa7268e3e147e6faaf14f99734d2c8565bb9080ec0f292ae2aae65879bfd2727 1.71MB / 1.71MB 0.3s done
+#19 extracting sha256:c75f989a229d12b2d2613a5997de9ff3546f664c22da9248720033a2410220f6
+#19 sha256:a7d3259c055657a65a0815a6a5d07333f0b859c90cb197f4c7853941f77e78f2 49.96MB / 49.96MB 0.7s done
+#19 sha256:a8e3f40b26e8ab8419b3b90a177118d69162cdcd4799bd0c6bae541309993590 447B / 447B 0.7s done
+#19 ...
+
+#20 [web internal] load build context
+#20 transferring context: 121.56MB 0.7s done
+#20 DONE 0.7s
+
+#19 [web  1/11] FROM docker.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+#19 extracting sha256:c75f989a229d12b2d2613a5997de9ff3546f664c22da9248720033a2410220f6 2.4s done
+#19 extracting sha256:8d752b15e16356e3c5fddfe9c08b5cd27a091835fe465cdef26dd30d3d856171 done
+#19 extracting sha256:a7d3259c055657a65a0815a6a5d07333f0b859c90cb197f4c7853941f77e78f2
+#19 extracting sha256:a7d3259c055657a65a0815a6a5d07333f0b859c90cb197f4c7853941f77e78f2 1.5s done
+#19 ...
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 sha256:bbeda6b4abb749f743f4547ef5a28070a14de8caef211daa5afb78d5b5fa21ba 30.20MB / 30.20MB 0.7s done
+#15 sha256:387b25ff7b944c188f58f0e8633fb93428b7418b9af0549618f96ce8fd56da5f 1.28MB / 1.28MB 0.8s done
+#15 extracting sha256:bbeda6b4abb749f743f4547ef5a28070a14de8caef211daa5afb78d5b5fa21ba 1.9s done
+#15 sha256:4dbdca1a513d31094476a7f745c8278b0ca94c30b9bc66ec65b9faebff263a16 12.06MB / 12.06MB 0.9s done
+#15 sha256:6e2fcafe72a4c4e812d11805d3f8f7b8fddd43ac39a29aadbe0a93b079d60e18 249B / 249B 0.9s done
+#15 extracting sha256:387b25ff7b944c188f58f0e8633fb93428b7418b9af0549618f96ce8fd56da5f 0.4s done
+#15 extracting sha256:4dbdca1a513d31094476a7f745c8278b0ca94c30b9bc66ec65b9faebff263a16
+#15 ...
+
+#19 [web  1/11] FROM docker.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+#19 extracting sha256:aa7268e3e147e6faaf14f99734d2c8565bb9080ec0f292ae2aae65879bfd2727 0.3s done
+#19 extracting sha256:a8e3f40b26e8ab8419b3b90a177118d69162cdcd4799bd0c6bae541309993590 done
+#19 DONE 8.5s
+
+#21 [web  2/11] WORKDIR /app
+#21 DONE 0.0s
+
+#22 [defense-engine  3/11] COPY package.json ./package.json
+#22 DONE 0.0s
+
+#23 [maia-worker 3/8] COPY package.json package-lock.json ./
+#23 DONE 0.0s
+
+#24 [web web 3/7] COPY package.json package-lock.json ./
+#24 CACHED
+
+#25 [web web 4/7] RUN npm ci
+#25 ...
+
+#26 [defense-engine  4/11] COPY scripts/defense-engine-worker.mjs ./scripts/defense-engine-worker.mjs
+#26 DONE 0.0s
+
+#27 [defense-engine  5/11] COPY scripts/engine-search.mjs ./scripts/engine-search.mjs
+#27 DONE 0.0s
+
+#28 [defense-engine  6/11] COPY scripts/engine-worker-cycle.mjs ./scripts/engine-worker-cycle.mjs
+#28 DONE 0.1s
+
+#29 [web core 1/7] FROM docker.io/library/rust:1.91-slim@sha256:f75071363e7f4771769d4cf81b1b7b290e607f4d4459e8731f6abdcee9982dc8
+#29 resolve docker.io/library/rust:1.91-slim@sha256:f75071363e7f4771769d4cf81b1b7b290e607f4d4459e8731f6abdcee9982dc8 0.0s done
+#29 sha256:f75071363e7f4771769d4cf81b1b7b290e607f4d4459e8731f6abdcee9982dc8 9.04kB / 9.04kB done
+#29 sha256:57ff41afec9aad2121abb5bf6f76021e36a22a6a5156e6ce94e20ec954a2f09e 1.36kB / 1.36kB done
+#29 sha256:ae3ffd12cf98ccbb20f279c5f9c567888f77d8020e8b5d752da71b9d2f7bf2fa 3.47kB / 3.47kB done
+#29 sha256:f626fba1463b32b20f78d29b52dcf15be927dbb5372a9ba6a5f97aad47ae220b 30.14MB / 30.14MB 0.9s done
+#29 sha256:e9dcd0edc772b7015056b308a5733eda8e436a216fec513762edecd5ddcd0c5f 249.94MB / 249.94MB 2.5s done
+#29 extracting sha256:f626fba1463b32b20f78d29b52dcf15be927dbb5372a9ba6a5f97aad47ae220b 2.2s done
+#29 extracting sha256:e9dcd0edc772b7015056b308a5733eda8e436a216fec513762edecd5ddcd0c5f 4.8s done
+#29 DONE 8.6s
+
+#30 [defense-engine  7/11] COPY scripts/engine-attempt-diagnostics.mjs ./scripts/engine-attempt-diagnostics.mjs
+#30 DONE 0.0s
+
+#31 [defense-engine  8/11] COPY scripts/maia-coverage-client.mjs ./scripts/maia-coverage-client.mjs
+#31 DONE 0.0s
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 ...
+
+#32 [defense-engine  9/11] COPY scripts/durable-engine-request.mjs ./scripts/durable-engine-request.mjs
+#32 DONE 0.0s
+
+#33 [defense-engine 10/11] COPY scripts/engine-job-recovery.mjs ./scripts/engine-job-recovery.mjs
+#33 DONE 0.0s
+
+#34 [defense-engine 11/11] COPY public/engines/sf_19_smallnet.js public/engines/sf_19_smallnet.wasm public/engines/nn-61e7af4bb97d.nnue ./public/engines/
+#34 DONE 0.0s
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 ...
+
+#35 [web stage-2 1/4] FROM docker.io/library/nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+#35 resolve docker.io/library/nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236 0.0s done
+#35 sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236 10.32kB / 10.32kB done
+#35 sha256:1be286f7dd7d6e6be04f46e8df36d0084b05aa3d7fd3c6ebda3e1eff4e5b665d 2.50kB / 2.50kB done
+#35 sha256:feb29ad4d53f4c6d793d598ed2af77917b8587163de8df86d6ae8e2acec5a5d4 12.31kB / 12.31kB done
+#35 sha256:d8ad8cd72600f46cc068e16c39046ebc76526e41051f43a8c249884b200936c0 4.20MB / 4.20MB 0.9s done
+#35 extracting sha256:d8ad8cd72600f46cc068e16c39046ebc76526e41051f43a8c249884b200936c0 0.2s done
+#35 sha256:0c9e85b345e6064c61d3655ec4390c0d13d45d8becbd25c5a7ac3db8b4097cfd 625B / 625B 1.1s done
+#35 sha256:0190f85b656602c295783e3e0b93423890316e896a1bba05d1ab48da0e23bb43 1.85MB / 1.85MB 1.0s done
+#35 sha256:3d2c901b120a3a0488cc5bf5b6c9f739a3fbaabbb8b0238fddc99fe40b5c1790 953B / 953B 1.2s done
+#35 sha256:004928619bd7ca6c2d3092673b3e08e40d8603df0a1d604a13228ff8f4c3a969 1.21kB / 1.21kB 1.3s done
+#35 sha256:39ba19c6a1e3b8a62dce91cb78eb6b4344fc81833da73cecbf0e34fa8c5d0e71 402B / 402B 1.2s done
+#35 extracting sha256:0190f85b656602c295783e3e0b93423890316e896a1bba05d1ab48da0e23bb43 0.1s done
+#35 sha256:04e73639757d2fe4a5fa6e1c03b2eaf6de521cfb97433e57fbca027d787d57f3 1.40kB / 1.40kB 1.6s done
+#35 sha256:40b38cc61f0ed9f05cc4513445f27d89576e409b87c570c10407be8f17811fcd 19.72MB / 19.72MB 1.6s done
+#35 extracting sha256:0c9e85b345e6064c61d3655ec4390c0d13d45d8becbd25c5a7ac3db8b4097cfd done
+#35 extracting sha256:3d2c901b120a3a0488cc5bf5b6c9f739a3fbaabbb8b0238fddc99fe40b5c1790 done
+#35 extracting sha256:39ba19c6a1e3b8a62dce91cb78eb6b4344fc81833da73cecbf0e34fa8c5d0e71 done
+#35 extracting sha256:004928619bd7ca6c2d3092673b3e08e40d8603df0a1d604a13228ff8f4c3a969 done
+#35 extracting sha256:04e73639757d2fe4a5fa6e1c03b2eaf6de521cfb97433e57fbca027d787d57f3 done
+#35 extracting sha256:40b38cc61f0ed9f05cc4513445f27d89576e409b87c570c10407be8f17811fcd 1.5s
+#35 ...
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 ...
+
+#36 [defense-engine] exporting to image
+#36 exporting layers 1.9s done
+#36 writing image sha256:f0c3d683330f9c0c87bcff1dadad4ba6571ac8a57b2dfb6db72acee63cce0e24 done
+#36 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-defense-engine done
+#36 DONE 1.9s
+
+#37 [defense-engine] resolving provenance for metadata file
+#37 DONE 0.0s
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 extracting sha256:4dbdca1a513d31094476a7f745c8278b0ca94c30b9bc66ec65b9faebff263a16 3.0s done
+#15 ...
+
+#35 [web stage-2 1/4] FROM docker.io/library/nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+#35 extracting sha256:40b38cc61f0ed9f05cc4513445f27d89576e409b87c570c10407be8f17811fcd 2.4s done
+#35 DONE 11.5s
+
+#15 [api 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#15 extracting sha256:6e2fcafe72a4c4e812d11805d3f8f7b8fddd43ac39a29aadbe0a93b079d60e18 done
+#15 DONE 11.7s
+
+#38 [web stage-2 2/4] COPY nginx.conf /etc/nginx/conf.d/default.conf
+#38 DONE 0.1s
+
+#39 [api 2/7] WORKDIR /app
+#39 DONE 0.1s
+
+#40 [api 3/7] COPY backend/requirements.txt .
+#40 DONE 0.0s
+
+#41 [foreground-worker 4/7] RUN pip install --no-cache-dir -r requirements.txt
+#41 2.109 Collecting fastapi==0.116.1 (from -r requirements.txt (line 1))
+#41 2.155   Downloading fastapi-0.116.1-py3-none-any.whl.metadata (28 kB)
+#41 2.187 Collecting fsrs==6.3.2 (from -r requirements.txt (line 2))
+#41 2.196   Downloading fsrs-6.3.2-py3-none-any.whl.metadata (14 kB)
+#41 2.222 Collecting httpx==0.28.1 (from -r requirements.txt (line 3))
+#41 2.232   Downloading httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+#41 2.258 Collecting python-chess==1.999 (from -r requirements.txt (line 4))
+#41 2.271   Downloading python_chess-1.999-py3-none-any.whl.metadata (776 bytes)
+#41 2.282 Collecting python-multipart==0.0.20 (from -r requirements.txt (line 5))
+#41 2.290   Downloading python_multipart-0.0.20-py3-none-any.whl.metadata (1.8 kB)
+#41 2.322 Collecting uvicorn==0.35.0 (from uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 2.332   Downloading uvicorn-0.35.0-py3-none-any.whl.metadata (6.5 kB)
+#41 2.425 Collecting celery==5.6.3 (from -r requirements.txt (line 7))
+#41 2.434   Downloading celery-5.6.3-py3-none-any.whl.metadata (23 kB)
+#41 2.480 Collecting psycopg==3.3.6 (from psycopg[binary]==3.3.6->-r requirements.txt (line 8))
+#41 2.491   Downloading psycopg-3.3.6-py3-none-any.whl.metadata (4.4 kB)
+#41 2.512 Collecting psycopg-pool==3.3.3 (from -r requirements.txt (line 9))
+#41 2.520   Downloading psycopg_pool-3.3.3-py3-none-any.whl.metadata (2.8 kB)
+#41 2.573 Collecting redis==6.4.0 (from -r requirements.txt (line 10))
+#41 2.581   Downloading redis-6.4.0-py3-none-any.whl.metadata (10 kB)
+#41 2.707 Collecting sqlglot==30.19.0 (from -r requirements.txt (line 11))
+#41 2.719   Downloading sqlglot-30.19.0-py3-none-any.whl.metadata (25 kB)
+#41 2.755 Collecting starlette<0.48.0,>=0.40.0 (from fastapi==0.116.1->-r requirements.txt (line 1))
+#41 2.762   Downloading starlette-0.47.3-py3-none-any.whl.metadata (6.2 kB)
+#41 2.879 Collecting pydantic!=1.8,!=1.8.1,!=2.0.0,!=2.0.1,!=2.1.0,<3.0.0,>=1.7.4 (from fastapi==0.116.1->-r requirements.txt (line 1))
+#41 2.888   Downloading pydantic-2.14.1-py3-none-any.whl.metadata (133 kB)
+#41 2.921 Collecting typing-extensions>=4.8.0 (from fastapi==0.116.1->-r requirements.txt (line 1))
+#41 2.931   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+#41 2.955 Collecting anyio (from httpx==0.28.1->-r requirements.txt (line 3))
+#41 2.963   Downloading anyio-4.15.1-py3-none-any.whl.metadata (4.7 kB)
+#41 2.982 Collecting certifi (from httpx==0.28.1->-r requirements.txt (line 3))
+#41 2.990   Downloading certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)
+#41 3.008 Collecting httpcore==1.* (from httpx==0.28.1->-r requirements.txt (line 3))
+#41 3.018   Downloading httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+#41 3.035 Collecting idna (from httpx==0.28.1->-r requirements.txt (line 3))
+#41 3.044   Downloading idna-3.20-py3-none-any.whl.metadata (7.2 kB)
+#41 3.064 Collecting chess<2,>=1 (from python-chess==1.999->-r requirements.txt (line 4))
+#41 3.073   Downloading chess-1.11.2.tar.gz (6.1 MB)
+#41 3.126      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.1/6.1 MB 133.5 MB/s eta 0:00:00
+#41 3.328   Installing build dependencies: started
+#41 4.714   Installing build dependencies: finished with status 'done'
+#41 4.716   Getting requirements to build wheel: started
+#41 5.055   Getting requirements to build wheel: finished with status 'done'
+#41 5.059   Preparing metadata (pyproject.toml): started
+#41 5.469   Preparing metadata (pyproject.toml): finished with status 'done'
+#41 5.495 Collecting click>=7.0 (from uvicorn==0.35.0->uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 5.502   Downloading click-8.5.0-py3-none-any.whl.metadata (2.6 kB)
+#41 5.514 Collecting h11>=0.8 (from uvicorn==0.35.0->uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 5.523   Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+#41 5.544 Collecting billiard<5.0,>=4.2.1 (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.554   Downloading billiard-4.3.1-py3-none-any.whl.metadata (5.0 kB)
+#41 5.595 Collecting kombu>=5.6.0 (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.605   Downloading kombu-5.6.2-py3-none-any.whl.metadata (3.5 kB)
+#41 5.635 Collecting vine<6.0,>=5.1.0 (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.644   Downloading vine-5.1.0-py3-none-any.whl.metadata (2.7 kB)
+#41 5.659 Collecting click-didyoumean>=0.3.0 (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.674   Downloading click_didyoumean-0.3.1-py3-none-any.whl.metadata (3.9 kB)
+#41 5.685 Collecting click-repl>=0.2.0 (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.691   Downloading click_repl-0.4.1-py3-none-any.whl.metadata (3.7 kB)
+#41 5.703 Collecting click-plugins>=1.1.1 (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.713   Downloading click_plugins-1.1.1.2-py2.py3-none-any.whl.metadata (6.5 kB)
+#41 5.726 Collecting python-dateutil>=2.8.2 (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.733   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+#41 5.753 Collecting tzlocal (from celery==5.6.3->-r requirements.txt (line 7))
+#41 5.761   Downloading tzlocal-5.4.4-py3-none-any.whl.metadata (7.7 kB)
+#41 5.893 Collecting psycopg-binary==3.3.6 (from psycopg[binary]==3.3.6->-r requirements.txt (line 8))
+#41 5.902   Downloading psycopg_binary-3.3.6-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl.metadata (2.7 kB)
+#41 5.934 Collecting httptools>=0.6.3 (from uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 5.941   Downloading httptools-0.9.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (3.5 kB)
+#41 5.957 Collecting python-dotenv>=0.13 (from uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 5.965   Downloading python_dotenv-1.2.4-py3-none-any.whl.metadata (29 kB)
+#41 6.004 Collecting pyyaml>=5.1 (from uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 6.013   Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (2.4 kB)
+#41 6.051 Collecting uvloop>=0.15.1 (from uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 6.058   Downloading uvloop-0.23.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (5.1 kB)
+#41 6.138 Collecting watchfiles>=0.13 (from uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 6.147   Downloading watchfiles-1.3.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl.metadata (4.9 kB)
+#41 6.232 Collecting websockets>=10.4 (from uvicorn[standard]==0.35.0->-r requirements.txt (line 6))
+#41 6.239   Downloading websockets-17.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl.metadata (6.3 kB)
+#41 6.281 Collecting prompt_toolkit>=3.0.36 (from click-repl>=0.2.0->celery==5.6.3->-r requirements.txt (line 7))
+#41 6.288   Downloading prompt_toolkit-3.0.53-py3-none-any.whl.metadata (6.4 kB)
+#41 6.311 Collecting amqp<6.0.0,>=5.1.1 (from kombu>=5.6.0->celery==5.6.3->-r requirements.txt (line 7))
+#41 6.318   Downloading amqp-5.4.1-py3-none-any.whl.metadata (9.4 kB)
+#41 6.334 Collecting tzdata>=2025.2 (from kombu>=5.6.0->celery==5.6.3->-r requirements.txt (line 7))
+#41 6.343   Downloading tzdata-2026.5-py2.py3-none-any.whl.metadata (1.4 kB)
+#41 6.360 Collecting packaging (from kombu>=5.6.0->celery==5.6.3->-r requirements.txt (line 7))
+#41 6.368   Downloading packaging-26.3-py3-none-any.whl.metadata (3.5 kB)
+#41 6.381 Collecting annotated-types>=0.6.0 (from pydantic!=1.8,!=1.8.1,!=2.0.0,!=2.0.1,!=2.1.0,<3.0.0,>=1.7.4->fastapi==0.116.1->-r requirements.txt (line 1))
+#41 6.390   Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+#41 ...
+
+#42 [maia-worker 4/8] RUN npm ci --omit=dev
+#42 ...
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 0.346 info: downloading component 'rust-std' for 'wasm32-unknown-unknown'
+#43 0.595 info: installing component 'rust-std' for 'wasm32-unknown-unknown'
+#43 2.122     Updating crates.io index
+#43 2.233  Downloading crates ...
+#43 2.496   Downloaded wasm-pack v0.13.1
+#43 2.707   Installing wasm-pack v0.13.1
+#43 2.716     Updating crates.io index
+#43 3.424 warning: package `spin v0.9.8` in Cargo.lock is yanked in registry `crates-io`, consider running without --locked
+#43 3.424 warning: package `zip v2.2.0` in Cargo.lock is yanked in registry `crates-io`, consider running without --locked
+#43 3.462     Updating crates.io index
+#43 3.642  Downloading crates ...
+#43 3.802   Downloaded same-file v1.0.6
+#43 3.804   Downloaded adler2 v2.0.0
+#43 3.806   Downloaded anstyle-query v1.1.2
+#43 3.814   Downloaded autocfg v1.4.0
+#43 3.826   Downloaded scopeguard v1.2.0
+#43 3.826   Downloaded rustls-pki-types v1.10.0
+#43 3.831   Downloaded time-core v0.1.2
+#43 3.833   Downloaded rand_chacha v0.3.1
+#43 3.835   Downloaded errno v0.3.9
+#43 3.839   Downloaded toml_datetime v0.6.8
+#43 3.842   Downloaded hex v0.4.3
+#43 3.844   Downloaded anstream v0.6.17
+#43 3.850   Downloaded powerfmt v0.2.0
+#43 3.851   Downloaded pbkdf2 v0.12.2
+#43 3.854   Downloaded num-conv v0.1.0
+#43 3.856   Downloaded lockfree-object-pool v0.1.6
+#43 3.870   Downloaded parking_lot_core v0.9.10
+#43 3.870   Downloaded xattr v1.3.1
+#43 3.870   Downloaded shell-words v1.1.0
+#43 3.870   Downloaded serde_spanned v0.6.8
+#43 3.879   Downloaded rustc-demangle v0.1.24
+#43 3.879   Downloaded quote v1.0.37
+#43 3.910   Downloaded ppv-lite86 v0.2.20
+#43 3.910   Downloaded untrusted v0.9.0
+#43 3.910   Downloaded tinyvec_macros v0.1.1
+#43 3.910   Downloaded pkg-config v0.3.31
+#43 3.910   Downloaded socks v0.3.4
+#43 3.910   Downloaded thiserror-impl v1.0.65
+#43 3.910   Downloaded rand v0.8.5
+#43 3.911   Downloaded semver v1.0.23
+#43 3.920   Downloaded strsim v0.10.0
+#43 3.926   Downloaded backtrace v0.3.74
+#43 3.934   Downloaded which v4.4.2
+#43 3.944   Downloaded subtle v2.6.1
+#43 3.960   Downloaded clap_builder v4.5.20
+#43 3.963   Downloaded serde_ignored v0.1.10
+#43 3.977   Downloaded zeroize_derive v1.4.2
+#43 3.977   Downloaded zeroize v1.8.1
+#43 3.977   Downloaded walkdir v2.5.0
+#43 3.977   Downloaded strsim v0.11.1
+#43 3.977   Downloaded idna v0.5.0
+#43 3.982   Downloaded version_check v0.9.5
+#43 3.996   Downloaded shlex v1.3.0
+#43 3.996   Downloaded ryu v1.0.18
+#43 3.996   Downloaded object v0.36.5
+#43 4.016   Downloaded unicode-ident v1.0.13
+#43 4.016   Downloaded thiserror v1.0.65
+#43 4.021   Downloaded zstd-safe v7.2.1
+#43 4.021   Downloaded zerocopy-derive v0.7.35
+#43 4.032   Downloaded zopfli v0.8.1
+#43 4.032   Downloaded uuid v1.11.0
+#43 4.037   Downloaded spin v0.9.8
+#43 4.078   Downloaded unicode-bidi v0.3.17
+#43 4.078   Downloaded tar v0.4.42
+#43 4.078   Downloaded zstd v0.13.2
+#43 4.078   Downloaded toml v0.7.8
+#43 4.080   Downloaded tinyvec v1.8.0
+#43 4.094   Downloaded serde_derive v1.0.214
+#43 4.094   Downloaded bzip2-sys v0.1.11+1.0.8
+#43 4.206   Downloaded url v2.5.2
+#43 4.206   Downloaded toml_edit v0.19.15
+#43 4.206   Downloaded toml v0.8.19
+#43 4.206   Downloaded serde v1.0.214
+#43 4.206   Downloaded typenum v1.17.0
+#43 4.206   Downloaded libc v0.2.161
+#43 4.206   Downloaded toml_edit v0.22.22
+#43 4.206   Downloaded zip v2.2.0
+#43 4.206   Downloaded ureq v2.10.1
+#43 4.206   Downloaded unicode-normalization v0.1.24
+#43 4.206   Downloaded time v0.3.36
+#43 4.206   Downloaded tempfile v3.13.0
+#43 4.206   Downloaded smallvec v1.13.2
+#43 4.206   Downloaded gimli v0.31.1
+#43 4.211   Downloaded zerocopy v0.7.35
+#43 4.245   Downloaded winnow v0.5.40
+#43 4.269   Downloaded rustls-webpki v0.102.8
+#43 4.284   Downloaded serde_json v1.0.132
+#43 4.292   Downloaded chrono v0.4.38
+#43 4.298   Downloaded hashbrown v0.15.0
+#43 4.303   Downloaded base64 v0.22.1
+#43 4.307   Downloaded unicode-width v0.1.14
+#43 4.313   Downloaded webpki-roots v0.26.6
+#43 4.323   Downloaded syn v2.0.85
+#43 4.339   Downloaded indexmap v2.6.0
+#43 4.343   Downloaded rustls v0.23.16
+#43 4.352   Downloaded rustix v0.38.38
+#43 4.394   Downloaded cc v1.1.31
+#43 4.399   Downloaded bumpalo v3.16.0
+#43 4.408   Downloaded simd-adler32 v0.3.7
+#43 4.416   Downloaded memchr v2.7.4
+#43 4.426   Downloaded flate2 v1.0.34
+#43 4.436   Downloaded clap v4.5.20
+#43 4.452   Downloaded bzip2 v0.4.4
+#43 4.454   Downloaded bitflags v2.6.0
+#43 4.460   Downloaded sha1 v0.10.6
+#43 4.468   Downloaded proc-macro2 v1.0.89
+#43 4.472   Downloaded once_cell v1.20.2
+#43 4.476   Downloaded num-traits v0.2.19
+#43 4.480   Downloaded miniz_oxide v0.8.0
+#43 4.483   Downloaded hmac v0.12.1
+#43 4.488   Downloaded aes v0.8.4
+#43 4.493   Downloaded parking_lot v0.12.3
+#43 4.495   Downloaded env_logger v0.10.2
+#43 4.497   Downloaded camino v1.1.9
+#43 4.499   Downloaded rand_core v0.6.4
+#43 4.501   Downloaded lock_api v0.4.12
+#43 4.504   Downloaded getrandom v0.2.15
+#43 4.507   Downloaded byteorder v1.5.0
+#43 4.509   Downloaded binary-install v0.4.1
+#43 4.511   Downloaded zstd-sys v2.0.13+zstd.1.5.6
+#43 4.538   Downloaded lzma-rs v0.3.0
+#43 4.543   Downloaded log v0.4.22
+#43 4.548   Downloaded console v0.15.8
+#43 4.552   Downloaded cargo_metadata v0.15.4
+#43 4.554   Downloaded anyhow v1.0.91
+#43 4.566   Downloaded os_info v3.8.2
+#43 4.581   Downloaded jobserver v0.1.32
+#43 4.584   Downloaded iana-time-zone v0.1.61
+#43 4.596   Downloaded glob v0.3.1
+#43 4.604   Downloaded generic-array v0.14.7
+#43 4.604   Downloaded fs4 v0.6.6
+#43 4.605   Downloaded deranged v0.3.11
+#43 4.607   Downloaded linux-raw-sys v0.4.14
+#43 4.651   Downloaded crc32fast v1.4.2
+#43 4.653   Downloaded clap_derive v4.5.18
+#43 4.656   Downloaded percent-encoding v2.3.1
+#43 4.658   Downloaded path-clean v1.0.1
+#43 4.663   Downloaded lazy_static v1.5.0
+#43 4.666   Downloaded itoa v1.0.11
+#43 4.667   Downloaded human-panic v1.2.3
+#43 4.669   Downloaded equivalent v1.0.1
+#43 4.670   Downloaded cpufeatures v0.2.14
+#43 4.674   Downloaded utf8parse v0.2.2
+#43 4.684   Downloaded siphasher v0.3.11
+#43 4.687   Downloaded dialoguer v0.10.4
+#43 4.690   Downloaded cipher v0.4.4
+#43 4.693   Downloaded block-buffer v0.10.4
+#43 4.695   Downloaded displaydoc v0.2.5
+#43 4.698   Downloaded digest v0.10.7
+#43 4.701   Downloaded anstyle-parse v0.2.6
+#43 4.703   Downloaded is_executable v0.1.2
+#43 4.704   Downloaded home v0.5.9
+#43 4.707   Downloaded heck v0.5.0
+#43 4.709   Downloaded crc v3.2.1
+#43 4.713   Downloaded clap_lex v0.7.2
+#43 4.718   Downloaded is_terminal_polyfill v1.70.1
+#43 4.719   Downloaded either v1.13.0
+#43 4.724   Downloaded dirs-sys-next v0.1.2
+#43 4.728   Downloaded deflate64 v0.1.9
+#43 4.731   Downloaded inout v0.1.3
+#43 4.732   Downloaded constant_time_eq v0.3.1
+#43 4.734   Downloaded colorchoice v1.0.3
+#43 4.736   Downloaded cfg-if v1.0.0
+#43 4.738   Downloaded cargo-platform v0.1.8
+#43 4.740   Downloaded form_urlencoded v1.2.1
+#43 4.741   Downloaded filetime v0.2.25
+#43 4.747   Downloaded fastrand v2.1.1
+#43 4.749   Downloaded dirs-next v2.0.0
+#43 4.751   Downloaded crypto-common v0.1.6
+#43 4.752   Downloaded crc-catalog v2.4.0
+#43 4.754   Downloaded addr2line v0.24.2
+#43 4.757   Downloaded anstyle v1.0.9
+#43 4.769   Downloaded ring v0.17.8
+#43 4.896    Compiling libc v0.2.161
+#43 4.898    Compiling proc-macro2 v1.0.89
+#43 4.899    Compiling unicode-ident v1.0.13
+#43 4.901    Compiling cfg-if v1.0.0
+#43 5.020    Compiling shlex v1.3.0
+#43 5.066    Compiling serde v1.0.214
+#43 5.432    Compiling version_check v0.9.5
+#43 5.699    Compiling typenum v1.17.0
+#43 6.204    Compiling quote v1.0.37
+#43 6.352    Compiling jobserver v0.1.32
+#43 6.512    Compiling generic-array v0.14.7
+#43 6.612    Compiling cc v1.1.31
+#43 6.896    Compiling pkg-config v0.3.31
+#43 7.042    Compiling syn v2.0.85
+#43 7.960    Compiling getrandom v0.2.15
+#43 8.182    Compiling byteorder v1.5.0
+#43 8.542    Compiling rustix v0.38.38
+#43 8.746    Compiling crypto-common v0.1.6
+#43 8.945    Compiling hashbrown v0.15.0
+#43 9.010    Compiling autocfg v1.4.0
+#43 9.773    Compiling memchr v2.7.4
+#43 ...
+
+#41 [foreground-worker 4/7] RUN pip install --no-cache-dir -r requirements.txt
+#41 6.890 Collecting pydantic-core==2.50.1 (from pydantic!=1.8,!=1.8.1,!=2.0.0,!=2.0.1,!=2.1.0,<3.0.0,>=1.7.4->fastapi==0.116.1->-r requirements.txt (line 1))
+#41 6.896   Downloading pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl.metadata (6.5 kB)
+#41 6.914 Collecting typing-inspection>=0.4.4 (from pydantic!=1.8,!=1.8.1,!=2.0.0,!=2.0.1,!=2.1.0,<3.0.0,>=1.7.4->fastapi==0.116.1->-r requirements.txt (line 1))
+#41 6.921   Downloading typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+#41 6.937 Collecting six>=1.5 (from python-dateutil>=2.8.2->celery==5.6.3->-r requirements.txt (line 7))
+#41 6.945   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+#41 6.998 Collecting wcwidth>=0.1.4 (from prompt_toolkit>=3.0.36->click-repl>=0.2.0->celery==5.6.3->-r requirements.txt (line 7))
+#41 7.006   Downloading wcwidth-0.9.2-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl.metadata (23 kB)
+#41 7.028 Downloading fastapi-0.116.1-py3-none-any.whl (95 kB)
+#41 7.035 Downloading fsrs-6.3.2-py3-none-any.whl (22 kB)
+#41 7.042 Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+#41 7.051 Downloading python_chess-1.999-py3-none-any.whl (1.4 kB)
+#41 7.059 Downloading python_multipart-0.0.20-py3-none-any.whl (24 kB)
+#41 7.066 Downloading uvicorn-0.35.0-py3-none-any.whl (66 kB)
+#41 7.074 Downloading celery-5.6.3-py3-none-any.whl (451 kB)
+#41 7.081 Downloading psycopg-3.3.6-py3-none-any.whl (215 kB)
+#41 7.091 Downloading psycopg_pool-3.3.3-py3-none-any.whl (40 kB)
+#41 7.098 Downloading redis-6.4.0-py3-none-any.whl (279 kB)
+#41 7.106 Downloading sqlglot-30.19.0-py3-none-any.whl (756 kB)
+#41 7.109    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 756.2/756.2 kB 673.1 MB/s eta 0:00:00
+#41 7.117 Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+#41 7.127 Downloading psycopg_binary-3.3.6-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl (6.8 MB)
+#41 7.163    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.8/6.8 MB 333.7 MB/s eta 0:00:00
+#41 7.177 Downloading billiard-4.3.1-py3-none-any.whl (90 kB)
+#41 7.184 Downloading click-8.5.0-py3-none-any.whl (125 kB)
+#41 7.192 Downloading click_didyoumean-0.3.1-py3-none-any.whl (3.6 kB)
+#41 7.201 Downloading click_plugins-1.1.1.2-py2.py3-none-any.whl (11 kB)
+#41 7.209 Downloading click_repl-0.4.1-py3-none-any.whl (14 kB)
+#41 7.219 Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+#41 7.227 Downloading httptools-0.9.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (549 kB)
+#41 7.231    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 549.2/549.2 kB 237.7 MB/s eta 0:00:00
+#41 7.240 Downloading kombu-5.6.2-py3-none-any.whl (214 kB)
+#41 7.250 Downloading vine-5.1.0-py3-none-any.whl (9.6 kB)
+#41 7.260 Downloading pydantic-2.14.1-py3-none-any.whl (488 kB)
+#41 7.269 Downloading pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (2.0 MB)
+#41 7.275    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 493.5 MB/s eta 0:00:00
+#41 7.284 Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+#41 7.291 Downloading python_dotenv-1.2.4-py3-none-any.whl (23 kB)
+#41 7.299 Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (775 kB)
+#41 7.303    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 775.1/775.1 kB 960.9 MB/s eta 0:00:00
+#41 7.313 Downloading starlette-0.47.3-py3-none-any.whl (72 kB)
+#41 7.323 Downloading anyio-4.15.1-py3-none-any.whl (132 kB)
+#41 7.331 Downloading idna-3.20-py3-none-any.whl (69 kB)
+#41 7.339 Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+#41 7.349 Downloading uvloop-0.23.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (4.4 MB)
+#41 7.376    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.4/4.4 MB 207.2 MB/s eta 0:00:00
+#41 7.384 Downloading watchfiles-1.3.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl (454 kB)
+#41 7.393 Downloading websockets-17.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl (226 kB)
+#41 7.403 Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+#41 7.412 Downloading tzlocal-5.4.4-py3-none-any.whl (18 kB)
+#41 7.420 Downloading amqp-5.4.1-py3-none-any.whl (51 kB)
+#41 7.431 Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+#41 7.439 Downloading prompt_toolkit-3.0.53-py3-none-any.whl (392 kB)
+#41 7.447 Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+#41 7.457 Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+#41 7.465 Downloading tzdata-2026.5-py2.py3-none-any.whl (347 kB)
+#41 7.473 Downloading packaging-26.3-py3-none-any.whl (129 kB)
+#41 7.482 Downloading wcwidth-0.9.2-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl (771 kB)
+#41 7.486    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 771.6/771.6 kB 901.4 MB/s eta 0:00:00
+#41 7.545 Building wheels for collected packages: chess
+#41 7.548   Building wheel for chess (pyproject.toml): started
+#41 7.798   Building wheel for chess (pyproject.toml): finished with status 'done'
+#41 7.816   Created wheel for chess: filename=chess-1.11.2-py3-none-any.whl size=147879 sha256=7c20fe8fbb613df2c765d69a51bc0fdadfc0073f067af605ba3e15cd6c7a9338
+#41 7.816   Stored in directory: /tmp/pip-ephem-wheel-cache-1okx5dcg/wheels/83/1f/4e/8f4300f7dd554eb8de70ddfed96e94d3d030ace10c5b53d447
+#41 7.818 Successfully built chess
+#41 7.888 Installing collected packages: websockets, wcwidth, vine, uvloop, tzlocal, tzdata, typing-extensions, sqlglot, six, redis, pyyaml, python-multipart, python-dotenv, psycopg-binary, packaging, idna, httptools, h11, click, chess, certifi, billiard, annotated-types, uvicorn, typing-inspection, python-dateutil, python-chess, pydantic-core, psycopg-pool, psycopg, prompt_toolkit, httpcore, fsrs, click-plugins, click-didyoumean, anyio, amqp, watchfiles, starlette, pydantic, kombu, httpx, click-repl, fastapi, celery
+#41 ...
+
+#25 [web web 4/7] RUN npm ci
+#25 15.68 npm warn deprecated eslint@9.39.4: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+#25 ...
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 10.21    Compiling subtle v2.6.1
+#43 10.49    Compiling linux-raw-sys v0.4.14
+#43 10.55    Compiling log v0.4.22
+#43 11.15    Compiling equivalent v1.0.1
+#43 11.20    Compiling bitflags v2.6.0
+#43 11.25    Compiling indexmap v2.6.0
+#43 12.18    Compiling zstd-sys v2.0.13+zstd.1.5.6
+#43 12.77    Compiling ring v0.17.8
+#43 13.20    Compiling adler2 v2.0.0
+#43 13.48    Compiling once_cell v1.20.2
+#43 13.89    Compiling miniz_oxide v0.8.0
+#43 16.35    Compiling serde_derive v1.0.214
+#43 16.54    Compiling zerocopy-derive v0.7.35
+#43 17.81    Compiling zeroize_derive v1.4.2
+#43 18.42    Compiling block-buffer v0.10.4
+#43 18.54    Compiling tinyvec_macros v0.1.1
+#43 18.56    Compiling tinyvec v1.8.0
+#43 19.24    Compiling digest v0.10.7
+#43 19.37    Compiling zeroize v1.8.1
+#43 19.45    Compiling zerocopy v0.7.35
+#43 20.10    Compiling bzip2-sys v0.1.11+1.0.8
+#43 20.50    Compiling crc32fast v1.4.2
+#43 20.65    Compiling thiserror v1.0.65
+#43 ...
+
+#42 [maia-worker 4/8] RUN npm ci --omit=dev
+#42 16.33 
+#42 16.33 added 51 packages, and audited 52 packages in 16s
+#42 16.33 
+#42 16.33 8 packages are looking for funding
+#42 16.33   run `npm fund` for details
+#42 16.55 
+#42 16.55 4 vulnerabilities (3 high, 1 critical)
+#42 16.55 
+#42 16.55 To address issues that do not require attention, run:
+#42 16.55   npm audit fix
+#42 16.55 
+#42 16.55 To address all issues, run:
+#42 16.55   npm audit fix --force
+#42 16.55 
+#42 16.55 Run `npm audit` for details.
+#42 16.55 npm notice
+#42 16.55 npm notice New major version of npm available! 10.9.9 -> 12.2.0
+#42 16.55 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#42 16.55 npm notice To update run: npm install -g npm@12.2.0
+#42 16.55 npm notice
+#42 DONE 20.9s
+
+#41 [foreground-worker 4/7] RUN pip install --no-cache-dir -r requirements.txt
+#41 14.74 Successfully installed amqp-5.4.1 annotated-types-0.8.0 anyio-4.15.1 billiard-4.3.1 celery-5.6.3 certifi-2026.7.22 chess-1.11.2 click-8.5.0 click-didyoumean-0.3.1 click-plugins-1.1.1.2 click-repl-0.4.1 fastapi-0.116.1 fsrs-6.3.2 h11-0.16.0 httpcore-1.0.9 httptools-0.9.0 httpx-0.28.1 idna-3.20 kombu-5.6.2 packaging-26.3 prompt_toolkit-3.0.53 psycopg-3.3.6 psycopg-binary-3.3.6 psycopg-pool-3.3.3 pydantic-2.14.1 pydantic-core-2.50.1 python-chess-1.999 python-dateutil-2.9.0.post0 python-dotenv-1.2.4 python-multipart-0.0.20 pyyaml-6.0.3 redis-6.4.0 six-1.17.0 sqlglot-30.19.0 starlette-0.47.3 typing-extensions-4.16.0 typing-inspection-0.4.4 tzdata-2026.5 tzlocal-5.4.4 uvicorn-0.35.0 uvloop-0.23.0 vine-5.1.0 watchfiles-1.3.0 wcwidth-0.9.2 websockets-17.2
+#41 14.74 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#41 14.82 
+#41 14.82 [notice] A new release of pip is available: 25.0.1 -> 26.2.1
+#41 14.82 [notice] To update, run: pip install --upgrade pip
+#41 DONE 17.7s
+
+#44 [maia-worker 5/8] COPY scripts/maia-coverage-worker.mjs ./scripts/maia-coverage-worker.mjs
+#44 DONE 0.0s
+
+#45 [maia-worker 6/8] COPY scripts/maia-coverage-client.mjs ./scripts/maia-coverage-client.mjs
+#45 DONE 0.0s
+
+#46 [foreground-worker 5/7] COPY backend/app ./app
+#46 DONE 0.1s
+
+#47 [maia-worker 7/8] COPY app/lib/all_moves_maia3.json app/lib/all_moves_maia3_reversed.json ./app/lib/
+#47 DONE 0.0s
+
+#48 [background-scheduler 6/7] COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json
+#48 DONE 0.0s
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 20.90    Compiling zstd-safe v7.2.1
+#43 21.00    Compiling utf8parse v0.2.2
+#43 ...
+
+#49 [maia-worker 8/8] COPY public/maia3/parts ./public/maia3/parts
+#49 DONE 0.3s
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 21.08    Compiling spin v0.9.8
+#43 ...
+
+#50 [foreground-worker 7/7] COPY public/data/tactics-packs ./public/data/tactics-packs
+#50 DONE 0.3s
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 21.31    Compiling untrusted v0.9.0
+#43 21.35    Compiling toml_datetime v0.6.8
+#43 21.50    Compiling serde_spanned v0.6.8
+#43 21.74    Compiling serde_json v1.0.132
+#43 21.89    Compiling rustls-pki-types v1.10.0
+#43 22.26    Compiling anstyle-parse v0.2.6
+#43 ...
+
+#51 [api] exporting to image
+#51 exporting layers 2.3s done
+#51 writing image sha256:1b75097ad15dee04161f5d7518c9842675f5e6f8bb4bd03cab8e50dc69ec0ed6 done
+#51 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-api done
+#51 DONE 2.3s
+
+#52 [schema] exporting to image
+#52 exporting layers 2.3s done
+#52 writing image sha256:1b75097ad15dee04161f5d7518c9842675f5e6f8bb4bd03cab8e50dc69ec0ed6 done
+#52 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-schema done
+#52 DONE 2.3s
+
+#53 [background-worker] exporting to image
+#53 exporting layers 2.3s done
+#53 writing image sha256:1b75097ad15dee04161f5d7518c9842675f5e6f8bb4bd03cab8e50dc69ec0ed6 done
+#53 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-background-worker done
+#53 DONE 2.4s
+
+#54 [background-scheduler] exporting to image
+#54 exporting layers 2.3s done
+#54 writing image sha256:1b75097ad15dee04161f5d7518c9842675f5e6f8bb4bd03cab8e50dc69ec0ed6 done
+#54 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-background-scheduler done
+#54 DONE 2.3s
+
+#55 [foreground-worker] exporting to image
+#55 exporting layers 2.3s done
+#55 writing image sha256:1b75097ad15dee04161f5d7518c9842675f5e6f8bb4bd03cab8e50dc69ec0ed6 done
+#55 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-foreground-worker done
+#55 DONE 2.4s
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 23.56    Compiling ppv-lite86 v0.2.20
+#43 ...
+
+#56 [api] resolving provenance for metadata file
+#56 DONE 0.1s
+
+#57 [foreground-worker] resolving provenance for metadata file
+#57 DONE 0.0s
+
+#58 [schema] resolving provenance for metadata file
+#58 DONE 0.0s
+
+#59 [background-worker] resolving provenance for metadata file
+#59 DONE 0.0s
+
+#60 [background-scheduler] resolving provenance for metadata file
+#60 DONE 0.0s
+
+#61 [maia-worker] exporting to image
+#61 exporting layers 3.8s done
+#61 writing image sha256:990de5fcce7d2ee409f5f06419d0d3c821025364d764576ac172c0b0c0997d05 done
+#61 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-maia-worker done
+#61 DONE 3.8s
+
+#62 [maia-worker] resolving provenance for metadata file
+#62 DONE 0.0s
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 24.06    Compiling unicode-normalization v0.1.24
+#43 24.93    Compiling thiserror-impl v1.0.65
+#43 25.81    Compiling inout v0.1.3
+#43 25.91    Compiling rand_core v0.6.4
+#43 26.05    Compiling cpufeatures v0.2.14
+#43 26.08    Compiling anstyle v1.0.9
+#43 26.29    Compiling crc-catalog v2.4.0
+#43 26.35    Compiling colorchoice v1.0.3
+#43 26.43    Compiling is_terminal_polyfill v1.70.1
+#43 26.48    Compiling rustls v0.23.16
+#43 26.69    Compiling itoa v1.0.11
+#43 26.76    Compiling anstyle-query v1.1.2
+#43 26.80    Compiling unicode-bidi v0.3.17
+#43 27.75    Compiling ryu v1.0.18
+#43 27.84    Compiling powerfmt v0.2.0
+#43 28.03    Compiling percent-encoding v2.3.1
+#43 28.08    Compiling deranged v0.3.11
+#43 28.30    Compiling form_urlencoded v1.2.1
+#43 28.97    Compiling idna v0.5.0
+#43 29.11    Compiling anstream v0.6.17
+#43 29.55    Compiling rustls-webpki v0.102.8
+#43 30.86    Compiling crc v3.2.1
+#43 31.51    Compiling rand_chacha v0.3.1
+#43 31.62    Compiling cipher v0.4.4
+#43 31.79    Compiling flate2 v1.0.34
+#43 31.85    Compiling hmac v0.12.1
+#43 31.94    Compiling lock_api v0.4.12
+#43 32.04    Compiling num-traits v0.2.19
+#43 32.16    Compiling simd-adler32 v0.3.7
+#43 32.33    Compiling zip v2.2.0
+#43 32.41    Compiling anyhow v1.0.91
+#43 ...
+
+#25 [web web 4/7] RUN npm ci
+#25 32.70 
+#25 32.70 added 583 packages, and audited 584 packages in 32s
+#25 32.70 
+#25 32.70 177 packages are looking for funding
+#25 32.70   run `npm fund` for details
+#25 32.95 
+#25 32.95 23 vulnerabilities (1 low, 3 moderate, 18 high, 1 critical)
+#25 32.95 
+#25 32.95 To address issues that do not require attention, run:
+#25 32.95   npm audit fix
+#25 32.95 
+#25 32.95 To address all issues (including breaking changes), run:
+#25 32.95   npm audit fix --force
+#25 32.95 
+#25 32.95 Run `npm audit` for details.
+#25 32.95 npm notice
+#25 32.95 npm notice New major version of npm available! 10.9.9 -> 12.2.0
+#25 32.95 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#25 32.95 npm notice To update run: npm install -g npm@12.2.0
+#25 32.95 npm notice
+#25 DONE 34.8s
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 32.67    Compiling parking_lot_core v0.9.10
+#43 32.73    Compiling bumpalo v3.16.0
+#43 32.79    Compiling semver v1.0.23
+#43 32.92    Compiling num-conv v0.1.0
+#43 32.99    Compiling lockfree-object-pool v0.1.6
+#43 32.99    Compiling camino v1.1.9
+#43 33.00    Compiling time-core v0.1.2
+#43 33.06    Compiling gimli v0.31.1
+#43 33.08    Compiling zopfli v0.8.1
+#43 33.15    Compiling time v0.3.36
+#43 34.51    Compiling addr2line v0.24.2
+#43 34.94    Compiling pbkdf2 v0.12.2
+#43 34.95    Compiling aes v0.8.4
+#43 34.99    Compiling rand v0.8.5
+#43 35.24    Compiling#43 ...
+
+#63 [web web 5/7] COPY . .
+#63 DONE 0.7s
+
+#43 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#43 35.24    Compiling lzma-rs v0.3.0
+#43 35.82    Compiling url v2.5.2
+#43 35.85    Compiling bzip2 v0.4.4
+#43 35.97    Compiling sha1 v0.10.6
+#43 36.18    Compiling webpki-roots v0.26.6
+#43 36.22    Compiling toml_edit v0.22.22
+#43 37.79    Compiling displaydoc v0.2.5
+#43 38.23    Compiling xattr v1.3.1
+#43 38.55    Compiling object v0.36.5
+#43 40.25    Compiling socks v0.3.4
+#43 40.54    Compiling dirs-sys-next v0.1.2
+#43 40.90    Compiling filetime v0.2.25
+#43 41.03    Compiling deflate64 v0.1.9
+#43 41.39    Compiling rustc-demangle v0.1.24
+#43 41.46    Compiling scopeguard v1.2.0
+#43 41.49    Compiling strsim v0.11.1
+#43 42.11    Compiling unicode-width v0.1.14
+#43 42.17    Compiling base64 v0.22.1
+#43 42.25    Compiling constant_time_eq v0.3.1
+#43 42.30    Compiling lazy_static v1.5.0
+#43 42.33    Compiling smallvec v1.13.2
+#43 42.48    Compiling fastrand v2.1.1
+#43 42.53    Compiling winnow v0.5.40
+#43 42.64    Compiling heck v0.5.0
+#43 42.75    Compiling clap_lex v0.7.2
+#43 42.98    Compiling clap_builder v4.5.20
+#43 43.90    Compiling toml_edit v0.19.15
+#43 50.07    Compiling zstd v0.13.2
+#43 50.86    Compiling clap_derive v4.5.18
+#43 52.10    Compiling tempfile v3.13.0
+#43 52.36    Compiling ureq v2.10.1
+#43 52.89    Compiling console v0.15.8
+#43 53.04    Compiling backtrace v0.3.74
+#43 53.75    Compiling tar v0.4.42
+#43 54.04    Compiling dirs-next v2.0.0
+#43 54.11    Compiling toml v0.8.19
+#43 56.68    Compiling os_info v3.8.2
+#43 57.03    Compiling cargo-platform v0.1.8
+#43 57.26    Compiling fs4 v0.6.6
+#43 57.33    Compiling uuid v1.11.0
+#43 57.43    Compiling either v1.13.0
+#43 57.51    Compiling siphasher v0.3.11
+#43 57.55    Compiling home v0.5.9
+#43 57.63    Compiling hex v0.4.3
+#43 57.64    Compiling same-file v1.0.6
+#43 57.68    Compiling iana-time-zone v0.1.61
+#43 57.71    Compiling is_executable v0.1.2
+#43 57.77    Compiling shell-words v1.1.0
+#43 57.81    Compiling binary-install v0.4.1
+#43 57.92    Compiling dialoguer v0.10.4
+#43 58.07    Compiling chrono v0.4.38
+#43 58.50    Compiling walkdir v2.5.0
+#43 59.11    Compiling which v4.4.2
+#43 59.52    Compiling human-panic v1.2.3
+#43 59.68    Compiling cargo_metadata v0.15.4
+#43 60.02    Compiling parking_lot v0.12.3
+#43 60.07    Compiling clap v4.5.20
+#43 60.10    Compiling toml v0.7.8
+#43 60.75    Compiling serde_ignored v0.1.10
+#43 60.87    Compiling env_logger v0.10.2
+#43 60.87    Compiling strsim v0.10.0
+#43 61.50    Compiling glob v0.3.1
+#43 61.80    Compiling path-clean v1.0.1
+#43 61.88    Compiling wasm-pack v0.13.1
+#43 66.55     Finished `release` profile [optimized] target(s) in 1m 04s
+#43 66.57   Installing /usr/local/cargo/bin/wasm-pack
+#43 66.57    Installed package `wasm-pack v0.13.1` (executable `wasm-pack`)
+#43 DONE 66.8s
+
+#64 [web core 3/7] WORKDIR /app
+#64 DONE 0.0s
+
+#65 [web core 4/7] COPY Cargo.toml Cargo.lock ./
+#65 DONE 0.0s
+
+#66 [web core 5/7] COPY tempo-core ./tempo-core
+#66 DONE 0.0s
+
+#67 [web core 6/7] COPY tests/fixtures ./tests/fixtures
+#67 DONE 0.0s
+
+#68 [web core 7/7] RUN wasm-pack build tempo-core --target web --out-dir ../public/tempo-core --release
+#68 0.955 [INFO]: Checking for the Wasm target...
+#68 1.040 [INFO]: Compiling to Wasm...
+#68 1.143    Compiling unicode-ident v1.0.24
+#68 1.143    Compiling proc-macro2 v1.0.107
+#68 1.143    Compiling quote v1.0.47
+#68 1.143    Compiling autocfg v1.5.1
+#68 1.185    Compiling wasm-bindgen-shared v0.2.100
+#68 1.273    Compiling bumpalo v3.20.3
+#68 1.398    Compiling log v0.4.34
+#68 1.406    Compiling num-traits v0.2.19
+#68 1.411    Compiling rustversion v1.0.23
+#68 1.483    Compiling cfg-if v1.0.4
+#68 1.503    Compiling version_check v0.9.5
+#68 1.534    Compiling wasm-bindgen v0.2.100
+#68 1.616    Compiling crossbeam-utils v0.8.23
+#68 1.755    Compiling generic-array v0.14.7
+#68 1.834    Compiling syn v2.0.119
+#68 1.852    Compiling once_cell v1.21.4
+#68 1.893    Compiling crossbeam-epoch v0.9.21
+#68 1.996    Compiling typenum v1.20.1
+#68 2.290    Compiling heck v0.5.0
+#68 2.331    Compiling serde_core v1.0.229
+#68 2.402    Compiling crossbeam-deque v0.8.8
+#68 2.505    Compiling syn v3.0.5
+#68 2.730    Compiling matrixmultiply v0.3.11
+#68 2.824    Compiling rand_core v0.10.1
+#68 2.828    Compiling getrandom v0.4.3
+#68 2.894    Compiling rayon-core v1.13.0
+#68 2.918    Compiling serde v1.0.229
+#68 3.090    Compiling equivalent v1.0.2
+#68 3.123    Compiling either v1.18.0
+#68 3.248    Compiling rawpointer v0.2.1
+#68 3.276    Compiling hashbrown v0.17.1
+#68 3.697    Compiling indexmap v2.14.2
+#68 4.167    Compiling wasm-bindgen-backend v0.2.100
+#68 4.312    Compiling serde_derive v1.0.229
+#68 4.905    Compiling wasm-bindgen-macro-support v0.2.100
+#68 4.993    Compiling snafu-derive v0.9.2
+#68 5.241    Compiling strum_macros v0.28.0
+#68 5.758    Compiling wasm-bindgen-macro v0.2.100
+#68 6.651    Compiling chacha20 v0.10.2
+#68 6.691    Compiling crypto-common v0.1.7
+#68 6.730    Compiling block-buffer v0.10.4
+#68 6.731    Compiling num-integer v0.1.47
+#68 6.762    Compiling num-complex v0.4.6
+#68 6.786    Compiling digest v0.10.7
+#68 6.884    Compiling rayon v1.12.0
+#68 7.000    Compiling ndarray v0.17.2
+#68 7.018    Compiling rand v0.10.2
+#68 7.184    Compiling strum v0.28.0
+#68 7.221    Compiling js-sys v0.3.77
+#68 7.460    Compiling snafu v0.9.2
+#68 7.750    Compiling priority-queue v2.7.0
+#68 7.921    Compiling itertools v0.15.0
+#68 8.470    Compiling btoi v0.5.0
+#68 8.627    Compiling arrayvec v0.7.8
+#68 8.742    Compiling bitflags v2.13.2
+#68 8.942    Compiling shakmaty v0.29.4
+#68 9.030    Compiling sha2 v0.10.9
+#68 9.389    Compiling hex v0.4.3
+#68 9.550    Compiling fsrs v6.6.2
+#68 10.09    Compiling serde-wasm-bindgen v0.6.5
+#68 14.51    Compiling tempo-core v0.1.0 (/app/tempo-core)
+#68 15.22     Finished `release` profile [optimized] target(s) in 14.14s
+#68 15.23 [INFO]: Installing wasm-bindgen...
+#68 15.67 [INFO]: Optional field missing from Cargo.toml: 'repository'. This is not necessary, but recommended
+#68 15.67 [INFO]: License key is set in Cargo.toml but no LICENSE file(s) were found; Please add the LICENSE file(s) to your project directory
+#68 15.67 [INFO]: :-) Done in 14.75s
+#68 15.67 [INFO]: :-) Your wasm pkg is ready to publish at public/tempo-core.
+#68 15.67 [WARN]: :-) There's a newer version of wasm-pack available, the new version is: 0.15.0, you are using: 0.13.1. To update, navigate to: https://rustwasm.github.io/wasm-pack/installer/
+#68 DONE 16.1s
+
+#69 [web web 6/7] COPY --from=core /app/public/tempo-core ./public/tempo-core
+#69 DONE 0.0s
+
+#70 [web web 7/7] RUN npm run build:local
+#70 0.183 
+#70 0.183 > sites-project@0.1.0 build:local
+#70 0.183 > TEMPO_TARGET=local vite build --config vite.static.config.ts
+#70 0.183 
+#70 0.488 vite v8.0.13 building client environment for production...
+#70 0.500 [2Ktransforming...
+#70 1.195 ../pieces/merida/wP.svg referenced in ../pieces/merida/wP.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.196 
+#70 1.196 ../pieces/merida/wN.svg referenced in ../pieces/merida/wN.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.196 
+#70 1.196 ../pieces/merida/wB.svg referenced in ../pieces/merida/wB.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.196 
+#70 1.196 ../pieces/merida/wR.svg referenced in ../pieces/merida/wR.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.196 
+#70 1.196 ../pieces/merida/wQ.svg referenced in ../pieces/merida/wQ.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.196 
+#70 1.196 ../pieces/merida/wK.svg referenced in ../pieces/merida/wK.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.196 
+#70 1.196 ../pieces/merida/bP.svg referenced in ../pieces/merida/bP.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.197 
+#70 1.197 ../pieces/merida/bN.svg referenced in ../pieces/merida/bN.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.197 
+#70 1.197 ../pieces/merida/bB.svg referenced in ../pieces/merida/bB.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.197 
+#70 1.197 ../pieces/merida/bR.svg referenced in ../pieces/merida/bR.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.197 
+#70 1.197 ../pieces/merida/bQ.svg referenced in ../pieces/merida/bQ.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.197 
+#70 1.197 ../pieces/merida/bK.svg referenced in ../pieces/merida/bK.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#70 1.426 ✓ 353 modules transformed.
+#70 2.018 rendering chunks...
+#70 2.148 computing gzip size...
+#70 2.265 local-dist/index.html                                        1.47 kB │ gzip:     0.78 kB
+#70 2.265 local-dist/assets/study.worker-BbsMd_in.js                 191.73 kB
+#70 2.265 local-dist/assets/maia.worker-D9vdAUFY.js                  342.67 kB
+#70 2.265 local-dist/assets/ort-wasm-simd-threaded-CpHjICJN.wasm  11,815.49 kB │ gzip: 3,111.16 kB
+#70 2.265 local-dist/assets/index-RcDCOiFS.css                       133.93 kB │ gzip:    27.59 kB
+#70 2.265 local-dist/assets/index-DOEs9wf4.js                      1,056.24 kB │ gzip:   310.34 kB │ map: 3,929.49 kB
+#70 2.265 
+#70 2.265 ✓ built in 1.77s
+#70 2.266 [plugin builtin:vite-reporter] 
+#70 2.266 (!) Some chunks are larger than 500 kB after minification. Consider:
+#70 2.266 - Using dynamic import() to code-split the application
+#70 2.266 - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+#70 2.266 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#70 DONE 2.4s
+
+#71 [web stage-2 3/4] COPY --from=web /app/local-dist /usr/share/nginx/html
+#71 DONE 0.5s
+
+#72 [web stage-2 4/4] RUN chmod -R a+rX /usr/share/nginx/html
+#72 DONE 0.8s
+
+#73 [web] exporting to image
+#73 exporting layers
+#73 exporting layers 0.3s done
+#73 writing image sha256:79afd7b2b45475d00491b80ccc758b7d6510acf6686000f80ebee8e6c9444469 done
+#73 naming to docker.io/library/tempo-pg-regressions-5365-2b17f2fa-web done
+#73 DONE 0.3s
+
+#74 [web] resolving provenance for metadata file
+#74 DONE 0.0s
+ api  Built
+ schema  Built
+ background-worker  Built
+ defense-engine  Built
+ background-scheduler  Built
+ foreground-worker  Built
+ maia-worker  Built
+ web  Built
+PostgreSQL scenario image_build: 97.59s (exit 0)
+ postgres Pulling 
+ redis Pulling 
+ bbeda6b4abb7 Already exists 
+ 19fcd068927b Pulling fs layer 
+ dae9c1725998 Pulling fs layer 
+ a97c43a6325a Pulling fs layer 
+ adef3e37879a Pulling fs layer 
+ 729e9c644210 Pulling fs layer 
+ 21a9e5df9938 Pulling fs layer 
+ c344258f5c4b Pulling fs layer 
+ 9aa353a8667f Pulling fs layer 
+ 145ddee77a61 Pulling fs layer 
+ 364028cfe3c1 Pulling fs layer 
+ 7f4f6f4ec9d3 Pulling fs layer 
+ 7ceb07498658 Pulling fs layer 
+ 21a9e5df9938 Waiting 
+ c344258f5c4b Waiting 
+ 9aa353a8667f Waiting 
+ 145ddee77a61 Waiting 
+ 364028cfe3c1 Waiting 
+ 7f4f6f4ec9d3 Waiting 
+ 7ceb07498658 Waiting 
+ adef3e37879a Waiting 
+ 729e9c644210 Waiting 
+ 248d4d6535e8 Pulling fs layer 
+ 80825e26e4d6 Pulling fs layer 
+ 6c159c167f77 Pulling fs layer 
+ 574676109835 Pulling fs layer 
+ 459f390c40ba Pulling fs layer 
+ 248d4d6535e8 Waiting 
+ 4f4fb700ef54 Pulling fs layer 
+ 80825e26e4d6 Waiting 
+ c436aca17997 Pulling fs layer 
+ 6c159c167f77 Waiting 
+ 574676109835 Waiting 
+ 459f390c40ba Waiting 
+ 4f4fb700ef54 Waiting 
+ c436aca17997 Waiting 
+ 19fcd068927b Downloading [==================================================>]  1.169kB/1.169kB
+ 19fcd068927b Verifying Checksum 
+ 19fcd068927b Download complete 
+ 19fcd068927b Extracting [==================================================>]  1.169kB/1.169kB
+ 19fcd068927b Extracting [==================================================>]  1.169kB/1.169kB
+ a97c43a6325a Downloading [>                                                  ]  15.79kB/1.21MB
+ 19fcd068927b Pull complete 
+ dae9c1725998 Downloading [>                                                  ]  64.94kB/6.235MB
+ a97c43a6325a Downloading [==================================================>]   1.21MB/1.21MB
+ a97c43a6325a Download complete 
+ dae9c1725998 Verifying Checksum 
+ dae9c1725998 Download complete 
+ dae9c1725998 Extracting [>                                                  ]  65.54kB/6.235MB
+ dae9c1725998 Extracting [==================================================>]  6.235MB/6.235MB
+ adef3e37879a Downloading [>                                                  ]  97.71kB/8.204MB
+ dae9c1725998 Pull complete 
+ a97c43a6325a Extracting [=>                                                 ]  32.77kB/1.21MB
+ 729e9c644210 Downloading [>                                                  ]  15.79kB/1.221MB
+ a97c43a6325a Extracting [==================================================>]   1.21MB/1.21MB
+ a97c43a6325a Extracting [==================================================>]   1.21MB/1.21MB
+ 21a9e5df9938 Downloading [==================================================>]     116B/116B
+ 21a9e5df9938 Verifying Checksum 
+ 21a9e5df9938 Download complete 
+ a97c43a6325a Pull complete 
+ adef3e37879a Verifying Checksum 
+ adef3e37879a Download complete 
+ adef3e37879a Extracting [>                                                  ]   98.3kB/8.204MB
+ 729e9c644210 Verifying Checksum 
+ 729e9c644210 Download complete 
+ adef3e37879a Extracting [=============================>                     ]  4.817MB/8.204MB
+ adef3e37879a Extracting [==================================================>]  8.204MB/8.204MB
+ 145ddee77a61 Downloading [=========>                                         ]  3.501kB/19.42kB
+ 145ddee77a61 Downloading [==================================================>]  19.42kB/19.42kB
+ 145ddee77a61 Verifying Checksum 
+ 145ddee77a61 Download complete 
+ c344258f5c4b Downloading [==================================================>]  3.144kB/3.144kB
+ c344258f5c4b Download complete 
+ 9aa353a8667f Downloading [>                                                  ]  531.5kB/114MB
+ adef3e37879a Pull complete 
+ 729e9c644210 Extracting [=>                                                 ]  32.77kB/1.221MB
+ 729e9c644210 Extracting [==================================================>]  1.221MB/1.221MB
+ 9aa353a8667f Downloading [==========>                                        ]  23.38MB/114MB
+ 729e9c644210 Pull complete 
+ 21a9e5df9938 Extracting [==================================================>]     116B/116B
+ 21a9e5df9938 Extracting [==================================================>]     116B/116B
+ 364028cfe3c1 Downloading [==================================================>]     128B/128B
+ 364028cfe3c1 Verifying Checksum 
+ 364028cfe3c1 Download complete 
+ 9aa353a8667f Downloading [========================>                          ]  55.15MB/114MB
+ 21a9e5df9938 Pull complete 
+ c344258f5c4b Extracting [==================================================>]  3.144kB/3.144kB
+ c344258f5c4b Extracting [==================================================>]  3.144kB/3.144kB
+ 7f4f6f4ec9d3 Downloading [============================>                      ]  3.502kB/6.109kB
+ 7f4f6f4ec9d3 Downloading [==================================================>]  6.109kB/6.109kB
+ 7f4f6f4ec9d3 Verifying Checksum 
+ 7f4f6f4ec9d3 Download complete 
+ 9aa353a8667f Downloading [======================================>            ]  86.93MB/114MB
+ c344258f5c4b Pull complete 
+ 9aa353a8667f Downloading [=============================================>     ]  103.9MB/114MB
+ 9aa353a8667f Verifying Checksum 
+ 9aa353a8667f Download complete 
+ 7ceb07498658 Downloading [==================================================>]     186B/186B
+ 7ceb07498658 Verifying Checksum 
+ 7ceb07498658 Download complete 
+ 9aa353a8667f Extracting [>                                                  ]  557.1kB/114MB
+ 248d4d6535e8 Downloading [>                                                  ]  48.55kB/3.975MB
+ 248d4d6535e8 Download complete 
+ 248d4d6535e8 Extracting [>                                                  ]  65.54kB/3.975MB
+ 9aa353a8667f Extracting [====>                                              ]  10.58MB/114MB
+ 248d4d6535e8 Extracting [==================================================>]  3.975MB/3.975MB
+ 248d4d6535e8 Extracting [==================================================>]  3.975MB/3.975MB
+ 80825e26e4d6 Downloading [==================================================>]     948B/948B
+ 80825e26e4d6 Verifying Checksum 
+ 80825e26e4d6 Download complete 
+ 248d4d6535e8 Pull complete 
+ 80825e26e4d6 Extracting [==================================================>]     948B/948B
+ 80825e26e4d6 Extracting [==================================================>]     948B/948B
+ 9aa353a8667f Extracting [==========>                                        ]  22.84MB/114MB
+ 6c159c167f77 Downloading [>                                                  ]  3.457kB/201.4kB
+ 6c159c167f77 Downloading [==================================================>]  201.4kB/201.4kB
+ 6c159c167f77 Download complete 
+ 9aa353a8667f Extracting [==============>                                    ]  33.42MB/114MB
+ 574676109835 Downloading [>                                                  ]  130.5kB/12.58MB
+ 9aa353a8667f Extracting [==================>                                ]  41.78MB/114MB
+ 459f390c40ba Download complete 
+ 574676109835 Downloading [==================================================>]  12.58MB/12.58MB
+ 574676109835 Download complete 
+ 4f4fb700ef54 Downloading [==================================================>]      32B/32B
+ 9aa353a8667f Extracting [=======================>                           ]  54.03MB/114MB
+ 4f4fb700ef54 Verifying Checksum 
+ 4f4fb700ef54 Download complete 
+ 9aa353a8667f Extracting [=========================>                         ]  58.49MB/114MB
+ c436aca17997 Downloading [==================================================>]     600B/600B
+ c436aca17997 Verifying Checksum 
+ c436aca17997 Download complete 
+ 9aa353a8667f Extracting [===============================>                   ]  71.86MB/114MB
+ 9aa353a8667f Extracting [================================>                  ]  74.09MB/114MB
+ 80825e26e4d6 Pull complete 
+ 6c159c167f77 Extracting [========>                                          ]  32.77kB/201.4kB
+ 6c159c167f77 Extracting [==================================================>]  201.4kB/201.4kB
+ 6c159c167f77 Extracting [==================================================>]  201.4kB/201.4kB
+ 9aa353a8667f Extracting [==================================>                ]  77.99MB/114MB
+ 9aa353a8667f Extracting [====================================>              ]  83.56MB/114MB
+ 9aa353a8667f Extracting [======================================>            ]  88.01MB/114MB
+ 9aa353a8667f Extracting [========================================>          ]  93.03MB/114MB
+ 6c159c167f77 Pull complete 
+ 574676109835 Extracting [>                                                  ]  131.1kB/12.58MB
+ 9aa353a8667f Extracting [===========================================>       ]  99.16MB/114MB
+ 574676109835 Extracting [=======================================>           ]   9.83MB/12.58MB
+ 9aa353a8667f Extracting [============================================>      ]  102.5MB/114MB
+ 574676109835 Extracting [==================================================>]  12.58MB/12.58MB
+ 574676109835 Extracting [==================================================>]  12.58MB/12.58MB
+ 9aa353a8667f Extracting [=============================================>     ]  104.7MB/114MB
+ 574676109835 Pull complete 
+ 459f390c40ba Extracting [==================================================>]     101B/101B
+ 459f390c40ba Extracting [==================================================>]     101B/101B
+ 459f390c40ba Pull complete 
+ 4f4fb700ef54 Extracting [==================================================>]      32B/32B
+ 4f4fb700ef54 Extracting [==================================================>]      32B/32B
+ 4f4fb700ef54 Pull complete 
+ c436aca17997 Extracting [==================================================>]     600B/600B
+ c436aca17997 Extracting [==================================================>]     600B/600B
+ c436aca17997 Pull complete 
+ redis Pulled 
+ 9aa353a8667f Extracting [===============================================>   ]  107.5MB/114MB
+ 9aa353a8667f Extracting [================================================>  ]  109.7MB/114MB
+ 9aa353a8667f Extracting [=================================================> ]    112MB/114MB
+ 9aa353a8667f Extracting [=================================================> ]  112.5MB/114MB
+ 9aa353a8667f Extracting [==================================================>]    114MB/114MB
+ 9aa353a8667f Pull complete 
+ 145ddee77a61 Extracting [==================================================>]  19.42kB/19.42kB
+ 145ddee77a61 Extracting [==================================================>]  19.42kB/19.42kB
+ 145ddee77a61 Pull complete 
+ 364028cfe3c1 Extracting [==================================================>]     128B/128B
+ 364028cfe3c1 Extracting [==================================================>]     128B/128B
+ 364028cfe3c1 Pull complete 
+ 7f4f6f4ec9d3 Extracting [==================================================>]  6.109kB/6.109kB
+ 7f4f6f4ec9d3 Extracting [==================================================>]  6.109kB/6.109kB
+ 7f4f6f4ec9d3 Pull complete 
+ 7ceb07498658 Extracting [==================================================>]     186B/186B
+ 7ceb07498658 Extracting [==================================================>]     186B/186B
+ 7ceb07498658 Pull complete 
+ postgres Pulled 
+ Network tempo-pg-regressions-5365-2b17f2fa_default  Creating
+ Network tempo-pg-regressions-5365-2b17f2fa_default  Created
+ Volume "tempo-pg-regressions-5365-2b17f2fa_redis-test-data"  Creating
+ Volume "tempo-pg-regressions-5365-2b17f2fa_redis-test-data"  Created
+ Volume "tempo-pg-regressions-5365-2b17f2fa_engine-test-operations"  Creating
+ Volume "tempo-pg-regressions-5365-2b17f2fa_engine-test-operations"  Created
+ Volume "tempo-pg-regressions-5365-2b17f2fa_postgres-test-data"  Creating
+ Volume "tempo-pg-regressions-5365-2b17f2fa_postgres-test-data"  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Creating
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Creating
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Creating
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Creating
+time="2026-10-12T17:19:41Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Creating
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Creating
+time="2026-10-12T17:19:41Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:19:41Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Creating
+time="2026-10-12T17:19:41Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Creating
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Creating
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Creating
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Created
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Exited
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Exited
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Exited
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Waiting
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Healthy
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Starting
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Started
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Started
+PostgreSQL scenario startup: 17.02s (exit 0)
+PostgreSQL scenario service_health: 0.08s (exit 0)
+
+Running 67 tests using 1 worker
+
+[1/67] [chromium] › tests/browser/activity-tray.spec.ts:59:1 › phone notification history groups retries and opens to needs attention
+[2/67] [chromium] › tests/browser/activity-tray.spec.ts:85:3 › activity tray stays reachable and controls queued work 320
+[3/67] [chromium] › tests/browser/activity-tray.spec.ts:85:3 › activity tray stays reachable and controls queued work 390
+[4/67] [chromium] › tests/browser/activity-tray.spec.ts:85:3 › activity tray stays reachable and controls queued work 1280
+[5/67] [chromium] › tests/browser/activity-tray.spec.ts:114:1 › analysis activity count growth keeps desktop navigation anchored
+[6/67] [chromium] › tests/browser/activity-tray.spec.ts:139:1 › notifications tray remains inside a 320px phone viewport
+[7/67] [chromium] › tests/browser/activity-tray.spec.ts:149:1 › issue137_notification_geometry_waits_for_training_heading_after_delayed_reload
+[8/67] [chromium] › tests/browser/activity-tray.spec.ts:196:3 › notification clear controls preserve history across reload and count new arrivals at 320
+[9/67] [chromium] › tests/browser/activity-tray.spec.ts:196:3 › notification clear controls preserve history across reload and count new arrivals at 1280
+[10/67] [chromium] › tests/browser/activity-tray.spec.ts:285:3 › analysis activity count fits header controls at 390
+[11/67] [chromium] › tests/browser/activity-tray.spec.ts:285:3 › analysis activity count fits header controls at 1280
+[12/67] [chromium] › tests/browser/activity-tray.spec.ts:307:1 › status_recovery_during_training_preserves_held_drag_and_command_execution
+[13/67] [chromium] › tests/browser/board-input.spec.ts:20:3 › touch board input and rotation preserve legal position at DPR 1
+[14/67] [chromium] › tests/browser/board-input.spec.ts:20:3 › touch board input and rotation preserve legal position at DPR 2
+[15/67] [chromium] › tests/browser/board-input.spec.ts:76:1 › drag input and promotion retain the established queen-promotion behavior
+[16/67] [chromium] › tests/browser/canonical-repertoire-prefix.spec.ts:19:3 › canonical Italian prefix persists without changing training and rejects Philidor additions 390
+[17/67] [chromium] › tests/browser/canonical-repertoire-prefix.spec.ts:19:3 › canonical Italian prefix persists without changing training and rejects Philidor additions 1280
+[18/67] [chromium] › tests/browser/defense-preview.spec.ts:9:3 › reported Rc4 defensive preview stays readable and returns to the decision at 390px
+[19/67] [chromium] › tests/browser/defense-preview.spec.ts:9:3 › reported Rc4 defensive preview stays readable and returns to the decision at 1440px
+[20/67] [chromium] › tests/browser/keyboard-context.spec.ts:9:1 › incorrect study answers retain their live board while Home End and R browse the revealed reference
+[21/67] [chromium] › tests/browser/keyboard-context.spec.ts:57:1 › training arrows never uncover the next answer and R restores the decision without grading
+[22/67] [chromium] › tests/browser/keyboard-context.spec.ts:82:1 › Builder shortcuts cancel a held piece and preserve notes, selection and splitter keys
+[23/67] [chromium] › tests/browser/keyboard-context.spec.ts:116:1 › Settings letter preference takes effect immediately and persists while arrows and help work
+[24/67] [chromium] › tests/browser/keyboard-context.spec.ts:139:1 › Escape closes Builder search and header popups one at a time and restores their openers
+[25/67] [chromium] › tests/browser/opening-evidence.spec.ts:31:1 › AS-16 offline evidence quota saves a compact phone review and retains its journal after sync
+[26/67] [chromium] › tests/browser/opening-evidence.spec.ts:31:1 › AS-16 offline compact quota failure blocks advancement until durable retry
+[27/67] [chromium] › tests/browser/opening-evidence.spec.ts:146:1 › AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity
+[28/67] [chromium] › tests/browser/opening-evidence.spec.ts:211:1 › AS-15 a real tab lease releases stranded evidence into a later idle slice
+[29/67] [chromium] › tests/browser/opening-evidence.spec.ts:290:1 › AS-16 restarted opening board records guided arrows and retains the prior partial attempt
+[30/67] [chromium] › tests/browser/opening-evidence.spec.ts:308:1 › AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt
+[31/67] [chromium] › tests/browser/opening-evidence.spec.ts:358:1 › AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive
+[32/67] [chromium] › tests/browser/opening-evidence.spec.ts:396:1 › AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work
+[33/67] [chromium] › tests/browser/opening-evidence.spec.ts:417:1 › AS-09 actual teaching arrows manual Again and revealed correction retain first response context
+[34/67] [chromium] › tests/browser/opening-evidence.spec.ts:446:1 › AS-15 crash recovery seals committed work as partial and starts a new board identity
+[35/67] [chromium] › tests/browser/opening-evidence.spec.ts:470:1 › AS-15 orphaned completion without an aggregate outbox retains partial work instead of inventing a review
+[36/67] [chromium] › tests/browser/opening-evidence.spec.ts:512:1 › AS-16 offline repeats retain independent attempts and reconcile their parent before completion
+[37/67] [chromium] › tests/browser/opening-evidence.spec.ts:512:1 › AS-16 offline parent fallback retains rejected journal after queue refresh and reconciles repeat evidence
+[38/67] [chromium] › tests/browser/opening-evidence.spec.ts:622:41 › cross-tab completion › cross-tab opening completion wakes reconciliation through storage events
+[39/67] [chromium] › tests/browser/opening-evidence.spec.ts:622:41 › cross-tab completion › cross-tab opening completion wakes reconciliation through BroadcastChannel fallback
+[40/67] [chromium] › tests/browser/opening-segmentation.spec.ts:3:34 › AS-01/19 real PostgreSQL segmentation preview preserves practice 390
+[41/67] [chromium] › tests/browser/opening-segmentation.spec.ts:3:34 › AS-01/19 real PostgreSQL segmentation preview preserves practice 1280
+[42/67] [chromium] › tests/browser/phone-opening-study.spec.ts:13:3 › Phone opening study shows repertoire identity above the board 320
+[43/67] [chromium] › tests/browser/phone-opening-study.spec.ts:13:3 › Phone opening study shows repertoire identity above the board 390
+[44/67] [chromium] › tests/browser/phone-opening-study.spec.ts:13:3 › Phone opening study shows repertoire identity above the board 767
+[45/67] [chromium] › tests/browser/phone-opening-study.spec.ts:42:1 › Phone study heading follows London-to-Ruy-Lopez card transitions
+[46/67] [chromium] › tests/browser/phone-opening-study.spec.ts:54:1 › Phone opening More supports keyboard help, restart, and edit without resetting on resize
+[47/67] [chromium] › tests/browser/phone-opening-study.spec.ts:95:1 › Long phone repertoire names wrap without hiding the board or overflowing
+[48/67] [chromium] › tests/browser/phone-opening-study.spec.ts:102:1 › Phone pending review keeps one inline status until its original receipt confirms
+[49/67] [chromium] › tests/browser/phone-opening-study.spec.ts:135:1 › Phone actionable save warning keeps its severity and dismiss control readable
+[50/67] [chromium] › tests/browser/phone-opening-study.spec.ts:154:1 › Phone terminal review stays retained through idle recovery until explicit retry reload=false
+[51/67] [chromium] › tests/browser/phone-opening-study.spec.ts:154:1 › Phone terminal review stays retained through idle recovery until explicit retry reload=true
+[52/67] [chromium] › tests/browser/phone-opening-study.spec.ts:190:1 › Phone idle review conflict releases Check save and permits the next real board move
+[53/67] [chromium] › tests/browser/phone-opening-study.spec.ts:235:1 › Phone skipped same-card result stays paused with actionable earlier-result status
+[54/67] [chromium] › tests/browser/phone-opening-study.spec.ts:264:1 › Phone reload consumes a retained completed review receipt without another review POST
+[55/67] [chromium] › tests/browser/real-game-feedback.spec.ts:10:1 › Games prioritizes a canonical miss and explains the targeted study card
+[56/67] [chromium] › tests/browser/real-game-feedback.spec.ts:39:1 › Games loads every page of pending findings for the selected game
+[57/67] [chromium] › tests/browser/real-game-feedback.spec.ts:57:1 › previously studied game-miss priority card starts without a teaching arrow
+[58/67] [chromium] › tests/browser/real-game-feedback.spec.ts:71:1 › Games shows reanalysis without repeatedly fetching its own summary
+[59/67] [chromium] › tests/browser/real-game-feedback.spec.ts:89:1 › connected completion fetches a new real-game obligation before cached ordinary work
+[60/67] [chromium] › tests/browser/workspace-flows.spec.ts:11:1 › training Bury hides the card for today across reload and reports a failed bury
+[61/67] [chromium] › tests/browser/workspace-flows.spec.ts:120:1 › sample deletion uses repertoire identity and does not delete its same-filename sibling
+[62/67] [chromium] › tests/browser/workspace-flows.spec.ts:159:1 › Builder exact transposition confirms a conflicting trained move then saves the route
+[63/67] [chromium] › tests/browser/workspace-flows.spec.ts:207:1 › review position opens consistently in analysis builder and games
+[64/67] [chromium] › tests/browser/workspace-flows.spec.ts:255:1 › Edit card opens Builder line-removal context and deletes the selected branch
+[65/67] [chromium] › tests/browser/workspace-flows.spec.ts:320:1 › training Builder restores the viewed mid-line position and durably saves Bg4 on the original route
+[66/67] [chromium] › tests/browser/workspace-flows.spec.ts:390:3 › partial training Builder route chooser keeps the board fixed at 390
+[67/67] [chromium] › tests/browser/workspace-flows.spec.ts:390:3 › partial training Builder route chooser keeps the board fixed at 1470
+  67 passed (4.0m)
+PostgreSQL scenario browser: 238.31s (exit 0)
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-maia-worker-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-defense-engine-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-web-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-background-scheduler-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-api-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-foreground-worker-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-background-worker-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-schema-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Stopping
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-redis-1  Removed
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Stopped
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Removing
+ Container tempo-pg-regressions-5365-2b17f2fa-postgres-1  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-foreground-worker:latest  Removing
+ Image tempo-pg-regressions-5365-2b17f2fa-background-scheduler:latest  Removing
+ Image tempo-pg-regressions-5365-2b17f2fa-background-worker:latest  Removing
+ Image tempo-pg-regressions-5365-2b17f2fa-maia-worker:latest  Removing
+ Image tempo-pg-regressions-5365-2b17f2fa-defense-engine:latest  Removing
+ Image tempo-pg-regressions-5365-2b17f2fa-web:latest  Removing
+ Image tempo-pg-regressions-5365-2b17f2fa-schema:latest  Removing
+ Image tempo-pg-regressions-5365-2b17f2fa-api:latest  Removing
+ Volume tempo-pg-regressions-5365-2b17f2fa_redis-test-data  Removing
+ Network tempo-pg-regressions-5365-2b17f2fa_default  Removing
+ Volume tempo-pg-regressions-5365-2b17f2fa_engine-test-operations  Removing
+ Volume tempo-pg-regressions-5365-2b17f2fa_postgres-test-data  Removing
+ Volume tempo-pg-regressions-5365-2b17f2fa_redis-test-data  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-schema:latest  Removed
+ Volume tempo-pg-regressions-5365-2b17f2fa_engine-test-operations  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-defense-engine:latest  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-api:latest  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-background-scheduler:latest  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-maia-worker:latest  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-web:latest  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-background-worker:latest  Removed
+ Image tempo-pg-regressions-5365-2b17f2fa-foreground-worker:latest  Warning: No resource found to remove
+ Network tempo-pg-regressions-5365-2b17f2fa_default  Removed
+ Volume tempo-pg-regressions-5365-2b17f2fa_postgres-test-data  Removed
+PostgreSQL scenario cleanup: 3.3s (exit 0)

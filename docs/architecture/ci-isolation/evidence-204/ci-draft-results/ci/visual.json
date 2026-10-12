@@ -1,0 +1,605 @@
+{
+  "version": 2,
+  "layer": "visual",
+  "planHash": "0a40375cc201d8bc7d2f853bfb2f6dbef8bc1cd2a2eda1f3eecbb5ed002d097b",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "executionKey": "a65256f402be7dfe321016d123ff47c87d2808dedcc820cef5be3645574bd687",
+  "execution": {
+    "kind": "executed",
+    "runId": 38282616369,
+    "attempt": 1
+  },
+  "completed": true,
+  "status": "success",
+  "commands": [
+    {
+      "name": "capabilities",
+      "command": "node",
+      "args": [
+        "scripts/check-test-capabilities.mjs",
+        "--docker",
+        "--workspace-mount"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 25.34
+    },
+    {
+      "name": "visual",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:visual"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 274.06
+    }
+  ],
+  "tests": [
+    {
+      "id": "b15d6361b2fc38288977-b3a24995c05da901c644:",
+      "title": "warm workspace and Builder move responsiveness",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 6112
+    },
+    {
+      "id": "b15d6361b2fc38288977-773f1153ae88f73506ed:",
+      "title": "warm training cards advance to the next visible paint",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1251
+    },
+    {
+      "id": "b15d6361b2fc38288977-ac346dc414e2bf0d8823:",
+      "title": "Builder similarity worker messages keep the position index in the worker",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1805
+    },
+    {
+      "id": "b15d6361b2fc38288977-a401cdc0eca72e9a0923:",
+      "title": "held-piece drag baseline separates workloads and capture overhead",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 175413
+    },
+    {
+      "id": "8324bb52c49185e48ff4-97ac40b36e7392f29b20:",
+      "title": "issue186_prepared_recovery_remains_visible_and_interactive-390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1721
+    },
+    {
+      "id": "8324bb52c49185e48ff4-326e4a9e671a2b092f01:",
+      "title": "issue186_prepared_recovery_remains_visible_and_interactive-1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1786
+    },
+    {
+      "id": "8324bb52c49185e48ff4-9881355ed8166c78112d:",
+      "title": "repertoire-deletion-390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 937
+    },
+    {
+      "id": "8324bb52c49185e48ff4-ad632d0e17fa22bac4ea:",
+      "title": "card-deletion-390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 927
+    },
+    {
+      "id": "8324bb52c49185e48ff4-ed17d29689d2ec5b2e97:",
+      "title": "repertoire-deletion-1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 959
+    },
+    {
+      "id": "8324bb52c49185e48ff4-8c89060cdbd31fe95c90:",
+      "title": "card-deletion-1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1038
+    },
+    {
+      "id": "8324bb52c49185e48ff4-8e06b7ff107ed255b251:",
+      "title": "Train 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 665
+    },
+    {
+      "id": "8324bb52c49185e48ff4-69e25004a68f14b624a9:",
+      "title": "Tactics 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 724
+    },
+    {
+      "id": "8324bb52c49185e48ff4-959c54864cfd74538b94:",
+      "title": "Endgames 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 725
+    },
+    {
+      "id": "8324bb52c49185e48ff4-17841fd20bfca6524823:",
+      "title": "Repertoire 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 730
+    },
+    {
+      "id": "8324bb52c49185e48ff4-f447407f44c139cb5678:",
+      "title": "Builder 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 749
+    },
+    {
+      "id": "8324bb52c49185e48ff4-b08a75ea71a8c4a571ba:",
+      "title": "Games 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 783
+    },
+    {
+      "id": "8324bb52c49185e48ff4-9be889900ad9d7f52236:",
+      "title": "Progress 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 770
+    },
+    {
+      "id": "8324bb52c49185e48ff4-30073568546a846dae7b:",
+      "title": "Statistics 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 839
+    },
+    {
+      "id": "8324bb52c49185e48ff4-7a84eb3ae7b0e31e739f:",
+      "title": "Settings 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 822
+    },
+    {
+      "id": "8324bb52c49185e48ff4-730891b2e37ae80bf349:",
+      "title": "Train 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 839
+    },
+    {
+      "id": "8324bb52c49185e48ff4-58e7b2f78f75db0a3f6a:",
+      "title": "Tactics 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 841
+    },
+    {
+      "id": "8324bb52c49185e48ff4-583385450fb0869416a5:",
+      "title": "Endgames 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 837
+    },
+    {
+      "id": "8324bb52c49185e48ff4-78752e8f7f97e63e4f61:",
+      "title": "Repertoire 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 739
+    },
+    {
+      "id": "8324bb52c49185e48ff4-620e7ac6d311e495ce7b:",
+      "title": "Builder 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 882
+    },
+    {
+      "id": "8324bb52c49185e48ff4-65c139272483038b81ac:",
+      "title": "Games 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 834
+    },
+    {
+      "id": "8324bb52c49185e48ff4-8536811f232aeb25d45c:",
+      "title": "Progress 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 801
+    },
+    {
+      "id": "8324bb52c49185e48ff4-47726df7740950d20dbb:",
+      "title": "Statistics 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 862
+    },
+    {
+      "id": "8324bb52c49185e48ff4-edc61a1c28abd0f6f014:",
+      "title": "Settings 768",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 846
+    },
+    {
+      "id": "8324bb52c49185e48ff4-9c4755e2645a377409bf:",
+      "title": "Train 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 724
+    },
+    {
+      "id": "8324bb52c49185e48ff4-827297caacd6d400509f:",
+      "title": "Tactics 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 712
+    },
+    {
+      "id": "8324bb52c49185e48ff4-fdbca579435c89e96aac:",
+      "title": "Endgames 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 739
+    },
+    {
+      "id": "8324bb52c49185e48ff4-9b2cb39f9ebd1b998950:",
+      "title": "Repertoire 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 723
+    },
+    {
+      "id": "8324bb52c49185e48ff4-d5c017419aa4d3a3f070:",
+      "title": "Builder 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 836
+    },
+    {
+      "id": "8324bb52c49185e48ff4-6c17b346346cfc57f260:",
+      "title": "Games 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 778
+    },
+    {
+      "id": "8324bb52c49185e48ff4-8b6782b78d2cc1342770:",
+      "title": "Progress 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 804
+    },
+    {
+      "id": "8324bb52c49185e48ff4-9ce1af46b0fe7f6438ec:",
+      "title": "Statistics 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 857
+    },
+    {
+      "id": "8324bb52c49185e48ff4-c3cfe0d60eb6c5420cbd:",
+      "title": "Settings 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 861
+    },
+    {
+      "id": "8324bb52c49185e48ff4-800943baf671ab09358e:",
+      "title": "Train 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 856
+    },
+    {
+      "id": "8324bb52c49185e48ff4-dd1eaefb30a945bde3ad:",
+      "title": "Tactics 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 873
+    },
+    {
+      "id": "8324bb52c49185e48ff4-1cebc32abaab47c2fab2:",
+      "title": "Endgames 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 886
+    },
+    {
+      "id": "8324bb52c49185e48ff4-a5d66747b52d228890ab:",
+      "title": "Repertoire 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 773
+    },
+    {
+      "id": "8324bb52c49185e48ff4-b7d18b9ab4c24bef318d:",
+      "title": "Builder 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 915
+    },
+    {
+      "id": "8324bb52c49185e48ff4-bcddf95600740fe52a01:",
+      "title": "Games 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 915
+    },
+    {
+      "id": "8324bb52c49185e48ff4-c1e5c3884b9a6a07ff1d:",
+      "title": "Progress 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 823
+    },
+    {
+      "id": "8324bb52c49185e48ff4-609c40c57d5aa38edb57:",
+      "title": "Statistics 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 957
+    },
+    {
+      "id": "8324bb52c49185e48ff4-2e6fc2c852ecb17a37c8:",
+      "title": "Settings 1920",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 916
+    },
+    {
+      "id": "8324bb52c49185e48ff4-52f5a4d51fb4c872081c:",
+      "title": "Repertoire statistics 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 889
+    },
+    {
+      "id": "8324bb52c49185e48ff4-b6131d12219fad60ef62:",
+      "title": "Repertoire statistics 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 921
+    },
+    {
+      "id": "8324bb52c49185e48ff4-da8bf85f3199099d5db7:",
+      "title": "service-unavailable",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 743
+    },
+    {
+      "id": "8324bb52c49185e48ff4-572d537c4b823f77a044:",
+      "title": "laptop header navigation and actions remain separate",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 648
+    },
+    {
+      "id": "8324bb52c49185e48ff4-0bb21b05a9da2978b89c:",
+      "title": "activity-tray-390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 730
+    },
+    {
+      "id": "8324bb52c49185e48ff4-e112b0b5fe0907ccb6d7:",
+      "title": "activity-tray-1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 779
+    },
+    {
+      "id": "8324bb52c49185e48ff4-fcba4bf71c85722110d7:",
+      "title": "import-dialog-phone",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 799
+    },
+    {
+      "id": "8324bb52c49185e48ff4-efc791dc178e566aeb5a:",
+      "title": "pending-import-dialog-phone",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 839
+    },
+    {
+      "id": "8324bb52c49185e48ff4-db9229088f8fc135c7bc:",
+      "title": "acknowledged-import-publication-phone",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 907
+    },
+    {
+      "id": "8324bb52c49185e48ff4-79f8cba77be7224464c7:",
+      "title": "board-unavailable",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1573
+    },
+    {
+      "id": "8324bb52c49185e48ff4-e79b446cee35a8668474:",
+      "title": "training-feedback-phone",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 754
+    },
+    {
+      "id": "8324bb52c49185e48ff4-7284f758edb89d795391:",
+      "title": "Capture tactic dialog 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1221
+    },
+    {
+      "id": "8324bb52c49185e48ff4-5a26ec2943a0d9174779:",
+      "title": "Capture tactic dialog 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1644
+    },
+    {
+      "id": "8324bb52c49185e48ff4-e84c858e6b2f1b47de1b:",
+      "title": "Canonical prefix dialog 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1039
+    },
+    {
+      "id": "8324bb52c49185e48ff4-0a840d9322917240bb34:",
+      "title": "Canonical prefix dialog 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1190
+    },
+    {
+      "id": "8324bb52c49185e48ff4-0b274e8dfca1d59967cd:",
+      "title": "keyboard help and letter preference remain readable 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1057
+    },
+    {
+      "id": "8324bb52c49185e48ff4-ccf2f11620d6fa0ea873:",
+      "title": "keyboard help and letter preference remain readable 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1158
+    },
+    {
+      "id": "8324bb52c49185e48ff4-ab57aa71e9a3ccfc5e79:",
+      "title": "Queued repertoire repairs 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 810
+    },
+    {
+      "id": "8324bb52c49185e48ff4-6968d98dbee1861d4085:",
+      "title": "review-conflicts-390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 744
+    },
+    {
+      "id": "8324bb52c49185e48ff4-dd34ace1b1f6709e7d2d:",
+      "title": "Queued repertoire repairs 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 822
+    },
+    {
+      "id": "8324bb52c49185e48ff4-9eee73d8a6e68d4e1393:",
+      "title": "review-conflicts-1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 7855
+    },
+    {
+      "id": "8324bb52c49185e48ff4-2a5c396adae651fa1df1:",
+      "title": "Prefix comparison 390",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1306
+    },
+    {
+      "id": "8324bb52c49185e48ff4-d8ad3957345298fc778d:",
+      "title": "Prefix comparison 1280",
+      "project": "",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1494
+    }
+  ],
+  "timestamp": "2026-10-12T17:16:16.334Z",
+  "environment": {
+    "node": "v22.23.3",
+    "platform": "linux",
+    "architecture": "arm64",
+    "python": "Python 3.12.3",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "cpuCount": 4,
+    "memoryBytes": 16722006016,
+    "wasmPack": null
+  },
+  "diagnostics": []
+}

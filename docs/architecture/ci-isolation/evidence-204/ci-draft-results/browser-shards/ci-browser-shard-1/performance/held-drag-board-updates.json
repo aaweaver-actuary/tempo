@@ -1,0 +1,40 @@
+{
+  "measurement": "imperative operation counts during a real held drag; no latency claim",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "recordedAt": "2026-10-12T17:20:33.931Z",
+  "browser": "chromium",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "updates": 4,
+  "syncResponses": 5,
+  "activityResponses": 5,
+  "before": {
+    "acquisitions": 1,
+    "releases": 0,
+    "publications": 2,
+    "equivalentPublications": 7,
+    "rejectedPublications": 0,
+    "positionResets": 3,
+    "inputCancellations": 3
+  },
+  "after": {
+    "acquisitions": 1,
+    "releases": 0,
+    "publications": 2,
+    "equivalentPublications": 11,
+    "rejectedPublications": 0,
+    "positionResets": 3,
+    "inputCancellations": 3
+  },
+  "delta": {
+    "acquisitions": 0,
+    "releases": 0,
+    "publications": 0,
+    "equivalentPublications": 4,
+    "rejectedPublications": 0,
+    "positionResets": 0,
+    "inputCancellations": 0
+  }
+}

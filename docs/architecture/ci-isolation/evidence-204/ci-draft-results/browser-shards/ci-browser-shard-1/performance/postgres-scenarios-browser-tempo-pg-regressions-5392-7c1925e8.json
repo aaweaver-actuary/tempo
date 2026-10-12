@@ -1,0 +1,94 @@
+{
+  "runner": "postgres",
+  "mode": "browser",
+  "commit": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
+  "plan_hash": "0a40375cc201d8bc7d2f853bfb2f6dbef8bc1cd2a2eda1f3eecbb5ed002d097b",
+  "browser_file": null,
+  "browser_grep": "^chromium product-fixture-reset\\.spec\\.ts Issue136 fixture reset stops at its contention deadline and retains exclusions$|^chromium product-fixture-reset\\.spec\\.ts Issue136 fixture reset rejects unexpected real database errors without retry$|^chromium product-fixture-reset\\.spec\\.ts Issue136 fixture reset yields to a held writer and succeeds after release$|^chromium held-drag-preservation\\.spec\\.ts held training drag survives sync, service, notification and parent updates and drops once$|^chromium held-drag-preservation\\.spec\\.ts a read-only transition interrupts a real held drag and prevents a stale drop$|^chromium games-board-context\\.spec\\.ts selecting another game changes piece placement and move highlights together$|^chromium games-board-context\\.spec\\.ts Games shows loading until the selected game's full moves arrive$|^chromium games-board-context\\.spec\\.ts Games selection and move navigation keep the board on the selected game$|^chromium training-queue-contention\\.spec\\.ts daily study opens on the workspace date while background analysis remains queued$|^chromium training-queue-contention\\.spec\\.ts discovery preview backlog leaves a prompt foreground training queue refresh$|^chromium board-state\\.spec\\.ts shared toolbar flip persists while stepping through a game$|^chromium board-state\\.spec\\.ts owner changes clear an unfinished square selection at the same position$|^chromium board-state\\.spec\\.ts every directed workspace transition isolates annotations and board input$|^chromium board-state\\.spec\\.ts pointer resizing persists and clamps without horizontal overflow$|^chromium board-state\\.spec\\.ts builder annotations never appear in games$|^firefox cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through storage events$|^firefox cross-browser\\.spec\\.ts capture modal keeps incomplete setup draggable and restores focus across browser engines$|^webkit cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^firefox cross-browser\\.spec\\.ts Study board promotion places the selected knight across browser engines$|^chromium cross-browser\\.spec\\.ts critical navigation, board input, split and dialogs work across browser engines$|^chromium cross-browser\\.spec\\.ts capture accepts SAN from Black's perspective across browser engines$|^chromium cross-browser\\.spec\\.ts capture modal keeps incomplete setup draggable and restores focus across browser engines$|^chromium cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through storage events$|^firefox cross-browser\\.spec\\.ts queue retirement during a held opening drag preserves active board and accepts one drop$|^webkit cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through storage events$|^chromium cross-browser\\.spec\\.ts tablet menu Escape restores the visible navigation trigger$|^firefox cross-browser\\.spec\\.ts capture accepts SAN from Black's perspective across browser engines$|^chromium cross-browser\\.spec\\.ts WebKit desktop prepared queue outage preserves the position and blocks grading until Retry$|^webkit cross-browser\\.spec\\.ts Study board promotion places the selected knight across browser engines$|^chromium cross-browser\\.spec\\.ts Chess\\.com puzzle import starts at the solver position across browser engines$|^chromium cross-browser\\.spec\\.ts prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines$|^firefox cross-browser\\.spec\\.ts prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines$|^webkit cross-browser\\.spec\\.ts contextual board keys and nested popup Escape work across browser engines$|^webkit cross-browser\\.spec\\.ts capture modal keeps incomplete setup draggable and restores focus across browser engines$|^webkit cross-browser\\.spec\\.ts queue retirement during a held opening drag preserves active board and accepts one drop$|^firefox cross-browser\\.spec\\.ts contextual board keys and nested popup Escape work across browser engines$|^webkit cross-browser\\.spec\\.ts prepared_next_card_advances_after_durable_review_without_queue_refresh across browser engines$|^webkit cross-browser\\.spec\\.ts Chess\\.com puzzle import starts at the solver position across browser engines$|^webkit cross-browser\\.spec\\.ts tablet menu Escape restores the visible navigation trigger$|^webkit cross-browser\\.spec\\.ts critical navigation, board input, split and dialogs work across browser engines$|^firefox cross-browser\\.spec\\.ts WebKit desktop prepared queue outage preserves the position and blocks grading until Retry$|^webkit cross-browser\\.spec\\.ts capture accepts SAN from Black's perspective across browser engines$|^chromium cross-browser\\.spec\\.ts queue retirement during a held opening drag preserves active board and accepts one drop$|^chromium cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^firefox cross-browser\\.spec\\.ts tablet menu Escape restores the visible navigation trigger$|^chromium cross-browser\\.spec\\.ts contextual board keys and nested popup Escape work across browser engines$|^chromium cross-browser\\.spec\\.ts phone opening identity and move input work across browser engines$|^firefox cross-browser\\.spec\\.ts critical navigation, board input, split and dialogs work across browser engines$|^firefox cross-browser\\.spec\\.ts Chess\\.com puzzle import starts at the solver position across browser engines$|^chromium cross-browser\\.spec\\.ts Study board promotion places the selected knight across browser engines$|^webkit cross-browser\\.spec\\.ts phone opening identity and move input work across browser engines$|^webkit cross-browser\\.spec\\.ts WebKit desktop prepared queue outage preserves the position and blocks grading until Retry$|^firefox cross-browser\\.spec\\.ts phone opening identity and move input work across browser engines$|^firefox cross-browser\\.spec\\.ts cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^chromium layout\\.spec\\.ts application navigation retains one Chessground instance$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1440x900$|^chromium layout\\.spec\\.ts desktop workspace panels do not clip controls or content$|^chromium layout\\.spec\\.ts phone board controls provide 44px touch targets with every pointer type$|^chromium layout\\.spec\\.ts tactical catalog groups and activation controls remain reachable on phones$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1100x800$|^chromium layout\\.spec\\.ts endgame study actions remain reachable on narrow screens$|^chromium layout\\.spec\\.ts shared split supports keyboard reset and persistence without changing workspace preference$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 320x568$|^chromium layout\\.spec\\.ts board controls retain consistent placement across workspaces$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 769x844$|^chromium layout\\.spec\\.ts hover feedback covers controls outside the chessboard without changing the board$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1920x1080$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 844x390$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1101x800$|^chromium layout\\.spec\\.ts tablet section menu stays inside the header and never overlaps the board$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1280x720$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 390x844$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1099x800$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 1024x768$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 767x844$|^chromium layout\\.spec\\.ts board bounds remain identical across workspace navigation 768x1024$|^chromium layout\\.spec\\.ts layout fixture starts with an empty disposable queue regardless of preceding specs$|^chromium board-geometry\\.spec\\.ts high-DPI board geometry stays aligned through narrow resize and orientation flips$|^chromium board-geometry\\.spec\\.ts shared board shell keeps board region fixed left on desktop and top on mobile across board workspaces$|^chromium tactic-capture\\.spec\\.ts Chess\\.com Puzzle Rush PGN reaches ordinary Training through tactic capture$|^chromium tactic-capture\\.spec\\.ts manual capture places and removes pieces and freely drags an incomplete setup on the real board$|^chromium tactic-capture\\.spec\\.ts FEN capture records a real-board solution and is reviewed through ordinary Training$|^chromium tactic-capture\\.spec\\.ts Black-first capture keeps its orientation while typed SAN and real-board moves save one solution$|^chromium phone-offline-training\\.spec\\.ts yesterday's prepared phone queue never becomes today's training$|^chromium phone-offline-training\\.spec\\.ts prepared phone queue validates study metadata beyond the live window and keeps offline exercises$|^chromium phone-offline-training\\.spec\\.ts iphone offline fallback excludes a conflicted card across revision and queue changes$|^chromium phone-offline-training\\.spec\\.ts competing computer review credits the saved phone result and explains the schedule fallback$|^chromium phone-offline-training\\.spec\\.ts local Tempo shell opens after the network drops$|^chromium phone-offline-training\\.spec\\.ts phone reconnect retains its active card before advancing into the refreshed 241-card queue$|^chromium phone-offline-training\\.spec\\.ts prepared phone queue and study worker survive full offline reload and sync one review per attempt$|^chromium phone-offline-training\\.spec\\.ts phone projection refresh retains its saved queue and coalesces preparation notices across reloads$|^chromium phone-offline-training\\.spec\\.ts pending phone review remains saved while live training opens and a conflict remains recorded after reconciliation$|^chromium phone-offline-training\\.spec\\.ts offline guided failure stays guided after reopening the phone app$|^chromium phone-offline-training\\.spec\\.ts complete queue reconciliation keeps a removed phone attempt playable and retains its completed conflict$|^chromium phone-offline-training\\.spec\\.ts service worker update during an active phone attempt waits for a safe reopen$|^chromium phone-offline-training\\.spec\\.ts an older prepared response cannot replace a newer saved phone queue$|^chromium phone-offline-training\\.spec\\.ts older computer API blocks phone preparation with an update instruction$|^chromium phone-offline-training\\.spec\\.ts nine phone conflicts can be inspected and discarded individually without changing computer reviews$",
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "startup",
+    "service_health",
+    "browser",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:17:42.506Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.36,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 107.18,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 17.77,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.08,
+      "exit_code": 0
+    },
+    "browser": {
+      "duration_seconds": 271.93,
+      "exit_code": 0
+    },
+    "cleanup": {
+      "duration_seconds": 3.53,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.36,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 107.18,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 107.54,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 16.71,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 124.26,
+      "completed": true,
+      "poll_count": 1,
+      "duration_seconds": 1.05,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "browser",
+      "parent_id": null,
+      "label": "resource_inspection",
+      "category": "inspection",
+      "start_seconds": 125.4,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 271.93,
+      "exit_code": 0
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "services": {
+    "api": {
+      "environment": {
+        "TEMPO_UNCOMMITTED_CANDIDATE": "interrupted-rollout"
+      }
+    },
+    "foreground-worker": {
+      "environment": {
+        "TEMPO_UNCOMMITTED_CANDIDATE": "interrupted-rollout"
+      }
+    },
+    "background-worker": {
+      "environment": {
+        "TEMPO_UNCOMMITTED_CANDIDATE": "interrupted-rollout"
+      }
+    }
+  }
+}
