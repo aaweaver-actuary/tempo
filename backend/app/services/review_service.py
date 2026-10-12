@@ -99,98 +99,22 @@ def apply_scheduling_review(
     reviewed_at: datetime,
     review_day: date,
 ) -> dict:
-    if source_ref:
-        prior = database.execute(
-            "SELECT 1 FROM reviews WHERE source_kind=? AND source_ref=?",
-            (source_kind, source_ref),
-        ).fetchone()
-        if prior:
-            card = database.execute(
-                "SELECT due_date,interval_days,state,stability,scheduling_mode,hard_correct_streak FROM cards WHERE id=?",
-                (card_id,),
-            ).fetchone()
-            return {
-                "card_id": card_id, "next_due": card["due_date"], "interval_days": card["interval_days"],
-                "state": card["state"], "requeue_today": True, "requeue_after_cards": 4,
-                "stability": card["stability"], "scheduling_mode": card["scheduling_mode"],
-                "hard_correct_streak": card["hard_correct_streak"], "suggest_shorter_prefix": False,
-                "idempotent": True,
-            }
-    card = database.execute(
-        """SELECT interval_days,fsrs_card_json,first_correct_at,reinforcement_pending,
-                  scheduling_mode,hard_correct_streak,recent_attempts_json
-           FROM cards WHERE id=? AND archived=0""",
-        (card_id,),
-    ).fetchone()
-    if not card:
-        raise KeyError("Card not found")
-    schedule = schedule_review(
-        outcome,
-        interval_days=card["interval_days"],
-        fsrs_card_json=card["fsrs_card_json"],
-        first_correct_at=card["first_correct_at"],
-        reinforcement_pending=bool(card["reinforcement_pending"]),
-        scheduling_mode=card["scheduling_mode"],
-        hard_correct_streak=card["hard_correct_streak"],
-        recent_attempts=json.loads(card["recent_attempts_json"] or "[]"),
+    from .scheduling_review_application import apply_scheduling_review as apply_review_to_store
+    from .scheduling_review_store import OwnedConnectionSchedulingReviewStore
+
+    result = apply_review_to_store(
+        OwnedConnectionSchedulingReviewStore(database), card_id, outcome,
+        guided=guided, source_kind=source_kind, source_ref=source_ref,
         light_first_interval_days=light_first_interval_days,
-        reviewed_at=reviewed_at,
-        review_day=review_day,
+        reviewed_at=reviewed_at, review_day=review_day,
     )
-    database.execute(
-        """INSERT INTO reviews(card_id,rating,internal_rating,guided,reviewed_at,previous_interval,next_interval,source_kind,source_ref)
-           VALUES(?,?,?,?,?,?,?,?,?)""",
-        (
-            card_id, outcome, schedule.internal_rating, int(guided), reviewed_at.isoformat(),
-            card["interval_days"], schedule.interval_days, source_kind, source_ref,
-        ),
-    )
-    successful_days = database.execute(
-        "SELECT COUNT(DISTINCT date(reviewed_at)) FROM reviews WHERE card_id=? AND rating='correct' AND invalidated_at IS NULL",
-        (card_id,),
-    ).fetchone()[0]
-    seed = database.execute(
-        """SELECT baseline_successful_days,baseline_recent_clean
-           FROM opening_card_schedule_seeds WHERE card_id=?""",
-        (card_id,),
-    ).fetchone()
-    successful_days += int(seed["baseline_successful_days"] if seed else 0)
-    recent_outcomes = [row[0] for row in database.execute(
-        "SELECT rating FROM reviews WHERE card_id=? AND invalidated_at IS NULL ORDER BY reviewed_at DESC,id DESC LIMIT 2", (card_id,)
-    )]
-    if seed:
-        recent_outcomes.extend(
-            ["correct"]
-            * min(int(seed["baseline_recent_clean"]), max(0, 2 - len(recent_outcomes)))
-        )
-    state = "mature" if unlock_ready(schedule.stability, successful_days, recent_outcomes) else "learning"
-    database.execute(
-        """UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,reinforcement_pending=?,
-           stability=?,guided_review=?,state=?,scheduling_mode=?,hard_correct_streak=?,recent_attempts_json=? WHERE id=?""",
-        (
-            schedule.due_date.isoformat(), schedule.interval_days, schedule.fsrs_card_json,
-            schedule.first_correct_at, int(schedule.reinforcement_pending), schedule.stability,
-            int(guided), state, schedule.scheduling_mode, schedule.hard_correct_streak,
-            json.dumps(schedule.recent_attempts), card_id,
-        ),
-    )
+    if result["idempotent"]:
+        return result
     if source_kind == "study":
         from .real_game_feedback import clear_satisfied_miss_priority
         clear_satisfied_miss_priority(database, card_id)
-    unlock_legacy_children_after_review(database, card_id, review_day.isoformat(), state)
-    return {
-        "card_id": card_id,
-        "next_due": schedule.due_date.isoformat(),
-        "interval_days": schedule.interval_days,
-        "state": state,
-        "requeue_today": schedule.requeue_today,
-        "requeue_after_cards": schedule.requeue_after_cards,
-        "stability": schedule.stability,
-        "scheduling_mode": schedule.scheduling_mode,
-        "hard_correct_streak": schedule.hard_correct_streak,
-        "suggest_shorter_prefix": schedule.suggest_shorter_prefix,
-        "idempotent": False,
-    }
+    unlock_legacy_children_after_review(database, card_id, review_day.isoformat(), result["state"])
+    return result
 
 
 def ensure_card_queued_after(
