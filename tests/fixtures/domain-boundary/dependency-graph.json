@@ -1,0 +1,90 @@
+{
+  "__future__": [],
+  "app": [],
+  "app.opening_move_probability_contracts": [
+    "__future__",
+    "app.services.opening_segmentation",
+    "chess",
+    "datetime",
+    "json",
+    "math",
+    "pydantic",
+    "re",
+    "typing"
+  ],
+  "app.services": [],
+  "app.services.decision_readiness": [
+    "__future__",
+    "app.services.opening_segmentation",
+    "app.services.scheduler",
+    "chess",
+    "dataclasses",
+    "datetime",
+    "fsrs",
+    "json",
+    "math",
+    "typing"
+  ],
+  "app.services.opening_card_valuation": [
+    "__future__",
+    "app.services.decision_readiness",
+    "app.services.opening_policy_reach",
+    "app.services.opening_preparedness",
+    "app.services.opening_ranking_evaluation",
+    "app.services.opening_segmentation",
+    "dataclasses",
+    "datetime",
+    "json"
+  ],
+  "app.services.opening_policy_reach": [
+    "__future__",
+    "app.opening_move_probability_contracts",
+    "app.services.opening_preparedness",
+    "app.services.opening_segmentation",
+    "chess",
+    "collections",
+    "dataclasses",
+    "json",
+    "math",
+    "typing"
+  ],
+  "app.services.opening_preparedness": [
+    "__future__",
+    "dataclasses",
+    "math",
+    "typing"
+  ],
+  "app.services.opening_ranking_evaluation": [
+    "__future__",
+    "dataclasses",
+    "datetime",
+    "hashlib",
+    "json",
+    "math",
+    "typing"
+  ],
+  "app.services.opening_segmentation": [
+    "__future__",
+    "chess",
+    "hashlib",
+    "json",
+    "typing"
+  ],
+  "app.services.scheduler": [
+    "__future__",
+    "dataclasses",
+    "datetime",
+    "fsrs"
+  ],
+  "chess": [],
+  "collections": [],
+  "dataclasses": [],
+  "datetime": [],
+  "fsrs": [],
+  "hashlib": [],
+  "json": [],
+  "math": [],
+  "pydantic": [],
+  "re": [],
+  "typing": []
+}

@@ -1,0 +1,8 @@
+{
+  "captured_from": "2ef94eaf04e36b8f354af7d95ed901b05cec5baf before the dependency correction",
+  "sha256": {
+    "tests/fixtures/opening-move-probability/examples.json": "b4264cd06e9a5fd30a3dac3f966092ebc32ac6c7a1074ed5c5861901109f9bf9",
+    "docs/examples/opening-ranking-snapshot.json": "01b5a4d72e3eee161b33c06010518ed8e601b03597fbb4286e251ce8d9026737",
+    "tests/fixtures/domain-boundary/fixed-as-of.json": "6de50a8ca06620c6eb729af4cfd10ebbbba5e57c2181dada682a53c60fee8ab6"
+  }
+}

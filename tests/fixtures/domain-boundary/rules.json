@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "modules": [
+    "app.services.scheduler",
+    "app.services.decision_readiness",
+    "app.services.opening_card_valuation",
+    "app.services.opening_policy_reach",
+    "app.services.opening_preparedness",
+    "app.services.opening_ranking_evaluation",
+    "app.services.opening_segmentation",
+    "app.opening_move_probability_contracts"
+  ],
+  "stdlib": [
+    "__future__",
+    "collections",
+    "dataclasses",
+    "datetime",
+    "hashlib",
+    "json",
+    "math",
+    "re",
+    "typing"
+  ],
+  "third_party": {
+    "chess": {
+      "distribution": "python-chess",
+      "requirement": "==1.999",
+      "symbols": [
+        "BB_RANK_1",
+        "BB_RANK_8",
+        "BLACK",
+        "Board",
+        "KING",
+        "Move",
+        "WHITE"
+      ],
+      "review": "Base chess value/traversal API only; engine, pgn, variant and network/process integrations are not certified.",
+      "owner": "aaweaver-actuary",
+      "review_by": "2026-11-12",
+      "review_milestone": "B02 dependency review before broadening certified entrypoints",
+      "regression": "test_domain_import_smoke_requires_no_database_or_network_initialization",
+      "runtime_packages": [
+        "chess"
+      ]
+    },
+    "fsrs": {
+      "distribution": "fsrs",
+      "requirement": "==6.3.2",
+      "symbols": [
+        "Card",
+        "Rating",
+        "Scheduler"
+      ],
+      "review": "Card/Rating/Scheduler/State/ReviewLog and typing_extensions closure. Optimizer and wildcard imports prohibited. Fuzzing disabled; explicit review/retrievability times. New Card default identity clock and 1 ms sleep limited to scheduler exception.",
+      "owner": "aaweaver-actuary",
+      "review_by": "2026-11-12",
+      "review_milestone": "B02 dependency review before broadening certified entrypoints",
+      "regression": "test_domain_import_smoke_requires_no_database_or_network_initialization",
+      "runtime_packages": [
+        "fsrs",
+        "typing_extensions"
+      ]
+    },
+    "pydantic": {
+      "distribution": "pydantic",
+      "requirement": "transitive FastAPI requirement; record exact installed version in evidence",
+      "symbols": [
+        "AfterValidator",
+        "BaseModel",
+        "ConfigDict",
+        "Field",
+        "JsonValue",
+        "StrictInt",
+        "StrictStr",
+        "field_validator",
+        "model_validator"
+      ],
+      "review": "Value validation/serialization only. Native pydantic_core, annotated_types, typing_extensions and typing_inspection reviewed by runtime closure; no FastAPI/schema router imports. No network validators.",
+      "owner": "aaweaver-actuary",
+      "review_by": "2026-11-12",
+      "review_milestone": "B02 dependency review before broadening certified entrypoints",
+      "regression": "test_domain_import_smoke_requires_no_database_or_network_initialization",
+      "runtime_packages": [
+        "pydantic",
+        "pydantic_core",
+        "annotated_types",
+        "typing_extensions",
+        "typing_inspection"
+      ]
+    }
+  },
+  "exceptions": [
+    {
+      "module": "app.services.scheduler",
+      "symbol": "schedule_review",
+      "operation": "datetime.datetime.now",
+      "owner": "aaweaver-actuary",
+      "reason": "Legacy optional reviewed_at uses UTC wall clock; explicit-time calls avoid this fallback.",
+      "regression": "test_domain_scheduler_clock_compatibility_is_bounded",
+      "review_milestone": "B02 follow-up: review explicit scheduler clock and FSRS identity contracts before extending certification",
+      "review_by": "2026-11-12",
+      "expression_sha256": "8167b2ab4b99c45b92ca9c97f7c5c728d6333e3b063ca5b088005db62f0bdb33"
+    },
+    {
+      "module": "app.services.scheduler",
+      "symbol": "schedule_review",
+      "operation": "datetime.date.today",
+      "owner": "aaweaver-actuary",
+      "reason": "Legacy optional review_day uses local calendar day; preserve callers until clock API review.",
+      "regression": "test_domain_scheduler_clock_compatibility_is_bounded",
+      "review_milestone": "B02 follow-up: review explicit scheduler clock and FSRS identity contracts before extending certification",
+      "review_by": "2026-11-12",
+      "expression_sha256": "922a6fdbf86726df73478ab0220ccc49c9719f1e821a154a5f5c0a8896a90117"
+    },
+    {
+      "module": "app.services.scheduler",
+      "symbol": "schedule_review",
+      "operation": "fsrs.Card",
+      "owner": "aaweaver-actuary",
+      "reason": "New-card construction retains FSRS epoch identity and 1 ms collision wait; persisted fixed card IDs avoid both.",
+      "regression": "test_domain_scheduler_clock_compatibility_is_bounded",
+      "review_milestone": "B02 follow-up: review explicit scheduler clock and FSRS identity contracts before extending certification",
+      "review_by": "2026-11-12",
+      "expression_sha256": "19d84165636e5053252c7a244695e34fae49a6742fc9d104e44a881f2c5e7f46"
+    },
+    {
+      "module": "app.services.opening_ranking_evaluation",
+      "symbol": "OpeningRankingContext.__post_init__",
+      "operation": "getattr",
+      "owner": "aaweaver-actuary",
+      "reason": "Reads only self value fields from the fixed metadata field tuple; no module or capability lookup.",
+      "regression": "test_valuation_readiness_snapshot_contract_is_identical_at_fixed_as_of",
+      "review_milestone": "B02 follow-up: re-review bounded value reflection before extending certified snapshot fields",
+      "review_by": "2026-11-12",
+      "expression_sha256": "737529544cd5dcee00e617ec91c3442d42d0a4a5adef8029afacb44ad107a0ae"
+    },
+    {
+      "module": "app.services.opening_card_valuation",
+      "symbol": "OpeningCardValuationSnapshot.__post_init__",
+      "operation": "getattr",
+      "owner": "aaweaver-actuary",
+      "reason": "Reads self collections from the fixed routes/evidence/readiness/candidates tuple; no module or capability lookup.",
+      "regression": "test_valuation_readiness_snapshot_contract_is_identical_at_fixed_as_of",
+      "review_milestone": "B02 follow-up: re-review bounded value reflection before extending certified snapshot fields",
+      "review_by": "2026-11-12",
+      "expression_sha256": "737529544cd5dcee00e617ec91c3442d42d0a4a5adef8029afacb44ad107a0ae"
+    }
+  ]
+}

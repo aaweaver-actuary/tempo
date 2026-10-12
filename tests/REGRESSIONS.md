@@ -1,3 +1,15 @@
+## B02 pure domain certification — #200 / #192 (October 12, 2026)
+
+Regular suite owner: `backend/tests/test_domain_boundaries.py`.
+
+- `test_domain_import_rules_reject_transitive_database_and_entrypoint_dependencies` rejects direct, relative, lazy, conditional, re-exported and dynamic forbidden edges, with full dependency paths. The fresh-process valuation baseline failed on probability contracts → canonical prefix → SQLite before the import correction.
+- `test_domain_import_smoke_requires_no_database_or_network_initialization` imports all eight certified modules in independent credential-free processes and executes real valuation/readiness/scheduling/replay with service, network, process and domain filesystem guards. Deliberate-initialization cases prove the guards are active.
+- `test_valuation_readiness_snapshot_contract_is_identical_at_fixed_as_of` preserves pre-correction canonical contract bytes, source versions, evidence cutoff, fixed FSRS identity and cross-hash-seed replay. The immutable fixture manifest protects existing probability and snapshot examples.
+- `test_domain_boundary_exception_is_explicit_owned_and_bounded` requires exact owned exceptions, real named guards and review by November 12, 2026. Changed or duplicated exception expressions, expired/wildcard/unused exceptions and unreviewed third-party capabilities fail.
+- `test_domain_scheduler_clock_compatibility_is_bounded` preserves legacy clock/FSRS identity defaults and verifies fixed persisted IDs bypass FSRS's clock/collision wait. `test_domain_probability_position_identity_preserves_legacy_contract` checks castling, FEN clocks, legal/irrelevant en-passant and invalid inputs against the existing public helper.
+
+Existing valuation, readiness, preparedness, policy-reach, identity, unknown-mass, deterministic serialization, scheduling and Python/TypeScript probability contracts remain unchanged. Snapshot capture is outside certification; PR #177's corpus is untouched. See `docs/architecture/ci-isolation/domain-boundaries.md` for the executable allowlist, graph, bounded exceptions and proof limitations.
+
 ## P0 study restoration — related #186, #190 (October 11, 2026)
 
 - `backend/tests/test_postgres_route_contract.py`: `test_postgres_route_contract_matches_registered_endpoints` failed in repair CI for the missing foreground membership route. Its reader registration now keeps the endpoint inventory and PostgreSQL write-guard audit complete.
