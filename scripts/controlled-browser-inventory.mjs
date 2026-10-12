@@ -30,7 +30,7 @@ function proofSequence(file, title) {
   function visit(node) {
     if (ts.isCallExpression(node)) {
       const expression = node.expression.getText(source);
-      const normalized = printer.printNode(ts.EmitHint.Expression, node, source).replace(/\s+/g, " ");
+      const normalized = printer.printNode(ts.EmitHint.Expression, node, source);
       if (expression.startsWith("expect(") || expression.startsWith("expect.poll(") || expression === "noPageOverflow") assertions.push(normalized);
       if (/\.(click|fill|press|focus|reload|evaluate|boundingBox|setViewportSize|scrollIntoViewIfNeeded|down|up|move)$/.test(expression) || expression === "move") nativeActions.push(normalized);
     }

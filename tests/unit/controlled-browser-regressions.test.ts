@@ -10,10 +10,12 @@ import { verifyPilotSource, verifyPilotResults, pilotLedger } from "../../script
 import type { BrowserContext, Route } from "@playwright/test";
 import { ControlledApi } from "../controlled-browser/strict-api";
 import { matchesContract, validateReview, receiptResponse } from "../controlled-browser/contracts";
+import { tacticalCatalogSchema } from "../../app/lib/tactical-catalog";
 import { backgroundDiagnosticsSchema } from "../../app/domain/schemas/background-diagnostics";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { queueEnvelopeSchema, queueCardSchema, settingsResponseSchema, repertoiresResponseSchema,
-  repertoireLinesResponseSchema, motifRecommendationsSchema, tacticProgressSchema, syncStatusSchema } from "../../app/domain/schemas";
+  repertoireLinesResponseSchema, motifRecommendationsSchema, tacticProgressSchema, syncStatusSchema,
+  gamesSummarySchema, discoveriesFeedSchema, progressResponseSchema, teachingResponseSchema } from "../../app/domain/schemas";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -75,10 +77,7 @@ it("controlled_browser_review_receipt_uses_original_intent_and_authorized_contin
   expect(await response.json()).toEqual({ persisted: true, prepared_continuation: continuation });
 });
 it("controlled_browser_fixture_provider_consumer_shape_parity", () => {
-  const producer = JSON.parse(execFileSync(resolvePython(), ["tests/fixtures/controlled-browser/generate.py"], {
-    env: { ...controlledEnvironment(process.env), NODE_ENV: "test", PYTHONPATH: "backend" }, encoding: "utf8", timeout: 30_000,
-  }));
-  const receipts = JSON.parse(execFileSync(resolvePython(), ["tests/fixtures/controlled-browser/generate.py", "--receipts"], {
+  const { startup: producer, receipts } = JSON.parse(execFileSync(resolvePython(), ["tests/fixtures/controlled-browser/generate.py", "--all"], {
     env: { ...controlledEnvironment(process.env), NODE_ENV: "test", PYTHONPATH: "backend" }, encoding: "utf8", timeout: 30_000,
   }));
   expect(receipts).toEqual(JSON.parse(readFileSync("tests/fixtures/controlled-browser/receipts.json", "utf8")));
@@ -95,12 +94,30 @@ it("controlled_browser_fixture_provider_consumer_shape_parity", () => {
   repertoireLinesResponseSchema.parse(producer["/api/repertoire/lines"]);
   queueEnvelopeSchema.parse(producer["/api/queue/window"]);
   for (const card of producer["/api/queue/window"].cards) queueCardSchema.parse(card);
+  tacticalCatalogSchema.parse(producer["/api/tactics/catalog"]);
+  gamesSummarySchema.parse(producer["/api/games/summary"]);
+  discoveriesFeedSchema.parse(producer["/api/discoveries"]);
+  progressResponseSchema.parse(producer["/api/progress"]);
+  expect(teachingResponseSchema.parse(producer["/api/cards/visual-card/teaching"])).toEqual({ states: [] });
+  expect(producer["/api/system/browser-activity"]).toEqual({ active: true });
   syncStatusSchema.parse(producer["/api/games/sync/status"]);
   motifRecommendationsSchema.parse(producer["/api/game-insights/motifs"]);
   tacticProgressSchema.parse(producer["/api/tactics/progress"]);
 });
-it("controlled_browser_movement_preserves_exact_case_inventory", () => {
+it("controlled_browser_movement_preserves_exact_case_inventory", async () => {
   expect(verifyPilotSource()).toHaveLength(9);
+  const changedCase = pilotLedger.cases[1];
+  const originalPath = changedCase.newFile;
+  const directory = await mkdtemp(join(tmpdir(), "tempo-b01-proof-"));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  const changedPath = join(directory, "literal-drift.spec.ts");
+  const originalSource = readFileSync(originalPath, "utf8");
+  const changedSource = originalSource.replace("R7/8/8/8 w - -", "R7/8/8/8 w  - -");
+  expect(changedSource).not.toBe(originalSource);
+  await writeFile(changedPath, changedSource);
+  changedCase.newFile = changedPath;
+  try { expect(() => verifyPilotSource()).toThrow("Assertion/native interaction drift"); }
+  finally { changedCase.newFile = originalPath; }
   const report = { suites: [{ specs: pilotLedger.cases.map((entry: { newFile: string; newTitle: string; projects: string[] }) => ({ file: entry.newFile, title: entry.newTitle,
     tests: entry.projects.map(projectName => ({ projectName, expectedStatus: "passed", results: [{ status: "passed" }] })) })) }], errors: [] };
   expect(verifyPilotResults(report)).toHaveLength(9);

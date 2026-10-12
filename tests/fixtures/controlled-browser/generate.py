@@ -47,11 +47,16 @@ def produce_examples():
             connection.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('visual-line','visual-repertoire','Main line','white',?,?,'2026-09-18T12:00:00Z')", (starting_fen, moves))
             connection.execute("INSERT INTO daily_queue(id,queue_date,card_id,position) VALUES(1,'2026-09-18','visual-card',0)")
             connection.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=1")
-        catalog = main.tactics_catalog()
-        # Bounded catalog examples preserve the production serializer and pack references.
-        catalog["packs"] = catalog["packs"][:4]
-        theme_ids = {pack["theme"] for pack in catalog["packs"]}
-        catalog["themes"] = [theme for theme in catalog["themes"] if theme["id"] in theme_ids]
+        from app.services import tactical_catalog
+        source_catalog = tactical_catalog.catalog()
+        selected_packs = source_catalog["packs"][:4]
+        selected_themes = {pack["theme"] for pack in selected_packs}
+        catalog_input = {**source_catalog, "packs": selected_packs,
+                         "themes": [theme for theme in source_catalog["themes"] if theme["id"] in selected_themes]}
+        # Bound real catalog inputs before invoking the actual serializer, avoiding
+        # reads of hundreds of unrelated pack files just to truncate its output.
+        with patch.object(tactical_catalog, "catalog", return_value=catalog_input):
+            catalog = main.tactics_catalog()
         activity = main.system_activity(offset=0, limit=50)
         activity.pop("writer", None)  # Writer health is not a frontend-host claim.
         from app.services import background_diagnostics
@@ -105,5 +110,13 @@ def produce_receipts():
 
 if __name__ == "__main__":
     import sys
-    value = produce_receipts() if sys.argv[1:] == ["--receipts"] else produce_examples()
+    arguments = sys.argv[1:]
+    if arguments == ["--all"]:
+        value = {"startup": produce_examples(), "receipts": produce_receipts()}
+    elif arguments == ["--receipts"]:
+        value = produce_receipts()
+    elif not arguments:
+        value = produce_examples()
+    else:
+        raise SystemExit("Usage: generate.py [--all|--receipts]")
     print(json.dumps(jsonable_encoder(value), sort_keys=True, ensure_ascii=False, indent=2))

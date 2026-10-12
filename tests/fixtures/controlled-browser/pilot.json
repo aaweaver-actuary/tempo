@@ -186,7 +186,7 @@
         "real browser DOM, viewport, pointer, localStorage and reload as originally asserted"
       ],
       "retained": "original identity plus post-review-progression, phone-offline-training and PostgreSQL receipt/issuance durability",
-      "assertion_action_sha256": "cf48a2a87c6162d73fd8867aa5502d5514a639d63c76a5ef2efaeeb7b542365b",
+      "assertion_action_sha256": "2c838d8b98363b862503d6809758370c55c6dd4f6f2634564af92dc324eadbc9",
       "assertions_preserved": [
         "expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem(\"tempo-pending-training-reviews-v1\") ?? \"[]\").length)).toBe(0)",
         "expect(page.locator(\".phone-study-heading h2\")).toHaveText(\"Ruy Lopez\")",
@@ -195,7 +195,7 @@
       ],
       "native_actions_preserved": [
         "page.setViewportSize({ width: 390, height: 844 })",
-        "page.evaluate(() => localStorage.setItem(\"tempo-pending-training-reviews-v1\", JSON.stringify([{ backendId: \"reload-london\", queueEntryId: 811, attemptId: \"reload-original\", outcome: \"correct\", guided: false, completedAt: \"2026-09-18T15:00:00Z\", }])))",
+        "page.evaluate(() => localStorage.setItem(\"tempo-pending-training-reviews-v1\", JSON.stringify([{\n        backendId: \"reload-london\", queueEntryId: 811, attemptId: \"reload-original\", outcome: \"correct\", guided: false,\n        completedAt: \"2026-09-18T15:00:00Z\",\n    }])))",
         "page.reload()",
         "page.evaluate(() => JSON.parse(localStorage.getItem(\"tempo-pending-training-reviews-v1\") ?? \"[]\").length)"
       ],
