@@ -1,0 +1,4 @@
+{"source_sha": "3f7332399796366eb32f9fcb5e1b5c678a5b1562", "candidate_sha": "8200e096d6a2b3475dba34f55c7ff381785be0a0", "cases": 24, "comparison": "complete result, card columns including FSRS JSON, and history rows", "status": "passed"}
+real 0.84
+user 0.56
+sys 0.11

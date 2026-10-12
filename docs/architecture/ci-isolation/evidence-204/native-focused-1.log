@@ -1,0 +1,265 @@
+time="2026-10-12T13:10:31-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:31-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:31-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:31-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Image tempo-a1-204-6d07e75f08-foreground-worker Building 
+ Image tempo-a1-204-6d07e75f08-schema Building 
+ Image tempo-a1-204-6d07e75f08-api Building 
+ Image tempo-a1-204-6d07e75f08-background-worker Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 2.23kB done
+#1 DONE 0.0s
+
+#2 [background-worker internal] load build definition from Dockerfile
+#2 transferring dockerfile: 431B done
+#2 DONE 0.0s
+
+#3 [background-worker internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 0.2s
+
+#4 [schema internal] load .dockerignore
+#4 transferring context: 374B done
+#4 DONE 0.0s
+
+#5 [schema 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#5 resolve docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 0.0s done
+#5 DONE 0.0s
+
+#6 [background-worker internal] load build context
+#6 transferring context: 9.90MB 0.2s done
+#6 transferring context: 9.90MB 0.2s done
+#6 DONE 0.2s
+
+#7 [background-worker 5/7] COPY backend/app ./app
+#7 CACHED
+
+#8 [background-worker 6/7] COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json
+#8 CACHED
+
+#9 [background-worker 2/7] WORKDIR /app
+#9 CACHED
+
+#10 [background-worker 3/7] COPY backend/requirements.txt .
+#10 CACHED
+
+#11 [background-worker 4/7] RUN pip install --no-cache-dir -r requirements.txt
+#11 CACHED
+
+#12 [api 7/7] COPY public/data/tactics-packs ./public/data/tactics-packs
+#12 CACHED
+
+#13 [foreground-worker] exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:2c0bd83fd299e7cb7da55bbc52ea6b53a329a9afe2f5c7d5aed51ab28e2cf826 0.0s done
+#13 exporting config sha256:5e0d71315189a0f43f4a48acf3303c76c2cc7840b9bc6112c56f995e1a08ad94 0.0s done
+#13 exporting attestation manifest sha256:b37c307ece30f30a97abe16801b5cfb077e71f8776e9ec4893465f4d7c64e5b3 0.0s done
+#13 exporting manifest list sha256:f107ba68ce3c7fb37798d7237e992838cfab501502ccacda0ca3ebfb2b09b9c9 0.0s done
+#13 naming to docker.io/library/tempo-a1-204-6d07e75f08-foreground-worker:latest done
+#13 unpacking to docker.io/library/tempo-a1-204-6d07e75f08-foreground-worker:latest
+#13 ...
+
+#14 [api] exporting to image
+#14 exporting layers done
+#14 exporting manifest sha256:cd6834b9ac28ec49341f28c4f5118284a605e1642bea09b0b0ef0aa6f91e82e2 0.0s done
+#14 exporting config sha256:1c85b21d3713af45a87fd45282a6a24800d6ec2871d4bd1662ec5495063597d0 0.0s done
+#14 exporting attestation manifest sha256:c7782cf3253cb61b5f80557fe15aab4d21474e0d71ea1b481138539a5a0d830c 0.0s done
+#14 exporting manifest list sha256:ae249fdaa98515631635041bc2ae2b34ad527bd03a9e85dec1d1e124bd3f46db 0.0s done
+#14 naming to docker.io/library/tempo-a1-204-6d07e75f08-api:latest done
+#14 unpacking to docker.io/library/tempo-a1-204-6d07e75f08-api:latest 0.2s done
+#14 DONE 0.4s
+
+#15 [schema] exporting to image
+#15 exporting layers done
+#15 exporting manifest sha256:785c986056a0419cc8f31dae332df511ba6df03d699f17b4e471fe131954beb4 0.0s done
+#15 exporting config sha256:3b6f44c6e5306404af6bd22e6d72f60f0b030fb5fe5d0de60d22c75f165d170c 0.0s done
+#15 exporting attestation manifest sha256:0d47c834b61209b507826b110bbd4f76fe8642741e8841d0de38fa6aaa6180bf 0.0s done
+#15 exporting manifest list sha256:a3758854cdc32fb419d08f93875ae775ee7b92a86b342a0efc30c0c2138c7138 0.0s done
+#15 naming to docker.io/library/tempo-a1-204-6d07e75f08-schema:latest done
+#15 unpacking to docker.io/library/tempo-a1-204-6d07e75f08-schema:latest 0.2s done
+#15 DONE 0.5s
+
+#13 [foreground-worker] exporting to image
+#13 unpacking to docker.io/library/tempo-a1-204-6d07e75f08-foreground-worker:latest 0.2s done
+#13 DONE 0.5s
+
+#16 [background-worker] exporting to image
+#16 exporting layers done
+#16 exporting manifest sha256:6b97bcbd627eb9657c890dbe584991a611648133c471989d0edad59de7745cd5 0.0s done
+#16 exporting config sha256:ee92992f2611215d32c9ff01222928c305adb51b383cd2d2e21484dde01ac260 0.0s done
+#16 exporting attestation manifest sha256:17c2e1a3ca5fdb3acfaa8f564c40199d5025622bc292212d390d45500e9d9e9f 0.0s done
+#16 exporting manifest list sha256:94d2207adc7de12f482383fa308a3899ee184bea1e4df926d7fbf52b427e95ec 0.0s done
+#16 naming to docker.io/library/tempo-a1-204-6d07e75f08-background-worker:latest done
+#16 unpacking to docker.io/library/tempo-a1-204-6d07e75f08-background-worker:latest 0.2s done
+#16 DONE 0.5s
+
+#17 [foreground-worker] resolving provenance for metadata file
+#17 DONE 0.1s
+
+#18 [schema] resolving provenance for metadata file
+#18 DONE 0.0s
+
+#19 [api] resolving provenance for metadata file
+#19 DONE 0.1s
+
+#20 [background-worker] resolving provenance for metadata file
+#20 DONE 0.0s
+ Image tempo-a1-204-6d07e75f08-schema Built 
+ Image tempo-a1-204-6d07e75f08-api Built 
+ Image tempo-a1-204-6d07e75f08-foreground-worker Built 
+ Image tempo-a1-204-6d07e75f08-background-worker Built 
+time="2026-10-12T13:10:34-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:34-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:34-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:34-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Volume tempo-a1-204-6d07e75f08_redis-test-data Creating 
+ Volume tempo-a1-204-6d07e75f08_postgres-test-data Creating 
+ Volume tempo-a1-204-6d07e75f08_redis-test-data Creating 
+ Volume tempo-a1-204-6d07e75f08_postgres-test-data Creating 
+ Network tempo-a1-204-6d07e75f08_default Creating 
+ Network tempo-a1-204-6d07e75f08_default Creating 
+ Volume tempo-a1-204-6d07e75f08_redis-test-data Created 
+ Volume tempo-a1-204-6d07e75f08_redis-test-data Created 
+ Volume tempo-a1-204-6d07e75f08_postgres-test-data Created 
+ Volume tempo-a1-204-6d07e75f08_postgres-test-data Created 
+ Network tempo-a1-204-6d07e75f08_default Created 
+ Network tempo-a1-204-6d07e75f08_default Created 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Creating 
+ Container tempo-a1-204-6d07e75f08-redis-1 Creating 
+ Container tempo-a1-204-6d07e75f08-redis-1 Created 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Created 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Starting 
+ Container tempo-a1-204-6d07e75f08-redis-1 Starting 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Started 
+ Container tempo-a1-204-6d07e75f08-redis-1 Started 
+ Container tempo-a1-204-6d07e75f08-redis-1 Waiting 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Waiting 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Healthy 
+ Container tempo-a1-204-6d07e75f08-redis-1 Healthy 
+time="2026-10-12T13:10:37-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:37-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:37-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:37-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-a1-204-6d07e75f08-schema-run-2b1833c43957 Creating 
+ Container tempo-a1-204-6d07e75f08-schema-run-2b1833c43957 Created 
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+time="2026-10-12T13:10:38-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:38-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:38-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:38-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Creating 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Creating 
+ Container tempo-a1-204-6d07e75f08-api-1 Creating 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Created 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Created 
+ Container tempo-a1-204-6d07e75f08-api-1 Created 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Starting 
+ Container tempo-a1-204-6d07e75f08-api-1 Starting 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Starting 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Started 
+ Container tempo-a1-204-6d07e75f08-api-1 Started 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Started 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Waiting 
+ Container tempo-a1-204-6d07e75f08-api-1 Waiting 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Waiting 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Healthy 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Healthy 
+ Container tempo-a1-204-6d07e75f08-api-1 Healthy 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Stopping 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Stopped 
+time="2026-10-12T13:10:48-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:48-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:48-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:10:48-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-a1-204-6d07e75f08-schema-run-3b54b2845b77 Creating 
+ Container tempo-a1-204-6d07e75f08-schema-run-3b54b2845b77 Created 
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/source/scripts/check_postgres_queue_attempt_recovery.py", line 799, in test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure
+    assert read_operation(operation) is None
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Stopping 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Stopping 
+ Container tempo-a1-204-6d07e75f08-api-1 Stopping 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Stopped 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Removing 
+ Container tempo-a1-204-6d07e75f08-background-worker-1 Removed 
+ Container tempo-a1-204-6d07e75f08-api-1 Stopped 
+ Container tempo-a1-204-6d07e75f08-api-1 Removing 
+ Container tempo-a1-204-6d07e75f08-api-1 Removed 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Stopped 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Removing 
+ Container tempo-a1-204-6d07e75f08-foreground-worker-1 Removed 
+ Container tempo-a1-204-6d07e75f08-redis-1 Stopping 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Stopping 
+ Container tempo-a1-204-6d07e75f08-redis-1 Stopped 
+ Container tempo-a1-204-6d07e75f08-redis-1 Removing 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Stopped 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Removing 
+ Container tempo-a1-204-6d07e75f08-redis-1 Removed 
+ Container tempo-a1-204-6d07e75f08-postgres-1 Removed 
+ Network tempo-a1-204-6d07e75f08_default Removing 
+ Volume tempo-a1-204-6d07e75f08_postgres-test-data Removing 
+ Volume tempo-a1-204-6d07e75f08_redis-test-data Removing 
+ Volume tempo-a1-204-6d07e75f08_postgres-test-data Removed 
+ Volume tempo-a1-204-6d07e75f08_redis-test-data Removed 
+ Network tempo-a1-204-6d07e75f08_default Removed 
+ Image tempo-a1-204-6d07e75f08-schema:latest Removing 
+ Image tempo-a1-204-6d07e75f08-api:latest Removing 
+ Image tempo-a1-204-6d07e75f08-background-worker:latest Removing 
+ Image tempo-a1-204-6d07e75f08-foreground-worker:latest Removing 
+ Image tempo-a1-204-6d07e75f08-background-worker:latest Removed 
+ Image tempo-a1-204-6d07e75f08-schema:latest Removed 
+ Image tempo-a1-204-6d07e75f08-foreground-worker:latest Removed 
+ Image tempo-a1-204-6d07e75f08-api:latest Removed 
+real 25.86
+user 1.57
+sys 1.13

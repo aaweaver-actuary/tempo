@@ -1,0 +1,233 @@
+{
+  "project": "tempo-a1-204-b093309900",
+  "source_revision": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+  "started_at": 1791825439.55282,
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-a1-204-b093309900",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "build",
+        "schema",
+        "api",
+        "foreground-worker",
+        "background-worker"
+      ],
+      "seconds": 2.595,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-a1-204-b093309900",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "up",
+        "-d",
+        "--wait",
+        "postgres",
+        "redis"
+      ],
+      "seconds": 3.217,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-a1-204-b093309900",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "schema"
+      ],
+      "seconds": 1.009,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-a1-204-b093309900",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "up",
+        "-d",
+        "--no-deps",
+        "--wait",
+        "api",
+        "foreground-worker",
+        "background-worker"
+      ],
+      "seconds": 6.574,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-a1-204-b093309900",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "stop",
+        "background-worker"
+      ],
+      "seconds": 2.541,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-a1-204-b093309900",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-e",
+        "TEMPO_REDIS_URL=redis://redis:6379/0",
+        "schema",
+        "python",
+        "-c",
+        "import sys; sys.path.insert(0,'/source/scripts'); import check_postgres_daily_study_dispatch as p; p.configure(); from check_postgres_refresh_inputs import proof_refresh_state_recovery; proof_refresh_state_recovery(p.DSN)"
+      ],
+      "seconds": 3.513,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-a1-204-b093309900",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "down",
+        "--rmi",
+        "local",
+        "-v"
+      ],
+      "seconds": 3.69,
+      "exit_code": 0
+    }
+  ],
+  "teardown": [
+    "docker",
+    "compose",
+    "-p",
+    "tempo-a1-204-b093309900",
+    "-f",
+    "docker-compose.postgres.test.yml",
+    "down",
+    "--rmi",
+    "local",
+    "-v"
+  ],
+  "status": "passed",
+  "resources": [
+    {
+      "id": "0ca2bd80fb64cc25a7a2227558918758f4e3340e77408080ff49507c6230d5f0",
+      "image": "sha256:88d858a006de9c6b3ce18c50562076f6821669833dd0d26b2b1019e6bce7d0e2",
+      "created": "2026-10-12T17:17:26.603543302Z",
+      "name": "/tempo-a1-204-b093309900-background-worker-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-204-main-baseline/.tempo-a1-204-secrets-kor9a08m/writer_pgpass",
+          "destination": "/run/secrets/writer_pgpass"
+        }
+      ]
+    },
+    {
+      "id": "667cae7a250df085d0351fc59f972ca971dd545a50591930e6aecf72ce77ceb5",
+      "image": "sha256:54f97559ae8a874aa148029c71d6d9f1683859e9f036c8d9dab24fabe1e72e22",
+      "created": "2026-10-12T17:17:26.60294751Z",
+      "name": "/tempo-a1-204-b093309900-api-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-204-main-baseline/.tempo-a1-204-secrets-kor9a08m/reader_pgpass",
+          "destination": "/run/secrets/reader_pgpass"
+        }
+      ]
+    },
+    {
+      "id": "0c0cec48f72cc56d848929b7348172f496f36542c975278cc0aa0c8956cb6b7a",
+      "image": "sha256:69eb3a78d2a7823fe230aefb355d352039ff319a5379a339abe4544ae9f8281f",
+      "created": "2026-10-12T17:17:26.602899718Z",
+      "name": "/tempo-a1-204-b093309900-foreground-worker-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-204-main-baseline/.tempo-a1-204-secrets-kor9a08m/writer_pgpass",
+          "destination": "/run/secrets/writer_pgpass"
+        }
+      ]
+    },
+    {
+      "id": "c60fda5c6e44462c2a6f38469c38c33290d1bcdab6560989f13ef90eefed59d1",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+      "created": "2026-10-12T17:17:22.398675883Z",
+      "name": "/tempo-a1-204-b093309900-postgres-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-204-main-baseline/.tempo-a1-204-secrets-kor9a08m/admin_password",
+          "destination": "/run/secrets/admin_password"
+        },
+        {
+          "type": "volume",
+          "name": "tempo-a1-204-b093309900_postgres-test-data",
+          "source": "/var/lib/docker/volumes/tempo-a1-204-b093309900_postgres-test-data/_data",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    {
+      "id": "266cad4cf23ef06e085702191d806b69ddc14feebacd997ec9ab153918c08d68",
+      "image": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "created": "2026-10-12T17:17:22.3962058Z",
+      "name": "/tempo-a1-204-b093309900-redis-1",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "tempo-a1-204-b093309900_redis-test-data",
+          "source": "/var/lib/docker/volumes/tempo-a1-204-b093309900_redis-test-data/_data",
+          "destination": "/data"
+        }
+      ]
+    }
+  ],
+  "remaining": {
+    "containers": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "volumes": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "networks": {
+      "exit_code": 0,
+      "identifiers": []
+    }
+  },
+  "finished_at": 1791825463.152831
+}

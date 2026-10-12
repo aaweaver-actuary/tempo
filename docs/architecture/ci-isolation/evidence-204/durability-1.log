@@ -1,0 +1,1719 @@
+node scripts/check-test-capabilities.mjs --docker --loopback
+Test capability preflight passed: Docker daemon and 127.0.0.1 loopback bind available.
+node scripts/test-postgres-docker.mjs --mode durability
+PostgreSQL durability timings: test-results/performance/postgres-scenarios-durability-tempo-pg-regressions-54986-da1082fb.json
+PASS PostgreSQL API has reader credentials and no SQLite mount
+PASS recurring PostgreSQL backup loop has valid shell syntax
+PASS default Compose selects PostgreSQL and keeps SQLite isolated
+PostgreSQL scenario compose_config: 0.37s (exit 0)
+time="2026-10-12T13:07:42-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:07:42-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:07:42-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:07:42-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Image tempo-pg-regressions-54986-da1082fb-defense-engine Building 
+ Image tempo-pg-regressions-54986-da1082fb-maia-worker Building 
+ Image tempo-pg-regressions-54986-da1082fb-background-scheduler Building 
+ Image tempo-pg-regressions-54986-da1082fb-background-worker Building 
+ Image tempo-pg-regressions-54986-da1082fb-foreground-worker Building 
+ Image tempo-pg-regressions-54986-da1082fb-web Building 
+ Image tempo-pg-regressions-54986-da1082fb-schema Building 
+ Image tempo-pg-regressions-54986-da1082fb-api Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 5.29kB done
+#1 DONE 0.0s
+
+#2 [web internal] load build definition from Dockerfile.web
+#2 transferring dockerfile: 720B done
+#2 DONE 0.0s
+
+#3 [defense-engine internal] load build definition from Dockerfile.engine
+#3 transferring dockerfile: 798B done
+#3 DONE 0.0s
+
+#4 [maia-worker internal] load build definition from Dockerfile.maia
+#4 transferring dockerfile: 459B done
+#4 DONE 0.1s
+
+#5 [api internal] load build definition from Dockerfile
+#5 transferring dockerfile: 431B done
+#5 DONE 0.1s
+
+#6 [background-worker internal] load metadata for docker.io/library/python:3.12-slim
+#6 DONE 0.1s
+
+#7 [web internal] load .dockerignore
+#7 transferring context: 374B done
+#7 DONE 0.0s
+
+#8 [maia-worker internal] load metadata for docker.io/library/node:22-slim
+#8 DONE 0.2s
+
+#9 [foreground-worker 1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#9 resolve docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 0.0s done
+#9 DONE 0.0s
+
+#10 [web internal] load metadata for docker.io/library/nginx:1.28-alpine
+#10 DONE 0.2s
+
+#11 [web internal] load metadata for docker.io/library/rust:1.91-slim
+#11 DONE 0.2s
+
+#12 [background-scheduler internal] load build context
+#12 ...
+
+#13 [maia-worker  1/11] FROM docker.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+#13 resolve docker.io/library/node:22-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 0.1s done
+#13 DONE 0.1s
+
+#12 [background-scheduler internal] load build context
+#12 ...
+
+#14 [defense-engine internal] load build context
+#14 transferring context: 1.74MB 0.1s done
+#14 DONE 0.2s
+
+#12 [background-scheduler internal] load build context
+#12 transferring context: 9.90MB 0.4s done
+#12 DONE 0.5s
+
+#15 [defense-engine 10/11] COPY scripts/engine-job-recovery.mjs ./scripts/engine-job-recovery.mjs
+#15 CACHED
+
+#16 [defense-engine  2/11] WORKDIR /app
+#16 CACHED
+
+#17 [defense-engine  4/11] COPY scripts/defense-engine-worker.mjs ./scripts/defense-engine-worker.mjs
+#17 CACHED
+
+#18 [defense-engine  7/11] COPY scripts/engine-attempt-diagnostics.mjs ./scripts/engine-attempt-diagnostics.mjs
+#18 CACHED
+
+#19 [defense-engine  5/11] COPY scripts/engine-search.mjs ./scripts/engine-search.mjs
+#19 CACHED
+
+#20 [defense-engine  3/11] COPY package.json ./package.json
+#20 CACHED
+
+#21 [defense-engine  9/11] COPY scripts/durable-engine-request.mjs ./scripts/durable-engine-request.mjs
+#21 CACHED
+
+#22 [defense-engine  6/11] COPY scripts/engine-worker-cycle.mjs ./scripts/engine-worker-cycle.mjs
+#22 CACHED
+
+#23 [defense-engine  8/11] COPY scripts/maia-coverage-client.mjs ./scripts/maia-coverage-client.mjs
+#23 CACHED
+
+#24 [defense-engine 11/11] COPY public/engines/sf_19_smallnet.js public/engines/sf_19_smallnet.wasm public/engines/nn-61e7af4bb97d.nnue ./public/engines/
+#24 CACHED
+
+#25 [defense-engine] exporting to image
+#25 exporting layers
+#25 ...
+
+#26 [web stage-2 1/4] FROM docker.io/library/nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+#26 resolve docker.io/library/nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236 0.5s done
+#26 DONE 0.5s
+
+#27 [web core 1/7] FROM docker.io/library/rust:1.91-slim@sha256:f75071363e7f4771769d4cf81b1b7b290e607f4d4459e8731f6abdcee9982dc8
+#27 resolve docker.io/library/rust:1.91-slim@sha256:f75071363e7f4771769d4cf81b1b7b290e607f4d4459e8731f6abdcee9982dc8 0.5s done
+#27 DONE 0.5s
+
+#25 [defense-engine] exporting to image
+#25 exporting layers 0.0s done
+#25 exporting manifest sha256:ed45c5af478e047827f29316bcb868303ef7308a31be46f6a864ae502cbb770d
+#25 ...
+
+#28 [schema 2/7] WORKDIR /app
+#28 CACHED
+
+#29 [schema 3/7] COPY backend/requirements.txt .
+#29 CACHED
+
+#30 [schema 4/7] RUN pip install --no-cache-dir -r requirements.txt
+#30 CACHED
+
+#25 [defense-engine] exporting to image
+#25 exporting manifest sha256:ed45c5af478e047827f29316bcb868303ef7308a31be46f6a864ae502cbb770d 0.2s done
+#25 exporting config sha256:2cff1e77ae745e6903bf0e2ba1e6b5688bb48716efaec36b6810fd4f0f090973
+#25 exporting config sha256:2cff1e77ae745e6903bf0e2ba1e6b5688bb48716efaec36b6810fd4f0f090973 0.1s done
+#25 exporting attestation manifest sha256:82a5e2d06485109d54a8b4b954be0b8ffbc5cb6362c692a4ea749c65c74bf6a0 0.0s done
+#25 exporting manifest list sha256:25b62e42012df03ba91b27e4d18b446e8106643c30f56ac237feafb40f19a6d8
+#25 ...
+
+#31 [foreground-worker 5/7] COPY backend/app ./app
+#31 DONE 0.4s
+
+#25 [defense-engine] exporting to image
+#25 exporting manifest list sha256:25b62e42012df03ba91b27e4d18b446e8106643c30f56ac237feafb40f19a6d8 0.1s done
+#25 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-defense-engine:latest 0.0s done
+#25 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-defense-engine:latest
+#25 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-defense-engine:latest 0.0s done
+#25 DONE 0.7s
+
+#32 [api 6/7] COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json
+#32 DONE 0.1s
+
+#33 [foreground-worker 7/7] COPY public/data/tactics-packs ./public/data/tactics-packs
+#33 DONE 0.5s
+
+#34 [api] exporting to image
+#34 ...
+
+#35 [maia-worker internal] load build context
+#35 transferring context: 46.21MB 1.7s done
+#35 DONE 1.9s
+
+#36 [maia-worker 4/8] RUN npm ci --omit=dev
+#36 CACHED
+
+#16 [maia-worker  2/11] WORKDIR /app
+#16 CACHED
+
+#37 [maia-worker 5/8] COPY scripts/maia-coverage-worker.mjs ./scripts/maia-coverage-worker.mjs
+#37 CACHED
+
+#38 [maia-worker 7/8] COPY app/lib/all_moves_maia3.json app/lib/all_moves_maia3_reversed.json ./app/lib/
+#38 CACHED
+
+#39 [maia-worker 6/8] COPY scripts/maia-coverage-client.mjs ./scripts/maia-coverage-client.mjs
+#39 CACHED
+
+#40 [maia-worker 3/8] COPY package.json package-lock.json ./
+#40 CACHED
+
+#41 [maia-worker 8/8] COPY public/maia3/parts ./public/maia3/parts
+#41 CACHED
+
+#42 [defense-engine] resolving provenance for metadata file
+#42 DONE 0.1s
+
+#43 [maia-worker] exporting to image
+#43 exporting layers 0.0s done
+#43 exporting manifest sha256:23b926fb1d5a408eab471a758fda4c8a6e10cdf583b269fc9a72b4207c377c86
+#43 exporting manifest sha256:23b926fb1d5a408eab471a758fda4c8a6e10cdf583b269fc9a72b4207c377c86 0.1s done
+#43 exporting config sha256:90dd4f045ebd3a95b4d71c359b6c91680138da40149cbe19314a707f8d6c0068 0.0s done
+#43 exporting attestation manifest sha256:3d981d16302baf938d4757bc0394179b4b3d6988819c83af6959d293305136e4 0.0s done
+#43 exporting manifest list sha256:515fc18a437a95ccf2ace4a900694a69ca40a2ebc559e45ef84c2046ac6bedf4 0.0s done
+#43 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-maia-worker:latest
+#43 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-maia-worker:latest 0.0s done
+#43 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-maia-worker:latest 0.1s done
+#43 DONE 0.7s
+
+#44 [web internal] load build context
+#44 ...
+
+#45 [maia-worker] resolving provenance for metadata file
+#45 DONE 0.2s
+
+#44 [web internal] load build context
+#44 ...
+
+#46 [background-scheduler] exporting to image
+#46 exporting layers 1.9s done
+#46 exporting manifest sha256:bf768b4e788de10067625507681fa150683de143031820c1211f9b21cf4fe930 0.2s done
+#46 exporting config sha256:681b69d015288ef71e4632fc910b1c44264bf4837e4c50a370a4e3ef4b560b14 0.2s done
+#46 exporting attestation manifest sha256:95dd252a4f61cf294a3b424f6c73ecbcadf1bc6f3dedabfc29777ba0cbef6b3d 0.1s done
+#46 exporting manifest list sha256:f9df1c6ba4ec3dfefe2fdb8ef34a0e0d0b68d443e9505117894d0c62c221df26 0.1s done
+#46 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-background-scheduler:latest done
+#46 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-background-scheduler:latest 0.5s done
+#46 DONE 3.1s
+
+#47 [schema] exporting to image
+#47 exporting layers 1.9s done
+#47 exporting manifest sha256:9106ae35e50489323e6a726c874588e2c8fb5e52775f059c2e3730eaea9baa40 0.2s done
+#47 exporting config sha256:b99e7beaf4007043a918d4ed2717c05d371003d50548b4c37b662c356c199e13 0.2s done
+#47 exporting attestation manifest sha256:5e3a876db5cc7bae762be058604ee12f452dbf307df0da7b24d2ffdec9d150d5 0.1s done
+#47 exporting manifest list sha256:d8b5e1e58ea7d1f737c14469587cebb351af04a444f51243c47c9b9cb006f55b 0.1s done
+#47 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-schema:latest 0.0s done
+#47 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-schema:latest 0.5s done
+#47 DONE 3.2s
+
+#34 [api] exporting to image
+#34 exporting layers 1.9s done
+#34 exporting manifest sha256:ccf8ad86c7c9e66ca8665b39419bcee96afe0cc6624bd4d6057ab8ea114f2e93 0.2s done
+#34 exporting config sha256:a6cbc59db1c8a08a0d4ccf5ee74286df7277aab20b29c33aa1c1c9cf480f7701 0.2s done
+#34 exporting attestation manifest sha256:aefc1cd62cb5fd371e821702a728ffb06dae8ff4e8d6a48160b6bd93ce6dc14b 0.1s done
+#34 exporting manifest list sha256:ebd5641c1001c4f3f3d8c1226796988c2900d97e90769d73eeca86d29d07a6d8 0.1s done
+#34 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-api:latest 0.0s done
+#34 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-api:latest 0.5s done
+#34 DONE 3.1s
+
+#44 [web internal] load build context
+#44 ...
+
+#48 [foreground-worker] exporting to image
+#48 exporting layers 1.9s done
+#48 exporting manifest sha256:b468a247cc667fffe1e28897ea54c67389e2367f30f90e97b8d0d4cd0bf622b8 0.2s done
+#48 exporting config sha256:4ab2c26ca6d7a0fc918d910e5d977eef0ab102a0316084f7181a4e3cf2df0acf 0.2s done
+#48 exporting attestation manifest sha256:0762bdba07f02ffac5e881f495d974bcddf984c13133f633ef378f83a6d31bfe 0.1s done
+#48 exporting manifest list sha256:6f0c08d62c1f74da7ad1e9088f08c149176340a91692c09e5e6da506ca4025d7 0.1s done
+#48 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-foreground-worker:latest 0.0s done
+#48 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-foreground-worker:latest 0.6s done
+#48 DONE 3.3s
+
+#49 [background-worker] exporting to image
+#49 exporting layers 1.9s done
+#49 exporting manifest sha256:244aec132811d064f0d9648d7fe85ea73dabeacd22366ec9ff0db3f78e53d306 0.2s done
+#49 exporting config sha256:ae37af0aa47a1529200d28b21322b0606a3a0c2b6a665a53dfa35e465ea82ca5 0.2s done
+#49 exporting attestation manifest sha256:9bdccabfa263bf47008ff55d4971e1f065cdbf82a4137288247bb6a391ca6f8a 0.1s done
+#49 exporting manifest list sha256:140615bde75649614eb129116fb3ab6ef4de20ade8204259d1e0b2aab020a6db 0.1s done
+#49 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-background-worker:latest 0.0s done
+#49 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-background-worker:latest 0.6s done
+#49 DONE 3.4s
+
+#44 [web internal] load build context
+#44 ...
+
+#50 [background-scheduler] resolving provenance for metadata file
+#50 DONE 1.1s
+
+#44 [web internal] load build context
+#44 transferring context: 178.07MB 5.9s done
+#44 DONE 6.4s
+
+#51 [background-worker] resolving provenance for metadata file
+#51 DONE 0.3s
+
+#52 [api] resolving provenance for metadata file
+#52 DONE 1.0s
+
+#53 [schema] resolving provenance for metadata file
+#53 DONE 0.1s
+
+#54 [foreground-worker] resolving provenance for metadata file
+#54 DONE 0.4s
+
+#55 [web web 3/7] COPY package.json package-lock.json ./
+#55 CACHED
+
+#16 [web  2/11] WORKDIR /app
+#16 CACHED
+
+#56 [web web 4/7] RUN npm ci
+#56 CACHED
+
+#57 [web core 3/7] WORKDIR /app
+#57 CACHED
+
+#58 [web core 6/7] COPY tests/fixtures ./tests/fixtures
+#58 CACHED
+
+#59 [web core 4/7] COPY Cargo.toml Cargo.lock ./
+#59 CACHED
+
+#60 [web core 2/7] RUN rustup target add wasm32-unknown-unknown && cargo install wasm-pack --version 0.13.1 --locked
+#60 CACHED
+
+#61 [web core 5/7] COPY tempo-core ./tempo-core
+#61 CACHED
+
+#62 [web core 7/7] RUN wasm-pack build tempo-core --target web --out-dir ../public/tempo-core --release
+#62 CACHED
+
+#63 [web web 5/7] COPY . .
+#63 DONE 1.5s
+
+#64 [web web 6/7] COPY --from=core /app/public/tempo-core ./public/tempo-core
+#64 DONE 0.1s
+
+#65 [web web 7/7] RUN npm run build:local
+#65 0.248 
+#65 0.248 > sites-project@0.1.0 build:local
+#65 0.248 > TEMPO_TARGET=local vite build --config vite.static.config.ts
+#65 0.248 
+#65 0.649 vite v8.0.13 building client environment for production...
+#65 0.665 [2Ktransforming...
+#65 1.772 ../pieces/merida/wP.svg referenced in ../pieces/merida/wP.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.772 
+#65 1.772 ../pieces/merida/wN.svg referenced in ../pieces/merida/wN.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.772 
+#65 1.772 ../pieces/merida/wB.svg referenced in ../pieces/merida/wB.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.772 
+#65 1.772 ../pieces/merida/wR.svg referenced in ../pieces/merida/wR.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.773 
+#65 1.773 ../pieces/merida/wQ.svg referenced in ../pieces/merida/wQ.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.773 
+#65 1.773 ../pieces/merida/wK.svg referenced in ../pieces/merida/wK.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.773 
+#65 1.773 ../pieces/merida/bP.svg referenced in ../pieces/merida/bP.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.773 
+#65 1.773 ../pieces/merida/bN.svg referenced in ../pieces/merida/bN.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.774 
+#65 1.774 ../pieces/merida/bB.svg referenced in ../pieces/merida/bB.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.774 
+#65 1.774 ../pieces/merida/bR.svg referenced in ../pieces/merida/bR.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.774 
+#65 1.774 ../pieces/merida/bQ.svg referenced in ../pieces/merida/bQ.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 1.774 
+#65 1.774 ../pieces/merida/bK.svg referenced in ../pieces/merida/bK.svg didn't resolve at build time, it will remain unchanged to be resolved at runtime
+#65 2.215 ✓ 353 modules transformed.
+#65 2.833 rendering chunks...
+#65 3.101 computing gzip size...
+#65 3.271 local-dist/index.html                                        1.47 kB │ gzip:     0.78 kB
+#65 3.271 local-dist/assets/study.worker-BbsMd_in.js                 191.73 kB
+#65 3.271 local-dist/assets/maia.worker-D9vdAUFY.js                  342.67 kB
+#65 3.271 local-dist/assets/ort-wasm-simd-threaded-CpHjICJN.wasm  11,815.49 kB │ gzip: 3,111.16 kB
+#65 3.271 local-dist/assets/index-RcDCOiFS.css                       133.93 kB │ gzip:    27.59 kB
+#65 3.271 local-dist/assets/index-DOEs9wf4.js                      1,056.24 kB │ gzip:   310.34 kB │ map: 3,929.49 kB
+#65 3.271 
+#65 3.272 [plugin builtin:vite-reporter] 
+#65 3.272 (!) Some chunks are larger than 500 kB after minification. Consider:
+#65 3.272 - Using dynamic import() to code-split the application
+#65 3.272 - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+#65 3.272 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#65 3.272 ✓ built in 2.62s
+#65 DONE 3.5s
+
+#66 [web stage-2 2/4] COPY nginx.conf /etc/nginx/conf.d/default.conf
+#66 CACHED
+
+#67 [web stage-2 3/4] COPY --from=web /app/local-dist /usr/share/nginx/html
+#67 CACHED
+
+#68 [web stage-2 4/4] RUN chmod -R a+rX /usr/share/nginx/html
+#68 CACHED
+
+#69 [web] exporting to image
+#69 exporting layers done
+#69 exporting manifest sha256:868dd9447e6b25238f5290000de99c0ec73b95cb1a1b8f6ebc7419f90f9bcc2e 0.0s done
+#69 exporting config sha256:f175abac6569749384f10889dd58f442801ec539dc253cfc1cf622320d4d6d6a 0.0s done
+#69 exporting attestation manifest sha256:4e4af5b3e5631b2adc30c9eb164224525e696cd138e78449ebdd181f2b13b370 done
+#69 exporting manifest list sha256:da013f1ab46c68efcf3aebf75de5feff9fa7c568fc89673df4e40c42806e7971 done
+#69 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-web:latest done
+#69 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-web:latest done
+#69 DONE 0.1s
+
+#70 [web] resolving provenance for metadata file
+#70 DONE 1.1s
+ Image tempo-pg-regressions-54986-da1082fb-web Built 
+ Image tempo-pg-regressions-54986-da1082fb-api Built 
+ Image tempo-pg-regressions-54986-da1082fb-background-scheduler Built 
+ Image tempo-pg-regressions-54986-da1082fb-defense-engine Built 
+ Image tempo-pg-regressions-54986-da1082fb-maia-worker Built 
+ Image tempo-pg-regressions-54986-da1082fb-foreground-worker Built 
+ Image tempo-pg-regressions-54986-da1082fb-background-worker Built 
+ Image tempo-pg-regressions-54986-da1082fb-schema Built 
+PostgreSQL scenario image_build: 16.02s (exit 0)
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.postgres-maintenance
+#1 transferring dockerfile: 440B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 0.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 374B done
+#3 DONE 0.0s
+
+#4 [1/8] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#4 resolve docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 2.27MB 0.1s done
+#5 DONE 0.1s
+
+#6 [5/8] COPY backend/migrations ./backend/migrations
+#6 CACHED
+
+#7 [6/8] COPY backend/app/__init__.py backend/app/schema_version.py ./backend/app/
+#7 CACHED
+
+#8 [2/8] WORKDIR /work
+#8 CACHED
+
+#9 [3/8] COPY backend/requirements.txt ./requirements.txt
+#9 CACHED
+
+#10 [4/8] RUN pip install --no-cache-dir -r requirements.txt
+#10 CACHED
+
+#11 [7/8] COPY backend/app/services/tactic_capture_migration.py ./backend/app/services/
+#11 CACHED
+
+#12 [8/8] COPY scripts ./scripts
+#12 DONE 0.1s
+
+#13 exporting to image
+#13 exporting layers
+#13 exporting layers 0.2s done
+#13 exporting manifest sha256:826aae282b094be01ea723beb3184c55e0ce6a9160059872b91efd6e4bc6283d 0.0s done
+#13 exporting config sha256:be18b4089860131bc14a9274c6360ce588e872ef2ff29805135598f291517a9d 0.0s done
+#13 exporting attestation manifest sha256:5141c63d41ed87fb877bce298056ea996d6fd5db7aed2a7dce3becf1ec163280 0.0s done
+#13 exporting manifest list sha256:9d79b9ac7c757d69262588b02d98d7d74770a7200630f152b485b978ee7c7d95 0.0s done
+#13 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-maintenance:latest
+#13 naming to docker.io/library/tempo-pg-regressions-54986-da1082fb-maintenance:latest done
+#13 unpacking to docker.io/library/tempo-pg-regressions-54986-da1082fb-maintenance:latest 0.0s done
+#13 DONE 0.3s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/15wc89hvh3j882pgraddefp0v
+usage: apply_postgres_migrations.py [-h] [--dsn DSN] [--check] [--json]
+                                    [--reader-passfile READER_PASSFILE]
+                                    [--writer-passfile WRITER_PASSFILE]
+
+Apply checked-in PostgreSQL migrations during a stopped-writer window.
+
+options:
+  -h, --help            show this help message and exit
+  --dsn DSN
+  --check               Read-only history and initialization check
+  --json                Print --check as JSON
+  --reader-passfile READER_PASSFILE
+                        Verify reader authentication during --check
+  --writer-passfile WRITER_PASSFILE
+                        Verify writer authentication during --check
+usage: migrate_sqlite_to_postgres.py [-h] [--dsn DSN] [--verify-only]
+                                     sqlite_path
+
+Copy a stopped, verified Tempo SQLite snapshot into PostgreSQL. The
+destination must have all checked-in migrations applied and no application
+rows. Each table is copied in a separate transaction and recorded in
+tempo_migration_progress, so an interrupted import can resume safely. Run
+--verify-only afterward to compare every row in primary-key order.
+
+positional arguments:
+  sqlite_path
+
+options:
+  -h, --help     show this help message and exit
+  --dsn DSN
+  --verify-only
+usage: repair_verified_game_tactics.py [-h] [--dsn DSN] sqlite_path
+
+Record a narrow destination repair after exact SQLite import verification.
+Stop destination writers first. The original snapshot is opened read-only by
+the verifier and is never initialized or repaired. Replays require the same
+bytes.
+
+positional arguments:
+  sqlite_path
+
+options:
+  -h, --help   show this help message and exit
+  --dsn DSN
+PASS PostgreSQL maintenance image starts migration and import commands
+PostgreSQL scenario maintenance_cli: 4.01s (exit 0)
+time="2026-10-12T13:08:02-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:02-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:02-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:02-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Volume tempo-pg-regressions-54986-da1082fb_redis-test-data Creating 
+ Volume tempo-pg-regressions-54986-da1082fb_redis-test-data Creating 
+ Volume tempo-pg-regressions-54986-da1082fb_postgres-test-data Creating 
+ Volume tempo-pg-regressions-54986-da1082fb_postgres-test-data Creating 
+ Network tempo-pg-regressions-54986-da1082fb_default Creating 
+ Network tempo-pg-regressions-54986-da1082fb_default Creating 
+ Volume tempo-pg-regressions-54986-da1082fb_engine-test-operations Creating 
+ Volume tempo-pg-regressions-54986-da1082fb_engine-test-operations Creating 
+ Volume tempo-pg-regressions-54986-da1082fb_redis-test-data Created 
+ Volume tempo-pg-regressions-54986-da1082fb_redis-test-data Created 
+ Volume tempo-pg-regressions-54986-da1082fb_postgres-test-data Created 
+ Volume tempo-pg-regressions-54986-da1082fb_postgres-test-data Created 
+ Volume tempo-pg-regressions-54986-da1082fb_engine-test-operations Created 
+ Volume tempo-pg-regressions-54986-da1082fb_engine-test-operations Created 
+ Network tempo-pg-regressions-54986-da1082fb_default Created 
+ Network tempo-pg-regressions-54986-da1082fb_default Created 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Created 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Exited 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Exited 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Exited 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Started 
+PostgreSQL scenario startup: 13.75s (exit 0)
+PostgreSQL scenario service_health: 0.14s (exit 0)
+time="2026-10-12T13:08:16-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:16-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:16-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:16-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-c4cfde88ba19 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-c4cfde88ba19 Created 
+discarding closed connection: <app.postgres_store._TimingConnection [BAD] at 0xffffb94e7320>
+PASS background PostgreSQL settings are local, bounded, and recover after rollback
+PostgreSQL scenario background_budget: 1.26s (exit 0)
+time="2026-10-12T13:08:17-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:17-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:17-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:17-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-f611ca80e0df Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-f611ca80e0df Created 
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=1 stage=execute error_class=TransactionTimeout next_retry_seconds=0.5
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=2 stage=execute error_class=TransactionTimeout next_retry_seconds=1.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=3 stage=execute error_class=TransactionTimeout next_retry_seconds=2.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=4 stage=execute error_class=TransactionTimeout next_retry_seconds=4.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=5 stage=execute error_class=TransactionTimeout next_retry_seconds=8.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=6 stage=execute error_class=TransactionTimeout next_retry_seconds=16.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=7 stage=execute error_class=TransactionTimeout next_retry_seconds=30.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=8 stage=execute error_class=TransactionTimeout next_retry_seconds=30.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=9 stage=execute error_class=TransactionTimeout next_retry_seconds=30.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=10 stage=execute error_class=TransactionTimeout next_retry_seconds=30.0
+background command=test.recovery.state operation_id=recovery-2f90b552edab42e9b48e62c54a2bbc13 attempt=11 stage=execute error_class=TransactionTimeout next_retry_seconds=None
+PASS test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery
+PASS discarded PGN delivery cannot restore its payload or create repertoire data; admission race preserves completion
+PASS test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollback
+PASS finite retries, restart, conflict states and race, explicit cycle, stale lease, and one business effect
+PostgreSQL scenario operation_recovery: 3.88s (exit 0)
+time="2026-10-12T13:08:21-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:21-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:21-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:21-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-fed843e77fa5 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-fed843e77fa5 Created 
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS additive_migration_47_preserves_schema46_settings_and_replays
+PASS study_only_toggle_persists_and_omitted_field_preserves_value
+PASS study_only_mode_verifies_non_expected_move_from_saved_sources_without_bulk_preparation
+PASS superseded_queue_head_does_not_block_eligible_successor
+PASS deleted_queue_head_is_excluded_from_payload_and_count
+PASS study_only_mode_preserves_foreground_review_and_queue_progression
+PASS study_only_mode_preserves_receipts_and_idempotent_replay
+PASS study_only_mode_pauses_optional_work_and_resumes_after_restart
+time="2026-10-12T13:08:26-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:26-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:26-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:26-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-8738d4c543de Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-8738d4c543de Created 
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS populated published-main schema32->47 preserves opening evidence contexts
+PASS test_postgres_current_main_upgrade_captures_legacy_evidence_contexts schema29->47
+PASS test_postgres_current_main_schema31_upgrade_adds_queue_origins_without_changing_evidence
+PASS revision-aware PostgreSQL 027 backfill: matching handled; mismatch, ambiguity, wrong card and unfinished intent remain actionable; preparing/failed unhandled
+PASS handled discovery PostgreSQL upgrade and material-evidence replay
+PASS real PostgreSQL direct Train rejects missing/stale revision, preserves current evidence, confirms matching revision and replays after reconnect
+PASS real PostgreSQL stale admission, revisioned same-move acceptance, reconnect, and replay
+PASS test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates
+PASS populated schema 16 upgrade, idempotent repeat, and preserved business rows
+time="2026-10-12T13:08:29-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:29-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:29-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:29-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-9a849aebdd43 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-9a849aebdd43 Created 
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently
+PASS test_pr116_schema39_upgrade_preserves_sources_and_contiguous_queue_profile_history
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS test_pr116_migration044_malformed_historical_timestamps_upgrade_idempotently
+PASS test_pr116_current_schema43_upgrade_preserves_published_migrations_and_sources
+PASS test_issue107_postgres_profile_upgrade_restart_concurrency_and_replay
+PASS test_issue107_postgres_source_race_retains_last_complete_snapshot
+PASS test_issue107_postgres_foreground_contends_without_compute_transaction
+PASS test_issue107_postgres_profile_reads_preserve_queue_and_exclusions
+PASS test_pr116_future_evidence_becomes_eligible_at_successful_sync_without_source_mutation
+PASS test_pr116_far_future_timestamp_does_not_break_profile_deadline_publication
+PASS test_pr116_concurrent_profile_refresh_requests_share_task_identity_and_generation
+PASS test_pr116_older_cutoff_cannot_replace_newer_snapshot_or_future_deadline
+PASS test_pr116_postgres_ancient_and_out_of_range_utc_dates_publish_without_crashing
+PostgreSQL scenario schema_migrations: 17.79s (exit 0)
+time="2026-10-12T13:08:39-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:39-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:39-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:39-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-ed4367288947 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-ed4367288947 Created 
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS schema 20/21 priority recovery across queued, retrying, expired, and old-ordering work; repeated migration and stale delivery are inert
+PASS PostgreSQL second-batch crash, reconstructed task claim, shuffled retry, unique ordinals, and atomic publication
+PASS PostgreSQL source/scoring invalidation retains old publication and publishes a current follow-up generation
+PASS priority_position_publication_invalidates_prepared_generation
+PASS test_postgres_shadow_opening_ranking_is_read_only
+PostgreSQL scenario priority_recovery: 6.92s (exit 0)
+time="2026-10-12T13:08:46-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:46-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:46-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:46-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-225bda133b98 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-225bda133b98 Created 
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+{"regression": "background_snapshot_cost_is_independent_of_event_history", "before_seconds": [0.008140749999938635, 0.008445500000107131, 0.008701874999815118, 0.00461583299988888, 0.004824749999897904, 0.005223458000045866, 0.005265042000019093, 0.004625291999900583, 0.00422304200014878, 0.004590041000028577, 0.004184167000175876, 0.003347917000155576, 0.003680709000036586, 0.004309624999905282, 0.0036734159998559335, 0.003438541999912559, 0.0037600420000671875, 0.0036652500000400323, 0.0038796669998646394, 0.0040962499999750435], "after_100000_events_seconds": [0.004895000000033178, 0.0040984170000228914, 0.0032876669999950536, 0.005280125000126645, 0.004003166000074998, 0.003923375000113083, 0.003421375000016269, 0.0034029169999030273, 0.0036915000000590226, 0.0035698750000392465, 0.0012627920000340964, 0.0029465829998116533, 0.002926417000026049, 0.0032030830000167043, 0.001683833999777562, 0.003305375000081767, 0.003388625000070533, 0.0033192500000041036, 0.0017133339999872987, 0.0034022909999293915], "baseline_transition_seconds": [0.013778958000102648, 0.008679957999902399, 0.006993624999950043, 0.00970279200009827, 0.007546209000111048, 0.006787875999862081, 0.006526790999942023, 0.006912125000098968, 0.007730917000117188, 0.00793466699997225, 0.006548583000039798, 0.006694083999946088, 0.006744083000057799, 0.007411665999825345, 0.00900104199990892, 0.011222541000051933, 0.009521833000007973, 0.00884741700019731, 0.008199667000098998, 0.00684224999986327, 0.0068990409999969415, 0.007066375000022163, 0.00679512499982593, 0.007271415999866804, 0.007091874999787251, 0.0069569590000355674, 0.007389457999806837, 0.00742245800006458, 0.00630558300008488, 0.006247291999898152, 0.005609791999859226, 0.005792707999944469, 0.00598629199998868, 0.005769125000142594, 0.005752125000071828, 0.006004792000112502, 0.006189332999838371, 0.0062296250000599684, 0.006611332999909791, 0.006101708999949551, 0.006514667000146801, 0.005829750000202694, 0.006477291999999579, 0.005758999999898151, 0.006010625000044456, 0.006200292000130503, 0.005931790999966324, 0.005793082999844046, 0.007557083999927272, 0.009025374999964697], "instrumented_transition_seconds": [0.009141042000010202, 0.009311458999945899, 0.008087374999831809, 0.007223166999892783, 0.007634791000100449, 0.00783337500001835, 0.007255084000007628, 0.007433792000028916, 0.006928499999958149, 0.006832583000004888, 0.007210166000049867, 0.006864542000130314, 0.006630249999943771, 0.007469165999964389, 0.007469874999969761, 0.008266583000022365, 0.007522709000113537, 0.007542916999909721, 0.0073419999998805, 0.007172249999939595, 0.0077784579998478875, 0.006894290999980512, 0.0070826250000664, 0.006939417000012327, 0.006699625000010201, 0.0065500830000928545, 0.006718625000075917, 0.006447917000059533, 0.006604749999951309, 0.006732332999945356, 0.006162291000009645, 0.006727292000050511, 0.006477708000147686, 0.006425874999877124, 0.0060284999999566935, 0.006604374999824358, 0.006391791999931229, 0.007050124999977925, 0.006031040999914694, 0.006641166000008525, 0.006232875000023341, 0.0070787090000976605, 0.007035999999970954, 0.008377625000093758, 0.007878665999896839, 0.008475332999978491, 0.008219582999799968, 0.008249750000004497, 0.009399083000062092, 0.007372125000074448], "query_deadline_seconds": 0.1, "counter_replay": "passed", "bounded_buckets": "passed", "admitted_primary_read_only_preflight": "passed", "runtime_redis_reservation_boundary": "passed", "known_kind_lookup_count": 0, "transition_measurement_scope": "domain UPDATE + full raw-event/counter hook + transaction flush; excludes Redis and preflight"}
+PostgreSQL scenario background_diagnostics: 6.07s (exit 0)
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Stopped 
+time="2026-10-12T13:08:55-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:55-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:55-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T13:08:55-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-963fc85de6b5 Creating 
+ Container tempo-pg-regressions-54986-da1082fb-schema-run-963fc85de6b5 Created 
+PASS test_redis_publication_deadline_preserves_independent_delivery_and_connection_recovery elapsed_seconds=5.119
+{"test": "test_real_broker_wakes_coalesce_restart_and_fence_delivery", "concurrent_requests": 1000, "serial_expired_requests": 100, "pending_messages": 1, "slow_publication_fenced": true, "next_request_stranded_owner_recovery": true, "unacked_and_restore_preserved": true, "committed_response_loss_preserved": true, "same_token_retry_preserved": true, "useful_executions": 15}
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PASS test_postgres_engine_committed_selection_survives_real_failure_and_release
+PASS test_postgres_engine_completed_position_receipt_validates_request_identity
+PASS test_postgres_engine_concurrent_claims_cannot_spend_same_reserved_turn
+PASS test_postgres_engine_failed_claim_and_handler_rollback_preserve_streak
+PASS test_postgres_engine_foreground_and_turn_row_contention_remain_bounded
+PASS test_postgres_engine_interactive_bypasses_reserved_and_locked_turn
+PASS test_postgres_engine_locked_game_and_stale_hint_allow_next_automated_claim
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS test_postgres_engine_migration_replay_preserves_streak_and_historical_game
+PASS test_postgres_engine_mixed_backlog_has_bounded_service_and_inspectable_plans
+PASS test_postgres_engine_pending_position_receipt_validates_request_identity
+PASS test_postgres_engine_process_crash_rolls_back_uncommitted_selection
+PASS test_postgres_engine_promotions_and_existing_automated_order_are_preserved
+PASS test_postgres_engine_receipt_replay_does_not_increment_or_reset_twice
+PASS test_postgres_engine_rejected_parent_and_position_writes_do_not_spend_turn
+PASS test_postgres_engine_restart_recovers_correct_next_selection
+PASS test_postgres_engine_terminal_checkpoint_and_finalization_reset_only_after_acceptance
+PASS test_postgres_engine_three_accepted_claims_reserve_production_position
+PASS test_postgres_engine_unavailable_paused_deleted_and_stale_games_do_not_block
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+PostgreSQL schema version 44
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PostgreSQL schema version 47
+PASS test_postgres_engine_upgrade_from_schema_44_preserves_historical_data
+{"engine_fairness": [{"selection_sequence": ["automated", "automated", "automated", "ordinary", "automated", "automated", "automated", "ordinary", "automated", "automated", "automated", "ordinary"], "automated_completed": 9, "ordinary_positions_completed": 2, "finalization_leases_accepted": 1, "oldest_eligible_automated_seconds": 1012137.578036, "oldest_eligible_ordinary_seconds_before_service": 0.339972, "oldest_eligible_ordinary_seconds_after_service": null, "plans": {"ordinary": [{"Plan": {"Node Type": "Limit", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 127.55, "Total Cost": 127.56, "Plan Rows": 1, "Plan Width": 51, "Actual Startup Time": 28.745, "Actual Total Time": 28.758, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Shared Hit Blocks": 9061, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "LockRows", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 127.55, "Total Cost": 127.73, "Plan Rows": 15, "Plan Width": 51, "Actual Startup Time": 28.743, "Actual Total Time": 28.751, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Shared Hit Blocks": 9061, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Sort", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 127.55, "Total Cost": 127.58, "Plan Rows": 15, "Plan Width": 51, "Actual Startup Time": 28.702, "Actual Total Time": 28.71, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Sort Key": ["(COALESCE(control.promoted, '0'::bigint)) DESC", "g.played_at DESC", "j.game_id"], "Sort Method": "quicksort", "Sort Space Used": 284, "Sort Space Type": "Memory", "Shared Hit Blocks": 9059, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 9.81, "Total Cost": 127.47, "Plan Rows": 15, "Plan Width": 51, "Actual Startup Time": 0.041, "Actual Total Time": 14.042, "Actual Rows": 3000.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": true, "Shared Hit Blocks": 9053, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Hash Join", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Left", "Startup Cost": 9.53, "Total Cost": 120.94, "Plan Rows": 15, "Plan Width": 34, "Actual Startup Time": 0.03, "Actual Total Time": 1.269, "Actual Rows": 3000.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": true, "Hash Cond": "(j.game_id = control.work_id)", "Filter": "(COALESCE(control.paused, '0'::bigint) = 0)", "Rows Removed by Filter": 0, "Shared Hit Blocks": 53, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Seq Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Relation Name": "game_analysis_jobs", "Alias": "j", "Startup Cost": 0.0, "Total Cost": 103.52, "Plan Rows": 3000, "Plan Width": 20, "Actual Startup Time": 0.009, "Actual Total Time": 0.708, "Actual Rows": 3000.0, "Actual Loops": 1, "Disabled": false, "Filter": "((status = 'queued'::text) OR ((status = 'leased'::text) AND (lease_expires_at < '2026-10-12T17:09:05.473278+00:00'::text)))", "Rows Removed by Filter": 1, "Shared Hit Blocks": 51, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Hash", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 9.5, "Total Cost": 9.5, "Plan Rows": 2, "Plan Width": 54, "Actual Startup Time": 0.009, "Actual Total Time": 0.012, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Hash Buckets": 1024, "Original Hash Buckets": 1024, "Hash Batches": 1, "Original Hash Batches": 1, "Peak Memory Usage": 8, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Bitmap Heap Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Relation Name": "background_activity", "Alias": "control", "Startup Cost": 4.16, "Total Cost": 9.5, "Plan Rows": 2, "Plan Width": 54, "Actual Startup Time": 0.009, "Actual Total Time": 0.01, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Recheck Cond": "(source = 'game_analysis'::text)", "Rows Removed by Index Recheck": 0, "Exact Heap Blocks": 0, "Lossy Heap Blocks": 0, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Bitmap Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Index Name": "background_activity_pkey", "Startup Cost": 0.0, "Total Cost": 4.16, "Plan Rows": 2, "Plan Width": 0, "Actual Startup Time": 0.002, "Actual Total Time": 0.002, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(source = 'game_analysis'::text)", "Index Searches": 1, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}]}, {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "imported_games_pkey", "Relation Name": "imported_games", "Alias": "g", "Startup Cost": 0.28, "Total Cost": 0.44, "Plan Rows": 1, "Plan Width": 31, "Actual Startup Time": 0.004, "Actual Total Time": 0.004, "Actual Rows": 1.0, "Actual Loops": 3000, "Disabled": false, "Index Cond": "(id = j.game_id)", "Rows Removed by Index Recheck": 0, "Filter": "((rated = 1) AND (speed = ANY ('{blitz,rapid,classical}'::text[])))", "Rows Removed by Filter": 0, "Index Searches": 3000, "Shared Hit Blocks": 9000, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}]}]}, "Planning": {"Shared Hit Blocks": 456, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, "Planning Time": 1.147, "Triggers": [], "Execution Time": 28.857}], "automated": [{"Plan": {"Node Type": "Limit", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 16.76, "Total Cost": 394653.27, "Plan Rows": 1, "Plan Width": 43, "Actual Startup Time": 75.513, "Actual Total Time": 75.521, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Shared Hit Blocks": 63, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "InitPlan", "Subplan Name": "InitPlan 1", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "settings_pkey", "Relation Name": "settings", "Alias": "settings", "Startup Cost": 0.15, "Total Cost": 8.17, "Plan Rows": 1, "Plan Width": 8, "Actual Startup Time": 0.062, "Actual Total Time": 0.063, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(id = 1)", "Rows Removed by Index Recheck": 0, "Index Searches": 1, "Shared Hit Blocks": 5, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Index Scan", "Parent Relationship": "InitPlan", "Subplan Name": "InitPlan 2", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "settings_pkey", "Relation Name": "settings", "Alias": "settings_1", "Startup Cost": 0.15, "Total Cost": 8.17, "Plan Rows": 1, "Plan Width": 8, "Actual Startup Time": 0.004, "Actual Total Time": 0.005, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(id = 1)", "Rows Removed by Index Recheck": 0, "Index Searches": 1, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "LockRows", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 0.43, "Total Cost": 394636.94, "Plan Rows": 1, "Plan Width": 43, "Actual Startup Time": 0.351, "Actual Total Time": 0.358, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Shared Hit Blocks": 63, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Result", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 0.43, "Total Cost": 394636.93, "Plan Rows": 1, "Plan Width": 43, "Actual Startup Time": 0.346, "Actual Total Time": 0.353, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "One-Time Filter": "((InitPlan 1).col1 = 0)", "Shared Hit Blocks": 62, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Left", "Startup Cost": 0.43, "Total Cost": 394636.93, "Plan Rows": 1, "Plan Width": 43, "Actual Startup Time": 0.25, "Actual Total Time": 0.257, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": true, "Filter": "((COALESCE(control.paused, '0'::bigint) = 0) AND (COALESCE(control.promoted, '0'::bigint) = 0))", "Rows Removed by Filter": 0, "Shared Hit Blocks": 57, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "idx_threat_analysis_diagnostic_state", "Relation Name": "threat_analysis_requests", "Alias": "request", "Startup Cost": 0.28, "Total Cost": 394232.69, "Plan Rows": 1974, "Plan Width": 37, "Actual Startup Time": 0.237, "Actual Total Time": 0.243, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(state = 'queued'::text)", "Rows Removed by Index Recheck": 0, "Filter": "((((InitPlan 2).col1 = 1) OR EXISTS(SubPlan 3) OR EXISTS(SubPlan 4)) AND (EXISTS(SubPlan 5) OR EXISTS(SubPlan 7) OR EXISTS(SubPlan 9)))", "Rows Removed by Filter": 0, "Index Searches": 1, "Shared Hit Blocks": 55, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Limit", "Parent Relationship": "SubPlan", "Subplan Name": "SubPlan 3", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 4.31, "Total Cost": 17.69, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.072, "Actual Total Time": 0.072, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Shared Hit Blocks": 22, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 4.31, "Total Cost": 17.69, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.071, "Actual Total Time": 0.071, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": true, "Join Filter": "(recommendation.opportunity_id = opportunity.id)", "Rows Removed by Join Filter": 9, "Shared Hit Blocks": 22, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "deletion_opportunity_card", "Relation Name": "repertoire_opportunities", "Alias": "opportunity", "Startup Cost": 0.14, "Total Cost": 8.16, "Plan Rows": 1, "Plan Width": 32, "Actual Startup Time": 0.013, "Actual Total Time": 0.015, "Actual Rows": 10.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(card_id IS NULL)", "Rows Removed by Index Recheck": 0, "Filter": "(status = 'active'::text)", "Rows Removed by Filter": 0, "Index Searches": 1, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Bitmap Heap Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Relation Name": "discovery_recommendation_requests", "Alias": "recommendation", "Startup Cost": 4.16, "Total Cost": 9.5, "Plan Rows": 2, "Plan Width": 32, "Actual Startup Time": 0.004, "Actual Total Time": 0.004, "Actual Rows": 1.0, "Actual Loops": 10, "Disabled": false, "Recheck Cond": "(request_id = request.id)", "Rows Removed by Index Recheck": 0, "Exact Heap Blocks": 10, "Lossy Heap Blocks": 0, "Shared Hit Blocks": 20, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Bitmap Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Index Name": "idx_discovery_recommendation_request", "Startup Cost": 0.0, "Total Cost": 4.16, "Plan Rows": 2, "Plan Width": 0, "Actual Startup Time": 0.001, "Actual Total Time": 0.001, "Actual Rows": 1.0, "Actual Loops": 10, "Disabled": false, "Index Cond": "(request_id = request.id)", "Index Searches": 10, "Shared Hit Blocks": 10, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}]}, {"Node Type": "Limit", "Parent Relationship": "SubPlan", "Subplan Name": "SubPlan 4", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 4.31, "Total Cost": 17.69, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 4.31, "Total Cost": 17.69, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Inner Unique": true, "Join Filter": "(recommendation_1.opportunity_id = opportunity_1.id)", "Rows Removed by Join Filter": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "deletion_opportunity_card", "Relation Name": "repertoire_opportunities", "Alias": "opportunity_1", "Startup Cost": 0.14, "Total Cost": 8.16, "Plan Rows": 1, "Plan Width": 32, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Index Cond": "(card_id IS NULL)", "Rows Removed by Index Recheck": 0, "Filter": "(status = 'active'::text)", "Rows Removed by Filter": 0, "Index Searches": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Bitmap Heap Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Relation Name": "coverage_discovery_recommendation_requests", "Alias": "recommendation_1", "Startup Cost": 4.16, "Total Cost": 9.5, "Plan Rows": 2, "Plan Width": 32, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Recheck Cond": "(request_id = request.id)", "Rows Removed by Index Recheck": 0, "Exact Heap Blocks": 0, "Lossy Heap Blocks": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Bitmap Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Index Name": "idx_coverage_discovery_recommendation_request", "Startup Cost": 0.0, "Total Cost": 4.16, "Plan Rows": 2, "Plan Width": 0, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Index Cond": "(request_id = request.id)", "Index Searches": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}]}, {"Node Type": "Limit", "Parent Relationship": "SubPlan", "Subplan Name": "SubPlan 5", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 0.43, "Total Cost": 27.7, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.024, "Actual Total Time": 0.026, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 0.43, "Total Cost": 27.7, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.022, "Actual Total Time": 0.023, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": true, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 0.15, "Total Cost": 19.39, "Plan Rows": 1, "Plan Width": 40, "Actual Startup Time": 0.021, "Actual Total Time": 0.021, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": false, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Seq Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Relation Name": "threat_training_candidates", "Alias": "candidate", "Startup Cost": 0.0, "Total Cost": 11.2, "Plan Rows": 1, "Plan Width": 104, "Actual Startup Time": 0.011, "Actual Total Time": 0.011, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Filter": "(superseded_at IS NULL)", "Rows Removed by Filter": 0, "Shared Hit Blocks": 1, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Index Only Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "threat_candidate_requests_pkey", "Relation Name": "threat_candidate_requests", "Alias": "relation", "Startup Cost": 0.15, "Total Cost": 8.18, "Plan Rows": 1, "Plan Width": 64, "Actual Startup Time": 0.006, "Actual Total Time": 0.006, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "((candidate_id = candidate.id) AND (request_id = request.id))", "Rows Removed by Index Recheck": 0, "Filter": "((candidate.validation_state = 'needs_analysis'::text) OR (role = 'attempt'::text))", "Rows Removed by Filter": 0, "Heap Fetches": 0, "Index Searches": 1, "Shared Hit Blocks": 1, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}, {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "imported_games_pkey", "Relation Name": "imported_games", "Alias": "game", "Startup Cost": 0.28, "Total Cost": 8.3, "Plan Rows": 1, "Plan Width": 22, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Index Cond": "(id = candidate.game_id)", "Rows Removed by Index Recheck": 0, "Filter": "(candidate.analysis_version = analysis_version)", "Rows Removed by Filter": 0, "Index Searches": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}, {"Node Type": "Limit", "Parent Relationship": "SubPlan", "Subplan Name": "SubPlan 7", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 12.62, "Total Cost": 34.05, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.074, "Actual Total Time": 0.075, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Shared Hit Blocks": 26, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "InitPlan", "Subplan Name": "InitPlan 6", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "repertoire_game_scope_pkey", "Relation Name": "repertoire_game_scope", "Alias": "repertoire_game_scope", "Startup Cost": 0.15, "Total Cost": 8.17, "Plan Rows": 1, "Plan Width": 8, "Actual Startup Time": 0.012, "Actual Total Time": 0.013, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(id = 1)", "Rows Removed by Index Recheck": 0, "Index Searches": 1, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 4.45, "Total Cost": 25.88, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.073, "Actual Total Time": 0.074, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": true, "Shared Hit Blocks": 26, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 4.31, "Total Cost": 17.69, "Plan Rows": 1, "Plan Width": 80, "Actual Startup Time": 0.062, "Actual Total Time": 0.062, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Inner Unique": true, "Join Filter": "(recommendation_2.opportunity_id = opportunity_2.id)", "Rows Removed by Join Filter": 9, "Shared Hit Blocks": 24, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "deletion_opportunity_card", "Relation Name": "repertoire_opportunities", "Alias": "opportunity_2", "Startup Cost": 0.14, "Total Cost": 8.17, "Plan Rows": 1, "Plan Width": 112, "Actual Startup Time": 0.022, "Actual Total Time": 0.026, "Actual Rows": 10.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(card_id IS NULL)", "Rows Removed by Index Recheck": 0, "Filter": "((game_scope_generation = (InitPlan 6).col1) AND (status = 'active'::text))", "Rows Removed by Filter": 0, "Index Searches": 1, "Shared Hit Blocks": 4, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Bitmap Heap Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Relation Name": "discovery_recommendation_requests", "Alias": "recommendation_2", "Startup Cost": 4.16, "Total Cost": 9.5, "Plan Rows": 2, "Plan Width": 32, "Actual Startup Time": 0.002, "Actual Total Time": 0.002, "Actual Rows": 1.0, "Actual Loops": 10, "Disabled": false, "Recheck Cond": "(request_id = request.id)", "Rows Removed by Index Recheck": 0, "Exact Heap Blocks": 10, "Lossy Heap Blocks": 0, "Shared Hit Blocks": 20, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Bitmap Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Index Name": "idx_discovery_recommendation_request", "Startup Cost": 0.0, "Total Cost": 4.16, "Plan Rows": 2, "Plan Width": 0, "Actual Startup Time": 0.001, "Actual Total Time": 0.001, "Actual Rows": 1.0, "Actual Loops": 10, "Disabled": false, "Index Cond": "(request_id = request.id)", "Index Searches": 10, "Shared Hit Blocks": 10, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}, {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "repertoires_pkey", "Relation Name": "repertoires", "Alias": "scope", "Startup Cost": 0.15, "Total Cost": 8.18, "Plan Rows": 1, "Plan Width": 112, "Actual Startup Time": 0.008, "Actual Total Time": 0.008, "Actual Rows": 1.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "(id = opportunity_2.repertoire_id)", "Rows Removed by Index Recheck": 0, "Filter": "((canonical_prefix_revision = opportunity_2.canonical_prefix_revision) AND ((canonical_prefix_moves_json = '[]'::text) OR ((opportunity_2.canonical_scope_source_revision = scope_source_revision) AND (opportunity_2.canonical_scope_preview_id = canonical_prefix_preview_id))))", "Rows Removed by Filter": 0, "Index Searches": 1, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}, {"Node Type": "Limit", "Parent Relationship": "SubPlan", "Subplan Name": "SubPlan 9", "Parallel Aware": false, "Async Capable": false, "Startup Cost": 12.62, "Total Cost": 34.05, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "InitPlan", "Subplan Name": "InitPlan 8", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "repertoire_game_scope_pkey", "Relation Name": "repertoire_game_scope", "Alias": "repertoire_game_scope_1", "Startup Cost": 0.15, "Total Cost": 8.17, "Plan Rows": 1, "Plan Width": 8, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Index Cond": "(id = 1)", "Rows Removed by Index Recheck": 0, "Index Searches": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 4.45, "Total Cost": 25.88, "Plan Rows": 1, "Plan Width": 4, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Inner Unique": true, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Nested Loop", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Join Type": "Inner", "Startup Cost": 4.31, "Total Cost": 17.69, "Plan Rows": 1, "Plan Width": 80, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Inner Unique": true, "Join Filter": "(recommendation_3.opportunity_id = opportunity_3.id)", "Rows Removed by Join Filter": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "deletion_opportunity_card", "Relation Name": "repertoire_opportunities", "Alias": "opportunity_3", "Startup Cost": 0.14, "Total Cost": 8.17, "Plan Rows": 1, "Plan Width": 112, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Index Cond": "(card_id IS NULL)", "Rows Removed by Index Recheck": 0, "Filter": "((game_scope_generation = (InitPlan 8).col1) AND (status = 'active'::text))", "Rows Removed by Filter": 0, "Index Searches": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, {"Node Type": "Bitmap Heap Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Relation Name": "coverage_discovery_recommendation_requests", "Alias": "recommendation_3", "Startup Cost": 4.16, "Total Cost": 9.5, "Plan Rows": 2, "Plan Width": 32, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Recheck Cond": "(request_id = request.id)", "Rows Removed by Index Recheck": 0, "Exact Heap Blocks": 0, "Lossy Heap Blocks": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0, "Plans": [{"Node Type": "Bitmap Index Scan", "Parent Relationship": "Outer", "Parallel Aware": false, "Async Capable": false, "Index Name": "idx_coverage_discovery_recommendation_request", "Startup Cost": 0.0, "Total Cost": 4.16, "Plan Rows": 2, "Plan Width": 0, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Index Cond": "(request_id = request.id)", "Index Searches": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}, {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "repertoires_pkey", "Relation Name": "repertoires", "Alias": "scope_1", "Startup Cost": 0.15, "Total Cost": 8.18, "Plan Rows": 1, "Plan Width": 112, "Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 0, "Actual Loops": 0, "Disabled": false, "Index Cond": "(id = opportunity_3.repertoire_id)", "Rows Removed by Index Recheck": 0, "Filter": "((canonical_prefix_revision = opportunity_3.canonical_prefix_revision) AND ((canonical_prefix_moves_json = '[]'::text) OR ((opportunity_3.canonical_scope_source_revision = scope_source_revision) AND (opportunity_3.canonical_scope_preview_id = canonical_prefix_preview_id))))", "Rows Removed by Filter": 0, "Index Searches": 0, "Shared Hit Blocks": 0, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}]}, {"Node Type": "Index Scan", "Parent Relationship": "Inner", "Parallel Aware": false, "Async Capable": false, "Scan Direction": "Forward", "Index Name": "background_activity_pkey", "Relation Name": "background_activity", "Alias": "control", "Startup Cost": 0.15, "Total Cost": 0.19, "Plan Rows": 1, "Plan Width": 54, "Actual Startup Time": 0.005, "Actual Total Time": 0.005, "Actual Rows": 0.0, "Actual Loops": 1, "Disabled": false, "Index Cond": "((source = 'threat_analysis'::text) AND (work_id = request.id))", "Rows Removed by Index Recheck": 0, "Index Searches": 1, "Shared Hit Blocks": 2, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}]}]}]}]}, "Planning": {"Shared Hit Blocks": 665, "Shared Read Blocks": 0, "Shared Dirtied Blocks": 0, "Shared Written Blocks": 0, "Local Hit Blocks": 0, "Local Read Blocks": 0, "Local Dirtied Blocks": 0, "Local Written Blocks": 0, "Temp Read Blocks": 0, "Temp Written Blocks": 0}, "Planning Time": 2.638, "Triggers": [], "JIT": {"Functions": 122, "Options": {"Inlining": false, "Optimization": false, "Expressions": true, "Deforming": true}, "Timing": {"Generation": {"Deform": 2.956, "Total": 5.61}, "Inlining": 0.0, "Optimization": 2.954, "Emission": 72.292, "Total": 80.856}}, "Execution Time": 99.754}]}, "measurement": "Selection bound, not equal CPU time; synthetic validated engine reports"}], "maximum_claim_callback_seconds": 0.019341499999882217, "transaction_budget_ms": 250, "lock_budget_ms": 25}
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+PASS test_postgres_persisted_scheduling_turns_advance_games_with_foreground_contention_restart_and_replay; 4157 queued game stages; max claim including pool reopen 0.1012s
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+{"test": "test_postgres_refresh_inputs_preserve_cursor_restart_failure_and_atomic_publication", "unchanged_requests": 100, "concurrent_initial_requests": 12, "maximum_delay_seconds": 60, "actual_priority_publication": 7, "max_reconnect_transaction_ms": 103.087}
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+Traceback (most recent call last):
+  File "/source/scripts/check_postgres_daily_study_dispatch.py", line 898, in <module>
+    proof()
+  File "/source/scripts/check_postgres_daily_study_dispatch.py", line 804, in proof
+    proof_refresh_state_recovery(DSN)
+  File "/source/scripts/check_postgres_refresh_inputs.py", line 162, in proof_refresh_state_recovery
+    completion_future.result(timeout=10)
+  File "/usr/local/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/local/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/source/scripts/check_postgres_refresh_inputs.py", line 157, in deliver_old_completion
+    return durable_tasks.complete_task(old_task['id'], old_task['generation'], old_task['lease_token'], kind='repertoire_opportunity')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/source/backend/app/services/durable_tasks.py", line 358, in complete_task
+    return submit_background_write(operation, label=f"complete:{task_id}")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/source/backend/app/services/database_executor.py", line 242, in submit_background_write
+    return operation(database)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/source/backend/app/services/durable_tasks.py", line 337, in operation
+    _priority_source_version(database, refresh_repertoire_id,
+  File "/source/backend/app/services/postgres_priority.py", line 49, in _priority_source_version
+    shared_version = int(database.execute(
+                         ^^^^^^^^^^^^^^^^^
+  File "/source/backend/app/postgres_store.py", line 166, in execute
+    return self._database.execute(translated, parameters)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.LockNotAvailable: canceling statement due to lock timeout
+CONTEXT:  while locking tuple (0,4) in relation "priority_source_epoch"
+
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Exited 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Started 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Exited 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Waiting 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Healthy 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Starting 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Started 
+PostgreSQL scenario background_workloads: 37.28s (exit 1)
+defense-engine-1  | Could not claim engine request: Error: /api/games/analysis/position/claim: HTTP 503 {"detail":"Waiting for foreground activity"}
+defense-engine-1     |     at requestMaiaApi (file:///app/scripts/maia-coverage-client.mjs:35:19)
+defense-engine-1     |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+defense-engine-1     |     at async Object.send (file:///app/scripts/durable-engine-request.mjs:35:22)
+defense-engine-1     |     at async runEngineWorkerCycle (file:///app/scripts/engine-worker-cycle.mjs:34:16)
+defense-engine-1     |     at async file:///app/scripts/defense-engine-worker.mjs:51:3 {
+defense-engine-1     |   terminal: false
+defense-engine-1     | }
+defense-engine-1     | {"event":"engine_waiting","kind":"engine","stage":"idle","observed_at":"2026-10-12T17:08:18.109Z"}
+web-1             | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+web-1                | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+web-1                | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+web-1                | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+web-1                | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
+web-1                | /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+web-1                | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+web-1                | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+web-1                | /docker-entrypoint.sh: Configuration complete; ready for start up
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: using the "epoll" event method
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: nginx/1.28.3
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: built by gcc 15.2.0 (Alpine 15.2.0) 
+foreground-worker-1  | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+foreground-worker-1  | absolutely not recommended!
+foreground-worker-1  | 
+foreground-worker-1  | Please specify a different user using the --uid option.
+foreground-worker-1  | 
+foreground-worker-1  | User information: uid=0 euid=0 gid=0 egid=0
+foreground-worker-1  | 
+foreground-worker-1  |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+foreground-worker-1  |  
+foreground-worker-1  |  -------------- celery@5881dbe8d9d3 v5.6.3 (recovery)
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  | -- ******* ---- Linux-7.0.14-linuxkit-aarch64-with-glibc2.41 2026-10-12 13:08:09
+foreground-worker-1  | - *** --- * --- 
+foreground-worker-1  | - ** ---------- [config]
+foreground-worker-1  | - ** ---------- .> app:         tempo:0xffff8dfbc260
+foreground-worker-1  | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | - ** ---------- .> results:     redis://redis:6379/0
+foreground-worker-1  | - *** --- * --- .> concurrency: 2 (prefork)
+redis-1              | 1:C 12 Oct 2026 17:08:04.011 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+foreground-worker-1  | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+schema-1             | Applied 001_initial.sql
+schema-1             | Applied 002_game_sync_windows.sql
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: OS: Linux 7.0.14-linuxkit
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: getrlimit(RLIMIT_NOFILE): 1048576:1048576
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker processes
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 30
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 31
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 32
+redis-1              | 1:C 12 Oct 2026 17:08:04.011 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+background-worker-1  | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1  | - ** ---------- .> results:     redis://redis:6379/0
+background-worker-1  | - *** --- * --- .> concurrency: 1 (prefork)
+background-worker-1  | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+background-worker-1  | --- ***** ----- 
+background-worker-1  |  -------------- [queues]
+background-worker-1  |                 .> background       exchange=background(direct) key=background
+background-worker-1  |                 
+background-worker-1  | 
+background-worker-1  | [tasks]
+background-worker-1  |   . app.tasks.ensure_daily_queue
+background-worker-1  |   . app.tasks.execute_background_command
+background-worker-1  |   . app.tasks.execute_background_slice
+background-worker-1  |   . app.tasks.execute_foreground_command
+background-worker-1  |   . app.tasks.poll_background_tasks
+background-worker-1  |   . app.tasks.recover_active_coverage
+background-worker-1  |   . app.tasks.recover_operations
+background-worker-1  | 
+background-worker-1  | [2026-10-12 13:09:23,022: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1  | [2026-10-12 13:09:23,024: INFO/MainProcess] mingle: searching for neighbors
+background-worker-1  | [2026-10-12 13:09:24,041: INFO/MainProcess] mingle: sync with 1 nodes
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  |  -------------- [queues]
+foreground-worker-1  |                 .> foreground       exchange=foreground(direct) key=foreground
+foreground-worker-1  |                 
+foreground-worker-1  | 
+foreground-worker-1  | [tasks]
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 33
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 34
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 35
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 36
+web-1                | 2026/10/12 17:08:14 [notice] 1#1: start worker process 37
+web-1                | 172.20.0.1 - - [12/Oct/2026:17:08:16 +0000] "GET /api/health HTTP/1.1" 200 80 "-" "node" "-"
+web-1                | 172.20.0.1 - - [12/Oct/2026:17:09:22 +0000] "GET /api/health HTTP/1.1" 503 64 "-" "node" "-"
+web-1                | 172.20.0.1 - - [12/Oct/2026:17:09:24 +0000] "GET /api/health HTTP/1.1" 503 64 "-" "node" "-"
+web-1                | 172.20.0.1 - - [12/Oct/2026:17:09:26 +0000] "GET /api/health HTTP/1.1" 200 80 "-" "node" "-"
+background-worker-1  | [2026-10-12 13:09:24,041: INFO/MainProcess] mingle: sync complete
+background-worker-1  | [2026-10-12 13:09:24,052: INFO/MainProcess] celery@5f9687744f80 ready.
+schema-1             | Applied 003_integrity_accumulators.sql
+schema-1             | Applied 004_discovery_cursor.sql
+schema-1             | Applied 005_coverage_building.sql
+schema-1             | Applied 006_coverage_maia_claim.sql
+schema-1             | Applied 007_coverage_explorer_claim.sql
+schema-1             | Applied 008_coverage_recovery.sql
+schema-1             | Applied 009_versioned_game_analysis.sql
+schema-1             | Applied 010_game_analysis_publications.sql
+schema-1             | Applied 011_versioned_game_positions.sql
+schema-1             | Applied 012_versioned_game_repertoire.sql
+foreground-worker-1  |   . app.tasks.ensure_daily_queue
+foreground-worker-1  |   . app.tasks.execute_background_command
+foreground-worker-1  |   . app.tasks.execute_background_slice
+foreground-worker-1  |   . app.tasks.execute_foreground_command
+foreground-worker-1  |   . app.tasks.poll_background_tasks
+foreground-worker-1  |   . app.tasks.recover_active_coverage
+foreground-worker-1  |   . app.tasks.recover_operations
+foreground-worker-1  | 
+foreground-worker-1  | [2026-10-12 13:08:10,079: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | [2026-10-12 13:08:10,082: INFO/MainProcess] mingle: searching for neighbors
+foreground-worker-1  | [2026-10-12 13:08:11,098: INFO/MainProcess] mingle: all alone
+foreground-worker-1  | [2026-10-12 13:08:11,106: INFO/MainProcess] celery@5881dbe8d9d3 ready.
+foreground-worker-1  | [2026-10-12 13:08:11,107: INFO/MainProcess] Task app.tasks.execute_foreground_command[34515e6a377a48ffa6535afffbf78378] received
+foreground-worker-1  | [2026-10-12 13:08:11,153: INFO/ForkPoolWorker-1] foreground command=queue.ensure_current queue_wait_seconds=1.260 execution_seconds=0.042
+background-worker-1  | [2026-10-12 13:09:24,054: INFO/MainProcess] Task app.tasks.recover_active_coverage[e82781ee54eb4e398338a352b3307e9b] received
+background-worker-1  | [2026-10-12 13:09:24,092: INFO/ForkPoolWorker-1] Task app.tasks.recover_active_coverage[e82781ee54eb4e398338a352b3307e9b] succeeded in 0.03745112500018877s: False
+redis-1              | 1:C 12 Oct 2026 17:08:04.011 * Configuration loaded
+redis-1              | 1:M 12 Oct 2026 17:08:04.011 * monotonic clock: POSIX clock_gettime
+redis-1              | 1:M 12 Oct 2026 17:08:04.014 * Running mode=standalone, port=6379.
+redis-1              | 1:M 12 Oct 2026 17:08:04.015 * Server initialized
+redis-1              | 1:M 12 Oct 2026 17:08:04.022 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+redis-1              | 1:M 12 Oct 2026 17:08:04.035 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+redis-1              | 1:M 12 Oct 2026 17:08:04.035 * Ready to accept connections tcp
+schema-1             | Applied 013_versioned_game_findings.sql
+schema-1             | Applied 014_versioned_game_events.sql
+schema-1             | Applied 015_game_finding_preparations.sql
+foreground-worker-1  | [2026-10-12 13:08:11,154: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[34515e6a377a48ffa6535afffbf78378] succeeded in 0.046574041999974725s: {'queue_date': '2026-10-12', 'refresh_pending': True, 'task_id': '0623ee01-26cf-4b51-8bb1-ae4994aaf192'}
+foreground-worker-1  | [2026-10-12 13:09:22,364: INFO/MainProcess] Task app.tasks.ensure_daily_queue[6b772bedcafb4387b35efd39fd82de2d] received
+foreground-worker-1  | [2026-10-12 13:09:22,385: INFO/ForkPoolWorker-1] Task app.tasks.ensure_daily_queue[6b772bedcafb4387b35efd39fd82de2d] succeeded in 0.015880874999993466s: False
+background-worker-1  | [2026-10-12 13:09:24,096: INFO/MainProcess] Task app.tasks.poll_background_tasks[fc40c221ab1c41e3a9b55417829224be] received
+background-worker-1  | [2026-10-12 13:09:24,098: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1  | [2026-10-12 13:09:24,099: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[fc40c221ab1c41e3a9b55417829224be] succeeded in 0.0022829580000234273s: False
+background-worker-1  | [2026-10-12 13:09:24,100: INFO/MainProcess] Task app.tasks.recover_operations[5c465a7d61b948c9a40d49eff9ca1844] received
+background-worker-1  | [2026-10-12 13:09:24,103: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:09:24,105: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+foreground-worker-1  | [2026-10-12 13:09:23,032: INFO/MainProcess] sync with celery@5f9687744f80
+background-worker-1  | [2026-10-12 13:09:24,105: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+schema-1             | Applied 016_phone_review_receipts.sql
+schema-1             | Applied 017_operation_recovery.sql
+background-worker-1  | [2026-10-12 13:09:24,106: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[5c465a7d61b948c9a40d49eff9ca1844] succeeded in 0.0050127090000842145s: False
+background-worker-1  | [2026-10-12 13:09:24,357: INFO/MainProcess] Task app.tasks.poll_background_tasks[2314eb291b9c4c3084fa115caf3c78aa] received
+schema-1             | Applied 018_operation_attempt_ownership.sql
+schema-1             | Applied 019_threat_claim_lookup.sql
+schema-1             | Applied 020_ordered_threat_claim.sql
+schema-1             | Applied 021_priority_preparations.sql
+schema-1             | Applied 022_priority_preparation_ordering.sql
+schema-1             | Applied 023_priority_visible_game_positions.sql
+schema-1             | Applied 024_opening_segmentation.sql
+schema-1             | Applied 025_tactic_capture.sql
+schema-1             | Applied 026_background_diagnostics.sql
+background-worker-1  | [2026-10-12 13:09:24,359: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1  | [2026-10-12 13:09:24,359: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[2314eb291b9c4c3084fa115caf3c78aa] succeeded in 0.0013347920000796876s: False
+background-worker-1  | [2026-10-12 13:09:25,358: INFO/MainProcess] Task app.tasks.poll_background_tasks[76ecb5751cd34668a1db9a5ef80de69b] received
+background-worker-1  | [2026-10-12 13:09:25,360: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:09:25,385: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.009 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:09:25,386: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.011s
+background-worker-1  | [2026-10-12 13:09:25,387: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[76ecb5751cd34668a1db9a5ef80de69b] succeeded in 0.029375374999972337s: False
+background-worker-1  | [2026-10-12 13:09:26,359: INFO/MainProcess] Task app.tasks.poll_background_tasks[2db6bd7e024641848d1e3262570400d9] received
+background-worker-1  | [2026-10-12 13:09:26,364: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1  | [2026-10-12 13:09:26,365: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[2db6bd7e024641848d1e3262570400d9] succeeded in 0.004820958999971481s: False
+background-worker-1  | [2026-10-12 13:09:27,361: INFO/MainProcess] Task app.tasks.poll_background_tasks[6dcd62eccbe24472a7262c334dd41c8d] received
+background-worker-1  | [2026-10-12 13:09:27,371: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.002 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:09:27,384: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.010 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:09:27,384: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.012s
+background-worker-1  | [2026-10-12 13:09:27,385: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[6dcd62eccbe24472a7262c334dd41c8d] succeeded in 0.020047624999961045s: False
+background-worker-1  | [2026-10-12 13:09:27,387: INFO/MainProcess] Task app.tasks.recover_operations[5986efc88d504ead8a19ded89f8c81d5] received
+schema-1             | Applied 027_handled_discoveries.sql
+schema-1             | Applied 028_revisioned_discovery_admissions.sql
+schema-1             | Applied 029_repertoire_daily_limits.sql
+schema-1             | Applied 030_opening_decision_evidence.sql
+schema-1             | Applied 031_defensive_analysis_pause.sql
+schema-1             | Applied 032_queue_attempt_origins.sql
+background-worker-1  | [2026-10-12 13:09:27,391: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:09:27,392: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+schema-1             | Applied 033_canonical_prefix.sql
+schema-1             | Applied 034_current_canonical_routes.sql
+background-worker-1  | [2026-10-12 13:09:27,392: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1  | [2026-10-12 13:09:27,393: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[5986efc88d504ead8a19ded89f8c81d5] succeeded in 0.005652333000170984s: False
+background-worker-1  | [2026-10-12 13:09:28,359: INFO/MainProcess] Task app.tasks.poll_background_tasks[b58d6a5c8725439abf8a260b22d230ab] received
+background-worker-1  | [2026-10-12 13:09:28,365: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+postgres-1           | creating configuration files ... ok
+postgres-1           | running bootstrap script ... ok
+postgres-1           | performing post-bootstrap initialization ... ok
+background-worker-1  | [2026-10-12 13:09:28,375: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.007 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:09:28,375: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.009s
+background-worker-1  | [2026-10-12 13:09:28,376: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[b58d6a5c8725439abf8a260b22d230ab] succeeded in 0.01654920900000434s: False
+background-worker-1  | [2026-10-12 13:09:29,454: INFO/MainProcess] Task app.tasks.poll_background_tasks[8af17e09bb1d49e888926aadbf8ce637] received
+background-worker-1  | [2026-10-12 13:09:29,458: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+schema-1             | Applied 035_canonical_publication_freshness.sql
+schema-1             | Applied 036_prefix_diagnostics_indexes.sql
+schema-1             | Applied 037_card_deletion.sql
+postgres-1           | syncing data to disk ... ok
+postgres-1           | initdb: warning: enabling "trust" authentication for local connections
+postgres-1           | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1           | 
+postgres-1           | 
+postgres-1           | Success. You can now start the database server using:
+postgres-1           | 
+background-worker-1  | [2026-10-12 13:09:29,473: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.014 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:09:29,473: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.015s
+postgres-1           |     pg_ctl -D /var/lib/postgresql/18/docker -l logfile start
+postgres-1           | 
+postgres-1           | waiting for server to start....2026-10-12 17:08:04.834 UTC [51] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+schema-1             | Applied 038_prefix_transition_application.sql
+schema-1             | Applied 039_prefix_transition_lock_budget.sql
+postgres-1           | 2026-10-12 17:08:04.835 UTC [51] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1           | 2026-10-12 17:08:04.839 UTC [57] LOG:  database system was shut down at 2026-10-12 17:08:04 UTC
+schema-1             | Applied 040_queue_unlock_deadlines.sql
+schema-1             | Applied 041_real_game_study_obligations.sql
+schema-1             | Applied 042_queue_attempt_issuance.sql
+schema-1             | Applied 043_background_scheduling_turns.sql
+schema-1             | Applied 044_next_opponent_profiles.sql
+schema-1             | Applied 045_engine_scheduling.sql
+postgres-1           | 2026-10-12 17:08:04.842 UTC [51] LOG:  database system is ready to accept connections
+postgres-1           |  done
+postgres-1           | server started
+postgres-1           | CREATE DATABASE
+postgres-1           | 
+postgres-1           | 
+postgres-1           | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1           | 
+postgres-1           | waiting for server to shut down....2026-10-12 17:08:05.035 UTC [51] LOG:  received fast shutdown request
+postgres-1           | 2026-10-12 17:08:05.037 UTC [51] LOG:  aborting any active transactions
+postgres-1           | 2026-10-12 17:08:05.038 UTC [51] LOG:  background worker "logical replication launcher" (PID 60) exited with exit code 1
+postgres-1           | 2026-10-12 17:08:05.039 UTC [55] LOG:  shutting down
+schema-1             | Applied 046_refresh_input_versions.sql
+schema-1             | Applied 047_study_only_mode.sql
+schema-1             | PostgreSQL schema version 47
+schema-1             | PostgreSQL schema version 47
+schema-1             | PostgreSQL schema version 47
+background-worker-1  | [2026-10-12 13:09:29,474: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[8af17e09bb1d49e888926aadbf8ce637] succeeded in 0.019031042000051457s: False
+background-worker-1  | [2026-10-12 13:09:29,578: INFO/MainProcess] Task app.tasks.execute_background_command[65ae5a53-9953-4332-91dd-13c87255c29d] received
+background-worker-1  | [2026-10-12 13:09:29,593: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.003 handler_seconds=0.004 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:09:29,593: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.008s
+background-worker-1  | [2026-10-12 13:09:29,598: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.004 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:09:29,620: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.016 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:09:29,620: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.002s transaction=0.018s
+postgres-1           | 2026-10-12 17:08:05.039 UTC [55] LOG:  checkpoint starting: shutdown immediate
+postgres-1           | 2026-10-12 17:08:05.075 UTC [55] LOG:  checkpoint complete: wrote 943 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.013 s, sync=0.021 s, total=0.037 s; sync files=303, longest=0.008 s, average=0.001 s; distance=4352 kB, estimate=4352 kB; lsn=0/1BA1BE8, redo lsn=0/1BA1BE8
+postgres-1           | 2026-10-12 17:08:05.086 UTC [51] LOG:  database system is shut down
+postgres-1           |  done
+postgres-1           | server stopped
+postgres-1           | 
+postgres-1           | PostgreSQL init process complete; ready for start up.
+postgres-1           | 
+postgres-1           | 2026-10-12 17:08:05.159 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1           | 2026-10-12 17:08:05.160 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1           | 2026-10-12 17:08:05.160 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1           | 2026-10-12 17:08:05.164 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+background-worker-1  | [2026-10-12 13:09:29,621: INFO/ForkPoolWorker-1] background_handler {"kind":"other","stage":"idle","observed_at":"2026-10-12T17:09:29.621506+00:00","process_started_at":"2026-10-12T17:09:22.611416+00:00","admission_wait_seconds":0.002058250000118278,"handler_elapsed_seconds":0.039465457999995124,"execution_seconds":0.037407207999876846,"dispatch_wait_seconds":0.019902467727661133}
+background-worker-1  | [2026-10-12 13:09:29,622: INFO/ForkPoolWorker-1] Task app.tasks.execute_background_command[65ae5a53-9953-4332-91dd-13c87255c29d] succeeded in 0.04309504200000447s: {'job': None}
+postgres-1           | 2026-10-12 17:08:05.167 UTC [73] LOG:  database system was shut down at 2026-10-12 17:08:05 UTC
+postgres-1           | 2026-10-12 17:08:05.169 UTC [1] LOG:  database system is ready to accept connections
+postgres-1           | 2026-10-12 17:08:17.356 UTC [134] FATAL:  terminating connection due to transaction timeout
+postgres-1           | 2026-10-12 17:08:17.356 UTC [134] STATEMENT:  SELECT pg_sleep(0.075)
+background-worker-1  | [2026-10-12 13:09:29,676: INFO/MainProcess] Task app.tasks.execute_background_command[18bcdd36-4b4a-468b-af7f-fefdc2e682a6] received
+background-worker-1  | [2026-10-12 13:09:29,687: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.003 commit_cleanup_seconds=0.002
+background-worker-1  | [2026-10-12 13:09:29,687: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 13:09:29,690: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.002 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:09:29,699: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.005 commit_cleanup_seconds=0.002
+background-worker-1  | [2026-10-12 13:09:29,699: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.007s
+postgres-1           | 2026-10-12 17:08:20.716 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:08:20.806 UTC [71] LOG:  checkpoint complete: wrote 637 buffers (3.9%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.011 s, sync=0.073 s, total=0.091 s; sync files=810, longest=0.006 s, average=0.001 s; distance=16421 kB, estimate=16421 kB; lsn=0/2BAB0D8, redo lsn=0/2BAB080
+postgres-1           | 2026-10-12 17:08:25.760 UTC [71] LOG:  checkpoint starting: immediate force wait
+background-worker-1  | [2026-10-12 13:09:29,700: INFO/ForkPoolWorker-1] background_handler {"kind":"other","stage":"idle","observed_at":"2026-10-12T17:09:29.700373+00:00","process_started_at":"2026-10-12T17:09:22.611416+00:00","admission_wait_seconds":0.001174706999790942,"handler_elapsed_seconds":0.01988662500002647,"execution_seconds":0.018711918000235528,"dispatch_wait_seconds":0.01055288314819336}
+background-worker-1  | [2026-10-12 13:09:29,701: INFO/ForkPoolWorker-1] Task app.tasks.execute_background_command[18bcdd36-4b4a-468b-af7f-fefdc2e682a6] succeeded in 0.02427674999989904s: {'requeued': False}
+postgres-1           | 2026-10-12 17:08:25.768 UTC [71] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.002 s, sync=0.002 s, total=0.008 s; sync files=10, longest=0.001 s, average=0.001 s; distance=9898 kB, estimate=15768 kB; lsn=0/3555CA8, redo lsn=0/3555C50
+postgres-1           | 2026-10-12 17:08:28.970 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:08:28.985 UTC [71] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.004 s, total=0.015 s; sync files=10, longest=0.002 s, average=0.001 s; distance=9922 kB, estimate=15184 kB; lsn=0/3F06790, redo lsn=0/3F06738
+postgres-1           | 2026-10-12 17:08:32.303 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:08:32.598 UTC [71] LOG:  checkpoint complete: wrote 1391 buffers (8.5%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 2 recycled; write=0.019 s, sync=0.272 s, total=0.295 s; sync files=1038, longest=0.007 s, average=0.001 s; distance=19698 kB, estimate=19698 kB; lsn=0/5243078, redo lsn=0/5243020
+postgres-1           | 2026-10-12 17:08:34.812 UTC [289] ERROR:  Next-opponent snapshots are immutable
+postgres-1           | 2026-10-12 17:08:34.812 UTC [289] CONTEXT:  PL/pgSQL function protect_next_opponent_snapshot() line 3 at RAISE
+postgres-1           | 2026-10-12 17:08:34.812 UTC [289] STATEMENT:  UPDATE next_opponent_snapshots SET published_at='altered'
+postgres-1           | 2026-10-12 17:08:38.578 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:08:38.589 UTC [71] LOG:  checkpoint complete: wrote 54 buffers (0.3%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.003 s, total=0.011 s; sync files=19, longest=0.002 s, average=0.001 s; distance=867 kB, estimate=17815 kB; lsn=0/531BCE0, redo lsn=0/531BC88
+postgres-1           | 2026-10-12 17:08:44.485 UTC [378] ERROR:  cannot execute UPDATE in a read-only transaction
+postgres-1           | 2026-10-12 17:08:44.485 UTC [378] STATEMENT:  UPDATE cards SET state='learning' WHERE repertoire_id=$1
+postgres-1           | 2026-10-12 17:08:44.696 UTC [377] FATAL:  terminating connection due to administrator command
+postgres-1           | 2026-10-12 17:08:44.696 UTC [378] FATAL:  terminating connection due to administrator command
+postgres-1           | 2026-10-12 17:08:44.798 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:08:44.814 UTC [71] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.005 s, total=0.016 s; sync files=10, longest=0.003 s, average=0.001 s; distance=10517 kB, estimate=17085 kB; lsn=0/5D611D0, redo lsn=0/5D61178
+postgres-1           | 2026-10-12 17:08:49.393 UTC [407] ERROR:  cannot execute UPDATE in a read-only transaction
+postgres-1           | 2026-10-12 17:08:49.393 UTC [407] STATEMENT:  UPDATE background_tasks SET updated_at = updated_at WHERE id = $1
+postgres-1           | 2026-10-12 17:08:51.604 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:08:51.617 UTC [71] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=0.002 s, sync=0.003 s, total=0.014 s; sync files=10, longest=0.002 s, average=0.001 s; distance=54676 kB, estimate=54676 kB; lsn=0/92C6378, redo lsn=0/92C6320
+postgres-1           | 2026-10-12 17:09:07.555 UTC [751] LOG:  unexpected EOF on client connection with an open transaction
+postgres-1           | 2026-10-12 17:09:11.069 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:09:11.755 UTC [71] LOG:  checkpoint complete: wrote 1897 buffers (11.6%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.029 s, sync=0.653 s, total=0.687 s; sync files=1047, longest=0.038 s, average=0.001 s; distance=26426 kB, estimate=51851 kB; lsn=0/AC94F30, redo lsn=0/AC94ED8
+postgres-1           | 2026-10-12 17:09:11.785 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:09:11.794 UTC [71] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.009 s; sync files=3, longest=0.001 s, average=0.001 s; distance=3 kB, estimate=46666 kB; lsn=0/AC95F10, redo lsn=0/AC95EB8
+postgres-1           | 2026-10-12 17:09:13.973 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:09:13.981 UTC [71] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.002 s, sync=0.002 s, total=0.008 s; sync files=4, longest=0.001 s, average=0.001 s; distance=16636 kB, estimate=43663 kB; lsn=0/BCD4FC0, redo lsn=0/BCD4F68
+postgres-1           | 2026-10-12 17:09:17.637 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:09:17.660 UTC [71] LOG:  checkpoint complete: wrote 5 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.007 s, sync=0.004 s, total=0.024 s; sync files=6, longest=0.003 s, average=0.001 s; distance=10013 kB, estimate=40298 kB; lsn=0/C69C6F8, redo lsn=0/C69C6A0
+postgres-1           | 2026-10-12 17:09:18.631 UTC [1203] ERROR:  canceling statement due to lock timeout
+postgres-1           | 2026-10-12 17:09:18.631 UTC [1203] CONTEXT:  while locking tuple (0,4) in relation "priority_source_epoch"
+postgres-1           | 2026-10-12 17:09:18.631 UTC [1203] STATEMENT:  SELECT version FROM priority_source_epoch WHERE id = 1 FOR UPDATE
+postgres-1           | 2026-10-12 17:09:18.738 UTC [71] LOG:  checkpoint starting: immediate force wait
+postgres-1           | 2026-10-12 17:09:18.754 UTC [71] LOG:  checkpoint complete: wrote 5 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.006 s, sync=0.003 s, total=0.017 s; sync files=6, longest=0.002 s, average=0.001 s; distance=9929 kB, estimate=37261 kB; lsn=0/D04EBE8, redo lsn=0/D04EB90
+background-scheduler-1  | [2026-10-12 17:08:08,635: INFO/MainProcess] beat: Starting...
+background-scheduler-1  | [2026-10-12 17:08:09,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:10,649: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:11,649: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:12,649: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:13,649: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:13,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:14,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:15,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:16,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:17,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:18,649: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:18,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:19,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:20,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:21,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:22,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:23,649: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:23,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:24,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:25,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:26,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:27,651: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:28,649: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:28,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:29,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:30,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:31,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:32,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:33,649: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:33,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:34,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:35,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:36,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:37,652: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:38,649: INFO/MainProcess] Scheduler: Sending due task recover-active-coverage (app.tasks.recover_active_coverage)
+background-scheduler-1  | [2026-10-12 17:08:38,653: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:38,659: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:39,659: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:40,659: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:41,663: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:42,663: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:43,653: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:43,663: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:44,663: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:45,665: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:46,665: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:47,665: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:48,653: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:08:48,665: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:49,665: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:50,665: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:08:51,665: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | celery beat v5.6.3 (recovery) is starting.
+background-scheduler-1  | __    -    ... __   -        _
+background-scheduler-1  | LocalTime -> 2026-10-12 17:08:08
+background-scheduler-1  | Configuration ->
+background-scheduler-1  |     . broker -> app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-scheduler-1  |     . loader -> celery.loaders.app.AppLoader
+background-scheduler-1  |     . scheduler -> celery.beat.PersistentScheduler
+background-scheduler-1  |     . db -> celerybeat-schedule
+background-scheduler-1  |     . logfile -> [stderr]@%INFO
+background-scheduler-1  |     . maxinterval -> 5.00 minutes (300s)
+background-scheduler-1  | [2026-10-12 17:09:22,324: INFO/MainProcess] beat: Starting...
+background-scheduler-1  | [2026-10-12 17:09:22,342: INFO/MainProcess] Scheduler: Sending due task recover-active-coverage (app.tasks.recover_active_coverage)
+background-scheduler-1  | [2026-10-12 17:09:22,355: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:09:22,357: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:09:22,358: INFO/MainProcess] Scheduler: Sending due task ensure-current-daily-queue (app.tasks.ensure_daily_queue)
+background-scheduler-1  | [2026-10-12 17:09:23,355: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:09:24,355: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:09:25,355: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:09:26,355: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:09:27,355: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:09:27,360: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:09:28,355: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:09:29,442: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:40336 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:60360 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:60372 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:40380 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:43830 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:43844 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:35584 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:43848 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:43854 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:35616 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:54314 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:35636 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.10:54546 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:54556 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:36018 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.10:54572 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:54578 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:36048 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.10:42944 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:42954 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:42788 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.10:42956 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:42968 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:42806 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     127.0.0.1:42828 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.10:40174 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:40182 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:43274 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.10:40194 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.9:38988 - "GET /api/health HTTP/1.0" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.10:40194 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:40210 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.9:38992 - "GET /api/health HTTP/1.0" 503 Service Unavailable
+api-1                   | INFO:     127.0.0.1:43300 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                   | INFO:     172.20.0.9:38996 - "GET /api/health HTTP/1.0" 200 OK
+api-1                   | INFO:     172.20.0.10:37996 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.10:37998 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1                   | INFO:     127.0.0.1:45526 - "GET /api/health HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:60734 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:60734 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1                   | INFO:     172.20.0.8:60734 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-maia-worker-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-web-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-defense-engine-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-background-scheduler-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-api-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-background-worker-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-foreground-worker-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-schema-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Stopping 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-redis-1 Removed 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Stopped 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Removing 
+ Container tempo-pg-regressions-54986-da1082fb-postgres-1 Removed 
+ Network tempo-pg-regressions-54986-da1082fb_default Removing 
+ Volume tempo-pg-regressions-54986-da1082fb_redis-test-data Removing 
+ Volume tempo-pg-regressions-54986-da1082fb_engine-test-operations Removing 
+ Volume tempo-pg-regressions-54986-da1082fb_engine-test-operations Removed 
+ Volume tempo-pg-regressions-54986-da1082fb_postgres-test-data Removing 
+ Volume tempo-pg-regressions-54986-da1082fb_redis-test-data Removed 
+ Volume tempo-pg-regressions-54986-da1082fb_postgres-test-data Removed 
+ Network tempo-pg-regressions-54986-da1082fb_default Removed 
+ Image tempo-pg-regressions-54986-da1082fb-web:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-defense-engine:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-api:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-background-scheduler:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-background-worker:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-maia-worker:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-foreground-worker:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-schema:latest Removing 
+ Image tempo-pg-regressions-54986-da1082fb-defense-engine:latest Removed 
+ Image tempo-pg-regressions-54986-da1082fb-web:latest Removed 
+ Image tempo-pg-regressions-54986-da1082fb-api:latest Removed 
+ Image tempo-pg-regressions-54986-da1082fb-background-scheduler:latest Removed 
+ Image tempo-pg-regressions-54986-da1082fb-schema:latest Removed 
+ Image tempo-pg-regressions-54986-da1082fb-maia-worker:latest Removed 
+ Image tempo-pg-regressions-54986-da1082fb-background-worker:latest Removed 
+ Image tempo-pg-regressions-54986-da1082fb-foreground-worker:latest Removed 
+PostgreSQL scenario cleanup: 7.66s (exit 0)
+Error: docker compose -p tempo-pg-regressions-54986-da1082fb -f docker-compose.postgres.test.yml -f /Users/andy/tempo/.dev-copies/issue-204-scheduling-store/.tempo-pg-test-secrets-Yfkn5Y/image-labels.json run --rm --no-deps -e TEMPO_REDIS_URL=redis://redis:6379/0 schema python /source/scripts/check_postgres_daily_study_dispatch.py failed
+    at file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/test-postgres-docker.mjs:119:52
+    at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:66:14)
+    at measureScenario.syncDetail (file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/test-scenario-timings.mjs:86:29)
+    at run (file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/test-postgres-docker.mjs:116:26)
+    at measureWorkload (file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/test-postgres-docker.mjs:983:9)
+    at executeIsolatedBackgroundWorkload (file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/postgres-test-plan.mjs:41:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async background_workloads (file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/test-postgres-docker.mjs:977:5)
+    at async measureScenario (file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/test-scenario-timings.mjs:58:20)
+    at async executePostgresTestPlan (file:///Users/andy/tempo/.dev-copies/issue-204-scheduling-store/scripts/postgres-test-plan.mjs:66:46)
+make: *** [docker-durability] Error 1
+real 115.91
+user 5.75
+sys 4.51

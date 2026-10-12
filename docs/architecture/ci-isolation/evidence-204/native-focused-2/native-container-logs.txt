@@ -1,0 +1,312 @@
+postgres-1  | The files belonging to this database system will be owned by user "postgres".
+postgres-1  | This user must also own the server process.
+postgres-1  | 
+postgres-1  | The database cluster will be initialized with locale "en_US.utf8".
+postgres-1  | The default database encoding has accordingly been set to "UTF8".
+postgres-1  | The default text search configuration will be set to "english".
+postgres-1  | 
+postgres-1  | Data page checksums are enabled.
+postgres-1  | 
+postgres-1  | fixing permissions on existing directory /var/lib/postgresql/18/docker ... ok
+postgres-1  | creating subdirectories ... ok
+postgres-1  | selecting dynamic shared memory implementation ... posix
+postgres-1  | selecting default "max_connections" ... 100
+postgres-1  | selecting default "shared_buffers" ... 128MB
+postgres-1  | selecting default time zone ... Etc/UTC
+postgres-1  | creating configuration files ... ok
+postgres-1  | running bootstrap script ... ok
+postgres-1  | performing post-bootstrap initialization ... ok
+postgres-1  | syncing data to disk ... ok
+postgres-1  | 
+postgres-1  | 
+postgres-1  | Success. You can now start the database server using:
+postgres-1  | 
+postgres-1  |     pg_ctl -D /var/lib/postgresql/18/docker -l logfile start
+postgres-1  | 
+postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1  | waiting for server to start....2026-10-12 17:11:36.774 UTC [60] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-12 17:11:36.776 UTC [60] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-12 17:11:36.784 UTC [66] LOG:  database system was shut down at 2026-10-12 17:11:34 UTC
+postgres-1  | 2026-10-12 17:11:36.788 UTC [60] LOG:  database system is ready to accept connections
+postgres-1  |  done
+postgres-1  | server started
+postgres-1  | CREATE DATABASE
+postgres-1  | 
+postgres-1  | 
+postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1  | 
+postgres-1  | waiting for server to shut down....2026-10-12 17:11:37.338 UTC [60] LOG:  received fast shutdown request
+postgres-1  | 2026-10-12 17:11:37.346 UTC [60] LOG:  aborting any active transactions
+postgres-1  | 2026-10-12 17:11:37.349 UTC [60] LOG:  background worker "logical replication launcher" (PID 69) exited with exit code 1
+postgres-1  | 2026-10-12 17:11:37.350 UTC [64] LOG:  shutting down
+postgres-1  | 2026-10-12 17:11:37.353 UTC [64] LOG:  checkpoint starting: shutdown immediate
+postgres-1  | 2026-10-12 17:11:37.518 UTC [64] LOG:  checkpoint complete: wrote 943 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.036 s, sync=0.114 s, total=0.169 s; sync files=303, longest=0.012 s, average=0.001 s; distance=4352 kB, estimate=4352 kB; lsn=0/1BA1BE8, redo lsn=0/1BA1BE8
+postgres-1  | 2026-10-12 17:11:37.559 UTC [60] LOG:  database system is shut down
+postgres-1  |  done
+postgres-1  | server stopped
+postgres-1  | 
+postgres-1  | PostgreSQL init process complete; ready for start up.
+postgres-1  | 
+postgres-1  | 2026-10-12 17:11:37.690 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-12 17:11:37.690 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-10-12 17:11:37.690 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-10-12 17:11:37.694 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-12 17:11:37.703 UTC [82] LOG:  database system was shut down at 2026-10-12 17:11:37 UTC
+postgres-1  | 2026-10-12 17:11:37.708 UTC [1] LOG:  database system is ready to accept connections
+redis-1     | 1:C 12 Oct 2026 17:11:33.386 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1     | 1:C 12 Oct 2026 17:11:33.386 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1     | 1:C 12 Oct 2026 17:11:33.386 * Configuration loaded
+redis-1     | 1:M 12 Oct 2026 17:11:33.387 * monotonic clock: POSIX clock_gettime
+redis-1     | 1:M 12 Oct 2026 17:11:33.389 * Running mode=standalone, port=6379.
+redis-1     | 1:M 12 Oct 2026 17:11:33.390 * Server initialized
+redis-1     | 1:M 12 Oct 2026 17:11:33.420 * Creating AOF base file appendonly.aof.1.base.rdb on server start
+redis-1     | 1:M 12 Oct 2026 17:11:33.440 * Creating AOF incr file appendonly.aof.1.incr.aof on server start
+redis-1              | 1:M 12 Oct 2026 17:11:33.440 * Ready to accept connections tcp
+foreground-worker-1  | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+foreground-worker-1  | absolutely not recommended!
+foreground-worker-1  | 
+foreground-worker-1  | Please specify a different user using the --uid option.
+foreground-worker-1  | 
+foreground-worker-1  | User information: uid=0 euid=0 gid=0 egid=0
+foreground-worker-1  | 
+foreground-worker-1  |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+foreground-worker-1  |  
+foreground-worker-1  |  -------------- celery@2d8dd29cafdc v5.6.3 (recovery)
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  | -- ******* ---- Linux-7.0.14-linuxkit-aarch64-with-glibc2.41 2026-10-12 13:11:42
+foreground-worker-1  | - *** --- * --- 
+foreground-worker-1  | - ** ---------- [config]
+foreground-worker-1  | - ** ---------- .> app:         tempo:0xffffb23ec320
+foreground-worker-1  | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | - ** ---------- .> results:     redis://redis:6379/0
+api-1                | INFO:     Started server process [1]
+api-1                | INFO:     Waiting for application startup.
+api-1                | INFO:     Application startup complete.
+api-1                | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+api-1                | INFO:     127.0.0.1:40134 - "GET /api/health HTTP/1.1" 200 OK
+foreground-worker-1  | - *** --- * --- .> concurrency: 2 (prefork)
+api-1                | INFO:     127.0.0.1:43596 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+api-1                | INFO:     127.0.0.1:43604 - "GET /api/health HTTP/1.1" 503 Service Unavailable
+foreground-worker-1  | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+foreground-worker-1  | --- ***** ----- 
+foreground-worker-1  |  -------------- [queues]
+foreground-worker-1  |                 .> foreground       exchange=foreground(direct) key=foreground
+foreground-worker-1  |                 
+foreground-worker-1  | 
+foreground-worker-1  | [tasks]
+foreground-worker-1  |   . app.tasks.ensure_daily_queue
+foreground-worker-1  |   . app.tasks.execute_background_command
+foreground-worker-1  |   . app.tasks.execute_background_slice
+foreground-worker-1  |   . app.tasks.execute_foreground_command
+foreground-worker-1  |   . app.tasks.poll_background_tasks
+foreground-worker-1  |   . app.tasks.recover_active_coverage
+foreground-worker-1  |   . app.tasks.recover_operations
+foreground-worker-1  | 
+foreground-worker-1  | [2026-10-12 13:11:42,227: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1  | [2026-10-12 13:11:42,230: INFO/MainProcess] mingle: searching for neighbors
+foreground-worker-1  | [2026-10-12 13:11:43,245: INFO/MainProcess] mingle: all alone
+foreground-worker-1  | [2026-10-12 13:11:43,262: INFO/MainProcess] celery@2d8dd29cafdc ready.
+foreground-worker-1  | [2026-10-12 13:11:43,265: INFO/MainProcess] Task app.tasks.execute_foreground_command[3b4ebb51a0d244758b6dd464b7fd1d1b] received
+foreground-worker-1  | [2026-10-12 13:11:43,322: INFO/ForkPoolWorker-1] foreground command=queue.ensure_current queue_wait_seconds=0.905 execution_seconds=0.051
+foreground-worker-1  | [2026-10-12 13:11:43,323: INFO/ForkPoolWorker-1] Task app.tasks.execute_foreground_command[3b4ebb51a0d244758b6dd464b7fd1d1b] succeeded in 0.0571826250002232s: {'queue_date': '2026-10-12', 'refresh_pending': True, 'task_id': '0529a0db-c3a8-4651-8908-915eedaab720'}
+background-worker-1  | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1  | - ** ---------- .> results:     redis://redis:6379/0
+background-worker-1  | - *** --- * --- .> concurrency: 1 (prefork)
+background-worker-1  | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+background-worker-1  | --- ***** ----- 
+background-worker-1  |  -------------- [queues]
+background-worker-1  |                 .> background       exchange=background(direct) key=background
+background-worker-1  |                 
+background-worker-1  | 
+background-worker-1  | [tasks]
+background-worker-1  |   . app.tasks.ensure_daily_queue
+background-worker-1  |   . app.tasks.execute_background_command
+background-worker-1  |   . app.tasks.execute_background_slice
+background-worker-1  |   . app.tasks.execute_foreground_command
+background-worker-1  |   . app.tasks.poll_background_tasks
+background-worker-1  |   . app.tasks.recover_active_coverage
+background-worker-1  |   . app.tasks.recover_operations
+background-worker-1  | 
+background-worker-1  | [2026-10-12 13:11:42,257: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-worker-1  | [2026-10-12 13:11:42,259: INFO/MainProcess] mingle: searching for neighbors
+background-worker-1  | [2026-10-12 13:11:43,268: INFO/MainProcess] mingle: all alone
+background-worker-1  | [2026-10-12 13:11:43,280: INFO/MainProcess] celery@c55bb868f580 ready.
+background-worker-1  | [2026-10-12 13:11:43,322: INFO/MainProcess] Task app.tasks.poll_background_tasks[05d204fa58fc48d0b5ed5b5ad9e27809] received
+background-worker-1  | [2026-10-12 13:11:43,352: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.010 settings_seconds=0.001 handler_seconds=0.013 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,382: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.016 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:11:43,382: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.018s
+background-worker-1  | [2026-10-12 13:11:43,389: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,586: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,599: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.010 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:11:43,599: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.012s
+background-worker-1  | [2026-10-12 13:11:43,600: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.600206+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0007070420006130007,"handler_elapsed_seconds":0.21639391700000488,"execution_seconds":0.21568687499939188,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,606: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[05d204fa58fc48d0b5ed5b5ad9e27809] succeeded in 0.2830442919998859s: True
+background-worker-1  | [2026-10-12 13:11:43,607: INFO/MainProcess] Task app.tasks.poll_background_tasks[a5f470ead5084019b087125976050eeb] received
+background-worker-1  | [2026-10-12 13:11:43,610: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,616: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,616: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 13:11:43,618: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,619: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,625: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,625: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 13:11:43,626: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.626140+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.000566709000395349,"handler_elapsed_seconds":0.009479916999680427,"execution_seconds":0.008913207999285078,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,629: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[a5f470ead5084019b087125976050eeb] succeeded in 0.02115887499985547s: True
+background-worker-1  | [2026-10-12 13:11:43,630: INFO/MainProcess] Task app.tasks.poll_background_tasks[347941a381af480a805cef8724110eab] received
+background-worker-1  | [2026-10-12 13:11:43,632: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,641: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.008 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,641: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.009s
+background-worker-1  | [2026-10-12 13:11:43,644: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,644: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,649: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,650: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 13:11:43,650: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.650309+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.000543374000244512,"handler_elapsed_seconds":0.008312708999710594,"execution_seconds":0.007769334999466082,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,653: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[347941a381af480a805cef8724110eab] succeeded in 0.02246587499985253s: True
+background-worker-1  | [2026-10-12 13:11:43,654: INFO/MainProcess] Task app.tasks.poll_background_tasks[6f764b3576f24590bc286863f38005dd] received
+background-worker-1  | [2026-10-12 13:11:43,655: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,662: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,662: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.007s
+background-worker-1  | [2026-10-12 13:11:43,664: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,665: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,671: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,671: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 13:11:43,671: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.671579+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0005895840004086494,"handler_elapsed_seconds":0.008491707999837672,"execution_seconds":0.007902123999429023,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,674: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[6f764b3576f24590bc286863f38005dd] succeeded in 0.0196570419998352s: True
+background-worker-1  | [2026-10-12 13:11:43,675: INFO/MainProcess] Task app.tasks.poll_background_tasks[eb9439d44cb144338743c351d134cffc] received
+background-worker-1  | [2026-10-12 13:11:43,676: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,683: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,683: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 13:11:43,684: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,684: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,689: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,689: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1  | [2026-10-12 13:11:43,689: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.689839+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0004030830000374408,"handler_elapsed_seconds":0.006597042000066722,"execution_seconds":0.006193959000029281,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,692: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[eb9439d44cb144338743c351d134cffc] succeeded in 0.016613374999906227s: True
+background-worker-1  | [2026-10-12 13:11:43,693: INFO/MainProcess] Task app.tasks.poll_background_tasks[d8fa2ed260ab4787a9b5bb0b62e546d7] received
+background-worker-1  | [2026-10-12 13:11:43,694: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,700: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,700: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 13:11:43,702: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,703: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,704: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,705: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,707: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,709: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,709: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1  | [2026-10-12 13:11:43,709: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.709846+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0010522899997340573,"handler_elapsed_seconds":0.008695874999830266,"execution_seconds":0.007643585000096209,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,712: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d8fa2ed260ab4787a9b5bb0b62e546d7] succeeded in 0.0192063340000459s: True
+background-worker-1  | [2026-10-12 13:11:43,713: INFO/MainProcess] Task app.tasks.poll_background_tasks[e404a184025b44a29fb938e4ed9087f0] received
+background-worker-1  | [2026-10-12 13:11:43,714: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,720: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,720: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 13:11:43,721: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,722: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,725: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,725: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1  | [2026-10-12 13:11:43,725: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.725646+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0003684160005832382,"handler_elapsed_seconds":0.005058582999936334,"execution_seconds":0.004690166999353096,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,728: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[e404a184025b44a29fb938e4ed9087f0] succeeded in 0.014285457999903883s: True
+background-worker-1  | [2026-10-12 13:11:43,728: INFO/MainProcess] Task app.tasks.poll_background_tasks[556d67f17f2e4e649882e0fc44154e68] received
+background-worker-1  | [2026-10-12 13:11:43,729: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,735: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,735: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 13:11:43,736: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,737: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,740: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,740: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1  | [2026-10-12 13:11:43,741: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.741170+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0003845840005851642,"handler_elapsed_seconds":0.005353250000098342,"execution_seconds":0.004968665999513178,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,745: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[556d67f17f2e4e649882e0fc44154e68] succeeded in 0.01588870900013717s: True
+background-worker-1  | [2026-10-12 13:11:43,746: INFO/MainProcess] Task app.tasks.poll_background_tasks[33706d7f97014c85a1c9b050c515d71d] received
+background-worker-1  | [2026-10-12 13:11:43,747: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,755: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,755: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.007s
+background-worker-1  | [2026-10-12 13:11:43,756: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,757: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,759: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,764: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:11:43,764: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1  | [2026-10-12 13:11:43,765: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.765051+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0009554580001349677,"handler_elapsed_seconds":0.009498417000031623,"execution_seconds":0.008542958999896655,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,768: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[33706d7f97014c85a1c9b050c515d71d] succeeded in 0.021801665999646502s: True
+background-worker-1  | [2026-10-12 13:11:43,769: INFO/MainProcess] Task app.tasks.poll_background_tasks[fd4840e54c05483aac6a46294fe55c00] received
+background-worker-1  | [2026-10-12 13:11:43,770: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,778: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.001
+background-worker-1  | [2026-10-12 13:11:43,778: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.007s
+background-worker-1  | [2026-10-12 13:11:43,779: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,780: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,782: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,784: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,784: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1  | [2026-10-12 13:11:43,784: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.784770+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0006945840000298631,"handler_elapsed_seconds":0.006273333000081038,"execution_seconds":0.005578749000051175,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,788: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[fd4840e54c05483aac6a46294fe55c00] succeeded in 0.01805899999999383s: True
+background-worker-1  | [2026-10-12 13:11:43,789: INFO/MainProcess] Task app.tasks.poll_background_tasks[607e51d7b3e64ee180382a6a65ec0945] received
+background-worker-1  | [2026-10-12 13:11:43,790: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,795: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,795: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 13:11:43,796: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,797: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,805: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.008 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,807: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,808: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,810: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,820: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,820: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1  | [2026-10-12 13:11:43,820: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.820757+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0015892490005171567,"handler_elapsed_seconds":0.02503462499998932,"execution_seconds":0.023445375999472162,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,824: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[607e51d7b3e64ee180382a6a65ec0945] succeeded in 0.034880749999956606s: True
+background-worker-1  | [2026-10-12 13:11:43,825: INFO/MainProcess] Task app.tasks.poll_background_tasks[bcf7112c7ed64bf0be402bd146af8ae7] received
+background-worker-1  | [2026-10-12 13:11:43,826: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,832: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,832: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1  | [2026-10-12 13:11:43,833: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,834: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,835: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,836: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,838: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,841: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,841: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1  | [2026-10-12 13:11:43,841: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.841660+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0011630419999164587,"handler_elapsed_seconds":0.009122833000219543,"execution_seconds":0.007959791000303085,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,844: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[bcf7112c7ed64bf0be402bd146af8ae7] succeeded in 0.01892220899981112s: True
+background-worker-1  | [2026-10-12 13:11:43,845: INFO/MainProcess] Task app.tasks.poll_background_tasks[0d4092bfbc2a4226961accdb712745c1] received
+background-worker-1  | [2026-10-12 13:11:43,846: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,852: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,852: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 13:11:43,853: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,853: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,858: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,861: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,861: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1  | [2026-10-12 13:11:43,861: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.861807+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0006633329999203852,"handler_elapsed_seconds":0.009603917000276851,"execution_seconds":0.008940584000356466,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,864: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[0d4092bfbc2a4226961accdb712745c1] succeeded in 0.018717375000051106s: True
+background-worker-1  | [2026-10-12 13:11:43,865: INFO/MainProcess] Task app.tasks.poll_background_tasks[f173f87940704df8974991474c8f0ac8] received
+background-worker-1  | [2026-10-12 13:11:43,866: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,871: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,871: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1  | [2026-10-12 13:11:43,872: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,872: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,873: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,878: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,878: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1  | [2026-10-12 13:11:43,879: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.879195+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0005927490005888103,"handler_elapsed_seconds":0.0076872500003446476,"execution_seconds":0.007094500999755837,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,882: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[f173f87940704df8974991474c8f0ac8] succeeded in 0.016459917000247515s: True
+background-worker-1  | [2026-10-12 13:11:43,883: INFO/MainProcess] Task app.tasks.poll_background_tasks[364d0b2b356142aab7580190e65f7351] received
+background-worker-1  | [2026-10-12 13:11:43,884: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,888: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,888: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1  | [2026-10-12 13:11:43,889: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,889: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,891: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,893: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,893: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1  | [2026-10-12 13:11:43,893: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.893919+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0005569160002778517,"handler_elapsed_seconds":0.005579832999956125,"execution_seconds":0.005022916999678273,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,896: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[364d0b2b356142aab7580190e65f7351] succeeded in 0.013279125000281056s: True
+background-worker-1  | [2026-10-12 13:11:43,897: INFO/MainProcess] Task app.tasks.poll_background_tasks[d084925cf9aa4459927049b0324dc1f2] received
+background-worker-1  | [2026-10-12 13:11:43,898: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,902: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,902: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1  | [2026-10-12 13:11:43,903: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,904: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,905: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,909: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1  | [2026-10-12 13:11:43,909: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1  | [2026-10-12 13:11:43,909: INFO/ForkPoolWorker-1] background_handler {"kind":"daily_queue","stage":"idle","observed_at":"2026-10-12T17:11:43.909639+00:00","process_started_at":"2026-10-12T17:11:41.479025+00:00","admission_wait_seconds":0.0005593750006482878,"handler_elapsed_seconds":0.006968625000354223,"execution_seconds":0.006409249999705935,"dispatch_wait_seconds":null}
+background-worker-1  | [2026-10-12 13:11:43,909: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d084925cf9aa4459927049b0324dc1f2] succeeded in 0.012087749999864172s: False
+background-worker-1  | 
+background-worker-1  | worker: Warm shutdown (MainProcess)

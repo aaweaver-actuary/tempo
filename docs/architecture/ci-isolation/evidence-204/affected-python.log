@@ -1,0 +1,19 @@
+........................................................................ [ 33%]
+........................................................................ [ 66%]
+........................................................................ [ 99%]
+..                                                                       [100%]
+=============================== warnings summary ===============================
+backend/.venv/lib/python3.14/site-packages/starlette/testclient.py:51
+  /Users/andy/tempo/.dev-copies/issue-204-scheduling-store/backend/.venv/lib/python3.14/site-packages/starlette/testclient.py:51: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+backend/.venv/lib/python3.14/site-packages/chess/engine.py:54
+  /Users/andy/tempo/.dev-copies/issue-204-scheduling-store/backend/.venv/lib/python3.14/site-packages/chess/engine.py:54: DeprecationWarning: 'asyncio.DefaultEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+    EventLoopPolicy = asyncio.DefaultEventLoopPolicy
+
+backend/.venv/lib/python3.14/site-packages/fastapi/routing.py:234: 233 warnings
+  /Users/andy/tempo/.dev-copies/issue-204-scheduling-store/backend/.venv/lib/python3.14/site-packages/fastapi/routing.py:234: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    is_coroutine = asyncio.iscoroutinefunction(dependant.call)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+218 passed, 235 warnings in 61.08s (0:01:01)
