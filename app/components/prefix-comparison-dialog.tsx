@@ -242,3 +242,5 @@ export function PrefixComparisonDialog({ repertoireId, repertoireName, onClose }
     </section>)}
   </div></div>;
 }
+
+// Temporary isolated frontend FAST qualification probe.
