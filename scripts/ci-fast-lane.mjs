@@ -62,6 +62,7 @@ export function validateFastGate(plan, report, needs, currentPullRequest, execut
     || currentPullRequest.base.repo.full_name !== plan.repository) failures.push('PR identity or head changed');
   if (currentPullRequest?.labels?.some(label => label.name === 'ci:full') && plan.tier !== 'FULL') failures.push('Complete qualification requested after selection');
   if (plan.tier === 'FULL') {
+    if (currentPullRequest?.base?.sha !== plan.base) failures.push('Full integration base changed; fresh qualification required');
     if (needs.quality?.result !== 'success') failures.push('Complete qualification did not pass');
     return failures;
   }
