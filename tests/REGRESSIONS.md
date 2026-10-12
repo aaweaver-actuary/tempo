@@ -4216,3 +4216,31 @@ Audit CI readiness evidence (existing named browser cases):
   The old probe throws on the error envelope; bounded polling now retains its
   HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
   These are fixture corrections for qualification, not additional product defects.
+
+## Issue #221 — connected review outbox cross-tab characterization
+
+Audit overlay on current main; these are normative durability assertions, not
+expected-failure declarations. A failing assertion means issue #221 remains open.
+No production correction or storage migration is included in this stage.
+
+- `review_outbox_two_tabs_preserve_distinct_completed_intents: A-B` and `B-A`
+  in `tests/browser/review-outbox-cross-tab.spec.ts`: real issued UI completions,
+  two native pages, debugger barrier before native storage writes, true reload,
+  original identities and real PostgreSQL receipt/history recovery.
+- `review_two_tabs_conflicting_results_preserve_original_receipts: correct first`
+  and `again first`: competing UI results for one issued head; real server delivery,
+  immutable canonical receipt and attributable competitor; existing chronological
+  credit for each distinct attempt, with no extra effects on replay.
+- `review_outbox_cross_tab_mutations_preserve_unrelated_intent` covers
+  enqueue/enqueue, enqueue/flush, flush/retry, flush/conflict,
+  flush/confirmed-record deletion, and recovery/another tab's update using the
+  bundled actual outbox against native shared localStorage and real PostgreSQL.
+- `lost_review_response_recovers_original_authoritative_receipt`: commit through
+  the real backend, suppress response, close submitting realm, reload, receipt-first
+  recovery with original body/key and unchanged scheduling/receipt evidence.
+
+Run `make ui-file FILE=review-outbox-cross-tab.spec.ts` with the disposable runner.
+The overlay intentionally remains visible to ordinary Chromium collection; no
+skips, retries, or assertion weakening hide unmet durability requirements.
+Existing #191 settlement, pending/blocked/failed receipt, and prepared-continuation
+regressions remain required. See `docs/architecture/audit-221/TEST-PLAN.md`.
