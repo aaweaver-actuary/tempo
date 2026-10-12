@@ -48,8 +48,8 @@
     },
     {
       "path": "checkout-cleanup.json",
-      "bytes": 750,
-      "sha256": "286e451457884b4099ab11fa0dcbc45600660d67b679285d616e8d09d1156f65"
+      "bytes": 810,
+      "sha256": "6fa05bac84396f8f1b8b86f6dbee089f46538c3aa3e38ced89f8d6d8ed5be8a4"
     },
     {
       "path": "checkout-deletion-gate.json",
