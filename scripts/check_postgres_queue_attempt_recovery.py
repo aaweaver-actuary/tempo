@@ -796,9 +796,11 @@ def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
                         assert "injected operation receipt" in str(error)
                     else:
                         raise AssertionError("Operation receipt failure did not escape to transaction owner")
-                    assert read_operation(operation) is None
+                    assert read_operation(operation)["state"] == "unknown"
                 wake.assert_not_called()
             with postgres_store.connection(read_only=True) as observer:
+                if boundary == "operation":
+                    assert observer.execute("SELECT COUNT(*) FROM operation_receipts WHERE operation_id=?", (operation,)).fetchone()[0] == 0
                 assert card_schedule_state(observer, card_id) == original_schedule
                 assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 0
                 assert observer.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card_id,)).fetchone()[0] == 0
