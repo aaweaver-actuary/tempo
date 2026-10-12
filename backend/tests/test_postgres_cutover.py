@@ -3407,7 +3407,7 @@ def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
             self.writes.append((statement, parameters))
             return Cursor(None)
 
-    monkeypatch.setattr(queue_commands, "enqueue_task_in_transaction",
+    monkeypatch.setattr(queue_commands.queue_application, "enqueue_task_in_transaction",
                         lambda database, kind, key, payload, *, priority:
                         enqueued.append((kind, key, payload, priority)) or {"id": "new-task"})
     database = Database()
@@ -5040,8 +5040,8 @@ def test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_rep
     monkeypatch.setattr(postgres_queue_refresh, "connection", section)
     monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice", lock_current_slice)
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance_slice)
-    for phase_name, handler in main._QUEUE_ELIGIBILITY_PHASES[1:]:
-        monkeypatch.setattr(main, handler.__name__,
+    for phase_name, handler in postgres_queue_refresh.queue_application._QUEUE_ELIGIBILITY_PHASES[1:]:
+        monkeypatch.setattr(postgres_queue_refresh.queue_application, handler.__name__,
                             lambda database, queue_date, name=phase_name: completed_phases.append(name))
 
     lease_number = 1
@@ -5092,7 +5092,7 @@ def test_postgres_queue_refresh_foreground_request_blocks_new_database_slice(mon
     monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(postgres_queue_refresh, "connection", section)
     monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice", lambda database, task: True)
-    monkeypatch.setattr(main, "_unlock_eligible_opening_cards", lambda *args, **kwargs: None)
+    monkeypatch.setattr(postgres_queue_refresh.queue_application, "_unlock_eligible_opening_cards", lambda *args, **kwargs: None)
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction",
                         lambda *args, **kwargs: True)
     task = {"id": "queue-job", "generation": 1, "lease_token": "lease",
@@ -5148,7 +5148,7 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
     # This small parity fixture models ordinary quota reconciliation. Actual
     # current miss evidence is proved by feedback and PostgreSQL durability tests.
     from app import main
-    monkeypatch.setattr(main, "has_outstanding_real_game_miss", lambda *_args: False)
+    monkeypatch.setattr(postgres_queue_refresh.queue_application, "has_outstanding_real_game_miss", lambda *_args: False)
     monkeypatch.setattr(postgres_queue_refresh, "has_outstanding_real_game_miss", lambda *_args: False)
 
     schema = """
