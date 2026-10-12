@@ -277,6 +277,9 @@ test("training-feedback-phone", async ({ page }) => {
     page.getByText("Try that position again", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".feedback.wrong")).toBeVisible();
+  // OutcomeFlash removes its otherwise empty board column after one second.
+  // Assert the settled layout instead of racing that transient grid gap.
+  await expect(page.locator(".outcome-flash")).toHaveCount(0);
   await page.evaluate(() => new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   ));

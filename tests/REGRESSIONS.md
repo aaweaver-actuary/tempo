@@ -4165,6 +4165,7 @@ unchanged by this correction.
 - `issue190_native_cancelled_bulk_releases_foreground_capacity_within_500ms` — actual workers compiled from pinned main reproduce 12.4–16.0 seconds of residual foreground blockage after cancellation; the current dispatcher must release capacity in all three browsers.
 
 - `restoration_retry_keeps_unavailable_evidence_visible_until_worker_publication` — retry does not claim recovered evidence before its worker snapshot is ready.
+- `training-feedback-phone` — pinned feedback rendering waits for the existing transient outcome flash to disappear, preventing its empty grid column from racing the stable screenshot.
 
 ## PR #172 independent flush-settlement audit
 
