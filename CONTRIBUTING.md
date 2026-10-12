@@ -10,7 +10,7 @@ All background analysis is foreground-preemptible. Treat ordinary API requests a
 FAST, STUDY or FULL through the required `merge-gate` check, as described in
 [docs/testing.md](docs/testing.md). FAST selects relevant unit/contract tests and
 static checks; STUDY adds bounded PostgreSQL durability and ten named browser
-cases. Schema, shared persistence, security, CI qualification infrastructure and
+cases. Schema, shared persistence, executable security, CI qualification infrastructure and
 unknown changes select FULL. This emergency policy accepts regression risk in
 inactive functionality and supersedes the older complete-core requirement for
 all ready PRs and the prerequisites in issues #202/#203.

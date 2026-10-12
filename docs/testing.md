@@ -23,21 +23,28 @@ those broader architecture issues remain open.
 | --- | --- | --- | --- |
 | FAST | Reviewed isolated sources and prose | Relevant unit/contract files, applicable lint/typecheck; prose uses conflict, migration inventory and diff checks without dependencies | Under 5 minutes |
 | STUDY | Queue, reviews, grading, admissions, quotas, scheduling, FSRS consumers, offline recovery and study-only mode | Relevant unit/backend files, bounded PostgreSQL study durability and ten named Chromium cases | Under 10 minutes |
-| FULL | Schema/migrations, shared persistence, authentication/security, qualification infrastructure, explicit global invariants, unknown ownership/history, or `ci:full` | Existing complete units, builds, PostgreSQL, lifecycle, browser and pinned checks | Measured per candidate |
+| FULL | Schema/migrations, shared persistence, executable authentication/security, qualification infrastructure, explicit global invariants, unknown ownership/history, or `ci:full` | Existing complete units, builds, PostgreSQL, lifecycle, browser and pinned checks | Measured per candidate |
 
 `scripts/ci-fast-lane-inventory.json` contains exact source ownership and browser
 file/title/project identities. Multiple changed paths use the union of selected
 files and the highest tier. Renames classify both paths. Missing tests, ambiguous
 ownership and unavailable history select FULL. A large file or shared frontend
 module does not by itself imply FULL. New unmapped functionality requires an
-explicit ownership review before it can use the fast lane.
+explicit ownership review before it can use the fast lane. This inventory asserts
+reviewed ownership; it is not certified reverse dependency closure (#202).
+Documentation-only Markdown, including security and CI documentation, remains
+FAST. Executable configuration, validators, workflows and security code retain
+FULL; changing their documentation does not change the executable policy.
 
 FAST/STUDY execute the exact PR head and verify selected collection against actual
 passing results. Zero, skipped, retried, missing, failed, cancelled, stale-head or
 other-run evidence cannot pass. Their results remain valid if only main advances;
 there is no cross-run fast-lane evidence reuse. FULL still qualifies the captured
-head/base/integration candidate. Draft FULL runs provide evidence but become
-merge-qualified only after ready-for-review complete qualification passes.
+head/base/integration candidate. Its merge gate reads the same-run immutable
+FULL plan and compares the qualified integration SHA with the fresh PR state,
+while the successful same-run `quality` dependency validates all required layers
+and evidence provenance. Every tier rejects drafts and draft-selected plans;
+becoming ready requires a fresh ready selection and successful qualification.
 
 The PostgreSQL `study` runner uses fresh owned databases, credentials and ports.
 It proves queue/attempt receipt recovery, study-only foreground review and
@@ -57,8 +64,23 @@ has no dependency on those runs. No existing tests or assertions are removed.
 Actions status to `merge-gate` (app ID 15368), remove required `quality`, and
 uncheck **Require branches to be up to date before merging**. Preserve all other
 protections. Read back the required-status-check configuration. Until this change
-is confirmed, the fast lane is implemented but is not operational. Roll back by
-requiring `quality` with strict=true; ordinary PRs must then request `ci:full`.
+is confirmed, the fast lane is implemented but is not operational.
+
+On 2026-10-12, main protection already requires non-strict `merge-gate` and has
+removed required `quality`; at that readback main did not yet contain the new
+workflow. Existing
+PRs with older workflows cannot satisfy that check until they include the new
+workflow. Do not treat this rollout gap as permission to bypass qualification.
+
+Rollback procedure (settings changes require explicit authorization):
+1. Add `ci:full` to each ordinary PR and obtain complete current-candidate quality.
+2. Update only main's required-status-checks endpoint, using this payload:
+   `{"strict":true,"checks":[{"context":"quality","app_id":15368}]}`.
+3. Read back that endpoint, verify `quality` and strict=true, and compare all other
+   branch protection fields with the pre-change snapshot. Confirm a current PR's
+   required checks; do not merge using an old candidate's success.
+The rollback payload can be validated locally without applying it. No rollback
+or protection mutation is performed as part of the PR214 correction.
 
 Omitted FAST/STUDY coverage includes unrelated analysis/import/model suites,
 full durability and backup/restore, deployment lifecycle, full browser inventory,
