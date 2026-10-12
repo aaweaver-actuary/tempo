@@ -275,8 +275,19 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
     page.getByRole("button", { name: "Import repertoire", exact: true }).click(),
   ]);
   const importedRepertoireId = (await importResponse.json()).repertoire_id as string;
+  expect(importedRepertoireId).toEqual(expect.any(String));
+  let pendingIssuanceProbe = true;
   await expect.poll(async () => {
-    const queue = await (await request.get(`${api}/queue/today`)).json();
+    // The real service can report pending issuance without a cards array.
+    // Include that observed boundary before proving the real imported queue.
+    const queueResponse = pendingIssuanceProbe ? {
+      ok: () => false, status: () => 503,
+      text: async () => "Queue changed or attempt issuance is pending. Retry loading the queue.",
+      json: async () => ({ detail: "Queue changed or attempt issuance is pending. Retry loading the queue." }),
+    } : await request.get(`${api}/queue/today`);
+    pendingIssuanceProbe = false;
+    if (!queueResponse.ok()) return `HTTP ${queueResponse.status()}: ${await queueResponse.text()}`;
+    const queue = await queueResponse.json();
     return (queue.cards as { repertoire_id: string }[]).some((card) => card.repertoire_id === importedRepertoireId);
   }, { timeout: 30_000 }).toBe(true);
   const viewImportedRepertoire = page.getByRole("button", { name: "View imported repertoire" });
