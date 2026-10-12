@@ -17,13 +17,13 @@ export function selectFastLane(paths, { comparisonAvailable = true, complete = f
   for (const path of paths) {
     if (!path || path.startsWith('/') || path.split('/').includes('..')) { full('Invalid path'); continue; }
     const mappings = inventory.sources.filter(mapping => mapping.paths.includes(path));
-    if (inventory.fullPaths.includes(path) || inventory.fullPrefixes.some(prefix => path.startsWith(prefix))
-      || /(?:auth|security|database|postgres_store|postgres_readiness|command_executor|redis_admission_gate)/i.test(path)
-      || /^docker|\.ya?ml$|\.lock$/.test(path)) { full(`${path}: global invariant or qualification infrastructure`); continue; }
     if ((/^docs\/.+\.md$/.test(path) || /(?:^|\/)README\.md$/.test(path)
       || ['AGENTS.md','CONTRIBUTING.md','tests/REGRESSIONS.md','THIRD_PARTY_NOTICES.md'].includes(path))) {
       reasons.push(`${path}: prose`); continue;
     }
+    if (inventory.fullPaths.includes(path) || inventory.fullPrefixes.some(prefix => path.startsWith(prefix))
+      || /(?:auth|security|database|postgres_store|postgres_readiness|command_executor|redis_admission_gate)/i.test(path)
+      || /^docker|\.ya?ml$|\.lock$/.test(path)) { full(`${path}: global invariant or qualification infrastructure`); continue; }
     if (mappings.length === 1) {
       const mapping = mappings[0];
       if (!['FAST','STUDY'].includes(mapping.tier) || !mapping.frontend?.length && !mapping.backend?.length) { full(`${path}: invalid ownership`); continue; }

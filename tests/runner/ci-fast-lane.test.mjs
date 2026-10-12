@@ -30,7 +30,7 @@ function fixture(path = 'app/lib/review-outbox.ts') {
 const failures = fixture => validateFastGate(fixture.plan,fixture.report,fixture.needs,pr,execution);
 
 test('emergency_docs_only_changes_do_not_trigger_full_qualification', () => {
-  const selection = selectFastLane(['docs/testing.md','CONTRIBUTING.md']);
+  const selection = selectFastLane(['docs/testing.md','docs/database-security.md','.github/workflows/README.md','CONTRIBUTING.md']);
   assert.equal(selection.tier,'FAST'); assert.equal(selection.node,false); assert.equal(selection.python,false);
   assert.deepEqual(selection.frontend,[]); assert.deepEqual(selection.browser,[]);
 });
