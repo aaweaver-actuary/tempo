@@ -1,10 +1,12 @@
 import { render, waitFor } from "@testing-library/react";
-import { expect, it, vi, beforeEach } from "vitest";
+import { expect, it, vi, beforeEach, afterEach } from "vitest";
 import GamesView from "../../app/views/games_view";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
+import { usesLocalApi } from "../../app/utils/local";
+import { readWorkspaceResponse } from "../../app/lib/workspace-data";
 
 vi.mock("../../app/utils/local", () => ({
-  usesLocalApi: () => false,
+  usesLocalApi: vi.fn(() => false),
 }));
 
 vi.mock("../../app/lib/analysis-engines", () => ({
@@ -21,6 +23,8 @@ vi.mock("../../app/lib/workspace-data", () => ({
 }));
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(usesLocalApi).mockReturnValue(false);
   useBoardShellStore.setState((state) => ({
     ...state,
     board: {
@@ -32,6 +36,18 @@ beforeEach(() => {
       drawnShapes: [],
     },
   }));
+});
+afterEach(() => vi.unstubAllGlobals());
+
+it("restoration_empty_games_navigation_never_admits_unused_full_repertoire_indexing", async () => {
+  vi.mocked(usesLocalApi).mockReturnValue(true);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({})));
+  vi.mocked(readWorkspaceResponse).mockImplementation(async () => Response.json({ games: [], lines: [] }));
+  const view = render(<GamesView onAnalyze={vi.fn()} onSettings={vi.fn()} onSync={vi.fn()}
+    syncState={{ syncing: false, imported: 0, error: "", lastSuccess: "" }} theme="brown" pieceSet="cburnett" useSharedBoard />);
+  await waitFor(() => expect(view.getByText("No games imported", { exact: true })).toBeTruthy());
+  expect(vi.mocked(readWorkspaceResponse).mock.calls.some(([url]) => String(url).includes("/api/repertoire/lines"))).toBe(false);
+  view.unmount();
 });
 
 it("Games shared board publishes readonly state and releases ownership on unmount", async () => {

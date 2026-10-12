@@ -489,7 +489,9 @@ export default function GamesView({
     queueMicrotask(() => void loadGames());
   }, [loadGames, syncState.lastSuccess]);
   useEffect(() => {
-    if (!local) return;
+    // No game position can consume repertoire suggestions before records load.
+    // Avoid admitting an unused full index ahead of the foreground summary.
+    if (!local || !loaded || records.length === 0) return;
     void readWorkspaceResponse(`${API_URL}/api/repertoire/lines`)
       .then(async (response) => {
         if (!response.ok) return;
@@ -511,7 +513,7 @@ export default function GamesView({
         );
       })
       .catch(() => undefined);
-  }, [local]);
+  }, [local, loaded, records.length]);
   const loadFindings = useCallback(async () => {
     if (!local || !selectedIdRef.current) {
       setFindings([]);

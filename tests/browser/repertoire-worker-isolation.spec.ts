@@ -63,6 +63,10 @@ test("issue190_native_bulk_abort_releases_capacity_preserves_retained_indexes_an
   const workloadPath = process.env.TEMPO_RESTORATION_WORKLOAD;
   if (observations === 1000 && !workloadPath) throw new Error("Qualification requires the generated diverse public workload");
   const publicPayload = workloadPath ? JSON.parse(await readFile(workloadPath, "utf8")) : undefined;
+  await page.exposeFunction("tempoPersistNativeProgress", (progress: { phase: string; baseline: unknown[]; measurements: unknown[] }) => {
+    writeFileSync(testInfo.outputPath("native-worker-progress.json"), JSON.stringify(progress, null, 2));
+    console.log(`Native ${testInfo.project.name}: ${progress.phase}, ${progress.baseline.length} baseline / ${progress.measurements.length} loaded requests`);
+  });
   const result = await page.evaluate(async ({ observations, publicPayload }) => {
     const native = Reflect.get(globalThis, "tempoNative") as {
       runStudyTask: (task: unknown, signal?: AbortSignal) => Promise<unknown>;
@@ -108,21 +112,29 @@ test("issue190_native_bulk_abort_releases_capacity_preserves_retained_indexes_an
       return { kind, milliseconds: performance.now() - started };
     };
     for (let warmup = 0; warmup < 10; warmup++) for (const family of families) await sampleForeground(family);
-    const baseline = [];
-    for (let observation = 0; observation < observations; observation++) for (const family of families) baseline.push(await sampleForeground(family));
-    const measurements = [];
+    const baseline: Awaited<ReturnType<typeof sampleForeground>>[] = [];
+    const measurements: Awaited<ReturnType<typeof sampleForeground>>[] = [];
+    const persistProgress = async (phase: string) => Reflect.get(globalThis, "tempoPersistNativeProgress")({ phase, baseline, measurements });
+    for (let observation = 0; observation < observations; observation++) {
+      for (const family of families) baseline.push(await sampleForeground(family));
+      if ((observation + 1) % 100 === 0) await persistProgress("baseline");
+    }
     for (let generation = 1; generation <= 3; generation++) {
       const cancellation = new AbortController();
       const work = native.runStudyTask({ kind: "repertoirePreparation", generation, payload: { lines } }, cancellation.signal);
       const settled = work.catch(error => error.name);
       await awaitRunning();
-      for (let observation = 0; observation < observations; observation++) for (const family of families) measurements.push(await sampleForeground(family));
+      for (let observation = 0; observation < observations; observation++) {
+        for (const family of families) measurements.push(await sampleForeground(family));
+        if ((observation + 1) % 100 === 0) await persistProgress(`generation ${generation}`);
+      }
       const queue = await native.runStudyTask({ kind: "queue", payload: { cards: [], count: 0 } });
       cancellation.abort();
       if (await settled !== "AbortError") throw new Error("Obsolete bulk work was not cancelled");
       if (JSON.stringify(queue) !== "[]") throw new Error("Foreground queue output changed");
     }
     const after = await native.runStudyTask({ kind: "findPositionMatches", repertoireId: "retained", revision: 1, fen: startFen });
+    await persistProgress("index retention and recovery");
     const comparisonAfter = await native.runStudyTask({ kind: "findComparisonMatches", revision: 1, fen: startFen, repertoireId: "retained" });
     const recovered = await native.runStudyTask({ kind: "repertoirePreparation", generation: 4, payload: { lines: lines.slice(0, 1) } }) as { generation: number; positions: unknown[] };
     return { baseline, measurements, parity: JSON.stringify(before) === JSON.stringify(after), comparisonParity: JSON.stringify(comparisonBefore) === JSON.stringify(comparisonAfter), comparisonCount: (comparisonBefore as unknown[]).length, generation: recovered.generation, positionCount: recovered.positions.length };

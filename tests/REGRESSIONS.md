@@ -4166,6 +4166,7 @@ unchanged by this correction.
 
 - `restoration_retry_keeps_unavailable_evidence_visible_until_worker_publication` — retry does not claim recovered evidence before its worker snapshot is ready.
 - `training-feedback-phone` — pinned feedback rendering waits for the existing transient outcome flash to disappear, preventing its empty grid column from racing the stable screenshot.
+- `restoration_empty_games_navigation_never_admits_unused_full_repertoire_indexing` — an empty Games workspace does not queue full-repertoire indexing ahead of its foreground summary. The named component regression failed before the gate; the native qualification asserts real Games readiness under bulk load.
 
 ## #204 — A1 scheduling store in the existing owned transaction
 
