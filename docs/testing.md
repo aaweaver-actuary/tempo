@@ -745,3 +745,5 @@ selections and local browser commands retain one runner. Whole-browser evidence 
 includes the shard assignment and original shard provenance. See
 [browser CI performance](browser-ci-performance.md) for baseline decomposition,
 isolation, tradeoffs, and nested diagnostic timing accounting.
+
+<!-- Temporary FAST docs qualification probe. -->
