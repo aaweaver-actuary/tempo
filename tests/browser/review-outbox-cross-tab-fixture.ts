@@ -74,6 +74,8 @@ export async function openOutboxHarness(page: Page) {
   // this avoids duplicating its mutation rules or adding a production test API.
   await page.route("**/__review-outbox-audit", route => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Review outbox audit</title>" }));
   await page.goto("/__review-outbox-audit");
+  await expect(page).toHaveTitle("Review outbox audit");
+  await expect(page.locator("#train")).toHaveCount(0);
   await page.addScriptTag({ content: await harnessBundle });
 }
 

@@ -6,6 +6,10 @@ import { envelope, instrumentReviewWrites, openOutboxHarness, readReviews, revie
   type Issued } from "./review-outbox-cross-tab-fixture";
 import type { PendingReview } from "../../app/lib/review-outbox";
 
+// Keep route-controlled connected delivery deterministic; the offline shell
+// is covered separately and must not serve an application behind the harness.
+test.use({ serviceWorkers: "block" });
+
 async function showIssuedReview(page: Page, identity: Issued) {
   await instrumentReviewWrites(page);
   // Observe actual server-issued presentation; select one already-issued head,
