@@ -1,0 +1,52 @@
+Issue #208 — asynchronous tactic failure ordering audit (partial; INCONCLUSIVE)
+2026-10-12, America/New_York
+
+Scope and provenance
+PR: https://github.com/aaweaver-actuary/tempo/pull/196
+Issue: https://github.com/aaweaver-actuary/tempo/issues/208
+Audited production head: ac48f467bae5ffdfbb11c30fccf54023b11bb23d
+PR captured base: 622d611a2fc6315163a54d7ae689ce1b97d06122
+Current remote main: 2ef94eaf04e36b8f354af7d95ed901b05cec5baf
+Head/base were refreshed before delivery; requested head remains unchanged.
+Audit checkout: /Users/andy/tempo/.dev-copies/issue-208-async-audit
+Branch: codex/issue-208-async-audit
+This exact-head audit intentionally uses the requested source rather than incorporating newer main. It does not qualify the newer integration candidate.
+Production app/backend/assets/config/dependencies are unchanged relative to the audited head. Only independent tests, a read-only synthetic database snapshot helper, the regression registry, and this report are added. PR196 and the live study stack were not modified. Local results tested exact PR production source with an uncommitted audit overlay, not clean HEAD.
+Environment: macOS ARM64, Node v26.10.0, locked npm dependencies installed with npm ci --no-audit --prefer-offline. Existing PostgreSQL runner uses fresh project-scoped disposable services. No local Python environment was installed; snapshot helper syntax was checked statically and database execution was intended inside the runner's schema container.
+
+Executed evidence
+1. make plan: exact complete inventory inspected; no full local gate launched.
+2. npm run test:unit -- tests/unit/tactic-failure-ordering-audit.test.tsx -t tactic_completion_while_failure_pending_remains_guided_again
+   1 passed, 7 selection-skipped; Vitest 2.80s. Wrong move restored starting FEN and retained original queue/card/revision; completed before initial /fail response and submitted Again/guided=true.
+3. npm run test:unit -- tests/unit/tactic-failure-ordering-audit.test.tsx
+   Final settled overlay: 8 passed, Vitest 3.37s; command wall 4.01s. Cases: completion while failure pending; rejection/lost-response/timeout retry identity; lost-response replay; reload before failure commit; review before original failure response; competing queue advancement. Timeout uses the actual AbortSignal with controlled clocks. Unit network persistence is mocked and does not establish database semantics.
+4. npm run test:unit -- tests/unit/study-only-tactics-regressions.test.tsx tests/unit/training-failure-outbox-regressions.test.ts tests/unit/review-outbox-regressions.test.ts
+   86 passed, Vitest 11.89s; wall 13.36s. Includes clean-solution and immediate-mate controls and existing conflict/receipt/retry coverage.
+5. npm run typecheck: final overlay passed, 13.45s wall. Earlier settled run passed in 16.10s before the competing-case expectation refinement.
+6. npm run lint: zero errors, 10 pre-existing warnings; wall 263.06s during host resource pressure. Focused final overlay lint passed, 8.64s; final browser-only lint passed, 2.05s after expectation refinement.
+7. git diff --check passed. Python audit snapshot helper parsed successfully; database execution is unproven.
+
+Harness failures
+The first whole audit unit run had 4 failed and 4 passed in 24.97s because tests looked for persistence notifications in the training view instead of observing the persistence promise. Those assertions were corrected; this is a harness failure, not a confirmed product defect. All eight final cases pass without production edits. No failing product reproduction has been established.
+
+Static trace
+Home marks failure synchronously, restores the board position, and retains a queue/card/revision-specific marker before asynchronous flush. Completion reads current store failure state, freezes an Again/guided review and logical attempt identity before its delivery timer. Queue initialization overlays matching saved failure contexts, preserving guidance even when the server flag is still false. Failure outbox replay keeps its operation identity across transient delivery failures. Guided review delivery has an independent failure-marker operation, and its explicit guided result remains authoritative when an advisory marker conflicts. PostgreSQL marker validation follows card-before-queue locking and checks retained identity. Review receipts bind logical attempts; independent competing attempts are reconciled separately. Two different attempts are legitimate separate review rows; replay of either must not create another row. These static observations do not prove real database concurrency.
+
+PostgreSQL/browser failure and missing proof
+Command: make ui-file FILE=tactic-failure-ordering-audit.spec.ts (initial call elevated).
+Project: tempo-pg-regressions-8993-b3a02df3
+compose_config 1.03s, image_build 27.91s passed; startup failed after 207.80s before service_health or browser execution. Schema bootstrap applied 001_initial.sql then psycopg reported that the server closed the connection unexpectedly. PostgreSQL logs record an unexpected child exit/recovery; background scheduler logs report unavailable Redis connections.
+During the same run, the host reported no space left on device; df showed only 359Mi free. That is an observed infrastructure limitation, not a proven root cause of the PostgreSQL crash. Disk availability later fluctuated around 1.7–2.6Gi. Docker version and Docker ps each exceeded a bounded 15-second read-only timeout. Other task-owned disposable runners were active; they were not altered.
+No browser audit case ran. There are no fresh adversarial PostgreSQL review/receipt/scheduling snapshots or browser screenshots. The seven authored modes (delayed, rejected, lost-response, timeout, reload, reordered, competing) are typechecked but unqualified at runtime. They assert real piece restoration, manual-correct blocking during guidance, retained failure identity, Again/guided reviews, receipts, replay-stable scheduling/origins, and rejection of stale identity without transferring failure. The competing mode expects one review per independent attempt and no replay duplicates.
+make docker-durability was not started because the daemon became unresponsive and the first owning runner's teardown remains pending. It would be a known-incompatible run. No full gate, visual/performance run, deployment, merge, or PR196 modification was performed. Existing PR CI is not evidence for this new adversarial matrix.
+
+Verdict and next action
+INCONCLUSIVE. No confirmed asynchronous product defect from the executed evidence; do not infer merge clearance from these passes. Withhold issue208 audit qualification until the seven real PostgreSQL browser cases and complete docker-durability pass. Keep issue208 open. Infrastructure recovery is required before the remaining evidence can be obtained. Do not restart Docker automatically because it hosts live study services.
+
+Cleanup and preservation
+Runner teardown started and removed multiple audit services, but stalled while stopping its Redis container. Remaining containers, volumes and images cannot be verified absent while Docker is unresponsive. Keep the owning runner and its secrets/Compose overlay available until teardown completes. No secret values are included in this report or ownership record.
+Exact owning teardown: docker compose -p tempo-pg-regressions-8993-b3a02df3 -f docker-compose.postgres.test.yml -f /Users/andy/tempo/.dev-copies/issue-208-async-audit/.tempo-pg-test-secrets-oizQmO/image-labels.json down --rmi local -v
+Ownership file with exact container/image/volume identifiers: runner-artifacts/tempo-cli/tempo-pg-regressions-8993-b3a02df3/ownership.json in the evidence directory.
+Retain the isolated audit checkout, its reproducible dependencies, and audit overlay for completion of missing proof. Preserve live resources, other tasks' checkouts/stacks, base images and safe build caches. No global prune or cross-task cleanup occurred. No storage-recovery claim is made.
+Evidence directory: /Users/andy/tempo/test-results/issue-208-async-audit-2026-10-12
+Logs and timing artifacts are preserved outside the checkout; evidence manifest records SHA256 hashes. Audit source is independently published on its audit branch; no new PR is opened for this partial qualification.
