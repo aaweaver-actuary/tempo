@@ -330,3 +330,100 @@ in `latest-main-two-browser-source.json` in the dated evidence directory.
 Project `tempo-pg-regressions-22026-e76dfa0a` teardown passed (7.35 s), and exact
 container/image/volume inventories were empty. New current-head/current-base CI
 must qualify this integration; no broad local gate or performance claim is made.
+
+## Capacity-driven admission (default off)
+
+`OPENING_CAPACITY_FRONTIER_EXPANSION` is a separate, conservative admission
+policy. It does not change the diagnostic frontier, ordinary unlock predicate,
+FSRS, review evidence, queue identities, or display ordering. Only the exact
+environment value `1` enables it; unset, `0`, and other values disable it.
+
+The normal admission plan runs first with its existing priorities and exceptions.
+Where that plan leaves a repertoire's allowance unused, the pure
+`opening_capacity_frontier.propose_capacity_expansion` policy may propose an
+immediate single-decision child on one current, ready, published line. Every
+prerequisite **before the immediate parent on that same line** must have a
+non-invalidated `study` review (`again` counts). The immediate parent may be
+unreviewed and immature, but must already be introduced, or be successfully
+normally admitted earlier in the same refresh. Previously introduced parents
+are preferred; within each tier the existing gameplay/breadth/score/depth/length
+selection kernel is reused. Transposed routes cannot splice their prerequisites.
+
+Relaxed proposals never recursively supply parent eligibility. A child stays
+`locked` until the existing writer admits it directly to `learning`. If its
+unreviewed parent was itself a speculative admission, the earlier prerequisite
+check blocks the grandchild. Repeated refreshes, worker replay, restart, or a new
+day do not manufacture exposure. Actual persisted study reviews advance the
+boundary. There is no quota refund or removal of existing admissions when the
+flag is disabled.
+
+For example, start with two unreviewed prefixes `A` and `B`, four distinct
+immediate children per prefix, and deeper grandchildren. With a daily allowance
+of ten and no mature cards:
+
+| Flag | Ordinary eligibility | Relaxed proposals | Admitted |
+| --- | --- | --- | --- |
+| Disabled | `A`, `B` | None | Two prefixes |
+| Enabled | `A`, `B` | `A1`–`A4`, `B1`–`B4` | Prefixes first, then eight children |
+
+The eight children do **not** acquire ordinary `new` eligibility. Grandchildren
+remain locked on later refreshes without new study exposure, even if the
+allowance increases. Fewer immediate children deliberately leave unused
+capacity. A rejected parent prevents its dependent child admission.
+
+Existing per-repertoire effective limits remain authoritative. The default
+`settings.new_cards_per_day` is inherited separately by each repertoire; it is
+not a global opening ceiling. Shared card identities are selected once and
+charged to one qualifying repertoire. This incremental flag neither implements
+nor completes the probability-ranking/global-budget roadmap in #114/#118/#159.
+Study-only mode and existing publication/recovery fences take precedence.
+
+### Local activation and rollback
+
+After installing a qualified revision into a separately configured local Compose
+stack, add this single configuration line to the `.env` used by that stack:
+
+```dotenv
+OPENING_CAPACITY_FRONTIER_EXPANSION=1
+```
+
+Using that stack's existing Compose project, files, credentials, and environment,
+recreate the backend services so all processes receive the same value:
+
+```sh
+docker compose up -d --no-deps --force-recreate api foreground-worker background-worker
+```
+
+For an isolated Python development runtime, supply
+`OPENING_CAPACITY_FRONTIER_EXPANSION=1` to its backend and worker processes.
+There is no settings UI or migration. To roll back, remove the line or set it to
+`0` and recreate the same services. Pending relaxed proposals are rechecked and
+rejected with the flag off; already admitted cards and reviews remain intact.
+Development and CI do not enable or restart the live study installation.
+
+### Cost and validation boundary
+
+Disabled operation adds no database queries. Enabled expansion adds reads only
+for repertoires with a shortage: unreviewed introduced-parent pages and normal
+parent IDs, indexed direct-child pages, compact route checks, and existing
+priority joins in pages of sixteen. Each PostgreSQL read connection closes before
+policy computation. Route checks use the published occurrence-prefix index;
+they do not load complete graph objects, traverse card-identity paths, fetch
+review histories, call engines, or acquire probability data. Candidate
+materialization scales with the actual next frontier (one route per physical
+card and repertoire), not with all locked descendants; exact priority/breadth
+selection still needs the competing frontier rather than an arbitrary shortlist.
+
+The existing one-card transaction rechecks the flag, ready generation, exact
+line/parent, earlier reviews, introductions, current due/priority restrictions,
+route membership/lifecycle/integrity, duplicate queue entries, and current
+allowance. Existing queue-position locks, task leases, checkpoints, and writes
+remain authoritative. No second writer or durable storage contract is added.
+
+Pure and SQLite/native-adapter regression tests live in
+`backend/tests/test_opening_capacity_frontier.py` and
+`backend/tests/test_opening_capacity_admission.py`. These prove policy and writer
+boundaries, not native PostgreSQL lock/durability semantics. Existing required CI
+still supplies backend, PostgreSQL durability, builds, selected browser families,
+lifecycle, and rendering qualification. No browser or database testing
+architecture is changed.
