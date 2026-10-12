@@ -1,0 +1,121 @@
+{
+  "repository": "aaweaver-actuary/tempo",
+  "issue": 220,
+  "pull_request": "https://github.com/aaweaver-actuary/tempo/pull/227",
+  "head": "b4007e70c50cd631ac35d0eafc00ea7ce028d60d",
+  "base": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+  "integration": "58d86c960b19b0d0f884ef5d5e5d5cd50e8ad631",
+  "audit_source": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "audit_report": "076e101474b5227189a98fa280d65c9d80d373fb",
+  "status": "implemented; complete and ready-state qualification pending",
+  "ownership": {
+    "queue_application": [
+      "reconcile_unseen_queue",
+      "admit_prioritized_opening_cards",
+      "_unlock_eligible_opening_cards",
+      "_block_ineligible_opening_queue_entries",
+      "_block_unapproved_defense_queue_entries",
+      "_restore_eligible_due_queue_entries",
+      "_restore_published_study_queue_entries",
+      "_reset_unintroduced_opening_cards",
+      "_reset_stale_opening_introductions",
+      "seed_queue",
+      "randomize_daily_queue",
+      "_quarantine_malformed_opening_cards",
+      "materialize_daily_queue",
+      "requeue",
+      "request_queue_refresh_in_transaction"
+    ],
+    "queue_ordering": [
+      "_queue_membership_hash",
+      "_plan_daily_queue_order"
+    ]
+  },
+  "validation": [
+    {
+      "scope": "affected Python queue/planner/Study/receipt files",
+      "passed": 411,
+      "seconds": 43.87
+    },
+    {
+      "command": "PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_queue_application_extraction.py backend/tests/test_opening_ranking_evaluation.py -q --rootdir=. -o cache_dir=.pytest_cache",
+      "passed": 96,
+      "seconds": 3.67
+    },
+    {
+      "command": "PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_postgres_cutover.py -q --rootdir=. -o cache_dir=.pytest_cache",
+      "passed": 242,
+      "seconds": 3.96
+    },
+    {
+      "command": "make ui-file FILE=post-review-progression.spec.ts",
+      "passed": 3,
+      "stage_seconds": 211.42
+    },
+    {
+      "scope": "fresh native PostgreSQL focused proof",
+      "tests": [
+        "test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay",
+        "test_issue135_postgres_first_ensure_calls_preserve_singleton_creation"
+      ],
+      "passed": 2,
+      "proof_invocation_seconds": [
+        2.373,
+        2.173
+      ]
+    }
+  ],
+  "failure_record": "Initial missing prioritization import repaired. Initial durability run stopped at a singleton barrier patching the old owner; mock retargeted with original assertions/deadlines preserved; focused native reproduction passed. No complete durability pass claimed from that failed run.",
+  "environments": {
+    "python": "CPython 3.14.8 with repository requirements",
+    "native": "disposable PostgreSQL 18.6, Redis 7, Python 3.12 product images",
+    "ci": "repository pinned ubuntu-24.04-arm runtime"
+  },
+  "performance": {
+    "method": "same-process alternating sequential hot planner comparison; 10 warmups and 200 samples per version; identical fixtures",
+    "rows": [
+      12,
+      1200
+    ],
+    "baseline_p50_ms": [
+      0.1025,
+      1.420521
+    ],
+    "extracted_p50_ms": [
+      0.1024795,
+      1.4201875
+    ],
+    "results_identical": true,
+    "limits": "Excludes imports, database, locks, network and foreground latency; no speedup claim"
+  },
+  "ci": "https://github.com/aaweaver-actuary/tempo/actions/runs/38282710771",
+  "preserved_contracts": [
+    "gateway transaction ownership",
+    "locks",
+    "receipts",
+    "issuance",
+    "generation/lease/task/phase fences",
+    "checkpoint shapes",
+    "Study-only resume",
+    "prepared continuation",
+    "SQLite compatibility",
+    "HTTP and schema"
+  ],
+  "remaining_risks": [
+    "#146 authoritative enqueue identity remains separate",
+    "#191 settlement remains separate",
+    "#223 unbounded preparation remains separate",
+    "#224 broader review-root extraction remains separate"
+  ],
+  "rollback": "Revert the three extraction/regression commits; no schema or persisted format change.",
+  "cleanup": {
+    "completed_local_projects_removed": [
+      "tempo-pg-regressions-54729-82ee7e5f",
+      "tempo-queue220-proof-62f805b847",
+      "tempo-pg-regressions-57381-512130bf"
+    ],
+    "raw_diagnostics": "Retained locally outside the checkout; not published",
+    "checkout": "Retain until CI/final preservation checks finish; then remove",
+    "live_and_other_task_resources": "untouched"
+  }
+}
