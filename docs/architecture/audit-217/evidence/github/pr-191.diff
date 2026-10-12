@@ -1,0 +1,1146 @@
+diff --git a/app/lib/review-outbox.ts b/app/lib/review-outbox.ts
+index f85f62a6..10c1ef85 100644
+--- a/app/lib/review-outbox.ts
++++ b/app/lib/review-outbox.ts
+@@ -433,6 +433,25 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst
+   return result;
+ }
+ 
++function combineReviewFlushResults(earlier: ReviewFlushResult, later: ReviewFlushResult): ReviewFlushResult {
++  return { persistedAttemptIds: [...earlier.persistedAttemptIds, ...later.persistedAttemptIds],
++    conflictedAttemptIds: [...earlier.conflictedAttemptIds, ...later.conflictedAttemptIds],
++    preparedContinuations: { ...earlier.preparedContinuations, ...later.preparedContinuations } };
++}
++
++function includeEarlierFlushSettlement(earlier: ReviewFlushResult, later: Promise<ReviewFlushResult>): Promise<ReviewFlushResult> {
++  return later.then(result => combineReviewFlushResults(earlier, result), error => {
++    if (!(error instanceof ReviewReplayError) || !error.flushResult) throw error;
++    // The underlying flush may have other observers. Only this caller's error
++    // includes the earlier generation; keep the original failure evidence intact.
++    const combinedError = Object.assign(new Error(error.message, { cause: error.cause }), error) as ReviewReplayError;
++    Object.setPrototypeOf(combinedError, Object.getPrototypeOf(error));
++    combinedError.stack = error.stack;
++    combinedError.flushResult = combineReviewFlushResults(earlier, error.flushResult);
++    throw combinedError;
++  });
++}
++
+ // Only the Retry save action supplies an explicit attempt identity. Incidental
+ // queue refreshes and saving another card must never release terminal suppression.
+ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false,
+@@ -440,21 +459,18 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
+   if (activeFlush && stopAfterAttemptId) return waitForSubmittedAttempt(activeFlush, stopAfterAttemptId).catch(error => {
+     if (!explicitRetryAttemptId) throw error;
+     return { persistedAttemptIds: [], conflictedAttemptIds: [] } as ReviewFlushResult;
+-  }).then(async result => {
++  }).then(result => {
+     if (attemptSettled(result, stopAfterAttemptId)) return result;
+-    const remainder = await flushPendingReviews(maximumReviews, verifyReceiptFirst, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId);
+-    return { persistedAttemptIds: [...result.persistedAttemptIds, ...remainder.persistedAttemptIds],
+-      conflictedAttemptIds: [...result.conflictedAttemptIds, ...remainder.conflictedAttemptIds],
+-      preparedContinuations: { ...result.preparedContinuations, ...remainder.preparedContinuations } };
++    return includeEarlierFlushSettlement(result,
++      flushPendingReviews(maximumReviews, verifyReceiptFirst, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId));
+   });
+   if (activeFlush && explicitRetryAttemptId) {
+     return activeFlush.catch(() => undefined).then(() => flushPendingReviews(maximumReviews, true, explicitRetryAttemptId, deferredAttemptIds));
+   }
+-  if (activeFlush && activeFlushMaximumReviews !== Infinity && maximumReviews === Infinity) return activeFlush.then(async result => {
++  if (activeFlush && activeFlushMaximumReviews !== Infinity && maximumReviews === Infinity) return activeFlush.then(result => {
+     if (!recoverableReviews(undefined, deferredAttemptIds).length) return result;
+-    const remainder = await flushPendingReviews(maximumReviews, verifyReceiptFirst, undefined, deferredAttemptIds);
+-    return { persistedAttemptIds: [...result.persistedAttemptIds, ...remainder.persistedAttemptIds],
+-      conflictedAttemptIds: [...result.conflictedAttemptIds, ...remainder.conflictedAttemptIds] };
++    return includeEarlierFlushSettlement(result,
++      flushPendingReviews(maximumReviews, verifyReceiptFirst, undefined, deferredAttemptIds));
+   });
+   if (!activeFlush) {
+     currentFlushProgress = undefined;
+@@ -462,8 +478,17 @@ export function flushPendingReviews(maximumReviews = Infinity, verifyReceiptFirs
+     if (retainedRetry && !recoverableReviews(explicitRetryAttemptId).some(review => logicalAttemptId(review) === explicitRetryAttemptId))
+       return Promise.reject(new Error("An earlier result for this card needs attention before this result can retry."));
+     activeFlushMaximumReviews = maximumReviews;
++    // Reserve ownership before saving can synchronously emit a public event.
++    // Reentrant callers observe this reservation's forwarded settlement.
++    let resolveFlushReservation!: (result: ReviewFlushResult | PromiseLike<ReviewFlushResult>) => void;
++    const flushReservation = new Promise<ReviewFlushResult>(resolve => { resolveFlushReservation = resolve; });
++    // Ordinary callers receive the actual flush below; an unused reservation
++    // must not create a second unhandled rejection when that flush fails.
++    void flushReservation.catch(() => undefined);
++    activeFlush = flushReservation;
+     activeFlush = savePendingReviews(maximumReviews, verifyReceiptFirst || !!explicitRetryAttemptId, explicitRetryAttemptId, deferredAttemptIds, stopAfterAttemptId)
+       .finally(() => { activeFlush = undefined; });
++    resolveFlushReservation(activeFlush);
+   }
+   return activeFlush;
+ }
+diff --git a/docs/review-outbox-settlement-audit.md b/docs/review-outbox-settlement-audit.md
+new file mode 100644
+index 00000000..3cfaa1a6
+--- /dev/null
++++ b/docs/review-outbox-settlement-audit.md
+@@ -0,0 +1,188 @@
++# Review-outbox flush settlement audit
++
++Independent audit of PR #172 on merged main
++`d4dbf28da5b6e95db8da1acfd9fecd4655821296`, October 11, 2026.
++Baseline tree: `cc2ed24e7114ed755b7caea481f2a7c1caca6cfb`.
++The isolated checkout is owned by PR #191; the live study checkout is untouched.
++
++## Verdict
++
++**Three CONFIRMED DEFECTS**, reproduced before changing production:
++
++1. A bounded owner followed by an unlimited caller drops both generations'
++   prepared-continuation maps while retaining their confirmed attempt IDs.
++2. A failing follow-up drops earlier confirmed IDs and continuation evidence
++   from unlimited and submitted-attempt callers' error results.
++3. Saving can synchronously publish a public event before `activeFlush` is
++   assigned. A reentrant submission can lose ownership, allowing concurrent
++   authoritative receipt recovery followed by an incorrect submitted rejection.
++
++The corrections combine all three settlement fields on success/failure, copy
++aggregate errors without mutating shared observers, and reserve ownership before
++saving can publish synchronously. Public signatures, storage formats, ranking,
++FSRS, scheduling, backend locking and reconciliation are unchanged. Existing
++synchronous publication and low-latency target settlement are preserved.
++
++No false persistence confirmation, terminal-conflict authorization, advancement
++to an unissued successor, duplicate advancement, or lost known failed-attempt
++marker was reproduced. The evidence does not establish an actual study incident.
++Qualification remains pending until current-candidate required CI passes.
++
++## Ownership and settlement invariants
++
++The corrected transition is idle → reserve active ownership → save → publish
++cumulative progress → complete/reject → release ownership → waiter callbacks or
++follow-up. A reservation forwards the actual flush settlement to synchronous
++reentrant observers; ordinary observers still receive the original flush.
++
++- Persistence requires an authoritative `persisted: true` POST or receipt.
++  Storage absence, another attempt's success and ambiguous delivery are insufficient.
++- Terminal reconciliation conflict retains the envelope and settles its own ID;
++  it does not confirm persistence or authorize a prepared successor.
++- Progress listeners require their requested attempt ID in a settlement list and
++  copy arrays/maps for an immutable early result. Unrelated later delivery need
++  not finish before a submitted attempt becomes usable.
++- Continuation evidence must belong to the confirmed attempt and match its frozen
++  issued successor. Advancement also rechecks the current attempt/generation,
++  queue-entry/card/revision/cycle/date, readiness and known failure evidence.
++- Advancement changes logical attempt ownership, preventing duplicate observers
++  from advancing the completed attempt twice.
++- A caller's aggregate error preserves earlier settlement plus the later failure's
++  identity, classification, message, cause, prototype and stack. Direct observers'
++  error evidence remains unchanged.
++
++**Flush-generation isolation is not an invariant.** For both completion and
++rejection, controlled public outbox callbacks and two explicit microtasks reach:
++A terminates → A's `finally` releases the slot → B starts and synchronously
++publishes its target conflict → A's old waiter callbacks run. The old listener
++can observe B, but resolves with genuine B terminal settlement and no persistence
++or continuation. Cross-generation observation alone is SAFE — VERIFIED in those
++executions; no generation abstraction was added for it.
++
++## Classified scenario matrix
++
++All 39 new unit cases have the `flush_settlement_audit` prefix in the four regular
++regression files listed below. Controlled fetch/body/receipt promises and explicit
++microtasks establish ordering; tests do not write private flush state or sleep.
++
++| Interleaving / outcome | Classification and observation |
++| --- | --- |
++| A completes/rejects; B publishes before A callbacks | SAFE — VERIFIED; genuine B conflict, no fabricated evidence |
++| Subscription immediately before/after publication; duplicate observers | SAFE — VERIFIED; target attribution, immutable early snapshots |
++| Synchronous subscriber during target storage change | SAFE — VERIFIED; target usable before held unrelated delivery |
++| Reentrant submitted caller during initial synchronous conflict | CONFIRMED DEFECT; recovered target subsequently rejected by its original caller |
++| Same/different submitted IDs; limits 1, 2, Infinity | SAFE — VERIFIED for target settlement; coalesced delivery and caller follow-up settings |
++| Different explicit retry IDs/settings; receipt-first versus POST-first | SAFE — VERIFIED; exact original identities, suppression retained for other attempts |
++| Bounded owner followed by unlimited drain | CONFIRMED DEFECT; confirmed IDs survive but both continuation maps disappear |
++| Unlimited/submitted follow-up fails after earlier confirmation | CONFIRMED DEFECT; earlier IDs/maps disappear from partial failure evidence |
++| Success; terminal or retryable conflict; missing confirmation | SAFE — VERIFIED; persistence and terminal settlement remain distinct |
++| Network failure before persistence; lost response after simulated commit | SAFE — VERIFIED; ambiguous until authoritative receipt recovery |
++| Same-card persisted/suppressed/conflicted predecessor | SAFE — VERIFIED; dependency ordering and retained unrelated work |
++| Unrelated reviews before/after target; reviews appended during delivery | SAFE — VERIFIED by new and retained cases; early settlement survives later work |
++| Missing/mismatched issuance; replacement attempt/generation | SAFE — VERIFIED; no stale or unissued advancement |
++| Changed queue entry/revision/cycle/date; newly known failure flag/marker | SAFE — VERIFIED; no advancement, retained failure guidance |
++| Home foreground with overlapping recovery/reconnect | SAFE — VERIFIED; one prepared advance or actionable authoritative recovery |
++| Idle receipt observer plus later failure | SAFE — VERIFIED after correction; confirmed target and capability retained |
++| Real PostgreSQL confirmation held during reconnect | SAFE — VERIFIED on baseline and first correction; native successor, restart and exact durable replay |
++
++## Reproductions and regression protection
++
++`tests/unit/review-outbox-regressions.test.ts`:
++
++- `flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities`
++  fails on baseline for limits 1 and 2. Hold A, join its bounded flush with an
++  unlimited caller, confirm A, then drain B/C. The caller loses both maps.
++- `flush_settlement_audit %s follow-up failure retains earlier settled evidence`
++  fails for unlimited and submitted callers. A confirms; follow-up B fails before
++  C. A disappears from error evidence. Duplicate aggregate and direct B observers
++  guard against shared error mutation and duplicated evidence.
++- `flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery`
++  fails on baseline. An initial same-card conflict event synchronously starts
++  target C's held POST. The first owner's assignment/cleanup discards C's active
++  ownership. Another receipt-first caller confirms C and removes its envelope;
++  the held POST then fails and rejects the original submitted caller. The ordered
++  trace confirms that recovery precedes rejection. With reserved ownership,
++  recovery cannot overtake the POST: ambiguous rejection remains truthful and
++  the explicit retry subsequently confirms C through its original receipt.
++
++The other audit cases live in this file and
++`tests/unit/prepared-review-continuation-regressions.test.ts`,
++`tests/unit/review-attempt-confirmation-regressions.test.tsx`, and
++`tests/unit/pending-review-recovery-regressions.test.tsx`.
++Exact expanded case names, baseline artifacts and corrected results are retained
++in `exact-audit-cases.json` in the local evidence bundle. Coverage is registered in
++`tests/REGRESSIONS.md` and remains discoverable by the regular suite.
++
++`tests/browser/post-review-progression.spec.ts` adds
++`flush_settlement_audit overlapping reconnect preserves issued successor and one durable review`.
++It holds actual POST or 202/receipt confirmation during reconnect, exercises native
++successor input after authoritative queue recovery, restarts the owned services,
++and proves original review/receipt/scheduling equality and idempotent replay.
++
++## Execution evidence and qualification limits
++
++- Baseline unit matrix: **39 cases; five failing assertions reproducing the three
++  defects, 34 passes**. Production was unchanged; tests were dirty additions.
++  Ordered traces and source hashes distinguish baseline from correction runs.
++- Final affected unit run: **269 passed, ten files, 18.10 s**, including all 39
++  audit cases. Runtime source is the final correction, tested while dirty on
++  `3394cd45`; it was then committed as `a35abbf0`. Final outbox file: **90 passed,
++  3.63 s**. Typecheck and lint passed (ten existing warnings); fresh static-command
++  duration was not captured. Earlier typecheck/lint timings are preserved separately.
++- Baseline real browser probe: **one passed, 81.66 s** browser stage. First
++  correction's full browser file: **four passed, 287.61 s** on clean runtime
++  `c46bc94d`. Fresh final ownership-correction browser evidence is pending.
++- Draft CI [38142379629](https://github.com/aaweaver-actuary/tempo/actions/runs/38142379629)
++  for `3394cd45` passed **1,629 frontend tests, 159 files, 270.59 s**, build and
++  pinned visual. Browser: **280/282 passed, 1,138.56 s**. Two existing startup
++  fixtures failed before review submission: `ERR_NETWORK_CHANGED` and a queue
++  probe dereferencing `cards` on pending-issuance HTTP 503. This run is failed
++  evidence and cannot qualify the new correction.
++- Both CI fixture failures were deterministically reproduced with controlled
++  inputs on unchanged production (**two failures, 100.62 s**). Test-only fixes
++  use one explicit initial UI Retry and bounded non-OK queue polling. Native
++  progression, durability/replay, deadlines and branch-deletion assertions remain.
++  Workspace passed its corrected probe. The large training fixture then exposed
++  separate failures: a 60 s cleanup timeout (isolated cleanup 25.42 s), followed
++  in a focused run by historical checkpoints remaining retrying beyond their
++  original 30 s deadline. Worker/lease/receipt traces are retained. Their cause
++  is unproven; no timeout, backend budget or product assertion is weakened.
++- Two complete local durability attempts did **not** qualify: unchanged operation
++  recovery hit a transaction timeout (focused unchanged case passed in 11.21 s);
++  the next attempt passed it but hit a daily-study refresh lock timeout (focused
++  unchanged case passed in 18.17 s). These are retained failures, not attributed
++  to the client fix. Fresh settled-correction durability and final CI remain pending.
++
++Exact proving commands (reporter/output options are retained in bundle logs):
++
++```sh
++npm run test:unit -- tests/unit/review-outbox-regressions.test.ts -t 'flush_settlement_audit reentrant submitted owner'
++npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/pending-review-recovery-regressions.test.tsx -t flush_settlement_audit
++npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/prepared-review-continuation-regressions.test.ts tests/unit/review-attempt-confirmation-regressions.test.tsx tests/unit/pending-review-recovery-regressions.test.tsx tests/unit/desktop-queue-regressions.test.ts tests/unit/phone-queue-preparation-regressions.test.ts tests/unit/queue-readiness-diagnostics-regressions.test.ts tests/unit/offline-training-regressions.test.ts tests/unit/attempt-lifecycle-regressions.test.ts tests/unit/opening-evidence-review-deadlines.test.ts
++npm run typecheck
++npm run lint
++make ui-file FILE=post-review-progression.spec.ts
++make docker-durability
++```
++
++macOS development: Node 26.10.0, npm 11.19.1, Vitest 5.0.1/jsdom, locked
++Node dependencies installed once. Docker invocations use fresh disposable
++project-isolated state. CI owns complete current-head/base/integration validation;
++[PR #191 checks](https://github.com/aaweaver-actuary/tempo/pull/191/checks) record
++its candidate qualification separately. No local `make full` duplicates CI.
++
++## Remaining uncertainty and resource ownership
++
++Mocked commit/receipt cases prove client semantics, not PostgreSQL durability.
++This finite matrix is not exhaustive model checking or cross-tab serialization.
++Raw errors without `ReviewReplayError.flushResult` keep their existing behavior;
++aggregate retention for that exceptional path is INCONCLUSIVE. No unsafe
++advancement was reproduced; this is bounded evidence, not a universal proof.
++
++Logs, traces, assertions, patches, timing, source provenance and owned-resource
++teardown records are retained outside the clone at root
++`test-results/audits/2026-10-11-review-outbox-settlement/`.
++Task-owned disposable runners are torn down after capturing diagnostics. The
++checkout remains owned by this audit while PR #191 is unmerged. Existing issue
++#186's broader requirements remain open; this PR references #172 without claiming
++that issue is completely resolved. No merge or deployment was performed.
+diff --git a/tests/REGRESSIONS.md b/tests/REGRESSIONS.md
+index 335fbbb6..46c82bc6 100644
+--- a/tests/REGRESSIONS.md
++++ b/tests/REGRESSIONS.md
+@@ -3998,3 +3998,76 @@ PR #185 final independent diagnostic qualification (October 11, 2026):
+ - `issue36_quiet_obsolete_quarantine_cannot_suppress_current_identical_alert` proves a current invalid record still alerts after the same obsolete record was retained quietly; both callers receive the original quarantined result.
+ - `quiet debug evidence permits one later authoritative notification` covers both Error-object and signature deduplication, one authorized alert, and unchanged suppression of later published/quiet repeats. All five cases fail against `f6f1e7fb`; envelope cases retain a generic API fallback alert but lose validation attribution, while quarantine and direct-report cases lose the alert entirely.
+ - `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` now covers success and request-specific failure: current diagnostics survive, obsolete callers settle, and obsolete failures do not alert or publish workspace error events. Worker-wide protocol/decode failures remain genuine shared-worker failures covered by `study-worker-regressions.test.ts`; stale terminated-worker callbacks cannot affect a replacement worker.
++
++
++## PR #172 independent flush-settlement audit
++
++`flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities`
++in `tests/unit/review-outbox-regressions.test.ts` fails on merged main
++`d4dbf28d` for limits 1 and 2: overlapping unlimited drain retains confirmed IDs
++but discards both prepared-continuation maps. Merge both maps in the existing
++aggregation return; do not change generation tracking, APIs, persistence or queue
++policy. See `docs/review-outbox-settlement-audit.md` for baseline evidence and limits.
++
++Other named audit cases in the same file verify `next generation publishes before
++previous waiter callbacks` (completion/rejection), `submitted identities coalesce
++with limit` (1/2/Infinity), `overlapping submitted outcome remains truthful`
++(terminal/retryable conflict, network before/after simulated commit, missing
++confirmation), `unrelated rejection attributes its own attempt and explicit
++retry` (false/true), and `target cannot bypass same-card` predecessors
++(persisted/suppressed/conflicted). Cross-generation observation is reproduced,
++but its actual target conflict is truthful; shared state alone is not a defect.
++
++- `flush_settlement_audit overlapping continuation observers preserve %s authorization boundary`
++  in `tests/unit/prepared-review-continuation-regressions.test.ts`: none, missing,
++  mismatch, attempt, generation, entry, revision, cycle, date, failed-flag,
++  failed-marker; duplicate observers advance once or not at all and preserve
++  known failure evidence.
++- `flush_settlement_audit Home foreground settlement and idle observer retain ownership during reconnect=%s`
++  in `tests/unit/review-attempt-confirmation-regressions.test.tsx`: early prepared
++  advancement without reconnect; actionable authoritative recovery after
++  reconnect invalidates readiness; later delivery cannot advance again.
++- `flush_settlement_audit idle receipt observer retains target evidence after later %s`
++  in `tests/unit/pending-review-recovery-regressions.test.tsx`: shared-flush
++  success/failure retains original receipt and continuation evidence.
++- `flush_settlement_audit overlapping reconnect preserves issued successor and one durable review`
++  in `tests/browser/post-review-progression.spec.ts`: real PostgreSQL commits
++  while its response is held; concurrent reconnect cannot authorize an unready
++  cached successor, and queue recovery/restart/replay retain one original review.
++
++- `flush_settlement_audit %s follow-up failure retains earlier settled evidence`
++  (unlimited/submitted) proves A's confirmed IDs/continuation must survive a later
++  B failure before C. Both cases fail on unchanged main with an empty partial
++  result. Duplicate aggregate observers and a direct B observer guard original
++  error ownership and diagnostic identity.
++- `flush_settlement_audit different explicit retry identities retain suppression after %s owner`
++  (persisted/failed) proves separate explicit retries perform original-key receipt
++  reads and cannot release another attempt's terminal suppression.
++- `flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication`
++  (persisted/terminal) subscribes inside the public storage-change callback before
++  settlement publication. Both baseline cases preserve exact attribution and an
++  immutable early result while unrelated delivery remains held.
++
++- `flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery`
++  starts a submitted flush synchronously from the initial owner's public conflict
++  event. On unchanged main the first owner's assignment/cleanup discards that
++  submission's ownership: a concurrent receipt confirms it, then its held POST
++  rejects the original submitted caller. Reserve the active slot before saving
++  can publish synchronously; reentrant callers share the forwarded settlement.
++  The regression proves receipt recovery cannot overtake an owned held POST and
++  preserves truthful unconfirmed failure followed by authoritative recovery.
++
++Audit CI readiness evidence (existing named browser cases):
++
++- `opening_evidence_remains_durable_during_prepared_progression: prepared` in
++  `training-critical-path.spec.ts` now deterministically fails its initial queue
++  transport once, before the timed region, and requires explicit UI recovery
++  before native progression and original durability/replay assertions. Performance
++  mode keeps the original uninjected setup. The old startup assertion fails on
++  unchanged production with this input, matching CI's network-change failure.
++- `Edit card opens Builder line-removal context and deletes the selected branch`
++  in `workspace-flows.spec.ts` first receives the observed pending-issuance 503
++  shape, then requires a real queued card belonging to the confirmed import ID.
++  The old probe throws on the error envelope; bounded polling now retains its
++  HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
++  These are fixture corrections for qualification, not additional product defects.
+diff --git a/tests/browser/post-review-progression.spec.ts b/tests/browser/post-review-progression.spec.ts
+index bd845b88..17c712a3 100644
+--- a/tests/browser/post-review-progression.spec.ts
++++ b/tests/browser/post-review-progression.spec.ts
+@@ -3,12 +3,15 @@ import { execFile } from "node:child_process";
+ import { promisify } from "node:util";
+ import { mkdirSync, writeFileSync } from "node:fs";
+ import { join } from "node:path";
++import type { APIResponse, Route } from "@playwright/test";
+ import { test, expect } from "./observability";
+ import { api } from "./product-fixtures";
+ import { prepareUI, boardBounds } from "./ui-fixtures";
+ 
+-for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] as const) {
+-  test(`issue186_completed_tactic_has_bounded_progression: ${failure}`, async ({ page, request }, testInfo) => {
++for (const failure of ["prepared abort", "fallback abort", "fallback timeout", "overlapping confirmation"] as const) {
++  test(failure === "overlapping confirmation"
++    ? "flush_settlement_audit overlapping reconnect preserves issued successor and one durable review"
++    : `issue186_completed_tactic_has_bounded_progression: ${failure}`, async ({ page, request }, testInfo) => {
+     test.setTimeout(180_000);
+     const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
+     if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project)) throw new Error("An owning disposable runner is required");
+@@ -23,6 +26,10 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
+     let reviewPosts = 0;
+     let delivery: { url: string; key: string; body: string } | undefined;
+     const heldRequests: (() => Promise<void>)[] = [];
++    const prepared = failure === "prepared abort" || failure === "overlapping confirmation";
++    let releaseReview!: () => void;
++    const reviewRelease = new Promise<void>(resolve => { releaseReview = resolve; });
++    let persistedResponseHeld = false;
+     const consumers = ["background-worker", "background-scheduler", "defense-engine", "maia-worker"];
+     try {
+       const todayResponse = await request.get(`${api}/queue/window?limit=20`);
+@@ -46,13 +53,34 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
+           return;
+         }
+         const response = await route.fetch();
+-        if (failure !== "prepared abort" && reviewPosts === 0) {
++        if (!prepared && reviewPosts === 0) {
+           const body = await response.json();
+           // Only A is cached. Authoritative issuance and total count remain real;
+           // no prepared candidate can be sent in the durable review envelope.
+           await route.fulfill({ response, json: { ...body, cards: body.cards.slice(0, 1) } });
+         } else await route.fulfill({ response });
+       });
++      if (failure === "overlapping confirmation") {
++        const holdConfirmation = async (route: Route, response: APIResponse, persisted: unknown) => {
++          if (persisted === true) {
++            persistedResponseHeld = true;
++            await reviewRelease;
++          }
++          await route.fulfill({ response });
++        };
++        await page.route("**/api/cards/*/review", async route => {
++          const response = await route.fetch();
++          const result = await response.json();
++          // A slow real transaction can return 202 before its durable receipt.
++          if (result.persisted !== true) expect(response.status()).toBe(202);
++          await holdConfirmation(route, response, result.persisted);
++        });
++        await page.route("**/api/operations/review-attempt%3A*", async route => {
++          const response = await route.fetch();
++          const receipt = await response.json();
++          await holdConfirmation(route, response, receipt.state === "complete" && receipt.response?.persisted);
++        });
++      }
+       page.on("request", submitted => {
+         if (submitted.method() === "POST" && /\/api\/cards\/[^/]+\/review$/.test(new URL(submitted.url()).pathname)) reviewPosts++;
+         if (submitted.url().endsWith(`/cards/${identifier}-prepared-000/review`)) {
+@@ -68,6 +96,15 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
+       const board = await boardBounds(page);
+       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
+       await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
++      if (failure === "overlapping confirmation") {
++        await expect.poll(() => persistedResponseHeld).toBe(true);
++        // The real transaction committed, but its response is still unavailable
++        // to the foreground flush. Reconnect starts a second consumer.
++        await page.evaluate(() => window.dispatchEvent(new Event("online")));
++        await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", completedEntry!);
++        expect(reviewPosts).toBe(1);
++        releaseReview();
++      }
+       // Completion normally schedules its review after the feedback pause.
+       if (failure === "fallback timeout") await page.clock.runFor(1_000);
+       await expect.poll(() => queueFailures).toBeGreaterThan(0);
+@@ -82,7 +119,7 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
+           await page.clock.fastForward(15_001);
+         }
+         await expect(page.getByRole("button", { name: "Retry loading the queue", exact: true })).toBeVisible();
+-        expect(queueFailures).toBe(2);
++        if (failure !== "overlapping confirmation") expect(queueFailures).toBe(2);
+         await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", completedEntry!);
+       }
+       const lifecycle = await page.evaluate(entry => JSON.parse(localStorage.getItem("tempo-notifications-v1") ?? "[]")
+@@ -97,7 +134,7 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
+       blockQueue = false;
+       for (const abortRequest of heldRequests) await abortRequest();
+       await page.getByRole("button", { name: "Retry loading the queue", exact: true }).click();
+-      if (failure === "prepared abort") await expect(page.getByRole("button", { name: "Retry loading the queue", exact: true })).toHaveCount(0);
++      if (prepared) await expect(page.getByRole("button", { name: "Retry loading the queue", exact: true })).toHaveCount(0);
+       await expect(page.locator("#train")).not.toHaveAttribute("data-queue-entry-id", completedEntry!);
+       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+       const nextBoard = await boardBounds(page);
+@@ -109,9 +146,17 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
+       await page.close();
+       await docker("start", ...consumers);
+       await docker("restart", "api", "foreground-worker");
++      // The fixture stops/restarts consumers around the API. Nginx resolves its
++      // upstream at startup; refresh that address after this overlap rehearsal.
++      if (failure === "overlapping confirmation") await docker("restart", "web");
+       await expect.poll(async () => {
+-        const response = await request.get(`${api}/health`);
+-        return response.ok() ? "ready" : await response.text();
++        try {
++          const response = await request.get(`${api}/health`);
++          return response.ok() ? "ready" : await response.text();
++        } catch (error) {
++          if (failure !== "overlapping confirmation") throw error;
++          return String(error); // Transport can close while the fixture's proxy restarts.
++        }
+       }, { timeout: 60_000 }).toBe("ready");
+       expect(delivery).toBeDefined();
+       const replay = await request.post(delivery!.url, { headers: { "Idempotency-Key": delivery!.key,
+@@ -132,14 +177,20 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout"] a
+         contentType: "image/png" }).catch(() => undefined);
+       throw error;
+     } finally {
++      releaseReview();
+       await page.close();
+       await docker("stop", ...consumers);
+       try { await fixture("cleanup", JSON.stringify(displaced)); }
+       finally {
+         await docker("start", ...consumers);
+         await expect.poll(async () => {
+-          const restoredHealth = await request.get(`${api}/health`);
+-          return restoredHealth.ok() ? "ready" : await restoredHealth.text();
++          try {
++            const restoredHealth = await request.get(`${api}/health`);
++            return restoredHealth.ok() ? "ready" : await restoredHealth.text();
++          } catch (error) {
++            if (failure !== "overlapping confirmation") throw error;
++            return String(error);
++          }
+         }, { timeout: 60_000, message: "Progression fixture cleanup must restore service readiness before the next test" }).toBe("ready");
+       }
+     }
+diff --git a/tests/browser/training-critical-path.spec.ts b/tests/browser/training-critical-path.spec.ts
+index 18f25cb9..411e470a 100644
+--- a/tests/browser/training-critical-path.spec.ts
++++ b/tests/browser/training-critical-path.spec.ts
+@@ -90,8 +90,24 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
+       expect(prepared.cards?.every((card: { position: number }) => Number.isInteger(card.position) && card.position >= 0)).toBe(true);
+       return prepared.cards?.[0]?.id ?? "No authoritative prepared head";
+     }, { timeout: 60_000, message: "The seeded authoritative prepared head must be readable before timing training" }).toBe(`${identifier}-prepared-000`);
++    // CI observed ERR_NETWORK_CHANGED before any review submission. Exercise
++    // the initial user recovery boundary outside the measured progression.
++    let injectedInitialQueueFailure = false;
++    if (condition === "prepared" && process.env.TEMPO_TRAINING_TIMINGS !== "1") {
++      await page.route("**/api/queue/window?*", route => {
++        if (injectedInitialQueueFailure) return route.continue();
++        injectedInitialQueueFailure = true;
++        return route.abort("connectionfailed");
++      });
++    }
+     if (condition === "lines-held") await page.route("**/api/repertoire/lines", () => new Promise(() => {}));
+     await prepareUI(page);
++    if (condition === "prepared" && process.env.TEMPO_TRAINING_TIMINGS !== "1")
++      await expect.poll(() => injectedInitialQueueFailure).toBe(true);
++    const initialQueueRetry = page.getByRole("alert").filter({ hasText: "local queue could not be loaded" })
++      .getByRole("button", { name: "Retry", exact: true });
++    await expect(page.locator("#train").or(initialQueueRetry).first()).toBeVisible();
++    if (await initialQueueRetry.isVisible()) await initialQueueRetry.click();
+     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", /\d+/);
+     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+     const playPreparedMove = async () => {
+diff --git a/tests/browser/workspace-flows.spec.ts b/tests/browser/workspace-flows.spec.ts
+index 091723fa..9bce24b6 100644
+--- a/tests/browser/workspace-flows.spec.ts
++++ b/tests/browser/workspace-flows.spec.ts
+@@ -275,8 +275,19 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
+     page.getByRole("button", { name: "Import repertoire", exact: true }).click(),
+   ]);
+   const importedRepertoireId = (await importResponse.json()).repertoire_id as string;
++  expect(importedRepertoireId).toEqual(expect.any(String));
++  let pendingIssuanceProbe = true;
+   await expect.poll(async () => {
+-    const queue = await (await request.get(`${api}/queue/today`)).json();
++    // The real service can report pending issuance without a cards array.
++    // Include that observed boundary before proving the real imported queue.
++    const queueResponse = pendingIssuanceProbe ? {
++      ok: () => false, status: () => 503,
++      text: async () => "Queue changed or attempt issuance is pending. Retry loading the queue.",
++      json: async () => ({ detail: "Queue changed or attempt issuance is pending. Retry loading the queue." }),
++    } : await request.get(`${api}/queue/today`);
++    pendingIssuanceProbe = false;
++    if (!queueResponse.ok()) return `HTTP ${queueResponse.status()}: ${await queueResponse.text()}`;
++    const queue = await queueResponse.json();
+     return (queue.cards as { repertoire_id: string }[]).some((card) => card.repertoire_id === importedRepertoireId);
+   }, { timeout: 30_000 }).toBe(true);
+   const viewImportedRepertoire = page.getByRole("button", { name: "View imported repertoire" });
+diff --git a/tests/unit/pending-review-recovery-regressions.test.tsx b/tests/unit/pending-review-recovery-regressions.test.tsx
+index 145e559b..fe586d53 100644
+--- a/tests/unit/pending-review-recovery-regressions.test.tsx
++++ b/tests/unit/pending-review-recovery-regressions.test.tsx
+@@ -13,6 +13,43 @@ function Harness({ blocked = false, confirmed }: { blocked?: boolean; confirmed:
+ }
+ const advance = async (milliseconds: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds); }); };
+ 
++it.each(["success", "failure"])("flush_settlement_audit idle receipt observer retains target evidence after later %s", async laterOutcome => {
++  const continuation = { card_id: "next", queue_entry_id: 103, revision: 1, cycle: 0, local_date: "2026-10-11" };
++  enqueuePendingReview({ ...review, preparedNext: continuation });
++  enqueuePendingReview({ ...review, backendId: "other", queueEntryId: 102, attemptId: "other-attempt" });
++  let releaseReceipt!: (response: Response) => void;
++  let releaseOther!: (response: Response) => void;
++  let rejectOther!: (error: Error) => void;
++  const receipt = new Promise<Response>(resolve => { releaseReceipt = resolve; });
++  const other = new Promise<Response>((resolve, reject) => { releaseOther = resolve; rejectOther = reject; });
++  vi.stubGlobal("fetch", vi.fn(input => String(input).includes("original-attempt") ? receipt : other));
++  const foregroundOwner = flushPendingReviews(Infinity, true).catch(error => error);
++  const confirmed = vi.fn();
++  try {
++    render(<Harness confirmed={confirmed} />);
++    await advance(1000);
++    const targetWaiter = flushPendingReviews(Infinity, true, undefined, undefined, review.attemptId);
++    await act(async () => {
++      releaseReceipt(Response.json({ state: "complete", response: { persisted: true, prepared_continuation: continuation } }));
++      expect((await targetWaiter).preparedContinuations?.[review.attemptId]).toEqual(continuation);
++    });
++    expect(confirmed).not.toHaveBeenCalled();
++    await act(async () => {
++      if (laterOutcome === "success") releaseOther(Response.json({ state: "complete", response: { persisted: true } }));
++      else rejectOther(new Error("Other transport failure"));
++      await foregroundOwner;
++    });
++    expect(confirmed).toHaveBeenCalledOnce();
++    expect(confirmed.mock.calls[0][0]).toMatchObject({ persistedAttemptIds: expect.arrayContaining([review.attemptId]),
++      preparedContinuations: { [review.attemptId]: continuation } });
++    expect(pendingReviews().map(item => item.attemptId)).toEqual(laterOutcome === "success" ? [] : ["other-attempt"]);
++  } finally {
++    releaseReceipt(Response.json({ state: "complete", response: { persisted: true, prepared_continuation: continuation } }));
++    releaseOther(Response.json({ state: "complete", response: { persisted: true } }));
++    await act(async () => { await foregroundOwner; });
++  }
++});
++
+ it("phone review recovery confirms the original receipt after reload without another POST", async () => {
+   enqueuePendingReview(review);
+   const fetcher = vi.fn().mockResolvedValue(Response.json({ state: "complete", response: { persisted: true, review_id: 77 } }));
+diff --git a/tests/unit/prepared-review-continuation-regressions.test.ts b/tests/unit/prepared-review-continuation-regressions.test.ts
+index 6e440a16..2fbc0ed8 100644
+--- a/tests/unit/prepared-review-continuation-regressions.test.ts
++++ b/tests/unit/prepared-review-continuation-regressions.test.ts
+@@ -5,7 +5,8 @@ import { fetchAndInitializeQueue, rememberConfirmedQueueEntry } from "../../app/
+ import { useTrainingStore } from "../../app/state/training-store";
+ import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
+ import { localDayKey } from "../../app/utils/local";
+-import { enqueueTrainingFailure } from "../../app/lib/training-failure-outbox";
++import { asQueueEntryId } from "../../app/types";
++import { enqueueTrainingFailure, pendingTrainingFailureContexts } from "../../app/lib/training-failure-outbox";
+ import * as offlineTraining from "../../app/lib/offline-training";
+ 
+ vi.mock("../../app/lib/background-study", async () => {
+@@ -25,6 +26,51 @@ beforeEach(() => {
+ });
+ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+ 
++it.each(["none", "missing", "mismatch", "attempt", "generation", "entry", "revision", "cycle", "date", "failed-flag", "failed-marker"])(
++  "flush_settlement_audit overlapping continuation observers preserve %s authorization boundary", async invalidation => {
++    const submitted = useTrainingStore.getState().attempt;
++    const preparedNext = capturePreparedNext()!;
++    const candidate = { ...preparedNext, attempt_failed: false };
++    enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: submitted.attemptId!,
++      outcome: "correct", guided: false, expectedRevision: 1, preparedNext });
++    let release!: (response: Response) => void;
++    const response = new Promise<Response>(resolve => { release = resolve; });
++    const fetcher = vi.fn(() => response);
++    vi.stubGlobal("fetch", fetcher);
++    const owner = flushPendingReviews();
++    const first = flushPendingReviews(Infinity, false, undefined, undefined, submitted.attemptId);
++    const second = flushPendingReviews(Infinity, true, submitted.attemptId, undefined, submitted.attemptId);
++    if (invalidation === "attempt") useTrainingStore.setState({ attempt: { ...submitted, attemptId: "replacement-attempt" } });
++    if (invalidation === "generation") useTrainingStore.setState({ attempt: { ...submitted, generation: submitted.generation + 1 } });
++    if (["entry", "revision", "cycle", "failed-flag"].includes(invalidation)) {
++      const next = { ...cards[1],
++        ...(invalidation === "entry" ? { queueEntryId: asQueueEntryId(777) } : {}),
++        ...(invalidation === "revision" ? { revision: 2 } : {}),
++        ...(invalidation === "cycle" ? { queueCycle: 1 } : {}),
++        ...(invalidation === "failed-flag" ? { attemptFailed: true } : {}) };
++      useTrainingStore.setState({ practiceCards: [cards[0], next, cards[2]] });
++    }
++    if (invalidation === "date") useTrainingStore.setState({ queueLocalDate: "1999-01-01" });
++    if (invalidation === "failed-marker") enqueueTrainingFailure(502, "b", 1);
++    const before = useTrainingStore.getState();
++    release(Response.json({ persisted: true, ...(invalidation === "missing" ? {} : {
++      prepared_continuation: invalidation === "mismatch" ? { ...candidate, queue_entry_id: 777 } : candidate }) }));
++    const [firstResult, secondResult] = await Promise.all([first, second]);
++    await owner;
++    const advances = [firstResult, secondResult].map(result => advancePreparedContinuation(
++      result.preparedContinuations?.[submitted.attemptId!], submitted.attemptId!, submitted.generation));
++    expect(advances).toEqual(invalidation === "none" ? [true, false] : [false, false]);
++    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(invalidation === "none" ? 502 : 501);
++    if (invalidation !== "none") {
++      expect(useTrainingStore.getState().attempt).toEqual(before.attempt);
++      expect(useTrainingStore.getState().practiceCards).toEqual(before.practiceCards);
++    }
++    if (invalidation === "failed-flag") expect(useTrainingStore.getState().practiceCards[1].attemptFailed).toBe(true);
++    if (invalidation === "failed-marker") expect(pendingTrainingFailureContexts()).toContainEqual(expect.objectContaining({ queueEntryId: 502, backendId: "b" }));
++    expect(firstResult.persistedAttemptIds).toEqual([submitted.attemptId]);
++    expect(fetcher).toHaveBeenCalledTimes(1);
++  });
++
+ it.each([true, false])("unconfirmed_review_does_not_advance_prepared_card: unresolved authoritative head cannot issue a filtered successor (advance=%s)", async advance => {
+   const activeAttempt = useTrainingStore.getState().attempt;
+   rememberConfirmedQueueEntry(cards[0]);
+diff --git a/tests/unit/review-attempt-confirmation-regressions.test.tsx b/tests/unit/review-attempt-confirmation-regressions.test.tsx
+index 341e3a19..bacebe35 100644
+--- a/tests/unit/review-attempt-confirmation-regressions.test.tsx
++++ b/tests/unit/review-attempt-confirmation-regressions.test.tsx
+@@ -351,6 +351,62 @@ const snapshotActive = () => {
+   const state = useTrainingStore.getState();
+   return { card: state.getCard(), attempt: state.attempt, fen: state.currentFenString, step: state.step };
+ };
++
++it.each([false, true])("flush_settlement_audit Home foreground settlement and idle observer retain ownership during reconnect=%s", async reconnect => {
++  queue = [queueCard("card-a", 12), queueCard("card-b", 13), queueCard("card-c", 14)];
++  await readyHome();
++  const attempt = useTrainingStore.getState().attempt;
++  const preparedNext = { card_id: "card-b", queue_entry_id: 13, revision: 1, cycle: 0,
++    local_date: new Date().toLocaleDateString("en-CA") };
++  enqueuePendingReview({ backendId: "card-a", queueEntryId: 12, attemptId: attempt.attemptId!, outcome: "correct", guided: false, preparedNext });
++  enqueuePendingReview({ backendId: "unrelated-later", queueEntryId: 999, attemptId: "audit-later", outcome: "correct", guided: false });
++  let releaseSubmitted!: (response: Response) => void;
++  let releaseLater!: (response: Response) => void;
++  const submitted = new Promise<Response>(resolve => { releaseSubmitted = resolve; });
++  const later = new Promise<Response>(resolve => { releaseLater = resolve; });
++  let laterRequested!: () => void;
++  const laterStarted = new Promise<void>(resolve => { laterRequested = resolve; });
++  reviewResponse = async (_url, options) => {
++    if (JSON.parse(options!.body as string).attempt_id === "audit-later") { laterRequested(); return later; }
++    return submitted;
++  };
++  const idleOwner = flushPendingReviews();
++  act(() => { trainingProps.retryReviewSave!(); });
++  const foreground = flushPendingReviews(Infinity, false, undefined, undefined, attempt.attemptId);
++  const idleOutcome = idleOwner.catch(error => error);
++  try {
++    if (reconnect) {
++      const originalFetcher = fetcher.getMockImplementation()!;
++      fetcher.mockImplementation(async (input, options) => {
++        if (String(input).includes("/api/queue/window")) throw new Error("Audit reconnect queue unavailable");
++        return originalFetcher(input, options);
++      });
++      act(() => window.dispatchEvent(new Event("online")));
++      expect(useTrainingStore.getState().queueReadiness).toBe("loading");
++    }
++    releaseSubmitted(Response.json({ persisted: true, prepared_continuation: preparedNext }));
++    await act(async () => { await foreground; await laterStarted; });
++    const advancedAttempt = useTrainingStore.getState().attempt;
++    if (reconnect) {
++      expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
++      expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
++      expect(screen.getByRole("button", { name: "Retry loading the queue" })).toBeTruthy();
++    } else {
++      expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
++      expect(advancedAttempt.attemptId).not.toBe(attempt.attemptId);
++      expect(trainingProps.reviewPersistenceState).toBe("idle");
++    }
++    expect(pendingReviews().map(item => item.attemptId)).toEqual(["audit-later"]);
++    await act(async () => { releaseLater(Response.json({ persisted: true })); await idleOwner; });
++    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(reconnect ? 12 : 13);
++    expect(useTrainingStore.getState().attempt).toEqual(advancedAttempt);
++    expect(reviewPosts()).toHaveLength(2);
++  } finally {
++    releaseSubmitted(Response.json({ persisted: true, prepared_continuation: preparedNext }));
++    releaseLater(Response.json({ persisted: true }));
++    await act(async () => { await idleOutcome; await foreground.catch(() => undefined); });
++  }
++});
+ function pendingThenConflict() {
+   reviewResponse = async (url) => {
+     if (url.includes("review-reconcile%3A")) return new Response(null, { status: 404 });
+diff --git a/tests/unit/review-outbox-regressions.test.ts b/tests/unit/review-outbox-regressions.test.ts
+index 9830b38f..20e8fd24 100644
+--- a/tests/unit/review-outbox-regressions.test.ts
++++ b/tests/unit/review-outbox-regressions.test.ts
+@@ -6,6 +6,409 @@ import { openingEvidenceCheckpointSchema } from "../../app/domain/opening-eviden
+ import * as notificationModule from "../../app/lib/notifications";
+ import * as openingEvidenceJournal from "../../app/lib/opening-evidence-journal";
+ 
++function auditDeferred<T>() {
++  let resolve!: (value: T) => void;
++  let reject!: (error: Error) => void;
++  const promise = new Promise<T>((accept, decline) => { resolve = accept; reject = decline; });
++  return { promise, resolve, reject };
++}
++const auditReview = (attemptId: string, queueEntryId: number, backendId = attemptId) => ({
++  backendId, queueEntryId, attemptId, outcome: "correct" as const, guided: false,
++});
++const auditSuccessor = { card_id: "audit-successor", queue_entry_id: 9999, revision: 1, cycle: 0, local_date: "2026-10-11" };
++
++it("flush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery", async () => {
++  enqueuePendingReview({ ...auditReview("startup-predecessor", 10001, "startup-conflict-card"), state: "conflicted",
++    conflict: { code: "retired", message: "Needs attention", retryable: false } });
++  enqueuePendingReview(auditReview("startup-conflict", 10002, "startup-conflict-card"));
++  enqueuePendingReview({ ...auditReview("startup-target", 10003), preparedNext: auditSuccessor });
++  const heldPost = auditDeferred<Response>();
++  const postRequested = auditDeferred<void>();
++  const heldReceipt = auditDeferred<Response>();
++  const receiptRequested = auditDeferred<void>();
++  const trace: string[] = [];
++  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
++    if (String(input).includes("/api/operations/")) {
++      trace.push("receipt requested"); receiptRequested.resolve(); return heldReceipt.promise;
++    }
++    expect(JSON.parse(options!.body as string).attempt_id).toBe("startup-target");
++    trace.push("submitted POST started"); postRequested.resolve(); return heldPost.promise;
++  }));
++  let enteredReentrantCall = false;
++  let submittedOutcome: Promise<{ result?: Awaited<ReturnType<typeof flushPendingReviews>>; error?: ReviewReplayError }> | undefined;
++  const submitFromInitialConflict = () => {
++    if (enteredReentrantCall || !conflictedReviews().some(review => review.attemptId === "startup-conflict")) return;
++    enteredReentrantCall = true;
++    trace.push("initial conflict storage event");
++    submittedOutcome = flushPendingReviews(Infinity, false, undefined, undefined, "startup-target")
++      .then(result => ({ result }), error => { trace.push("submitted owner rejected"); return { error }; });
++  };
++  window.addEventListener("tempo:review-outbox", submitFromInitialConflict);
++  const firstFlush = flushPendingReviews(1, false, undefined, undefined, "startup-conflict");
++  let recoveredOutcome: ReturnType<typeof flushPendingReviews> | undefined;
++  try {
++    expect((await firstFlush).conflictedAttemptIds).toEqual(["startup-conflict"]);
++    await postRequested.promise;
++    expect(enteredReentrantCall).toBe(true);
++    recoveredOutcome = flushPendingReviews(Infinity, true, "startup-target", undefined, "startup-target")
++      .then(result => { trace.push("authoritative recovery confirmed"); return result; });
++    // Receipt-first delivery begins synchronously only if the initial owner's
++    // cleanup discarded the reentrant submission's active ownership.
++    const concurrentRecoveryStarted = trace.includes("receipt requested");
++    const confirmedReceipt = Response.json({ state: "complete", response: { persisted: true,
++      prepared_continuation: auditSuccessor } });
++    if (concurrentRecoveryStarted) {
++      heldReceipt.resolve(confirmedReceipt);
++      expect((await recoveredOutcome).persistedAttemptIds).toEqual(["startup-target"]);
++      expect(pendingReviews().some(review => review.attemptId === "startup-target")).toBe(false);
++      heldPost.reject(new Error("Lost POST response after the authoritative receipt"));
++      const submitted = await submittedOutcome!;
++      console.info("flush_settlement_audit initial ownership", { concurrentRecoveryStarted, trace, submitted });
++      expect(submitted).toMatchObject({ result: { persistedAttemptIds: ["startup-target"] } });
++    } else {
++      expect(pendingReviews().some(review => review.attemptId === "startup-target")).toBe(true);
++      heldPost.reject(new Error("Lost POST response before any receipt observation"));
++      expect((await submittedOutcome!).error).toMatchObject({ attemptId: "startup-target", classification: "transient" });
++      await receiptRequested.promise;
++      heldReceipt.resolve(confirmedReceipt);
++      const recovered = await recoveredOutcome;
++      expect(recovered.persistedAttemptIds).toEqual(["startup-target"]);
++      expect(recovered.preparedContinuations?.["startup-target"]).toEqual(auditSuccessor);
++      expect(trace.indexOf("submitted owner rejected")).toBeLessThan(trace.indexOf("authoritative recovery confirmed"));
++    }
++    console.info("flush_settlement_audit initial ownership", { concurrentRecoveryStarted, trace });
++  } finally {
++    window.removeEventListener("tempo:review-outbox", submitFromInitialConflict);
++    heldPost.reject(new Error("Release held POST"));
++    heldReceipt.resolve(Response.json({ state: "complete", response: { persisted: true, prepared_continuation: auditSuccessor } }));
++    await firstFlush; await submittedOutcome; await recoveredOutcome;
++  }
++});
++
++it.each(["persisted", "terminal"])("flush_settlement_audit synchronous outbox subscriber observes subsequent %s publication", async outcome => {
++  enqueuePendingReview({ ...auditReview("reentrant-a", 9901), preparedNext: auditSuccessor });
++  enqueuePendingReview(auditReview("reentrant-b", 9902));
++  const heldA = auditDeferred<Response>();
++  const requestedA = auditDeferred<void>();
++  const heldB = auditDeferred<Response>();
++  const requestedB = auditDeferred<void>();
++  const trace: string[] = [];
++  const deliveries: string[] = [];
++  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
++    const attempt = JSON.parse(options!.body as string).attempt_id;
++    deliveries.push(attempt);
++    if (attempt === "reentrant-b") { requestedB.resolve(); return heldB.promise; }
++    if (String(input).endsWith("/reconcile")) return Response.json({ persisted: false,
++      conflict: { code: "retired", message: "Needs attention", retryable: false } });
++    requestedA.resolve(); return heldA.promise;
++  }));
++  let ownerCompleted = false;
++  const owner = flushPendingReviews().then(result => { ownerCompleted = true; return result; });
++  await requestedA.promise;
++  let reentrant: ReturnType<typeof flushPendingReviews> | undefined;
++  const subscribeDuringStorageChange = () => {
++    const target = [...pendingReviews(), ...conflictedReviews()].find(review => review.attemptId === "reentrant-a");
++    if (reentrant || (outcome === "persisted" ? !!target : target?.state !== "conflicted")) return;
++    trace.push("target storage transition");
++    reentrant = flushPendingReviews(Infinity, false, undefined, undefined, "reentrant-a")
++      .then(result => { trace.push("target observer settled"); return result; });
++    trace.push("synchronous subscriber returned");
++  };
++  window.addEventListener("tempo:review-outbox", subscribeDuringStorageChange);
++  try {
++    heldA.resolve(outcome === "persisted" ? Response.json({ persisted: true, prepared_continuation: auditSuccessor })
++      : Response.json({ detail: "Conflict", retryable: false }, { status: 409 }));
++    await requestedB.promise;
++    expect(reentrant).toBeDefined();
++    const result = await reentrant!;
++    expect(ownerCompleted).toBe(false);
++    expect(result.persistedAttemptIds).toEqual(outcome === "persisted" ? ["reentrant-a"] : []);
++    expect(result.conflictedAttemptIds).toEqual(outcome === "terminal" ? ["reentrant-a"] : []);
++    expect(result.preparedContinuations).toEqual(outcome === "persisted" ? { "reentrant-a": auditSuccessor } : {});
++    expect(trace).toEqual(["target storage transition", "synchronous subscriber returned", "target observer settled"]);
++    heldB.resolve(Response.json({ persisted: true }));
++    await owner;
++    expect(result.persistedAttemptIds).not.toContain("reentrant-b");
++    expect(deliveries).toEqual(outcome === "persisted" ? ["reentrant-a", "reentrant-b"] : ["reentrant-a", "reentrant-a", "reentrant-b"]);
++    console.info("flush_settlement_audit synchronous subscriber", outcome, trace);
++  } finally {
++    window.removeEventListener("tempo:review-outbox", subscribeDuringStorageChange);
++    heldA.resolve(Response.json({ persisted: true })); heldB.resolve(Response.json({ persisted: true }));
++    await owner; await reentrant;
++  }
++});
++
++it.each(["unlimited", "submitted"])("flush_settlement_audit %s follow-up failure retains earlier settled evidence", async caller => {
++  enqueuePendingReview({ ...auditReview("partial-a", 9801, "partial-card"), preparedNext: auditSuccessor });
++  enqueuePendingReview(auditReview("partial-b", 9802, "partial-card"));
++  enqueuePendingReview(auditReview("partial-c", 9803, "partial-card"));
++  const responseA = auditDeferred<Response>();
++  const requestedA = auditDeferred<void>();
++  const responseB = auditDeferred<Response>();
++  const requestedB = auditDeferred<void>();
++  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
++    const attempt = JSON.parse(options!.body as string).attempt_id;
++    if (attempt === "partial-a") { requestedA.resolve(); return responseA.promise; }
++    requestedB.resolve(); return responseB.promise;
++  }));
++  const owner = flushPendingReviews(1);
++  await requestedA.promise;
++  const joinedOutcome = flushPendingReviews(Infinity, false, undefined, undefined, caller === "submitted" ? "partial-c" : undefined)
++    .catch(error => error);
++  const duplicateOutcome = flushPendingReviews(Infinity, false, undefined, undefined, caller === "submitted" ? "partial-c" : undefined)
++    .catch(error => error);
++  responseA.resolve(Response.json({ persisted: true, prepared_continuation: auditSuccessor }));
++  expect((await owner).persistedAttemptIds).toEqual(["partial-a"]);
++  await requestedB.promise;
++  const originalBOutcome = flushPendingReviews(1).catch(error => error);
++  responseB.reject(new Error("B failed before C delivery"));
++  const error = await joinedOutcome;
++  const duplicateError = await duplicateOutcome;
++  const originalError = await originalBOutcome;
++  expect(error).toBeInstanceOf(ReviewReplayError);
++  expect(error.message).toBe(originalError.message);
++  expect(error.stack).toBe(originalError.stack);
++  expect(error.cause).toBe(originalError.cause);
++  expect(error).toMatchObject({ attemptId: "partial-b", classification: "transient" });
++  expect(pendingReviews().map(item => item.attemptId)).toEqual(["partial-b", "partial-c"]);
++  expect(error.flushResult).toMatchObject({ persistedAttemptIds: ["partial-a"], conflictedAttemptIds: [],
++    preparedContinuations: { "partial-a": auditSuccessor } });
++  expect(duplicateError.flushResult).toEqual(error.flushResult);
++  expect(originalError.flushResult).toEqual({ persistedAttemptIds: [], conflictedAttemptIds: [] });
++  expect(error).not.toBe(originalError);
++});
++
++it.each(["persisted", "failed"])("flush_settlement_audit different explicit retry identities retain suppression after %s owner", async outcome => {
++  enqueuePendingReview({ ...auditReview("retry-a", 9701), automaticRecoverySuppressed: "failed" });
++  enqueuePendingReview({ ...auditReview("retry-b", 9702), automaticRecoverySuppressed: "failed" });
++  const heldA = auditDeferred<Response>();
++  const requests: string[] = [];
++  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
++    if (String(input).includes("/api/operations/")) { requests.push(String(input).split("/").at(-1)!); return new Response(null, { status: 404 }); }
++    const attempt = JSON.parse(options!.body as string).attempt_id;
++    requests.push(attempt);
++    return attempt === "retry-a" ? heldA.promise : Response.json({ persisted: true });
++  }));
++  const retryA = flushPendingReviews(1, false, "retry-a").catch(error => error);
++  const retryB = flushPendingReviews(Infinity, false, "retry-b");
++  heldA.resolve(outcome === "persisted" ? Response.json({ persisted: true })
++    : Response.json({ detail: "Failed retry", retryable: false }, { status: 422 }));
++  const [resultA, resultB] = await Promise.all([retryA, retryB]);
++  if (outcome === "persisted") expect(resultA.persistedAttemptIds).toEqual(["retry-a"]);
++  else expect(resultA).toMatchObject({ attemptId: "retry-a", classification: "failed" });
++  expect(resultB.persistedAttemptIds).toEqual(["retry-b"]);
++  expect(requests).toEqual(["review-attempt%3Aretry-a", "retry-a", "review-attempt%3Aretry-b", "retry-b"]);
++  expect(pendingReviews().map(item => [item.attemptId, item.automaticRecoverySuppressed])).toEqual(outcome === "persisted" ? [] : [["retry-a", "failed"]]);
++});
++
++it.each(["completion", "rejection"])("flush_settlement_audit next generation publishes before previous waiter callbacks: %s", async outcome => {
++  const trace: string[] = [];
++  const initialResponse = auditDeferred<Response>();
++  const initialRequested = auditDeferred<void>();
++  enqueuePendingReview(auditReview("handoff-a", 9601));
++  enqueuePendingReview({ ...auditReview("handoff-predecessor", 9602, "handoff-card"), state: "conflicted",
++    conflict: { code: "retired", message: "Needs attention", retryable: false } });
++  enqueuePendingReview(auditReview("handoff-b", 9603, "handoff-card"));
++  vi.stubGlobal("fetch", vi.fn(() => { initialRequested.resolve(); return initialResponse.promise; }));
++  const owner = flushPendingReviews(1).then(result => { trace.push("A caller completion"); return { result }; },
++    error => { trace.push("A caller rejection"); return { error }; });
++  await initialRequested.promise;
++  const oldWaiter = flushPendingReviews(Infinity, false, undefined, undefined, "handoff-b")
++    .then(result => { trace.push("old B waiter completion"); return { result }; }, error => { trace.push("old B waiter rejection"); return { error }; });
++  let nextFlush: ReturnType<typeof flushPendingReviews> | undefined;
++  let scheduled = false;
++  const scheduleNext = () => {
++    if (scheduled) return;
++    const remaining = pendingReviews().find(item => item.attemptId === "handoff-a");
++    if (outcome === "completion" ? !!remaining : remaining?.automaticRecoverySuppressed !== "failed") return;
++    scheduled = true;
++    trace.push("A storage transition");
++    queueMicrotask(() => {
++      trace.push("first microtask");
++      queueMicrotask(() => {
++        trace.push("B starts");
++        nextFlush = flushPendingReviews(Infinity, false, undefined, undefined, "handoff-b");
++        trace.push(conflictedReviews().some(item => item.attemptId === "handoff-b") ? "B published terminal settlement" : "B did not publish synchronously");
++      });
++    });
++  };
++  window.addEventListener("tempo:review-outbox", scheduleNext);
++  try {
++    initialResponse.resolve(outcome === "completion" ? Response.json({ persisted: true })
++      : Response.json({ detail: "Invalid request", retryable: false }, { status: 422 }));
++    const [ownerResult, submittedResult] = await Promise.all([owner, oldWaiter]);
++    expect(scheduled).toBe(true);
++    expect(nextFlush).toBeDefined();
++    const nextResult = await nextFlush!;
++    expect(trace.indexOf("B published terminal settlement")).toBeGreaterThan(trace.indexOf("B starts"));
++    expect(trace.indexOf("B published terminal settlement")).toBeLessThan(trace.indexOf(`A caller ${outcome}`));
++    expect(submittedResult).toMatchObject({ result: { persistedAttemptIds: [], conflictedAttemptIds: ["handoff-b"] } });
++    expect(nextResult).toMatchObject({ persistedAttemptIds: [], conflictedAttemptIds: ["handoff-b"] });
++    expect(nextResult.preparedContinuations).toBeUndefined();
++    if (outcome === "completion") expect(ownerResult).toMatchObject({ result: { persistedAttemptIds: ["handoff-a"] } });
++    else expect(ownerResult).toMatchObject({ error: { attemptId: "handoff-a" } });
++    console.info("flush_settlement_audit handoff", outcome, trace);
++  } finally { window.removeEventListener("tempo:review-outbox", scheduleNext); await owner; await nextFlush; }
++});
++
++it.each([1, 2])("flush_settlement_audit bounded %s then unlimited preserves all continuation capabilities", async maximum => {
++  const response = auditDeferred<Response>();
++  const firstRequested = auditDeferred<void>();
++  enqueuePendingReview({ ...auditReview("bounded-a", 9101), preparedNext: auditSuccessor });
++  enqueuePendingReview(auditReview("bounded-b", 9102));
++  enqueuePendingReview({ ...auditReview("bounded-c", 9103), preparedNext: auditSuccessor });
++  const deliveries: string[] = [];
++  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
++    const attempt = JSON.parse(options!.body as string).attempt_id;
++    deliveries.push(attempt);
++    if (attempt === "bounded-a") { firstRequested.resolve(); return response.promise; }
++    return Response.json({ persisted: true, prepared_continuation: auditSuccessor });
++  }));
++  const bounded = flushPendingReviews(maximum);
++  await firstRequested.promise;
++  const unlimited = flushPendingReviews();
++  response.resolve(Response.json({ persisted: true, prepared_continuation: auditSuccessor }));
++  const [firstResult, completeResult] = await Promise.all([bounded, unlimited]);
++  expect(firstResult.persistedAttemptIds).toHaveLength(maximum);
++  expect(completeResult.persistedAttemptIds).toEqual(["bounded-a", "bounded-b", "bounded-c"]);
++  expect(deliveries).toEqual(completeResult.persistedAttemptIds);
++  expect(pendingReviews()).toEqual([]);
++  expect(completeResult.preparedContinuations).toEqual({ "bounded-a": auditSuccessor, "bounded-c": auditSuccessor });
++});
++
++it.each([1, 2, Infinity])("flush_settlement_audit submitted identities coalesce with limit %s and retain immutable early snapshots", async maximum => {
++  enqueuePendingReview({ ...auditReview("identity-a", 9201), preparedNext: auditSuccessor });
++  enqueuePendingReview(auditReview("identity-b", 9202));
++  const responseA = auditDeferred<Response>();
++  const responseB = auditDeferred<Response>();
++  const requestedA = auditDeferred<void>();
++  const requestedB = auditDeferred<void>();
++  const fetcher = vi.fn(async (input, options) => {
++    if (String(input).includes("/api/operations/")) return new Response(null, { status: 404 });
++    const attempt = JSON.parse(options!.body as string).attempt_id;
++    if (attempt === "identity-a") { requestedA.resolve(); return responseA.promise; }
++    requestedB.resolve(); return responseB.promise;
++  });
++  vi.stubGlobal("fetch", fetcher);
++  const owner = flushPendingReviews(maximum);
++  await requestedA.promise;
++  const a1 = flushPendingReviews(Infinity, false, undefined, undefined, "identity-a");
++  const a2 = flushPendingReviews(1, true, "identity-a", undefined, "identity-a");
++  const b = flushPendingReviews(Infinity, true, undefined, undefined, "identity-b");
++  responseA.resolve(Response.json({ persisted: true, prepared_continuation: auditSuccessor }));
++  const [settledA1, settledA2] = await Promise.all([a1, a2]);
++  expect(settledA1.persistedAttemptIds).toEqual(["identity-a"]);
++  expect(settledA2).toEqual(settledA1);
++  if (maximum > 1) expect(await flushPendingReviews(Infinity, false, undefined, undefined, "identity-a")).toEqual(settledA1);
++  await requestedB.promise;
++  responseB.resolve(Response.json({ persisted: true }));
++  expect((await b).persistedAttemptIds).toContain("identity-b");
++  await owner;
++  expect(settledA1.persistedAttemptIds).toEqual(["identity-a"]);
++  expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(2);
++});
++
++it.each(["terminal", "retryable", "network-before", "network-after", "missing-confirmation"])(
++  "flush_settlement_audit overlapping submitted outcome remains truthful: %s", async outcome => {
++    const attempt = "outcome-attempt";
++    enqueuePendingReview({ ...auditReview(attempt, 9301), preparedNext: auditSuccessor });
++    const response = auditDeferred<Response>();
++    const requested = auditDeferred<void>();
++    let committed = false;
++    let posts = 0;
++    const fetcher = vi.fn(async (input, options) => {
++      if (String(input).includes("/api/operations/")) return Response.json(committed
++        ? { state: "complete", response: { persisted: true, prepared_continuation: auditSuccessor } }
++        : { state: "queued" });
++      posts++;
++      if (String(input).endsWith("/reconcile")) return Response.json({ persisted: false,
++        conflict: { code: "queue_attempt_unprovable", message: "Needs attention", retryable: false }, prepared_continuation: auditSuccessor });
++      requested.resolve();
++      expect(JSON.parse(options!.body as string).attempt_id).toBe(attempt);
++      return response.promise;
++    });
++    vi.stubGlobal("fetch", fetcher);
++    const ownerOutcome = flushPendingReviews().then(result => ({ result }), error => ({ error }));
++    await requested.promise;
++    const waiterOutcome = flushPendingReviews(Infinity, false, undefined, undefined, attempt)
++      .then(result => ({ result }), error => ({ error }));
++    if (outcome.startsWith("network")) {
++      committed = outcome === "network-after";
++      response.reject(new Error("Lost transport"));
++    } else if (outcome === "missing-confirmation") response.resolve(Response.json({ prepared_continuation: auditSuccessor }));
++    else response.resolve(Response.json({ detail: "Conflict", retryable: outcome === "retryable" }, { status: 409 }));
++    const [ownerResult, waiterResult] = await Promise.all([ownerOutcome, waiterOutcome]);
++    if (outcome === "terminal") {
++      expect(waiterResult).toMatchObject({ result: { persistedAttemptIds: [], conflictedAttemptIds: [attempt], preparedContinuations: {} } });
++      expect(conflictedReviews()[0].attemptId).toBe(attempt);
++      expect(posts).toBe(2);
++    } else {
++      expect(waiterResult).toEqual(ownerResult);
++      expect(waiterResult).toMatchObject({ error: { attemptId: attempt, flushResult: { persistedAttemptIds: [], conflictedAttemptIds: [] } } });
++      expect(pendingReviews()[0].attemptId).toBe(attempt);
++      expect(posts).toBe(1);
++      if (committed) {
++        const recovered = await flushPendingReviews(Infinity, true, undefined, undefined, attempt);
++        expect(recovered.persistedAttemptIds).toEqual([attempt]);
++        expect(recovered.preparedContinuations?.[attempt]).toEqual(auditSuccessor);
++        expect(posts).toBe(1);
++        expect(pendingReviews()).toEqual([]);
++      }
++    }
++  });
++
++it.each([false, true])("flush_settlement_audit unrelated rejection attributes its own attempt and explicit retry=%s", async explicitRetry => {
++  enqueuePendingReview(auditReview("reject-a", 9401));
++  enqueuePendingReview(auditReview("waiting-b", 9402));
++  const rejectedResponse = auditDeferred<Response>();
++  const requested = auditDeferred<void>();
++  const requests: string[] = [];
++  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
++    if (String(input).includes("/api/operations/")) return new Response(null, { status: 404 });
++    const attempt = JSON.parse(options!.body as string).attempt_id;
++    requests.push(attempt);
++    if (attempt === "reject-a") { requested.resolve(); return rejectedResponse.promise; }
++    return Response.json({ persisted: true });
++  }));
++  const owner = flushPendingReviews().catch(error => error);
++  await requested.promise;
++  const waiting = flushPendingReviews(Infinity, false, explicitRetry ? "waiting-b" : undefined, undefined, "waiting-b").catch(error => error);
++  rejectedResponse.reject(new Error("A failed"));
++  expect(await owner).toMatchObject({ attemptId: "reject-a" });
++  const result = await waiting;
++  if (explicitRetry) {
++    expect(result.persistedAttemptIds).toEqual(["waiting-b"]);
++    expect(requests).toEqual(["reject-a", "waiting-b"]);
++    expect(pendingReviews().map(item => item.attemptId)).toEqual(["reject-a"]);
++  } else {
++    expect(result).toMatchObject({ attemptId: "reject-a", flushResult: { persistedAttemptIds: [] } });
++    expect(pendingReviews().map(item => item.attemptId)).toEqual(["reject-a", "waiting-b"]);
++  }
++});
++
++it.each(["persisted", "suppressed", "conflicted"])("flush_settlement_audit target cannot bypass same-card %s predecessor", async predecessor => {
++  enqueuePendingReview(auditReview("independent-before", 9500));
++  enqueuePendingReview({ ...auditReview("same-earlier", 9501, "same-card"),
++    ...(predecessor === "suppressed" ? { automaticRecoverySuppressed: "failed" as const } : {}),
++    ...(predecessor === "conflicted" ? { state: "conflicted" as const, conflict: { code: "retired", message: "Needs review", retryable: false } } : {}) });
++  enqueuePendingReview(auditReview("same-target", 9502, "same-card"));
++  enqueuePendingReview(auditReview("independent-after", 9503));
++  const deliveries: string[] = [];
++  vi.stubGlobal("fetch", vi.fn(async (_input, options) => {
++    deliveries.push(JSON.parse(options!.body as string).attempt_id);
++    return Response.json({ persisted: true });
++  }));
++  const result = await flushPendingReviews(Infinity, false, undefined, undefined, "same-target");
++  if (predecessor === "persisted") expect(result.persistedAttemptIds).toEqual(["same-earlier", "same-target"]);
++  else {
++    expect(result.persistedAttemptIds).toEqual([]);
++    expect(result.conflictedAttemptIds).toEqual(predecessor === "conflicted" ? ["same-target"] : []);
++  }
++  expect(deliveries).toEqual(predecessor === "persisted" ? ["same-earlier", "same-target"] : []);
++  expect(pendingReviews().map(item => item.attemptId)).toContain("independent-before");
++  expect(pendingReviews().map(item => item.attemptId)).toContain("independent-after");
++});
++
+ function heldReviewResponse() {
+   let resolveResponse!: (response: Response) => void;
+   let rejectResponse!: (error: Error) => void;

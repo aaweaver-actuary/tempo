@@ -1,0 +1,5 @@
+Audit-only scope, production baseline 02b65f229aaccc91ae7c03fd11efc8f3aedd2883.
+Failure modes: operation/logical identity replay, stale projections, evidence rollback, continuation authority, queue phase/generation replacement, deadline restart, foreground contention, study-only preservation.
+Small tests: existing prepared continuation, queue issuance/recovery, guided command dispatch, transport errors, queue wake/deadline recovery, study-only tests. Whole selected files run once. These use SQLite/mocks and do not prove PostgreSQL locking.
+Native tests: fresh project-scoped PostgreSQL/Redis; existing queue-attempt recovery script and daily-study dispatch script; no live services or data. Preserve exact assertions and timing bounds. Test-only audit harness uses existing Compose schema bootstrap and production backend image built at audit SHA.
+CI owns future implementation qualification; no complete gate is required for this characterization. Browser next-card installation will remain static/unproven unless a focused browser proof is needed after server analysis.

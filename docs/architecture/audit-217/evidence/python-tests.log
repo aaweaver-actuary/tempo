@@ -1,0 +1,9 @@
+PYTHONPATH=backend "backend/.venv/bin/python" -m pytest "backend/tests/test_prepared_review_continuation.py backend/tests/test_queue_attempt_issuance.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_postgres_guided_review.py backend/tests/test_command_transport_errors.py backend/tests/test_queue_refresh_deadline_recovery.py backend/tests/test_queue_refresh_retry_wakes.py backend/tests/test_study_only_mode.py" -q -o cache_dir=.pytest_cache --rootdir=.
+ERROR: file or directory not found: backend/tests/test_prepared_review_continuation.py backend/tests/test_queue_attempt_issuance.py backend/tests/test_queue_attempt_recovery.py backend/tests/test_postgres_guided_review.py backend/tests/test_command_transport_errors.py backend/tests/test_queue_refresh_deadline_recovery.py backend/tests/test_queue_refresh_retry_wakes.py backend/tests/test_study_only_mode.py
+
+
+no tests ran in 0.00s
+make: *** [python-file] Error 4
+real 1.73
+user 1.03
+sys 0.22

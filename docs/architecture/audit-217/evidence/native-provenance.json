@@ -1,0 +1,275 @@
+{
+  "project": "tempo-audit217-c5f0c57045",
+  "source_revision": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "started_at": 1791820099.8544362,
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "build",
+        "schema",
+        "api",
+        "foreground-worker",
+        "background-worker"
+      ],
+      "seconds": 2.132,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "up",
+        "-d",
+        "--wait",
+        "postgres",
+        "redis"
+      ],
+      "seconds": 3.131,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "schema"
+      ],
+      "seconds": 1.049,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "up",
+        "-d",
+        "--no-deps",
+        "--wait",
+        "api",
+        "foreground-worker",
+        "background-worker"
+      ],
+      "seconds": 7.08,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "stop",
+        "background-worker"
+      ],
+      "seconds": 2.944,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-e",
+        "TEMPO_REDIS_URL=redis://redis:6379/0",
+        "schema",
+        "python",
+        "/source/scripts/check_postgres_queue_attempt_recovery.py"
+      ],
+      "seconds": 4.833,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-e",
+        "TEMPO_REDIS_URL=redis://redis:6379/0",
+        "schema",
+        "python",
+        "-c",
+        "import sys; sys.path.insert(0,'/source/scripts'); import check_postgres_daily_study_dispatch as p; p.configure(); p.test_issue135_postgres_ensure_current_timeout_deferral_lock_order(); p.test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral(); p.test_issue135_postgres_ensure_current_absent_task_creation_lock_order(); p.test_issue135_postgres_first_ensure_calls_preserve_singleton_creation()"
+      ],
+      "seconds": 2.278,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-e",
+        "TEMPO_REDIS_URL=redis://redis:6379/0",
+        "schema",
+        "python",
+        "/source/scripts/check_postgres_training_transition.py",
+        "proof",
+        "training-transition-4909be22-a3eb-487e-844b-7aaf11e3b05d"
+      ],
+      "seconds": 3.264,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-c5f0c57045",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "down",
+        "--rmi",
+        "local",
+        "-v"
+      ],
+      "seconds": 3.739,
+      "exit_code": 0
+    }
+  ],
+  "teardown": [
+    "docker",
+    "compose",
+    "-p",
+    "tempo-audit217-c5f0c57045",
+    "-f",
+    "docker-compose.postgres.test.yml",
+    "down",
+    "--rmi",
+    "local",
+    "-v"
+  ],
+  "status": "passed",
+  "resources": [
+    {
+      "id": "d0c532a09157dcb0b60a7f6b5d7f8f7ea1b394fee4ec646d39a881fdd2e2d2a6",
+      "image": "sha256:b5d06c125dca5c0e9d508244ec42e0cd4589cc95ad64991a22066d5467f2d86d",
+      "created": "2026-10-12T15:48:26.413754001Z",
+      "name": "/tempo-audit217-c5f0c57045-foreground-worker-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit/.tempo-audit217-secrets-mr3x_epy/writer_pgpass",
+          "destination": "/run/secrets/writer_pgpass"
+        }
+      ]
+    },
+    {
+      "id": "bfe7ac08eb805ba647ee83373838e1c57ffb34e6d54520918a420f190278ccb5",
+      "image": "sha256:9c02803fec28d0878ca9e85cdc040691fc5f2fe2ed7bc24be7fb8f6863260da1",
+      "created": "2026-10-12T15:48:26.413539293Z",
+      "name": "/tempo-audit217-c5f0c57045-api-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit/.tempo-audit217-secrets-mr3x_epy/reader_pgpass",
+          "destination": "/run/secrets/reader_pgpass"
+        }
+      ]
+    },
+    {
+      "id": "ddc25cf2dafcdbefcfa71423c478e2af28f4672df17a8815415bd2fe5dd94b78",
+      "image": "sha256:602873bc53658ceac2417973ce16ec2fa27d92a72e580787dd6c6f1a72f6f45a",
+      "created": "2026-10-12T15:48:26.413489918Z",
+      "name": "/tempo-audit217-c5f0c57045-background-worker-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit/.tempo-audit217-secrets-mr3x_epy/writer_pgpass",
+          "destination": "/run/secrets/writer_pgpass"
+        }
+      ]
+    },
+    {
+      "id": "c8a0df59f3a09ee6f2c8c850f870b2fea3c87a93e425352bab9ee3d3f0bcbe17",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+      "created": "2026-10-12T15:48:22.315163722Z",
+      "name": "/tempo-audit217-c5f0c57045-postgres-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit/.tempo-audit217-secrets-mr3x_epy/admin_password",
+          "destination": "/run/secrets/admin_password"
+        },
+        {
+          "type": "volume",
+          "name": "tempo-audit217-c5f0c57045_postgres-test-data",
+          "source": "/var/lib/docker/volumes/tempo-audit217-c5f0c57045_postgres-test-data/_data",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    {
+      "id": "5486cdeaa5475a1af6b336cad40fbef32e79f2052890e39d1315ca6b035e2870",
+      "image": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "created": "2026-10-12T15:48:22.311145472Z",
+      "name": "/tempo-audit217-c5f0c57045-redis-1",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "tempo-audit217-c5f0c57045_redis-test-data",
+          "source": "/var/lib/docker/volumes/tempo-audit217-c5f0c57045_redis-test-data/_data",
+          "destination": "/data"
+        }
+      ]
+    }
+  ],
+  "remaining": {
+    "containers": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "volumes": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "networks": {
+      "exit_code": 0,
+      "identifiers": []
+    }
+  },
+  "finished_at": 1791820130.7228212
+}

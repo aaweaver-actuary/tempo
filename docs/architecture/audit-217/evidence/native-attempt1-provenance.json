@@ -1,0 +1,155 @@
+{
+  "project": "tempo-audit217-7029ee1581",
+  "source_revision": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "started_at": 1791819736.016007,
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-7029ee1581",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "build",
+        "schema"
+      ],
+      "seconds": 2.807,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-7029ee1581",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "up",
+        "-d",
+        "--wait",
+        "postgres",
+        "redis"
+      ],
+      "seconds": 3.059,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-7029ee1581",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "schema"
+      ],
+      "seconds": 1.148,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-7029ee1581",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-e",
+        "TEMPO_REDIS_URL=redis://redis:6379/0",
+        "schema",
+        "python",
+        "/source/scripts/check_postgres_queue_attempt_recovery.py"
+      ],
+      "seconds": 2.137,
+      "exit_code": 1
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-7029ee1581",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "down",
+        "--rmi",
+        "local",
+        "-v"
+      ],
+      "seconds": 0.729,
+      "exit_code": 0
+    }
+  ],
+  "teardown": [
+    "docker",
+    "compose",
+    "-p",
+    "tempo-audit217-7029ee1581",
+    "-f",
+    "docker-compose.postgres.test.yml",
+    "down",
+    "--rmi",
+    "local",
+    "-v"
+  ],
+  "status": "failed",
+  "error": "Audit native command failed",
+  "resources": [
+    {
+      "id": "b6522cae1b604fe311f461388a7897294850353a52019f5e6034250324d2e006",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+      "created": "2026-10-12T15:42:19.168220637Z",
+      "name": "/tempo-audit217-7029ee1581-postgres-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit/.tempo-audit217-secrets-rm8y1uc8/admin_password",
+          "destination": "/run/secrets/admin_password"
+        },
+        {
+          "type": "volume",
+          "name": "tempo-audit217-7029ee1581_postgres-test-data",
+          "source": "/var/lib/docker/volumes/tempo-audit217-7029ee1581_postgres-test-data/_data",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    {
+      "id": "1ddc95afe537fd5fe6c400a7ca895c929aa065db6a4dd0473ef830ed7a228013",
+      "image": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "created": "2026-10-12T15:42:19.163454846Z",
+      "name": "/tempo-audit217-7029ee1581-redis-1",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "tempo-audit217-7029ee1581_redis-test-data",
+          "source": "/var/lib/docker/volumes/tempo-audit217-7029ee1581_redis-test-data/_data",
+          "destination": "/data"
+        }
+      ]
+    }
+  ],
+  "remaining": {
+    "containers": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "volumes": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "networks": {
+      "exit_code": 0,
+      "identifiers": []
+    }
+  },
+  "finished_at": 1791819746.351371
+}

@@ -1,0 +1,218 @@
+time="2026-10-12T11:42:16-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:16-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:16-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:16-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Image tempo-audit217-7029ee1581-schema Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 612B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 431B done
+#2 DONE 0.0s
+
+#3 [auth] library/python:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/python:3.12-slim
+#4 DONE 0.4s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 374B done
+#5 DONE 0.0s
+
+#6 [1/7] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#6 resolve docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 0.0s done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 9.89MB 0.2s done
+#7 DONE 0.2s
+
+#8 [2/7] WORKDIR /app
+#8 CACHED
+
+#9 [3/7] COPY backend/requirements.txt .
+#9 CACHED
+
+#10 [4/7] RUN pip install --no-cache-dir -r requirements.txt
+#10 CACHED
+
+#11 [5/7] COPY backend/app ./app
+#11 CACHED
+
+#12 [6/7] COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json
+#12 CACHED
+
+#13 [7/7] COPY public/data/tactics-packs ./public/data/tactics-packs
+#13 DONE 0.1s
+
+#14 exporting to image
+#14 exporting layers
+#14 exporting layers 1.2s done
+#14 exporting manifest sha256:4443015ec28eb6b1a0ca7eaaa79809896d548fc5378e94ff37c17993f47830b8 done
+#14 exporting config sha256:9ac19f830d39b13ae778d20a06127886b890c8fcbed0f8b813b2dc7414b91282 done
+#14 exporting attestation manifest sha256:0b83c66b7117eb89ee9948397252e1384042417f6f3284edec96294e160d9650 done
+#14 exporting manifest list sha256:f8581684b949f89bf8f2f1441e3fce59bc32ae4197f3eef798b5eaa9600a5573 done
+#14 naming to docker.io/library/tempo-audit217-7029ee1581-schema:latest done
+#14 unpacking to docker.io/library/tempo-audit217-7029ee1581-schema:latest 0.1s done
+#14 DONE 1.3s
+
+#15 resolving provenance for metadata file
+#15 DONE 0.0s
+ Image tempo-audit217-7029ee1581-schema Built 
+time="2026-10-12T11:42:19-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:19-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:19-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:19-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Volume tempo-audit217-7029ee1581_redis-test-data Creating 
+ Volume tempo-audit217-7029ee1581_postgres-test-data Creating 
+ Volume tempo-audit217-7029ee1581_postgres-test-data Creating 
+ Volume tempo-audit217-7029ee1581_redis-test-data Creating 
+ Network tempo-audit217-7029ee1581_default Creating 
+ Network tempo-audit217-7029ee1581_default Creating 
+ Volume tempo-audit217-7029ee1581_redis-test-data Created 
+ Volume tempo-audit217-7029ee1581_redis-test-data Created 
+ Volume tempo-audit217-7029ee1581_postgres-test-data Created 
+ Volume tempo-audit217-7029ee1581_postgres-test-data Created 
+ Network tempo-audit217-7029ee1581_default Created 
+ Network tempo-audit217-7029ee1581_default Created 
+ Container tempo-audit217-7029ee1581-redis-1 Creating 
+ Container tempo-audit217-7029ee1581-postgres-1 Creating 
+ Container tempo-audit217-7029ee1581-redis-1 Created 
+ Container tempo-audit217-7029ee1581-postgres-1 Created 
+ Container tempo-audit217-7029ee1581-postgres-1 Starting 
+ Container tempo-audit217-7029ee1581-redis-1 Starting 
+ Container tempo-audit217-7029ee1581-postgres-1 Started 
+ Container tempo-audit217-7029ee1581-redis-1 Started 
+ Container tempo-audit217-7029ee1581-redis-1 Waiting 
+ Container tempo-audit217-7029ee1581-postgres-1 Waiting 
+ Container tempo-audit217-7029ee1581-postgres-1 Healthy 
+ Container tempo-audit217-7029ee1581-redis-1 Healthy 
+time="2026-10-12T11:42:22-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:22-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:22-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:22-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-audit217-7029ee1581-schema-run-fcbc108dd18b Creating 
+ Container tempo-audit217-7029ee1581-schema-run-fcbc108dd18b Created 
+Applied 001_initial.sql
+Applied 002_game_sync_windows.sql
+Applied 003_integrity_accumulators.sql
+Applied 004_discovery_cursor.sql
+Applied 005_coverage_building.sql
+Applied 006_coverage_maia_claim.sql
+Applied 007_coverage_explorer_claim.sql
+Applied 008_coverage_recovery.sql
+Applied 009_versioned_game_analysis.sql
+Applied 010_game_analysis_publications.sql
+Applied 011_versioned_game_positions.sql
+Applied 012_versioned_game_repertoire.sql
+Applied 013_versioned_game_findings.sql
+Applied 014_versioned_game_events.sql
+Applied 015_game_finding_preparations.sql
+Applied 016_phone_review_receipts.sql
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+time="2026-10-12T11:42:23-04:00" level=warning msg="service \"api\": secrets.reader_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:23-04:00" level=warning msg="service \"background-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:23-04:00" level=warning msg="service \"foreground-worker\": secrets.writer_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+time="2026-10-12T11:42:23-04:00" level=warning msg="service \"schema\": secrets.admin_pgpass.mode: mode is not supported outside Swarm mode and will be ignored"
+ Container tempo-audit217-7029ee1581-schema-run-edf8406252c7 Creating 
+ Container tempo-audit217-7029ee1581-schema-run-edf8406252c7 Created 
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1357, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "/usr/local/lib/python3.12/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/usr/local/lib/python3.12/http/client.py", line 1141, in _send_output
+    self.send(msg)
+  File "/usr/local/lib/python3.12/http/client.py", line 1085, in send
+    self.connect()
+  File "/usr/local/lib/python3.12/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 841, in create_connection
+    for res in getaddrinfo(host, port, 0, SOCK_STREAM):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/socket.py", line 978, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno -2] Name or service not known
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/source/scripts/check_postgres_queue_attempt_recovery.py", line 707, in <module>
+    test_retained_command_retry_preserves_immutable_identity()
+  File "/source/scripts/check_postgres_queue_attempt_recovery.py", line 625, in test_retained_command_retry_preserves_immutable_identity
+    with urlopen('http://api:8000/api/queue/window?limit=3', timeout=10) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1386, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/urllib/request.py", line 1360, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno -2] Name or service not known>
+
+ Container tempo-audit217-7029ee1581-redis-1 Stopping 
+ Container tempo-audit217-7029ee1581-postgres-1 Stopping 
+ Container tempo-audit217-7029ee1581-postgres-1 Stopped 
+ Container tempo-audit217-7029ee1581-postgres-1 Removing 
+ Container tempo-audit217-7029ee1581-redis-1 Stopped 
+ Container tempo-audit217-7029ee1581-redis-1 Removing 
+ Container tempo-audit217-7029ee1581-postgres-1 Removed 
+ Container tempo-audit217-7029ee1581-redis-1 Removed 
+ Volume tempo-audit217-7029ee1581_redis-test-data Removing 
+ Network tempo-audit217-7029ee1581_default Removing 
+ Volume tempo-audit217-7029ee1581_postgres-test-data Removing 
+ Volume tempo-audit217-7029ee1581_postgres-test-data Removed 
+ Volume tempo-audit217-7029ee1581_redis-test-data Removed 
+ Network tempo-audit217-7029ee1581_default Removed 
+ Image tempo-audit217-7029ee1581-schema:latest Removing 
+ Image tempo-audit217-7029ee1581-schema:latest Removed 

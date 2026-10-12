@@ -1,0 +1,156 @@
+{
+  "project": "tempo-audit217-12c472aea2",
+  "source_revision": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "started_at": 1791819809.720381,
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-12c472aea2",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "build",
+        "schema"
+      ],
+      "seconds": 1.677,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-12c472aea2",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "up",
+        "-d",
+        "--wait",
+        "postgres",
+        "redis"
+      ],
+      "seconds": 3.268,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-12c472aea2",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "schema"
+      ],
+      "seconds": 1.304,
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-12c472aea2",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-e",
+        "TEMPO_REDIS_URL=redis://redis:6379/0",
+        "schema",
+        "python",
+        "-c",
+        "import sys; sys.path.insert(0,'/source/scripts'); import check_postgres_queue_attempt_recovery as p; p.test_postgres_guided_marker_locks_displayed_revision_until_commit(); p.test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe(); p.test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery()"
+      ],
+      "seconds": 4.892,
+      "exit_code": 1
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-p",
+        "tempo-audit217-12c472aea2",
+        "-f",
+        "docker-compose.postgres.test.yml",
+        "down",
+        "--rmi",
+        "local",
+        "-v"
+      ],
+      "seconds": 0.738,
+      "exit_code": 0
+    }
+  ],
+  "teardown": [
+    "docker",
+    "compose",
+    "-p",
+    "tempo-audit217-12c472aea2",
+    "-f",
+    "docker-compose.postgres.test.yml",
+    "down",
+    "--rmi",
+    "local",
+    "-v"
+  ],
+  "status": "failed",
+  "error": "Audit native command failed",
+  "resources": [
+    {
+      "id": "c72c4e96b96b59031e3474a709baa19b128ce00c1219c40352b6c5a7fb8aa408",
+      "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+      "created": "2026-10-12T15:43:31.804428421Z",
+      "name": "/tempo-audit217-12c472aea2-postgres-1",
+      "mounts": [
+        {
+          "type": "bind",
+          "name": null,
+          "source": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit/.tempo-audit217-secrets-o1a8m8vj/admin_password",
+          "destination": "/run/secrets/admin_password"
+        },
+        {
+          "type": "volume",
+          "name": "tempo-audit217-12c472aea2_postgres-test-data",
+          "source": "/var/lib/docker/volumes/tempo-audit217-12c472aea2_postgres-test-data/_data",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    {
+      "id": "f41759148a0dfee8ea86ae35e0262cd6aa274f83065178b899d7f6caa57bfa53",
+      "image": "sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "created": "2026-10-12T15:43:31.788769546Z",
+      "name": "/tempo-audit217-12c472aea2-redis-1",
+      "mounts": [
+        {
+          "type": "volume",
+          "name": "tempo-audit217-12c472aea2_redis-test-data",
+          "source": "/var/lib/docker/volumes/tempo-audit217-12c472aea2_redis-test-data/_data",
+          "destination": "/data"
+        }
+      ]
+    }
+  ],
+  "remaining": {
+    "containers": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "volumes": {
+      "exit_code": 0,
+      "identifiers": []
+    },
+    "networks": {
+      "exit_code": 0,
+      "identifiers": []
+    }
+  },
+  "finished_at": 1791819822.058466
+}

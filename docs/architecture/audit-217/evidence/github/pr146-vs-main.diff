@@ -1,0 +1,85 @@
+diff --git a/backend/app/services/durable_tasks.py b/backend/app/services/durable_tasks.py
+index 35408387..0bb1d426 100644
+--- a/backend/app/services/durable_tasks.py
++++ b/backend/app/services/durable_tasks.py
+@@ -44,7 +44,7 @@ _TASK_UPSERT_SQL = """INSERT INTO background_tasks(
+                    transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
+                    max_attempts=excluded.max_attempts,next_attempt_at=excluded.next_attempt_at,
+                    lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
+-                   completed_at=NULL,updated_at=excluded.updated_at"""
++                   completed_at=NULL,updated_at=excluded.updated_at RETURNING id"""
+ _TASK_BY_ID_SQL = "SELECT * FROM background_tasks WHERE id=?"
+ _COMPLETE_SLICE_SQL = """UPDATE background_tasks SET state='complete',phase='published',
+                lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
+@@ -168,17 +168,17 @@ def enqueue_task_in_transaction(
+             (kind, deduplication_key),
+     ).fetchone()
+     now = _now()
+-    task_id = existing["id"] if existing else str(uuid.uuid4())
++    proposed_task_id = existing["id"] if existing else str(uuid.uuid4())
+     generation = max(
+         int(existing["generation"]) + 1 if existing else 1,
+         minimum_generation + 1,
+     )
+     next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
+     created_at = existing["created_at"] if existing else _iso(now)
+-    database.execute(
++    authoritative_task_id = database.execute(
+             _TASK_UPSERT_SQL,
+             (
+-                task_id,
++                proposed_task_id,
+                 kind,
+                 deduplication_key,
+                 generation,
+@@ -189,11 +189,11 @@ def enqueue_task_in_transaction(
+                 created_at,
+                 _iso(now),
+             ),
+-    )
+-    _record_event(database, task_id, generation, "enqueued", "queued", kind=kind)
+-    queued_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
++    ).fetchone()["id"]
++    _record_event(database, authoritative_task_id, generation, "enqueued", "queued", kind=kind)
++    queued_row = database.execute(_TASK_BY_ID_SQL, (authoritative_task_id,)).fetchone()
+     if queued_row["replaced_pending_generation"]:
+-        _record_event(database, task_id, generation, "generation_replaced", "queued", kind=kind)
++        _record_event(database, authoritative_task_id, generation, "generation_replaced", "queued", kind=kind)
+     if kind == "daily_queue":
+         mark_queue_refresh_requested()
+     return dict(queued_row)
+@@ -312,9 +312,6 @@ def claim_task(
+             return None
+         if scheduling_turn is not None:
+             persist_scheduling_turn(database, scheduling_turn)
+-        if row['kind'] in {'repertoire_priority', 'repertoire_opportunity'}:
+-            database.execute('UPDATE analysis_refresh_requests SET pending_since=NULL WHERE kind=? AND repertoire_id=?',
+-                             (row['kind'], row['deduplication_key']))
+         _record_event(database, row["id"], row["generation"], "claimed", "claimed", kind=row["kind"])
+         claimed = dict(database.execute("SELECT * FROM background_tasks WHERE id=?", (row["id"],)).fetchone())
+         claimed["payload"] = json.loads(claimed.pop("payload_json"))
+@@ -328,14 +325,6 @@ def claim_task(
+ 
+ def complete_task(task_id: str, generation: int, lease_token: str, *, kind: str | None = None) -> bool:
+     def operation(database: sqlite3.Connection) -> bool:
+-        refresh_repertoire_id = None
+-        if kind == 'repertoire_opportunity':
+-            refresh_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
+-            if refresh_row:
+-                refresh_repertoire_id = refresh_row['deduplication_key']
+-                from .postgres_priority import _priority_source_version
+-                _priority_source_version(database, refresh_repertoire_id,
+-                                         lock=hasattr(database, 'execute_native'))
+         now = _iso()
+         changed = database.execute(
+             """UPDATE background_tasks SET state='complete',phase='published',
+@@ -346,9 +335,6 @@ def complete_task(task_id: str, generation: int, lease_token: str, *, kind: str
+             (now, now, task_id, generation, lease_token),
+         ).rowcount
+         if changed:
+-            if refresh_repertoire_id is not None:
+-                from .refresh_requests import record_publication
+-                record_publication(database, kind, refresh_repertoire_id)
+             clear_queue_refresh_error_in_transaction(database, task_id, kind=kind)
+             _record_event(database, task_id, generation, "published", "published", kind=kind)
+         else:

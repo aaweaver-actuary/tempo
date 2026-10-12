@@ -1,0 +1,27 @@
+{
+  "source_revision": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "deployed_study_revision": "81cad1cb33817484db5d5ce2d80b3286d178d021",
+  "audit_branch": "codex/issue-217-architecture-audit",
+  "implementation_pr": null,
+  "python_proofs": {
+    "passed": 154,
+    "pytest_seconds": 27.15,
+    "wall_seconds": 27.75
+  },
+  "native_proofs": {
+    "successful_labels": 13,
+    "total_seconds": 30.868
+  },
+  "unexecuted": [
+    "browser runtime",
+    "complete gate",
+    "process/container recreation and backup restore",
+    "saturation/performance comparisons"
+  ],
+  "audit_resources": "all four owned Compose projects torn down; no owned containers, volumes, networks or images remain",
+  "checkout": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit",
+  "checkout_cleanup": "pending durable remote preservation and final inactivity verification",
+  "retained_evidence": "/Users/andy/tempo/test-results/issue-217-architecture-audit-2026-10-12",
+  "other_task_resources": "retained; uncertain ownership; no cross-task cleanup authorized",
+  "publication": "pending; final update will record URLs and verified remote ref"
+}

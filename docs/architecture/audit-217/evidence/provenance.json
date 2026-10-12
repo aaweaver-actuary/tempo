@@ -1,0 +1,12 @@
+{
+  "source_revision": "02b65f229aaccc91ae7c03fd11efc8f3aedd2883",
+  "audit_branch": "codex/issue-217-architecture-audit",
+  "production_diff": [],
+  "source_line_links_validated": 290,
+  "inventory_sha256": "1dd41b01953f1cb95d4d46640d2eaa6e483244be65623cd68d1804af8e5c3859",
+  "full_gate": "not requested for characterization",
+  "browser_runtime": "not executed; static trace only",
+  "native_environment": "Python 3.12 Docker product image, PostgreSQL 18.6, Redis 7; fresh project-scoped data",
+  "python_environment": "CPython 3.14.8, pytest 9.1.1; isolated uv environment",
+  "cleanup": "all four owned Compose invocations report empty containers/volumes/networks; images removed"
+}

@@ -1,0 +1,6 @@
+time="2026-10-12T11:46:40-04:00" level=warning msg="The \"TEMPO_PG_TEST_SECRETS\" variable is not set. Defaulting to a blank string."
+time="2026-10-12T11:46:40-04:00" level=warning msg="The \"TEMPO_PG_TEST_SECRETS\" variable is not set. Defaulting to a blank string."
+time="2026-10-12T11:46:40-04:00" level=warning msg="The \"TEMPO_PG_TEST_SECRETS\" variable is not set. Defaulting to a blank string."
+time="2026-10-12T11:46:40-04:00" level=warning msg="The \"TEMPO_PG_TEST_SECRETS\" variable is not set. Defaulting to a blank string."
+time="2026-10-12T11:46:40-04:00" level=warning msg="The \"TEMPO_PG_TEST_SECRETS\" variable is not set. Defaulting to a blank string."
+error while interpolating secrets.admin_password.file: required variable TEMPO_PG_TEST_SECRETS is missing a value: Set disposable PostgreSQL secrets
