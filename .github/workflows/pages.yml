@@ -240,7 +240,7 @@ jobs:
       candidate_sha: ${{ needs.plan.outputs.commit }}
       layer: quarantine
   development:
-    if: always() && (needs.plan.outputs.tier == 'development' || github.event.pull_request.draft == true || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'))
+    if: always() && needs.plan.result == 'success' && (needs.plan.outputs.tier == 'development' || github.event.pull_request.draft == true || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'))
     needs: [plan, frontend, backend, build, postgres, lifecycle, browser, visual, quarantine]
     runs-on: ubuntu-24.04-arm
     steps:

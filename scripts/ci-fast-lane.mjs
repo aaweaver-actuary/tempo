@@ -70,12 +70,13 @@ export function validateFastGate(plan, report, needs, currentPullRequest, execut
     || report.pullRequest !== plan.pullRequest || report.runId !== execution.id || report.attempt !== execution.attempt) return [...failures,'Missing, failed, cancelled or stale selected evidence'];
   if (report.runtime?.node !== `v${plan.runtime.node}` || report.runtime?.platform !== plan.runtime.platform || report.runtime?.architecture !== plan.runtime.architecture) failures.push('Execution runtime differs from selected runtime');
   if (!report.commands?.length || report.commands.some(command => command.exit_code !== 0 || command.error)) failures.push('Selected commands failed or did not execute');
-  if (JSON.stringify(fastCommands(plan)) !== JSON.stringify(report.commands.map(({name,command,args}) => [name,command,args]))) failures.push('Missing selected command evidence');
+  if (JSON.stringify(fastCommands(plan)) !== JSON.stringify((report.commands ?? []).map(({name,command,args}) => [name,command,args]))) failures.push('Missing selected command evidence');
   for (const layer of ['frontend','backend','browser']) {
     const selected = layer === 'browser' ? plan.browser : plan[layer];
     if (!selected.length) continue;
     const evidence = report[layer];
-    if (!evidence?.expected?.length || !evidence.tests?.length
+    if (!evidence?.expected?.length || !evidence.tests?.length || evidence.expected.length !== evidence.tests.length
+      || new Set(evidence.expected.map(test => test.id)).size !== evidence.expected.length
       || JSON.stringify(sorted(evidence.expected.map(test => test.id))) !== JSON.stringify(sorted(evidence.tests.map(test => test.id)))
       || new Set(evidence.tests.map(test => test.id)).size !== evidence.tests.length
       || evidence.tests.some(test => test.status !== 'passed' || test.retries !== 0)) {
