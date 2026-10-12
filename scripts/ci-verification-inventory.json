@@ -164,6 +164,7 @@
   ],
   "development": {
     "runnerOwners": {
+      "tests/runner/ci-fast-lane.test.mjs": ["tests/unit/ci-fast-lane-regressions.test.ts"],
       "tests/runner/ci-browser-shards.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/ci-development.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
       "tests/runner/ci-reliability.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],

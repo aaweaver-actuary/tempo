@@ -1,3 +1,4 @@
+import { makeFastPlan, validateFastGate } from '../../scripts/ci-fast-lane.mjs';
 import { attachPassingBrowserShards } from "./ci-browser-shard-fixture.mjs";
 import { suiteFingerprint } from "../../scripts/ci-evidence.mjs";
 import test from 'node:test';
@@ -162,7 +163,7 @@ test('workflow subscribes to state and base events and pins every verification c
   const workflow=readFileSync('.github/workflows/pages.yml','utf8');
   for (const action of ['opened','synchronize','reopened','ready_for_review','converted_to_draft','edited','labeled','unlabeled']) assert(workflow.includes(action));
   assert(workflow.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
-  assert(workflow.includes("  quality:\n    if: always()"));
+  assert(workflow.includes("  quality:\n    if: always() && needs.plan.result == 'success'"));
   assert(workflow.includes('node scripts/ci-quality.mjs --development'));
   assert(workflow.includes('gh api "repos/$TEMPO_REPOSITORY/pulls/$TEMPO_PR"'));
   assert.equal((workflow.match(/candidate_sha: \$\{\{ needs.plan.outputs.commit \}\}/g)??[]).length,allLayers.length);
@@ -482,4 +483,39 @@ test('PR132 frontend runtime inventory expands parameterized execution identitie
     assert(expectedTests.some(item=>item.id.includes('opponentReplyPending')));
     validateUnitResults('frontend',planned,{test_count:unit.numTotalTests,expectedTests,tests:observed,files:{[file]:unit.numTotalTests}});
   } finally {rmSync(directory,{recursive:true,force:true});}
+});
+
+test('PR214_FULL_quality_and_merge_gate_compose_exact_candidate_proof', () => {
+  const ready = {...pr,draft:false,labels:[{name:'ci:full'}]};
+  const planned = captured(ready);
+  planned.pinnedCollection = [{id:'pinned-fixture'}];
+  planned.hash = planHash(planned);
+  const selection = makeFastPlan(['scripts/ci-quality.mjs'],{
+    repository:planned.repository,repositoryId:planned.repositoryId,pullRequest:planned.pullRequest,
+    head:planned.head,base:planned.base,draft:false,
+  });
+  const check = (evidence, current = ready, fullPlan = planned) => {
+    const quality = evaluateQuality(planned,evidence.needs,evidence.reports,{
+      currentPullRequest:current,currentRun:{id:100,attempt:1},
+    });
+    return validateFastGate(selection,null,{selection:{result:'success'},quality:{result:quality.success?'success':'failure'}},
+      current,{id:100,attempt:1},fullPlan);
+  };
+  assert.deepEqual(check(results(planned)),[],JSON.stringify(evaluateQuality(planned,results(planned).needs,results(planned).reports,{currentPullRequest:ready,currentRun:{id:100,attempt:1}})));
+  for (const current of [{...ready,merge_commit_sha:'wrong-integration'},
+    {...ready,head:{sha:'new-head'}},{...ready,base:{...ready.base,sha:'new-base'}}]) {
+    assert(check(results(planned),current).length);
+  }
+  for (const alter of [
+    evidence => delete evidence.reports.frontend,
+    evidence => evidence.reports.frontend.completed = false,
+    evidence => evidence.reports.frontend.commit = 'stale',
+    evidence => evidence.reports.frontend.execution.runId = 999,
+    evidence => evidence.reports.frontend.planHash = 'other-plan',
+    evidence => evidence.needs.backend.result = 'cancelled',
+    evidence => evidence.needs.postgres.result = 'failure',
+    evidence => {evidence.reports.frontend.execution.kind='reused'; evidence.reports.frontend.source={plan:{...planned,commit:'foreign'}};},
+  ]) {
+    const evidence = results(planned); alter(evidence); assert(check(evidence).length);
+  }
 });

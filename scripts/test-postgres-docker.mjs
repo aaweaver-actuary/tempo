@@ -1147,6 +1147,24 @@ const actions = {
     assert.equal((await get("queue/today")).cards.length, 0,
       "Fresh durability database starts without browser queue entries");
   },
+  study_only: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_study_only.py"]);
+  },
+  study_queue_receipts: async () => {
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run("docker", [...compose, "stop", ...workloadConsumers]);
+        verifyWorkloadConsumers("exited");
+      },
+      measureWorkload: () => run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+        "/source/scripts/check_postgres_queue_attempt_recovery.py"]),
+      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
+        startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
+        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
+      }),
+    });
+  },
   study_durability: async () => {
     await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);
     await measureScenario.detail("canonical_route_admission", "scenario", verifyCurrentCanonicalRouteAdmission);
