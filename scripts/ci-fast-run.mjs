@@ -20,7 +20,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const plan = JSON.parse(readFileSync('test-results/fast-lane/plan.json','utf8'));
   const report = {planHash:plan.hash,head:plan.head,repository:plan.repository,pullRequest:plan.pullRequest,
     runId:Number(process.env.GITHUB_RUN_ID),attempt:Number(process.env.GITHUB_RUN_ATTEMPT),
-    runtime:{node:process.version,platform:process.platform,architecture:process.arch},
+    runtime:{node:process.version,platform:process.platform,architecture:process.arch,
+      python:plan.python ? spawnSync(resolvePython(),['--version'],{encoding:'utf8'}).stdout?.trim() : null},
     completed:false,status:'failed',commands:[]};
   mkdirSync('test-results/fast-lane',{recursive:true});
   function run(name, command, args, env = {}) {

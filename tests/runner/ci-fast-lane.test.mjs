@@ -12,7 +12,7 @@ const pr = {number:217,state:'open',head:{sha:context.head},base:{sha:context.ba
 const execution = {id:123,attempt:1};
 function fixture(path = 'app/lib/review-outbox.ts') {
   const plan = makeFastPlan([path],context);
-  const report = {completed:true,status:'success',planHash:plan.hash,head:plan.head,repository:plan.repository,pullRequest:plan.pullRequest,runId:execution.id,attempt:1,runtime:{node:`v${plan.runtime.node}`,platform:plan.runtime.platform,architecture:plan.runtime.architecture}};
+  const report = {completed:true,status:'success',planHash:plan.hash,head:plan.head,repository:plan.repository,pullRequest:plan.pullRequest,runId:execution.id,attempt:1,runtime:{node:`v${plan.runtime.node}`,platform:plan.runtime.platform,architecture:plan.runtime.architecture,python:`Python ${plan.runtime.python}`} };
   report.commands = fastCommands(plan).map(([name,command,args]) => ({name,command,args,exit_code:0}));
   for (const layer of ['frontend','backend','browser']) {
     const selected = layer === 'browser' ? plan.browser : plan[layer];
@@ -117,6 +117,8 @@ test('emergency_workflow_runs_full_only_when_selected_and_pins_fast_head', () =>
 
 test('emergency_wrong_runtime_and_late_full_request_cannot_qualify', () => {
   const evidence = fixture(); evidence.report.runtime.architecture = 'x64'; assert(failures(evidence).length);
+  const backend = fixture('backend/app/services/lichess_client.py'); assert.deepEqual(failures(backend),[]);
+  backend.report.runtime.python = 'Python 3.11.0'; assert(failures(backend).length);
   const late = fixture(); assert(validateFastGate(late.plan,late.report,late.needs,{...pr,labels:[{name:'ci:full'}]},execution).length);
 });
 
