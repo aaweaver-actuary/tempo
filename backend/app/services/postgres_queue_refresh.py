@@ -1004,3 +1004,5 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         return advance_task_slice_in_transaction(
             database, task, next_phase=next_phase, next_payload=next_payload,
         )
+
+# Temporary STUDY queue-persistence qualification probe.
