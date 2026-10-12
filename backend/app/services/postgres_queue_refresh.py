@@ -12,6 +12,9 @@ from psycopg.errors import TransactionTimeout
 from ..database import background_read_connection, connection
 from .. import postgres_store
 from ..queue_position_lock import lock_queue_date_for_position
+from . import queue_application, queue_ordering
+from .opening_capacity_frontier import plan_prioritized_opening_admissions
+from .queue_application import AdmittedOpeningProposal
 from .cards import card_id
 from .real_game_feedback import (MISS_REASON, outstanding_miss_sql, has_outstanding_real_game_miss,
                                  promote_real_game_card, clear_satisfied_miss_priority, prioritize_queued_misses)
@@ -354,12 +357,11 @@ def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
     return True
 
 
-def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
+def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningProposal]:
     """Plan openings using separate bounded reads and no open write transaction."""
 
-    from .. import main
 
-    active_misses = [row[0] for row in _bounded_read(main._ACTIVE_OPENING_MISS_SQL)]
+    active_misses = [row[0] for row in _bounded_read(queue_application._ACTIVE_OPENING_MISS_SQL)]
     candidates = []
     after_card_id = ""
     while True:
@@ -374,7 +376,7 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
             break
         candidates.extend(_bounded_read(
             _PRIORITY_OPENING_PAGE_SQL,
-            (active_misses, card_ids, main.MISS_REASON, queue_date,
+            (active_misses, card_ids, MISS_REASON, queue_date,
              queue_date, queue_date, queue_date), native=True,
         ))
         after_card_id = card_ids[-1]
@@ -390,8 +392,8 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
         "SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) "
         "FROM repertoires r CROSS JOIN settings s WHERE s.id=1",
     ))
-    plan = main._plan_prioritized_opening_admissions(
-        candidates, dict(counts), queue_date, daily_limit,
+    plan = plan_prioritized_opening_admissions(
+        candidates, dict(counts), queue_date, daily_limit, miss_reason=MISS_REASON,
     )
     planned_items = [{"repertoire_id": repertoire_id, "card_id": candidate["id"],
                       "reason": candidate["gameplay_priority_reason"]}
@@ -416,11 +418,11 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
     for offset in range(0, len(card_ids), CAPACITY_READ_BATCH_SIZE):
         capacity_rows.extend(_bounded_read(
             capacity_priority_statement(_PRIORITY_OPENING_PAGE_SQL),
-            (active_misses, card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE], main.MISS_REASON,
+            (active_misses, card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE], MISS_REASON,
              queue_date, queue_date, queue_date, queue_date), native=True,
         ))
     return planned_items + [capacity_proposal_payload(proposal) for proposal in propose_capacity_expansion_from_priority_rows(
-        queue_date, plan, remaining, routes, capacity_rows, miss_reason=main.MISS_REASON,
+        queue_date, plan, remaining, routes, capacity_rows, miss_reason=MISS_REASON,
     )]
 
 
@@ -602,7 +604,6 @@ def _prepare_real_game_obligation(queue_date: str, after_card_id: str) -> str | 
 def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
     """Plan a stable queue order without retaining a database transaction."""
 
-    from .. import main
 
     queue_rows = _bounded_read(
         """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,q.gameplay_priority_reason
@@ -611,7 +612,7 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
         (queue_date,), native=True,
     )
     if not queue_rows:
-        return {"membership_hash": main._queue_membership_hash([]), "entries": None}
+        return {"membership_hash": queue_ordering._queue_membership_hash([]), "entries": None}
     reviewed_card_ids = {row[0] for row in _bounded_read(
         """SELECT DISTINCT card_id FROM reviews
            WHERE card_id=ANY(%s::text[]) AND invalidated_at IS NULL""",
@@ -629,10 +630,10 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
         (queue_date,),
     )
     saved = saved_rows[0] if saved_rows else None
-    membership_hash = main._queue_membership_hash(rows)
+    membership_hash = queue_ordering._queue_membership_hash(rows)
     if saved and saved["membership_hash"] == membership_hash:
         return {"membership_hash": membership_hash, "entries": None}
-    seed, membership_hash, ordered = main._plan_daily_queue_order(
+    seed, membership_hash, ordered = queue_ordering._plan_daily_queue_order(
         rows, queue_date, saved, preserve_through_entry_id=preserve_through_entry_id,
     )
     return {
@@ -649,14 +650,13 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
 def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     """Atomically reorder the current membership, or request a new plan."""
 
-    from .. import main
 
     lock_queue_date_for_position(database, queue_date)
     current_membership = database.execute_native(
         "SELECT id,card_id FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY id",
         (queue_date,),
     ).fetchall()
-    if main._queue_membership_hash(current_membership) != plan["membership_hash"]:
+    if queue_ordering._queue_membership_hash(current_membership) != plan["membership_hash"]:
         return False
     if plan["entries"] is None:
         prioritize_queued_misses(database, queue_date)
@@ -800,8 +800,6 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
 
     if not postgres_store.configured():
         raise RuntimeError("PostgreSQL queue refresh requires the PostgreSQL store")
-    # Import lazily because main owns the SQLite-compatible eligibility SQL.
-    from .. import main
 
     payload = task["payload"]
     queue_date = str(payload.get("queue_date") or date.today().isoformat())
@@ -888,7 +886,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             enqueue_completion(database, task['id'], int(task['generation']), queue_date)
             return False
         if phase == "unlock_opening":
-            next_cursor = main._unlock_eligible_opening_cards(
+            next_cursor = queue_application._unlock_eligible_opening_cards(
                 database, queue_date,
                 after_card_id=str(payload.get("after_card_id") or ""),
                 batch_size=_UNLOCK_BATCH_SIZE,
@@ -907,11 +905,11 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             next_phase = phase if more_tactics else "reset_opening_new"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         elif phase == "reset_opening_new":
-            main._reset_unintroduced_opening_cards(database, queue_date)
+            queue_application._reset_unintroduced_opening_cards(database, queue_date)
             next_phase = "reset_opening_stale"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         elif phase == "reset_opening_stale":
-            main._reset_stale_opening_introductions(database, queue_date)
+            queue_application._reset_stale_opening_introductions(database, queue_date)
             next_phase = "reconcile_unseen"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         elif phase == "reconcile_unseen":
@@ -988,10 +986,10 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                             "after_entry_id": quarantine_batch["after_entry_id"]}
         else:
             phase_handlers = {
-                "block_opening": main._block_ineligible_opening_queue_entries,
-                "block_defense": main._block_unapproved_defense_queue_entries,
-                "restore_due": main._restore_eligible_due_queue_entries,
-                "restore_study": main._restore_published_study_queue_entries,
+                "block_opening": queue_application._block_ineligible_opening_queue_entries,
+                "block_defense": queue_application._block_unapproved_defense_queue_entries,
+                "restore_due": queue_application._restore_eligible_due_queue_entries,
+                "restore_study": queue_application._restore_published_study_queue_entries,
             }
             phase_handlers[phase](database, queue_date)
             phase_index = _ELIGIBILITY_PHASES.index(phase)
