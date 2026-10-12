@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "target": "af7d755d82d738add84688f4",
+  "database": {
+    "name": "tempo",
+    "volume": "tempo-pg-regressions-2665-d88d2608-cli_postgres-test-data"
+  },
+  "attempt_id": "9a07d576-6974-4b3e-9469-8a49c51ff563",
+  "origin_revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "starting_schema": 39,
+  "starting_versions": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39
+  ],
+  "intended_schema": 47,
+  "study_invariants": {
+    "reviews": {
+      "columns": [
+        "id",
+        "card_id",
+        "rating",
+        "reviewed_at",
+        "previous_interval",
+        "next_interval",
+        "internal_rating",
+        "guided",
+        "source_kind",
+        "source_ref",
+        "invalidated_at",
+        "invalidation_reason"
+      ],
+      "count": 1,
+      "digest": "994c5eda499d2e39cccd699a34c17be13bf113cf9e77955ef02e8adcefbbdcdc"
+    },
+    "daily_queue": {
+      "columns": [
+        "id",
+        "queue_date",
+        "card_id",
+        "cycle",
+        "position",
+        "status",
+        "attempt_state",
+        "review_result_json",
+        "attempt_failed",
+        "admission_kind",
+        "admission_repertoire_id",
+        "admission_source"
+      ],
+      "count": 2,
+      "digest": "0138090695a7b7e1ab06ddc3fc1b74f0be47cf0caa0e94aa84ea4ae85331c218"
+    },
+    "operation_receipts": {
+      "columns": [
+        "operation_id",
+        "command_name",
+        "request_hash",
+        "state",
+        "response_json",
+        "error_json",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 53,
+      "digest": "50052fc389b91cce2b686e5a19cef6fd89ec404880a25c6b4d19e38bdcd66eac"
+    }
+  },
+  "backup": {
+    "filename": "tempo-20261012T173836382Z-9a07d576-6974-4b3e-9469-8a49c51ff563.dump",
+    "restore_database": "tempo_cli_restore_9a07d57669744b3e94698a49c51ff563",
+    "created_at": "2026-10-12T17:38:36.382Z",
+    "verified": true,
+    "restore_created": true,
+    "restore_removed": true
+  },
+  "state": "pending",
+  "created_at": "2026-10-12T17:38:39.866Z",
+  "last_attempted_revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "last_attempted_at": "2026-10-12T17:38:39.866Z"
+}

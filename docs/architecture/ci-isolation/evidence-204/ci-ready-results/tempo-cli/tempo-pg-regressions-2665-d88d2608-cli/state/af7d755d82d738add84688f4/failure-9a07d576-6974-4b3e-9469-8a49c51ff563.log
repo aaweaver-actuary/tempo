@@ -1,0 +1,41 @@
+Phase: applying_migrations
+Revision: 76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91
+Failed at: 2026-10-12T17:38:40.462Z
+docker failed (1): Traceback (most recent call last):
+  File "/work/scripts/apply_postgres_migrations.py", line 142, in <module>
+    main()
+  File "/work/scripts/apply_postgres_migrations.py", line 138, in main
+    apply_migrations(options.dsn)
+  File "/work/scripts/apply_postgres_migrations.py", line 54, in apply_migrations
+    database.execute(path.read_text(), prepare=False)
+  File "/usr/local/lib/python3.12/site-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.DuplicateColumn: column "transaction_timeout_count" of relation "background_tasks" already exists
+
+
+postgres-1  | 
+postgres-1  | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1  | 
+postgres-1  | 2026-10-12 17:38:33.697 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-12 17:38:33.697 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-10-12 17:38:33.697 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-10-12 17:38:33.698 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-12 17:38:33.701 UTC [32] LOG:  database system was shut down at 2026-10-12 17:38:33 UTC
+postgres-1  | 2026-10-12 17:38:33.704 UTC [1] LOG:  database system is ready to accept connections
+postgres-1  | 2026-10-12 17:38:39.104 UTC [30] LOG:  checkpoint starting: immediate force wait
+postgres-1  | 2026-10-12 17:38:39.108 UTC [30] LOG:  checkpoint complete: wrote 29 buffers (0.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.002 s, sync=0.001 s, total=0.005 s; sync files=26, longest=0.001 s, average=0.001 s; distance=9930 kB, estimate=9930 kB; lsn=0/38E4B28, redo lsn=0/38E4AD0
+postgres-1  | 2026-10-12 17:38:40.280 UTC [70] ERROR:  column "transaction_timeout_count" of relation "background_tasks" already exists
+postgres-1  | 2026-10-12 17:38:40.280 UTC [70] STATEMENT:  -- Preserve transaction-deadline episodes without deleting or resetting work.
+postgres-1  | 	ALTER TABLE background_tasks ADD COLUMN transaction_timeout_count BIGINT NOT NULL DEFAULT 0;
+postgres-1  | 	ALTER TABLE background_tasks ADD COLUMN transaction_timeout_checkpoint TEXT;
+postgres-1  | 	CREATE INDEX idx_opening_graph_current_roots
+postgres-1  | 	    ON opening_graph_steps(repertoire_id,generation,card_id NULLS FIRST) WHERE parent_card_id IS NULL;
+postgres-1  | 	CREATE INDEX idx_opening_graph_mature_parent_candidates
+postgres-1  | 	    ON opening_graph_steps(parent_card_id,card_id NULLS FIRST,repertoire_id,generation)
+postgres-1  | 	    WHERE parent_card_id IS NOT NULL;
+postgres-1  | 	CREATE INDEX idx_cards_locked_openings ON cards(id)
+postgres-1  | 	    WHERE content_type='opening' AND state='locked' AND archived=0;
+postgres-1  | 	CREATE INDEX idx_cards_mature_parent ON cards(id) WHERE state='mature';
+postgres-1  | 	
+postgres-1  | 	INSERT INTO tempo_schema_migrations(version) VALUES(40);
+postgres-1  | 	

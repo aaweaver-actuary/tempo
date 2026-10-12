@@ -1,0 +1,72 @@
+{
+  "id": "9a07d576-6974-4b3e-9469-8a49c51ff563",
+  "revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "started_at": "2026-10-12T17:38:32.120Z",
+  "phase": "failed",
+  "target": "tempo-pg-regressions-2665-d88d2608-cli",
+  "backup": {
+    "filename": "tempo-20261012T173836382Z-9a07d576-6974-4b3e-9469-8a49c51ff563.dump",
+    "restore_database": "tempo_cli_restore_9a07d57669744b3e94698a49c51ff563",
+    "created_at": "2026-10-12T17:38:36.382Z",
+    "verified": true,
+    "restore_created": true,
+    "restore_removed": true
+  },
+  "study_invariants": {
+    "reviews": {
+      "columns": [
+        "id",
+        "card_id",
+        "rating",
+        "reviewed_at",
+        "previous_interval",
+        "next_interval",
+        "internal_rating",
+        "guided",
+        "source_kind",
+        "source_ref",
+        "invalidated_at",
+        "invalidation_reason"
+      ],
+      "count": 1,
+      "digest": "994c5eda499d2e39cccd699a34c17be13bf113cf9e77955ef02e8adcefbbdcdc"
+    },
+    "daily_queue": {
+      "columns": [
+        "id",
+        "queue_date",
+        "card_id",
+        "cycle",
+        "position",
+        "status",
+        "attempt_state",
+        "review_result_json",
+        "attempt_failed",
+        "admission_kind",
+        "admission_repertoire_id",
+        "admission_source"
+      ],
+      "count": 2,
+      "digest": "0138090695a7b7e1ab06ddc3fc1b74f0be47cf0caa0e94aa84ea4ae85331c218"
+    },
+    "operation_receipts": {
+      "columns": [
+        "operation_id",
+        "command_name",
+        "request_hash",
+        "state",
+        "response_json",
+        "error_json",
+        "created_at",
+        "updated_at"
+      ],
+      "count": 53,
+      "digest": "50052fc389b91cce2b686e5a19cef6fd89ec404880a25c6b4d19e38bdcd66eac"
+    }
+  },
+  "failure": "docker failed (1): Traceback (most recent call last):\n  File \"/work/scripts/apply_postgres_migrations.py\", line 142, in <module>\n    main()\n  File \"/work/scripts/apply_postgres_migrations.py\", line 138, in main\n    apply_migrations(options.dsn)\n  File \"/work/scripts/apply_postgres_migrations.py\", line 54, in apply_migrations\n    database.execute(path.read_text(), prepare=False)\n  File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 304, in execute\n    raise ex.with_traceback(None)\npsycopg.errors.DuplicateColumn: column \"transaction_timeout_count\" of relation \"background_tasks\" already exists\n\n",
+  "failed_phase": "applying_migrations",
+  "failed_at": "2026-10-12T17:38:40.462Z",
+  "failure_log": "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/state/af7d755d82d738add84688f4/failure-9a07d576-6974-4b3e-9469-8a49c51ff563.log",
+  "next_action": "Next: repair the migration error using the saved evidence and original backup, then explicitly run tempo migrate --retry."
+}

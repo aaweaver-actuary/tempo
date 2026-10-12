@@ -1,0 +1,171 @@
+{
+  "condition": "prepared",
+  "revision": "8200e096d6a2b3475dba34f55c7ff381785be0a0",
+  "dirtyPatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fixture": {
+    "prepared": 64,
+    "moves": [
+      "e4",
+      "e5",
+      "Nf3"
+    ],
+    "establishedScheduling": true,
+    "competingJobs": 3000,
+    "lockedCards": 15000,
+    "journals": 100,
+    "warmup": 0,
+    "samples": 3,
+    "snapshot": {
+      "sha256": "c057680a8b95f641abd393588e513d52cea43c5430de4f68f1c1eef4700c74a2",
+      "displaced_queue_positions": [],
+      "description": "Canonical ordered source rows; identical fixed IDs/date/scheduling/eligible jobs in each fresh invocation. Runtime attempt IDs, leases and clocks are deliberately excluded."
+    }
+  },
+  "clock": {
+    "description": "Successful psycopg commit completion, separately from response receipt and pool cleanup. API and worker share the disposable Docker VM clock. Five HTTP exchanges at each end bracket host/VM offset after subtracting observed server duration; uncertainty includes endpoint drift. Commit-to-input time includes test-driver scheduling; nativeInputProcessingMs uses browser event/mutation clocks.",
+    "offsetMs": 0,
+    "uncertaintyMs": 0,
+    "starting": {
+      "offsetMs": 0,
+      "uncertaintyMs": 0
+    },
+    "ending": {
+      "offsetMs": 0,
+      "uncertaintyMs": 0
+    },
+    "driftMs": 0
+  },
+  "measured": [
+    {
+      "clickEpochMs": 1791825549355,
+      "submissionEpochMs": 1791825549394,
+      "responseEpochMs": 1791825549726,
+      "interactiveEpochMs": 1791825549730.4749,
+      "operationId": "review-attempt:ef39b2c3-b96c-4bc8-81f9-fff3973d7019",
+      "receiptObservationEpochMs": 1791825549726.28,
+      "nextInputAcceptedEpochMs": 1791825550240,
+      "nativeInputDispatchEpochMs": 1791825550209.88,
+      "nativeInputAcceptedEpochMs": 1791825550228.5898,
+      "queueNetworkMs": [
+        80.11500000000001
+      ],
+      "queueProcessingMs": [
+        13.18500000052154
+      ],
+      "network": [
+        {
+          "label": "review",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "integrity",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "queue",
+          "sqlCount": 0,
+          "transactions": 0
+        }
+      ],
+      "commitEpochMs": null,
+      "commitToInteractiveMs": null,
+      "commitToInputAcceptedMs": null,
+      "nativeInputProcessingMs": 18.7099609375,
+      "clickToInteractiveMs": 375.474853515625
+    },
+    {
+      "clickEpochMs": 1791825551051,
+      "submissionEpochMs": 1791825551081,
+      "responseEpochMs": 1791825551136,
+      "interactiveEpochMs": 1791825551139.505,
+      "operationId": "review-attempt:3a66223b-c45a-4d95-a821-81e3cae19155",
+      "receiptObservationEpochMs": 1791825551135.9849,
+      "nextInputAcceptedEpochMs": 1791825551212,
+      "nativeInputDispatchEpochMs": 1791825551183.73,
+      "nativeInputAcceptedEpochMs": 1791825551194.165,
+      "queueNetworkMs": [
+        58.011
+      ],
+      "queueProcessingMs": [
+        11.365000000223517
+      ],
+      "network": [
+        {
+          "label": "recovery",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "review",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "integrity",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "recovery",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "queue",
+          "sqlCount": 0,
+          "transactions": 0
+        }
+      ],
+      "commitEpochMs": null,
+      "commitToInteractiveMs": null,
+      "commitToInputAcceptedMs": null,
+      "nativeInputProcessingMs": 10.43505859375,
+      "clickToInteractiveMs": 88.5048828125
+    },
+    {
+      "clickEpochMs": 1791825552021,
+      "submissionEpochMs": 1791825552051,
+      "responseEpochMs": 1791825552266,
+      "interactiveEpochMs": 1791825552272.2449,
+      "operationId": "review-attempt:f67a85d9-4ca4-41ad-a44c-dce7e91f89f7",
+      "receiptObservationEpochMs": 1791825552266.14,
+      "nextInputAcceptedEpochMs": 1791825552400,
+      "nativeInputDispatchEpochMs": 1791825552387.19,
+      "nativeInputAcceptedEpochMs": 1791825552395.2349,
+      "queueNetworkMs": [],
+      "queueProcessingMs": [],
+      "network": [
+        {
+          "label": "review",
+          "sqlCount": 0,
+          "transactions": 0
+        },
+        {
+          "label": "integrity",
+          "sqlCount": 0,
+          "transactions": 0
+        }
+      ],
+      "commitEpochMs": null,
+      "commitToInteractiveMs": null,
+      "commitToInputAcceptedMs": null,
+      "nativeInputProcessingMs": 8.044921875,
+      "clickToInteractiveMs": 251.244873046875
+    }
+  ],
+  "recoveryRequests": 20,
+  "historicalRecoveryRequests": 20,
+  "historicalJournalState": {
+    "remaining": 82,
+    "rejected": []
+  },
+  "persisted": {
+    "reviews": 3,
+    "complete_evidence": 3,
+    "completion_events": 3,
+    "pending_maintenance": 2994,
+    "historical_partials": 19
+  }
+}

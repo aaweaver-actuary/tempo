@@ -1,0 +1,94 @@
+{
+  "runner": "postgres",
+  "mode": "browser",
+  "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "plan_hash": "624e401434c4febc205dc30f7a06d8801d7666bd1003f2faaf4536d0abc2e617",
+  "browser_file": null,
+  "browser_grep": "^chromium post-review-progression\\.spec\\.ts flush_settlement_audit overlapping reconnect preserves issued successor and one durable review$|^chromium post-review-progression\\.spec\\.ts issue186_completed_tactic_has_bounded_progression: fallback abort$|^chromium post-review-progression\\.spec\\.ts issue186_completed_tactic_has_bounded_progression: prepared abort$|^chromium post-review-progression\\.spec\\.ts issue186_completed_tactic_has_bounded_progression: fallback timeout$|^chromium opening-progression\\.spec\\.ts one real short-prefix practice admits its child while parent is learning 1280$|^chromium opening-progression\\.spec\\.ts one real short-prefix practice admits its child while parent is learning 390$|^chromium board-input\\.spec\\.ts touch board input and rotation preserve legal position at DPR 1$|^chromium board-input\\.spec\\.ts drag input and promotion retain the established queen-promotion behavior$|^chromium board-input\\.spec\\.ts touch board input and rotation preserve legal position at DPR 2$|^chromium provider-integration\\.spec\\.ts automatic game sync has a visible spinner and reports provider failure$|^chromium provider-integration\\.spec\\.ts Docker Games shows actual empty records and actionable sync errors, never sample success$|^chromium provider-integration\\.spec\\.ts Maia initializes matching runtime assets and returns legal playable probabilities$|^chromium provider-integration\\.spec\\.ts real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics$|^chromium provider-integration\\.spec\\.ts production Stockfish returns playable engine moves without clipping the board$|^chromium settings-repertoire-limits\\.spec\\.ts repertoire limits update today's queue, persist after reload, and reset to default$|^chromium training-prefetch\\.spec\\.ts legacy object guided marker blocks clean grading across reload until authoritative replay$|^chromium training-prefetch\\.spec\\.ts review saves stay quiet without moving the board or card$|^chromium training-prefetch\\.spec\\.ts poisoned online A becomes inspectable while B and C save and conflict retry survives reload$|^chromium training-prefetch\\.spec\\.ts completed tactic follows the authoritative queue after the earlier save$|^chromium training-prefetch\\.spec\\.ts connected next training card waits for review confirmation and fresh queue$|^chromium training-prefetch\\.spec\\.ts prepared_reconciliation_failure_preserves_native_play_and_blocks_unissued_successor_until_retry$|^chromium training-prefetch\\.spec\\.ts legacy numeric guided marker blocks clean grading across reload until authoritative replay$|^chromium prefix-comparison\\.spec\\.ts issue78_phone_and_desktop_comparison_remain_usable 390$|^chromium prefix-comparison\\.spec\\.ts issue78_phone_and_desktop_comparison_remain_usable 1280$|^chromium board-interactions\\.spec\\.ts delayed startup audio never replays earlier board moves and the next move sounds normally$|^chromium board-interactions\\.spec\\.ts checked king gets a persistent translucent red cue that clears when the position changes$|^chromium board-interactions\\.spec\\.ts local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh$|^chromium board-interactions\\.spec\\.ts Black Train prompt remains playable with a fully visible narrow board$|^chromium board-interactions\\.spec\\.ts Builder right-click annotation saves the exact clicked square$|^chromium board-interactions\\.spec\\.ts Builder source comparison is immediately reachable beside the board$|^chromium recovery\\.spec\\.ts issue36_browser_alternatives_retry_and_confirmed_edit_invalidation_preserve_the_board_and_grading$|^chromium recovery\\.spec\\.ts intentional training failure is saved once and reload resumes it without another failure$|^chromium recovery\\.spec\\.ts repair choices advance before a delayed save and survive reload through real PostgreSQL receipts$|^chromium recovery\\.spec\\.ts fractional priority evidence loads both repertoires without a diagnostic$|^chromium recovery\\.spec\\.ts import waits for saved settings before writing a repertoire$|^chromium recovery\\.spec\\.ts failed initial loads never display empty records or zero statistics$|^chromium recovery\\.spec\\.ts unavailable repertoire lines do not falsely grade another legal move$|^chromium recovery\\.spec\\.ts legacy long discovery save key recovers and queues the saved choice$|^chromium recovery\\.spec\\.ts unaffected opening reviews remain mixed with tactics during repertoire repair$|^chromium recovery\\.spec\\.ts check coverage loads adaptive settings without a validation alert$|^chromium recovery\\.spec\\.ts reopening a saved guided card without input does not record a new failure or show a red X$|^chromium recovery\\.spec\\.ts unknown PGN receipt recovers the same operation after reload and matching file reselection$|^chromium recovery\\.spec\\.ts failed settings reads cannot overwrite authoritative settings with defaults$|^chromium recovery\\.spec\\.ts training startup does not preload unrelated workspace requests$|^chromium recovery\\.spec\\.ts legacy pending PGN import promptly shows its diagnostic and Check again only inspects the original operation$|^chromium recovery\\.spec\\.ts asynchronous repair validation retry survives reload without repeating the retry command$|^chromium recovery\\.spec\\.ts durably executing PGN import waits informationally and Check again never resends$|^chromium recovery\\.spec\\.ts malformed progress is unavailable and retry recovers real measurements$|^chromium recovery\\.spec\\.ts unresolved guided review keeps its card paused while other training opens$|^chromium recovery\\.spec\\.ts frontend errors show a redacted copyable debug bundle$|^chromium recovery\\.spec\\.ts legacy discovery timeout reopens as an unconfirmed save and retries the same choice$|^chromium recovery\\.spec\\.ts unconfirmed_review_does_not_advance_prepared_card: filtering an issued unresolved head does not enable its successor$|^chromium recovery\\.spec\\.ts discarding an unknown PGN import permits a different file after reload$|^chromium recovery\\.spec\\.ts reloaded prefetched guided card waits for the earlier review before marking failure$|^chromium recovery\\.spec\\.ts durably retrying PGN import waits informationally and Check again never resends$|^chromium recovery\\.spec\\.ts repair confirmation during a held training piece preserves the drag and active attempt$|^chromium real-game-feedback\\.spec\\.ts Games shows reanalysis without repeatedly fetching its own summary$|^chromium real-game-feedback\\.spec\\.ts Games prioritizes a canonical miss and explains the targeted study card$|^chromium real-game-feedback\\.spec\\.ts previously studied game-miss priority card starts without a teaching arrow$|^chromium real-game-feedback\\.spec\\.ts Games loads every page of pending findings for the selected game$|^chromium real-game-feedback\\.spec\\.ts connected completion fetches a new real-game obligation before cached ordinary work$",
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "startup",
+    "service_health",
+    "browser",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:37:00.463Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.47,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 106.11,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 17.5,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.09,
+      "exit_code": 0
+    },
+    "browser": {
+      "duration_seconds": 360.75,
+      "exit_code": 0
+    },
+    "cleanup": {
+      "duration_seconds": 3.21,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.47,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 106.11,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 106.59,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 16.45,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 123.04,
+      "completed": true,
+      "poll_count": 1,
+      "duration_seconds": 1.05,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "browser",
+      "parent_id": null,
+      "label": "resource_inspection",
+      "category": "inspection",
+      "start_seconds": 124.18,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 360.75,
+      "exit_code": 0
+    }
+  ]
+}

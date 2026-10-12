@@ -1,0 +1,579 @@
+{
+  "version": 2,
+  "layer": "browser",
+  "planHash": "624e401434c4febc205dc30f7a06d8801d7666bd1003f2faaf4536d0abc2e617",
+  "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "executionKey": "909a85366a7a600b1127688b89121943a8017e092f485db584626f465523e493",
+  "shardId": 4,
+  "assignmentHash": "4049800e615b2252c0c6b2c112acdce5c373fea11130feb6201c7334f00193f3",
+  "execution": {
+    "kind": "executed",
+    "runId": 38284546174,
+    "attempt": 1
+  },
+  "completed": true,
+  "status": "success",
+  "commands": [
+    {
+      "name": "capabilities",
+      "command": "node",
+      "args": [
+        "scripts/check-test-capabilities.mjs",
+        "--docker",
+        "--loopback",
+        "--workspace-mount"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 26.31
+    },
+    {
+      "name": "browser",
+      "command": "node",
+      "args": [
+        "scripts/test-postgres-docker.mjs",
+        "--mode",
+        "browser",
+        "--browser-grep",
+        "^chromium canonical-repertoire-prefix\\.spec\\.ts canonical Italian prefix persists without changing training and rejects Philidor additions 1280$|^chromium canonical-repertoire-prefix\\.spec\\.ts canonical Italian prefix persists without changing training and rejects Philidor additions 390$|^chromium opening-evidence\\.spec\\.ts cross-tab completion cross-tab opening completion wakes reconciliation through storage events$|^chromium opening-evidence\\.spec\\.ts AS-16 offline parent fallback retains rejected journal after queue refresh and reconciles repeat evidence$|^chromium opening-evidence\\.spec\\.ts AS-16 offline evidence quota saves a compact phone review and retains its journal after sync$|^chromium opening-evidence\\.spec\\.ts AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt$|^chromium opening-evidence\\.spec\\.ts AS-16 offline compact quota failure blocks advancement until durable retry$|^chromium opening-evidence\\.spec\\.ts AS-15 orphaned completion without an aggregate outbox retains partial work instead of inventing a review$|^chromium opening-evidence\\.spec\\.ts AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work$|^chromium opening-evidence\\.spec\\.ts AS-16 offline repeats retain independent attempts and reconcile their parent before completion$|^chromium opening-evidence\\.spec\\.ts AS-09 actual teaching arrows manual Again and revealed correction retain first response context$|^chromium opening-evidence\\.spec\\.ts AS-15 crash recovery seals committed work as partial and starts a new board identity$|^chromium opening-evidence\\.spec\\.ts AS-15 a real tab lease releases stranded evidence into a later idle slice$|^chromium opening-evidence\\.spec\\.ts AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity$|^chromium opening-evidence\\.spec\\.ts AS-16 restarted opening board records guided arrows and retains the prior partial attempt$|^chromium opening-evidence\\.spec\\.ts cross-tab completion cross-tab opening completion wakes reconciliation through BroadcastChannel fallback$|^chromium opening-evidence\\.spec\\.ts AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive$|^chromium held-drag-preservation\\.spec\\.ts held training drag survives sync, service, notification and parent updates and drops once$|^chromium held-drag-preservation\\.spec\\.ts a read-only transition interrupts a real held drag and prevents a stale drop$|^chromium games-board-context\\.spec\\.ts selecting another game changes piece placement and move highlights together$|^chromium games-board-context\\.spec\\.ts Games shows loading until the selected game's full moves arrive$|^chromium games-board-context\\.spec\\.ts Games selection and move navigation keep the board on the selected game$|^chromium workspace-flows\\.spec\\.ts sample deletion uses repertoire identity and does not delete its same-filename sibling$|^chromium workspace-flows\\.spec\\.ts partial training Builder route chooser keeps the board fixed at 1470$|^chromium workspace-flows\\.spec\\.ts training Builder restores the viewed mid-line position and durably saves Bg4 on the original route$|^chromium workspace-flows\\.spec\\.ts partial training Builder route chooser keeps the board fixed at 390$|^chromium workspace-flows\\.spec\\.ts Builder exact transposition confirms a conflicting trained move then saves the route$|^chromium workspace-flows\\.spec\\.ts Edit card opens Builder line-removal context and deletes the selected branch$|^chromium workspace-flows\\.spec\\.ts review position opens consistently in analysis builder and games$|^chromium workspace-flows\\.spec\\.ts training Bury hides the card for today across reload and reports a failed bury$|^chromium training-critical-path\\.spec\\.ts opening_evidence_remains_durable_during_prepared_progression: prepared$|^chromium defense-preview\\.spec\\.ts reported Rc4 defensive preview stays readable and returns to the decision at 1440px$|^chromium defense-preview\\.spec\\.ts reported Rc4 defensive preview stays readable and returns to the decision at 390px$|^chromium keyboard-context\\.spec\\.ts incorrect study answers retain their live board while Home End and R browse the revealed reference$|^chromium keyboard-context\\.spec\\.ts training arrows never uncover the next answer and R restores the decision without grading$|^chromium keyboard-context\\.spec\\.ts Builder shortcuts cancel a held piece and preserve notes, selection and splitter keys$|^chromium keyboard-context\\.spec\\.ts Settings letter preference takes effect immediately and persists while arrows and help work$|^chromium keyboard-context\\.spec\\.ts Escape closes Builder search and header popups one at a time and restores their openers$|^chromium phone-opening-study\\.spec\\.ts Long phone repertoire names wrap without hiding the board or overflowing$|^chromium phone-opening-study\\.spec\\.ts Phone opening study shows repertoire identity above the board 320$|^chromium phone-opening-study\\.spec\\.ts Phone skipped same-card result stays paused with actionable earlier-result status$|^chromium phone-opening-study\\.spec\\.ts Phone terminal review stays retained through idle recovery until explicit retry reload=false$|^chromium phone-opening-study\\.spec\\.ts Phone opening study shows repertoire identity above the board 767$|^chromium phone-opening-study\\.spec\\.ts Phone study heading follows London-to-Ruy-Lopez card transitions$|^chromium phone-opening-study\\.spec\\.ts Phone opening More supports keyboard help, restart, and edit without resetting on resize$|^chromium phone-opening-study\\.spec\\.ts Phone reload consumes a retained completed review receipt without another review POST$|^chromium phone-opening-study\\.spec\\.ts Phone actionable save warning keeps its severity and dismiss control readable$|^chromium phone-opening-study\\.spec\\.ts Phone idle review conflict releases Check save and permits the next real board move$|^chromium phone-opening-study\\.spec\\.ts Phone pending review keeps one inline status until its original receipt confirms$|^chromium phone-opening-study\\.spec\\.ts Phone terminal review stays retained through idle recovery until explicit retry reload=true$|^chromium phone-opening-study\\.spec\\.ts Phone opening study shows repertoire identity above the board 390$|^chromium opening-segmentation\\.spec\\.ts AS-01/19 real PostgreSQL segmentation preview preserves practice 1280$|^chromium opening-segmentation\\.spec\\.ts AS-01/19 real PostgreSQL segmentation preview preserves practice 390$|^chromium activity-tray\\.spec\\.ts analysis activity count growth keeps desktop navigation anchored$|^chromium activity-tray\\.spec\\.ts notifications tray remains inside a 320px phone viewport$|^chromium activity-tray\\.spec\\.ts status_recovery_during_training_preserves_held_drag_and_command_execution$|^chromium activity-tray\\.spec\\.ts activity tray stays reachable and controls queued work 1280$|^chromium activity-tray\\.spec\\.ts activity tray stays reachable and controls queued work 320$|^chromium activity-tray\\.spec\\.ts issue137_notification_geometry_waits_for_training_heading_after_delayed_reload$|^chromium activity-tray\\.spec\\.ts activity tray stays reachable and controls queued work 390$|^chromium activity-tray\\.spec\\.ts analysis activity count fits header controls at 1280$|^chromium activity-tray\\.spec\\.ts analysis activity count fits header controls at 390$|^chromium activity-tray\\.spec\\.ts phone notification history groups retries and opens to needs attention$|^chromium activity-tray\\.spec\\.ts notification clear controls preserve history across reload and count new arrivals at 1280$|^chromium activity-tray\\.spec\\.ts notification clear controls preserve history across reload and count new arrivals at 320$"
+      ],
+      "exit_code": 0,
+      "error": null,
+      "duration_seconds": 426.6
+    }
+  ],
+  "tests": [
+    {
+      "id": "fb6417f87ca405b9bb83-c73dacda0696500cfd1b:chromium",
+      "title": "phone notification history groups retries and opens to needs attention",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 907
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-4187ef5875db95f37871:chromium",
+      "title": "activity tray stays reachable and controls queued work 320",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 867
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-8b6f9b541ff6c8975425:chromium",
+      "title": "activity tray stays reachable and controls queued work 390",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 893
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-3ebd1f6c796e8d54e978:chromium",
+      "title": "activity tray stays reachable and controls queued work 1280",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 801
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-14ab6d7e444dfac0ae5b:chromium",
+      "title": "analysis activity count growth keeps desktop navigation anchored",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 684
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-2532c84ad2c657fe190d:chromium",
+      "title": "notifications tray remains inside a 320px phone viewport",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 597
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-73ec58a23c9dde68220e:chromium",
+      "title": "issue137_notification_geometry_waits_for_training_heading_after_delayed_reload",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1400
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-fe961ea1e15148f462c0:chromium",
+      "title": "notification clear controls preserve history across reload and count new arrivals at 320",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1881
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-e0bc33b620d0ee44d286:chromium",
+      "title": "notification clear controls preserve history across reload and count new arrivals at 1280",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2037
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-b067934805fb602cf083:chromium",
+      "title": "analysis activity count fits header controls at 390",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 722
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-8c84da2029c809c580be:chromium",
+      "title": "analysis activity count fits header controls at 1280",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 697
+    },
+    {
+      "id": "fb6417f87ca405b9bb83-372b86eaa9b4e7fbf198:chromium",
+      "title": "status_recovery_during_training_preserves_held_drag_and_command_execution",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2655
+    },
+    {
+      "id": "1b7bc3ee32de79a030aa-dbc4ad89fd824ee3ddca:chromium",
+      "title": "canonical Italian prefix persists without changing training and rejects Philidor additions 390",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 25928
+    },
+    {
+      "id": "1b7bc3ee32de79a030aa-59f2a747e86b6632d92e:chromium",
+      "title": "canonical Italian prefix persists without changing training and rejects Philidor additions 1280",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 26754
+    },
+    {
+      "id": "d1381d145d8484b99329-84cd5e3a463ae13f4000:chromium",
+      "title": "reported Rc4 defensive preview stays readable and returns to the decision at 390px",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3409
+    },
+    {
+      "id": "d1381d145d8484b99329-1b20041a4e3d661ed6a3:chromium",
+      "title": "reported Rc4 defensive preview stays readable and returns to the decision at 1440px",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3290
+    },
+    {
+      "id": "713d5585e9db58c104c3-9e4c7beff03ce7797698:chromium",
+      "title": "Games selection and move navigation keep the board on the selected game",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 902
+    },
+    {
+      "id": "713d5585e9db58c104c3-25962907f6154ddec484:chromium",
+      "title": "Games shows loading until the selected game's full moves arrive",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 675
+    },
+    {
+      "id": "713d5585e9db58c104c3-07791ff74d40f940a38e:chromium",
+      "title": "selecting another game changes piece placement and move highlights together",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 922
+    },
+    {
+      "id": "53d2a509fd77a7305032-7e0156dcdb636cdc8319:chromium",
+      "title": "held training drag survives sync, service, notification and parent updates and drops once",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2640
+    },
+    {
+      "id": "53d2a509fd77a7305032-ab59e58b05dd52fb4167:chromium",
+      "title": "a read-only transition interrupts a real held drag and prevents a stale drop",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1608
+    },
+    {
+      "id": "d6329d55e879b67eb2f1-6de41ddb70d41847ab2f:chromium",
+      "title": "incorrect study answers retain their live board while Home End and R browse the revealed reference",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1642
+    },
+    {
+      "id": "d6329d55e879b67eb2f1-73496e27e3598cf61930:chromium",
+      "title": "training arrows never uncover the next answer and R restores the decision without grading",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1879
+    },
+    {
+      "id": "d6329d55e879b67eb2f1-8672a953aedb0f132fe0:chromium",
+      "title": "Builder shortcuts cancel a held piece and preserve notes, selection and splitter keys",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1421
+    },
+    {
+      "id": "d6329d55e879b67eb2f1-9dc309882b589fb47624:chromium",
+      "title": "Settings letter preference takes effect immediately and persists while arrows and help work",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1846
+    },
+    {
+      "id": "d6329d55e879b67eb2f1-aad5e5f9b9e892599d59:chromium",
+      "title": "Escape closes Builder search and header popups one at a time and restores their openers",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 958
+    },
+    {
+      "id": "3b74a9a62d344e667965-38fc5031d85bcf89e6a6:chromium",
+      "title": "AS-16 offline evidence quota saves a compact phone review and retains its journal after sync",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 4443
+    },
+    {
+      "id": "3b74a9a62d344e667965-4f685be2489e054fa4f5:chromium",
+      "title": "AS-16 offline compact quota failure blocks advancement until durable retry",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 4573
+    },
+    {
+      "id": "3b74a9a62d344e667965-a1cb71bdaff95d21da96:chromium",
+      "title": "AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2047
+    },
+    {
+      "id": "3b74a9a62d344e667965-9fcd4c84fa00c44eb42e:chromium",
+      "title": "AS-15 a real tab lease releases stranded evidence into a later idle slice",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3391
+    },
+    {
+      "id": "3b74a9a62d344e667965-bd8fe3d92a522cb47c0a:chromium",
+      "title": "AS-16 restarted opening board records guided arrows and retains the prior partial attempt",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1048
+    },
+    {
+      "id": "3b74a9a62d344e667965-3b5409af0b48c2771c3f:chromium",
+      "title": "AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3995
+    },
+    {
+      "id": "3b74a9a62d344e667965-d6fb733bab42eec29b49:chromium",
+      "title": "AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3497
+    },
+    {
+      "id": "3b74a9a62d344e667965-62096661fd6c8a8e9d95:chromium",
+      "title": "AS-15 ambiguous checkpoint retries frozen events and delivery key before newer work",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2636
+    },
+    {
+      "id": "3b74a9a62d344e667965-8343c8ed7b4e36535a3b:chromium",
+      "title": "AS-09 actual teaching arrows manual Again and revealed correction retain first response context",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 3661
+    },
+    {
+      "id": "3b74a9a62d344e667965-83e5cc368222734e5318:chromium",
+      "title": "AS-15 crash recovery seals committed work as partial and starts a new board identity",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2545
+    },
+    {
+      "id": "3b74a9a62d344e667965-5f8f504ccbf110ca399f:chromium",
+      "title": "AS-15 orphaned completion without an aggregate outbox retains partial work instead of inventing a review",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1549
+    },
+    {
+      "id": "3b74a9a62d344e667965-74cd261673e82781cc5f:chromium",
+      "title": "AS-16 offline repeats retain independent attempts and reconcile their parent before completion",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 4150
+    },
+    {
+      "id": "3b74a9a62d344e667965-2ed62f0042932e9c72d2:chromium",
+      "title": "AS-16 offline parent fallback retains rejected journal after queue refresh and reconciles repeat evidence",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 4495
+    },
+    {
+      "id": "3b74a9a62d344e667965-1f8d1c7d0effac23a7a3:chromium",
+      "title": "cross-tab opening completion wakes reconciliation through storage events",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1948
+    },
+    {
+      "id": "3b74a9a62d344e667965-d02b0e14655b26b78e66:chromium",
+      "title": "cross-tab opening completion wakes reconciliation through BroadcastChannel fallback",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1891
+    },
+    {
+      "id": "e9109e4bcf60cb91035d-c5badefb33a0eaf9f876:chromium",
+      "title": "AS-01/19 real PostgreSQL segmentation preview preserves practice 390",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 11796
+    },
+    {
+      "id": "e9109e4bcf60cb91035d-70003b86e300d53bc8c3:chromium",
+      "title": "AS-01/19 real PostgreSQL segmentation preview preserves practice 1280",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 14717
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-66da18872208454a5778:chromium",
+      "title": "Phone opening study shows repertoire identity above the board 320",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 708
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-feebf2a516f1873bd49a:chromium",
+      "title": "Phone opening study shows repertoire identity above the board 390",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 697
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-94179428e1cd2d5abbed:chromium",
+      "title": "Phone opening study shows repertoire identity above the board 767",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 681
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-b5eb325332c0565befc5:chromium",
+      "title": "Phone study heading follows London-to-Ruy-Lopez card transitions",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1905
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-bed2c55ab54043e17190:chromium",
+      "title": "Phone opening More supports keyboard help, restart, and edit without resetting on resize",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1150
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-45bfdfe3fa0458050168:chromium",
+      "title": "Long phone repertoire names wrap without hiding the board or overflowing",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 544
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-f5d866f5eb2e3a1c142f:chromium",
+      "title": "Phone pending review keeps one inline status until its original receipt confirms",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2873
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-c4a14828404c0a0191e2:chromium",
+      "title": "Phone actionable save warning keeps its severity and dismiss control readable",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1544
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-813adf1a63f76c7f026c:chromium",
+      "title": "Phone terminal review stays retained through idle recovery until explicit retry reload=false",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1040
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-f7327d744e2c1cdd1061:chromium",
+      "title": "Phone terminal review stays retained through idle recovery until explicit retry reload=true",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1333
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-ca434dadadcb1d3b164a:chromium",
+      "title": "Phone idle review conflict releases Check save and permits the next real board move",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1358
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-7abcb86bae09bc5d099d:chromium",
+      "title": "Phone skipped same-card result stays paused with actionable earlier-result status",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 1588
+    },
+    {
+      "id": "d74c522084c5dd73ce9b-bf49afcea2e7fbfdf42b:chromium",
+      "title": "Phone reload consumes a retained completed review receipt without another review POST",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 723
+    },
+    {
+      "id": "a6a7221a249d76791737-e5b18addbab1f283e8c1:chromium",
+      "title": "opening_evidence_remains_durable_during_prepared_progression: prepared",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 61509
+    },
+    {
+      "id": "7a2e569f248c1a939328-f4174e6ea3650463b14d:chromium",
+      "title": "training Bury hides the card for today across reload and reports a failed bury",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 10815
+    },
+    {
+      "id": "7a2e569f248c1a939328-1c4bd2adcf696618cad8:chromium",
+      "title": "sample deletion uses repertoire identity and does not delete its same-filename sibling",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 7016
+    },
+    {
+      "id": "7a2e569f248c1a939328-933a4d09c49633b1a80f:chromium",
+      "title": "Builder exact transposition confirms a conflicting trained move then saves the route",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 5760
+    },
+    {
+      "id": "7a2e569f248c1a939328-d52670ba62223dae091e:chromium",
+      "title": "review position opens consistently in analysis builder and games",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 5215
+    },
+    {
+      "id": "7a2e569f248c1a939328-b5f6aee77d81efad0f02:chromium",
+      "title": "Edit card opens Builder line-removal context and deletes the selected branch",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 8352
+    },
+    {
+      "id": "7a2e569f248c1a939328-4684c3117c88a9ced01d:chromium",
+      "title": "training Builder restores the viewed mid-line position and durably saves Bg4 on the original route",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 20094
+    },
+    {
+      "id": "7a2e569f248c1a939328-86e5d4d7e3bee3f495a4:chromium",
+      "title": "partial training Builder route chooser keeps the board fixed at 390",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2162
+    },
+    {
+      "id": "7a2e569f248c1a939328-2e54f03da4941f0c45a0:chromium",
+      "title": "partial training Builder route chooser keeps the board fixed at 1470",
+      "project": "chromium",
+      "status": "passed",
+      "retries": 0,
+      "duration_ms": 2269
+    }
+  ],
+  "timestamp": "2026-10-12T17:36:44.000Z",
+  "environment": {
+    "node": "v22.23.3",
+    "platform": "linux",
+    "architecture": "arm64",
+    "python": "Python 3.12.3",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "cpuCount": 4,
+    "memoryBytes": 16722010112,
+    "wasmPack": null
+  },
+  "diagnostics": []
+}

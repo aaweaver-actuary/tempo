@@ -1,0 +1,23 @@
+{
+  "head": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
+  "base": "25363aa0bc7073646ff8a00b94857d4f3127f694",
+  "integration": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "required_results": {
+    "backend / verify": "success",
+    "postgres / verify": "success",
+    "frontend / verify": "success",
+    "lifecycle / verify": "success",
+    "build / verify": "success",
+    "visual / verify": "success",
+    "browser / shard-1": "success",
+    "browser / shard-3": "success",
+    "browser / shard-2": "success",
+    "browser / shard-4": "success",
+    "browser / verify": "success",
+    "quality": "success",
+    "merge-gate": "success"
+  },
+  "github_merge_state": "CLEAN",
+  "successful": true,
+  "wall_including_queue_seconds": 1016.0
+}

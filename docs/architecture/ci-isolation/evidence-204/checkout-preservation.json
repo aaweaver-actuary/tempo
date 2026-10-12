@@ -1,0 +1,13 @@
+{
+  "checkout": "/Users/andy/tempo/.dev-copies/issue-204-scheduling-store",
+  "head": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
+  "preserved_test_result_files": 15,
+  "bytes": 49217,
+  "discardable_ignored": [
+    ".pytest_cache",
+    "backend/.venv",
+    "node_modules",
+    "Python __pycache__ directories"
+  ],
+  "classification": "only installed dependencies, bytecode/cache and verified copied test results; no unique ignored application state"
+}

@@ -1,0 +1,22 @@
+Phase: applying_migrations
+Revision: 76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91
+Failed at: 2026-10-12T17:35:51.173Z
+Original migration history verification failed; keep writers stopped. Preserve backup tempo-20261012T173546599Z-07eebb8e-9226-4736-a8cb-759a3c8b70bf.dump and guard /home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/state/af7d755d82d738add84688f4/migration-guard.json. docker failed (1): Traceback (most recent call last):
+  File "/work/scripts/verify_postgres_cli_state.py", line 59, in <module>
+    main()
+  File "/work/scripts/verify_postgres_cli_state.py", line 54, in main
+    raise RuntimeError("Schema upgrade changed review, queue, or operation receipt history; keep writers stopped")
+RuntimeError: Schema upgrade changed review, queue, or operation receipt history; keep writers stopped
+
+
+postgres-1  | 
+postgres-1  | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1  | 
+postgres-1  | 2026-10-12 17:35:43.925 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-12 17:35:43.925 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-10-12 17:35:43.925 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1  | 2026-10-12 17:35:43.926 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-12 17:35:43.929 UTC [33] LOG:  database system was shut down at 2026-10-12 17:35:43 UTC
+postgres-1  | 2026-10-12 17:35:43.931 UTC [1] LOG:  database system is ready to accept connections
+postgres-1  | 2026-10-12 17:35:48.998 UTC [31] LOG:  checkpoint starting: immediate force wait
+postgres-1  | 2026-10-12 17:35:49.003 UTC [31] LOG:  checkpoint complete: wrote 195 buffers (1.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.001 s, total=0.005 s; sync files=29, longest=0.001 s, average=0.001 s; distance=9606 kB, estimate=9606 kB; lsn=0/29731B8, redo lsn=0/2973160

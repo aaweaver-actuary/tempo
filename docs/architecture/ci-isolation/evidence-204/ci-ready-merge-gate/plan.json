@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "tier": "FULL",
+  "paths": [
+    "backend/app/services/review_service.py",
+    "backend/app/services/scheduling_review_application.py",
+    "backend/app/services/scheduling_review_store.py",
+    "backend/tests/test_scheduling_review_application.py",
+    "backend/tests/test_scheduling_review_store.py",
+    "docs/architecture/ci-isolation/scheduling-store-a1.md",
+    "scripts/check_postgres_queue_attempt_recovery.py",
+    "tests/REGRESSIONS.md"
+  ],
+  "frontend": [],
+  "backend": [
+    "backend/tests/test_guided_review.py",
+    "backend/tests/test_prepared_review_continuation.py",
+    "backend/tests/test_queue_attempt_issuance.py",
+    "backend/tests/test_scheduling_review_application.py",
+    "backend/tests/test_scheduling_review_store.py"
+  ],
+  "browser": [],
+  "node": false,
+  "python": true,
+  "reasons": [
+    "Complete qualification requested",
+    "backend/app/services/review_service.py: reviewed STUDY test ownership",
+    "backend/app/services/scheduling_review_application.py: unknown or ambiguous ownership",
+    "backend/app/services/scheduling_review_store.py: unknown or ambiguous ownership",
+    "backend/tests/test_scheduling_review_application.py: changed regression executes directly",
+    "backend/tests/test_scheduling_review_store.py: changed regression executes directly",
+    "docs/architecture/ci-isolation/scheduling-store-a1.md: prose",
+    "scripts/check_postgres_queue_attempt_recovery.py: global invariant or qualification infrastructure",
+    "tests/REGRESSIONS.md: prose"
+  ],
+  "inventoryHash": "85ada0ef18c1c0866f82e00f6f25b4400b0b02da9e5c614fc48ac272df5d8034",
+  "repository": "aaweaver-actuary/tempo",
+  "repositoryId": 1371942142,
+  "pullRequest": 226,
+  "draft": false,
+  "head": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
+  "base": "25363aa0bc7073646ff8a00b94857d4f3127f694",
+  "runtime": {
+    "runner": "ubuntu-24.04-arm",
+    "platform": "linux",
+    "architecture": "arm64",
+    "node": "22.23.3",
+    "python": "3.12.14",
+    "rust": "1.99.0",
+    "wasmPack": "0.15.0"
+  },
+  "hash": "cf260facbf92b7718039dbfa034c8aad122d0a64d1f8cb554c344d8472f2cf40"
+}

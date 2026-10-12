@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "schema": 47,
+  "images": {
+    "api": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "background-scheduler": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "background-worker": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "defense-engine": "sha256:c885a8f3b3a150aa6bc53688319e94b8390eb2308787233b8b9810bd03a0c99a",
+    "foreground-worker": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "maia-worker": "sha256:03c1deba0a7f3c23fae9e474252a51868414831861d3c5566e88b493cda66a4f",
+    "migration": "sha256:4e5507175642a97f8d3e5d59bb2d31a0d2239254bc653960b8e316b6aef08483",
+    "postgres": "sha256:0336095afa072c685c93021dcfa4a5fee9cbce25ecd65121b58226c787afc0d0",
+    "postgres-backup": "sha256:0336095afa072c685c93021dcfa4a5fee9cbce25ecd65121b58226c787afc0d0",
+    "redis": "sha256:ec4f171e9ff071bb2a1c936057d3be00206069b028b6c0d61df2477e1dd02c42",
+    "schema": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "web": "sha256:c4f2b7ef2372136b2889f6489f271985da9741ed2d17b19beb3c599a3f100eaf"
+  },
+  "composeFiles": [
+    "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/state/af7d755d82d738add84688f4/releases/76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91-4c37e348-c7f6-4838-af98-b4f268f4f973/0-docker-compose.postgres.test.yml",
+    "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/state/af7d755d82d738add84688f4/releases/76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91-4c37e348-c7f6-4838-af98-b4f268f4f973/1-image-labels.json"
+  ],
+  "imageOverride": "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/state/af7d755d82d738add84688f4/releases/76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91-4c37e348-c7f6-4838-af98-b4f268f4f973/images.json",
+  "configFingerprint": "7fe8de49737d82a31a1c0071a48fc14112ceffa6879a4cdcdfa2fa768f16d27f",
+  "evidence": {
+    "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+    "disposable_runner": "tempo-pg-regressions-2665-d88d2608-cli"
+  },
+  "verified_at": "2026-10-12T17:38:29.020Z",
+  "backup": {
+    "filename": "tempo-20261012T173546599Z-07eebb8e-9226-4736-a8cb-759a3c8b70bf.dump",
+    "restore_database": "tempo_cli_restore_07eebb8e92264736a8cb759a3c8b70bf",
+    "created_at": "2026-10-12T17:35:46.599Z",
+    "verified": true,
+    "restore_created": true,
+    "restore_removed": true
+  }
+}

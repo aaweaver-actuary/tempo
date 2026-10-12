@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "schema": 47,
+  "images": {
+    "api": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "background-scheduler": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "background-worker": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "defense-engine": "sha256:c885a8f3b3a150aa6bc53688319e94b8390eb2308787233b8b9810bd03a0c99a",
+    "foreground-worker": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "maia-worker": "sha256:03c1deba0a7f3c23fae9e474252a51868414831861d3c5566e88b493cda66a4f",
+    "migration": "sha256:4e5507175642a97f8d3e5d59bb2d31a0d2239254bc653960b8e316b6aef08483",
+    "postgres": "sha256:0336095afa072c685c93021dcfa4a5fee9cbce25ecd65121b58226c787afc0d0",
+    "postgres-backup": "sha256:0336095afa072c685c93021dcfa4a5fee9cbce25ecd65121b58226c787afc0d0",
+    "redis": "sha256:ec4f171e9ff071bb2a1c936057d3be00206069b028b6c0d61df2477e1dd02c42",
+    "schema": "sha256:2d186a076fc3a7e3abed2572a551ef9e29abb8249ac5ab214973ccdab0fb786d",
+    "web": "sha256:c4f2b7ef2372136b2889f6489f271985da9741ed2d17b19beb3c599a3f100eaf"
+  },
+  "composeFiles": [
+    "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/redis-loading-legacy/state/releases/76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91-c26a5d5f-5a16-47cd-afc0-abfa5460f3d9/0-docker-compose.postgres.test.yml",
+    "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/redis-loading-legacy/state/releases/76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91-c26a5d5f-5a16-47cd-afc0-abfa5460f3d9/1-image-labels.json",
+    "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/redis-loading-legacy/state/releases/76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91-c26a5d5f-5a16-47cd-afc0-abfa5460f3d9/2-redis.json"
+  ],
+  "imageOverride": "/home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/redis-loading-legacy/state/releases/76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91-c26a5d5f-5a16-47cd-afc0-abfa5460f3d9/images.json",
+  "configFingerprint": "ece94ca443367fcdd10deb8d4f496c258d84b1b58b22afafeccdbaccd3b8d087",
+  "evidence": {
+    "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+    "disposable_runner": "tempo-pg-regressions-2665-d88d2608-cli"
+  },
+  "verified_at": "2026-10-12T17:36:56.874Z"
+}

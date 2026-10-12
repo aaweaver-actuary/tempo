@@ -2,9 +2,9 @@ import json, subprocess
 from pathlib import Path
 root=Path(__file__).parent
 projects=set()
-for path in root.rglob("ownership.json"):
+for path in (root/"local-resources").rglob("ownership.json"):
     projects.add(json.loads(path.read_text())["project"])
-for path in root.rglob("native-provenance.json"):
+for path in [root/"native-focused-1/native-provenance.json", root/"native-focused-2/native-provenance.json", root/"refresh-main-baseline/native-provenance.json"]:
     projects.add(json.loads(path.read_text())["project"])
 def run(*args):
     return subprocess.check_output(["docker",*args],text=True).strip().splitlines()

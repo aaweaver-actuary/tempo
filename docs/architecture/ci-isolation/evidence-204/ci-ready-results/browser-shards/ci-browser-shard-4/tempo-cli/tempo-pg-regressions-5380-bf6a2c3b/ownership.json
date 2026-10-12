@@ -1,0 +1,134 @@
+{
+  "checkout": "/home/runner/work/tempo/tempo",
+  "revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "project": "tempo-pg-regressions-5380-bf6a2c3b",
+  "context": "default",
+  "containers": [
+    {
+      "id": "761404fdb683f6baf6ab2fc2af01719d166ffde3c4002e45838f5ceea7cd0dc1",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-web-1",
+      "image": "sha256:625019c6ebc5d5d2ab45f24b4bf1e7ad5946b8c5c4a915fe9fbccc5ea4d5f1af",
+      "created": "2026-10-12T17:38:56.817381533Z",
+      "started_at": "2026-10-12T17:39:07.202850314Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": []
+    },
+    {
+      "id": "5c651c22ab311f306a4d5e3dc1411c88bb09dfb2d1f719954874b01c0081cfa7",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-maia-worker-1",
+      "image": "sha256:ec1fb0fa9474d5caf5363b3e157ef01de980e69a5c8e15ee6777eaf723bf9ba1",
+      "created": "2026-10-12T17:38:56.81633598Z",
+      "started_at": "2026-10-12T17:43:08.710956274Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": []
+    },
+    {
+      "id": "236361403bfee3ea9e3832d8de083cac9e831eb419ef7fcb22d7232fb25f62eb",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-defense-engine-1",
+      "image": "sha256:d2c72a01532665a2a90088f80a9b47dda9c60476222b001b9b8f2f26572e69c1",
+      "created": "2026-10-12T17:38:56.816068332Z",
+      "started_at": "2026-10-12T17:43:08.707327032Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": [
+        {
+          "name": "tempo-pg-regressions-5380-bf6a2c3b_engine-test-operations",
+          "destination": "/state"
+        }
+      ]
+    },
+    {
+      "id": "ad17e2950a3b894f74eca389c860700128fd5ac766b9b61f73e9ada70e96a711",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-api-1",
+      "image": "sha256:daabf7ae68fcf3a6495a8c01f238f3a456843a4384a408a2a674508a29df46b7",
+      "created": "2026-10-12T17:38:56.804980743Z",
+      "started_at": "2026-10-12T17:42:40.48268732Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": []
+    },
+    {
+      "id": "ee2bcf2d14fbd95f721bf840edf81fd5dce42b9e685bce5147a692fb8aaecbc1",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-background-worker-1",
+      "image": "sha256:daabf7ae68fcf3a6495a8c01f238f3a456843a4384a408a2a674508a29df46b7",
+      "created": "2026-10-12T17:38:56.804828074Z",
+      "started_at": "2026-10-12T17:43:08.207407065Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": []
+    },
+    {
+      "id": "d01596c9c18e2158fb1c176c482572bb88520522a90e9f437225b25cae959938",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-foreground-worker-1",
+      "image": "sha256:daabf7ae68fcf3a6495a8c01f238f3a456843a4384a408a2a674508a29df46b7",
+      "created": "2026-10-12T17:38:56.804303465Z",
+      "started_at": "2026-10-12T17:42:42.37397529Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": []
+    },
+    {
+      "id": "146456d43aeb05523f35d0f145594817ea2d74dfc6e77741702110bbe03e3f97",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-background-scheduler-1",
+      "image": "sha256:daabf7ae68fcf3a6495a8c01f238f3a456843a4384a408a2a674508a29df46b7",
+      "created": "2026-10-12T17:38:56.795310614Z",
+      "started_at": "2026-10-12T17:43:07.616673568Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": []
+    },
+    {
+      "id": "0caed7f4d48b0cd9bab6ee8b7d58caaf4c69cb75a081ce0a1e33a1c8777af168",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-schema-1",
+      "image": "sha256:daabf7ae68fcf3a6495a8c01f238f3a456843a4384a408a2a674508a29df46b7",
+      "created": "2026-10-12T17:38:56.794665698Z",
+      "started_at": "2026-10-12T17:43:07.615651167Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": []
+    },
+    {
+      "id": "af2ae8029862abec4e97625a3515014b247e2bee6cacd80ae49546f8ab682f05",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-postgres-1",
+      "image": "sha256:0336095afa072c685c93021dcfa4a5fee9cbce25ecd65121b58226c787afc0d0",
+      "created": "2026-10-12T17:38:56.784145215Z",
+      "started_at": "2026-10-12T17:38:56.837137556Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": [
+        {
+          "name": "tempo-pg-regressions-5380-bf6a2c3b_postgres-test-data",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    {
+      "id": "da6043f2bd196d3d2f7e3ad77dfb71c0a011626fde13410241daf30ce37503d0",
+      "name": "/tempo-pg-regressions-5380-bf6a2c3b-redis-1",
+      "image": "sha256:ec4f171e9ff071bb2a1c936057d3be00206069b028b6c0d61df2477e1dd02c42",
+      "created": "2026-10-12T17:38:56.784061116Z",
+      "started_at": "2026-10-12T17:38:56.837275576Z",
+      "project": "tempo-pg-regressions-5380-bf6a2c3b",
+      "volumes": [
+        {
+          "name": "tempo-pg-regressions-5380-bf6a2c3b_redis-test-data",
+          "destination": "/data"
+        }
+      ]
+    }
+  ],
+  "maintenance_image": [],
+  "teardown": [
+    "docker",
+    "compose",
+    "-p",
+    "tempo-pg-regressions-5380-bf6a2c3b",
+    "-f",
+    "docker-compose.postgres.test.yml",
+    "-f",
+    "/home/runner/work/tempo/tempo/.tempo-pg-test-secrets-MMiipF/image-labels.json",
+    "down",
+    "--rmi",
+    "local",
+    "-v"
+  ],
+  "maintenance_teardown": [
+    "docker",
+    "image",
+    "rm",
+    "tempo-pg-regressions-5380-bf6a2c3b-maintenance"
+  ]
+}

@@ -1,0 +1,483 @@
+
+> sites-project@0.1.0 test:unit
+> vitest run --reporter=default --reporter=json --outputFile.json=test-results/performance/unit-files-ci-frontend.json --includeTaskLocation
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90m/home/runner/work/tempo/tempo[39m
+
+[90mstdout[2m | tests/unit/discoveries-tray-regressions.test.tsx[2m:904[22m[2m[2m > [22m[2mdiscovery_closed_training_defers_preview_and_feed_work
+[22m[39missue-33 closed-training workload { previews: [33m0[39m, maximumActive: [33m0[39m, feedPages: [33m0[39m }
+
+[90mstdout[2m | tests/unit/discoveries-tray-regressions.test.tsx[2m:945[22m[2m[2m > [22m[2mdiscovery_preview_global_concurrency_survives_overlapping_triggers
+[22m[39missue-33 overlapping workload { maximumActive: [33m2[39m, requests: [33m2[39m }
+
+ [32m✓[39m tests/unit/discoveries-tray-regressions.test.tsx [2m([22m[2m60 tests[22m[2m)[22m[33m 4699[2mms[22m[39m
+[90mstdout[2m | tests/unit/review-outbox-regressions.test.ts[2m:20[22m[2m[2m > [22m[2mflush_settlement_audit reentrant submitted owner cannot reject after concurrent authoritative recovery
+[22m[39mflush_settlement_audit initial ownership {
+  concurrentRecoveryStarted: [33mfalse[39m,
+  trace: [
+    [32m'initial conflict storage event'[39m,
+    [32m'submitted POST started'[39m,
+    [32m'submitted owner rejected'[39m,
+    [32m'receipt requested'[39m,
+    [32m'authoritative recovery confirmed'[39m
+  ]
+}
+
+[90mstdout[2m | tests/unit/review-outbox-regressions.test.ts[2m:88[22m[2m[2m > [22m[2mflush_settlement_audit synchronous outbox subscriber observes subsequent persisted publication
+[22m[39mflush_settlement_audit synchronous subscriber persisted [
+  [32m'target storage transition'[39m,
+  [32m'synchronous subscriber returned'[39m,
+  [32m'target observer settled'[39m
+]
+
+[90mstdout[2m | tests/unit/review-outbox-regressions.test.ts[2m:88[22m[2m[2m > [22m[2mflush_settlement_audit synchronous outbox subscriber observes subsequent terminal publication
+[22m[39mflush_settlement_audit synchronous subscriber terminal [
+  [32m'target storage transition'[39m,
+  [32m'synchronous subscriber returned'[39m,
+  [32m'target observer settled'[39m
+]
+
+[90mstdout[2m | tests/unit/review-outbox-regressions.test.ts[2m:204[22m[2m[2m > [22m[2mflush_settlement_audit next generation publishes before previous waiter callbacks: completion
+[22m[39mflush_settlement_audit handoff completion [
+  [32m'A storage transition'[39m,
+  [32m'first microtask'[39m,
+  [32m'B starts'[39m,
+  [32m'B published terminal settlement'[39m,
+  [32m'A caller completion'[39m,
+  [32m'old B waiter completion'[39m
+]
+
+[90mstdout[2m | tests/unit/review-outbox-regressions.test.ts[2m:204[22m[2m[2m > [22m[2mflush_settlement_audit next generation publishes before previous waiter callbacks: rejection
+[22m[39mflush_settlement_audit handoff rejection [
+  [32m'A storage transition'[39m,
+  [32m'first microtask'[39m,
+  [32m'B starts'[39m,
+  [32m'B published terminal settlement'[39m,
+  [32m'A caller rejection'[39m,
+  [32m'old B waiter completion'[39m
+]
+
+ [32m✓[39m tests/unit/review-outbox-regressions.test.ts [2m([22m[2m90 tests[22m[2m)[22m[32m 244[2mms[22m[39m
+ [32m✓[39m tests/unit/review-attempt-confirmation-regressions.test.tsx [2m([22m[2m48 tests[22m[2m)[22m[33m 6972[2mms[22m[39m
+   [33m[2m✓[22m[39m issue186_post_review_acquisition_has_bounded_recovery: headers[33m 497[2mms[22m[39m
+ [32m✓[39m tests/unit/status-polling-regressions.test.tsx [2m([22m[2m53 tests[22m[2m)[22m[33m 719[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-recovery-policy.test.tsx [2m([22m[2m43 tests[22m[2m)[22m[33m 781[2mms[22m[39m
+ [32m✓[39m tests/unit/notification-regressions.test.tsx [2m([22m[2m25 tests[22m[2m)[22m[33m 804[2mms[22m[39m
+ [32m✓[39m tests/unit/integrity-repair-outbox-regressions.test.ts [2m([22m[2m54 tests[22m[2m)[22m[32m 166[2mms[22m[39m
+ [32m✓[39m tests/unit/desktop-queue-regressions.test.ts [2m([22m[2m27 tests[22m[2m)[22m[33m 361[2mms[22m[39m
+ [32m✓[39m tests/unit/tactic-capture-regressions.test.tsx [2m([22m[2m27 tests[22m[2m)[22m[33m 2116[2mms[22m[39m
+   [33m[2m✓[22m[39m capture prevents invalid saves and sends the minimal UCI request before invalidating the queue[33m 340[2mms[22m[39m
+ [32m✓[39m tests/unit/pgn-import-dialog-regressions.test.tsx [2m([22m[2m27 tests[22m[2m)[22m[33m 1692[2mms[22m[39m
+ [32m✓[39m tests/unit/pgn-import-pending-regressions.test.ts [2m([22m[2m50 tests[22m[2m)[22m[33m 666[2mms[22m[39m
+ [32m✓[39m tests/unit/study-regressions.test.tsx [2m([22m[2m76 tests[22m[2m)[22m[33m 30210[2mms[22m[39m
+   [32m✓[39m reported study regressions [2m(21)[22m
+     [33m[2m✓[22m[39m completed tactic follows confirmation of the preceding connected review[33m 1014[2mms[22m[39m
+     [33m[2m✓[22m[39m failed preceding connected save retains its attempt until ordered retry succeeds[33m 768[2mms[22m[39m
+     [33m[2m✓[22m[39m completed tactic survives queue reconciliation before its feedback timer grades it[33m 1331[2mms[22m[39m
+     [33m[2m✓[22m[39m connected completion waits for authoritative real-game obligations before starting the next card[33m 489[2mms[22m[39m
+     [33m[2m✓[22m[39m failed review save retains the completed card for retry; successful review is not reported as failed when queue refresh fails[33m 2227[2mms[22m[39m
+     [33m[2m✓[22m[39m tomorrow and later opening reviews remain unassisted even when teaching storage is empty[33m 640[2mms[22m[39m
+     [33m[2m✓[22m[39m unseen game-miss priority introduction teaches once and returns for unassisted recall[33m 867[2mms[22m[39m
+     [33m[2m✓[22m[39m self-reported first clean solves receive reinforcement without teaching later plies[33m 613[2mms[22m[39m
+     [33m[2m✓[22m[39m tactic failure remains interactive until the full guided solution is complete[33m 791[2mms[22m[39m
+     [33m[2m✓[22m[39m motif progress is independent and stale completion cannot advance another deck[33m 853[2mms[22m[39m
+   [33m[2m✓[22m[39m final repair reconciliation immediately loads newly unblocked cards from an empty training queue[33m 307[2mms[22m[39m
+   [32m✓[39m integrity request intent ordering regressions [2m(45)[22m
+     [33m[2m✓[22m[39m newer generic integrity refresh preserves an earlier preferred repair-open intent (latest first)[33m 344[2mms[22m[39m
+     [33m[2m✓[22m[39m newer generic integrity refresh preserves an earlier preferred repair-open intent (older first)[33m 384[2mms[22m[39m
+     [33m[2m✓[22m[39m newer passive reconciliation preserves a current preferred repair-open intent (latest first)[33m 335[2mms[22m[39m
+     [33m[2m✓[22m[39m newer passive reconciliation preserves a current preferred repair-open intent (older first)[33m 395[2mms[22m[39m
+     [33m[2m✓[22m[39m clean authoritative reconciliation retires obsolete preferred repair intent (clean, generic, latest first)[33m 320[2mms[22m[39m
+     [33m[2m✓[22m[39m newer clean snapshot preserves a repair dialog opened by an earlier accepted snapshot (clean, generic, older first)[33m 444[2mms[22m[39m
+     [33m[2m✓[22m[39m clean authoritative reconciliation retires obsolete preferred repair intent (clean, passive, latest first)[33m 330[2mms[22m[39m
+     [33m[2m✓[22m[39m newer clean snapshot preserves a repair dialog opened by an earlier accepted snapshot (clean, passive, older first)[33m 459[2mms[22m[39m
+     [33m[2m✓[22m[39m clean authoritative reconciliation retires obsolete preferred repair intent (removed, generic, latest first)[33m 310[2mms[22m[39m
+     [33m[2m✓[22m[39m newer clean snapshot preserves a repair dialog opened by an earlier accepted snapshot (removed, generic, older first)[33m 435[2mms[22m[39m
+     [33m[2m✓[22m[39m clean authoritative reconciliation retires obsolete preferred repair intent (removed, passive, latest first)[33m 348[2mms[22m[39m
+     [33m[2m✓[22m[39m newer clean snapshot preserves a repair dialog opened by an earlier accepted snapshot (removed, passive, older first)[33m 446[2mms[22m[39m
+     [33m[2m✓[22m[39m newer preferred repertoire intent cannot be replaced by an older preferred request (none, latest first)[33m 326[2mms[22m[39m
+     [33m[2m✓[22m[39m newer preferred repertoire intent cannot be replaced by an older preferred request (none, older first)[33m 357[2mms[22m[39m
+     [33m[2m✓[22m[39m newer preferred repertoire intent cannot be replaced by an older preferred request (generic, latest first)[33m 320[2mms[22m[39m
+     [33m[2m✓[22m[39m newer preferred repertoire intent cannot be replaced by an older preferred request (generic, older first)[33m 418[2mms[22m[39m
+     [33m[2m✓[22m[39m newer preferred repertoire intent cannot be replaced by an older preferred request (passive, latest first)[33m 342[2mms[22m[39m
+     [33m[2m✓[22m[39m newer preferred repertoire intent cannot be replaced by an older preferred request (passive, older first)[33m 420[2mms[22m[39m
+     [33m[2m✓[22m[39m preferred reconciliation preserves an explicitly opened dialog and selected response (before manual open, needs repair)[33m 319[2mms[22m[39m
+     [33m[2m✓[22m[39m preferred reconciliation preserves an explicitly opened dialog and selected response (before manual open, clean)[33m 317[2mms[22m[39m
+     [33m[2m✓[22m[39m preferred reconciliation preserves an explicitly opened dialog and selected response (after manual open, needs repair)[33m 315[2mms[22m[39m
+     [33m[2m✓[22m[39m preferred reconciliation preserves an explicitly opened dialog and selected response (after manual open, clean)[33m 308[2mms[22m[39m
+     [33m[2m✓[22m[39m deferring an explicitly opened dialog cancels pending preferred intent until a fresh event (rep)[33m 442[2mms[22m[39m
+     [33m[2m✓[22m[39m deferring an explicitly opened dialog cancels pending preferred intent until a fresh event (other)[33m 432[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (generic, transport)[33m 337[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (generic, transport)[33m 318[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (generic, valid-shaped HTTP error)[33m 341[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (generic, valid-shaped HTTP error)[33m 314[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (generic, malformed JSON)[33m 351[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (generic, malformed JSON)[33m 322[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (generic, schema)[33m 347[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (generic, schema)[33m 315[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (passive, transport)[33m 349[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (passive, transport)[33m 317[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (passive, valid-shaped HTTP error)[33m 351[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (passive, valid-shaped HTTP error)[33m 338[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (passive, malformed JSON)[33m 373[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (passive, malformed JSON)[33m 337[2mms[22m[39m
+     [33m[2m✓[22m[39m failed newer integrity request cannot fence an older valid preferred snapshot (passive, schema)[33m 354[2mms[22m[39m
+     [33m[2m✓[22m[39m older valid snapshot remains authoritative when a newer request later fails (passive, schema)[33m 325[2mms[22m[39m
+     [33m[2m✓[22m[39m pre-intent snapshot cannot retire newer preferred repair intent (removed)[33m 301[2mms[22m[39m
+     [33m[2m✓[22m[39m workspace navigation cancels pending preferred repair intent (Browse tree)[33m 429[2mms[22m[39m
+     [33m[2m✓[22m[39m CardEditor save repair intent survives its later queue integrity refresh[33m 438[2mms[22m[39m
+   [33m[2m✓[22m[39m older passive integrity reconciliation cannot restore repair counts after a newer clean result[32m 300[2mms[22m[39m
+   [33m[2m✓[22m[39m newer preferred integrity reconciliation opens its dialog while an older passive response is pending[33m 359[2mms[22m[39m
+   [33m[2m✓[22m[39m confirmed partial repair restores the deferred resume notice without changing study[33m 399[2mms[22m[39m
+   [33m[2m✓[22m[39m confirmed final repair removes the deferred resume notice without changing study[33m 354[2mms[22m[39m
+   [33m[2m✓[22m[39m external partial repair refreshes deferred counts and preserves active study[33m 403[2mms[22m[39m
+   [33m[2m✓[22m[39m external final repair removes the deferred notice without changing active study[33m 345[2mms[22m[39m
+Not implemented: HTMLMediaElement's load() method
+ [32m✓[39m tests/unit/training-builder-context-regressions.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[33m 3732[2mms[22m[39m
+   [33m[2m✓[22m[39m obsolete initial repertoire lines cannot replace a successfully recovered training route[33m 540[2mms[22m[39m
+   [33m[2m✓[22m[39m obsolete initial repertoire failure cannot replace successful training recovery[33m 315[2mms[22m[39m
+   [33m[2m✓[22m[39m obsolete initial repertoire conversion cannot publish after newer recovery[33m 304[2mms[22m[39m
+   [33m[2m✓[22m[39m current repertoire refresh failure reports its error and preserves recovery until a successful retry[33m 308[2mms[22m[39m
+   [33m[2m✓[22m[39m late training route lookup cannot overwrite a newer retry in the same Builder session[33m 334[2mms[22m[39m
+   [33m[2m✓[22m[39m switching repertoires during unresolved training recovery preserves the card board route and draft anchor[33m 322[2mms[22m[39m
+ [32m✓[39m tests/unit/attempt-lifecycle-regressions.test.ts [2m([22m[2m25 tests[22m[2m)[22m[33m 361[2mms[22m[39m
+ [32m✓[39m tests/unit/prefix-comparison-regressions.test.tsx [2m([22m[2m29 tests[22m[2m)[22m[33m 2991[2mms[22m[39m
+   [33m[2m✓[22m[39m issue78_source_pagination_preserves_explicit_selection[33m 392[2mms[22m[39m
+ [32m✓[39m tests/unit/prepared-review-continuation-regressions.test.ts [2m([22m[2m37 tests[22m[2m)[22m[32m 113[2mms[22m[39m
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:42[22m[2m[2m > [22m[2mpausing an active defensive search drains once and records preemption without a partial report
+[22m[39m{"event":"engine_waiting","kind":"engine_defense","stage":"execution","observed_at":"2026-10-12T17:36:15.300Z"}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:42[22m[2m[2m > [22m[2mpausing an active defensive search drains once and records preemption without a partial report
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"preempted","elapsed_seconds":0.75}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:73[22m[2m[2m > [22m[2ma pending defensive report survives pause and restart and delivers before another claim
+[22m[39m{"event":"engine_waiting","kind":"engine","stage":"foreground_admission","observed_at":"2026-10-12T17:36:15.311Z"}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:113[22m[2m[2m > [22m[2mordinary game searches retain foreground control and complete while defense is paused
+[22m[39m{"event":"engine_waiting","kind":"engine_game","stage":"execution","observed_at":"2026-10-12T17:36:15.313Z"}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:113[22m[2m[2m > [22m[2mordinary game searches retain foreground control and complete while defense is paused
+[22m[39m{"event":"engine_search","kind":"engine_game","outcome":"success","elapsed_seconds":0.75}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:127[22m[2m[2m > [22m[2mengine control polling stays single-flight and a stale pause cannot stop a completed search
+[22m[39m{"event":"engine_waiting","kind":"engine_defense","stage":"execution","observed_at":"2026-10-12T17:36:15.315Z"}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:127[22m[2m[2m > [22m[2mengine control polling stays single-flight and a stale pause cannot stop a completed search
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"success","elapsed_seconds":2.25}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:148[22m[2m[2m > [22m[2ma paused engine that cannot drain releases its lease without recording failure and cleans every timer
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"preempted","elapsed_seconds":5.75}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:163[22m[2m[2m > [22m[2mpause near depth deadline preserves preemption through drain (drains=true)
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"preempted","elapsed_seconds":55.5}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:163[22m[2m[2m > [22m[2mpause near depth deadline preserves preemption through drain (drains=false)
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"preempted","elapsed_seconds":59}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:190[22m[2m[2m > [22m[2mdepth deadline first remains timeout when a later outstanding control reports pause
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"timeout","elapsed_seconds":55.5}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:215[22m[2m[2m > [22m[2mold control response cannot stop the next search after the previous search completed
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"success","elapsed_seconds":0.75}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:215[22m[2m[2m > [22m[2mold control response cannot stop the next search after the previous search completed
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"success","elapsed_seconds":0.75}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:271[22m[2m[2m > [22m[2mproduction worker routes cancellation and genuine failure outcomes (pause drains)
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"preempted","elapsed_seconds":55.5}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:271[22m[2m[2m > [22m[2mproduction worker routes cancellation and genuine failure outcomes (pause fatal)
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"preempted","elapsed_seconds":59}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:271[22m[2m[2m > [22m[2mproduction worker routes cancellation and genuine failure outcomes (deadline first)
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"timeout","elapsed_seconds":56.5}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:271[22m[2m[2m > [22m[2mproduction worker routes cancellation and genuine failure outcomes (engine fault)
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"failure","elapsed_seconds":0}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:314[22m[2m[2m > [22m[2mfatal cancellation bounds delivery and recovers the unchanged release before claims after restart
+[22m[39m{"event":"engine_search","kind":"engine_defense","outcome":"preempted","elapsed_seconds":5.75}
+
+[90mstdout[2m | tests/unit/defensive-analysis-pause-regressions.test.ts[2m:314[22m[2m[2m > [22m[2mfatal cancellation bounds delivery and recovers the unchanged release before claims after restart
+[22m[39m{"event":"engine_waiting","kind":"engine","stage":"foreground_admission","observed_at":"2026-10-12T17:36:22.706Z"}
+
+ [32m✓[39m tests/unit/defensive-analysis-pause-regressions.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 119[2mms[22m[39m
+ [32m✓[39m tests/unit/pending-review-recovery-regressions.test.tsx [2m([22m[2m21 tests[22m[2m)[22m[32m 143[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-alternative-home-regressions.test.tsx [2m([22m[2m26 tests[22m[2m)[22m[33m 2680[2mms[22m[39m
+   [33m[2m✓[22m[39m issue36_failed_loading_never_grades_unverified_moves_wrong[33m 429[2mms[22m[39m
+ [32m✓[39m tests/unit/performance-report-regressions.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 979[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-integrity-dialog-regressions.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[33m 820[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-background-admission.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 141[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-recovery-lifecycle.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 602[2mms[22m[39m
+ [32m✓[39m tests/unit/discovery-admission-outbox-regressions.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+ [32m✓[39m tests/unit/workspace-publication-regressions.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 139[2mms[22m[39m
+ [32m✓[39m tests/unit/board-drag-preservation-regressions.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[32m 225[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-regressions.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 413[2mms[22m[39m
+ [32m✓[39m tests/unit/held-drag-diagnostics-regressions.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 261[2mms[22m[39m
+ [32m✓[39m tests/unit/builder-regressions.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 1161[2mms[22m[39m
+ [32m✓[39m tests/unit/training-burial-regressions.test.ts [2m([22m[2m39 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [32m✓[39m tests/unit/defense-recognition-regressions.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 887[2mms[22m[39m
+   [33m[2m✓[22m[39m continuing to defense resets browsed refutation history and preserves recognition via button[33m 386[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-move-probability-contract-regressions.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 408[2mms[22m[39m
+   [33m[2m✓[22m[39m opening_probability_python_typescript_share_valid_and_invalid_contract_corpus[33m 311[2mms[22m[39m
+ [32m✓[39m tests/unit/debug-reporting-regressions.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[32m 291[2mms[22m[39m
+[90mstderr[2m | tests/unit/board-shortcuts-regressions.test.tsx[2m:122[22m[2m[2m > [22m[2mtyping widgets modifiers IME and handled events preserve their keyboard behavior
+[22m[39mA component is `contentEditable` and contains `children` managed by React. It is now your responsibility to guarantee that none of those nodes are unexpectedly modified or duplicated. This is probably not intentional.
+
+ [32m✓[39m tests/unit/board-shortcuts-regressions.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 372[2mms[22m[39m
+ [32m✓[39m tests/unit/training-burial-caller-regressions.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 2732[2mms[22m[39m
+   [33m[2m✓[22m[39m Home burial retry after failed queue refresh replays the selected entry even if the active card changes[33m 531[2mms[22m[39m
+   [33m[2m✓[22m[39m Home transport burial controls block mutations until a definitive outcome[33m 346[2mms[22m[39m
+   [33m[2m✓[22m[39m Home pending burial controls block mutations until a definitive outcome[33m 309[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-daily-limits.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 473[2mms[22m[39m
+ [32m✓[39m tests/unit/validated-data-regressions.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 82[2mms[22m[39m
+ [32m✓[39m tests/unit/canonical-prefix-regressions.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 397[2mms[22m[39m
+ [32m✓[39m tests/unit/test-plan-regressions.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 6225[2mms[22m[39m
+   [33m[2m✓[22m[39m full verification owns every test family once without repeating regular browser specs[33m 735[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL upgrade --plan validates identities and invokes no mutating Docker command[33m 740[2mms[22m[39m
+   [33m[2m✓[22m[39m regular and pinned Playwright plans partition every browser spec without overlap[33m 3387[2mms[22m[39m
+   [33m[2m✓[22m[39m split complete verification matches the existing full command inventory[33m 735[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-segmentation-regressions.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[33m 774[2mms[22m[39m
+Not implemented: HTMLMediaElement's load() method
+Not implemented: HTMLMediaElement's load() method
+Not implemented: HTMLMediaElement's load() method
+ [32m✓[39m tests/unit/opening-evidence-recovery-slices.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 389[2mms[22m[39m
+ [32m✓[39m tests/unit/product-fixture-reset-regressions.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m tests/unit/study-attempt-pending-regressions.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 470[2mms[22m[39m
+   [33m[2m✓[22m[39m study feedback browses the reference line and R restores an off-line submitted answer (shared board: false)[33m 305[2mms[22m[39m
+ [32m✓[39m tests/unit/opponent-reply-diagnostics-regressions.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 2780[2mms[22m[39m
+   [33m[2m✓[22m[39m opponent_reply_reset_closes_its_diagnostic_phase[33m 502[2mms[22m[39m
+   [33m[2m✓[22m[39m opponent_reply_repeated_cancellation_preserves_registry_capacity[33m 1579[2mms[22m[39m
+   [33m[2m✓[22m[39m opponent_reply_completion_and_stale_callbacks_preserve_newer_ownership[33m 370[2mms[22m[39m
+ [32m✓[39m tests/unit/training-failure-outbox-regressions.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m tests/unit/discovery-preview-scheduler-regressions.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m tests/unit/service-status-panel-regressions.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 513[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-alternative-index-regressions.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 1007[2mms[22m[39m
+   [33m[2m✓[22m[39m issue36_lookup_matches_legacy_scan[33m 681[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-cross-tab-signals.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 75[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-offline-quota.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 342[2mms[22m[39m
+ [32m✓[39m tests/unit/phone-opening-study-regressions.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 470[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-opportunities.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 458[2mms[22m[39m
+   [33m[2m✓[22m[39m issue 4 opportunities explain promotion, degraded sources, and explicit actions[33m 331[2mms[22m[39m
+ [32m✓[39m tests/unit/prefix-diagnostics-regressions.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 405[2mms[22m[39m
+ [32m✓[39m tests/unit/study-worker-regressions.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 71[2mms[22m[39m
+ [32m✓[39m tests/unit/phone-recovery-messaging-regressions.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 222[2mms[22m[39m
+ [32m✓[39m tests/unit/board-authoritative-restoration-regressions.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 252[2mms[22m[39m
+ [32m✓[39m tests/unit/board-move-feedback-regressions.test.tsx [2m([22m[2m30 tests[22m[2m)[22m[33m 915[2mms[22m[39m
+ [32m✓[39m tests/unit/queue-readiness-diagnostics-regressions.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-home-lifecycle.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 645[2mms[22m[39m
+ [32m✓[39m tests/unit/game-sync-enqueue-regressions.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 161[2mms[22m[39m
+ [32m✓[39m tests/unit/background-workspace-regressions.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 823[2mms[22m[39m
+ [32m✓[39m tests/unit/storage-cache-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 120[2mms[22m[39m
+ [32m✓[39m tests/unit/api-schema-parity-regressions.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1647[2mms[22m[39m
+   [33m[2m✓[22m[39m Python recommendation snapshots satisfy the frontend list and detail contract[33m 621[2mms[22m[39m
+   [33m[2m✓[22m[39m issue78_python_prefix_evaluator_matches_frontend_source_and_comparison_contracts[33m 307[2mms[22m[39m
+ [32m✓[39m tests/unit/training-builder-handoff-regressions.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 770[2mms[22m[39m
+   [33m[2m✓[22m[39m training Builder handoff keeps the middle-line cursor and full saved continuation without changing the attempt[33m 370[2mms[22m[39m
+ [32m✓[39m tests/unit/opening-evidence-review-deadlines.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 387[2mms[22m[39m
+ [32m✓[39m tests/unit/shared-board-shell-tactics-regressions.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 316[2mms[22m[39m
+ [32m✓[39m tests/unit/durable-engine-request-regressions.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m tests/unit/domain-boundary-regressions.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 169[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-statistics.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 293[2mms[22m[39m
+ [32m✓[39m tests/unit/lichess-explorer-regressions.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m tests/unit/deletion-dialogs-regressions.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 483[2mms[22m[39m
+ [32m✓[39m tests/unit/training-builder-route-regressions.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 52[2mms[22m[39m
+ [32m✓[39m tests/unit/background-diagnostics-regressions.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 660[2mms[22m[39m
+ [32m✓[39m tests/unit/tactics-polish-regressions.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 475[2mms[22m[39m
+   [33m[2m✓[22m[39m tactic Show Move, capture dialog, and Restart retain the guided attempt and classify the opponent reply sound[33m 345[2mms[22m[39m
+ [32m✓[39m tests/unit/settings-notification-regressions.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 647[2mms[22m[39m
+   [33m[2m✓[22m[39m settings transfer unavailable warning remains actionable after progress ends[33m 385[2mms[22m[39m
+ [32m✓[39m tests/unit/postgres-test-runner-regressions.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 305[2mms[22m[39m
+ [32m✓[39m tests/unit/guided-review-pending-regressions.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/game-contract-recovery-regressions.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[32m 86[2mms[22m[39m
+ [32m✓[39m tests/unit/canonical-prefix-parent-regressions.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 562[2mms[22m[39m
+ [32m✓[39m tests/unit/chessground-input-regressions.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 67[2mms[22m[39m
+ [32m✓[39m tests/unit/shared-board-shell-training-regressions.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 235[2mms[22m[39m
+ [32m✓[39m tests/unit/opportunity-action-pending-regressions.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/visual-runner-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 177[2mms[22m[39m
+ [32m✓[39m tests/unit/tactic-capture-pgn.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+ [32m✓[39m tests/unit/repair-endgame-regressions.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 348[2mms[22m[39m
+ [32m✓[39m tests/unit/chess-sound-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m tests/unit/position-search-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m tests/unit/review-conflict-ui-regressions.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 250[2mms[22m[39m
+ [32m✓[39m tests/unit/integrity-repair-pending-regressions.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m tests/unit/card-delete-pending-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/integrity-repair-status-regressions.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[32m 182[2mms[22m[39m
+ [32m✓[39m tests/unit/prefix-split-training-regressions.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 374[2mms[22m[39m
+ [32m✓[39m tests/unit/study-position-store-regressions.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-delete-pending-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/transposition-polish-regressions.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 1215[2mms[22m[39m
+   [33m[2m✓[22m[39m exact transposition banner adds the played route as a persisted branch without waiting for Maia[33m 703[2mms[22m[39m
+   [33m[2m✓[22m[39m transposition dismissal survives Builder remount and existing routes never prompt[33m 511[2mms[22m[39m
+ [32m✓[39m tests/unit/annotation-concealment-regressions.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 88[2mms[22m[39m
+ [32m✓[39m tests/unit/shared-board-shell-mount-regressions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 47[2mms[22m[39m
+ [32m✓[39m tests/unit/phone-queue-preparation-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 108[2mms[22m[39m
+ [32m✓[39m tests/unit/maia-coverage-client-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m tests/unit/comparison-position-regressions.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m tests/unit/ui-primitives.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 219[2mms[22m[39m
+ [32m✓[39m tests/unit/study-promotion-regressions.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 313[2mms[22m[39m
+ [32m✓[39m tests/unit/shared-board-shell-endgames-regressions.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 197[2mms[22m[39m
+ [32m✓[39m tests/unit/settings-loading-regressions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[33m 340[2mms[22m[39m
+   [33m[2m✓[22m[39m settings hydration blocks premature editing then persists independent defensive toggles[33m 339[2mms[22m[39m
+ [32m✓[39m tests/unit/comparison-polish-regressions.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 667[2mms[22m[39m
+   [33m[2m✓[22m[39m comparison headers sort ascending then descending with missing values last and preserve playable hover rows[33m 301[2mms[22m[39m
+ [32m✓[39m tests/unit/operation-status-events.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m tests/unit/board-owner-isolation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/study-worker-coalescing-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m tests/unit/operation-status-integration-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 165[2mms[22m[39m
+ [32m✓[39m tests/unit/settings-save-pending-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/ui-focus-regressions.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 221[2mms[22m[39m
+ [32m✓[39m tests/unit/game-exclusion-pending-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m tests/unit/study-only-settings-regressions.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 382[2mms[22m[39m
+ [32m✓[39m tests/unit/shared-prefix-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 42[2mms[22m[39m
+ [32m✓[39m tests/unit/game-sync-command-pending-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/position-annotation-pending-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m tests/unit/popup-shortcuts-regressions.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[32m 251[2mms[22m[39m
+ [32m✓[39m tests/unit/ci-reliability-regressions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 21597[2mms[22m[39m
+   [33m[2m✓[22m[39m CI reliability planning and browser selection regressions pass in the regular suite[33m 5674[2mms[22m[39m
+   [33m[2m✓[22m[39m draft development and merge qualification regressions execute nonzero cases[33m 9056[2mms[22m[39m
+   [33m[2m✓[22m[39m four isolated browser shards retain exact qualification and reuse regressions[33m 6762[2mms[22m[39m
+ [32m✓[39m tests/unit/study-position-index-regressions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m tests/unit/offline-training-regressions.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m tests/unit/training-store-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/builder-performance-regressions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 248[2mms[22m[39m
+ [32m✓[39m tests/unit/maia-worker-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+[0;93m2026-10-12 17:37:53.229509 [W:onnxruntime:Default, cpuid_info.cc:91 LogEarlyWarning] Unknown CPU vendor. cpuinfo_vendor value: 0[m
+[0;93m2026-10-12 17:37:54.619583 [W:onnxruntime:Default, cpuid_info.cc:91 LogEarlyWarning] Unknown CPU vendor. cpuinfo_vendor value: 0[m
+[0;93m2026-10-12 17:37:56.602552 [W:onnxruntime:Default, cpuid_info.cc:91 LogEarlyWarning] Unknown CPU vendor. cpuinfo_vendor value: 0[m
+ [32m✓[39m tests/unit/maia-container-parity-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5203[2mms[22m[39m
+   [33m[2m✓[22m[39m container Maia probabilities match browser inference for both colors[33m 5202[2mms[22m[39m
+ [32m✓[39m tests/unit/analysis-paste-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/finding-card-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/branch-removal-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/engine-priority-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 66[2mms[22m[39m
+ [32m✓[39m tests/unit/workspace-performance-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m tests/unit/teaching-state-outbox-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/card-revision-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/offline-shell-build-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/unit/shared-board-shell-games-regressions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 68[2mms[22m[39m
+ [32m✓[39m tests/unit/branch-command-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/engine-job-recovery-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/background-read-admission-regressions.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m tests/unit/endgame-template-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/game-finding-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/activity-control-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/game-threat-refresh-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/endgame-attempt-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/opportunity-refresh-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/prefix-split-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/coverage-refresh-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-move-verification.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/repertoire-rename-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m tests/unit/postgres-browser-day-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 934[2mms[22m[39m
+   [32m✓[39m disposable PostgreSQL browser calendar [2m(1)[22m
+     [33m[2m✓[22m[39m regular browser and service share the study day across UTC midnight[33m 933[2mms[22m[39m
+ [32m✓[39m tests/unit/offline-shell-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit/tactical-catalog-suggestions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 148[2mms[22m[39m
+ [32m✓[39m tests/unit/tactic-activation-pending-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/defense-engine-smoke-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 218[2mms[22m[39m
+ [32m✓[39m tests/unit/source-table-regressions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 149[2mms[22m[39m
+ [32m✓[39m tests/unit/workspace-timeout.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 36[2mms[22m[39m
+ [32m✓[39m tests/unit/outcome-flash-regressions.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 36[2mms[22m[39m
+ [32m✓[39m tests/unit/study-exercise-grading.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m tests/unit/study-review-badge.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m tests/unit/board-geometry-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/postgres-test-speedups-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1106[2mms[22m[39m
+   [33m[2m✓[22m[39m PostgreSQL test speedups preserve full coverage, failure propagation, and disposable cleanup[33m 1105[2mms[22m[39m
+ [32m✓[39m tests/unit/ci-fast-lane-regressions.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 280[2mms[22m[39m
+ [32m✓[39m tests/unit/tactical-opportunities.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/test-target-safety.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit/tempo-cli-regressions.test.ts [2m([22m[2m52 tests[22m[2m)[22m[33m 191683[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: contracts[33m 913[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: automatic start waits[33m 7741[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: automatic start timeout preserves[33m 1431[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: automatic start timeout validates[33m 2339[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: automatic migrate timeout[33m 1431[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: automatic start cancels[33m 4639[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: automatic start relaunch[33m 4038[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration guard partial[33m 6674[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration guard completed[33m 6717[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration guard newer[33m 4890[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration guard interrupted[33m 5236[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration diagnostics applying[33m 3261[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration diagnostics failed[33m 3195[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration diagnostics invalid[33m 4800[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration diagnostics verified[33m 3273[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration diagnostics pending[33m 2694[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration diagnostics retry[33m 647[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: migration diagnostics normal[33m 3226[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: upgrades[33m 4653[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: dependency startup[33m 2158[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: falls back[33m 3768[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: read-only[33m 1956[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: failed migration[33m 2689[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: failed builds[33m 3629[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: backup restores the prior[33m 1093[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: blocked update[33m 4247[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: backup restores stopped[33m 971[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: detects[33m 1943[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: fallback corrects[33m 5602[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: compatible fallback[33m 3864[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: interrupted fallback stops uncommitted[33m 4275[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: interrupted fallback quiesces[33m 4305[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: interrupted fallback stops mixed[33m 4289[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: interrupted fallback rejects application[33m 4282[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: interrupted fallback rejects incompatib…[33m 4201[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: concurrent[33m 1565[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: backup rejects[33m 823[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: source inspection fallback[33m 12597[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: source inspection no-receipt[33m 680[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: source inspection migrate[33m 683[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: source inspection safety[33m 2743[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: source inspection diagnostics remain[33m 5252[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: source inspection diagnostics retain[33m 15496[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostics explain[33m 4058[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostics keep[33m 1666[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostics identify[33m 1605[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostics report[33m 2530[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostics distinguish[33m 624[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostics retain[33m 2130[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostics preserve[33m 4179[2mms[22m[39m
+   [33m[2m✓[22m[39m Tempo lifecycle CLI safety regressions run in the regular suite: diagnostic safety[33m 9963[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m162 passed[39m[22m[90m (162)[39m
+[2m      Tests [22m [1m[32m1643 passed[39m[22m[90m (1643)[39m
+[2m   Start at [22m 17:35:36
+[2m   Duration [22m 283.91s[2m (tests 73%, environment 17%, setup 7%, transform 1%, import 1%)[22m
+
+[2m    Isolate [22m [33m162 workers spawned[39m[2m · ~546ms startup each (spawn + environment, per file)[22m
+[2m            [22m [2mat least ~43.65s faster with [22m[33misolate: false[39m[2m — reuses workers across files instead of one per file[22m
+
+JSON report written to /home/runner/work/tempo/tempo/test-results/performance/unit-files-ci-frontend.json
+
+> sites-project@0.1.0 lint
+> eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern static/test-results --ignore-pattern playwright-report --ignore-pattern .dev-copies/**
+
+
+/home/runner/work/tempo/tempo/app/components/opening-segmentation.tsx
+  68:24  warning  The ref value 'listGeneration.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'listGeneration.current' to a variable inside the effect, and use that variable in the cleanup function        react-hooks/exhaustive-deps
+  68:52  warning  The ref value 'detailGeneration.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'detailGeneration.current' to a variable inside the effect, and use that variable in the cleanup function    react-hooks/exhaustive-deps
+  68:81  warning  The ref value 'commandGeneration.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'commandGeneration.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+
+/home/runner/work/tempo/tempo/app/hooks/use-opening-evidence-recovery.ts
+  35:41  warning  The ref value 'lifecycle.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'lifecycle.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+
+/home/runner/work/tempo/tempo/tests/unit/durable-engine-request-regressions.test.ts
+  25:9   warning  '_options' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  54:36  warning  '_url' is defined but never used               @typescript-eslint/no-unused-vars
+  54:50  warning  '_options' is defined but never used           @typescript-eslint/no-unused-vars
+
+/home/runner/work/tempo/tempo/tests/unit/game-exclusion-pending-regressions.test.ts
+  34:35  warning  '_input' is defined but never used  @typescript-eslint/no-unused-vars
+  34:62  warning  '_init' is defined but never used   @typescript-eslint/no-unused-vars
+
+/home/runner/work/tempo/tempo/tests/unit/review-outbox-regressions.test.ts
+  905:40  warning  '_completion' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+✖ 10 problems (0 errors, 10 warnings)
+
+
+> sites-project@0.1.0 typecheck
+> tsc --noEmit --incremental false
+

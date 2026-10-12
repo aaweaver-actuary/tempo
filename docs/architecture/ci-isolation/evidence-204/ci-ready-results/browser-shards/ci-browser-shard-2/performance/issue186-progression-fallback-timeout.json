@@ -1,0 +1,80 @@
+{
+  "revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "project": "tempo-pg-regressions-5425-3ef7f35c",
+  "failure": "fallback timeout",
+  "completedEntry": "142",
+  "reviewPosts": 1,
+  "queueFailures": 2,
+  "lifecycle": {
+    "id": "notification-aa139fc5-0971-4f01-9d89-69853d83af12",
+    "key": "review-queue:142",
+    "occurredAt": "2026-10-12T17:41:40.082Z",
+    "updatedAt": "2026-10-12T17:42:10.204Z",
+    "occurrenceCount": 1,
+    "resolvedAt": null,
+    "clearedAt": null,
+    "active": false,
+    "severity": "warning",
+    "source": "training review",
+    "message": "Result saved; the next card could not be loaded. Retry loading the queue.",
+    "details": {
+      "cardId": "training-transition-0ea88b9e-e5dc-42cf-9a7b-51ead38ce5df-prepared-000",
+      "queueEntryId": 142,
+      "attemptId": "6ee514b6-96dd-4318-a372-765b9fb40b54",
+      "phase": "fallback/retry entered",
+      "error": "Error: Queue acquisition timed out after 15 seconds. Retry loading the queue."
+    }
+  },
+  "receipt": {
+    "card_id": "training-transition-0ea88b9e-e5dc-42cf-9a7b-51ead38ce5df-prepared-000",
+    "hard_correct_streak": 0,
+    "idempotent": false,
+    "interval_days": 2,
+    "next_due": "2026-10-14",
+    "persisted": true,
+    "queue_entry_id": 142,
+    "requeue_after_cards": null,
+    "requeue_entry_id": null,
+    "requeue_today": false,
+    "review_id": 8,
+    "scheduling_mode": "normal",
+    "stability": 2.3065,
+    "state": "learning",
+    "suggest_shorter_prefix": false
+  },
+  "persisted": {
+    "scheduling": [
+      "2026-10-14",
+      2,
+      0,
+      0,
+      "{\"card_id\": 1791826899120, \"state\": 2, \"step\": null, \"stability\": 2.3065, \"difficulty\": 2.118103970459016, \"due\": \"2026-10-14T12:00:00+00:00\", \"last_review\": \"2026-10-12T17:41:38.866000+00:00\"}",
+      2.3065,
+      0
+    ],
+    "reviews": [
+      [
+        8,
+        "correct",
+        1,
+        2
+      ]
+    ],
+    "receipts": [
+      [
+        "6ee514b6-96dd-4318-a372-765b9fb40b54",
+        142,
+        8,
+        "canonical",
+        "{\"card_id\": \"training-transition-0ea88b9e-e5dc-42cf-9a7b-51ead38ce5df-prepared-000\", \"next_due\": \"2026-10-14\", \"interval_days\": 2, \"state\": \"learning\", \"requeue_today\": false, \"requeue_after_cards\": null, \"stability\": 2.3065, \"scheduling_mode\": \"normal\", \"hard_correct_streak\": 0, \"suggest_shorter_prefix\": false, \"idempotent\": false, \"queue_entry_id\": 142, \"requeue_entry_id\": null, \"review_id\": 8, \"persisted\": true}"
+      ]
+    ],
+    "queue": [
+      [
+        142,
+        "complete"
+      ]
+    ],
+    "review_count": 1
+  }
+}

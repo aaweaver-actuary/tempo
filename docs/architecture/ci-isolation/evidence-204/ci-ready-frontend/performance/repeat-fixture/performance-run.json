@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "timestamp": "2026-10-12T17:36:29.035Z",
+  "stages": {},
+  "environment": {
+    "platform": "linux",
+    "architecture": "arm64",
+    "dockerCpus": "",
+    "dockerMemoryBytes": null,
+    "host": {
+      "platform": "linux",
+      "architecture": "arm64",
+      "cpuModel": "unknown",
+      "logicalCpus": 4,
+      "memoryBytes": 16722006016
+    },
+    "runner": "linux-pinned",
+    "buildMode": "production-local"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "project": "tempo-pg-regressions-5425-3ef7f35c",
+  "failure": "fallback abort",
+  "completedEntry": "77",
+  "reviewPosts": 1,
+  "queueFailures": 2,
+  "lifecycle": {
+    "id": "notification-1930e345-6900-404b-9345-31a36bc39937",
+    "key": "review-queue:77",
+    "occurredAt": "2026-10-12T17:41:08.450Z",
+    "updatedAt": "2026-10-12T17:41:08.476Z",
+    "occurrenceCount": 1,
+    "resolvedAt": null,
+    "clearedAt": null,
+    "active": false,
+    "severity": "warning",
+    "source": "training review",
+    "message": "Result saved; the next card could not be loaded. Retry loading the queue.",
+    "details": {
+      "cardId": "training-transition-fc9aace8-e99e-4e08-8ab4-12c6d06b562d-prepared-000",
+      "queueEntryId": 77,
+      "attemptId": "898558c4-ac28-4e5d-ba21-70e899ce59ab",
+      "phase": "fallback/retry entered",
+      "error": "TypeError: Failed to fetch"
+    }
+  },
+  "receipt": {
+    "card_id": "training-transition-fc9aace8-e99e-4e08-8ab4-12c6d06b562d-prepared-000",
+    "hard_correct_streak": 0,
+    "idempotent": false,
+    "interval_days": 2,
+    "next_due": "2026-10-14",
+    "persisted": true,
+    "queue_entry_id": 77,
+    "requeue_after_cards": null,
+    "requeue_entry_id": null,
+    "requeue_today": false,
+    "review_id": 6,
+    "scheduling_mode": "normal",
+    "stability": 2.3065,
+    "state": "learning",
+    "suggest_shorter_prefix": false
+  },
+  "persisted": {
+    "scheduling": [
+      "2026-10-14",
+      2,
+      0,
+      0,
+      "{\"card_id\": 1791826868417, \"state\": 2, \"step\": null, \"stability\": 2.3065, \"difficulty\": 2.118103970459016, \"due\": \"2026-10-14T12:00:00+00:00\", \"last_review\": \"2026-10-12T17:41:07.494000+00:00\"}",
+      2.3065,
+      0
+    ],
+    "reviews": [
+      [
+        6,
+        "correct",
+        1,
+        2
+      ]
+    ],
+    "receipts": [
+      [
+        "898558c4-ac28-4e5d-ba21-70e899ce59ab",
+        77,
+        6,
+        "canonical",
+        "{\"card_id\": \"training-transition-fc9aace8-e99e-4e08-8ab4-12c6d06b562d-prepared-000\", \"next_due\": \"2026-10-14\", \"interval_days\": 2, \"state\": \"learning\", \"requeue_today\": false, \"requeue_after_cards\": null, \"stability\": 2.3065, \"scheduling_mode\": \"normal\", \"hard_correct_streak\": 0, \"suggest_shorter_prefix\": false, \"idempotent\": false, \"queue_entry_id\": 77, \"requeue_entry_id\": null, \"review_id\": 6, \"persisted\": true}"
+      ]
+    ],
+    "queue": [
+      [
+        77,
+        "complete"
+      ]
+    ],
+    "review_count": 1
+  }
+}

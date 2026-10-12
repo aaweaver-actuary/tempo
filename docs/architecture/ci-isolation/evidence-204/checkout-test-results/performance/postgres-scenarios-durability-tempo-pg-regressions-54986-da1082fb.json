@@ -1,0 +1,309 @@
+{
+  "runner": "postgres",
+  "mode": "durability",
+  "commit": "d26ef448dd5b4791a37d0d1f4c765574ebad9061",
+  "plan_hash": null,
+  "browser_file": null,
+  "browser_grep": null,
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "maintenance_cli",
+    "startup",
+    "service_health",
+    "background_budget",
+    "operation_recovery",
+    "schema_migrations",
+    "priority_recovery",
+    "background_diagnostics",
+    "background_workloads",
+    "threat_candidate_upsert",
+    "command_recreation",
+    "backup_restore",
+    "study_durability",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:07:42.043Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.37,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 16.02,
+      "exit_code": 0
+    },
+    "maintenance_cli": {
+      "duration_seconds": 4.01,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 13.75,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.14,
+      "exit_code": 0
+    },
+    "background_budget": {
+      "duration_seconds": 1.26,
+      "exit_code": 0
+    },
+    "operation_recovery": {
+      "duration_seconds": 3.88,
+      "exit_code": 0
+    },
+    "schema_migrations": {
+      "duration_seconds": 17.79,
+      "exit_code": 0
+    },
+    "priority_recovery": {
+      "duration_seconds": 6.92,
+      "exit_code": 0
+    },
+    "background_diagnostics": {
+      "duration_seconds": 6.07,
+      "exit_code": 0
+    },
+    "background_workloads": {
+      "duration_seconds": 37.28,
+      "exit_code": 1
+    },
+    "cleanup": {
+      "duration_seconds": 7.66,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.37,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 16.02,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "maintenance_cli",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 16.39,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 1.3,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "maintenance_cli",
+      "parent_id": null,
+      "label": "apply_postgres_migrations",
+      "category": "migration",
+      "start_seconds": 17.69,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 1.25,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "maintenance_cli",
+      "parent_id": null,
+      "label": "migrate_sqlite_to_postgres",
+      "category": "scenario",
+      "start_seconds": 18.94,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 0.73,
+      "exit_code": 0
+    },
+    {
+      "id": 4,
+      "stage": "maintenance_cli",
+      "parent_id": null,
+      "label": "repair_verified_game_tactics",
+      "category": "scenario",
+      "start_seconds": 19.68,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 0.72,
+      "exit_code": 0
+    },
+    {
+      "id": 5,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 20.41,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 12.65,
+      "exit_code": 0
+    },
+    {
+      "id": 6,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 33.06,
+      "completed": true,
+      "poll_count": 1,
+      "duration_seconds": 1.1,
+      "exit_code": 0
+    },
+    {
+      "id": 7,
+      "stage": "background_budget",
+      "parent_id": null,
+      "label": "check_postgres_background_budget",
+      "category": "scenario",
+      "start_seconds": 34.3,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 1.26,
+      "exit_code": 0
+    },
+    {
+      "id": 8,
+      "stage": "operation_recovery",
+      "parent_id": null,
+      "label": "check_postgres_operation_recovery",
+      "category": "scenario",
+      "start_seconds": 35.56,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 3.88,
+      "exit_code": 0
+    },
+    {
+      "id": 9,
+      "stage": "schema_migrations",
+      "parent_id": null,
+      "label": "check_postgres_study_only",
+      "category": "scenario",
+      "start_seconds": 39.44,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 4.61,
+      "exit_code": 0
+    },
+    {
+      "id": 10,
+      "stage": "schema_migrations",
+      "parent_id": null,
+      "label": "check_postgres_upgrade",
+      "category": "migration",
+      "start_seconds": 44.06,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 3.45,
+      "exit_code": 0
+    },
+    {
+      "id": 11,
+      "stage": "schema_migrations",
+      "parent_id": null,
+      "label": "check_postgres_next_opponent",
+      "category": "scenario",
+      "start_seconds": 47.5,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 9.73,
+      "exit_code": 0
+    },
+    {
+      "id": 12,
+      "stage": "priority_recovery",
+      "parent_id": null,
+      "label": "check_postgres_priority_recovery",
+      "category": "scenario",
+      "start_seconds": 57.23,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 6.91,
+      "exit_code": 0
+    },
+    {
+      "id": 13,
+      "stage": "background_diagnostics",
+      "parent_id": null,
+      "label": "check_postgres_background_diagnostics",
+      "category": "scenario",
+      "start_seconds": 64.15,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 6.07,
+      "exit_code": 0
+    },
+    {
+      "id": 14,
+      "stage": "background_workloads",
+      "parent_id": null,
+      "label": "compose_shutdown",
+      "category": "restart",
+      "start_seconds": 70.22,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 3.39,
+      "exit_code": 0
+    },
+    {
+      "id": 15,
+      "stage": "background_workloads",
+      "parent_id": null,
+      "label": "check_postgres_daily_study_dispatch",
+      "category": "scenario",
+      "start_seconds": 73.77,
+      "completed": true,
+      "process_exit_code": 1,
+      "duration_seconds": 23.86,
+      "exit_code": 1
+    },
+    {
+      "id": 16,
+      "stage": "background_workloads",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 97.63,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 1.88,
+      "exit_code": 0
+    },
+    {
+      "id": 17,
+      "stage": "background_workloads",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 99.51,
+      "completed": true,
+      "poll_count": 3,
+      "waiting_seconds": 2.0019479180000053,
+      "duration_seconds": 5.38,
+      "exit_code": 0
+    },
+    {
+      "id": 18,
+      "stage": "background_workloads",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 104.89,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 2.21,
+      "exit_code": 0
+    }
+  ]
+}

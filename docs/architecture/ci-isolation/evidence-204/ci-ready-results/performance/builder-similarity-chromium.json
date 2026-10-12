@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-10-12T17:35:55.755Z",
+  "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "fixture": {
+    "name": "legal-two-ply-opening-pairs-v1",
+    "lines": 250,
+    "plies": 500,
+    "warmPositionChanges": 6
+  },
+  "indexSamples": [
+    {
+      "bytes": 76389,
+      "queueMs": 10.334999999991851,
+      "computeMs": 20.120000000009895,
+      "roundtripMs": 27.864999999990687
+    }
+  ],
+  "querySamples": [
+    {
+      "bytes": 160,
+      "queueMs": 0.7200000000011642,
+      "computeMs": 8.464999999996508,
+      "roundtripMs": 12.755000000004657,
+      "paintMs": 44.65000000000873
+    },
+    {
+      "bytes": 162,
+      "queueMs": 14.459999999991851,
+      "computeMs": 2.099999999991269,
+      "roundtripMs": 15.619999999995343,
+      "paintMs": 45.2899999999936
+    },
+    {
+      "bytes": 160,
+      "queueMs": 12.14999999999418,
+      "computeMs": 9.834999999991851,
+      "roundtripMs": 13.145000000004075,
+      "paintMs": 41.84999999999127
+    },
+    {
+      "bytes": 162,
+      "queueMs": 5.980000000010477,
+      "computeMs": 0.4499999999970896,
+      "roundtripMs": 6.275000000008731,
+      "paintMs": 34.995000000009895
+    },
+    {
+      "bytes": 160,
+      "queueMs": 11.125,
+      "computeMs": 9.375,
+      "roundtripMs": 12.380000000004657,
+      "paintMs": 40.185000000012224
+    },
+    {
+      "bytes": 162,
+      "queueMs": 4.92500000000291,
+      "computeMs": 0.4250000000029104,
+      "roundtripMs": 5.240000000005239,
+      "paintMs": 30.510000000009313
+    },
+    {
+      "bytes": 160,
+      "queueMs": 11.770000000004075,
+      "computeMs": 6.239999999990687,
+      "roundtripMs": 12.169999999998254,
+      "paintMs": 41.220000000001164
+    }
+  ],
+  "roundtripSummary": {
+    "p50": 12.380000000004657,
+    "p95": 15.619999999995343
+  },
+  "paintSummary": {
+    "p50": 41.220000000001164,
+    "p95": 45.2899999999936
+  }
+}

@@ -3,7 +3,7 @@
   "head_sha": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
   "draft_integration_sha": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
   "ci_run": 38282616369,
-  "status": "implementation complete; qualification in progress",
+  "status": "complete exact-candidate ready-state qualification; cleanup finalization pending",
   "environment": {
     "local": "macOS arm64 / Node 26.10.0 / CPython 3.14.8",
     "native": "Docker PostgreSQL 18.6 / Redis 7 / product Python 3.12"
@@ -96,7 +96,273 @@
     },
     {
       "name": "ready FULL CI",
-      "result": "pending after integrating merged #191; current head/base require fresh candidate evidence"
+      "result": "passed all mandatory layers, quality and merge-gate",
+      "url": "https://github.com/aaweaver-actuary/tempo/actions/runs/38284546174",
+      "wall_including_queue_seconds": 1016.0,
+      "layers": {
+        "frontend": {
+          "tests": {
+            "passed": 1643
+          },
+          "commands": [
+            {
+              "name": "unit_inventory",
+              "command": "npx",
+              "args": [
+                "vitest",
+                "list",
+                "--no-static-parse",
+                "--includeTaskLocation",
+                "--json=test-results/ci/frontend-inventory.json"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 66.56
+            },
+            {
+              "name": "unit",
+              "command": "npm",
+              "args": [
+                "run",
+                "test:unit",
+                "--",
+                "--reporter=default",
+                "--reporter=json",
+                "--outputFile.json=test-results/performance/unit-files-ci-frontend.json",
+                "--includeTaskLocation"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 284.34
+            },
+            {
+              "name": "lint",
+              "command": "npm",
+              "args": [
+                "run",
+                "lint"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 25.51
+            },
+            {
+              "name": "typecheck",
+              "command": "npm",
+              "args": [
+                "run",
+                "typecheck"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 16.05
+            }
+          ]
+        },
+        "backend": {
+          "tests": {
+            "passed": 2586
+          },
+          "commands": [
+            {
+              "name": "backend_inventory",
+              "command": "python3",
+              "args": [
+                "scripts/ci-collect-backend.py",
+                "test-results/ci/backend-inventory.json",
+                "backend/tests",
+                "-q",
+                "-o",
+                "cache_dir=.pytest_cache",
+                "--rootdir=."
+              ],
+              "exit_code": 0,
+              "duration_seconds": 7.21
+            },
+            {
+              "name": "defense_engine",
+              "command": "node",
+              "args": [
+                "scripts/test-defense-engine.mjs"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 0.21
+            },
+            {
+              "name": "backend",
+              "command": "python3",
+              "args": [
+                "-m",
+                "pytest",
+                "backend/tests",
+                "-q",
+                "-o",
+                "cache_dir=.pytest_cache",
+                "--rootdir=.",
+                "--junitxml=test-results/ci/backend-tests.xml"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 334.61
+            }
+          ]
+        },
+        "build": {
+          "tests": {},
+          "commands": [
+            {
+              "name": "rust_format",
+              "command": "cargo",
+              "args": [
+                "fmt",
+                "--all",
+                "--",
+                "--check"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 0.03
+            },
+            {
+              "name": "rust_lint",
+              "command": "cargo",
+              "args": [
+                "clippy",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 0.37
+            },
+            {
+              "name": "rust_test",
+              "command": "cargo",
+              "args": [
+                "test",
+                "--workspace"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 0.81
+            },
+            {
+              "name": "wasm_build",
+              "command": "npm",
+              "args": [
+                "run",
+                "build:wasm"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 1.07
+            },
+            {
+              "name": "local_build",
+              "command": "npm",
+              "args": [
+                "run",
+                "build:local"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 2.33
+            }
+          ]
+        },
+        "postgres": {
+          "tests": {},
+          "commands": [
+            {
+              "name": "capabilities",
+              "command": "node",
+              "args": [
+                "scripts/check-test-capabilities.mjs",
+                "--docker",
+                "--loopback",
+                "--workspace-mount"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 25.06
+            },
+            {
+              "name": "durability",
+              "command": "node",
+              "args": [
+                "scripts/test-postgres-docker.mjs",
+                "--mode",
+                "durability"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 621.13
+            }
+          ]
+        },
+        "lifecycle": {
+          "tests": {},
+          "commands": [
+            {
+              "name": "capabilities",
+              "command": "node",
+              "args": [
+                "scripts/check-test-capabilities.mjs",
+                "--docker",
+                "--loopback",
+                "--workspace-mount"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 26.46
+            },
+            {
+              "name": "lifecycle",
+              "command": "node",
+              "args": [
+                "scripts/test-postgres-docker.mjs",
+                "--mode",
+                "lifecycle"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 301.91
+            }
+          ]
+        },
+        "browser": {
+          "tests": {
+            "passed": 283
+          },
+          "commands": [
+            {
+              "name": "browser_aggregate",
+              "command": "node",
+              "args": [
+                "scripts/ci-aggregate-browser.mjs"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 0.82
+            }
+          ]
+        },
+        "visual": {
+          "tests": {
+            "passed": 69
+          },
+          "commands": [
+            {
+              "name": "capabilities",
+              "command": "node",
+              "args": [
+                "scripts/check-test-capabilities.mjs",
+                "--docker",
+                "--workspace-mount"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 28.14
+            },
+            {
+              "name": "visual",
+              "command": "npm",
+              "args": [
+                "run",
+                "test:visual"
+              ],
+              "exit_code": 0,
+              "duration_seconds": 277.13
+            }
+          ]
+        }
+      }
     }
   ],
   "limitations": [

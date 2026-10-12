@@ -1,0 +1,336 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-10-12T17:35:52.833Z",
+  "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "fixture": {
+    "name": "prepareVisualUI-default",
+    "boardReloads": 5,
+    "warmMoves": 5
+  },
+  "browser": "chromium",
+  "viewSwitchSamples": {
+    "Builder": [
+      27.964999999996508,
+      28.38499999999476,
+      27.430000000007567,
+      28.580000000001746,
+      28.625
+    ],
+    "Games": [
+      25.460000000006403,
+      28.619999999995343,
+      25.485000000000582,
+      28.729999999995925,
+      29.579999999987194
+    ],
+    "Endgames": [
+      26.235000000000582,
+      28.270000000004075,
+      28.264999999999418,
+      27.270000000004075,
+      29.014999999999418
+    ],
+    "Tactics": [
+      26.52500000000873,
+      27.654999999998836,
+      29.029999999998836,
+      29.68499999999767,
+      28.38499999999476
+    ],
+    "Train": [
+      32.30500000000757,
+      34.330000000001746,
+      31.035000000003492,
+      32.794999999998254,
+      32.46499999999651
+    ]
+  },
+  "viewSwitchSummary": {
+    "Builder": {
+      "p50": 28.38499999999476,
+      "p95": 28.625
+    },
+    "Games": {
+      "p50": 28.619999999995343,
+      "p95": 29.579999999987194
+    },
+    "Endgames": {
+      "p50": 28.264999999999418,
+      "p95": 29.014999999999418
+    },
+    "Tactics": {
+      "p50": 28.38499999999476,
+      "p95": 29.68499999999767
+    },
+    "Train": {
+      "p50": 32.46499999999651,
+      "p95": 34.330000000001746
+    }
+  },
+  "boardReadySamples": [
+    50.13000000000466,
+    33.654999999998836,
+    28.069999999992433,
+    30.730000000010477,
+    27.595000000001164
+  ],
+  "boardReadySummary": {
+    "p50": 30.730000000010477,
+    "p95": 50.13000000000466
+  },
+  "moveToPaintSamples": [
+    14.55000000000291,
+    15.404999999998836,
+    12.244999999995343,
+    11.330000000001746,
+    12.885000000009313
+  ],
+  "moveToPaintSummary": {
+    "p50": 12.885000000009313,
+    "p95": 15.404999999998836
+  },
+  "longTasks": [],
+  "eventTiming": {
+    "supported": true,
+    "samples": [
+      {
+        "name": "keydown",
+        "inputDelay": 0.20999999999185093,
+        "handlerDuration": 5.42500000000291,
+        "presentationDelay": 10.365000000005239,
+        "duration": 16
+      },
+      {
+        "name": "keydown",
+        "inputDelay": 0.15499999999883585,
+        "handlerDuration": 2.845000000001164,
+        "presentationDelay": 13,
+        "duration": 16
+      },
+      {
+        "name": "keydown",
+        "inputDelay": 0.20000000001164153,
+        "handlerDuration": 2.8949999999895226,
+        "presentationDelay": 20.904999999998836,
+        "duration": 24
+      },
+      {
+        "name": "keydown",
+        "inputDelay": 0.22499999999126885,
+        "handlerDuration": 2.8300000000017462,
+        "presentationDelay": 12.945000000006985,
+        "duration": 16
+      },
+      {
+        "name": "keydown",
+        "inputDelay": 0.1849999999976717,
+        "handlerDuration": 2.8000000000029104,
+        "presentationDelay": 21.014999999999418,
+        "duration": 24
+      },
+      {
+        "name": "keydown",
+        "inputDelay": 0.19500000000698492,
+        "handlerDuration": 2.735000000000582,
+        "presentationDelay": 21.069999999992433,
+        "duration": 24
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 2.570000000006985,
+        "handlerDuration": 0.08499999999185093,
+        "presentationDelay": 29.345000000001164,
+        "duration": 32
+      },
+      {
+        "name": "click",
+        "inputDelay": 2.7850000000034925,
+        "handlerDuration": 0.03999999999359716,
+        "presentationDelay": 29.17500000000291,
+        "duration": 32
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.0200000000040745,
+        "handlerDuration": 0.07499999999708962,
+        "presentationDelay": 14.904999999998836,
+        "duration": 16
+      },
+      {
+        "name": "click",
+        "inputDelay": 1.1200000000098953,
+        "handlerDuration": 0.029999999998835847,
+        "presentationDelay": 14.849999999991269,
+        "duration": 16
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.930000000007567,
+        "handlerDuration": 0.14999999999417923,
+        "presentationDelay": 29.919999999998254,
+        "duration": 32
+      },
+      {
+        "name": "click",
+        "inputDelay": 2.165000000008149,
+        "handlerDuration": 4.294999999998254,
+        "presentationDelay": 25.539999999993597,
+        "duration": 32
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 2,
+        "handlerDuration": 0.08499999999185093,
+        "presentationDelay": 13.915000000008149,
+        "duration": 16
+      },
+      {
+        "name": "click",
+        "inputDelay": 2.1449999999895226,
+        "handlerDuration": 0.045000000012805685,
+        "presentationDelay": 13.809999999997672,
+        "duration": 16
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.1450000000040745,
+        "handlerDuration": 0.10499999999592546,
+        "presentationDelay": 22.75,
+        "duration": 24
+      },
+      {
+        "name": "click",
+        "inputDelay": 1.3000000000029104,
+        "handlerDuration": 0.029999999998835847,
+        "presentationDelay": 22.669999999998254,
+        "duration": 24
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.7300000000104774,
+        "handlerDuration": 0.10499999999592546,
+        "presentationDelay": 22.164999999993597,
+        "duration": 24
+      },
+      {
+        "name": "click",
+        "inputDelay": 1.8700000000098953,
+        "handlerDuration": 4.264999999999418,
+        "presentationDelay": 17.864999999990687,
+        "duration": 24
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 2.0500000000029104,
+        "handlerDuration": 0.08000000000174623,
+        "presentationDelay": 29.869999999995343,
+        "duration": 32
+      },
+      {
+        "name": "click",
+        "inputDelay": 2.195000000006985,
+        "handlerDuration": 0.029999999998835847,
+        "presentationDelay": 29.77499999999418,
+        "duration": 32
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 0.75,
+        "handlerDuration": 0.069999999992433,
+        "presentationDelay": 23.180000000007567,
+        "duration": 24
+      },
+      {
+        "name": "click",
+        "inputDelay": 0.8549999999959255,
+        "handlerDuration": 0.029999999998835847,
+        "presentationDelay": 23.11500000000524,
+        "duration": 24
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.8650000000052387,
+        "handlerDuration": 0.08500000000640284,
+        "presentationDelay": 30.04999999998836,
+        "duration": 32
+      },
+      {
+        "name": "click",
+        "inputDelay": 2,
+        "handlerDuration": 4.0200000000040745,
+        "presentationDelay": 25.979999999995925,
+        "duration": 32
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 2.3099999999976717,
+        "handlerDuration": 0.09999999999126885,
+        "presentationDelay": 13.59000000001106,
+        "duration": 16
+      },
+      {
+        "name": "click",
+        "inputDelay": 2.4799999999959255,
+        "handlerDuration": 0.03500000000349246,
+        "presentationDelay": 13.485000000000582,
+        "duration": 16
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 0.8500000000058208,
+        "handlerDuration": 0.059999999997671694,
+        "presentationDelay": 23.089999999996508,
+        "duration": 24
+      },
+      {
+        "name": "click",
+        "inputDelay": 0.9400000000023283,
+        "handlerDuration": 0.024999999994179234,
+        "presentationDelay": 23.035000000003492,
+        "duration": 24
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.4250000000029104,
+        "handlerDuration": 0.08999999999650754,
+        "presentationDelay": 22.485000000000582,
+        "duration": 24
+      },
+      {
+        "name": "click",
+        "inputDelay": 1.5449999999982538,
+        "handlerDuration": 4.1600000000034925,
+        "presentationDelay": 18.294999999998254,
+        "duration": 24
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.9349999999976717,
+        "handlerDuration": 0.08000000000174623,
+        "presentationDelay": 13.985000000000582,
+        "duration": 16
+      },
+      {
+        "name": "click",
+        "inputDelay": 2.0800000000017462,
+        "handlerDuration": 0.029999999998835847,
+        "presentationDelay": 13.889999999999418,
+        "duration": 16
+      },
+      {
+        "name": "pointerup",
+        "inputDelay": 1.0950000000011642,
+        "handlerDuration": 0.08000000000174623,
+        "presentationDelay": 22.82499999999709,
+        "duration": 24
+      },
+      {
+        "name": "click",
+        "inputDelay": 1.2100000000064028,
+        "handlerDuration": 0.034999999988940544,
+        "presentationDelay": 22.755000000004657,
+        "duration": 24
+      }
+    ]
+  }
+}

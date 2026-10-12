@@ -1,0 +1,94 @@
+{
+  "runner": "postgres",
+  "mode": "browser",
+  "commit": "8200e096d6a2b3475dba34f55c7ff381785be0a0",
+  "plan_hash": null,
+  "browser_file": "post-review-progression.spec.ts",
+  "browser_grep": null,
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "startup",
+    "service_health",
+    "browser",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:12:46.399Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.33,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 17.26,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 17.03,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.19,
+      "exit_code": 0
+    },
+    "browser": {
+      "duration_seconds": 216.09,
+      "exit_code": 0
+    },
+    "cleanup": {
+      "duration_seconds": 4.61,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.34,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 17.26,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 17.6,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 15.95,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 33.55,
+      "completed": true,
+      "poll_count": 1,
+      "duration_seconds": 1.07,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "browser",
+      "parent_id": null,
+      "label": "resource_inspection",
+      "category": "inspection",
+      "start_seconds": 34.82,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 216.09,
+      "exit_code": 0
+    }
+  ]
+}

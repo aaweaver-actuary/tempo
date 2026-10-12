@@ -1,0 +1,5166 @@
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 1 minute ago
+
+JOBS
+* selection (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  * Run actions/setup-node@v4
+  * Classify emergency qualification
+  * Run actions/upload-artifact@v4
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 1 minute ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* plan (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  * Run actions/setup-node@v4
+  * Reject committed merge-conflict artifacts
+  * Guard migration numbering and schema agreement
+  * Run npm ci
+  * Collect complete inventory and select required work
+  * Run actions/upload-artifact@v4
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- fast in 0s (ID 114930194183)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 2 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+* postgres / verify (ID 114930526767)
+* frontend / verify (ID 114930526809)
+* lifecycle / verify (ID 114930526817)
+* build / verify (ID 114930526851)
+* browser / reuse (ID 114930526909)
+* visual / verify (ID 114930527029)
+- quarantine (ID 114930528165)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 3 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+* postgres / verify (ID 114930526767)
+* frontend / verify (ID 114930526809)
+* lifecycle / verify (ID 114930526817)
+* build / verify (ID 114930526851)
+* browser / reuse (ID 114930526909)
+* visual / verify (ID 114930527029)
+- quarantine (ID 114930528165)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 3 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+* postgres / verify (ID 114930526767)
+* frontend / verify (ID 114930526809)
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* build / verify (ID 114930526851)
+* browser / reuse (ID 114930526909)
+* visual / verify (ID 114930527029)
+- quarantine (ID 114930528165)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 4 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+* postgres / verify (ID 114930526767)
+* frontend / verify (ID 114930526809)
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* build / verify (ID 114930526851)
+* browser / reuse (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  * Complete job
+* visual / verify (ID 114930527029)
+- quarantine (ID 114930528165)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 4 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  * Python contract and backend prerequisites
+  * Run dtolnay/rust-toolchain@1.99.0
+  * Run Swatinem/rust-cache@v2
+  * Run taiki-e/install-action@v2
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* build / verify (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  * Run actions/setup-node@v4
+  * Verify reusable original suite evidence
+  * Run actions/setup-python@v5
+  * Python contract and backend prerequisites
+  * Run dtolnay/rust-toolchain@1.99.0
+  * Run Swatinem/rust-cache@v2
+  * Run taiki-e/install-action@v2
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+* browser / shard-3 (ID 114931162942)
+* browser / shard-2 (ID 114931162969)
+* browser / shard-4 (ID 114931163033)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 5 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* build / verify (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  * Run actions/setup-node@v4
+  * Verify reusable original suite evidence
+  * Run actions/setup-python@v5
+  * Python contract and backend prerequisites
+  * Run dtolnay/rust-toolchain@1.99.0
+  * Run Swatinem/rust-cache@v2
+  * Run taiki-e/install-action@v2
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+* browser / shard-3 (ID 114931162942)
+* browser / shard-2 (ID 114931162969)
+* browser / shard-4 (ID 114931163033)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 5 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 6 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 6 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 7 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 7 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  * Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 8 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 8 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 9 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* lifecycle / verify (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 9 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 10 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+* backend / verify (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* visual / verify (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 10 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 11 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* frontend / verify (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-python@v5
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 11 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 12 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 12 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 13 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 13 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+* browser / shard-1 (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 14 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+✓ browser / shard-1 in 9m0s (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* browser / shard-3 (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+* browser / shard-4 (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 14 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+✓ browser / shard-1 in 9m0s (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-3 in 8m26s (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ browser / shard-4 in 9m1s (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 15 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* postgres / verify (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+✓ browser / shard-1 in 9m0s (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-3 in 8m26s (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* browser / shard-2 (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  * Run isolated browser shard
+  * Retain shard results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+✓ browser / shard-4 in 9m1s (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 15 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ postgres / verify in 11m30s (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+✓ browser / shard-1 in 9m0s (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-3 in 8m26s (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-2 in 10m24s (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-4 in 9m1s (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* browser / verify (ID 114935377619)
+  ✓ Set up job
+  ✓ Require captured assignment and reuse decision
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  * Run actions/setup-node@v4
+  * Run actions/download-artifact@v4
+  * Run actions/download-artifact@v4
+  * Run npm ci
+  * Browser prerequisites
+  * Run isolated verification layer
+  * Retain layer results and diagnostics
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 16 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ postgres / verify in 11m30s (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+✓ browser / shard-1 in 9m0s (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-3 in 8m26s (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-2 in 10m24s (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-4 in 9m1s (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / verify in 18s (ID 114935377619)
+  ✓ Set up job
+  ✓ Require captured assignment and reuse decision
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  - Run actions/download-artifact@v4
+  ✓ Run actions/download-artifact@v4
+  - Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* quality (ID 114935518996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Download immutable plan
+  ✓ Download available layer reports
+  ✓ Refresh PR qualification context
+  ✓ Require every planned mandatory result
+  * Download latest successful main performance reference
+  * Summarize available pinned performance
+  * Retain aggregate reports
+  * Post Run actions/setup-node@v4
+  * Post Run actions/checkout@v4
+- development in 0s (ID 114935520628)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/download-artifact@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+browser / verify: .github#2
+
+✓ codex/issue-204-scheduling-store Deploy Tempo to GitHub Pages aaweaver-actuary/tempo#226 · 38284546174
+Triggered via pull_request about 17 minutes ago
+
+JOBS
+✓ selection in 11s (ID 114929850532)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Classify emergency qualification
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ plan in 35s (ID 114930191016)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Reject committed merge-conflict artifacts
+  ✓ Guard migration numbering and schema agreement
+  ✓ Run npm ci
+  ✓ Collect complete inventory and select required work
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- fast in 0s (ID 114930194183)
+✓ backend / verify in 6m33s (ID 114930526693)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ postgres / verify in 11m30s (ID 114930526767)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ frontend / verify in 7m29s (ID 114930526809)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  ✓ Run actions/setup-python@v5
+  ✓ Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-python@v5
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ lifecycle / verify in 6m15s (ID 114930526817)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ build / verify in 52s (ID 114930526851)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  ✓ Run dtolnay/rust-toolchain@1.99.0
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / reuse in 9s (ID 114930526909)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Read captured browser assignment
+  ✓ Verify reusable original suite evidence
+  - Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ visual / verify in 5m48s (ID 114930527029)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Verify reusable original suite evidence
+  - Run actions/setup-python@v5
+  - Python contract and backend prerequisites
+  - Run dtolnay/rust-toolchain@1.99.0
+  - Run Swatinem/rust-cache@v2
+  - Run taiki-e/install-action@v2
+  ✓ Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- quarantine (ID 114930528165)
+✓ browser / shard-1 in 9m0s (ID 114931162917)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-3 in 8m26s (ID 114931162942)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-2 in 10m24s (ID 114931162969)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / shard-4 in 9m1s (ID 114931163033)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run npm ci
+  ✓ Browser prerequisites
+  ✓ Run isolated browser shard
+  ✓ Retain shard results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ browser / verify in 18s (ID 114935377619)
+  ✓ Set up job
+  ✓ Require captured assignment and reuse decision
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Run actions/setup-node@v4
+  - Run actions/download-artifact@v4
+  ✓ Run actions/download-artifact@v4
+  - Run npm ci
+  - Browser prerequisites
+  ✓ Run isolated verification layer
+  ✓ Retain layer results and diagnostics
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ quality in 22s (ID 114935518996)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Download immutable plan
+  ✓ Download available layer reports
+  ✓ Refresh PR qualification context
+  ✓ Require every planned mandatory result
+  ✓ Download latest successful main performance reference
+  ✓ Summarize available pinned performance
+  ✓ Retain aggregate reports
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- development in 0s (ID 114935520628)
+✓ merge-gate in 15s (ID 114935688403)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run actions/setup-node@v4
+  ✓ Run actions/download-artifact@v4
+  - Run actions/download-artifact@v4
+  ✓ Run actions/download-artifact@v4
+  ✓ Validate selected qualification and current PR head
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run actions/setup-node@v4
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+- pages-build in 0s (ID 114935691766)
+- deploy in 0s (ID 114935692779)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+selection: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/download-artifact@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+browser / verify: .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/download-artifact@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+merge-gate: .github#2
+

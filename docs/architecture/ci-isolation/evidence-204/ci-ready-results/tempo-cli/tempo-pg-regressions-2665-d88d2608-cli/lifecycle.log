@@ -1,0 +1,1266 @@
+ Network tempo-pg-regressions-2665-d88d2608-cli_default  Creating
+ Network tempo-pg-regressions-2665-d88d2608-cli_default  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Healthy
+Seeded populated schema 16 with preserved review, queue, and receipt history
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+tempo-20261012T173546599Z-07eebb8e-9226-4736-a8cb-759a3c8b70bf.dump: OK
+RESTORED background_activity: 0 rows
+RESTORED background_task_events: 0 rows
+RESTORED background_tasks: 0 rows
+RESTORED card_revisions: 0 rows
+RESTORED cards: 2 rows
+RESTORED coverage_discovery_recommendation_requests: 0 rows
+RESTORED daily_chess_insights: 0 rows
+RESTORED daily_chess_snapshots: 0 rows
+RESTORED daily_queue: 2 rows
+RESTORED daily_queue_days: 0 rows
+RESTORED daily_statistics_jobs: 0 rows
+RESTORED defense_attempts: 0 rows
+RESTORED defense_recognition_submissions: 0 rows
+RESTORED discovery_admission_intents: 0 rows
+RESTORED discovery_recommendation_requests: 0 rows
+RESTORED endgame_attempts: 0 rows
+RESTORED endgame_templates: 0 rows
+RESTORED explorer_position_cache: 0 rows
+RESTORED game_accounts: 0 rows
+RESTORED game_analysis_jobs: 0 rows
+RESTORED game_analysis_position_errors: 0 rows
+RESTORED game_analysis_position_reports: 0 rows
+RESTORED game_analysis_publications: 0 rows
+RESTORED game_derivation_jobs: 0 rows
+RESTORED game_feature_rows: 0 rows
+RESTORED game_finding_preparations: 0 rows
+RESTORED game_finding_publication_items: 0 rows
+RESTORED game_findings: 0 rows
+RESTORED game_insight_recommendations: 0 rows
+RESTORED game_move_analysis_candidates_legacy: 0 rows
+RESTORED game_move_analysis_candidates_staged: 0 rows
+RESTORED game_move_analysis_legacy: 0 rows
+RESTORED game_move_analysis_staged: 0 rows
+RESTORED game_position_occurrences_legacy: 0 rows
+RESTORED game_position_occurrences_staged: 0 rows
+RESTORED game_repertoire_matches_legacy: 0 rows
+RESTORED game_repertoire_matches_staged: 0 rows
+RESTORED game_sync_jobs: 0 rows
+RESTORED game_sync_state: 0 rows
+RESTORED game_sync_windows: 0 rows
+RESTORED gameplay_card_priorities: 0 rows
+RESTORED gameplay_events_legacy: 0 rows
+RESTORED gameplay_events_staged: 0 rows
+RESTORED guided_review_attempts: 0 rows
+RESTORED guided_review_sessions: 0 rows
+RESTORED imported_games: 0 rows
+RESTORED internal_migrations: 0 rows
+RESTORED opening_card_schedule_seeds: 0 rows
+RESTORED opening_graph_legacy_mappings: 0 rows
+RESTORED opening_graph_publications: 0 rows
+RESTORED opening_graph_steps: 0 rows
+RESTORED operation_receipts: 1 rows
+RESTORED position_annotations: 0 rows
+RESTORED prefix_splits: 0 rows
+RESTORED puzzle_decks: 0 rows
+RESTORED puzzles: 0 rows
+RESTORED queue_projection_diagnostics: 0 rows
+RESTORED queue_projections: 0 rows
+RESTORED repertoire_card_introduction_priorities: 0 rows
+RESTORED repertoire_card_priority_generations: 0 rows
+RESTORED repertoire_cards: 0 rows
+RESTORED repertoire_comparisons_legacy: 0 rows
+RESTORED repertoire_comparisons_staged: 0 rows
+RESTORED repertoire_coverage_candidates: 0 rows
+RESTORED repertoire_coverage_nodes: 0 rows
+RESTORED repertoire_coverage_runs: 0 rows
+RESTORED repertoire_decision_events_legacy: 0 rows
+RESTORED repertoire_decision_events_staged: 0 rows
+RESTORED repertoire_decision_gameplay_summaries: 0 rows
+RESTORED repertoire_integrity_card_blocks: 0 rows
+RESTORED repertoire_integrity_issue_candidates: 0 rows
+RESTORED repertoire_integrity_issues: 0 rows
+RESTORED repertoire_integrity_jobs: 0 rows
+RESTORED repertoire_integrity_position_accumulators: 0 rows
+RESTORED repertoire_integrity_source_runs: 0 rows
+RESTORED repertoire_integrity_state: 0 rows
+RESTORED repertoire_line_training_depths: 0 rows
+RESTORED repertoire_lines: 0 rows
+RESTORED repertoire_opportunities: 0 rows
+RESTORED repertoire_priority_jobs: 0 rows
+RESTORED repertoire_priority_publications: 0 rows
+RESTORED repertoires: 2 rows
+RESTORED review_attempt_receipts: 0 rows
+RESTORED review_schedule_snapshots: 0 rows
+RESTORED reviews: 1 rows
+RESTORED settings: 1 rows
+RESTORED studies: 0 rows
+RESTORED study_attempts: 0 rows
+RESTORED study_chapters: 0 rows
+RESTORED study_exercise_revisions: 0 rows
+RESTORED study_exercises: 0 rows
+RESTORED study_links: 0 rows
+RESTORED study_positions: 0 rows
+RESTORED study_sibling_burials: 0 rows
+RESTORED study_sources: 0 rows
+RESTORED tablebase_cache: 0 rows
+RESTORED tactic_discovery_attempts: 0 rows
+RESTORED tactic_introductions: 0 rows
+RESTORED tactic_pack_activation: 0 rows
+RESTORED tactic_progress: 0 rows
+RESTORED tactic_rotation: 1 rows
+RESTORED tactical_opportunities: 0 rows
+RESTORED teaching_states: 0 rows
+RESTORED tempo_migration_progress: 0 rows
+RESTORED tempo_schema_migrations: 16 rows
+RESTORED threat_analysis_report_history: 0 rows
+RESTORED threat_analysis_requests: 0 rows
+RESTORED threat_candidate_requests: 0 rows
+RESTORED threat_training_candidates: 0 rows
+Verified all 109 PostgreSQL tables
+Applied 017_operation_recovery.sql
+Applied 018_operation_attempt_ownership.sql
+Applied 019_threat_claim_lookup.sql
+Applied 020_ordered_threat_claim.sql
+Applied 021_priority_preparations.sql
+Applied 022_priority_preparation_ordering.sql
+Applied 023_priority_visible_game_positions.sql
+Applied 024_opening_segmentation.sql
+Applied 025_tactic_capture.sql
+Applied 026_background_diagnostics.sql
+Applied 027_handled_discoveries.sql
+Applied 028_revisioned_discovery_admissions.sql
+Applied 029_repertoire_daily_limits.sql
+Applied 030_opening_decision_evidence.sql
+Applied 031_defensive_analysis_pause.sql
+Applied 032_queue_attempt_origins.sql
+Applied 033_canonical_prefix.sql
+Applied 034_current_canonical_routes.sql
+Applied 035_canonical_publication_freshness.sql
+Applied 036_prefix_diagnostics_indexes.sql
+Applied 037_card_deletion.sql
+Applied 038_prefix_transition_application.sql
+Applied 039_prefix_transition_lock_budget.sql
+Applied 040_queue_unlock_deadlines.sql
+Applied 041_real_game_study_obligations.sql
+Applied 042_queue_attempt_issuance.sql
+Applied 043_background_scheduling_turns.sql
+Applied 044_next_opponent_profiles.sql
+Applied 045_engine_scheduling.sql
+Applied 046_refresh_input_versions.sql
+Applied 047_study_only_mode.sql
+PostgreSQL schema version 47
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Creating
+time="2026-10-12T17:36:01Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:36:01Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:36:01Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreate
+time="2026-10-12T17:36:26Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:36:26Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:36:26Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreate
+time="2026-10-12T17:36:48Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:36:48Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:36:48Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+Automatic updates require the registered checkout to be on main. Current branch: detached HEAD.
+Next: preserve your work in /home/runner/work/tempo/tempo; move development work to an isolated checkout, then leave this registered checkout clean on main.
+Attempting previously verified revision 76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91; its images, schema and readiness must still pass. The update has not been applied.
+Tempo: checking database
+Tempo: checking redis
+Tempo: checking database
+Tempo: checking schema
+Tempo: starting services
+Tempo: checking readiness
+Tempo ready at http://127.0.0.1:39465 (revision 76b66d0ed3bb); previous verified version ready, update deferred.
+
+Tempo: preparing images
+Tempo: stopping application services
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+Tempo: checking database
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+Tempo: checking redis
+Tempo: checking database
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+Tempo: checking schema
+Tempo: starting services
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreate
+time="2026-10-12T17:37:27Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:37:27Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:37:27Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+
+Automatic updates require the registered checkout to be on main. Current branch: detached HEAD.
+Next: preserve your work in /home/runner/work/tempo/tempo; move development work to an isolated checkout, then leave this registered checkout clean on main.
+Attempting previously verified revision 0000000000000000000000000000000000000000; its images, schema and readiness must still pass. The update has not been applied.
+Tempo: stopping application services
+Tempo: checking database
+Tempo: checking redis
+Tempo: checking database
+Tempo: checking schema
+Failure evidence: /home/runner/work/tempo/tempo/test-results/tempo-cli/tempo-pg-regressions-2665-d88d2608-cli/state/af7d755d82d738add84688f4/failure-5d736cfb-cb1e-4543-9ed2-683d2e8addb1.log
+Tempo: The previous deployment is incompatible with the current database. Preserve the backup and fix forward with compatible code.
+Next: repair the reported schema or permission problem before tempo start; preserve study data.
+
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreate
+time="2026-10-12T17:37:45Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:37:45Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:37:45Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Creating
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Created
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Recreate
+time="2026-10-12T17:38:20Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:38:20Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+time="2026-10-12T17:38:20Z" level=warning msg="secrets `uid`, `gid` and `mode` are not supported, they will be ignored"
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Healthy
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreate
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Recreated
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Starting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-redis-1  Started
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Running
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Waiting
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-1  Healthy
+tempo-20261012T173836382Z-9a07d576-6974-4b3e-9469-8a49c51ff563.dump: OK
+RESTORED analysis_refresh_requests: 0 rows
+RESTORED background_activity: 0 rows
+RESTORED background_diagnostic_metadata: 1 rows
+RESTORED background_metric_buckets: 1 rows
+RESTORED background_scheduling_turns: 1 rows
+RESTORED background_task_events: 33 rows
+RESTORED background_tasks: 1 rows
+RESTORED canonical_prefix_positions: 0 rows
+RESTORED canonical_prefix_previews: 0 rows
+RESTORED canonical_prefix_results: 0 rows
+RESTORED card_revisions: 0 rows
+RESTORED cards: 2 rows
+RESTORED coverage_discovery_recommendation_requests: 0 rows
+RESTORED daily_chess_insights: 0 rows
+RESTORED daily_chess_snapshots: 0 rows
+RESTORED daily_queue: 2 rows
+RESTORED daily_queue_days: 1 rows
+RESTORED daily_statistics_jobs: 0 rows
+RESTORED defense_attempts: 0 rows
+RESTORED defense_recognition_submissions: 0 rows
+RESTORED deleted_cards: 0 rows
+RESTORED discovery_admission_intents: 0 rows
+RESTORED discovery_recommendation_requests: 0 rows
+RESTORED endgame_attempts: 0 rows
+RESTORED endgame_templates: 0 rows
+RESTORED engine_scheduling_state: 1 rows
+RESTORED explorer_position_cache: 0 rows
+RESTORED game_accounts: 0 rows
+RESTORED game_analysis_jobs: 0 rows
+RESTORED game_analysis_position_errors: 0 rows
+RESTORED game_analysis_position_reports: 0 rows
+RESTORED game_analysis_publications: 0 rows
+RESTORED game_derivation_jobs: 0 rows
+RESTORED game_feature_rows: 0 rows
+RESTORED game_finding_preparations: 0 rows
+RESTORED game_finding_publication_items: 0 rows
+RESTORED game_findings: 0 rows
+RESTORED game_insight_recommendations: 0 rows
+RESTORED game_move_analysis_candidates_legacy: 0 rows
+RESTORED game_move_analysis_candidates_staged: 0 rows
+RESTORED game_move_analysis_legacy: 0 rows
+RESTORED game_move_analysis_staged: 0 rows
+RESTORED game_position_occurrences_legacy: 0 rows
+RESTORED game_position_occurrences_staged: 0 rows
+RESTORED game_repertoire_matches_legacy: 0 rows
+RESTORED game_repertoire_matches_staged: 0 rows
+RESTORED game_sync_jobs: 0 rows
+RESTORED game_sync_state: 0 rows
+RESTORED game_sync_windows: 0 rows
+RESTORED gameplay_card_priorities: 0 rows
+RESTORED gameplay_events_legacy: 0 rows
+RESTORED gameplay_events_staged: 0 rows
+RESTORED guided_review_attempts: 0 rows
+RESTORED guided_review_sessions: 0 rows
+RESTORED imported_games: 0 rows
+RESTORED internal_migrations: 0 rows
+RESTORED next_opponent_accounts: 0 rows
+RESTORED next_opponent_snapshots: 0 rows
+RESTORED opening_card_schedule_seeds: 0 rows
+RESTORED opening_evidence_attempts: 0 rows
+RESTORED opening_evidence_clean_days: 0 rows
+RESTORED opening_evidence_events: 0 rows
+RESTORED opening_evidence_observations: 0 rows
+RESTORED opening_evidence_presentations: 1 rows
+RESTORED opening_evidence_queue_contexts: 0 rows
+RESTORED opening_evidence_summaries: 0 rows
+RESTORED opening_graph_legacy_mappings: 0 rows
+RESTORED opening_graph_publications: 0 rows
+RESTORED opening_graph_steps: 0 rows
+RESTORED opening_segmentation_groups: 0 rows
+RESTORED opening_segmentation_occurrences: 0 rows
+RESTORED opening_segmentation_parts: 0 rows
+RESTORED opening_segmentation_preferences: 0 rows
+RESTORED opening_segmentation_recommendations: 0 rows
+RESTORED opening_segmentation_runs: 0 rows
+RESTORED opening_segmentation_sources: 0 rows
+RESTORED opening_segmentation_state: 0 rows
+RESTORED operation_receipts: 53 rows
+RESTORED position_annotations: 0 rows
+RESTORED prefix_splits: 0 rows
+RESTORED prefix_transition_applications: 0 rows
+RESTORED prefix_transition_card_fences: 0 rows
+RESTORED prefix_transition_repertoire_fences: 0 rows
+RESTORED priority_repertoire_source_epochs: 1 rows
+RESTORED priority_source_epoch: 1 rows
+RESTORED puzzle_decks: 0 rows
+RESTORED puzzles: 0 rows
+RESTORED queue_attempt_origins: 2 rows
+RESTORED queue_projection_diagnostics: 0 rows
+RESTORED queue_projections: 1 rows
+RESTORED repertoire_card_introduction_priorities: 0 rows
+RESTORED repertoire_card_priority_generations: 0 rows
+RESTORED repertoire_cards: 0 rows
+RESTORED repertoire_comparisons_legacy: 0 rows
+RESTORED repertoire_comparisons_staged: 0 rows
+RESTORED repertoire_coverage_candidates: 0 rows
+RESTORED repertoire_coverage_nodes: 0 rows
+RESTORED repertoire_coverage_runs: 0 rows
+RESTORED repertoire_decision_events_legacy: 0 rows
+RESTORED repertoire_decision_events_staged: 0 rows
+RESTORED repertoire_decision_gameplay_summaries: 0 rows
+RESTORED repertoire_game_scope: 1 rows
+RESTORED repertoire_integrity_card_blocks: 0 rows
+RESTORED repertoire_integrity_issue_candidates: 0 rows
+RESTORED repertoire_integrity_issues: 0 rows
+RESTORED repertoire_integrity_jobs: 0 rows
+RESTORED repertoire_integrity_position_accumulators: 0 rows
+RESTORED repertoire_integrity_source_runs: 0 rows
+RESTORED repertoire_integrity_state: 0 rows
+RESTORED repertoire_line_training_depths: 0 rows
+RESTORED repertoire_lines: 0 rows
+RESTORED repertoire_opportunities: 0 rows
+RESTORED repertoire_priority_jobs: 0 rows
+RESTORED repertoire_priority_preparations: 0 rows
+RESTORED repertoire_priority_prepared_rows: 0 rows
+RESTORED repertoire_priority_publications: 0 rows
+RESTORED repertoires: 2 rows
+RESTORED review_attempt_receipts: 0 rows
+RESTORED review_schedule_snapshots: 0 rows
+RESTORED reviews: 1 rows
+RESTORED settings: 1 rows
+RESTORED studies: 0 rows
+RESTORED study_attempts: 0 rows
+RESTORED study_chapters: 0 rows
+RESTORED study_exercise_revisions: 0 rows
+RESTORED study_exercises: 0 rows
+RESTORED study_links: 0 rows
+RESTORED study_positions: 0 rows
+RESTORED study_sibling_burials: 0 rows
+RESTORED study_sources: 0 rows
+RESTORED tablebase_cache: 0 rows
+RESTORED tactic_captures: 0 rows
+RESTORED tactic_discovery_attempts: 0 rows
+RESTORED tactic_introductions: 0 rows
+RESTORED tactic_pack_activation: 0 rows
+RESTORED tactic_progress: 0 rows
+RESTORED tactic_rotation: 1 rows
+RESTORED tactical_opportunities: 0 rows
+RESTORED teaching_states: 0 rows
+RESTORED tempo_migration_progress: 0 rows
+RESTORED tempo_schema_migrations: 39 rows
+RESTORED threat_analysis_report_history: 0 rows
+RESTORED threat_analysis_requests: 0 rows
+RESTORED threat_candidate_requests: 0 rows
+RESTORED threat_training_candidates: 0 rows
+Verified all 145 PostgreSQL tables
+Traceback (most recent call last):
+  File "/work/scripts/apply_postgres_migrations.py", line 142, in <module>
+    main()
+  File "/work/scripts/apply_postgres_migrations.py", line 138, in main
+    apply_migrations(options.dsn)
+  File "/work/scripts/apply_postgres_migrations.py", line 54, in apply_migrations
+    database.execute(path.read_text(), prepare=False)
+  File "/usr/local/lib/python3.12/site-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.DuplicateColumn: column "transaction_timeout_count" of relation "background_tasks" already exists
+
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-foreground-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-web-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-defense-engine-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-background-scheduler-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-maia-worker-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopping
+ Container tempo-pg-regressions-2665-d88d2608-cli-api-1  Stopped
+ Container tempo-pg-regressions-2665-d88d2608-cli-postgres-backup-1  Stopped
+api-1  | INFO:     Started server process [1]
+api-1  | INFO:     Waiting for application startup.
+api-1  | INFO:     Application startup complete.
+api-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+api-1  | INFO:     127.0.0.1:38076 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.8:53232 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.8:53240 - "GET /api/repertoire-coverage/maia/available HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "POST /api/games/analysis/repair-provenance HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "POST /api/games/analysis/position/claim HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.11:34064 - "GET /api/health HTTP/1.0" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "GET /api/system/foreground-active HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "POST /api/defensive-threats/analysis/claim HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.10:56516 - "POST /api/games/analysis/repair-timeout HTTP/1.1" 200 OK
+api-1  | INFO:     Shutting down
+api-1  | INFO:     Waiting for connections to close. (CTRL+C to force quit)
+api-1  | INFO:     127.0.0.1:36754 - "GET /api/health HTTP/1.1" 200 OK
+api-1  | INFO:     Waiting for background tasks to complete. (CTRL+C to force quit)
+api-1  | INFO:     Waiting for application shutdown.
+api-1  | INFO:     Application shutdown complete.
+api-1  | INFO:     Finished server process [1]
+background-scheduler-1  | [2026-10-12 17:38:21,644: INFO/MainProcess] beat: Starting...
+background-scheduler-1  | [2026-10-12 17:38:22,682: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:38:23,679: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:38:24,679: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:38:25,679: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:38:26,679: INFO/MainProcess] Scheduler: Sending due task recover-operations (app.tasks.recover_operations)
+background-scheduler-1  | [2026-10-12 17:38:26,680: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:38:27,680: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:38:28,680: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | [2026-10-12 17:38:29,681: INFO/MainProcess] Scheduler: Sending due task poll-durable-background-tasks (app.tasks.poll_background_tasks)
+background-scheduler-1  | celery beat v5.6.3 (recovery) is starting.
+background-scheduler-1  | __    -    ... __   -        _
+background-scheduler-1  | LocalTime -> 2026-10-12 17:38:21
+background-scheduler-1  | Configuration ->
+background-scheduler-1  |     . broker -> app.services.background_wakes:WakeRedisTransport://redis:6379/0
+background-scheduler-1  |     . loader -> celery.loaders.app.AppLoader
+background-scheduler-1  |     . scheduler -> celery.beat.PersistentScheduler
+background-scheduler-1  |     . db -> celerybeat-schedule
+background-scheduler-1  |     . logfile -> [stderr]@%INFO
+background-scheduler-1  |     . maxinterval -> 5.00 minutes (300s)
+foreground-worker-1     | /usr/local/lib/python3.12/site-packages/celery/platforms.py:841: SecurityWarning: You're running the worker with superuser privileges: this is
+foreground-worker-1     | absolutely not recommended!
+foreground-worker-1     | 
+foreground-worker-1     | Please specify a different user using the --uid option.
+foreground-worker-1     | 
+foreground-worker-1     | User information: uid=0 euid=0 gid=0 egid=0
+foreground-worker-1     | 
+foreground-worker-1     |   warnings.warn(SecurityWarning(ROOT_DISCOURAGED.format(
+foreground-worker-1     |  
+foreground-worker-1     |  -------------- celery@974d6a7587e1 v5.6.3 (recovery)
+foreground-worker-1     | --- ***** ----- 
+foreground-worker-1     | -- ******* ---- Linux-6.17.0-1022-azure-aarch64-with-glibc2.41 2026-10-12 13:38:21
+foreground-worker-1     | - *** --- * --- 
+foreground-worker-1     | - ** ---------- [config]
+foreground-worker-1     | - ** ---------- .> app:         tempo:0xff9d2a539d60
+foreground-worker-1     | - ** ---------- .> transport:   app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1     | - ** ---------- .> results:     redis://redis:6379/0
+foreground-worker-1     | - *** --- * --- .> concurrency: 2 (prefork)
+foreground-worker-1     | -- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+foreground-worker-1     | --- ***** ----- 
+foreground-worker-1     |  -------------- [queues]
+foreground-worker-1     |                 .> foreground       exchange=foreground(direct) key=foreground
+foreground-worker-1     |                 
+foreground-worker-1     | 
+foreground-worker-1     | [tasks]
+foreground-worker-1     |   . app.tasks.ensure_daily_queue
+foreground-worker-1     |   . app.tasks.execute_background_command
+redis-1                 | 1:C 12 Oct 2026 17:38:33.666 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+redis-1                 | 1:C 12 Oct 2026 17:38:33.667 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1                 | 1:C 12 Oct 2026 17:38:33.667 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1                 | 1:C 12 Oct 2026 17:38:33.667 * Configuration loaded
+redis-1                 | 1:M 12 Oct 2026 17:38:33.667 * monotonic clock: POSIX clock_gettime
+redis-1                 | 1:M 12 Oct 2026 17:38:33.668 * Running mode=standalone, port=6379.
+redis-1                 | 1:M 12 Oct 2026 17:38:33.668 * Server initialized
+redis-1                 | 1:M 12 Oct 2026 17:38:33.669 * Reading RDB base file on AOF loading...
+redis-1                 | 1:M 12 Oct 2026 17:38:33.669 * Loading RDB produced by version 7.4.11
+redis-1                 | 1:M 12 Oct 2026 17:38:33.669 * RDB age 134 seconds
+redis-1                 | 1:M 12 Oct 2026 17:38:33.669 * RDB memory usage when created 2.13 Mb
+redis-1                 | 1:M 12 Oct 2026 17:38:33.669 * RDB is base AOF
+redis-1                 | 1:M 12 Oct 2026 17:38:33.669 * Done loading RDB, keys loaded: 286, keys expired: 0.
+redis-1                 | 1:M 12 Oct 2026 17:38:33.670 * DB loaded from base file appendonly.aof.2.base.rdb: 0.001 seconds
+redis-1                 | 1:M 12 Oct 2026 17:38:33.675 * DB loaded from incr file appendonly.aof.2.incr.aof: 0.005 seconds
+redis-1                 | 1:M 12 Oct 2026 17:38:33.675 * DB loaded from append only file: 0.007 seconds
+redis-1                 | 1:M 12 Oct 2026 17:38:33.676 * Opening AOF incr file appendonly.aof.2.incr.aof on server start
+redis-1                 | 1:M 12 Oct 2026 17:38:33.676 * Ready to accept connections tcp
+web-1                   | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+defense-engine-1        | {"event":"engine_waiting","kind":"engine","stage":"idle","observed_at":"2026-10-12T17:38:27.664Z"}
+foreground-worker-1     |   . app.tasks.execute_background_slice
+foreground-worker-1     |   . app.tasks.execute_foreground_command
+foreground-worker-1     |   . app.tasks.poll_background_tasks
+foreground-worker-1     |   . app.tasks.recover_active_coverage
+foreground-worker-1     |   . app.tasks.recover_operations
+foreground-worker-1     | 
+foreground-worker-1     | [2026-10-12 13:38:21,788: INFO/MainProcess] Connected to app.services.background_wakes:WakeRedisTransport://redis:6379/0
+foreground-worker-1     | [2026-10-12 13:38:21,790: INFO/MainProcess] mingle: searching for neighbors
+foreground-worker-1     | [2026-10-12 13:38:22,797: INFO/MainProcess] mingle: all alone
+foreground-worker-1     | [2026-10-12 13:38:22,806: INFO/MainProcess] celery@974d6a7587e1 ready.
+foreground-worker-1     | [2026-10-12 13:38:22,809: INFO/MainProcess] Task app.tasks.execute_foreground_command[e60d18a54b654cd6afea3fd32cca867d] received
+foreground-worker-1     | [2026-10-12 13:38:22,847: INFO/ForkPoolWorker-2] foreground command=queue.ensure_current queue_wait_seconds=1.110 execution_seconds=0.034
+foreground-worker-1     | [2026-10-12 13:38:22,849: INFO/ForkPoolWorker-2] Task app.tasks.execute_foreground_command[e60d18a54b654cd6afea3fd32cca867d] succeeded in 0.03917954100006682s: {'queue_date': '2026-10-12', 'refresh_pending': False}
+foreground-worker-1     | 
+foreground-worker-1     | worker: Warm shutdown (MainProcess)
+web-1                   | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+web-1                   | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+web-1                   | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+web-1                   | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
+web-1                   | /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+web-1                   | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+web-1                   | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+web-1                   | /docker-entrypoint.sh: Configuration complete; ready for start up
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: using the "epoll" event method
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: nginx/1.28.3
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: built by gcc 15.2.0 (Alpine 15.2.0) 
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: OS: Linux 6.17.0-1022-azure
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: getrlimit(RLIMIT_NOFILE): 65536:65536
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: start worker processes
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: start worker process 30
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: start worker process 31
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: start worker process 32
+web-1                   | 2026/10/12 17:38:27 [notice] 1#1: start worker process 33
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:38:28 +0000] "GET /api/health HTTP/1.1" 200 80 "-" "node" "-"
+web-1                   | 172.18.0.1 - - [12/Oct/2026:17:38:28 +0000] "GET / HTTP/1.1" 200 1470 "-" "node" "-"
+background-worker-1     | [2026-10-12 13:38:23,691: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:23,691: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.007s
+background-worker-1     | [2026-10-12 13:38:23,692: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[d5eedb9f8ed74dd2afa3792af8ff6843] succeeded in 0.010144680000053086s: False
+background-worker-1     | [2026-10-12 13:38:24,681: INFO/MainProcess] Task app.tasks.poll_background_tasks[dd529c7a09924df798b39e86ab187990] received
+background-worker-1     | [2026-10-12 13:38:24,684: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:24,690: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:24,690: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 13:38:24,691: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[dd529c7a09924df798b39e86ab187990] succeeded in 0.009230082000044604s: False
+background-worker-1     | [2026-10-12 13:38:25,681: INFO/MainProcess] Task app.tasks.poll_background_tasks[41165981cfdb4f35aca670ff6ebdd224] received
+background-worker-1     | [2026-10-12 13:38:25,684: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:25,691: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:25,691: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.001s transaction=0.007s
+background-worker-1     | [2026-10-12 13:38:25,692: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[41165981cfdb4f35aca670ff6ebdd224] succeeded in 0.01067500800002108s: False
+background-worker-1     | [2026-10-12 13:38:26,681: INFO/MainProcess] Task app.tasks.recover_operations[625bd56772294784b5751011cca7ebec] received
+background-worker-1     | [2026-10-12 13:38:26,683: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:26,685: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:26,685: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 13:38:26,685: INFO/ForkPoolWorker-1] Task app.tasks.recover_operations[625bd56772294784b5751011cca7ebec] succeeded in 0.004107988999976442s: False
+background-worker-1     | [2026-10-12 13:38:26,687: INFO/MainProcess] Task app.tasks.poll_background_tasks[820cfd5b48564a0e83f35847d2939ada] received
+background-worker-1     | [2026-10-12 13:38:26,689: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:26,695: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.004 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:26,695: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 13:38:26,696: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[820cfd5b48564a0e83f35847d2939ada] succeeded in 0.008598269000003711s: False
+background-worker-1     | [2026-10-12 13:38:27,490: INFO/MainProcess] Task app.tasks.execute_background_command[06681ecd-e2cd-481e-b356-a63109cc1056] received
+background-worker-1     | [2026-10-12 13:38:27,497: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.002 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 13:38:27,497: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:38:27,498: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,510: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.010 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,510: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.011s
+background-worker-1     | [2026-10-12 13:38:27,511: INFO/ForkPoolWorker-1] background_handler {"kind":"other","stage":"idle","observed_at":"2026-10-12T17:38:27.511214+00:00","process_started_at":"2026-10-12T17:38:21.199858+00:00","admission_wait_seconds":0.0004215969998995206,"handler_elapsed_seconds":0.019034573999988424,"execution_seconds":0.018612977000088904,"dispatch_wait_seconds":0.00737309455871582}
+background-worker-1     | [2026-10-12 13:38:27,512: INFO/ForkPoolWorker-1] Task app.tasks.execute_background_command[06681ecd-e2cd-481e-b356-a63109cc1056] succeeded in 0.020804526999995687s: {'job': None}
+background-worker-1     | [2026-10-12 13:38:27,567: INFO/MainProcess] Task app.tasks.execute_background_command[1a92b216-3783-4ed2-8f5f-720c69228a7c] received
+background-worker-1     | [2026-10-12 13:38:27,571: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,571: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 13:38:27,572: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,575: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.002 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 13:38:27,575: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.003s
+background-worker-1     | [2026-10-12 13:38:27,576: INFO/ForkPoolWorker-1] background_handler {"kind":"other","stage":"idle","observed_at":"2026-10-12T17:38:27.576413+00:00","process_started_at":"2026-10-12T17:38:21.199858+00:00","admission_wait_seconds":0.00045449499998539977,"handler_elapsed_seconds":0.007648598000059792,"execution_seconds":0.007194103000074392,"dispatch_wait_seconds":0.002627134323120117}
+background-worker-1     | [2026-10-12 13:38:27,577: INFO/ForkPoolWorker-1] Task app.tasks.execute_background_command[1a92b216-3783-4ed2-8f5f-720c69228a7c] succeeded in 0.008912839000004169s: {'requeued': False}
+background-worker-1     | [2026-10-12 13:38:27,584: INFO/MainProcess] Task app.tasks.execute_background_command[8feb2daf-355e-4cd8-8ab5-c3a839d82b80] received
+background-worker-1     | [2026-10-12 13:38:27,591: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.003 handler_seconds=0.001 commit_cleanup_seconds=0.001
+background-worker-1     | [2026-10-12 13:38:27,591: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.005s
+background-worker-1     | [2026-10-12 13:38:27,592: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,596: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,596: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 13:38:27,597: INFO/ForkPoolWorker-1] background_handler {"kind":"other","stage":"idle","observed_at":"2026-10-12T17:38:27.597427+00:00","process_started_at":"2026-10-12T17:38:21.199858+00:00","admission_wait_seconds":0.0004494219998605331,"handler_elapsed_seconds":0.011995482999964224,"execution_seconds":0.011546061000103691,"dispatch_wait_seconds":0.0023908615112304688}
+background-worker-1     | [2026-10-12 13:38:27,598: INFO/ForkPoolWorker-1] Task app.tasks.execute_background_command[8feb2daf-355e-4cd8-8ab5-c3a839d82b80] succeeded in 0.01354441199998746s: {'requeued': False}
+background-worker-1     | [2026-10-12 13:38:27,683: INFO/MainProcess] Task app.tasks.poll_background_tasks[86945c4160a94e708bd3db1d2115b7c3] received
+background-worker-1     | [2026-10-12 13:38:27,685: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,692: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.006 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:27,692: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.007s
+background-worker-1     | [2026-10-12 13:38:27,693: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[86945c4160a94e708bd3db1d2115b7c3] succeeded in 0.010071859999925437s: False
+background-worker-1     | [2026-10-12 13:38:28,683: INFO/MainProcess] Task app.tasks.poll_background_tasks[8bce2cb78cc3437495720ccd0ecbc31f] received
+background-worker-1     | [2026-10-12 13:38:28,684: INFO/ForkPoolWorker-1] background admission deferred: Waiting for foreground activity
+background-worker-1     | [2026-10-12 13:38:28,685: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[8bce2cb78cc3437495720ccd0ecbc31f] succeeded in 0.001521514000046409s: False
+background-worker-1     | [2026-10-12 13:38:29,674: INFO/MainProcess] Task app.tasks.execute_background_command[1ad0f50a-c7b8-437e-a4de-7f0e93f5a587] received
+background-worker-1     | [2026-10-12 13:38:29,678: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,678: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 13:38:29,679: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,689: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.009 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,689: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.010s
+background-worker-1     | [2026-10-12 13:38:29,690: INFO/ForkPoolWorker-1] background_handler {"kind":"other","stage":"idle","observed_at":"2026-10-12T17:38:29.690370+00:00","process_started_at":"2026-10-12T17:38:21.199858+00:00","admission_wait_seconds":0.0004291730000431926,"handler_elapsed_seconds":0.01448921100006828,"execution_seconds":0.014060038000025088,"dispatch_wait_seconds":0.0035359859466552734}
+background-worker-1     | [2026-10-12 13:38:29,691: INFO/ForkPoolWorker-1] Task app.tasks.execute_background_command[1ad0f50a-c7b8-437e-a4de-7f0e93f5a587] succeeded in 0.01614476800000375s: {'job': None}
+background-worker-1     | [2026-10-12 13:38:29,692: INFO/MainProcess] Task app.tasks.poll_background_tasks[a8436812e29f4d979a58ff99fc2384f7] received
+background-worker-1     | [2026-10-12 13:38:29,695: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,701: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.005 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,701: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.006s
+background-worker-1     | [2026-10-12 13:38:29,702: INFO/ForkPoolWorker-1] Task app.tasks.poll_background_tasks[a8436812e29f4d979a58ff99fc2384f7] succeeded in 0.008782771000028333s: False
+background-worker-1     | [2026-10-12 13:38:29,705: INFO/MainProcess] Task app.tasks.execute_background_command[de967244-85b6-48c4-93ca-2c530c0f0954] received
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: signal 3 (SIGQUIT) received, shutting down
+web-1                   | 2026/10/12 17:38:29 [notice] 30#30: gracefully shutting down
+web-1                   | 2026/10/12 17:38:29 [notice] 30#30: exiting
+web-1                   | 2026/10/12 17:38:29 [notice] 31#31: gracefully shutting down
+web-1                   | 2026/10/12 17:38:29 [notice] 32#32: gracefully shutting down
+web-1                   | 2026/10/12 17:38:29 [notice] 32#32: exiting
+web-1                   | 2026/10/12 17:38:29 [notice] 32#32: exit
+web-1                   | 2026/10/12 17:38:29 [notice] 30#30: exit
+web-1                   | 2026/10/12 17:38:29 [notice] 33#33: gracefully shutting down
+web-1                   | 2026/10/12 17:38:29 [notice] 33#33: exiting
+web-1                   | 2026/10/12 17:38:29 [notice] 33#33: exit
+web-1                   | 2026/10/12 17:38:29 [notice] 31#31: exiting
+web-1                   | 2026/10/12 17:38:29 [notice] 31#31: exit
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: signal 17 (SIGCHLD) received from 32
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: worker process 32 exited with code 0
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: signal 29 (SIGIO) received
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: signal 17 (SIGCHLD) received from 30
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: worker process 30 exited with code 0
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: signal 29 (SIGIO) received
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: signal 17 (SIGCHLD) received from 33
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: worker process 31 exited with code 0
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: worker process 33 exited with code 0
+web-1                   | 2026/10/12 17:38:29 [notice] 1#1: exit
+background-worker-1     | [2026-10-12 13:38:29,708: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.001 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,708: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.002s
+background-worker-1     | [2026-10-12 13:38:29,709: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.000 handler_seconds=0.000 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,714: INFO/ForkPoolWorker-1] background_postgres_connection acquisition_seconds=0.000 settings_seconds=0.001 handler_seconds=0.003 commit_cleanup_seconds=0.000
+background-worker-1     | [2026-10-12 13:38:29,714: INFO/ForkPoolWorker-1] postgres background section foreground_wait=0.000s transaction=0.004s
+background-worker-1     | [2026-10-12 13:38:29,715: INFO/ForkPoolWorker-1] background_handler {"kind":"other","stage":"idle","observed_at":"2026-10-12T17:38:29.715386+00:00","process_started_at":"2026-10-12T17:38:21.199858+00:00","admission_wait_seconds":0.0004480699999476201,"handler_elapsed_seconds":0.008911799999964387,"execution_seconds":0.008463730000016767,"dispatch_wait_seconds":0.007943868637084961}
+background-worker-1     | [2026-10-12 13:38:29,716: INFO/ForkPoolWorker-1] Task app.tasks.execute_background_command[de967244-85b6-48c4-93ca-2c530c0f0954] succeeded in 0.010263626999972075s: {'requeued': False}
+background-worker-1     | 
+background-worker-1     | worker: Warm shutdown (MainProcess)
+background-worker-1     | [2026-10-12 13:38:29,726: INFO/MainProcess] Task app.tasks.execute_background_command[d5d3ca4f-ffb6-4b9b-b177-ee5d957c8ef9] received
+background-worker-1     | [2026-10-12 13:38:31,234: WARNING/MainProcess] Restoring 1 unacknowledged message(s)
+postgres-1              | 
+postgres-1              | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1              | 
+postgres-1              | 2026-10-12 17:38:33.697 UTC [1] LOG:  starting PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1              | 2026-10-12 17:38:33.697 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1              | 2026-10-12 17:38:33.697 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+postgres-1              | 2026-10-12 17:38:33.698 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1              | 2026-10-12 17:38:33.701 UTC [32] LOG:  database system was shut down at 2026-10-12 17:38:33 UTC
+postgres-1              | 2026-10-12 17:38:33.704 UTC [1] LOG:  database system is ready to accept connections
+postgres-1              | 2026-10-12 17:38:39.104 UTC [30] LOG:  checkpoint starting: immediate force wait
+postgres-1              | 2026-10-12 17:38:39.108 UTC [30] LOG:  checkpoint complete: wrote 29 buffers (0.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.002 s, sync=0.001 s, total=0.005 s; sync files=26, longest=0.001 s, average=0.001 s; distance=9930 kB, estimate=9930 kB; lsn=0/38E4B28, redo lsn=0/38E4AD0
+postgres-1              | 2026-10-12 17:38:40.280 UTC [70] ERROR:  column "transaction_timeout_count" of relation "background_tasks" already exists
+postgres-1              | 2026-10-12 17:38:40.280 UTC [70] STATEMENT:  -- Preserve transaction-deadline episodes without deleting or resetting work.
+postgres-1              | 	ALTER TABLE background_tasks ADD COLUMN transaction_timeout_count BIGINT NOT NULL DEFAULT 0;
+postgres-1              | 	ALTER TABLE background_tasks ADD COLUMN transaction_timeout_checkpoint TEXT;
+postgres-1              | 	CREATE INDEX idx_opening_graph_current_roots
+postgres-1              | 	    ON opening_graph_steps(repertoire_id,generation,card_id NULLS FIRST) WHERE parent_card_id IS NULL;
+postgres-1              | 	CREATE INDEX idx_opening_graph_mature_parent_candidates
+postgres-1              | 	    ON opening_graph_steps(parent_card_id,card_id NULLS FIRST,repertoire_id,generation)
+postgres-1              | 	    WHERE parent_card_id IS NOT NULL;
+postgres-1              | 	CREATE INDEX idx_cards_locked_openings ON cards(id)
+postgres-1              | 	    WHERE content_type='opening' AND state='locked' AND archived=0;
+postgres-1              | 	CREATE INDEX idx_cards_mature_parent ON cards(id) WHERE state='mature';
+postgres-1              | 	
+postgres-1              | 	INSERT INTO tempo_schema_migrations(version) VALUES(40);
+postgres-1              | 	
+

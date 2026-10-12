@@ -1,0 +1,95 @@
+{
+  "runner": "postgres",
+  "mode": "browser",
+  "commit": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "plan_hash": "624e401434c4febc205dc30f7a06d8801d7666bd1003f2faaf4536d0abc2e617",
+  "browser_file": null,
+  "browser_grep": "^chromium guided-review-board-restoration\\.spec\\.ts guided review reloads a stale displayed finding without grading its successor$|^chromium guided-review-board-restoration\\.spec\\.ts guided review restores the authoritative finding position after a same-FEN reveal \\(correct candidate\\)$|^chromium guided-review-board-restoration\\.spec\\.ts guided review restores the authoritative finding position after a same-FEN reveal \\(incorrect candidate\\)$|^chromium held-drag\\.spec\\.ts held_drag_status_and_preview_scenario_observes_continuity_before_drop$|^chromium held-drag\\.spec\\.ts held_drag_detector_reports_mid_drag_board_cancellation$|^chromium held-drag\\.spec\\.ts held_drag_training_phases_separate_drop_reply_review_and_readiness$|^chromium content-deletion\\.spec\\.ts recovering an older deletion preserves a different active card's board and attempt$|^chromium content-deletion\\.spec\\.ts permanently deleting the active training card clears its attempt and survives reload$|^chromium content-deletion\\.spec\\.ts repertoire confirmation delete removes the source and applies its learned-card policy$|^chromium content-deletion\\.spec\\.ts pending card deletion recovers after reload and reports a queue refresh failure$|^chromium content-deletion\\.spec\\.ts pending repertoire deletion recovers its chosen policy and reports failure without false success$|^chromium content-deletion\\.spec\\.ts repertoire confirmation keep removes the source and applies its learned-card policy$|^chromium prefix-diagnostics\\.spec\\.ts PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence 1280$|^chromium prefix-diagnostics\\.spec\\.ts PD-82 foreground deferral followed by database refusal still requires explicit retry$|^chromium prefix-diagnostics\\.spec\\.ts PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence 390$|^chromium prefix-diagnostics\\.spec\\.ts PD-82 repeated database refusals require explicit read-only inspection retries$|^chromium prefix-split-training\\.spec\\.ts accepting a prefix split skips preview and advances to the next queued card$|^chromium prefix-split-training\\.spec\\.ts rejecting a prefix split remains dismissed after queue reload$|^chromium discovery-viewer\\.spec\\.ts discovery viewer with a white decision rejects a black recommendation$|^chromium discovery-viewer\\.spec\\.ts genuine discovery preview unrelated 404 remains observable$|^chromium discovery-viewer\\.spec\\.ts genuine discovery preview network failure remains observable$|^chromium discovery-viewer\\.spec\\.ts confirmed Add and train clears the completed item after advancing before the save responds$|^chromium discovery-viewer\\.spec\\.ts inactive discovery preview refreshes once without a retry notification and another discovery loads$|^chromium discovery-viewer\\.spec\\.ts late removed preview cannot be reused when the discovery returns$|^chromium discovery-viewer\\.spec\\.ts genuine training eligibility failure remains visible and blocks direct training$|^chromium discovery-viewer\\.spec\\.ts late obsolete preview cannot replace a newer evidence version$|^chromium discovery-viewer\\.spec\\.ts supported saved discovery checks eligibility before direct training$|^chromium discovery-viewer\\.spec\\.ts black repertoire discovery keeps black at the bottom through route and preview$|^chromium discovery-viewer\\.spec\\.ts genuine discovery preview invalid schema remains observable$|^chromium discovery-viewer\\.spec\\.ts Repertoire Opportunities stale Train submits displayed evidence and preserves the current revision$|^chromium discovery-viewer\\.spec\\.ts unsupported saved discovery explains Builder route without sending train$|^chromium discovery-viewer\\.spec\\.ts hidden discovery speculation stays paused and viewer demand starts bounded look-ahead$|^chromium discovery-viewer\\.spec\\.ts discovery viewer compares one learner decision and returns from Builder 1470$|^chromium discovery-viewer\\.spec\\.ts refresh selects the remaining review item when the first feed item is waiting$|^chromium discovery-viewer\\.spec\\.ts repeated same-key inactive 404 previews stay bounded and silent$|^chromium discovery-viewer\\.spec\\.ts discovery viewer compares one learner decision and returns from Builder 390$|^chromium discovery-viewer\\.spec\\.ts genuine discovery preview server error remains observable$|^chromium discovery-viewer\\.spec\\.ts same-key inactive preview recovers after the retry delay without an error notification$|^chromium discovery-viewer\\.spec\\.ts eligibility recovers after an unchanged feed poll through an item retry$|^chromium settings-defense-toggle\\.spec\\.ts combined defensive pauses retain individual Resume until Settings allows it$|^chromium settings-defense-toggle\\.spec\\.ts defensive daily stack setting persists across navigation and reload$|^chromium settings-defense-toggle\\.spec\\.ts defensive analysis pause persists independently of defensive cards$|^chromium comparison-workspace\\.spec\\.ts four comparison boards retain distinct routes and independent ply navigation$|^chromium comparison-workspace\\.spec\\.ts training comparison stays concealed until a mistake and returning preserves the attempt$|^chromium comparison-workspace\\.spec\\.ts comparison card service failure gives a retry without sample matches$|^chromium studies\\.spec\\.ts Study White board underpromotion survives offline journal and exact UCI replay$|^chromium studies\\.spec\\.ts prepared explanation is self assessed offline and replayed through server validation$|^chromium studies\\.spec\\.ts prepared study queue shares the disposable service calendar day$|^chromium studies\\.spec\\.ts Study Black board underpromotion survives offline journal and exact UCI replay$|^chromium studies\\.spec\\.ts Issue135 foreground queue commit wakes an idle worker without periodic polling$|^chromium studies\\.spec\\.ts online study feedback recovery saved study attempt can retry feedback without a duplicate review$|^chromium studies\\.spec\\.ts prepared study response is graded offline and replayed with its actual squares$|^chromium studies\\.spec\\.ts stale study revisions retain the phone answer as a replay conflict$|^chromium studies\\.spec\\.ts FEN-only study square exercise is authored enrolled and reviewed through the real workspace$|^chromium studies\\.spec\\.ts all five study exercise types can be authored from the workspace$|^chromium studies\\.spec\\.ts Study workspace reports an actionable local service outage$|^chromium studies\\.spec\\.ts unknown prepared study grader versions are unavailable offline$|^chromium accessibility\\.spec\\.ts workspace accessibility and reflow 1280$|^chromium accessibility\\.spec\\.ts workspace accessibility and reflow 390$",
+  "planned_stages": [
+    "compose_config",
+    "image_build",
+    "startup",
+    "service_health",
+    "browser",
+    "cleanup"
+  ],
+  "schema_version": 2,
+  "timestamp": "2026-10-12T17:37:50.109Z",
+  "stages": {
+    "compose_config": {
+      "duration_seconds": 0.26,
+      "exit_code": 0
+    },
+    "image_build": {
+      "duration_seconds": 99.68,
+      "exit_code": 0
+    },
+    "startup": {
+      "duration_seconds": 17.69,
+      "exit_code": 0
+    },
+    "service_health": {
+      "duration_seconds": 0.08,
+      "exit_code": 0
+    },
+    "browser": {
+      "duration_seconds": 257.11,
+      "exit_code": 0
+    },
+    "cleanup": {
+      "duration_seconds": 2.9,
+      "exit_code": 0
+    }
+  },
+  "details": [
+    {
+      "id": 0,
+      "stage": "image_build",
+      "parent_id": null,
+      "label": "image_build",
+      "category": "build",
+      "start_seconds": 0.27,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 99.68,
+      "exit_code": 0
+    },
+    {
+      "id": 1,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "compose_startup",
+      "category": "startup",
+      "start_seconds": 99.94,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 15.64,
+      "exit_code": 0
+    },
+    {
+      "id": 2,
+      "stage": "startup",
+      "parent_id": null,
+      "label": "api_ready",
+      "category": "readiness",
+      "start_seconds": 115.58,
+      "completed": true,
+      "poll_count": 2,
+      "waiting_seconds": 1.000214380000005,
+      "duration_seconds": 2.05,
+      "exit_code": 0
+    },
+    {
+      "id": 3,
+      "stage": "browser",
+      "parent_id": null,
+      "label": "resource_inspection",
+      "category": "inspection",
+      "start_seconds": 117.72,
+      "completed": true,
+      "process_exit_code": 0,
+      "duration_seconds": 257.11,
+      "exit_code": 0
+    }
+  ]
+}

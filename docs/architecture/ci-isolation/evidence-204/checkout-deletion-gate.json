@@ -1,0 +1,13 @@
+{
+  "checkout": "/Users/andy/tempo/.dev-copies/issue-204-scheduling-store",
+  "owner": "issue #204 current task",
+  "gate": "passed; removal after this complete evidence snapshot is pushed",
+  "remote_feature_head": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
+  "unique_tracked_untracked_stashed_unpushed_work": false,
+  "ignored_files": "dependencies/caches; all 15 diagnostic files copied and checksum verified",
+  "active_processes": "none; elevated process/cwd inspection found only its own inspection command",
+  "mounted_containers": [],
+  "test_results": "preserved outside checkout and published on dedicated evidence ref",
+  "registered_worktree": "independent clone, no linked worktrees",
+  "live_and_other_tasks": "untouched"
+}

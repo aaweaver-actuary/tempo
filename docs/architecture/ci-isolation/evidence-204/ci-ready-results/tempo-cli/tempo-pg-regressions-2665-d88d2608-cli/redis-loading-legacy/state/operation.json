@@ -1,0 +1,7 @@
+{
+  "id": "c26a5d5f-5a16-47cd-afc0-abfa5460f3d9",
+  "revision": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",
+  "started_at": "2026-10-12T17:36:41.615Z",
+  "phase": "stopping_application_services",
+  "target": "tempo-pg-regressions-2665-d88d2608-cli"
+}
