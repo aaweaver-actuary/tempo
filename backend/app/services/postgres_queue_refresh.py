@@ -393,9 +393,35 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
     plan = main._plan_prioritized_opening_admissions(
         candidates, dict(counts), queue_date, daily_limit,
     )
-    return [{"repertoire_id": repertoire_id, "card_id": candidate["id"],
-             "reason": candidate["gameplay_priority_reason"]}
-            for repertoire_id, candidate in plan]
+    planned_items = [{"repertoire_id": repertoire_id, "card_id": candidate["id"],
+                      "reason": candidate["gameplay_priority_reason"]}
+                     for repertoire_id, candidate in plan]
+    from .opening_capacity_admission import (
+        capacity_expansion_enabled, remaining_opening_allowances, read_capacity_routes,
+        capacity_priority_statement, propose_capacity_expansion_from_priority_rows, capacity_proposal_payload, CAPACITY_READ_BATCH_SIZE,
+    )
+    if not capacity_expansion_enabled():
+        return planned_items
+    from .study_mode import study_only_enabled
+    if study_only_enabled():
+        return planned_items
+    remaining = remaining_opening_allowances(plan, dict(counts), daily_limit)
+    if not any(remaining.values()):
+        return planned_items
+    normal_parent_ids = tuple(candidate['id'] for _, candidate in plan)
+    routes = tuple(route for repertoire_id in sorted(remaining) if remaining[repertoire_id] > 0
+                   for route in read_capacity_routes(_bounded_read, repertoire_id, normal_parent_ids))
+    capacity_rows = []
+    card_ids = sorted({card_id for card_id, _ in routes})
+    for offset in range(0, len(card_ids), CAPACITY_READ_BATCH_SIZE):
+        capacity_rows.extend(_bounded_read(
+            capacity_priority_statement(_PRIORITY_OPENING_PAGE_SQL),
+            (active_misses, card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE], main.MISS_REASON,
+             queue_date, queue_date, queue_date, queue_date), native=True,
+        ))
+    return planned_items + [capacity_proposal_payload(proposal) for proposal in propose_capacity_expansion_from_priority_rows(
+        queue_date, plan, remaining, routes, capacity_rows, miss_reason=main.MISS_REASON,
+    )]
 
 
 def _current_opening_limit(database, repertoire_id: str) -> int | None:
@@ -458,11 +484,16 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
         "AND json_extract(evidence_json,'$.analysis_based') IS NULL LIMIT 1",
         (planned["repertoire_id"], card_id),
     ).fetchone()
-    if card[0] == 'locked' and not (outstanding or opportunity):
+    capacity_proposal = 'capacity_route' in planned
+    if capacity_proposal:
+        from .opening_capacity_admission import capacity_route_still_valid
+        if not capacity_route_still_valid(database, planned, queue_date):
+            return
+    if card[0] == 'locked' and not (outstanding or opportunity or capacity_proposal):
         return
     if planned["reason"] == MISS_REASON and not outstanding:
         return
-    if daily_limit is None or (admitted_count >= daily_limit and not outstanding):
+    if daily_limit is None or (admitted_count >= daily_limit and (capacity_proposal or not outstanding)):
         return
     position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",

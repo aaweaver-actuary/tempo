@@ -4017,3 +4017,64 @@ PR #185 final independent diagnostic qualification (October 11, 2026):
 - `issue36_quiet_obsolete_quarantine_cannot_suppress_current_identical_alert` proves a current invalid record still alerts after the same obsolete record was retained quietly; both callers receive the original quarantined result.
 - `quiet debug evidence permits one later authoritative notification` covers both Error-object and signature deduplication, one authorized alert, and unchanged suppression of later published/quiet repeats. All five cases fail against `f6f1e7fb`; envelope cases retain a generic API fallback alert but lose validation attribution, while quarantine and direct-report cases lose the alert entirely.
 - `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` now covers success and request-specific failure: current diagnostics survive, obsolete callers settle, and obsolete failures do not alert or publish workspace error events. Worker-wide protocol/decode failures remain genuine shared-worker failures covered by `study-worker-regressions.test.ts`; stale terminated-worker callbacks cannot affect a replacement worker.
+
+
+Capacity-driven opening frontier — related #114/#118/#159 (October 12, 2026):
+
+The named two-prefix admission regression failed on main
+`622d611a2fc6315163a54d7ae689ce1b97d06122`: only two prefixes were admitted
+instead of ten prefixes/immediate descendants (1 failure, 0.95 s). The default-off
+policy admits one additional learner decision, preserving normal selection and
+per-repertoire ownership/limits. Repeated refreshes with spare capacity, day
+rollover and replay cannot turn speculative admission into exposure. Native
+PostgreSQL qualification remains with existing CI; adapters are not durability
+proof. These partial roadmap references do not close the broader issues.
+
+`backend/tests/test_opening_capacity_frontier.py` (regular backend suite):
+
+- `test_capacity_flag_disabled_preserves_normal_frontier`
+- `test_capacity_sufficient_normal_candidates_leave_no_expansion_allowance`
+- `test_capacity_insufficient_normal_candidates_fill_only_residual_capacity`
+- `test_capacity_no_available_capacity_returns_empty`
+- `test_capacity_no_additional_frontier_candidates_returns_empty`
+- `test_capacity_introduced_unreviewed_parent_needs_no_maturity`
+- `test_capacity_reviewed_immature_parent_retains_normal_priority_and_selection`
+- `test_capacity_never_introduced_parent_requires_normal_selection_first`
+- `test_capacity_one_level_boundary_excludes_unreviewed_earlier_prerequisite`
+- `test_capacity_repeated_refresh_cannot_use_relaxed_admission_as_exposure`
+- `test_capacity_few_prefixes_fill_ten_without_any_mature_cards`
+- `test_capacity_shared_descendant_consumes_one_admission`
+- `test_capacity_transposition_one_complete_route_suffices_without_splicing`
+- `test_capacity_multiple_repertoires_keep_separate_allowances`
+- `test_capacity_repertoire_specific_allowances_do_not_transfer`
+- `test_capacity_total_capacity_limits_competing_repertoires`
+- `test_capacity_invalidated_or_ineligible_routes_are_excluded`
+- `test_capacity_duplicate_candidates_and_normal_shared_selection_are_suppressed`
+- `test_capacity_preserves_gameplay_breadth_and_score_priorities_within_tier`
+- `test_capacity_deterministic_order_under_candidate_and_allowance_permutations`
+- `test_capacity_previously_introduced_parent_precedes_new_normal_parent`
+- `test_capacity_miss_priority_cannot_bypass_relaxed_allowances`
+- `test_capacity_route_cannot_borrow_membership_or_use_self_parent`
+- `test_capacity_inadmissible_card_and_conflicting_duplicates_are_explicit`
+- `test_capacity_inputs_are_frozen_and_policy_is_idempotent`
+- `test_capacity_pure_module_has_no_database_network_clock_chess_or_fsrs_dependency`
+`backend/tests/test_opening_capacity_admission.py` (regular backend suite):
+
+- `test_capacity_two_prefixes_fill_ten_without_maturity_or_recursive_unlock`
+- `test_capacity_disabled_matches_existing_two_prefix_admissions`
+- `test_capacity_writer_rejects_changed_evidence_before_admission`
+- `test_capacity_worker_parent_first_quota_recheck_and_interleaved_replay`
+- `test_capacity_writer_rechecks_invalidated_earlier_review_on_exact_route`
+- `test_capacity_admissions_leave_fsrs_due_dates_and_reviews_unchanged`
+- `test_capacity_repeated_refresh_with_spare_allowance_and_day_rollover_stays_bounded`
+- `test_capacity_worker_preparation_preserves_normal_plan_and_returns_parent_dependencies`
+- `test_capacity_disabled_or_full_allowance_performs_no_frontier_reads`
+- `test_capacity_study_only_suppresses_frontier_reads`
+- `test_capacity_frontier_reads_only_bounded_direct_parent_pages_with_large_locked_backlog`
+- `test_capacity_shared_card_is_charged_once_to_qualifying_repertoire`
+- `test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease`
+- `test_capacity_configuration_enables_only_explicit_one`
+- `test_capacity_worker_full_allowance_avoids_frontier_queries`
+- `test_capacity_ready_publication_checks_translate_to_postgres_without_new_storage_contract`
+
+- `test_capacity_route_permutations_and_duplicate_occurrences_are_deterministic` (`test_opening_capacity_frontier.py`)

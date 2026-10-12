@@ -1149,16 +1149,6 @@ def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
             )
 
 
-def _priority_frontier_depth(priority_row) -> int:
-    if not priority_row or not priority_row["frontier_decisions_json"]:
-        return 0
-    try:
-        values = json.loads(priority_row["frontier_decisions_json"])
-        return max((int(item[2].get("ply", 0)) for item in values), default=0)
-    except (TypeError, ValueError, json.JSONDecodeError, IndexError):
-        return 0
-
-
 _ACTIVE_OPENING_MISS_SQL = outstanding_miss_sql(postgres=True)
 _PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
                   CASE WHEN active_miss.card_id IS NOT NULL THEN ?
@@ -1205,67 +1195,10 @@ _PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_
 
 def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
                                          day: str, limit: int | dict[str, int]) -> list[tuple[str, dict]]:
-    """Preserve gameplay, breadth, and global-card ordering outside a transaction."""
-
-    by_repertoire: dict[str, list] = {}
-    for row in candidates:
-        by_repertoire.setdefault(row["repertoire_id"], []).append(row)
-    globally_selected_ids: set[str] = set()
-    planned: list[tuple[str, dict]] = []
-    for repertoire_id, rows in by_repertoire.items():
-        daily_limit = limit.get(repertoire_id, 0) if isinstance(limit, dict) else limit
-        remaining = max(0, daily_limit - introduced_by_repertoire.get(repertoire_id, 0))
-        selected_ids: set[str] = set()
-        breadth_line_ids: set[str] = set()
-        for obligation in sorted((row for row in rows if row["gameplay_priority_reason"] == MISS_REASON), key=lambda row: row["id"]):
-            if obligation["id"] in globally_selected_ids:
-                continue
-            planned.append((repertoire_id, obligation))
-            selected_ids.add(obligation["id"])
-            globally_selected_ids.add(obligation["id"])
-            remaining = max(0, remaining - 1)
-        while remaining:
-            available = [
-                row for row in rows
-                if row["id"] not in selected_ids and row["id"] not in globally_selected_ids
-            ]
-            if not available:
-                break
-            gameplay = [row for row in available if row["gameplay_priority_reason"]]
-            if gameplay:
-                choice = min(gameplay, key=lambda row: (row["priority_date"] or day, row["id"]))
-            else:
-                def line_ids(row) -> set[str]:
-                    try:
-                        return set(json.loads(row["completed_line_ids_json"] or "[]"))
-                    except json.JSONDecodeError:
-                        return set()
-
-                breadth_candidates = [
-                    row for row in available
-                    if not line_ids(row) or not line_ids(row).issubset(breadth_line_ids)
-                ]
-                if not breadth_candidates:
-                    breadth_line_ids.clear()
-                    breadth_candidates = available
-                choice = min(
-                    breadth_candidates,
-                    key=lambda row: (
-                        -float(row["priority_score"] or 0),
-                        -_priority_frontier_depth(row),
-                        len(json.loads(row["moves_json"])),
-                        row["id"],
-                    ),
-                )
-                try:
-                    breadth_line_ids.update(json.loads(choice["completed_line_ids_json"] or "[]"))
-                except json.JSONDecodeError:
-                    pass
-            planned.append((repertoire_id, choice))
-            selected_ids.add(choice["id"])
-            globally_selected_ids.add(choice["id"])
-            remaining -= 1
-    return planned
+    from .services.opening_capacity_frontier import plan_prioritized_opening_admissions
+    return plan_prioritized_opening_admissions(
+        candidates, introduced_by_repertoire, day, limit, miss_reason=MISS_REASON,
+    )
 
 
 def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], maximum: int) -> int:
@@ -1285,10 +1218,61 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
             (day, day),
         ).fetchall()
     )
+    normal_plan = _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire, day, limit)
+    admission_plan = list(normal_plan)
+    from .services.opening_capacity_admission import (
+        capacity_expansion_enabled, remaining_opening_allowances, read_capacity_routes,
+        capacity_priority_statement, propose_capacity_expansion_from_priority_rows, capacity_proposal_payload, capacity_route_still_valid,
+        CAPACITY_READ_BATCH_SIZE,
+    )
+    if capacity_expansion_enabled():
+        from .services.study_mode import study_only_enabled
+        if not study_only_enabled(db):
+            limits = limit if isinstance(limit, dict) else {
+                row[0]: limit for row in db.execute('SELECT id FROM repertoires').fetchall()
+            }
+            remaining = remaining_opening_allowances(normal_plan, introduced_by_repertoire, limits)
+            if any(remaining.values()):
+                normal_parent_ids = tuple(row['id'] for _, row in normal_plan)
+                routes = tuple(route for repertoire_id in sorted(remaining) if remaining[repertoire_id] > 0
+                               for route in read_capacity_routes(
+                                   lambda statement, parameters: db.execute(statement, parameters).fetchall(),
+                                   repertoire_id, normal_parent_ids,
+                               ))
+                capacity_rows = []
+                card_ids = sorted({card_id for card_id, _ in routes})
+                for offset in range(0, len(card_ids), CAPACITY_READ_BATCH_SIZE):
+                    page = card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE]
+                    capacity_rows.extend(db.execute(
+                        f"WITH active_miss AS ({outstanding_miss_query(db)}) "
+                        + capacity_priority_statement(_PRIORITY_OPENING_CANDIDATE_BODY)
+                        + ' AND c.id IN (' + ','.join('?' for _ in page) + ')',
+                        (MISS_REASON, day, day, day, day, *page),
+                    ).fetchall())
+                for proposal in propose_capacity_expansion_from_priority_rows(day, normal_plan, remaining, routes, capacity_rows,
+                                                   miss_reason=MISS_REASON):
+                    admission_plan.append((proposal.candidate.repertoire_id, {
+                        **proposal.candidate.priority_row(), **capacity_proposal_payload(proposal),
+                    }))
     next_position = maximum
-    for repertoire_id, choice in _plan_prioritized_opening_admissions(
-        candidates, introduced_by_repertoire, day, limit,
-    ):
+    for repertoire_id, choice in admission_plan:
+        if 'capacity_route' in choice:
+            if not capacity_route_still_valid(db, choice, day):
+                continue
+            # Shared cards are charged only to the writer's chosen membership.
+            consumed = db.execute(
+                """SELECT COUNT(DISTINCT c.id) FROM daily_queue q JOIN cards c ON c.id=q.card_id
+                   WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?
+                     AND COALESCE(q.admission_repertoire_id,c.repertoire_id)=?""",
+                (day, day, repertoire_id),
+            ).fetchone()[0]
+            current_limit = db.execute(
+                'SELECT COALESCE(r.new_cards_per_day,s.new_cards_per_day) '
+                'FROM repertoires r CROSS JOIN settings s WHERE r.id=? AND s.id=1', (repertoire_id,),
+            ).fetchone()
+            requested_limit = limit.get(repertoire_id, 0) if isinstance(limit, dict) else limit
+            if current_limit is None or consumed >= min(current_limit[0], requested_limit):
+                continue
         next_position += 1
         db.execute(
             """INSERT INTO daily_queue(
