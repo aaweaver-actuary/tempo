@@ -1,6 +1,5 @@
 """Opening admissions must read bounded candidate pages before planning."""
 
-from app import main
 from app.services import postgres_queue_refresh
 
 
@@ -29,8 +28,8 @@ def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatc
 
     monkeypatch.setattr(postgres_queue_refresh, "_bounded_read", read_page)
     monkeypatch.setattr(
-        main, "_plan_prioritized_opening_admissions",
-        lambda candidates, _counts, _day, _limit: [
+        postgres_queue_refresh, "plan_prioritized_opening_admissions",
+        lambda candidates, _counts, _day, _limit, *, miss_reason: [
             ("rep", candidate) for candidate in candidates
         ],
     )

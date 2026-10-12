@@ -1,0 +1,621 @@
+{
+  "source_sha": "3f7332399796366eb32f9fcb5e1b5c678a5b1562",
+  "ordering": [
+    {
+      "rows": [],
+      "day": "2026-10-12",
+      "saved": null,
+      "preserve_through_entry_id": null,
+      "seed": 21418127140895520,
+      "membership_hash": "f85ae08dbaec463236415bafea2bd6a37586142105cf3255039af9d7bc257542",
+      "ordered_ids": []
+    },
+    {
+      "rows": [
+        {
+          "id": 1,
+          "card_id": "card-0",
+          "position": 15,
+          "content_type": "opening",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 2,
+          "card_id": "card-1",
+          "position": 14,
+          "content_type": "tactic",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 3,
+          "card_id": "card-2",
+          "position": 13,
+          "content_type": "study_exercise",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 4,
+          "card_id": "card-3",
+          "position": 12,
+          "content_type": "defense",
+          "admission_kind": "new",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 5,
+          "card_id": "card-4",
+          "position": 11,
+          "content_type": "opening",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 6,
+          "card_id": "card-5",
+          "position": 10,
+          "content_type": "tactic",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 7,
+          "card_id": "card-6",
+          "position": 9,
+          "content_type": "study_exercise",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 8,
+          "card_id": "card-7",
+          "position": 8,
+          "content_type": "defense",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 9,
+          "card_id": "card-8",
+          "position": 7,
+          "content_type": "opening",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 10,
+          "card_id": "card-9",
+          "position": 6,
+          "content_type": "tactic",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 11,
+          "card_id": "card-10",
+          "position": 5,
+          "content_type": "study_exercise",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 12,
+          "card_id": "card-11",
+          "position": 4,
+          "content_type": "defense",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        }
+      ],
+      "day": "2026-10-12",
+      "saved": null,
+      "preserve_through_entry_id": null,
+      "seed": 21418127140895520,
+      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "ordered_ids": [
+        4,
+        9,
+        3,
+        6,
+        12,
+        5,
+        1,
+        8,
+        2,
+        10,
+        11,
+        7
+      ]
+    },
+    {
+      "rows": [
+        {
+          "id": 1,
+          "card_id": "card-0",
+          "position": 15,
+          "content_type": "opening",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 2,
+          "card_id": "card-1",
+          "position": 14,
+          "content_type": "tactic",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 3,
+          "card_id": "card-2",
+          "position": 13,
+          "content_type": "study_exercise",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 4,
+          "card_id": "card-3",
+          "position": 12,
+          "content_type": "defense",
+          "admission_kind": "new",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 5,
+          "card_id": "card-4",
+          "position": 11,
+          "content_type": "opening",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 6,
+          "card_id": "card-5",
+          "position": 10,
+          "content_type": "tactic",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 7,
+          "card_id": "card-6",
+          "position": 9,
+          "content_type": "study_exercise",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 8,
+          "card_id": "card-7",
+          "position": 8,
+          "content_type": "defense",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 9,
+          "card_id": "card-8",
+          "position": 7,
+          "content_type": "opening",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 10,
+          "card_id": "card-9",
+          "position": 6,
+          "content_type": "tactic",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 11,
+          "card_id": "card-10",
+          "position": 5,
+          "content_type": "study_exercise",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 12,
+          "card_id": "card-11",
+          "position": 4,
+          "content_type": "defense",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        }
+      ],
+      "day": "2026-10-13",
+      "saved": null,
+      "preserve_through_entry_id": null,
+      "seed": 169887415448744407,
+      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "ordered_ids": [
+        4,
+        9,
+        3,
+        6,
+        12,
+        10,
+        2,
+        7,
+        11,
+        8,
+        1,
+        5
+      ]
+    },
+    {
+      "rows": [
+        {
+          "id": 1,
+          "card_id": "card-0",
+          "position": 15,
+          "content_type": "opening",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 2,
+          "card_id": "card-1",
+          "position": 14,
+          "content_type": "tactic",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 3,
+          "card_id": "card-2",
+          "position": 13,
+          "content_type": "study_exercise",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 4,
+          "card_id": "card-3",
+          "position": 12,
+          "content_type": "defense",
+          "admission_kind": "new",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 5,
+          "card_id": "card-4",
+          "position": 11,
+          "content_type": "opening",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 6,
+          "card_id": "card-5",
+          "position": 10,
+          "content_type": "tactic",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 7,
+          "card_id": "card-6",
+          "position": 9,
+          "content_type": "study_exercise",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 8,
+          "card_id": "card-7",
+          "position": 8,
+          "content_type": "defense",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 9,
+          "card_id": "card-8",
+          "position": 7,
+          "content_type": "opening",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 10,
+          "card_id": "card-9",
+          "position": 6,
+          "content_type": "tactic",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 11,
+          "card_id": "card-10",
+          "position": 5,
+          "content_type": "study_exercise",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 12,
+          "card_id": "card-11",
+          "position": 4,
+          "content_type": "defense",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        }
+      ],
+      "day": "2026-10-12",
+      "saved": {
+        "seed": 73,
+        "membership_hash": "old"
+      },
+      "preserve_through_entry_id": null,
+      "seed": 73,
+      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "ordered_ids": [
+        4,
+        9,
+        3,
+        6,
+        12,
+        10,
+        2,
+        7,
+        11,
+        8,
+        1,
+        5
+      ]
+    },
+    {
+      "rows": [
+        {
+          "id": 1,
+          "card_id": "card-0",
+          "position": 15,
+          "content_type": "opening",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 2,
+          "card_id": "card-1",
+          "position": 14,
+          "content_type": "tactic",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 3,
+          "card_id": "card-2",
+          "position": 13,
+          "content_type": "study_exercise",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 4,
+          "card_id": "card-3",
+          "position": 12,
+          "content_type": "defense",
+          "admission_kind": "new",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 5,
+          "card_id": "card-4",
+          "position": 11,
+          "content_type": "opening",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 6,
+          "card_id": "card-5",
+          "position": 10,
+          "content_type": "tactic",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 7,
+          "card_id": "card-6",
+          "position": 9,
+          "content_type": "study_exercise",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 8,
+          "card_id": "card-7",
+          "position": 8,
+          "content_type": "defense",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 9,
+          "card_id": "card-8",
+          "position": 7,
+          "content_type": "opening",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 10,
+          "card_id": "card-9",
+          "position": 6,
+          "content_type": "tactic",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 11,
+          "card_id": "card-10",
+          "position": 5,
+          "content_type": "study_exercise",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 12,
+          "card_id": "card-11",
+          "position": 4,
+          "content_type": "defense",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        }
+      ],
+      "day": "2026-10-12",
+      "saved": null,
+      "preserve_through_entry_id": 7,
+      "seed": 21418127140895520,
+      "membership_hash": "6c98ac8a4bfb78ad04578d9f8d310677fccbc035da98fab5e32dc4c37ae5401b",
+      "ordered_ids": [
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        9,
+        12,
+        8,
+        10,
+        11
+      ]
+    },
+    {
+      "rows": [
+        {
+          "id": 1,
+          "card_id": "card-0",
+          "position": 15,
+          "content_type": "opening",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 2,
+          "card_id": "card-1",
+          "position": 14,
+          "content_type": "tactic",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 3,
+          "card_id": "card-2",
+          "position": 13,
+          "content_type": "study_exercise",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 4,
+          "card_id": "card-3",
+          "position": 12,
+          "content_type": "defense",
+          "admission_kind": "new",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 5,
+          "card_id": "card-4",
+          "position": 11,
+          "content_type": "opening",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 6,
+          "card_id": "card-5",
+          "position": 10,
+          "content_type": "tactic",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 7,
+          "card_id": "card-6",
+          "position": 9,
+          "content_type": "study_exercise",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 8,
+          "card_id": "card-7",
+          "position": 8,
+          "content_type": "defense",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 9,
+          "card_id": "card-8",
+          "position": 7,
+          "content_type": "opening",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": "Priority review \u00b7 missed in a recent game"
+        },
+        {
+          "id": 10,
+          "card_id": "card-9",
+          "position": 6,
+          "content_type": "tactic",
+          "admission_kind": "new",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 11,
+          "card_id": "card-10",
+          "position": 5,
+          "content_type": "study_exercise",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 12,
+          "card_id": "card-11",
+          "position": 4,
+          "content_type": "defense",
+          "admission_kind": "explicit",
+          "gameplay_priority_reason": null
+        },
+        {
+          "id": 99,
+          "card_id": "card-0",
+          "position": 15,
+          "content_type": "opening",
+          "admission_kind": "review",
+          "gameplay_priority_reason": null
+        }
+      ],
+      "day": "2026-10-12",
+      "saved": null,
+      "preserve_through_entry_id": 12,
+      "seed": 21418127140895520,
+      "membership_hash": "fdc03bd523111790e29dfadc5e367d5d90486bad09d3125f469f63a58aa5bd26",
+      "ordered_ids": [
+        12,
+        11,
+        10,
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        99
+      ]
+    }
+  ]
+}
