@@ -3,7 +3,7 @@
   "head_sha": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
   "draft_integration_sha": "10994073fa5dcf885d807d9d2dc5b6a508a8cd36",
   "ci_run": 38282616369,
-  "status": "complete exact-candidate ready-state qualification; cleanup finalization pending",
+  "status": "complete: ready for review, successful exact-candidate FULL CI, CLEAN and MERGEABLE; not merged",
   "environment": {
     "local": "macOS arm64 / Node 26.10.0 / CPython 3.14.8",
     "native": "Docker PostgreSQL 18.6 / Redis 7 / product Python 3.12"
@@ -372,7 +372,7 @@
     "#224 remains separate and incomplete."
   ],
   "rollback": "Revert A1 commits; no API/schema/persisted changes.",
-  "cleanup": "All local qualification runs finished and owning runners/harnesses tore down their resources; baseline checkout removed after verified preservation (123036 KiB). Final Docker identifier verification and primary checkout cleanup pending CI completion.",
+  "cleanup": "All seven local task projects verified absent. Baseline (123036 KiB) and implementation (1273760 KiB including temporary Git preservation) clones removed. Diagnostics preserved outside checkout and on dedicated evidence ref; temporary Git-only publisher removed after final push verification. Live services, shared caches and other-task resources untouched.",
   "base_sha": "25363aa0bc7073646ff8a00b94857d4f3127f694",
   "ready_ci_run": 38284546174,
   "ready_integration_sha": "76b66d0ed3bbb3b5c2c5fb9b6d8d952343826e91",

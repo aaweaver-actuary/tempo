@@ -7,6 +7,11 @@
       "sha256": "15319cb5ae504f6977fa17f6099253e174594c4e7462a85c15cdbeb80b0fe3ba"
     },
     {
+      "path": "HANDOFF.md",
+      "bytes": 6873,
+      "sha256": "3f45df2e35a82384c0e8ea057f2bb089d4e96dc4f90e9752f2f25e7388504ba9"
+    },
+    {
       "path": "affected-callers.log",
       "bytes": 1541,
       "sha256": "284180f16b16dc91ecfe63681c41f8753348c4109c5455da24b416c8300ae167"
@@ -40,6 +45,11 @@
       "path": "characterization.log",
       "bytes": 244,
       "sha256": "86f4905f84301542490d97a3b2a8a193c928084f90dbcec271d5bc6219712563"
+    },
+    {
+      "path": "checkout-cleanup.json",
+      "bytes": 750,
+      "sha256": "286e451457884b4099ab11fa0dcbc45600660d67b679285d616e8d09d1156f65"
     },
     {
       "path": "checkout-deletion-gate.json",
@@ -1973,8 +1983,8 @@
     },
     {
       "path": "qualification.json",
-      "bytes": 11742,
-      "sha256": "5889170fefa0c5df2dee53ef09a14a63bbd7ae14503bf8dbfd184737f8af3eea"
+      "bytes": 11864,
+      "sha256": "d847a0252ae67c3828f1c2b98fec0de5447d9ff9f66fecdbc8c2abc38cf7d2a8"
     },
     {
       "path": "refresh-baseline-native.py",

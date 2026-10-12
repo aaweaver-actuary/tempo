@@ -1,0 +1,14 @@
+{
+  "removed_checkout": "/Users/andy/tempo/.dev-copies/issue-204-scheduling-store",
+  "checkout_size_before_removal_kib": 1273760,
+  "baseline_size_removed_kib": 123036,
+  "temporary_git_preservation": "/private/tmp/tempo-204-final-evidence-_yvbclfi",
+  "temporary_owner": "this task final evidence publication only; remove after push verification",
+  "remote_refs": {
+    "refs/heads/codex/issue-204-scheduling-evidence": "3527d52565d9abbf79424c662a13a61b041d059b",
+    "refs/heads/codex/issue-204-scheduling-store": "44955a4bce6ccb2a5ac914fc03cd05a5aa220063",
+    "refs/heads/main": "25363aa0bc7073646ff8a00b94857d4f3127f694"
+  },
+  "no_unique_work_lost": true,
+  "resources": "verified seven projects absent; live/other task resources retained"
+}
