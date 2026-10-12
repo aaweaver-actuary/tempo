@@ -117,6 +117,11 @@ jobs:
         with:
           name: fast-lane-results
           path: test-results
+      - uses: actions/download-artifact@v4
+        if: needs.selection.outputs.tier == 'FULL'
+        with:
+          name: ci-plan
+          path: test-results/ci
       - name: Validate selected qualification and current PR head
         env:
           TEMPO_CI_NEEDS: ${{ toJSON(needs) }}

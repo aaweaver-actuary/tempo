@@ -4124,3 +4124,24 @@ Regular ownership: `tests/unit/ci-fast-lane-regressions.test.ts` executes
 The prior ready-PR planner intentionally required complete core/durability for
 prose and isolated changes. New policy regressions therefore replace that
 qualification expectation; existing full-validator assertions remain intact.
+
+## PR214 — emergency merge-gate correctness
+
+Named regressions in `tests/runner/ci-fast-lane.test.mjs` execute through
+`tests/unit/ci-fast-lane-regressions.test.ts`:
+
+- `PR214_draft_candidates_never_qualify_FAST_or_STUDY` (demonstrated failing before repair).
+- `PR214_draft_ready_transitions_require_fresh_ready_selection` (all tiers, stale draft state and missing context).
+- `PR214_FULL_gate_binds_qualified_plan_to_current_integration` (hash/identity/readiness, head/base/integration advancement and failed/cancelled/missing quality).
+- `PR214_sensitive_prose_is_FAST_and_executable_security_is_FULL`.
+- `PR214_FULL_workflow_downloads_same_run_plan_and_retains_development_routing`.
+
+`PR214_FULL_quality_and_merge_gate_compose_exact_candidate_proof` in
+`tests/runner/ci-development.test.mjs` runs through
+`tests/unit/ci-reliability-regressions.test.ts`, covering correct composition,
+stale/incomplete/missing layer results, foreign runs and mismatched reuse.
+Existing `emergency_base_only_advancement_preserves_FAST_and_STUDY_head_evidence`,
+`emergency_stale_other_head_evidence_cannot_qualify` and
+`emergency_manifest_has_unique_existing_test_ownership_and_ten_smoke_cases` remain
+in the regular gate. FAST/STUDY commands, ownership and smoke inventories are
+unchanged by this correction.

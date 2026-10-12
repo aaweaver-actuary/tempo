@@ -4,11 +4,11 @@ import { readFileSync } from 'node:fs';
 import { makeFastPlan, selectFastLane, validateFastGate, testIdentity, fastInventory } from '../../scripts/ci-fast-lane.mjs';
 import { fastCommands } from '../../scripts/ci-fast-commands.mjs';
 import { verifySelection } from '../../scripts/ci-fast-run.mjs';
-import { changedPathsFromNameStatus } from '../../scripts/ci-verification-plan.mjs';
+import { changedPathsFromNameStatus, planHash } from '../../scripts/ci-verification-plan.mjs';
 import { postgresTestStages, executePostgresTestPlan } from '../../scripts/postgres-test-plan.mjs';
 import { parsePostgresTestOptions } from '../../scripts/postgres-test-options.mjs';
-const context = {repository:'aaweaver-actuary/tempo',repositoryId:1,pullRequest:217,head:'a'.repeat(40),base:'b'.repeat(40)};
-const pr = {number:217,state:'open',head:{sha:context.head},base:{sha:context.base,repo:{id:1,full_name:context.repository}}};
+const context = {repository:'aaweaver-actuary/tempo',repositoryId:1,pullRequest:217,head:'a'.repeat(40),base:'b'.repeat(40),draft:false};
+const pr = {number:217,state:'open',draft:false,merge_commit_sha:'e'.repeat(40),head:{sha:context.head},base:{sha:context.base,repo:{id:1,full_name:context.repository}}};
 const execution = {id:123,attempt:1};
 function fixture(path = 'app/lib/review-outbox.ts') {
   const plan = makeFastPlan([path],context);
@@ -26,6 +26,10 @@ function fixture(path = 'app/lib/review-outbox.ts') {
       stages:Object.fromEntries(report.studyStages.map(stage => [stage,{exit_code:0}]))};
   }
   return {plan,report,needs:{selection:{result:'success'},fast:{result:'success'}}};
+}
+function completePlan() {
+  const plan = {version:3,event:'pull_request',tier:'qualification',scope:'complete',...context,commit:pr.merge_commit_sha};
+  return {...plan,hash:planHash(plan)};
 }
 const failures = fixture => validateFastGate(fixture.plan,fixture.report,fixture.needs,pr,execution);
 
@@ -86,7 +90,7 @@ test('emergency_base_only_advancement_preserves_FAST_and_STUDY_head_evidence', (
 test('emergency_FULL_requires_existing_complete_quality', () => {
   const plan = makeFastPlan(['scripts/ci-quality.mjs'],context);
   assert(validateFastGate(plan,null,{selection:{result:'success'},quality:{result:'skipped'}},pr,execution).length);
-  assert.deepEqual(validateFastGate(plan,null,{selection:{result:'success'},quality:{result:'success'}},pr,execution),[]);
+  assert.deepEqual(validateFastGate(plan,null,{selection:{result:'success'},quality:{result:'success'}},pr,execution,completePlan()),[]);
 });
 test('emergency_cross_run_and_attempt_evidence_is_rejected', () => {
   for (const key of ['runId','attempt']) { const evidence = fixture(); evidence.report[key]++; assert(failures(evidence).length); }
@@ -131,4 +135,68 @@ test('emergency_inactive_provider_adapter_selects_FAST_without_durability', () =
 test('emergency_FULL_base_advancement_requires_fresh_integration', () => {
   const plan = makeFastPlan(['backend/migrations/999_new.sql'],context);
   assert(validateFastGate(plan,null,{selection:{result:'success'},quality:{result:'success'}},{...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution).length);
+});
+
+test('PR214_draft_candidates_never_qualify_FAST_or_STUDY', () => {
+  for (const path of ['app/components/prefix-comparison-dialog.tsx','app/lib/review-outbox.ts']) {
+    const evidence = fixture(path);
+    assert(validateFastGate(evidence.plan,evidence.report,evidence.needs,{...pr,draft:true},execution).length);
+  }
+});
+
+test('PR214_draft_ready_transitions_require_fresh_ready_selection', () => {
+  for (const path of ['app/components/prefix-comparison-dialog.tsx','app/lib/review-outbox.ts','scripts/ci-quality.mjs']) {
+    const evidence = fixture(path);
+    evidence.needs.quality = {result:'success'};
+    const full = completePlan();
+    assert.deepEqual(validateFastGate(evidence.plan,evidence.report,evidence.needs,pr,execution,full),[]);
+    assert(validateFastGate(evidence.plan,evidence.report,evidence.needs,{...pr,draft:true},execution,full).length);
+    const draftPlan = {...evidence.plan,draft:true}; draftPlan.hash = planHash(draftPlan);
+    assert(validateFastGate(draftPlan,evidence.report,evidence.needs,pr,execution,full).length);
+    for (const draft of [undefined,null]) {
+      const incomplete = {...evidence.plan,draft}; incomplete.hash = planHash(incomplete);
+      assert(validateFastGate(incomplete,evidence.report,evidence.needs,pr,execution,full).length);
+      assert(validateFastGate(evidence.plan,evidence.report,evidence.needs,{...pr,draft},execution,full).length);
+    }
+  }
+});
+test('PR214_FULL_gate_binds_qualified_plan_to_current_integration', () => {
+  const selection = makeFastPlan(['scripts/ci-quality.mjs'],context);
+  const needs = {selection:{result:'success'},quality:{result:'success'}};
+  const full = completePlan();
+  assert.deepEqual(validateFastGate(selection,null,needs,pr,execution,full),[]);
+  assert(validateFastGate(selection,null,needs,pr,execution).length);
+  for (const mutation of [{commit:'wrong'},{base:'wrong'},{head:'wrong'},{repository:'other/repo'},
+    {repositoryId:2},{pullRequest:1},{draft:true},{tier:'development'},{scope:'targeted'},{event:'push'},{version:2}]) {
+    const altered = {...full,...mutation}; altered.hash = planHash(altered);
+    assert(validateFastGate(selection,null,needs,pr,execution,altered).length,JSON.stringify(mutation));
+  }
+  assert(validateFastGate(selection,null,needs,pr,execution,{...full,hash:'invalid'}).length);
+  for (const mutation of [{merge_commit_sha:'new-integration'},{merge_commit_sha:null},
+    {head:{sha:'new-head'}},{base:{...pr.base,sha:'new-base'}}]) {
+    assert(validateFastGate(selection,null,needs,{...pr,...mutation},execution,full).length);
+  }
+  for (const result of [undefined,'failure','cancelled','skipped']) {
+    assert(validateFastGate(selection,null,{...needs,quality:{result}},pr,execution,full).length);
+  }
+});
+test('PR214_sensitive_prose_is_FAST_and_executable_security_is_FULL', () => {
+  for (const path of ['docs/database-security.md','docs/authentication.md','.github/workflows/README.md']) {
+    const selection = selectFastLane([path]); assert.equal(selection.tier,'FAST');
+    assert.deepEqual(fastCommands(makeFastPlan([path],context)).map(([name])=>name),['conflicts','migrations','diff']);
+  }
+  for (const path of ['backend/app/auth.py','backend/app/security.py','scripts/ci-fast-lane.mjs',
+    'scripts/ci-merge-gate.mjs','.github/workflows/pages.yml','scripts/ci-fast-lane-inventory.json']) {
+    assert.equal(selectFastLane([path]).tier,'FULL');
+  }
+});
+test('PR214_FULL_workflow_downloads_same_run_plan_and_retains_development_routing', () => {
+  const workflow = readFileSync('.github/workflows/pages.yml','utf8');
+  const gate = workflow.split('  merge-gate:')[1].split('  plan:')[0];
+  assert(gate.includes('needs: [selection, fast, quality]'));
+  assert(gate.includes("if: needs.selection.outputs.tier == 'FULL'"));
+  assert(gate.includes('name: ci-plan'));
+  assert(gate.includes('path: test-results/ci'));
+  assert(!gate.includes('run-id:'));
+  assert(workflow.includes("if: always() && needs.plan.result == 'success' && (needs.plan.outputs.tier"));
 });

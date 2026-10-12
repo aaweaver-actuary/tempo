@@ -53,17 +53,27 @@ export function makeFastPlan(paths, context, options = {}) {
   return { ...plan, hash: planHash(plan) };
 }
 
-export function validateFastGate(plan, report, needs, currentPullRequest, execution) {
+export function validateFastGate(plan, report, needs, currentPullRequest, execution, fullPlan) {
   const failures = [];
   if (!plan || plan.version !== 1 || plan.hash !== planHash(plan) || needs.selection?.result !== 'success') return ['Missing or invalid selection plan'];
   if (!['FAST','STUDY','FULL'].includes(plan.tier)) failures.push('Unknown qualification tier');
   if (!currentPullRequest || currentPullRequest.number !== plan.pullRequest || currentPullRequest.state !== 'open'
     || currentPullRequest.head?.sha !== plan.head || currentPullRequest.base?.repo?.id !== plan.repositoryId
     || currentPullRequest.base.repo.full_name !== plan.repository) failures.push('PR identity or head changed');
+  if (plan.draft !== false || currentPullRequest?.draft !== false) failures.push('Draft or changed PR readiness requires fresh ready qualification');
   if (currentPullRequest?.labels?.some(label => label.name === 'ci:full') && plan.tier !== 'FULL') failures.push('Complete qualification requested after selection');
   if (plan.tier === 'FULL') {
     if (currentPullRequest?.base?.sha !== plan.base) failures.push('Full integration base changed; fresh qualification required');
     if (needs.quality?.result !== 'success') failures.push('Complete qualification did not pass');
+    // The same-run quality dependency validates layer evidence; bind its immutable
+    // plan to this later PR read rather than duplicating the complete validator.
+    if (!fullPlan || fullPlan.version !== 3 || fullPlan.hash !== planHash(fullPlan)
+      || fullPlan.event !== 'pull_request' || fullPlan.tier !== 'qualification' || fullPlan.scope !== 'complete'
+      || fullPlan.draft !== false || fullPlan.repository !== plan.repository || fullPlan.repositoryId !== plan.repositoryId
+      || fullPlan.pullRequest !== plan.pullRequest || fullPlan.head !== plan.head || fullPlan.base !== plan.base
+      || !fullPlan.commit || fullPlan.commit !== currentPullRequest?.merge_commit_sha) {
+      failures.push('Missing, invalid or stale complete integration plan');
+    }
     return failures;
   }
   if (needs.fast?.result !== 'success' || !report || report.status !== 'success' || !report.completed
@@ -113,7 +123,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   const complete = !pr || pr.labels?.some(label => label.name === 'ci:full');
   const plan = makeFastPlan(paths, {repository:event.repository.full_name,repositoryId:event.repository.id,
-    pullRequest:pr?.number ?? null,head:pr?.head.sha ?? process.env.GITHUB_SHA,base:pr?.base.sha ?? null}, {comparisonAvailable,complete});
+    pullRequest:pr?.number ?? null,draft:pr?.draft ?? null,head:pr?.head.sha ?? process.env.GITHUB_SHA,base:pr?.base.sha ?? null}, {comparisonAvailable,complete});
   mkdirSync('test-results/fast-lane',{recursive:true});
   writeFileSync('test-results/fast-lane/plan.json',JSON.stringify(plan,null,2));
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`tier=${plan.tier}\nnode=${plan.node}\npython=${plan.python}\nhead=${plan.head}\n`);
