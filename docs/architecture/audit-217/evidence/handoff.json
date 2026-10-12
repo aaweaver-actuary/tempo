@@ -20,9 +20,20 @@
   ],
   "audit_resources": "all four owned Compose projects torn down; no owned containers, volumes, networks or images remain",
   "checkout": "/Users/andy/tempo/.dev-copies/issue-217-architecture-audit",
-  "checkout_cleanup": "pending durable remote preservation and final inactivity verification",
+  "checkout_cleanup": "removed after deletion gate passed",
   "retained_evidence": "/Users/andy/tempo/test-results/issue-217-architecture-audit-2026-10-12",
   "other_task_resources": "retained; uncertain ownership; no cross-task cleanup authorized",
-  "publication": "pending; final update will record URLs and verified remote ref",
-  "whitespace_review": "Authored report/tools/graphs pass diff --check; unchanged raw Docker logs and captured PR diffs preserve original trailing whitespace."
+  "publication": {
+    "217": "https://github.com/aaweaver-actuary/tempo/issues/217#issuecomment-6128015809",
+    "204": "https://github.com/aaweaver-actuary/tempo/issues/204#issuecomment-6128018626",
+    "220": "https://github.com/aaweaver-actuary/tempo/issues/220#issuecomment-6128017943",
+    "192": "https://github.com/aaweaver-actuary/tempo/issues/192#issuecomment-6128018244"
+  },
+  "whitespace_review": "Authored report/tools/graphs pass diff --check; unchanged raw Docker logs and captured PR diffs preserve original trailing whitespace.",
+  "artifact_commit": "076e101474b5227189a98fa280d65c9d80d373fb",
+  "verified_remote_ref": "refs/heads/codex/issue-217-architecture-audit",
+  "deletion_gate": "passed: remote HEAD equals local; no tracked/untracked/stashed/unpushed work; only classified disposable venv/pytest/bytecode caches ignored; evidence copied outside; no owning processes or mounted containers; all owned Docker resources absent",
+  "cleanup_review": "initial read-only automatic review timed out; retry approved and passed; no remaining approval blocker",
+  "checkout_disk_recovered_kib": 322776,
+  "cleanup_blockers": []
 }
