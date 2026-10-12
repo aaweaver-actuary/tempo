@@ -4017,3 +4017,24 @@ PR #185 final independent diagnostic qualification (October 11, 2026):
 - `issue36_quiet_obsolete_quarantine_cannot_suppress_current_identical_alert` proves a current invalid record still alerts after the same obsolete record was retained quietly; both callers receive the original quarantined result.
 - `quiet debug evidence permits one later authoritative notification` covers both Error-object and signature deduplication, one authorized alert, and unchanged suppression of later published/quiet repeats. All five cases fail against `f6f1e7fb`; envelope cases retain a generic API fallback alert but lose validation attribution, while quarantine and direct-report cases lose the alert entirely.
 - `issue36_delayed_workspace_worker_diagnostics_cannot_publish_after_invalidation` now covers success and request-specific failure: current diagnostics survive, obsolete callers settle, and obsolete failures do not alert or publish workspace error events. Worker-wide protocol/decode failures remain genuine shared-worker failures covered by `study-worker-regressions.test.ts`; stale terminated-worker callbacks cannot affect a replacement worker.
+
+## Issue #199 — B01 controlled frontend browser isolation
+
+Regular unit coverage: `tests/unit/controlled-browser-regressions.test.ts`.
+
+- `controlled_browser_unexpected_api_request_fails_without_live_fallback`
+- `controlled_browser_local_host_preserves_product_mode_and_contract_errors`
+- `controlled_browser_review_receipt_uses_original_intent_and_authorized_continuation`
+- `controlled_browser_fixture_provider_consumer_shape_parity`
+- `controlled_browser_movement_preserves_exact_case_inventory`
+- `controlled_browser_owned_port_closes_and_cannot_be_reused_as_a_live_server`
+
+Native additive pilot: `tests/fixtures/controlled-browser/pilot.json` maps nine
+original identities to `tests/controlled-browser` counterparts. Original
+full-system cases remain in regular CI. The standalone runner validates exact
+results and assertion/native-action conservation. B04 owns controlled-lane CI
+wiring; this entry does not claim that the native pilot is already in regular CI.
+Existing prepared-continuation and review-outbox regressions retain identity,
+conflict, original-intent and authorization behavior; native PostgreSQL remains
+required for durability, issuance, restart, publication and recovery.
+- `controlled_browser_delayed_response_waits_for_explicit_release` protects bounded deferred/error responses without wall-clock sleeps.

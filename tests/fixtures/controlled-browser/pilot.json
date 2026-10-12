@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "host": "production-local frontend-only",
+  "status": "additive-pilot; B04 owns CI integration",
+  "cases": [
+    {
+      "originalFile": "tests/browser/cross-browser.spec.ts",
+      "originalTitle": "tablet menu Escape restores the visible navigation trigger",
+      "newFile": "tests/controlled-browser/interaction.spec.ts",
+      "newTitle": "tablet menu Escape restores the visible navigation trigger",
+      "projects": [
+        "chromium",
+        "firefox",
+        "webkit"
+      ],
+      "native": [
+        "pointer/keyboard/focus"
+      ],
+      "retained": "original identity remains in full-system lane",
+      "assertion_action_sha256": "eec6bd45e50deba6b1acada8d2c876a35df41416fc5172d9b0eed59d676e28f6",
+      "assertions_preserved": [
+        "expect(menu).toBeFocused()",
+        "expect(page.locator(\"#workspace-menu\")).toHaveCount(0)"
+      ],
+      "native_actions_preserved": [
+        "page.setViewportSize({ width: 768, height: 1024 })",
+        "menu.click()",
+        "page.locator(\"#workspace-menu\").getByRole(\"button\", { name: \"Games\", exact: true }).focus()",
+        "page.keyboard.press(\"Escape\")"
+      ],
+      "provider_consumer_contracts": [
+        "generate.py actual response producers",
+        "frontend schemas",
+        "receipt serializer and continuation consumers"
+      ],
+      "full_system_proof": [
+        "original identity on regular PostgreSQL Playwright config",
+        "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
+        "PostgreSQL command_recreation and study_durability"
+      ]
+    },
+    {
+      "originalFile": "tests/browser/cross-browser.spec.ts",
+      "originalTitle": "capture modal keeps incomplete setup draggable and restores focus across browser engines",
+      "newFile": "tests/controlled-browser/interaction.spec.ts",
+      "newTitle": "capture modal keeps incomplete setup draggable and restores focus across browser engines",
+      "projects": [
+        "chromium",
+        "firefox",
+        "webkit"
+      ],
+      "native": [
+        "pointer/keyboard/focus"
+      ],
+      "retained": "original identity remains in full-system lane",
+      "assertion_action_sha256": "86fe940a61da7d51d0d0af28c50e047748de4f087d6ea3ccc8c7826de7e0dd59",
+      "assertions_preserved": [
+        "expect(board).toHaveAttribute(\"data-fen\", \"8/8/8/8/R7/8/8/8 w - - 0 1\")",
+        "expect(dialog).toHaveCount(0)",
+        "expect(launch).toBeFocused()"
+      ],
+      "native_actions_preserved": [
+        "launch.click()",
+        "dialog.getByRole(\"button\", { name: \"Place R\", exact: true }).click()",
+        "board.scrollIntoViewIfNeeded()",
+        "board.locator(\".cg-wrap\").boundingBox()",
+        "page.mouse.click(x, surface.y + 15 * surface.height / 16)",
+        "dialog.getByRole(\"button\", { name: \"Move pieces\", exact: true }).click()",
+        "board.scrollIntoViewIfNeeded()",
+        "page.mouse.move(x, surface.y + 15 * surface.height / 16)",
+        "page.mouse.down()",
+        "page.mouse.move(x, surface.y + 9 * surface.height / 16, { steps: 8 })",
+        "page.mouse.up()",
+        "page.keyboard.press(\"Escape\")"
+      ],
+      "provider_consumer_contracts": [
+        "generate.py actual response producers",
+        "frontend schemas",
+        "receipt serializer and continuation consumers"
+      ],
+      "full_system_proof": [
+        "original identity on regular PostgreSQL Playwright config",
+        "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
+        "PostgreSQL command_recreation and study_durability"
+      ]
+    },
+    {
+      "originalFile": "tests/browser/phone-opening-study.spec.ts",
+      "originalTitle": "Phone opening study shows repertoire identity above the board 390",
+      "newFile": "tests/controlled-browser/phone.spec.ts",
+      "newTitle": "Phone opening study shows repertoire identity above the board 390",
+      "projects": [
+        "chromium"
+      ],
+      "native": [
+        "real browser DOM, viewport, pointer, localStorage and reload as originally asserted"
+      ],
+      "retained": "original identity plus post-review-progression, phone-offline-training and PostgreSQL receipt/issuance durability",
+      "assertion_action_sha256": "1c00a081eb54c0a69adc5fc7ea345e3bf0d90a14ba5927693c8f4e852feacd1c",
+      "assertions_preserved": [
+        "expect(page.getByRole(\"heading\", { level: 1 })).toHaveCount(1)",
+        "expect(page.getByRole(\"heading\", { level: 1, name: \"Daily training\", exact: true })).toHaveCount(1)",
+        "expect(heading.getByRole(\"heading\", { name: \"London System\" })).toBeInViewport()",
+        "expect(heading.getByText(\"white to play\", { exact: true })).toBeVisible()",
+        "expect(headingBounds!.y + headingBounds!.height).toBeLessThanOrEqual(boardBounds!.y + 1)",
+        "expect(boardBounds!.width).toBeGreaterThanOrEqual(Math.min(viewport.width - 24, 658) - 1)",
+        "expect(page.getByRole(\"heading\", { name: \"London System\", exact: true })).toHaveCount(1)",
+        "expect(toolbar.getByRole(\"button\", { name: \"Keyboard shortcuts\" })).toBeHidden()",
+        "expect(toolbar.getByRole(\"button\", { name: \"Flip board\", exact: true })).toBeVisible()",
+        "expect(toolbar.getByRole(\"button\", { name: /Show move/ })).toBeVisible()",
+        "expect(toolbar.locator(\"summary\", { hasText: \"More\" })).toBeVisible()",
+        "expect(details).not.toHaveAttribute(\"open\", \"\")",
+        "expect(page.locator(\".study-source\")).toBeHidden()",
+        "expect(page.locator(\".study-source\")).toBeVisible()",
+        "expect(page.locator(\".board-frame\")).toHaveAttribute(\"data-fen\", boardFen!)",
+        "noPageOverflow(page)"
+      ],
+      "native_actions_preserved": [
+        "page.setViewportSize(viewport)",
+        "heading.boundingBox()",
+        "board.boundingBox()",
+        "details.locator(\"summary\").click()"
+      ],
+      "provider_consumer_contracts": [
+        "generate.py actual response producers",
+        "frontend schemas",
+        "receipt serializer and continuation consumers"
+      ],
+      "full_system_proof": [
+        "original identity on regular PostgreSQL Playwright config",
+        "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
+        "PostgreSQL command_recreation and study_durability"
+      ],
+      "parameters": {
+        "viewport": 390
+      }
+    },
+    {
+      "originalFile": "tests/browser/phone-opening-study.spec.ts",
+      "originalTitle": "Phone pending review keeps one inline status until its original receipt confirms",
+      "newFile": "tests/controlled-browser/phone.spec.ts",
+      "newTitle": "Phone pending review keeps one inline status until its original receipt confirms",
+      "projects": [
+        "chromium"
+      ],
+      "native": [
+        "real browser DOM, viewport, pointer, localStorage and reload as originally asserted"
+      ],
+      "retained": "original identity plus post-review-progression, phone-offline-training and PostgreSQL receipt/issuance durability",
+      "assertion_action_sha256": "643a2057b310655f52f9902acd311bc156355a0eb2a1a5e3f9072000537c1261",
+      "assertions_preserved": [
+        "expect(decodeURIComponent(route.request().url().split(\"/api/operations/\")[1])).toBe(originalOperation)",
+        "expect(page.getByRole(\"status\").filter({ hasText: \"Waiting for the computer to confirm this result.\" })).toBeVisible()",
+        "expect(page.getByRole(\"button\", { name: \"Check save\", exact: true })).toBeVisible()",
+        "expect(page.locator(\".notification-toast\")).toHaveCount(0)",
+        "expect(page.locator(\".phone-study-heading h2\")).toHaveText(\"London System\")",
+        "expect(page.getByRole(\"button\", { name: \"Check save\", exact: true })).toHaveCount(0, { timeout: 10000 })",
+        "expect(page.locator(\".phone-study-heading h2\")).toHaveText(\"Ruy Lopez\")",
+        "expect(submissions).toBe(1)",
+        "noPageOverflow(page)"
+      ],
+      "native_actions_preserved": [
+        "page.setViewportSize({ width: 390, height: 844 })",
+        "move(page, \"d2\", \"d4\")"
+      ],
+      "provider_consumer_contracts": [
+        "generate.py actual response producers",
+        "frontend schemas",
+        "receipt serializer and continuation consumers"
+      ],
+      "full_system_proof": [
+        "original identity on regular PostgreSQL Playwright config",
+        "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
+        "PostgreSQL command_recreation and study_durability"
+      ]
+    },
+    {
+      "originalFile": "tests/browser/phone-opening-study.spec.ts",
+      "originalTitle": "Phone reload consumes a retained completed review receipt without another review POST",
+      "newFile": "tests/controlled-browser/phone.spec.ts",
+      "newTitle": "Phone reload consumes a retained completed review receipt without another review POST",
+      "projects": [
+        "chromium"
+      ],
+      "native": [
+        "real browser DOM, viewport, pointer, localStorage and reload as originally asserted"
+      ],
+      "retained": "original identity plus post-review-progression, phone-offline-training and PostgreSQL receipt/issuance durability",
+      "assertion_action_sha256": "cf48a2a87c6162d73fd8867aa5502d5514a639d63c76a5ef2efaeeb7b542365b",
+      "assertions_preserved": [
+        "expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem(\"tempo-pending-training-reviews-v1\") ?? \"[]\").length)).toBe(0)",
+        "expect(page.locator(\".phone-study-heading h2\")).toHaveText(\"Ruy Lopez\")",
+        "expect(traffic).toEqual([\"receipt\"])",
+        "noPageOverflow(page)"
+      ],
+      "native_actions_preserved": [
+        "page.setViewportSize({ width: 390, height: 844 })",
+        "page.evaluate(() => localStorage.setItem(\"tempo-pending-training-reviews-v1\", JSON.stringify([{ backendId: \"reload-london\", queueEntryId: 811, attemptId: \"reload-original\", outcome: \"correct\", guided: false, completedAt: \"2026-09-18T15:00:00Z\", }])))",
+        "page.reload()",
+        "page.evaluate(() => JSON.parse(localStorage.getItem(\"tempo-pending-training-reviews-v1\") ?? \"[]\").length)"
+      ],
+      "provider_consumer_contracts": [
+        "generate.py actual response producers",
+        "frontend schemas",
+        "receipt serializer and continuation consumers"
+      ],
+      "full_system_proof": [
+        "original identity on regular PostgreSQL Playwright config",
+        "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
+        "PostgreSQL command_recreation and study_durability"
+      ]
+    }
+  ]
+}
