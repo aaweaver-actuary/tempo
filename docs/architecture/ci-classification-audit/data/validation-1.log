@@ -1,5 +1,6 @@
 test_checkout_candidate_requires_the_logged_git_head (test_audit.AccountingTests.test_checkout_candidate_requires_the_logged_git_head) ... ok
 test_checkout_recovery_does_not_assign_a_base_to_other_planless_runs (test_audit.AccountingTests.test_checkout_recovery_does_not_assign_a_base_to_other_planless_runs) ... ok
+test_csv_exports_use_repository_safe_lf_line_endings (test_audit.AccountingTests.test_csv_exports_use_repository_safe_lf_line_endings) ... ok
 test_cutoff_censors_running_and_later_completed_jobs (test_audit.AccountingTests.test_cutoff_censors_running_and_later_completed_jobs) ... ok
 test_failed_cancelled_and_retried_execution_remains_compute (test_audit.AccountingTests.test_failed_cancelled_and_retried_execution_remains_compute) ... ok
 test_markdown_controls_exclude_executable_evidence (test_audit.AccountingTests.test_markdown_controls_exclude_executable_evidence) ... ok
@@ -11,6 +12,6 @@ test_skipped_unassigned_jobs_do_not_consume_runner_time (test_audit.AccountingTe
 test_unknown_workflow_graph_is_not_an_elapsed_savings_estimate (test_audit.AccountingTests.test_unknown_workflow_graph_is_not_an_elapsed_savings_estimate) ... ok
 
 ----------------------------------------------------------------------
-Ran 11 tests in 0.000s
+Ran 12 tests in 0.001s
 
 OK

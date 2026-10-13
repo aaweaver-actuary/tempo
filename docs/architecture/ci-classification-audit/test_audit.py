@@ -1,6 +1,8 @@
 """Deterministic accounting protections for the historical audit; no live API calls."""
 import unittest
-from audit import interval_union, job_duration, percentile, seconds, prose_files
+import tempfile
+from pathlib import Path
+from audit import interval_union, job_duration, percentile, seconds, prose_files, csv_rows
 from recover import checkout_sha, revision_records
 from opportunities import replay_elapsed
 
@@ -54,6 +56,13 @@ class AccountingTests(unittest.TestCase):
         unresolved=next(record for record in records if record['runs']==[[2,1]])
         self.assertIsNone(unresolved['base'])
         self.assertIsNone(unresolved['integration'])
+
+    def test_csv_exports_use_repository_safe_lf_line_endings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'ledger.csv'
+            csv_rows(path,[{'run_id':123,'paths':['a.ts','b.ts']}])
+            self.assertNotIn(b'\r',path.read_bytes())
+            self.assertTrue(path.read_bytes().endswith(b'\n'))
 
     def test_noncritical_parallel_removal_does_not_reduce_gate_wait(self):
         def job(name, start, end, identity):

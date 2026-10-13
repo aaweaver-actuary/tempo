@@ -20,17 +20,7 @@
         "-v"
       ],
       "returncode": 0,
-      "elapsed_seconds": 0.06960037499811733
-    },
-    {
-      "command": [
-        "python3",
-        "docs/architecture/ci-classification-audit/opportunities.py",
-        "--output",
-        "/Users/andy/tempo/test-results/issue-238-ci-classification-audit-20261013/replay"
-      ],
-      "returncode": 0,
-      "elapsed_seconds": 0.20512066599621903
+      "elapsed_seconds": 0.09899179200147046
     },
     {
       "command": [
@@ -40,7 +30,17 @@
         "/Users/andy/tempo/test-results/issue-238-ci-classification-audit-20261013/replay"
       ],
       "returncode": 0,
-      "elapsed_seconds": 6.286280959000578
+      "elapsed_seconds": 6.445880749997741
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 0.09160983300535008
     },
     {
       "command": [
@@ -49,7 +49,7 @@
         "--check"
       ],
       "returncode": 0,
-      "elapsed_seconds": 0.019585708003432956
+      "elapsed_seconds": 0.035886207995645236
     }
   ]
 }

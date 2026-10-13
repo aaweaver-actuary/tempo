@@ -208,7 +208,7 @@ def csv_rows(path, rows):
         return
     fields = list(dict.fromkeys(key for row in rows for key in row))
     with path.open('w', newline='') as destination:
-        writer = csv.DictWriter(destination, fieldnames=fields)
+        writer = csv.DictWriter(destination, fieldnames=fields, lineterminator='\n')
         writer.writeheader()
         for row in rows:
             writer.writerow({key: json.dumps(value, sort_keys=True) if isinstance(value, (dict, list)) else value for key, value in row.items()})
