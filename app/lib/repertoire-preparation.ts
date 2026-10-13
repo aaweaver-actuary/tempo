@@ -26,6 +26,7 @@ export function runRepertoirePreparation(
     let preparationWorker: Worker | undefined;
     let settled = false;
     const cleanup = () => {
+      clearTimeout(timeout);
       signal?.removeEventListener("abort", cancel);
       if (cancelActivePreparation === cancel) cancelActivePreparation = undefined;
       if (preparationWorker) {
@@ -51,6 +52,8 @@ export function runRepertoirePreparation(
       updateBrowserActivity(activityId, title, "complete", "Cancelled");
       reject(new DOMException("Cancelled", "AbortError"));
     };
+    // Bound failure recovery even when a loaded worker never sends a reply.
+    const timeout = setTimeout(() => fail(new Error("Repertoire worker timed out after 120 seconds")), 120_000);
     cancelActivePreparation = cancel;
     signal?.addEventListener("abort", cancel, { once: true });
     try {

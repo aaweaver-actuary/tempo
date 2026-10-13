@@ -42,11 +42,11 @@ Scores are ordinal planning judgments, not measured probabilities. Value and saf
 
 ## Controls and rollback
 
-All new defaults are true and omitted fields preserve stored values, maintaining historical normal operation. Study-only overrides both controls without changing their saved values.
+Repertoire preparation defaults off pending operational qualification. Optional analysis/imports default on, preserving prior server admission. Omitted fields preserve stored values. Study-only overrides both controls without changing their saved values.
 
 For repertoire-only restoration, save: Study-only **off**, Repertoire preparation **on**, Optional analysis and imports **off**. Defensive analysis's existing setting cannot override either pause. Unknown settings suppress browser preparation. A pending or failed save does not publish effective settings.
 
-To disable only this increment, save Repertoire preparation **off**. The active browser caller/worker are canceled and saved-source move verification remains available. To invoke the emergency fallback, save Study-only **on**. No service restart or code revert is required. Other tabs observe confirmed settings on visibility or the existing periodic refresh; cross-tab transactional session coordination is outside this increment.
+To disable only this increment, save Repertoire preparation **off**. The active browser caller/worker are canceled and saved-source move verification remains available. To invoke the emergency fallback, save Study-only **on**. No service restart or code revert is required. Same-origin tabs invalidate browser controls on confirmed-save storage notifications. Visibility and periodic refresh cover external changes; cross-tab transactional session coordination is outside this increment.
 
 To resume existing optional server work, save Optional analysis and imports **on** with Study-only **off**. Existing operation identities, generations, cursors and envelopes resume; do not purge queues or receipts. A release of older binaries requires their compatible schema and cannot be assumed to understand the new independent control.
 
@@ -81,3 +81,47 @@ The confirmed-save event immediately suppresses both optional browser controls w
 Optional server admission reads Study-only and the independent flag from one settings row in one SQL statement and one owned reader. At PostgreSQL READ COMMITTED this is a statement snapshot. The earlier no-reader path recursively rechecked Study-only, so a commit between reader acquisitions alone did not establish the reported authorization race. A commit between the recursive Study-only read and optional-flag read can mix two paused rows `(false,false)` and `(true,true)` into an enabled decision; deterministic actual-row regressions cover that interleaving. The gate remains a point-in-time admission decision: a later pause does not retroactively revoke a slice already admitted. Existing execution-time rechecks and bounded slice contracts remain necessary.
 
 Migration 048 is unchanged. At restart inspection #227 remains open; reconcile if it merges before final qualification. Previous FULL CI 38292491135 qualifies head `5b6464066a64d613124f96acfba80adf35c98b7a`, base `d82f78e9b764fbba5b48e9ea6de8abcca5d133e7`, integration `f08578083043a9cacefb205823fdd171ad0feaff`; it does not qualify these corrections. Operational acceptance remains pending an exclusive slot; no activation or deployment is authorized by functional or CI passes.
+
+## Merge safety and settings ordering
+
+Repertoire preparation defaults **off** in migration 048, legacy schema initialization,
+API models, response parsing and the Settings form. Missing fields in an old server
+response cannot authorize preparation. Existing explicit persisted choices are preserved;
+legacy updates omit and therefore preserve these controls. Databases that already applied
+a development version of 048 retain their explicit row values; deploying to such a database
+requires checking the persisted preparation control first. This PR does not update live data.
+
+Optional analysis/imports retain the existing **on** default. This adds a restriction to
+prior server admission rather than enabling a newly restored server pipeline. Existing
+subsystem switches, provider/account configuration, queued work and foreground admission
+still apply. Study-only always overrides both controls. A fresh/migrated installation
+therefore starts with preparation off and the prior server-work admission policy intact.
+
+| Study-only | Preparation | Analysis/imports | Browser preparation | Optional server admission |
+| --- | --- | --- | --- | --- |
+| off | off | off | no | no |
+| off | off | on | no | prior policy permitted |
+| off | on | off | yes, explicit opt-in | no |
+| off | on | on | yes, explicit opt-in | prior policy permitted |
+| on | off | off | no | no |
+| on | off | on | no | no |
+| on | on | off | no | no |
+| on | on | on | no | no |
+
+The matrix applies to fresh and migrated installations and after restart. Admission
+permission alone does not start work. The preparation worker is created by the training
+view only when authoritative settings permit it. Operational acceptance for that restored
+pipeline remains required before enabling it in an actual installation.
+
+Confirmed saves invalidate controls in the saving tab and notify same-origin tabs using
+a storage token. Neither pending nor failed saves publishes this token. Receivers suppress
+both optional browser controls immediately, even while hidden or awaiting a GET. A read
+started before a known confirmation cannot restore permission. Only a valid read begun
+after the latest known confirmation can restore the persisted values. Tabs on different
+origins and externally changed settings converge through the existing visibility/30-second
+polling contract; there is no server push or global settings revision in this increment.
+
+Disposable preparation has a 120-second watchdog. A missing reply terminates that worker,
+settles its promise with the existing actionable error, and permits retry. The watchdog
+is a recovery bound, not a performance acceptance threshold. Success, failure and abort
+remove listeners and clear the timer; foreground worker ownership is unchanged.

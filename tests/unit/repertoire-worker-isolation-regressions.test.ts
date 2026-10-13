@@ -96,3 +96,35 @@ it.each(["runtime", "decoding", "protocol", "generation"])("issue190_bulk_failur
     result: { generation: 2, positions: [], movesByRepertoire: new Map() } } } as MessageEvent);
   await expect(retry).resolves.toMatchObject({ generation: 2 });
 });
+
+
+it("restoration_unresponsive_worker_times_out_terminates_and_allows_retry", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.resetModules();
+    const workers: ControlledWorker[] = [];
+    class ControlledWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: (() => void) | null = null;
+      terminate = vi.fn();
+      postMessage = vi.fn();
+      constructor() { workers.push(this); }
+    }
+    vi.stubGlobal("Worker", ControlledWorker);
+    const { runStudyTask } = await import("../../app/lib/background-study");
+    let failure: unknown;
+    const hanging = runStudyTask({ kind: "repertoirePreparation", generation: 1, payload: { lines: [] } })
+      .catch(error => { failure = error; });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(failure).toBeInstanceOf(Error);
+    await hanging;
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(workers[0].onmessage).toBeNull();
+    const retry = runStudyTask({ kind: "repertoirePreparation", generation: 2, payload: { lines: [] } });
+    workers[1].onmessage!({ data: { id: workers[1].postMessage.mock.calls[0][0].id,
+      result: { generation: 2, positions: [], movesByRepertoire: new Map() } } } as MessageEvent);
+    await expect(retry).resolves.toMatchObject({ generation: 2 });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally { vi.useRealTimers(); }
+});
