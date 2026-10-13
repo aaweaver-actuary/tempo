@@ -1,7 +1,7 @@
 {
   "version": 1,
   "fullPrefixes": [".github/", "backend/migrations/", "scripts/", "tests/runner/", "tempo-core/"],
-  "fullPaths": ["package.json", "package-lock.json", "pyproject.toml", "backend/pyproject.toml", "backend/uv.lock", "backend/requirements.txt", "Cargo.toml", "Cargo.lock", "Makefile", "docker-compose.postgres.test.yml", "playwright.config.ts", "vitest.config.ts", "tests/unit/ci-reliability-regressions.test.ts", "tests/unit/ci-fast-lane-regressions.test.ts", "tests/unit/postgres-test-speedups-regressions.test.ts", "app/lib/encrypted-backup.ts", "app/lib/sqlite-migration.ts"],
+  "fullPaths": ["backend/tests/test_ci_native_unittest.py", "package.json", "package-lock.json", "pyproject.toml", "backend/pyproject.toml", "backend/uv.lock", "backend/requirements.txt", "Cargo.toml", "Cargo.lock", "Makefile", "docker-compose.postgres.test.yml", "playwright.config.ts", "vitest.config.ts", "tests/unit/ci-reliability-regressions.test.ts", "tests/unit/ci-fast-lane-regressions.test.ts", "tests/unit/postgres-test-speedups-regressions.test.ts", "app/lib/encrypted-backup.ts", "app/lib/sqlite-migration.ts"],
   "sources": [
     {"paths": ["backend/app/services/chesscom_client.py", "backend/app/services/lichess_client.py"], "tier": "FAST", "frontend": [], "backend": ["backend/tests/test_game_sync.py", "backend/tests/test_postgres_game_sync_windows.py"]},
     {"paths": ["backend/app/services/motif_detectors.py"], "tier": "FAST", "frontend": [], "backend": ["backend/tests/test_motif_detectors.py"]},
@@ -247,5 +247,13 @@
     {"file": "post-review-progression.spec.ts", "title": "issue186_completed_tactic_has_bounded_progression: fallback abort", "project": "chromium"},
     {"file": "tactic-capture.spec.ts", "title": "FEN capture records a real-board solution and is reviewed through ordinary Training", "project": "chromium"},
     {"file": "opening-progression.spec.ts", "title": "one real short-prefix practice admits its child while parent is learning 390", "project": "chromium"}
+  ],
+  "certifiedTests": [
+    {"paths":["tests/unit/redis-admission-cleanup-regressions.test.ts"],"tier":"FAST","frontend":["tests/unit/redis-admission-cleanup-regressions.test.ts"],"backend":[],"browser":[],"nativeChecks":[]},
+    {"paths":["tests/browser/support/redis-admission-cleanup.ts"],"tier":"STUDY","frontend":["tests/unit/redis-admission-cleanup-regressions.test.ts"],"backend":[],"browser":[{"file":"redis-admission-recovery.spec.ts","title":"test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate","project":"chromium"}],"nativeChecks":[]},
+    {"paths":["tests/browser/redis-admission-recovery.spec.ts"],"tier":"STUDY","frontend":["tests/unit/redis-admission-cleanup-regressions.test.ts"],"backend":[],"browser":[{"file":"redis-admission-recovery.spec.ts","title":"test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate","project":"chromium"}],"nativeChecks":[]},
+    {"paths":["scripts/check_postgres_redis_admission.py"],"tier":"STUDY","frontend":["tests/unit/redis-admission-cleanup-regressions.test.ts"],"backend":["backend/tests/test_redis_admission_fixture.py"],"browser":[{"file":"redis-admission-recovery.spec.ts","title":"test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate","project":"chromium"}],"nativeChecks":["redis-fixture-isolation"]},
+    {"paths":["scripts/check_postgres_redis_fixture_isolation.py"],"tier":"STUDY","frontend":["tests/unit/redis-admission-cleanup-regressions.test.ts"],"backend":["backend/tests/test_redis_admission_fixture.py"],"browser":[{"file":"redis-admission-recovery.spec.ts","title":"test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate","project":"chromium"}],"nativeChecks":["redis-fixture-isolation"]},
+    {"paths":["backend/tests/test_redis_admission_fixture.py"],"tier":"STUDY","frontend":["tests/unit/redis-admission-cleanup-regressions.test.ts"],"backend":["backend/tests/test_redis_admission_fixture.py"],"browser":[{"file":"redis-admission-recovery.spec.ts","title":"test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate","project":"chromium"}],"nativeChecks":["redis-fixture-isolation"]}
   ]
 }

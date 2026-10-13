@@ -62,8 +62,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         const files = readdirSync('test-results/performance').filter(file => file.startsWith('postgres-scenarios-study-'));
         if (files.length !== 1) throw new Error('Study scenario results absent or ambiguous');
         report.scenarios = JSON.parse(readFileSync(`test-results/performance/${files[0]}`,'utf8'));
-        report.studyStages = postgresTestStages({mode:'study'});
+        report.studyStages = postgresTestStages({mode:'study',nativeChecks:plan.nativeChecks});
         if (report.studyStages.some(stage => report.scenarios.stages?.[stage]?.exit_code !== 0)) throw new Error('Study stages failed');
+        if (plan.nativeChecks?.length) {
+          const nativeFiles = readdirSync('test-results/native').filter(file => file.endsWith('.json'));
+          if (nativeFiles.length !== 1) throw new Error('Native fixture evidence absent or ambiguous');
+          report.native = JSON.parse(readFileSync(`test-results/native/${nativeFiles[0]}`,'utf8'));
+          for (const check of plan.nativeChecks) {
+            const evidence = report.native.checks?.[check];
+            if (!evidence) throw new Error('Native fixture evidence missing');
+            verifySelection(evidence.expected.map(id => ({id})), evidence.tests);
+          }
+        }
       }
     }
     report.completed = true; report.status = 'success';
