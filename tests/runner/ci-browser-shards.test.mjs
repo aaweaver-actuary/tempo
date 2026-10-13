@@ -135,6 +135,44 @@ test("latest shard attempts reject stale success while retaining untouched succe
   assert.throws(() => validateBrowserShardJobs(plan, reports, [...jobs, { ...jobs[0], id: 2000, run_attempt: 2 }]), /latest/);
 });
 
+test("browser_partial_rerun_accepts_only_verified_retained_job_aliases", () => {
+  const plan = completePlan(), reports = passingBrowserShards(plan);
+  const originalJobs = passingBrowserJobs(plan, reports).map((job, index) => ({ ...job,
+    runner_id: 500 + index, runner_name: `host-${index}`,
+    started_at: `2026-10-13T12:00:0${index}Z`, completed_at: `2026-10-13T12:01:0${index}Z`,
+    steps: job.steps.map(step => ({ ...step, number: 7,
+      started_at: `2026-10-13T12:00:0${index}Z`, completed_at: `2026-10-13T12:01:0${index}Z` })),
+  }));
+  // GitHub carries untouched successes into the new attempt with new job IDs,
+  // while artifacts still identify the attempt that physically ran the tests.
+  const carriedJobs = originalJobs.map(job => ({ ...job, id: job.id + 1000, run_attempt: 2 }));
+  reports[2].execution.attempt = 2;
+  carriedJobs[2] = { ...carriedJobs[2], runner_id: 900, runner_name: "replacement-host",
+    started_at: "2026-10-13T12:02:00Z", completed_at: "2026-10-13T12:03:00Z",
+    steps: originalJobs[2].steps.map(step => ({ ...step,
+      started_at: "2026-10-13T12:02:00Z", completed_at: "2026-10-13T12:03:00Z" })),
+  };
+  const jobs = [...originalJobs, ...carriedJobs];
+  assert.doesNotThrow(() => validateBrowserShardJobs(plan, reports, jobs));
+  assert.doesNotThrow(() => aggregateBrowserShards(plan, reports, { runId: 100, attempt: 2 }));
+  for (const mutation of [
+    job => { job.conclusion = "failure"; }, job => { job.conclusion = "cancelled"; },
+    job => { job.conclusion = "skipped"; }, job => { job.status = "in_progress"; },
+    job => { job.runner_id += 1; }, job => { job.runner_name = "different-host"; },
+    job => { job.started_at = "2026-10-13T12:04:00Z"; },
+    job => { job.completed_at = "2026-10-13T12:05:00Z"; },
+    job => { delete job.started_at; }, job => { delete job.completed_at; },
+    job => { job.steps[0].completed_at = "2026-10-13T12:05:00Z"; },
+    job => { job.labels = ["wrong-platform"]; },
+  ]) {
+    const invalidJobs = structuredClone(jobs); mutation(invalidJobs[originalJobs.length]);
+    assert.throws(() => validateBrowserShardJobs(plan, reports, invalidJobs), /latest/);
+  }
+  assert.throws(() => validateBrowserShardJobs(plan, reports, jobs.filter(job => job.id !== originalJobs[0].id)), /latest/);
+  const invalidOrigin = structuredClone(jobs); invalidOrigin[0].conclusion = "failure";
+  assert.throws(() => validateBrowserShardJobs(plan, reports, invalidOrigin), /latest/);
+});
+
 test("browser aggregate contains exactly planned identities and cannot substitute its own results", () => {
   const plan = completePlan(), report = aggregateFixture(plan);
   assert.deepEqual(report.tests.map(item => item.id), plan.collection.filter(item => item.selected).map(item => item.id).sort());

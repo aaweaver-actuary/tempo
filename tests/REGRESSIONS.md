@@ -4351,3 +4351,7 @@ Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
 ### PR #228 / #229 main integration preserves browser qualification ownership
 
 - `restoration_and_redis_admission_browser_owners_survive_main_integration` in `tests/runner/ci-reliability.test.mjs` requires exactly one training owner and actual collected/selected browser cases for repertoire worker isolation, restoration qualification, and Redis admission recovery after shared HTTP integration. Merge resolution must preserve every family entry and both regression registries.
+
+### CI partial rerun preserves the identity of untouched successful executions
+
+- `browser_partial_rerun_accepts_only_verified_retained_job_aliases` in `tests/runner/ci-browser-shards.test.mjs` reproduces GitHub's carried-job metadata after a targeted rerun: new job IDs/attempt numbers with unchanged original runner, execution timestamps and steps. It requires original successful execution provenance and rejects missing origins, latest failure/cancellation/skip/in-progress status, changed runner identity, absent/changed times or steps, and wrong platform. The actual rerun still requires its fresh report; all planned test identities and commands remain mandatory.
