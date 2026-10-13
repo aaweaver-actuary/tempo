@@ -59,3 +59,41 @@ it.each(["pending", "failed"])("study_only_mode_is_effective_only_after_confirme
     await waitFor(() => expect(modeChanged).toHaveBeenCalledTimes(1));
   } finally { window.removeEventListener("tempo:study-mode-changed", modeChanged); }
 });
+
+
+it.each(["failed", "malformed", "timed-out", "pending"])("restoration_confirmed_disable_clears_enabled_controls_before_settings_refresh (%s)", async failure => {
+  const fetchSettings = vi.fn().mockResolvedValueOnce(Response.json({ study_only_mode: false, repertoire_preparation_enabled: true }));
+  if (failure === "failed") fetchSettings.mockResolvedValueOnce(new Response(null, { status: 503 }));
+  else if (failure === "malformed") fetchSettings.mockResolvedValueOnce(Response.json({ study_only_mode: "false" }));
+  else if (failure === "timed-out") fetchSettings.mockRejectedValueOnce(new DOMException("Timed out", "TimeoutError"));
+  else fetchSettings.mockReturnValueOnce(new Promise(() => undefined));
+  vi.stubGlobal("fetch", fetchSettings);
+  render(<ControlsProbe />);
+  await waitFor(() => expect(screen.getByText("true")).toBeTruthy());
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  expect(screen.getByText("false")).toBeTruthy();
+  await act(async () => undefined);
+  expect(screen.getByText("false")).toBeTruthy();
+  expect(fetchSettings).toHaveBeenCalledTimes(2);
+});
+
+
+it("restoration_confirmed_disable_while_hidden_rejects_an_inflight_enabled_read", async () => {
+  let finishOldRead!: (response: Response) => void;
+  const fetchSettings = vi.fn().mockResolvedValueOnce(Response.json({ study_only_mode: false, repertoire_preparation_enabled: true }))
+    .mockReturnValueOnce(new Promise<Response>(resolve => { finishOldRead = resolve; }))
+    .mockResolvedValueOnce(Response.json({ study_only_mode: false, repertoire_preparation_enabled: false }));
+  vi.stubGlobal("fetch", fetchSettings);
+  render(<ControlsProbe />);
+  await waitFor(() => expect(screen.getByText("true")).toBeTruthy());
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  await act(async () => finishOldRead(Response.json({ study_only_mode: false, repertoire_preparation_enabled: true })));
+  expect(screen.getByText("false")).toBeTruthy();
+  expect(fetchSettings).toHaveBeenCalledTimes(2);
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  await waitFor(() => expect(fetchSettings).toHaveBeenCalledTimes(3));
+  expect(screen.getByText("false")).toBeTruthy();
+});

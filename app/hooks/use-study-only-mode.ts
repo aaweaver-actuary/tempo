@@ -28,7 +28,7 @@ export function useStudyControls() {
           repertoirePreparationEnabled: settings.repertoire_preparation_enabled !== false,
           optionalAnalysisAndImportsEnabled: settings.optional_analysis_and_imports_enabled !== false });
       } catch {
-        // Retain the last authoritative mode; never authorize optional work on failure.
+        // Poll failures retain the last read; confirmed changes invalidate it before reading.
       } finally {
         reading = false;
         if (!stopped && refreshAgain) void refresh();
@@ -36,13 +36,21 @@ export function useStudyControls() {
     };
     void refresh();
     const wake = () => void refresh();
+    const confirmedChange = () => {
+      // The previous read predates a committed save. Suppress optional work
+      // immediately, even when hidden or a settings request is still in flight.
+      refreshAgain = true;
+      setControls(previous => previous === null ? null : { ...previous,
+        repertoirePreparationEnabled: false, optionalAnalysisAndImportsEnabled: false });
+      void refresh();
+    };
     const timer = window.setInterval(wake, 30_000);
-    window.addEventListener("tempo:study-mode-changed", wake);
+    window.addEventListener("tempo:study-mode-changed", confirmedChange);
     document.addEventListener("visibilitychange", wake);
     return () => {
       stopped = true;
       window.clearInterval(timer);
-      window.removeEventListener("tempo:study-mode-changed", wake);
+      window.removeEventListener("tempo:study-mode-changed", confirmedChange);
       document.removeEventListener("visibilitychange", wake);
     };
   }, []);
