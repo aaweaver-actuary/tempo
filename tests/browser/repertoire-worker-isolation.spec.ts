@@ -288,13 +288,17 @@ test("restoration_native_two_tab_confirmed_disable_rejects_older_settings_read",
     return route.continue();
   });
   try {
+    await page.bringToFront();
     await page.goto("/");
     await page.addScriptTag({ content: controlsBundle.outputFiles[0].text });
     await expect(page.locator("#native-controls")).toHaveText("true");
+    await page.bringToFront();
+    await expect.poll(() => page.evaluate(() => document.visibilityState)).toBe("visible");
     holdNext = true;
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect.poll(() => heldRead).toBe(true);
     await second.goto("/");
+    await second.bringToFront();
     await second.addScriptTag({ content: controlsBundle.outputFiles[0].text });
     await second.evaluate(async settings => { await Reflect.get(window, "tempoSaveControls")(settings); },
       { ...enabled, repertoire_preparation_enabled: false });
