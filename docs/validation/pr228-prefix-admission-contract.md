@@ -32,7 +32,8 @@ Other focused execution:
 
 - `npm run test:unit -- tests/unit/prefix-diagnostics-regressions.test.tsx tests/unit/background-read-admission-regressions.test.ts`: 12 tests / two files passed; 1.73 seconds wall time.
 - `make python-file FILE=backend/tests/test_nonblocking_admission.py`: 26 tests passed; 1.46 seconds wall time. These focused compatibility tests are supplemented by the native PostgreSQL browser reads and final CI durability layer.
-- CI fast-lane, reliability, shard and development runner tests plus typecheck/lint are recorded in the task's external evidence. Final required candidate qualification belongs to CI; no equivalent broad local gate was launched.
+- `node --test tests/runner/ci-fast-lane.test.mjs tests/runner/ci-reliability.test.mjs tests/runner/ci-browser-shards.test.mjs tests/runner/ci-development.test.mjs`: 121 passed, zero skipped/cancelled, 6.72 seconds wall time.
+- `npm run lint`: zero errors and ten existing warnings, 11.64 seconds wall time. Typecheck results and the temporary scratch-source failure are preserved in external evidence. Final required candidate qualification belongs to CI; no equivalent broad local gate was launched.
 
 ## CI relevance and retained ownership
 
