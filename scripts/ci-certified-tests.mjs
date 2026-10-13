@@ -25,9 +25,11 @@ export function validateCertificate(certificate, sources) {
 
 export function sqlRelations(source) {
   if (typeof source !== 'string') return null;
-  const names = [...source.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN|TRUNCATE|TABLE)\s+([a-z_]\w*)\b/g)].map(match => match[1]);
-  for (const match of source.matchAll(/(?:snapshot_row|restore_row)\([^,]+,\s*['"]([a-z_]\w*)['"]|sql\.Identifier\(['"]([a-z_]\w*)['"]\)/g)) names.push(match[1] ?? match[2]);
-  return [...new Set(names)].sort();
+  const relationNames = [...source.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN|TRUNCATE|TABLE)\s+([a-z_]\w*)\b/gi)].map(match => match[1]);
+  for (const match of source.matchAll(/(?:snapshot_row|restore_row)\([^,]+,\s*['"]([a-z_]\w*)['"]|sql\.Identifier\(['"]([a-z_]\w*)['"]\)/g)) relationNames.push(match[1] ?? match[2]);
+  // Conservatively include identifier literals used by dynamic table/column lists.
+  for (const match of source.matchAll(/['"]([a-z_]\w*)['"]/gi)) relationNames.push(match[1]);
+  return [...new Set(relationNames.map(name => name.toLowerCase()))].sort();
 }
 
 export function readCertificateSources() {

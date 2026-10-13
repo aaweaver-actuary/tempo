@@ -4,7 +4,7 @@
 
 Baseline: `c5f773b18c4a5b30a3abda84ecac01ab625a3902`. No production source, migration, assertion, browser smoke, or full-boundary coverage changes. This qualification-infrastructure PR itself selects FULL.
 
-The certificate in `scripts/ci-certified-tests.json` records six exact test/fixture paths, their reviewed import/dynamic dependency lines, SQL relation dependencies, and literal consumers in tracked and nonignored new source. Changed dependencies, added consumers, missing source, ambiguous ownership, or unsupported native collection expand to FULL. There is no directory exemption. This is a bounded certificate, not a general dependency resolver. Security-sensitive paths and explicit FULL paths retain precedence. The reviewed exceptions bypass only broad directory classification.
+The certificate in `scripts/ci-certified-tests.json` records six exact test/fixture paths, their reviewed import/dynamic dependency lines, SQL relation/identifier dependencies, and literal consumers in tracked and nonignored new source. Changed dependencies, added consumers, missing source, ambiguous ownership, or unsupported native collection expand to FULL. There is no directory exemption. This is a bounded certificate, not a general dependency resolver. Security-sensitive paths and explicit FULL paths retain precedence. The reviewed exceptions bypass only broad directory classification.
 
 | Candidate | Behavior and callers | Production impact / shared dependency | Required evidence / decision |
 | --- | --- | --- | --- |
@@ -15,7 +15,7 @@ The certificate in `scripts/ci-certified-tests.json` records six exact test/fixt
 | Prose and registry | Evidence and named-test documentation | No executable registration | Existing conflict/migration/diff guards: FAST |
 | Executable registration / runner/configuration / new unknown fixture | Test scheduling, shared isolation, startup/build/teardown or qualification trust | Shared runner, inventory, schema and browser setup | FULL, including mixed changes with certified paths |
 
-Shared browser fixtures/observability, PostgreSQL runner/plan/options, qualification validators and inventories, test registration, production `main.py`, persistence, schema, dependency/build configuration and unknown sources are not certified exceptions. New import/caller dependencies invalidate the certificate until reviewed in a FULL-qualified change. Added or changed browser registrations invalidate its fixed single-case certificate. Native method identities are extracted from the sole supported `RedisFixtureIsolation` class into the immutable plan; runtime collection must match them exactly. Native check names and modes are allowlisted.
+Shared browser fixtures/observability, PostgreSQL runner/plan/options, qualification validators and inventories, test registration, production `main.py`, persistence, schema, dependency/build configuration and unknown sources are not certified exceptions. New SQL relations or identifier literals (including dynamic table/column lists), import/caller dependencies invalidate the certificate until reviewed in a FULL-qualified change. Added or changed browser registrations invalidate its fixed single-case certificate. Native method identities are extracted from the sole supported `RedisFixtureIsolation` class into the immutable plan; runtime collection must match them exactly. Native check names and modes are allowlisted.
 
 ## Historical ledger
 

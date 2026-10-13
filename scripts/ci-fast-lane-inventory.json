@@ -1,7 +1,7 @@
 {
   "version": 1,
   "fullPrefixes": [".github/", "backend/migrations/", "scripts/", "tests/runner/", "tempo-core/"],
-  "fullPaths": ["package.json", "package-lock.json", "pyproject.toml", "backend/pyproject.toml", "backend/uv.lock", "backend/requirements.txt", "Cargo.toml", "Cargo.lock", "Makefile", "docker-compose.postgres.test.yml", "playwright.config.ts", "vitest.config.ts", "tests/unit/ci-reliability-regressions.test.ts", "tests/unit/ci-fast-lane-regressions.test.ts", "tests/unit/postgres-test-speedups-regressions.test.ts", "app/lib/encrypted-backup.ts", "app/lib/sqlite-migration.ts"],
+  "fullPaths": ["backend/tests/test_ci_native_unittest.py", "package.json", "package-lock.json", "pyproject.toml", "backend/pyproject.toml", "backend/uv.lock", "backend/requirements.txt", "Cargo.toml", "Cargo.lock", "Makefile", "docker-compose.postgres.test.yml", "playwright.config.ts", "vitest.config.ts", "tests/unit/ci-reliability-regressions.test.ts", "tests/unit/ci-fast-lane-regressions.test.ts", "tests/unit/postgres-test-speedups-regressions.test.ts", "app/lib/encrypted-backup.ts", "app/lib/sqlite-migration.ts"],
   "sources": [
     {"paths": ["backend/app/services/chesscom_client.py", "backend/app/services/lichess_client.py"], "tier": "FAST", "frontend": [], "backend": ["backend/tests/test_game_sync.py", "backend/tests/test_postgres_game_sync_windows.py"]},
     {"paths": ["backend/app/services/motif_detectors.py"], "tier": "FAST", "frontend": [], "backend": ["backend/tests/test_motif_detectors.py"]},

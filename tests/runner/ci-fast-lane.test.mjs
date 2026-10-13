@@ -56,7 +56,7 @@ test('issue239_fixture_selects_native_proof_and_owning_browser_without_FULL', ()
 });
 test('issue239_shared_and_unknown_changes_expand_certified_selection', () => {
   for (const path of ['scripts/test-postgres-docker.mjs', 'scripts/ci-fast-lane-inventory.json',
-    'backend/app/main.py', 'tests/browser/ui-fixtures.ts', 'scripts/unknown-fixture.py']) {
+    'backend/app/main.py', 'tests/browser/ui-fixtures.ts', 'scripts/unknown-fixture.py', 'backend/tests/test_ci_native_unittest.py']) {
     assert.equal(selectFastLane(['scripts/check_postgres_redis_admission.py', path]).tier, 'FULL', path);
   }
 });
@@ -68,6 +68,8 @@ test('issue239_new_callers_imports_dynamic_dependencies_and_browser_cases_fail_c
     {...sources,[candidate]:sources[candidate]+'\nimport new_dependency\n'},
     {...sources,[candidate]:sources[candidate]+'\n__import__(dependency_name)\n'},
     {...sources,[candidate]:sources[candidate]+'\nquery = "SELECT * FROM unknown_shared_table"\n'},
+    {...sources,[candidate]:sources[candidate]+'\nquery = "update unknown_shared_table set value=1"\n'},
+    {...sources,[candidate]:sources[candidate]+"\nrelation_name = 'unknown_shared_table'\n"},
     {...sources,'tests/browser/redis-admission-recovery.spec.ts':sources['tests/browser/redis-admission-recovery.spec.ts']+'\ntest("new case", async () => {});\n'},
     {...sources,'scripts/check_postgres_redis_fixture_isolation.py':sources['scripts/check_postgres_redis_fixture_isolation.py']+'\nclass UnexpectedFixture(unittest.TestCase):\n    pass\n'},
     {...sources,[candidate]:undefined},
