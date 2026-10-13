@@ -1,3 +1,12 @@
+## PR #229 — Redis admission proof cleanup reliability
+
+- `tests/unit/redis-admission-cleanup-regressions.test.ts` runs in the regular Vitest suite. `Redis admission start failure still closes page and cleans fixture while retaining assertion` and `Redis admission unpause failure still closes page and cleans fixture while retaining assertion` both failed against the extracted original sequential finalizer: page and fixture cleanup were skipped. The repaired test-specific lifecycle (incorporated into #229 by its fixture owner) independently attempts listener removal, Redis restoration, page closure and fixture cleanup, retaining the original failure and all labelled cleanup failures.
+- The same file covers assertion failures in both fault scenarios, rejected stop/pause commands, fixture/page failures, listener retry, multiple failures, cleared restoration obligations, failed in-scenario restoration, fixture cleanup callback invocation despite failures elsewhere, evidence publication failures and falsy thrown values. `Redis admission committed seed with lost output still attempts identity cleanup` in that file throws a synthetic seed error and checks callback invocation and original-error preservation; despite its title, it does not run a seed command or exercise native identity recovery.
+- Native fixture recovery is covered by `scripts/check_postgres_redis_fixture_isolation.py::RedisFixtureIsolation.test_redis_fixture_committed_seed_output_loss_is_recoverable_and_concurrent_seed_is_rejected`: it commits seed without retaining its return value, cleans by identity from another PostgreSQL connection, checks settings/projection restoration and repeated-cleanup behavior, and rejects a competing seed. This exercises recovery without seed result data, not loss of subprocess stdout in the browser.
+- In the same native file, `test_redis_fixture_setup_failure_rolls_back_every_mutation` injects an initialization failure after snapshot/queue mutations and verifies rollback with no owned rows left. `test_redis_fixture_cleanup_failure_rolls_back_and_can_retry` injects failure after deletion, verifies cleanup rollback and retained ownership, then checks successful retry and idempotent cleanup. These cover transactional partial setup and interrupted cleanup, not cleanup of an arbitrary committed, partially initialized fixture.
+- `tests/browser/redis-admission-recovery.spec.ts::test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate` remains the real PostgreSQL/Redis browser boundary for Redis faults and review recovery; fault/recovery assertions and proof publication are unchanged. It uses identity-based fixture cleanup but does not inject lost seed-command output or partial initialization.
+- Failure matrix, selected commands and fixture-interface history and remaining limitations: [cleanup reliability evidence](../docs/validation/pr229-cleanup-reliability.md).
+
 ## Issue #225 — foreground Redis admission failure
 
 - Qualification fixture: `training-critical-path.spec.ts` waits for a new correlated `tempo.queue.processing` measurement and installed head/successor after its synthetic `online` event, then requires the first request and original accepted response to carry the expected continuation. Exact replay retains the positive continuation assertion and equals the original result. `prepared-queue-readiness-regressions.test.ts`: `issue225_loading_review_replay_does_not_invent_prepared_continuation` separately covers a loading submission with no hint: later readiness cannot manufacture a continuation during confirmation or authorize a successor. The native Redis test also explicitly rejects an invented continuation when its original envelope omitted the hint.
@@ -4240,7 +4249,9 @@ Audit CI readiness evidence (existing named browser cases):
 
 ### PR #229 Redis fixture database isolation
 
-Regular PostgreSQL durability runs `scripts/check_postgres_redis_fixture_isolation.py` against migrated PostgreSQL with real triggers and foreign keys. Focused lifecycle checks are in `backend/tests/test_redis_admission_fixture.py`; teardown checks are in `tests/unit/redis-admission-cleanup-regressions.test.ts`, reusing PR #233’s helper and failure matrix.
+Regular PostgreSQL durability runs `scripts/check_postgres_redis_fixture_isolation.py` against migrated PostgreSQL with real triggers and foreign keys. The native PostgreSQL cases below exercise fixture state and recovery. `backend/tests/test_redis_admission_fixture.py` provides focused fixture lifecycle checks; `tests/unit/redis-admission-cleanup-regressions.test.ts` checks the generic teardown callbacks and failure preservation, not native seed-output recovery. The coverage boundaries are detailed in the PR #229 cleanup reliability entry above.
+
+Native PostgreSQL cases in `scripts/check_postgres_redis_fixture_isolation.py`:
 
 - `test_redis_fixture_setup_failure_rolls_back_every_mutation`
 - `test_redis_fixture_cleanup_failure_rolls_back_and_can_retry`
@@ -4252,13 +4263,22 @@ Regular PostgreSQL durability runs `scripts/check_postgres_redis_fixture_isolati
 - `test_redis_fixture_cleanup_rejects_changed_ownership_before_cascades`
 - `test_redis_fixture_cleanup_removes_owned_receipts_and_preserves_unrelated_records`
 - `test_redis_fixture_committed_seed_output_loss_is_recoverable_and_concurrent_seed_is_rejected`
+
+Focused fixture checks in `backend/tests/test_redis_admission_fixture.py`:
+
 - `test_redis_fixture_cleanup_explicitly_removes_non_cascading_receipts`
 - `test_redis_fixture_restoration_conflicts_are_explicit`
 - `test_redis_fixture_unchanged_preexisting_settings_fields_are_preserved`
 - `test_redis_fixture_never_reports_success_before_commit`
 - `test_redis_fixture_rejects_unowned_or_custom_database_before_connect`
+
+Generic cleanup callback checks in `tests/unit/redis-admission-cleanup-regressions.test.ts`:
+
 - `Redis admission start failure still closes page and cleans fixture while retaining assertion`
 - `Redis admission unpause failure still closes page and cleans fixture while retaining assertion`
 - `Redis admission accumulates all cleanup failures after the original failure`
 - `Redis admission committed seed with lost output still attempts identity cleanup`
+
+Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
+
 - `redis_fixture_native_isolation_regressions_run_in_regular_durability`
