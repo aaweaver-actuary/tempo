@@ -49,6 +49,8 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
   let historicalRecoveryRequests = 0;
   let network: Sample["network"] = [];
   let firstReview: { url: string; body: string; key: string } | undefined;
+  let firstAcceptedReview: Record<string, unknown> | undefined;
+  let expectedFirstPreparedNext: { queue_entry_id: number; card_id: string; revision: number; cycle: number; local_date: string } | undefined;
   const submittedEvidenceEvents = new Map<string, number>();
   let displacedQueuePositions: number[][] = [];
   page.on("request", request => {
@@ -131,6 +133,10 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const body = route.request().postDataJSON(); delete body.prepared_next;
       await route.continue({ postData: JSON.stringify(body) });
     });
+    const queueProcessingGenerationBeforeOnline = await page.evaluate(() => {
+      const latest = performance.getEntriesByName("tempo.queue.processing").at(-1);
+      return latest ? Number(Reflect.get(latest, "detail")?.generation ?? 0) : 0;
+    });
     await page.evaluate(async ({ holdRecovery, expectedCard }) => {
       const opening = indexedDB.open("tempo-offline-training", 2);
       const database = await new Promise<IDBDatabase>(resolve => { opening.onsuccess = () => resolve(opening.result); });
@@ -161,8 +167,38 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       }
       await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); });
       database.close();
+      Reflect.set(window, "trainingSyntheticRefreshStarted", performance.now());
       window.dispatchEvent(new Event("online"));
     }, { holdRecovery: condition === "recovery-held", expectedCard: `${identifier}-prepared-000` });
+    if (condition === "prepared") {
+      // Our online event starts a real queue acquisition. Correct/input alone
+      // remain available while it loads, but capturePreparedNext must refuse.
+      // Processing plus the published window observe installation, not merely
+      // HTTP success; the desktop finally block publishes readiness in that turn.
+      await expect.poll(() => page.evaluate(({ priorGeneration }) => {
+        const latest = performance.getEntriesByName("tempo.queue.processing").at(-1);
+        const generation = latest ? Number(Reflect.get(latest, "detail")?.generation ?? 0) : 0;
+        const windowPayload = JSON.parse(localStorage.getItem("tempo-training-queue-window-v2") ?? "null");
+        return {
+          refreshed: Boolean(latest && generation > priorGeneration && latest.startTime >= Reflect.get(window, "trainingSyntheticRefreshStarted")),
+          head: windowPayload?.cards?.[0]?.id,
+          successor: windowPayload?.cards?.[1]?.id,
+          localDate: windowPayload?.local_date,
+          displayedMatchesInstalled: document.querySelector("#train")?.getAttribute("data-queue-entry-id") === String(windowPayload?.cards?.[0]?.queue_entry_id),
+        };
+      }, { priorGeneration: queueProcessingGenerationBeforeOnline }), {
+        message: "The synthetic reconnect must process and install its authoritative head/successor before positive prepared submission",
+      }).toEqual({ refreshed: true, head: `${identifier}-prepared-000`, successor: `${identifier}-prepared-001`,
+        localDate: today, displayedMatchesInstalled: true });
+      expectedFirstPreparedNext = await page.evaluate(() => {
+        const windowPayload = JSON.parse(localStorage.getItem("tempo-training-queue-window-v2")!);
+        const successor = windowPayload.cards[1];
+        if (document.querySelector("#train")?.getAttribute("data-queue-entry-id") !== String(windowPayload.cards[0].queue_entry_id))
+          throw new Error("Installed queue must still own the displayed head");
+        return { queue_entry_id: successor.queue_entry_id, card_id: successor.id, revision: successor.revision,
+          cycle: successor.cycle ?? 0, local_date: windowPayload.local_date };
+      });
+    }
     const readClockBracket = async () => {
       const clockReads: { offsetMs: number; uncertaintyMs: number }[] = [];
       for (let index = 0; process.env.TEMPO_TRAINING_TIMINGS === "1" && index < 5; index++) {
@@ -183,6 +219,8 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       return clockReads[0] ?? { offsetMs: 0, uncertaintyMs: 0 };
     };
     const startingClock = await readClockBracket();
+    const firstPreparedResponse = condition === "prepared" ? page.waitForResponse(response =>
+      response.request().method() === "POST" && response.url().endsWith(`/cards/${identifier}-prepared-000/review`)) : undefined;
     for (let index = 0; index < transitionCount; index++) {
       await expect(page.getByRole("button", { name: "Correct", exact: true })).toBeEnabled();
       const previousEntry = await page.locator("#train").getAttribute("data-queue-entry-id");
@@ -217,6 +255,14 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       }, startingFen);
       const clickEpochMs = Date.now();
       await page.getByRole("button", { name: "Correct", exact: true }).click();
+      if (condition === "prepared" && index === 0) {
+        expect(JSON.parse(firstReview!.body).prepared_next).toEqual(expectedFirstPreparedNext);
+        const originalResponse = await firstPreparedResponse!;
+        expect(originalResponse.status()).toBe(200);
+        firstAcceptedReview = await originalResponse.json();
+        expect(firstAcceptedReview?.persisted).toBe(true);
+        expect(firstAcceptedReview?.prepared_continuation).toMatchObject(expectedFirstPreparedNext!);
+      }
       await expect(page.locator("#train")).not.toHaveAttribute("data-queue-entry-id", previousEntry!);
       await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
       // Exercise native input immediately; gathering metrics must not delay it.
@@ -307,7 +353,9 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
       const replay = await request.post(firstReview!.url, { headers: { "Idempotency-Key": firstReview!.key,
         "Content-Type": "application/json" }, data: firstReview!.body });
       expect(replay.ok()).toBe(true);
-      expect((await replay.json()).prepared_continuation?.card_id).toContain("-prepared-001");
+      const replayedResult = await replay.json();
+      expect(replayedResult.prepared_continuation?.card_id).toContain("-prepared-001");
+      expect(replayedResult).toEqual(firstAcceptedReview);
       expect(JSON.parse(fixture("verify"))).toMatchObject({ reviews: transitionCount, complete_evidence: transitionCount, completion_events: expectedEvents });
     }
   } catch (error) {

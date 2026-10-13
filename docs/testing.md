@@ -770,3 +770,84 @@ selections and local browser commands retain one runner. Whole-browser evidence 
 includes the shard assignment and original shard provenance. See
 [browser CI performance](browser-ci-performance.md) for baseline decomposition,
 isolation, tradeoffs, and nested diagnostic timing accounting.
+
+
+### Redis admission fixture ownership (PR #229)
+
+`redis-admission-recovery.spec.ts` uses only the regular PostgreSQL runner.
+`test-postgres-docker.mjs` generates a PID/random Compose project, rejects existing
+containers/volumes/networks for that project, generates fresh credentials, and
+checks project-scoped nonexternal volumes and networks. Schema and API use the
+same project-local PostgreSQL service. Playwright runs with one worker; this
+regression rejects a worker override. Separate runner invocations own separate
+PostgreSQL and Redis volumes. Native Python, custom database URLs and custom
+Compose definitions are not supported by this regression. A project name or
+`TEMPO_TEST_INSTANCE=disposable` alone is not permission to target a real database.
+
+Sequential tests still share database state. Seed atomically stores a versioned
+restoration snapshot in its synthetic repertoire's `source_name`. Short advisory
+transaction locks serialize seed/cleanup, and an active snapshot rejects another
+Redis fixture. No lock remains held during browser/network work. Cleanup runs by
+identity even if committed seed output was lost, and reports success after commit.
+It validates locked settings mode, every displaced queue position, and the full
+installed projection before restoring anything. Snapshot version 2 also records
+each seeded queue row’s returned `id`, `card_id`,
+`queue_date`, `cycle` and `admission_repertoire_id`. Cleanup locks the union selected
+by saved IDs, owned cards and owned admission repertoire, then requires exactly
+those stable identities. Missing/reassigned/additional rows and unsupported
+snapshot versions fail visibly. Status, result, attempt flags, position and other
+mutable queue presentation fields may change legitimately. Changed synthetic
+card ownership or links into unrelated repertoires are rejected before destructive
+cascades. Conflicts roll back cleanup and
+retain its snapshot; they never silently overwrite newer state.
+
+Three synthetic cards cover the two reviews and an unreviewed successor, so
+browser refresh/issuance never advances into the displaced unrelated queue.
+Cleanup restores the original study-only mode (or removes an unchanged settings
+row it created), displaced queue positions, and the original projection or its
+absence. It deletes exact synthetic cards/repertoire/link/queue identities,
+reviews, scheduling snapshots, logical receipts and card-bound operation receipts (including head issuance), retained queue
+origins and card revisions. Queue-origin cleanup follows queue/card deletion
+because deletion triggers retain origins. Tactic fixture cards do not produce
+opening presentation/context records; canonical-source triggers affect only the
+synthetic repertoire. Operation receipt selection parses the payload's exact
+`card_id`, rather than searching arbitrary text. Other settings fields remain
+untouched. PostgreSQL identity sequence increments are intentionally not reversed.
+
+Redis recovery, page closure and SQL cleanup are independently attempted and
+failures are aggregated. The runner always attempts project teardown and verifies
+container/volume removal. Abrupt host termination can leave invocation-owned
+resources; verify ownership before removing them. Identical-value intervening
+writes are not distinguishable by snapshot comparison.
+
+The concurrency guarantees have separate boundaries:
+
+- Independent invocations have exclusive ownership of separate disposable stacks.
+- Cooperating fixture operations serialize their short seed/cleanup transactions.
+- Application writers remain active during the browser case. Study-only mode
+  permits essential daily-queue work; it is not complete application quiescence.
+  The native proof in `background_workloads` stops defense-engine,
+  background-worker and background-scheduler, then restores them. Foreground
+  workers are not suspended by that native proof.
+- Cleanup locks the repertoire and cards before examining queue ownership.
+  PostgreSQL FK checks for new queue/membership relationships need parent key
+  locks and wait behind these `FOR UPDATE` locks. A two-connection regression
+  proves that boundary. Existing queue rows and restoration targets are locked.
+  Projection or displaced-position changes visible before validation conflict.
+- These locks do not fence arbitrary SQL writers, all predicates, or new
+  non-FK operation receipts. `daily_queue.admission_repertoire_id` is text without
+  an FK: a concurrent unrelated-card insert naming only that repertoire does not
+  wait on its parent lock. It is not a supported application path for this nonce
+  repertoire (its membership contains only the three owned cards). The browser
+  closes its page before receipt inventory
+  and cleanup, observes completed owned operations, and asserts captured owned
+  operation IDs disappear while unrelated IDs survive. It does not establish
+  general application quiescence or protection from externally injected writers.
+
+Raw browser receipts are captured separately from fault-state comparisons. The
+verified scenario produced four `cards.review` and one `queue.issue_head` owned
+receipts, all with top-level exact `card_id`; the predicate is unchanged. Modern
+attempt-failure calls also carry `card_id`; legacy queue-only failure/burial shapes
+are not produced by this fresh-context successful-review scenario. An observed
+queue-only owned receipt fails the audit before deletion. See
+`docs/validation/pr229-fixture-isolation.md` for source and runtime evidence.
