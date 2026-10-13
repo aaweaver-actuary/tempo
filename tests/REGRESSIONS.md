@@ -25,6 +25,7 @@ planner changes or narrower production qualification. See
 ## Main CI test repairs after PR #235 (October 13, 2026)
 
 - `backend/tests/test_queue_application_extraction.py::test_essential_queue_study_only_resumes_every_legacy_phase` covers all four legacy checkpoints. Ranked checkpoints now enter the bounded `study_opening_page` path and, with exhausted allowance, continue to `admit_study`. The fixture supplies the bounded allowance read, forbids optional ranking/analysis, and preserves the queue date, recovery boundary, and quarantine cursor. Main `8384aa4d` reproduced two missing-read failures before the fixture repair.
+- `tests/browser/cross-browser.spec.ts`: `critical navigation, board input, split and dialogs work across browser engines` waits for initial repertoire binding and uses the existing orientation-aware `playMove` helper. It retains the positive e4 pawn assertion; main CI run `38422875006` failed that assertion in Firefox with the starting FEN unchanged. No shared helper or production board behavior changes.
 
 ## Study-only opening introductions — related #194, #220, #223, #230–#232
 
