@@ -1,0 +1,12 @@
+pr,run_id,attempt,conditional_gate_path_reduction_seconds,note
+180,38123187265,1,36.0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+183,38123656153,1,0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+185,38127382123,1,,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+185,38127747077,1,171.0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+187,38131626309,1,151.0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+191,38149585549,1,0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+195,38163643415,1,0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+196,38241409268,1,0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+196,38241698614,1,1.0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+197,38246261294,1,0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved
+227,38286644543,1,34.0,all matching layers replaced together; retains observed scheduling slack; future queue and original eligibility remain unproved

@@ -1,0 +1,16 @@
+test_checkout_candidate_requires_the_logged_git_head (test_audit.AccountingTests.test_checkout_candidate_requires_the_logged_git_head) ... ok
+test_checkout_recovery_does_not_assign_a_base_to_other_planless_runs (test_audit.AccountingTests.test_checkout_recovery_does_not_assign_a_base_to_other_planless_runs) ... ok
+test_cutoff_censors_running_and_later_completed_jobs (test_audit.AccountingTests.test_cutoff_censors_running_and_later_completed_jobs) ... ok
+test_failed_cancelled_and_retried_execution_remains_compute (test_audit.AccountingTests.test_failed_cancelled_and_retried_execution_remains_compute) ... ok
+test_markdown_controls_exclude_executable_evidence (test_audit.AccountingTests.test_markdown_controls_exclude_executable_evidence) ... ok
+test_missing_or_reversed_timestamps_are_not_successful_zeroes (test_audit.AccountingTests.test_missing_or_reversed_timestamps_are_not_successful_zeroes) ... ok
+test_nearest_rank_percentiles_and_empty_population (test_audit.AccountingTests.test_nearest_rank_percentiles_and_empty_population) ... ok
+test_noncritical_parallel_removal_does_not_reduce_gate_wait (test_audit.AccountingTests.test_noncritical_parallel_removal_does_not_reduce_gate_wait) ... ok
+test_parallel_jobs_do_not_double_count_elapsed_wait (test_audit.AccountingTests.test_parallel_jobs_do_not_double_count_elapsed_wait) ... ok
+test_skipped_unassigned_jobs_do_not_consume_runner_time (test_audit.AccountingTests.test_skipped_unassigned_jobs_do_not_consume_runner_time) ... ok
+test_unknown_workflow_graph_is_not_an_elapsed_savings_estimate (test_audit.AccountingTests.test_unknown_workflow_graph_is_not_an_elapsed_savings_estimate) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.000s
+
+OK

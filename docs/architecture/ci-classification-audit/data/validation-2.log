@@ -1,0 +1,61 @@
+{
+  "categories": {
+    "classification_and_ownership_envelope": {
+      "rows": 10,
+      "unique_job_count": 66,
+      "gross_runner_minutes": 304.5,
+      "conditional_net_runner_minutes": null
+    },
+    "exact_candidate_reuse_screen": {
+      "rows": 40,
+      "unique_job_count": 44,
+      "gross_runner_minutes": 251.43333333333334,
+      "conditional_net_runner_minutes": 240.225
+    },
+    "separate_documentation_pr": {
+      "rows": 1,
+      "unique_job_count": 17,
+      "gross_runner_minutes": 78.23333333333333,
+      "conditional_net_runner_minutes": null
+    }
+  },
+  "combined_deduplicated_gross_runner_minutes": 614.9833333333333,
+  "combined_unique_job_count": 123,
+  "combined_certified_lower_bound_runner_minutes": 0,
+  "reuse_overhead_seconds_by_layer": {
+    "backend": 16.0,
+    "browser": 14.0,
+    "build": 17.5,
+    "frontend": 18.0,
+    "lifecycle": 15.0,
+    "postgres": 16.0,
+    "visual": 18.0
+  },
+  "conditional_reuse_gate_path_reduction_minutes": 6.55,
+  "reuse_path_scenarios_without_terminal": 1,
+  "per_shard_repetition_not_whole_suite_reuse": {
+    "count": 3,
+    "runner_minutes": 21.066666666666666
+  },
+  "complete_selection_attempts": 135,
+  "complete_selection_outcomes": {
+    "incomplete_at_cutoff": 2,
+    "cancelled": 66,
+    "success": 26,
+    "failure": 41
+  },
+  "failure_categories": {
+    "draft_or_readiness_rejection": 23,
+    "test_or_layer_execution_failure": 22,
+    "planning_failure": 6,
+    "stale_or_closed_candidate_rejection": 2
+  },
+  "failure_category_runner_minutes": {
+    "draft_or_readiness_rejection": 1320.4666666666667,
+    "planning_failure": 5.9,
+    "stale_or_closed_candidate_rejection": 146.5,
+    "test_or_layer_execution_failure": 1603.2
+  },
+  "primary_per_pr_qualification_interval_union_minutes": 1679.8833333333332,
+  "primary_repository_interval_union_minutes": 968.9333333333333
+}

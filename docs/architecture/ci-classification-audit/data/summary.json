@@ -1,0 +1,93 @@
+{
+  "cutoff": "2026-10-13T12:18:16Z",
+  "primary_pr_count": 25,
+  "control_pr_count": 7,
+  "attempts": 273,
+  "tiers": {
+    "FULL": 62,
+    "UNKNOWN": 122,
+    "STUDY": 8,
+    "UNKNOWN_EARLIER_ATTEMPT": 1,
+    "PRE_FAST_LANE_COMPLETE": 73,
+    "PRE_FAST_LANE_DEVELOPMENT": 7
+  },
+  "outcomes": {
+    "incomplete_at_cutoff": 2,
+    "cancelled": 188,
+    "success": 30,
+    "failure": 53
+  },
+  "runner_minutes": 6181.3,
+  "by_tier": {
+    "FULL": {
+      "count": 62,
+      "runner_minutes": 2356.05,
+      "elapsed_median_minutes": 5.5,
+      "elapsed_p90_minutes": 16.916666666666668
+    },
+    "PRE_FAST_LANE_COMPLETE": {
+      "count": 73,
+      "runner_minutes": 3429.05,
+      "elapsed_median_minutes": 13.866666666666667,
+      "elapsed_p90_minutes": 27.0
+    },
+    "PRE_FAST_LANE_DEVELOPMENT": {
+      "count": 7,
+      "runner_minutes": 286.56666666666666,
+      "elapsed_median_minutes": 21.85,
+      "elapsed_p90_minutes": 30.35
+    },
+    "STUDY": {
+      "count": 8,
+      "runner_minutes": 45.36666666666667,
+      "elapsed_median_minutes": 6.016666666666667,
+      "elapsed_p90_minutes": 10.383333333333333
+    },
+    "UNKNOWN": {
+      "count": 122,
+      "runner_minutes": 25.183333333333334,
+      "elapsed_median_minutes": 0.5333333333333333,
+      "elapsed_p90_minutes": 1.9666666666666666
+    },
+    "UNKNOWN_EARLIER_ATTEMPT": {
+      "count": 1,
+      "runner_minutes": 39.083333333333336,
+      "elapsed_median_minutes": 8.95,
+      "elapsed_p90_minutes": 8.95
+    }
+  },
+  "missing_plan_attempts": 122,
+  "earlier_attempt_plan_gaps": 1,
+  "outcome_timing": {
+    "cancelled": {
+      "count": 188,
+      "runner_minutes": 1437.6166666666666,
+      "elapsed_median_minutes": 1.3333333333333333,
+      "elapsed_p90_minutes": 15.533333333333333
+    },
+    "failure": {
+      "count": 53,
+      "runner_minutes": 3076.0666666666666,
+      "elapsed_median_minutes": 15.45,
+      "elapsed_p90_minutes": 26.966666666666665
+    },
+    "incomplete_at_cutoff": {
+      "count": 2,
+      "runner_minutes": 71.1,
+      "elapsed_median_minutes": null,
+      "elapsed_p90_minutes": null
+    },
+    "success": {
+      "count": 30,
+      "runner_minutes": 1596.5166666666667,
+      "elapsed_median_minutes": 13.85,
+      "elapsed_p90_minutes": 17.166666666666668
+    }
+  },
+  "runner_classes": {
+    "ubuntu-24.04-arm": 6181.3,
+    "": 0.0
+  },
+  "distinct_job_count": 3776,
+  "revision_count": 204
+}

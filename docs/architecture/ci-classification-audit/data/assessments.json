@@ -1,0 +1,483 @@
+[
+  {
+    "pr": 235,
+    "assessment": "justified_FULL",
+    "reason": "Explicit ci:full plus PostgreSQL proof and runner changes; mapped queue source alone is STUDY. Do not ignore the explicit label.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_study_opening_admission.py",
+      "scripts/check_postgres_study_opening_admission.py",
+      "tests/REGRESSIONS.md",
+      "tests/runner/postgres-test-speedups.test.mjs"
+    ]
+  },
+  {
+    "pr": 234,
+    "assessment": "already_narrow",
+    "reason": "Archived plan is STUDY, including native study durability and ten browser identities. The issue FAST description is incorrect.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_prepared_review_continuation.py",
+      "tests/REGRESSIONS.md",
+      "tests/unit/prepared-review-continuation-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 229,
+    "assessment": "justified_FULL_with_boundary_opportunity",
+    "reason": "HTTP composition/admission, Redis proof, runner and inventory changes justify whole-PR FULL. Later documentation and independent prepared-authority audit additions can be separated.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_foreground_admission_http.py",
+      "backend/tests/test_prepared_review_continuation.py",
+      "backend/tests/test_redis_admission_fixture.py",
+      "scripts/check_postgres_redis_admission.py",
+      "scripts/check_postgres_redis_fixture_isolation.py",
+      "tests/REGRESSIONS.md",
+      "tests/browser/redis-admission-recovery.spec.ts",
+      "tests/browser/support/redis-admission-cleanup.ts",
+      "tests/browser/training-critical-path.spec.ts",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/runner/postgres-test-speedups.test.mjs",
+      "tests/unit/prepared-queue-readiness-regressions.test.ts",
+      "tests/unit/prepared-review-continuation-regressions.test.ts",
+      "tests/unit/redis-admission-cleanup-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 228,
+    "assessment": "justified_FULL",
+    "reason": "Migration 048, schema/database/main/models, workers, settings contracts and visuals. Prefix-diagnostics fixture iterations inherit this justified whole-PR tier.",
+    "named_existing_evidence_files": [
+      "backend/tests/conftest.py",
+      "backend/tests/test_opening_capacity_admission.py",
+      "backend/tests/test_postgres_cutover.py",
+      "backend/tests/test_restoration_controls.py",
+      "backend/tests/test_study_only_mode.py",
+      "scripts/check_postgres_study_only.py",
+      "scripts/check_postgres_training_transition.py",
+      "tests/REGRESSIONS.md",
+      "tests/browser/prefix-diagnostics.spec.ts",
+      "tests/browser/recovery.spec.ts",
+      "tests/browser/repertoire-restoration-qualification.spec.ts",
+      "tests/browser/repertoire-worker-isolation.spec.ts",
+      "tests/browser/study-only-mode.spec.ts",
+      "tests/browser/visual-baselines/settings-1280.png",
+      "tests/browser/visual-baselines/settings-1920.png",
+      "tests/browser/visual-baselines/settings-390.png",
+      "tests/browser/visual-baselines/settings-768.png",
+      "tests/browser/visual-baselines/training-feedback-phone.png",
+      "tests/browser/visual-fixtures.ts",
+      "tests/browser/visual.spec.ts",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/unit/repertoire-alternative-home-regressions.test.tsx",
+      "tests/unit/repertoire-alternative-index-regressions.test.ts",
+      "tests/unit/repertoire-worker-isolation-regressions.test.ts",
+      "tests/unit/shared-board-shell-games-regressions.test.tsx",
+      "tests/unit/study-only-settings-regressions.test.tsx"
+    ]
+  },
+  {
+    "pr": 227,
+    "assessment": "justified_FULL",
+    "reason": "HTTP composition/queue extraction, shared query and proof changes. Base/rebase tree deltas must not be called unrelated authored changes.",
+    "named_existing_evidence_files": [
+      "backend/tests/fixtures/queue-extraction-220-sql.json",
+      "backend/tests/fixtures/queue-extraction-220.json",
+      "backend/tests/test_opening_ranking_evaluation.py",
+      "backend/tests/test_postgres_cutover.py",
+      "backend/tests/test_postgres_opening_candidate_pages.py",
+      "backend/tests/test_queue_application_extraction.py",
+      "backend/tests/test_scheduling_review_application.py",
+      "backend/tests/test_scheduling_review_store.py",
+      "scripts/check_postgres_daily_study_dispatch.py",
+      "scripts/check_postgres_priority_recovery.py",
+      "scripts/check_postgres_queue_attempt_recovery.py",
+      "tests/REGRESSIONS.md"
+    ]
+  },
+  {
+    "pr": 226,
+    "assessment": "justified_FULL",
+    "reason": "Shared scheduling persistence store and native recovery proof.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_scheduling_review_application.py",
+      "backend/tests/test_scheduling_review_store.py",
+      "scripts/check_postgres_queue_attempt_recovery.py",
+      "tests/REGRESSIONS.md"
+    ]
+  },
+  {
+    "pr": 214,
+    "assessment": "justified_FULL",
+    "reason": "Qualification workflow, planner, inventory and merge-gate infrastructure.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/runner/ci-development.test.mjs",
+      "tests/runner/ci-fast-lane.test.mjs",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/runner/postgres-test-speedups.test.mjs",
+      "tests/unit/ci-fast-lane-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 212,
+    "assessment": "unresolved_execution",
+    "reason": "Controlled browser harness/config and generated fixtures require conservative qualification. Missing plan and planning failures prevent attributing a selected FULL tier.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/controlled-browser/contracts.ts",
+      "tests/controlled-browser/fixtures.ts",
+      "tests/controlled-browser/interaction.spec.ts",
+      "tests/controlled-browser/phone.spec.ts",
+      "tests/controlled-browser/strict-api.ts",
+      "tests/fixtures/controlled-browser/generate.py",
+      "tests/fixtures/controlled-browser/pilot.json",
+      "tests/fixtures/controlled-browser/receipts.json",
+      "tests/fixtures/controlled-browser/startup.json",
+      "tests/unit/controlled-browser-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 211,
+    "assessment": "defensibly_narrower_after_certification",
+    "reason": "Only cross-browser spec plus registry. Retain the complete affected real-engine spec and its native fixture; unrelated layers are a conditional ownership envelope.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/browser/cross-browser.spec.ts"
+    ]
+  },
+  {
+    "pr": 207,
+    "assessment": "defensibly_narrower_after_certification",
+    "reason": "Deletion publication fixture/readiness helper, its unit regression and real browser spec. Retain native deletion/publication/queue behavior; never replace with mocked smoke.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/browser/content-deletion-publication.ts",
+      "tests/browser/content-deletion.spec.ts",
+      "tests/unit/content-deletion-publication-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 206,
+    "assessment": "defensibly_narrower_after_certification",
+    "reason": "Read-only probability contract and explicit domain-boundary corpus/runtime checks. Certify all producer/consumer identities and no-service closure through #202 before narrowing.",
+    "named_existing_evidence_files": [
+      "backend/tests/domain_boundary.py",
+      "backend/tests/domain_boundary_fixtures.py",
+      "backend/tests/domain_boundary_runtime.py",
+      "backend/tests/test_domain_boundaries.py",
+      "tests/REGRESSIONS.md",
+      "tests/fixtures/domain-boundary/dependency-graph.json",
+      "tests/fixtures/domain-boundary/fixed-as-of.json",
+      "tests/fixtures/domain-boundary/immutable-fixtures.json",
+      "tests/fixtures/domain-boundary/rules.json"
+    ]
+  },
+  {
+    "pr": 197,
+    "assessment": "justified_FULL",
+    "reason": "Native admission/query behavior, HTTP composition, Compose and PostgreSQL runner/proofs.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_opening_capacity_admission.py",
+      "backend/tests/test_opening_capacity_frontier.py",
+      "scripts/check_postgres_opening_capacity.py",
+      "tests/REGRESSIONS.md"
+    ]
+  },
+  {
+    "pr": 196,
+    "assessment": "justified_FULL_under_existing_policy",
+    "reason": "Study tactic interaction, native training proof and visual baselines; source-selected study qualification is a future option only after proof ownership.",
+    "named_existing_evidence_files": [
+      "scripts/check_postgres_training_transition.py",
+      "tests/REGRESSIONS.md",
+      "tests/browser/study-only-mode.spec.ts",
+      "tests/browser/visual-baselines/guided-tactic-completion-1280.png",
+      "tests/browser/visual-baselines/guided-tactic-completion-390.png",
+      "tests/browser/visual.spec.ts",
+      "tests/unit/study-only-tactics-regressions.test.tsx"
+    ]
+  },
+  {
+    "pr": 195,
+    "assessment": "justified_FULL",
+    "reason": "Migration 047 plus database/schema/models, shared commands, background workers and settings.",
+    "named_existing_evidence_files": [
+      "backend/tests/conftest.py",
+      "backend/tests/test_engine_fairness.py",
+      "backend/tests/test_nonblocking_admission.py",
+      "backend/tests/test_opening_checkpoint_preparation.py",
+      "backend/tests/test_postgres_background_timeouts.py",
+      "backend/tests/test_postgres_cutover.py",
+      "backend/tests/test_postgres_game_derivation.py",
+      "backend/tests/test_postgres_maia_availability_read.py",
+      "backend/tests/test_postgres_next_opponent.py",
+      "backend/tests/test_prefix_transition_apply.py",
+      "backend/tests/test_queue_attempt_issuance.py",
+      "backend/tests/test_repertoire_move_verification.py",
+      "backend/tests/test_study_only_mode.py",
+      "scripts/check_postgres_next_opponent.py",
+      "scripts/check_postgres_study_only.py",
+      "scripts/check_postgres_training_transition.py",
+      "tests/REGRESSIONS.md",
+      "tests/browser/study-only-mode.spec.ts",
+      "tests/browser/visual-baselines/settings-1280.png",
+      "tests/browser/visual-baselines/settings-1920.png",
+      "tests/browser/visual-baselines/settings-390.png",
+      "tests/browser/visual-baselines/settings-768.png",
+      "tests/browser/visual.spec.ts",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/unit/defensive-analysis-pause-regressions.test.ts",
+      "tests/unit/repertoire-alternative-home-regressions.test.tsx",
+      "tests/unit/repertoire-move-verification.test.ts",
+      "tests/unit/study-only-settings-regressions.test.tsx"
+    ]
+  },
+  {
+    "pr": 191,
+    "assessment": "justified_FULL_for_recorded_broad_candidates",
+    "reason": "Review settlement invariant; recorded broad candidates include CI and persistence inputs. Distinguish imported base/rebase changes from the initial bounded outbox intent.",
+    "named_existing_evidence_files": [
+      "backend/tests/conftest.py",
+      "backend/tests/test_engine_fairness.py",
+      "backend/tests/test_nonblocking_admission.py",
+      "backend/tests/test_opening_capacity_admission.py",
+      "backend/tests/test_opening_capacity_frontier.py",
+      "backend/tests/test_opening_checkpoint_preparation.py",
+      "backend/tests/test_postgres_background_timeouts.py",
+      "backend/tests/test_postgres_cutover.py",
+      "backend/tests/test_postgres_game_derivation.py",
+      "backend/tests/test_postgres_maia_availability_read.py",
+      "backend/tests/test_postgres_next_opponent.py",
+      "backend/tests/test_prefix_transition_apply.py",
+      "backend/tests/test_queue_attempt_issuance.py",
+      "backend/tests/test_repertoire_move_verification.py",
+      "backend/tests/test_study_only_mode.py",
+      "scripts/check_postgres_next_opponent.py",
+      "scripts/check_postgres_opening_capacity.py",
+      "scripts/check_postgres_study_only.py",
+      "scripts/check_postgres_training_transition.py",
+      "tests/REGRESSIONS.md",
+      "tests/browser/post-review-progression.spec.ts",
+      "tests/browser/study-only-mode.spec.ts",
+      "tests/browser/training-critical-path.spec.ts",
+      "tests/browser/visual-baselines/settings-1280.png",
+      "tests/browser/visual-baselines/settings-1920.png",
+      "tests/browser/visual-baselines/settings-390.png",
+      "tests/browser/visual-baselines/settings-768.png",
+      "tests/browser/visual.spec.ts",
+      "tests/browser/workspace-flows.spec.ts",
+      "tests/runner/ci-development.test.mjs",
+      "tests/runner/ci-fast-lane.test.mjs",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/runner/postgres-test-speedups.test.mjs",
+      "tests/unit/ci-fast-lane-regressions.test.ts",
+      "tests/unit/defensive-analysis-pause-regressions.test.ts",
+      "tests/unit/pending-review-recovery-regressions.test.tsx",
+      "tests/unit/prepared-review-continuation-regressions.test.ts",
+      "tests/unit/repertoire-alternative-home-regressions.test.tsx",
+      "tests/unit/repertoire-move-verification.test.ts",
+      "tests/unit/review-attempt-confirmation-regressions.test.tsx",
+      "tests/unit/review-outbox-regressions.test.ts",
+      "tests/unit/study-only-settings-regressions.test.tsx"
+    ]
+  },
+  {
+    "pr": 189,
+    "assessment": "justified_FULL",
+    "reason": "Cross-command structural admission and shared qualification inventory; deletion/import/repair/outbox boundaries.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/browser/cross-browser.spec.ts",
+      "tests/browser/prefix-structural-safety.spec.ts",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/unit/analysis-paste-pending-regressions.test.ts",
+      "tests/unit/branch-command-pending-regressions.test.ts",
+      "tests/unit/branch-removal-pending-regressions.test.ts",
+      "tests/unit/builder-performance-regressions.test.tsx",
+      "tests/unit/builder-regressions.test.tsx",
+      "tests/unit/canonical-prefix-parent-regressions.test.tsx",
+      "tests/unit/canonical-prefix-regressions.test.tsx",
+      "tests/unit/card-delete-pending-regressions.test.ts",
+      "tests/unit/card-revision-pending-regressions.test.ts",
+      "tests/unit/deletion-dialogs-regressions.test.tsx",
+      "tests/unit/discoveries-tray-regressions.test.tsx",
+      "tests/unit/discovery-admission-outbox-regressions.test.ts",
+      "tests/unit/finding-card-pending-regressions.test.ts",
+      "tests/unit/integrity-repair-outbox-regressions.test.ts",
+      "tests/unit/integrity-repair-pending-regressions.test.ts",
+      "tests/unit/integrity-repair-status-regressions.test.tsx",
+      "tests/unit/opportunity-action-pending-regressions.test.ts",
+      "tests/unit/pgn-import-dialog-regressions.test.tsx",
+      "tests/unit/pgn-import-pending-regressions.test.ts",
+      "tests/unit/phone-recovery-messaging-regressions.test.tsx",
+      "tests/unit/popup-shortcuts-regressions.test.tsx",
+      "tests/unit/prefix-split-pending-regressions.test.ts",
+      "tests/unit/prefix-structural-command-regressions.test.ts",
+      "tests/unit/prefix-structural-editors-regressions.test.tsx",
+      "tests/unit/repair-endgame-regressions.test.tsx",
+      "tests/unit/repertoire-alternative-home-regressions.test.tsx",
+      "tests/unit/repertoire-delete-pending-regressions.test.ts",
+      "tests/unit/repertoire-integrity-dialog-regressions.test.tsx",
+      "tests/unit/repertoire-opportunities.test.tsx",
+      "tests/unit/shared-board-shell-endgames-regressions.test.tsx",
+      "tests/unit/shared-board-shell-games-regressions.test.tsx",
+      "tests/unit/study-regressions.test.tsx",
+      "tests/unit/tactic-capture-regressions.test.tsx",
+      "tests/unit/training-builder-context-regressions.test.tsx",
+      "tests/unit/transposition-polish-regressions.test.tsx"
+    ]
+  },
+  {
+    "pr": 188,
+    "assessment": "justified_FULL",
+    "reason": "Cross-tab prefix-journal recovery plus shared qualification inventory and harness changes.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/browser/cross-browser.spec.ts",
+      "tests/browser/prefix-transition-journal.spec.ts",
+      "tests/browser/support/prefix-transition-journal-browser.ts",
+      "tests/browser/support/prefix-transition-journal-harness.tsx",
+      "tests/runner/ci-reliability.test.mjs",
+      "tests/unit/pr187-audit-command.test.ts",
+      "tests/unit/pr187-audit-ui.test.tsx",
+      "tests/unit/prefix-comparison-regressions.test.tsx",
+      "tests/unit/prefix-transition-command-regressions.test.ts",
+      "tests/unit/prefix-transition-journal-regressions.test.ts",
+      "tests/unit/prefix-transition-parent-regressions.test.tsx",
+      "tests/unit/support/prefix-transition-locks.ts"
+    ]
+  },
+  {
+    "pr": 187,
+    "assessment": "justified_FULL",
+    "reason": "Shared durable prefix/command/review persistence and API/worker safety boundaries.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_opening_evidence_contracts.py",
+      "backend/tests/test_pr187_audit_contract.py",
+      "backend/tests/test_prepared_review_continuation.py",
+      "backend/tests/test_stalemate_swindles.py",
+      "backend/tests/test_training_transition_fixture.py",
+      "scripts/check_postgres_prefix_transition_application.py",
+      "scripts/check_postgres_training_transition.py",
+      "tests/REGRESSIONS.md",
+      "tests/browser/cross-browser.spec.ts",
+      "tests/browser/opening-evidence.spec.ts",
+      "tests/browser/post-review-progression.spec.ts",
+      "tests/browser/prefix-comparison.spec.ts",
+      "tests/browser/prefix-diagnostics.spec.ts",
+      "tests/browser/recovery.spec.ts",
+      "tests/browser/training-critical-path.spec.ts",
+      "tests/browser/training-prefetch.spec.ts",
+      "tests/browser/visual-baselines/prefix-comparison-1280.png",
+      "tests/browser/visual-baselines/prefix-comparison-whole-1280.png",
+      "tests/browser/visual-baselines/prefix-comparison-whole-390.png",
+      "tests/browser/visual-baselines/prefix-transition-confirmation-1280.png",
+      "tests/browser/visual-baselines/prefix-transition-confirmation-390.png",
+      "tests/browser/visual-baselines/prefix-transition-recovery-1280.png",
+      "tests/browser/visual-baselines/prefix-transition-recovery-390.png",
+      "tests/browser/visual.spec.ts",
+      "tests/browser/workspace-flows.spec.ts",
+      "tests/fixtures/prefix-comparison/transition.json",
+      "tests/fixtures/prefix-comparison/transition_generate.py",
+      "tests/runner/postgres-test-speedups.test.mjs",
+      "tests/unit/api-schema-parity-regressions.test.ts",
+      "tests/unit/attempt-lifecycle-regressions.test.ts",
+      "tests/unit/background-workspace-regressions.test.tsx",
+      "tests/unit/debug-reporting-regressions.test.tsx",
+      "tests/unit/opening-evidence-home-lifecycle.test.tsx",
+      "tests/unit/pr187-audit-command.test.ts",
+      "tests/unit/pr187-audit-ui.test.tsx",
+      "tests/unit/prefix-comparison-regressions.test.tsx",
+      "tests/unit/prefix-transition-command-regressions.test.ts",
+      "tests/unit/prefix-transition-parent-regressions.test.tsx",
+      "tests/unit/prepared-review-continuation-regressions.test.ts",
+      "tests/unit/repertoire-alternative-home-regressions.test.tsx",
+      "tests/unit/repertoire-alternative-index-regressions.test.ts",
+      "tests/unit/review-attempt-confirmation-regressions.test.tsx",
+      "tests/unit/review-outbox-regressions.test.ts",
+      "tests/unit/setup.ts",
+      "tests/unit/shared-board-shell-training-regressions.test.tsx",
+      "tests/unit/training-builder-handoff-regressions.test.tsx",
+      "tests/unit/training-burial-caller-regressions.test.tsx",
+      "tests/unit/workspace-publication-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 185,
+    "assessment": "unresolved_narrowing",
+    "reason": "Frontend generation/evidence indexing is promising, but benchmark/raw JSON, background workspace and schema consumers need dependency ownership; not counted in narrowing savings.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/browser/recovery.spec.ts",
+      "tests/unit/background-workspace-regressions.test.tsx",
+      "tests/unit/debug-reporting-regressions.test.tsx",
+      "tests/unit/repertoire-alternative-home-regressions.test.tsx",
+      "tests/unit/repertoire-alternative-index-regressions.test.ts",
+      "tests/unit/workspace-publication-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 184,
+    "assessment": "justified_FULL",
+    "reason": "Migration 046, database/schema, APIs/tasks and native learning-priority proofs.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_learning_priorities.py",
+      "scripts/check_postgres_engine_fairness.py",
+      "scripts/check_postgres_learning_priorities.py",
+      "tests/REGRESSIONS.md",
+      "tests/runner/postgres-test-speedups.test.mjs"
+    ]
+  },
+  {
+    "pr": 183,
+    "assessment": "already_development_scoped",
+    "reason": "Discovery preview UI with browser/unit regressions. Available plans are pre-fast-lane development, not counted as FULL.",
+    "named_existing_evidence_files": [
+      "tests/REGRESSIONS.md",
+      "tests/browser/discovery-viewer.spec.ts",
+      "tests/unit/discoveries-tray-regressions.test.tsx"
+    ]
+  },
+  {
+    "pr": 182,
+    "assessment": "justified_FULL",
+    "reason": "Engine Docker/provider process, PostgreSQL store and shared foreground/background admission.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_position_claim_failures.py",
+      "scripts/check_postgres_engine_fairness.py",
+      "tests/REGRESSIONS.md",
+      "tests/unit/defense-engine-smoke-regressions.test.ts",
+      "tests/unit/durable-engine-request-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 181,
+    "assessment": "justified_FULL",
+    "reason": "Maia Docker/runtime adapter/cache contracts, provider parity and PostgreSQL runner changes.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_maia_probability_contracts.py",
+      "tests/REGRESSIONS.md",
+      "tests/fixtures/maia-probability/examples.json",
+      "tests/fixtures/maia-probability/validate.py",
+      "tests/runner/postgres-test-speedups.test.mjs",
+      "tests/unit/maia-probability-regressions.test.ts"
+    ]
+  },
+  {
+    "pr": 180,
+    "assessment": "defensibly_narrower_after_certification",
+    "reason": "Retirement checkpoint proof foreground-admission retry and named native regression. Preserve real PostgreSQL/Redis contention, restart and replay; smaller smoke omitting this case is insufficient.",
+    "named_existing_evidence_files": [
+      "scripts/check_postgres_prefix_transition_application.py",
+      "tests/REGRESSIONS.md"
+    ]
+  },
+  {
+    "pr": 178,
+    "assessment": "defensibly_narrower_after_certification",
+    "reason": "Pure sequence/frontier eligibility, deterministic ID/segmentation/probability helpers and direct Python tests. Read-only contract, no migration or persistence mutation; certify transitive callers before FAST.",
+    "named_existing_evidence_files": [
+      "backend/tests/test_opening_frontier.py",
+      "tests/REGRESSIONS.md"
+    ]
+  }
+]

@@ -1,0 +1,55 @@
+{
+  "base": "c5f773b18c4a5b30a3abda84ecac01ab625a3902",
+  "environment": {
+    "python": "Python 3.14.8",
+    "node": "v26.10.0",
+    "platform": "Darwin arm64"
+  },
+  "dirty_audit_sources_tested": true,
+  "commands": [
+    {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs/architecture/ci-classification-audit",
+        "-p",
+        "test_audit.py",
+        "-v"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 0.06960037499811733
+    },
+    {
+      "command": [
+        "python3",
+        "docs/architecture/ci-classification-audit/opportunities.py",
+        "--output",
+        "/Users/andy/tempo/test-results/issue-238-ci-classification-audit-20261013/replay"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 0.20512066599621903
+    },
+    {
+      "command": [
+        "python3",
+        "docs/architecture/ci-classification-audit/verify.py",
+        "--output",
+        "/Users/andy/tempo/test-results/issue-238-ci-classification-audit-20261013/replay"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 6.286280959000578
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 0.019585708003432956
+    }
+  ]
+}
