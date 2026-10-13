@@ -226,7 +226,7 @@ test(`restoration_native_cancel_during_${phase}_terminates_computation_and_prese
     const native = Reflect.get(window, "tempoNative");
     const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const line = { id: "retained", repertoireId: "retained", repertoireName: "Retained", title: "Retained",
-      side: "white", startingFen: fen, moves: ["e2e4", "e7e5"] };
+      side: "white", startingFen: fen, moves: ["e2e4", "e7e5"], validation: { isValid: true, isTruncated: false, diagnostics: [] } };
     await native.runStudyTask({ kind: "initializePositionIndex", repertoireId: "retained", revision: 1, lines: [line] });
     const before = await native.runStudyTask({ kind: "findPositionMatches", repertoireId: "retained", revision: 1, fen });
     const payload = { lines: [{ id: "bulk", repertoire_id: "bulk", repertoire_name: "Bulk", name: "Bulk",
