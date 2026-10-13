@@ -1014,6 +1014,8 @@ const actions = {
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_training_transition.py", "proof", `training-transition-${randomBytes(16).toString("hex")}`]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
+          "schema", "python", "/source/scripts/check_postgres_redis_fixture_isolation.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_repertoire_limits.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",

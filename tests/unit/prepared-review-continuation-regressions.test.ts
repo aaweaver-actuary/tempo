@@ -118,6 +118,51 @@ it("prepared_continuation_requires_current_head_and_matching_identity: confirmed
   expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
 });
 
+it.each(["removed", "revision", "cycle", "replacement", "promotion", "day"])(
+  "pr229_observed_authoritative_invalidation_blocks_delayed_continuation: %s", async invalidation => {
+    const submittedAttempt = useTrainingStore.getState().attempt;
+    const preparedNext = capturePreparedNext()!;
+    enqueuePendingReview({ backendId: "a", queueEntryId: 501, attemptId: submittedAttempt.attemptId!,
+      outcome: "correct", guided: false, expectedRevision: 1, preparedNext });
+    let releaseReview!: (response: Response) => void;
+    const heldReview = new Promise<Response>(resolve => { releaseReview = resolve; });
+    const revisedSuccessor = { ...queue[1], cycle: 0,
+      ...(invalidation === "revision" ? { revision: 2 } : {}),
+      ...(invalidation === "cycle" ? { cycle: 1 } : {}),
+      ...(invalidation === "replacement" ? { id: "replacement-b", queue_entry_id: 777 } : {}) };
+    const authoritativeCards = invalidation === "removed" ? [queue[2]]
+      : invalidation === "promotion" ? [queue[2], revisedSuccessor] : [revisedSuccessor, queue[2]];
+    const fetcher = vi.fn(async (_input, options?: RequestInit) => options?.method === "POST" ? heldReview
+      : Response.json({ cards: authoritativeCards, count: authoritativeCards.length,
+        local_date: invalidation === "day" ? "1999-01-01" : localDayKey(), projection: { state: "ready", generation: 2, updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } }));
+    vi.stubGlobal("fetch", fetcher);
+    const settlement = flushPendingReviews();
+    await vi.waitFor(() => expect(releaseReview).toBeTypeOf("function"));
+    // Retain the active attempt so rejection must follow the newly observed
+    // authoritative successor, rather than an unrelated attempt-token change.
+    await fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true });
+    expect(useTrainingStore.getState().attempt).toEqual(submittedAttempt);
+    releaseReview(Response.json({ persisted: true, prepared_continuation: { ...preparedNext, attempt_failed: false } }));
+    const result = await settlement;
+    expect(result.persistedAttemptIds).toEqual([submittedAttempt.attemptId]);
+    expect(pendingReviews()).toEqual([]);
+    expect(advancePreparedContinuation(result.preparedContinuations?.[submittedAttempt.attemptId!],
+      submittedAttempt.attemptId!, submittedAttempt.generation)).toBe(false);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(501);
+    expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+  });
+
+it("pr229_new_publication_retaining_authorized_successor_preserves_continuation", async () => {
+  const submittedAttempt = useTrainingStore.getState().attempt;
+  const continuation = { ...capturePreparedNext()!, attempt_failed: false };
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ cards: queue.slice(1), count: 2,
+    local_date: localDayKey(), projection: { state: "ready", generation: 2, updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } })));
+  await fetchAndInitializeQueue(false, { replaySavedReviews: false, preservePreparedAttempt: true });
+  expect(useTrainingStore.getState().attempt).toEqual(submittedAttempt);
+  expect(advancePreparedContinuation(continuation, submittedAttempt.attemptId!, submittedAttempt.generation)).toBe(true);
+  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(502);
+});
+
 const preparedBoardSnapshot = () => {
   const state = useTrainingStore.getState();
   return { attempt: state.attempt, card: state.getCard(), fen: state.currentFenString, step: state.step,
