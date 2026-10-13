@@ -1,3 +1,0 @@
-# Architecture enforcement only; not installed in production images.
-import-linter==2.15
-grimp==3.17
