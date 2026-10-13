@@ -100,7 +100,7 @@ def test_study_only_mode_allows_daily_queue_claim_and_blocks_engine_preparation(
     assert durable_tasks.claim_task(kind='daily_queue')['id'] == current_queue['id']
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(main, 'read_operation', lambda *args, **kwargs: {'state': 'unknown'})
-    monkeypatch.setattr(study_mode, 'study_only_enabled', lambda database=None: True)
+    monkeypatch.setattr(study_mode, 'optional_work_paused', lambda database=None: True)
     from app import game_analysis_commands
     monkeypatch.setattr(game_analysis_commands, 'prepare_position_claim',
                         lambda *args: pytest.fail('Paused expensive position preparation ran'))

@@ -276,10 +276,10 @@ def execute_background_command(
 def recover_operations() -> bool:
     with activity_gate.background_job("operation_recovery", "one-run", yielding=True), \
             activity_gate.background_control():
-        study_only_mode = optional_work_paused()
+        optional_paused = optional_work_paused()
         operation = claim_recoverable_operation(
-            allowed_background_commands=STUDY_BACKGROUND_COMMANDS if study_only_mode else None,
-            paused_commands=PAUSED_IMPORT_COMMANDS if study_only_mode else (),
+            allowed_background_commands=STUDY_BACKGROUND_COMMANDS if optional_paused else None,
+            paused_commands=PAUSED_IMPORT_COMMANDS if optional_paused else (),
         )
     if operation is None:
         return False

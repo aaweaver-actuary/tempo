@@ -70,6 +70,44 @@ def proof(*, restoration_only=False):
                 postgres_store.close_pools()
                 assert not study_mode.study_only_enabled()
                 assert study_mode.optional_work_paused()
+                # Both committed rows pause optional work. Commit between the
+                # legacy flag statements at READ COMMITTED, never between fake values.
+                from contextlib import contextmanager
+                for owns_reader in (False, True):
+                    with psycopg.connect(owned_url) as writer:
+                        writer.execute('UPDATE settings SET study_only_mode=0, optional_analysis_and_imports_enabled=0 WHERE id=1')
+                    reads, acquisitions = [], []
+                    original_reader = study_mode.read_connection
+
+                    class InterleavedReader:
+                        def __init__(self, reader):
+                            self.reader = reader
+
+                        def execute(self, statement):
+                            reads.append(statement)
+                            row = self.reader.execute(statement).fetchone()
+                            if 'optional_analysis_and_imports_enabled' in statement or len(reads) == (1 if owns_reader else 2):
+                                with psycopg.connect(owned_url) as writer:
+                                    writer.execute('UPDATE settings SET study_only_mode=1, optional_analysis_and_imports_enabled=1 WHERE id=1')
+                            return SimpleNamespace(fetchone=lambda: row)
+
+                    @contextmanager
+                    def interleaved_reader():
+                        acquisitions.append(True)
+                        with original_reader() as reader:
+                            yield InterleavedReader(reader)
+
+                    with patch.object(study_mode, 'read_connection', interleaved_reader):
+                        if owns_reader:
+                            with interleaved_reader() as reader:
+                                paused = study_mode.optional_work_paused(reader)
+                        else:
+                            paused = study_mode.optional_work_paused()
+                    assert paused and len(acquisitions) == 1
+                    assert reads == ['SELECT study_only_mode, optional_analysis_and_imports_enabled FROM settings WHERE id=1']
+                execute_command(uuid4().hex, 'settings.update',
+                    {'settings': restoration, 'supplied_fields': sorted(restoration)})
+                print('PASS restoration_pause_reads_one_postgres_snapshot_during_atomic_control_switch')
                 omitted_controls = main.get_settings().model_dump(mode='json')
                 omitted_controls.pop('repertoire_preparation_enabled')
                 omitted_controls.pop('optional_analysis_and_imports_enabled')
