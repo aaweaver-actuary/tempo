@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 // Unsupported/new dependency syntax invalidates the certificate until reviewed.
 export function dependencyLines(source) {
   return source.split('\n').map(line => line.trim()).filter(line =>
-    /\b(?:import|from|require|eval|exec|execFile|exec_module|fetch|readFile\w*|spec_from_file_location|__import__)\b|\.py["']|^test(?:\.[\w.]+)?\s*\(/.test(line)
+    /\b(?:import|from|require|eval|exec|execFile|exec_module|fetch|readFile\w*|spec_from_file_location|__import__|getattr|setattr|Function|globalThis|XMLHttpRequest|WebSocket)\b|\b(?:os|sys)\.|\.py["']|^test(?:\.[\w.]+)?\s*\(/.test(line)
     && !line.startsWith('//') && !line.startsWith('#'));
 }
 
@@ -30,3 +30,11 @@ export function readCertificateSources() {
 }
 
 export const certificate = JSON.parse(readFileSync(new URL('./ci-certified-tests.json', import.meta.url), 'utf8'));
+
+export function nativeFixtureCases(source) {
+  if (typeof source !== 'string' || [...source.matchAll(/^class (\w+)\(unittest\.TestCase\):/gm)]
+    .map(match => match[1]).join() !== 'RedisFixtureIsolation') throw new Error('Unknown native fixture class');
+  const methods = [...source.matchAll(/^    def (test_\w+)\(self\):/gm)].map(match => match[1]);
+  if (!methods.length || new Set(methods).size !== methods.length) throw new Error('Invalid native fixture cases');
+  return methods.map(method => `check_postgres_redis_fixture_isolation.RedisFixtureIsolation.${method}`).sort();
+}

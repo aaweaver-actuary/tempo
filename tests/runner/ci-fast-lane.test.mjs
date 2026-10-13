@@ -28,8 +28,8 @@ function fixture(path = 'app/lib/review-outbox.ts') {
   }
   if (plan.nativeChecks?.length) report.native = {head:plan.head,planHash:plan.hash,
     runId:execution.id,attempt:execution.attempt,repository:plan.repository,
-    checks:Object.fromEntries(plan.nativeChecks.map(check => [check,{expected:['native.fixture.test_case'],
-      tests:[{id:'native.fixture.test_case',status:'passed',retries:0}]}]))};
+    checks:Object.fromEntries(plan.nativeChecks.map(check => [check,{expected:plan.nativeCases[check],
+      tests:plan.nativeCases[check].map(id => ({id,status:'passed',retries:0}))}]))};
   return {plan,report,needs:{selection:{result:'success'},fast:{result:'success'}}};
 }
 function completePlan() {
@@ -97,6 +97,7 @@ test('issue239_native_and_added_browser_evidence_is_mandatory_and_revision_bound
     value => value.report.native.attempt++,
     value => value.report.native.checks['unexpected']={},
     value => value.report.native.checks['redis-fixture-isolation'].tests=[],
+    value => { value.report.native.checks['redis-fixture-isolation'].tests.pop(); value.report.native.checks['redis-fixture-isolation'].expected=value.report.native.checks['redis-fixture-isolation'].expected.slice(0,-1); },
     value => value.report.native.checks['redis-fixture-isolation'].tests[0].status='skipped',
     value => value.report.native.checks['redis-fixture-isolation'].tests[0].status='failed',
     value => value.report.native.checks['redis-fixture-isolation'].tests[0].retries=1,

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { fastCommands } from './ci-fast-commands.mjs';
 import { postgresTestStages } from './postgres-test-plan.mjs';
 import { changedPathsFromNameStatus, planHash, runtime } from './ci-verification-plan.mjs';
-import { certificate, readCertificateSources, validateCertificate } from './ci-certified-tests.mjs';
+import { certificate, readCertificateSources, validateCertificate, nativeFixtureCases } from './ci-certified-tests.mjs';
 
 export const fastInventory = JSON.parse(readFileSync(new URL('./ci-fast-lane-inventory.json', import.meta.url), 'utf8'));
 const sorted = values => [...new Set(values)].sort();
@@ -66,9 +66,17 @@ export function selectFastLane(paths, { comparisonAvailable = true, complete = f
       && additionalBrowser.findIndex(value => testIdentity(value) === testIdentity(test)) === index)] : [];
   if (tier === 'STUDY' && (!browser.length || new Set(browser.map(testIdentity)).size !== browser.length)) full('Invalid study smoke inventory');
   const node = frontend.length > 0 || tier === 'STUDY';
+  let nativeCases = {};
+  if (nativeChecks.length && tier !== 'FULL') {
+    try { nativeCases = {'redis-fixture-isolation':nativeFixtureCases(
+      certificateSources ? certificateSources['scripts/check_postgres_redis_fixture_isolation.py']
+        : readFileSync('scripts/check_postgres_redis_fixture_isolation.py','utf8'))}; }
+    catch { full('Unknown native fixture collection'); }
+  }
   const python = backend.length > 0 || frontend.some(file => existsSync(file) && /python|backend\/|resolvePython|scripts\//i.test(readFileSync(file,'utf8')));
   return { tier, paths: sorted(paths), frontend: sorted(frontend), backend: sorted(backend), browser: tier === 'FULL' ? [] : browser,
     nativeChecks: tier === 'FULL' ? [] : sorted(nativeChecks),
+    nativeCases: tier === 'FULL' ? {} : nativeCases,
     node, python, reasons, inventoryHash: createHash('sha256').update(JSON.stringify({inventory, certificate})).digest('hex') };
 }
 
@@ -139,6 +147,7 @@ export function validateFastGate(plan, report, needs, currentPullRequest, execut
       } else for (const check of plan.nativeChecks) {
         const evidence = native.checks[check];
         if (!evidence?.expected?.length || !evidence.tests?.length
+          || JSON.stringify(sorted(evidence.expected)) !== JSON.stringify(plan.nativeCases?.[check])
           || evidence.expected.length !== evidence.tests.length
           || new Set(evidence.expected).size !== evidence.expected.length
           || new Set(evidence.tests.map(test => test.id)).size !== evidence.tests.length
