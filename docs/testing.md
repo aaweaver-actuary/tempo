@@ -89,6 +89,29 @@ main before periodic FULL detects them. Disabling strict freshness also accepts
 interaction risk between individually qualified PR heads; high-risk changes
 retain exact-integration FULL proof. Targets are budgets, not guaranteed timings.
 
+## Prefix diagnostics browser ownership (#240)
+
+`prefix-diagnostics.spec.ts` owns the `prefix-diagnostics` family. Direct diagnostics
+sources and opening-evidence/segmentation producers select that family alongside
+existing consumers. Shared admission, queue publication, persistence, workspace and
+browser dependencies retain broad coverage. Reviewed read-only statistics and game
+comparison sources omit diagnostics from targeted family plans. Unknown changes,
+renames with uncertain ownership and missing history remain conservative.
+
+The FAST/STUDY selector consults the same browser ownership inventory and escalates
+diagnostics dependencies to FULL: those tiers do not yet execute this browser proof.
+This is a prefix-specific correctness guard, not a general fixture exemption (#239).
+Complete nightly, release, manual and explicit FULL plans retain every diagnostics case.
+Missing collected coverage or missing/failed/skipped/retried/stale selected evidence
+cannot qualify. The inventory remains reviewed ownership, not certified automatic
+reverse dependency analysis.
+
+The browser proof journals responses before opening diagnostics. Automatic foreground
+waits stay inside the existing 15-second product request deadline; explicit database
+errors require a user retry. Evidence must render within five seconds of the successful
+response. A response arriving during UI assertions remains in the journal. No global
+timeout increases or fixed sleeps are used.
+
 ## Full gate
 
 From the repository root, after installing the project prerequisites, run:

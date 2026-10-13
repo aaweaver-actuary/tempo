@@ -13,6 +13,15 @@ export const runtime = Object.freeze({ runner: "ubuntu-24.04-arm", platform: "li
   node: "22.23.3", python: "3.12.14", rust: "1.99.0", wasmPack: "0.15.0" });
 export const allLayers = [...mandatoryLayers, "lifecycle", "visual", "quarantine"];
 export const inventory = JSON.parse(readFileSync(new URL("./ci-verification-inventory.json", import.meta.url), "utf8"));
+// FAST/STUDY cannot prove this browser consumer yet. Keep this ownership guard
+// independent of #239's general test/fixture classification.
+export function requiresPrefixDiagnostics(paths, sourceInventory = inventory) {
+  try { validateInventory([], sourceInventory); } catch { return true; }
+  return paths.some(path => path === "tests/browser/prefix-diagnostics.spec.ts"
+    || sourceInventory.prefixDiagnostics.broadPaths.includes(path)
+    || sourceInventory.sources.some(mapping => mapping.paths.includes(path) && mapping.families.includes("prefix-diagnostics")));
+}
+
 export const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Tier controls qualification; scope controls coverage. They are independent.
@@ -112,6 +121,12 @@ export function changedPathsFromNameStatus(output) {
 }
 
 export function validateInventory(files, sourceInventory = inventory) {
+  const broadDiagnosticPaths = sourceInventory.prefixDiagnostics?.broadPaths;
+  if (!Array.isArray(broadDiagnosticPaths) || !broadDiagnosticPaths.length
+    || new Set(broadDiagnosticPaths).size !== broadDiagnosticPaths.length
+    || broadDiagnosticPaths.some(path => typeof path !== "string" || !path || path.startsWith("/") || path.split("/").includes(".."))
+    || !sourceInventory.families?.["prefix-diagnostics"]?.includes("prefix-diagnostics.spec.ts"))
+    throw new Error("Missing prefix diagnostics ownership inventory");
   const mappedPaths = new Set();
   for (const mapping of sourceInventory.sources) {
     if (!mapping.paths?.length || !mapping.families?.length || new Set(mapping.families).size !== mapping.families.length
@@ -176,7 +191,8 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     if (rendering || (path.startsWith("app/") && path.endsWith(".tsx"))) visual = true;
     const ordinaryProse = (path.startsWith("docs/") && path.endsWith(".md")) || /(?:^|\/)README\.md$/.test(path) || sourceInventory.prosePaths?.includes(path);
     const standaloneCoreTest = /^tests\/unit\/.*\.test\.tsx?$/.test(path) || /^backend\/tests\/(?:.*\/)?(?:test_[^/]+|[^/]+_test)\.py$/.test(path);
-    if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: reviewed consumer families; ${mapping.reason}`); }
+    if (sourceInventory.prefixDiagnostics.broadPaths.includes(path)) { broad = true; reasons.push(`${path}: shared prefix diagnostics dependency; broad verification`); }
+    else if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: reviewed consumer families; ${mapping.reason}`); }
     else if (specFamily && specFamily !== "pinned") { families.add(specFamily); reasons.push(`${path}: complete ${specFamily} browser family`); }
     else if (specFamily === "pinned") { visual = true; reasons.push(`${path}: pinned rendering verification`); }
     else if (ordinaryProse) reasons.push(`${path}: reviewed prose; qualification retains core and critical coverage`);
@@ -194,6 +210,8 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
   const quarantined = new Set(quarantine.map(entry => entry.id));
   if ([...critical].some(id => quarantined.has(id))) throw new Error("Critical coverage cannot be quarantined");
   const selectedSpecs = new Set([...families].flatMap(family => sourceInventory.families[family]));
+  if (selectedSpecs.has("prefix-diagnostics.spec.ts") && !cases.some(item => item.file === "prefix-diagnostics.spec.ts"))
+    throw new Error("Missing collected prefix diagnostics browser coverage");
   const replacementCoverage = new Set(quarantine.flatMap(entry => entry.requiredCoverage));
   const collection = cases.map(item => ({ ...item, critical: critical.has(item.id), quarantined: quarantined.has(item.id),
     selected: !quarantined.has(item.id) && (critical.has(item.id) || selectedSpecs.has(item.file) || replacementCoverage.has(item.id)),
@@ -229,6 +247,9 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
   if (tier === "development") {
     const development = developmentSelection(paths, comparisonAvailable, sourceInventory);
     core = development.core;
+    if (paths.some(path => sourceInventory.prefixDiagnostics.broadPaths.includes(path))) {
+      development.broadBrowser = true; development.selected.add("browser");
+    }
     if (!development.broadBrowser) {
       families.clear();
       for (const path of paths) {

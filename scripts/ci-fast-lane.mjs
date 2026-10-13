@@ -4,15 +4,16 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fastCommands } from './ci-fast-commands.mjs';
 import { postgresTestStages } from './postgres-test-plan.mjs';
-import { changedPathsFromNameStatus, planHash, runtime } from './ci-verification-plan.mjs';
+import { changedPathsFromNameStatus, planHash, runtime, requiresPrefixDiagnostics, inventory as browserInventory } from './ci-verification-plan.mjs';
 
 export const fastInventory = JSON.parse(readFileSync(new URL('./ci-fast-lane-inventory.json', import.meta.url), 'utf8'));
 const sorted = values => [...new Set(values)].sort();
 export const testIdentity = test => `${test.project}:${test.file}:${test.title}`;
-export function selectFastLane(paths, { comparisonAvailable = true, complete = false, inventory = fastInventory } = {}) {
+export function selectFastLane(paths, { comparisonAvailable = true, complete = false, inventory = fastInventory, browserSourceInventory = browserInventory } = {}) {
   let tier = 'FAST';
   const frontend = [], backend = [], reasons = [];
   const full = reason => { tier = 'FULL'; reasons.push(reason); };
+  if (requiresPrefixDiagnostics(paths, browserSourceInventory)) full('Prefix diagnostics dependency requires browser qualification');
   if (complete || !comparisonAvailable) full(complete ? 'Complete qualification requested' : 'Comparison unavailable');
   for (const path of paths) {
     if (!path || path.startsWith('/') || path.split('/').includes('..')) { full('Invalid path'); continue; }
@@ -44,7 +45,7 @@ export function selectFastLane(paths, { comparisonAvailable = true, complete = f
   const node = frontend.length > 0 || tier === 'STUDY';
   const python = backend.length > 0 || frontend.some(file => existsSync(file) && /python|backend\/|resolvePython|scripts\//i.test(readFileSync(file,'utf8')));
   return { tier, paths: sorted(paths), frontend: sorted(frontend), backend: sorted(backend), browser: tier === 'FULL' ? [] : browser,
-    node, python, reasons, inventoryHash: createHash('sha256').update(JSON.stringify(inventory)).digest('hex') };
+    node, python, reasons, inventoryHash: createHash('sha256').update(JSON.stringify({fast: inventory, browser: browserSourceInventory})).digest('hex') };
 }
 
 export function makeFastPlan(paths, context, options = {}) {

@@ -4307,6 +4307,18 @@ Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
 
 ## Issue #240 — prefix diagnostics ownership and admitted-read browser contract
 
+Planner regressions run through the existing regular-suite CI reliability and fast-lane bridges:
+
+- `PD-240 diagnostics owner and evidence producers select every diagnostics case`
+- `PD-240 isolated consumers omit diagnostics while mixed unknown renamed and complete changes retain it`
+- `PD-240 missing diagnostics ownership fails inventory validation`
+- `PD-240 missing skipped failed retried and stale diagnostics evidence cannot qualify`
+- `PD-240 real diagnostics collection remains selected by its owner and comprehensive boundaries`
+- `PD-240 queue publication requires diagnostics browser qualification`
+- `PD-240 diagnostics and shared consumers cannot bypass browser qualification through FAST or STUDY`
+- `PD-240 missing diagnostics inventory conservatively escalates isolated FAST to FULL`
+- `PD-240 diagnostics FULL merge gate rejects absent complete browser qualification`
+
 Real PostgreSQL browser coverage in `tests/browser/prefix-diagnostics.spec.ts`:
 
 - `PD-240 repeated foreground detail deferrals outlast five seconds then require explicit database retry` — six controlled foreground refusals reproduce the old five-second contract failure (963 ms response-wait timeout); admission remains bounded by the existing 15-second request limit.
@@ -4314,4 +4326,4 @@ Real PostgreSQL browser coverage in `tests/browser/prefix-diagnostics.spec.ts`:
 - `PD-240 diagnostics consumes automatic retry responses recorded before UI assertions` and `PD-240 list consumes automatic retry responses recorded before UI assertions` — both deferral and subsequent database refusal arrive before journal consumption; the observer retains them and requires explicit retry.
 - Existing phone/desktop `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence`, repeated database refusals and foreground-then-database refusal cases retain every read-only, unknown-evidence, layout and unchanged settled-queue assertion.
 
-No product deadline, global timeout, test quarantine, PostgreSQL proof or nightly/release coverage was weakened. General fixture classification remains #239-owned.
+The four initial ownership cases failed before the correction. Missing/failed evidence checks already failed closed and are now explicitly exercised for diagnostics. No product deadline, global timeout, test quarantine, PostgreSQL proof or nightly/release coverage was weakened. General fixture classification remains #239-owned.

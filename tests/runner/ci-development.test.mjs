@@ -13,7 +13,8 @@ function temporaryContractDirectory(prefix, parent = join(process.cwd(),'test-re
   return mkdtempSync(join(parent,prefix));
 }
 const files = Object.values(inventory.families).flat();
-const cases = inventory.critical.map((item, index) => ({ ...item, id: `case-${index}`, fullTitle: item.title, project: 'chromium' }));
+const cases = [...inventory.critical.map((item, index) => ({ ...item, id: `case-${index}`, fullTitle: item.title, project: 'chromium' })),
+  {id:'diagnostics',file:'prefix-diagnostics.spec.ts',title:'ordinary diagnostics',fullTitle:'ordinary diagnostics',project:'chromium'}];
 function draft(paths, extra = {}) {
   return verificationPlan({ files, cases, paths, tier: 'development', draft: true, commit: 'integration', head: 'head', base: 'base', ...extra });
 }

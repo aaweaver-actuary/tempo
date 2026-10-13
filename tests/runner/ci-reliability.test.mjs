@@ -558,21 +558,21 @@ test("mapped leaf changes retain critical plus their family with regression addi
   const planned = plan({ cases: realCases, paths: ["app/domain/opening-segmentation.ts",
     "tests/unit/opening-segmentation-regressions.test.tsx", "backend/tests/test_opening_segmentation.py", "tests/REGRESSIONS.md"] });
   assert.equal(planned.scope, "targeted");
-  assert.deepEqual(planned.families, ["repertoire"]);
+  assert.deepEqual(planned.families, ["prefix-diagnostics", "repertoire"]);
   assert.equal(planned.jobs.visual.applicable, false);
-  const expectedIds = planned.collection.filter(item => item.critical || inventory.families.repertoire.includes(item.file)).map(item => item.id).sort();
+  const expectedIds = planned.collection.filter(item => item.critical || inventory.families.repertoire.includes(item.file) || inventory.families["prefix-diagnostics"].includes(item.file)).map(item => item.id).sort();
   assert.deepEqual(selectedIds(planned), expectedIds);
 });
 
 test("shared subsystem sources select complete consumer families without unrelated families", () => {
   const examples = [
-    ["app/lib/opening-evidence-recovery-policy.ts", ["training"]],
-    ["app/hooks/use-opening-evidence-recovery.ts", ["training"]],
-    ["backend/app/services/postgres_opening_evidence.py", ["training"]],
-    ["app/lib/opening-evidence-review.ts", ["defense", "training"]],
+    ["app/lib/opening-evidence-recovery-policy.ts", ["prefix-diagnostics", "training"]],
+    ["app/hooks/use-opening-evidence-recovery.ts", ["prefix-diagnostics", "training"]],
+    ["backend/app/services/postgres_opening_evidence.py", ["prefix-diagnostics", "training"]],
+    ["app/lib/opening-evidence-review.ts", ["defense", "prefix-diagnostics", "training"]],
     ["app/domain/study-exercises.ts", ["studies", "training"]],
     ["backend/app/services/study_grading.py", ["studies", "training"]],
-    ["backend/app/services/opening_segmentation.py", ["repertoire", "training"]],
+    ["backend/app/services/opening_segmentation.py", ["prefix-diagnostics", "repertoire", "training"]],
     ["app/lib/discovery-preview-scheduler.ts", ["discoveries", "training"]],
     ["app/lib/comparison.ts", ["games"]],
   ];
@@ -665,4 +665,69 @@ test("documented global browser smoke count and titles match inventory and real 
   assert.equal(Number(documentedCount[1]), inventory.critical.length);
   assert.equal(Number(documentedCount[1]), plan({ cases: currentBrowserCases() }).collection.filter(item => item.critical).length);
   for (const demoted of demotedCriticalCases) assert(documentation.includes(`| \`${demoted.file}\` | \`${demoted.title}\` | family |`), demoted.title);
+});
+
+test("PD-240 diagnostics owner and evidence producers select every diagnostics case", () => {
+  for (const path of ["tests/browser/prefix-diagnostics.spec.ts", "app/components/prefix-diagnostics.tsx",
+    "app/domain/prefix-diagnostics.ts", "backend/app/services/prefix_diagnostics.py",
+    "backend/app/prefix_diagnostics_api.py", "app/domain/opening-evidence.ts",
+    "backend/app/services/postgres_opening_evidence.py", "backend/app/services/opening_decision_evidence.py",
+    "backend/app/services/opening_segmentation.py"]) {
+    const planned = plan({ paths: [path] });
+    assert(planned.families.includes("prefix-diagnostics"), path);
+    assert(planned.collection.filter(item => item.file === "prefix-diagnostics.spec.ts").every(item => item.selected), path);
+  }
+});
+
+test("PD-240 isolated consumers omit diagnostics while mixed unknown renamed and complete changes retain it", () => {
+  for (const path of ["app/components/repertoire-statistics.tsx", "backend/app/services/repertoire_statistics.py", "app/lib/comparison.ts"]) {
+    assert(plan({paths:[path]}).collection.filter(item => item.file === "prefix-diagnostics.spec.ts").every(item => !item.selected), path);
+  }
+  for (const options of [{paths:["app/lib/comparison.ts","app/domain/opening-evidence.ts"]},
+    {paths:changedPathsFromNameStatus("R100\0app/domain/prefix-diagnostics.ts\0app/domain/renamed.ts\0")},
+    {paths:["app/lib/unknown.ts"]}, {comparisonAvailable:false}, {complete:true},
+    ...["app/lib/background-fetch.ts","backend/app/services/activity_gate.py","backend/app/services/redis_admission_gate.py",
+      "backend/app/postgres_store.py","backend/app/services/postgres_queue_refresh.py","tests/browser/product-fixtures.ts",
+      "playwright.config.ts","backend/app/main.py"].map(path=>({paths:[path]}))]) {
+    const selected = plan(options).collection.filter(item=>item.file === "prefix-diagnostics.spec.ts");
+    assert(selected.length && selected.every(item=>item.selected));
+    assert(selected.every(item=>item.nightly && item.release));
+  }
+});
+
+test("PD-240 missing diagnostics ownership fails inventory validation", () => {
+  const sourceInventory = structuredClone(inventory);
+  delete sourceInventory.families["prefix-diagnostics"];
+  assert.throws(()=>plan({sourceInventory}), /diagnostics|Unclassified|source mapping/i);
+  assert.throws(()=>plan({paths:["app/components/prefix-diagnostics.tsx"],cases:cases.filter(item=>item.file !== "prefix-diagnostics.spec.ts")}), /Missing collected prefix diagnostics/);
+  for (const paths of [["../outside"], ["app/lib/background-fetch.ts", "app/lib/background-fetch.ts"], []]) {
+    const malformedInventory = structuredClone(inventory); malformedInventory.prefixDiagnostics.broadPaths = paths;
+    assert.throws(()=>plan({sourceInventory:malformedInventory}), /diagnostics ownership/);
+  }
+});
+
+test("PD-240 missing skipped failed retried and stale diagnostics evidence cannot qualify", () => {
+  const planned = plan({paths:["app/components/prefix-diagnostics.tsx"]});
+  const diagnosticId = planned.collection.find(item=>item.file === "prefix-diagnostics.spec.ts").id;
+  for (const mutate of [
+    report=>{report.tests=report.tests.filter(item=>item.id !== diagnosticId);},
+    ...["skipped","failed"].map(status=>report=>{report.tests.find(item=>item.id === diagnosticId).status=status;}),
+    report=>{report.tests.find(item=>item.id === diagnosticId).retries=1;},
+    report=>{report.commit="stale";}, report=>{report.planHash="stale";},
+  ]) {
+    const evidence=successfulResults(planned); mutate(evidence.reports.browser);
+    assert.equal(evaluateQuality(planned,evidence.needs,evidence.reports).success,false);
+  }
+});
+
+
+test("PD-240 real diagnostics collection remains selected by its owner and comprehensive boundaries", () => {
+  const collected = currentBrowserCases();
+  const diagnostics = collected.filter(item=>item.file === "prefix-diagnostics.spec.ts");
+  assert(diagnostics.length >= 8);
+  for (const options of [{paths:["tests/browser/prefix-diagnostics.spec.ts"]},
+    {paths:["app/components/prefix-diagnostics.tsx"]}, {complete:true}]) {
+    const planned = plan({cases:collected,...options});
+    assert.deepEqual(planned.collection.filter(item=>item.file === "prefix-diagnostics.spec.ts" && item.selected).map(item=>item.id),diagnostics.map(item=>item.id));
+  }
 });

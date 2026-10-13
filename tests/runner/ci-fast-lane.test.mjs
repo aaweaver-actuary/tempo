@@ -47,7 +47,7 @@ test('emergency_tactics_grading_change_selects_STUDY', () => {
   assert.equal(selectFastLane(['backend/app/services/threat_grading.py']).tier,'STUDY');
   assert.equal(selectFastLane(['app/views/tactics_view.tsx']).tier,'STUDY');
 });
-test('emergency_queue_persistence_change_selects_STUDY', () => assert.equal(selectFastLane(['backend/app/services/postgres_queue_refresh.py']).tier,'STUDY'));
+test('PD-240 queue publication requires diagnostics browser qualification', () => assert.equal(selectFastLane(['backend/app/services/postgres_queue_refresh.py']).tier,'FULL'));
 test('emergency_database_migration_selects_FULL', () => assert.equal(selectFastLane(['backend/migrations/999_emergency.sql']).tier,'FULL'));
 test('emergency_qualification_validator_change_selects_FULL', () => assert.equal(selectFastLane(['scripts/ci-quality.mjs']).tier,'FULL'));
 test('emergency_unknown_or_ambiguous_change_fails_closed_to_FULL', () => {
@@ -199,4 +199,31 @@ test('PR214_FULL_workflow_downloads_same_run_plan_and_retains_development_routin
   assert(gate.includes('path: test-results/ci'));
   assert(!gate.includes('run-id:'));
   assert(workflow.includes("if: always() && needs.plan.result == 'success' && (needs.plan.outputs.tier"));
+});
+
+test('PD-240 diagnostics and shared consumers cannot bypass browser qualification through FAST or STUDY', () => {
+  for (const path of ['app/components/prefix-diagnostics.tsx','app/domain/prefix-diagnostics.ts',
+    'app/domain/opening-evidence.ts','app/lib/opening-evidence-journal.ts','app/lib/background-fetch.ts',
+    'backend/app/opening_evidence_api.py','backend/app/services/postgres_opening_evidence.py',
+    'app/views/repertoire_view.tsx','app/ImportDialogBox.tsx','app/lib/workspace-data.ts',
+    'app/components/service-status-panel.tsx','app/lib/activity-control-command.ts']) {
+    assert.equal(selectFastLane([path]).tier,'FULL',path);
+    assert.equal(selectFastLane(['app/components/repertoire-statistics.tsx',path]).tier,'FULL',path);
+  }
+  assert.equal(selectFastLane(['app/components/repertoire-statistics.tsx']).tier,'FAST');
+  assert.equal(selectFastLane(changedPathsFromNameStatus('R100\0app/domain/prefix-diagnostics.ts\0docs/new.md\0')).tier,'FULL');
+});
+
+
+test('PD-240 missing diagnostics inventory conservatively escalates isolated FAST to FULL', () => {
+  assert.equal(selectFastLane(['app/components/repertoire-statistics.tsx'], {browserSourceInventory:{}}).tier,'FULL');
+});
+
+
+test('PD-240 diagnostics FULL merge gate rejects absent complete browser qualification', () => {
+  const plan = makeFastPlan(['app/components/prefix-diagnostics.tsx'],context);
+  assert.equal(plan.tier,'FULL');
+  for (const result of ['failure','skipped','cancelled',undefined]) {
+    assert(validateFastGate(plan,null,{selection:{result:'success'},quality:{result}},pr,execution,completePlan()).includes('Complete qualification did not pass'));
+  }
 });
