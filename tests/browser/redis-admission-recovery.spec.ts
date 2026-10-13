@@ -16,14 +16,14 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
   const health = await request.get(`${api}/health`);
   expect((await health.json()).test_instance).toBe(true);
   const identity = `redis-admission-${randomUUID()}`;
-  const compose = ["compose", ...(process.env.TEMPO_NATIVE_COMPOSE_FILE ? ["-f", process.env.TEMPO_NATIVE_COMPOSE_FILE] : []), "-p", project];
+  const compose = ["compose", "-f", process.env.TEMPO_NATIVE_COMPOSE_FILE ?? "docker-compose.postgres.test.yml", "-p", project];
   const docker = (...args: string[]) => execute("docker", [...compose, ...args], { timeout: 30_000 });
   let savedFixture: unknown;
   const fixture = async (action: string) => {
     const extra = action === "cleanup" ? [JSON.stringify(savedFixture)] : [];
     const result = process.env.TEMPO_NATIVE_PYTHON
       ? await execute(process.env.TEMPO_NATIVE_PYTHON, ["scripts/check_postgres_redis_admission.py", action, identity, ...extra])
-      : await docker("exec", "-T", "foreground-worker", "python", "/workspace/scripts/check_postgres_redis_admission.py", action, identity, ...extra);
+      : await docker("run", "--rm", "--no-deps", "schema", "python", "/source/scripts/check_postgres_redis_admission.py", action, identity, ...extra);
     return result.stdout.trim() ? JSON.parse(result.stdout) : null;
   };
   // There is no dispatched operation during either fault. Recovery can proceed
