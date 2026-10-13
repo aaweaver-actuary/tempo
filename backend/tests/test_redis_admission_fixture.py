@@ -19,12 +19,16 @@ def redis_fixture():
 
 def test_redis_fixture_cleanup_explicitly_removes_non_cascading_receipts(redis_fixture, monkeypatch):
     statements = []
-    snapshot = {'marker': 'tempo-redis-admission-fixture', 'version': 1,
+    snapshot = {'marker': 'tempo-redis-admission-fixture', 'version': 2,
                 'identity': 'redis-admission-00000000-0000-0000-0000-000000000000',
                 'settings_before': {'id': 1, 'study_only_mode': 0},
                 'settings_installed': {'id': 1, 'study_only_mode': 1},
                 'queue_date': '2000-01-01', 'displaced': [],
                 'projection_before': None, 'projection_installed': {'queue_date': '2000-01-01'}}
+
+    snapshot['owned_queue_entries'] = [dict(zip(redis_fixture.QUEUE_OWNERSHIP_COLUMNS,
+        (index + 1, card_id, snapshot['queue_date'], 0, snapshot['identity'])))
+        for index, card_id in enumerate(redis_fixture.card_ids(snapshot['identity']))]
 
     class Database:
         def __enter__(self):
@@ -43,6 +47,8 @@ def test_redis_fixture_cleanup_explicitly_removes_non_cascading_receipts(redis_f
             return self
 
         def fetchall(self):
+            if 'SELECT id,card_id,queue_date,cycle,admission_repertoire_id' in self.statement:
+                return [tuple(entry[column] for column in redis_fixture.QUEUE_OWNERSHIP_COLUMNS) for entry in snapshot['owned_queue_entries']]
             if 'SELECT id,repertoire_id FROM cards' in self.statement:
                 return [(card_id, snapshot['identity']) for card_id in redis_fixture.card_ids(snapshot['identity'])]
             return []

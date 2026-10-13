@@ -8,6 +8,8 @@ import { boardBounds } from "./ui-fixtures";
 import { RedisAdmissionCleanup } from "./support/redis-admission-cleanup";
 
 const execute = promisify(execFile);
+type OperationReceipt = { operation_id: string; command_name: string; payload_json: string | null; state: string };
+type ReceiptAudit = { queue_entry_ids: number[]; operations: OperationReceipt[] };
 
 test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate", async ({ page, request }, testInfo) => {
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
@@ -31,6 +33,9 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
   // 15-second foreground watchdog bound confirmation without a five-minute lease.
   const recoveryDeadline = 5_000 + 15_000;
   const evidence: unknown[] = [];
+  const ownedCardIds = new Set([0, 1, 2].map(index => `${identity}-${index}`));
+  let receiptAuditBefore: ReceiptAudit | undefined;
+  let receiptAuditAfter: ReceiptAudit | undefined;
   const cleanup = new RedisAdmissionCleanup({
     stopRedis: () => docker("stop", "redis"),
     pauseRedis: () => docker("pause", "redis"),
@@ -38,7 +43,39 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
     unpauseRedis: () => docker("unpause", "redis"),
     closePage: () => page.close(),
     // Recover by identity even when committed seed stdout was lost.
-    cleanupFixture: () => fixture("cleanup"),
+    cleanupFixture: async () => {
+      receiptAuditBefore = await fixture("audit") as ReceiptAudit;
+      const directory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/issue-225";
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, "receipt-inventory-before-cleanup.json"), JSON.stringify(receiptAuditBefore, null, 2));
+      const ownedQueueIds = new Set(receiptAuditBefore.queue_entry_ids.map(String));
+      for (const receipt of receiptAuditBefore.operations) {
+        const payload = JSON.parse(receipt.payload_json ?? "null");
+        if (ownedQueueIds.has(String(payload?.entry_id ?? payload?.queue_entry_id))) {
+          // An unverified shape fails before destruction or predicate expansion.
+          expect(ownedCardIds.has(payload?.card_id), `Unexpected queue-only receipt: ${receipt.command_name}`).toBe(true);
+        }
+      }
+      await fixture("cleanup");
+      receiptAuditAfter = await fixture("audit") as ReceiptAudit;
+      const remainingIds = new Set(receiptAuditAfter.operations.map(receipt => receipt.operation_id));
+      for (const receipt of receiptAuditAfter.operations) {
+        const payload = JSON.parse(receipt.payload_json ?? "null");
+        expect(ownedCardIds.has(payload?.card_id), `Owned receipt remains: ${receipt.operation_id}`).toBe(false);
+      }
+      if (receiptAuditBefore) {
+        const queueIds = new Set(receiptAuditBefore.queue_entry_ids.map(String));
+        for (const receipt of receiptAuditBefore.operations) {
+          const payload = JSON.parse(receipt.payload_json ?? "null");
+          const owned = ownedCardIds.has(payload?.card_id)
+            || queueIds.has(String(payload?.entry_id ?? payload?.queue_entry_id));
+          expect(remainingIds.has(receipt.operation_id), `Receipt preservation: ${receipt.command_name} ${receipt.operation_id}`).toBe(!owned);
+        }
+      }
+      const receiptProof = JSON.stringify({ identity, receiptAuditBefore, receiptAuditAfter }, null, 2);
+      writeFileSync(join(directory, "receipt-cleanup.json"), receiptProof);
+      await testInfo.attach("redis-admission-receipt-cleanup", { body: receiptProof, contentType: "application/json" });
+    },
   });
   await cleanup.run(async () => {
     await fixture("seed");

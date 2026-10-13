@@ -50,6 +50,7 @@ class RedisFixtureIsolation(unittest.TestCase):
                               ('card_revisions', 'card_id'), ('repertoire_cards', 'card_id')]:
             count = self.database.execute(f'SELECT count(*) FROM {table} WHERE {column}=ANY(%s)', (fixture.card_ids(self.identity),)).fetchone()[0]
             self.assertEqual(count, 0, table)
+        self.assertEqual(self.database.execute("SELECT count(*) FROM operation_receipts WHERE payload_json::jsonb->>'card_id'=ANY(%s)", (fixture.card_ids(self.identity),)).fetchone()[0], 0)
         self.assertIsNone(fixture.snapshot_row(self.database, 'repertoires', 'id', self.identity))
 
     def test_redis_fixture_setup_failure_rolls_back_every_mutation(self):
@@ -139,6 +140,131 @@ class RedisFixtureIsolation(unittest.TestCase):
                 self.assertEqual(self.state(), conflicting)
         self.cleanup()
         self.assertEqual(self.state(), self.before)
+
+    def test_redis_fixture_cleanup_rejects_synthetic_queue_reassignment_atomically(self):
+        unrelated_card = self.control + '-unqueued'
+        self.database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,content_type,due_date) VALUES(%s,%s,'prefix','control','[]','learning','tactic',%s)", (unrelated_card, self.control, self.day))
+        self.before = self.state()
+        self.seed()
+        owned_card = fixture.card_ids(self.identity)[0]
+        entry_id = self.database.execute('SELECT id FROM daily_queue WHERE card_id=%s', (owned_card,)).fetchone()[0]
+        for column, value in [('card_id', unrelated_card), ('queue_date', '2099-12-31'),
+                              ('cycle', 7), ('admission_repertoire_id', self.control)]:
+            with self.subTest(column=column), self.database.transaction(force_rollback=True):
+                self.database.execute(f'UPDATE daily_queue SET {column}=%s WHERE id=%s', (value, entry_id))
+                conflicting = self.state()
+                owned_rows = self.database.execute('SELECT * FROM daily_queue WHERE id=%s', (entry_id,)).fetchall()
+                with self.assertRaisesRegex(RuntimeError, 'synthetic queue ownership'):
+                    self.cleanup()
+                self.assertEqual(self.state(), conflicting)
+                self.assertEqual(self.database.execute('SELECT * FROM daily_queue WHERE id=%s', (entry_id,)).fetchall(), owned_rows)
+                self.assertIsNotNone(fixture.snapshot_row(self.database, 'repertoires', 'id', self.identity))
+        self.cleanup()
+        self.assertEqual(self.state(), self.before)
+
+    def test_redis_fixture_cleanup_rejects_additional_synthetic_queue_relationships(self):
+        self.seed()
+        owned_card = fixture.card_ids(self.identity)[0]
+        for card, admission in [(owned_card, self.identity), (self.control, self.identity)]:
+            with self.subTest(card=card), self.database.transaction(force_rollback=True):
+                entry_id = self.database.execute(
+                    "INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_repertoire_id) VALUES(%s,%s,1,99,%s) RETURNING id",
+                    (self.day, card, admission)).fetchone()[0]
+                conflicting = self.state()
+                with self.assertRaisesRegex(RuntimeError, 'synthetic queue ownership'):
+                    self.cleanup()
+                self.assertEqual(self.state(), conflicting)
+                self.assertIsNotNone(self.database.execute('SELECT id FROM daily_queue WHERE id=%s', (entry_id,)).fetchone())
+        self.cleanup()
+        self.assertEqual(self.state(), self.before)
+
+    def test_redis_fixture_cleanup_allows_legitimate_mutable_queue_state(self):
+        self.seed()
+        owned_cards = fixture.card_ids(self.identity)
+        self.database.execute(
+            "UPDATE daily_queue SET position=position+11,attempt_failed=1,status=CASE WHEN card_id=%s THEN 'queued' ELSE 'complete' END,review_result_json=CASE WHEN card_id=%s THEN NULL ELSE '{\"persisted\":true}' END WHERE card_id=ANY(%s)",
+            (owned_cards[2], owned_cards[2], owned_cards))
+        self.database.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id=ANY(%s)', (owned_cards,))
+        self.cleanup()
+        self.assertEqual(self.state(), self.before)
+        self.assert_no_owned_rows()
+
+    def test_redis_fixture_cleanup_rejects_missing_synthetic_queue_entry(self):
+        self.seed()
+        self.database.execute('DELETE FROM daily_queue WHERE card_id=%s', (fixture.card_ids(self.identity)[0],))
+        conflicting = self.state()
+        with self.assertRaisesRegex(RuntimeError, 'synthetic queue ownership'):
+            self.cleanup()
+        self.assertEqual(self.state(), conflicting)
+        self.assertIsNotNone(fixture.snapshot_row(self.database, 'repertoires', 'id', self.identity))
+
+    def test_redis_fixture_cleanup_rejects_unsupported_snapshot_version_without_deletion(self):
+        self.seed()
+        original = self.database.execute('SELECT source_name FROM repertoires WHERE id=%s', (self.identity,)).fetchone()[0]
+        for version in [1, 99]:
+            with self.subTest(version=version), self.database.transaction(force_rollback=True):
+                saved = json.loads(original[len(fixture.MARKER) + 1:])
+                saved['version'] = version
+                self.database.execute('UPDATE repertoires SET source_name=%s WHERE id=%s', (fixture.MARKER + ':' + json.dumps(saved), self.identity))
+                conflicting = self.state()
+                with self.assertRaisesRegex(RuntimeError, 'invalid ownership snapshot'):
+                    self.cleanup()
+                self.assertEqual(self.state(), conflicting)
+                self.assertIsNotNone(fixture.snapshot_row(self.database, 'repertoires', 'id', self.identity))
+
+    def test_redis_fixture_manifest_finalization_failure_rolls_back_owned_queue_identities(self):
+        original_execute = self.database.execute
+
+        def fail_manifest_update(statement, parameters=()):
+            if str(statement).startswith('UPDATE repertoires SET source_name'):
+                raise RuntimeError('controlled final manifest interruption')
+            return original_execute(statement, parameters)
+
+        with patch.object(self.database, 'execute', side_effect=fail_manifest_update):
+            with self.assertRaisesRegex(RuntimeError, 'final manifest'):
+                self.seed()
+        self.assertEqual(self.state(), self.before)
+        self.assert_no_owned_rows()
+
+    def test_redis_fixture_parent_locks_fence_concurrent_queue_and_membership_inserts(self):
+        self.database.rollback()
+        identity = f'redis-admission-{uuid4()}'
+        card_id = fixture.card_ids(identity)[0]
+        with psycopg.connect(fixture.DSN, connect_timeout=5) as owner, psycopg.connect(fixture.DSN, connect_timeout=5) as contender:
+            before_settings = fixture.snapshot_row(owner, 'settings', 'id', 1)
+            before_projection = fixture.snapshot_row(owner, 'queue_projections', 'queue_date', self.day)
+            owner.commit()
+            contender.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'FK insert control','synthetic',%s)", (self.control, self.day))
+            contender.commit()
+            original_validation = fixture.validate_synthetic_queue_ownership
+            try:
+                fixture.seed_fixture(owner, identity, self.day)
+                owner.commit()
+
+                def attempt_inserts_under_cleanup_locks(saved, queue_rows):
+                    original_validation(saved, queue_rows)
+                    for statement, parameters in [
+                        ('INSERT INTO daily_queue(queue_date,card_id,cycle,position) VALUES(%s,%s,1,99)', (self.day, card_id)),
+                        ('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (self.control, card_id)),
+                    ]:
+                        with self.assertRaises(psycopg.errors.LockNotAvailable), contender.transaction():
+                            contender.execute("SET LOCAL lock_timeout='100ms'")
+                            contender.execute(statement, parameters)
+
+                with patch.object(fixture, 'validate_synthetic_queue_ownership', side_effect=attempt_inserts_under_cleanup_locks):
+                    self.assertTrue(fixture.cleanup_fixture(owner, identity)['cleaned'])
+                owner.commit()
+                with self.assertRaises(psycopg.errors.ForeignKeyViolation), contender.transaction():
+                    contender.execute('INSERT INTO daily_queue(queue_date,card_id,cycle,position) VALUES(%s,%s,1,99)', (self.day, card_id))
+                self.assertEqual(fixture.snapshot_row(owner, 'settings', 'id', 1), before_settings)
+                self.assertEqual(fixture.snapshot_row(owner, 'queue_projections', 'queue_date', self.day), before_projection)
+            finally:
+                owner.rollback()
+                contender.rollback()
+                fixture.cleanup_fixture(owner, identity)
+                owner.commit()
+                contender.execute('DELETE FROM repertoires WHERE id=%s', (self.control,))
+                contender.commit()
 
     def test_redis_fixture_cleanup_detects_projection_conflict(self):
         self.seed()

@@ -4263,6 +4263,21 @@ Native PostgreSQL cases in `scripts/check_postgres_redis_fixture_isolation.py`:
 - `test_redis_fixture_cleanup_rejects_changed_ownership_before_cascades`
 - `test_redis_fixture_cleanup_removes_owned_receipts_and_preserves_unrelated_records`
 - `test_redis_fixture_committed_seed_output_loss_is_recoverable_and_concurrent_seed_is_rejected`
+- `test_redis_fixture_cleanup_allows_legitimate_mutable_queue_state`
+- `test_redis_fixture_cleanup_rejects_synthetic_queue_reassignment_atomically`
+- `test_redis_fixture_cleanup_rejects_additional_synthetic_queue_relationships`
+- `test_redis_fixture_cleanup_rejects_missing_synthetic_queue_entry`
+- `test_redis_fixture_cleanup_rejects_unsupported_snapshot_version_without_deletion`
+- `test_redis_fixture_manifest_finalization_failure_rolls_back_owned_queue_identities`
+- `test_redis_fixture_parent_locks_fence_concurrent_queue_and_membership_inserts`
+
+The reassignment/additional-relationship cases fail against exact reference fixture
+`ef26a6d9` (six subtest failures) and pass with snapshot v2. They verify atomic
+conflict rollback and survival of unrelated queue state. The parent-lock case uses
+independent PostgreSQL connections and server lock timeouts; it does not simulate
+quiescence or predicate locking. The existing named Redis browser case now records
+raw operation receipts separately, rejects unexpected queue-only ownership, and
+asserts exact captured operation-ID cleanup plus unrelated-ID preservation.
 
 Focused fixture checks in `backend/tests/test_redis_admission_fixture.py`:
 

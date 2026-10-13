@@ -16,7 +16,8 @@ from psycopg import sql
 
 DSN = 'postgresql://postgres@postgres:5432/tempo'
 MARKER = 'tempo-redis-admission-fixture'
-VERSION = 1
+VERSION = 2
+QUEUE_OWNERSHIP_COLUMNS = ('id', 'card_id', 'queue_date', 'cycle', 'admission_repertoire_id')
 
 
 def configure():
@@ -79,14 +80,18 @@ def seed_fixture(database, identity, queue_date=None):
                  'settings_before': settings_before, 'settings_installed': settings_installed,
                  'displaced': [[entry, position, position + shift] for entry, position in displaced],
                  'projection_before': projection_before,
-                 'projection_installed': snapshot_row(database, 'queue_projections', 'queue_date', queue_date)}
+                 'projection_installed': snapshot_row(database, 'queue_projections', 'queue_date', queue_date),
+                 'owned_queue_entries': []}
         database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,'Redis admission proof',%s,%s,0)",
                          (identity, MARKER + ':' + json.dumps(saved), queue_date))
         for index, card_id in enumerate(owned_cards):
             database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,trained_color,content_type,introduced_at,first_correct_at,interval_days) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s,'white','tactic','2000-01-01','2000-01-01T00:00:00+00:00',1)",
                              (card_id, identity, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', queue_date))
             database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (identity, card_id))
-            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'due',%s)", (queue_date, card_id, index, identity))
+            queue_entry = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'due',%s) RETURNING id,card_id,queue_date,cycle,admission_repertoire_id", (queue_date, card_id, index, identity)).fetchone()
+            saved['owned_queue_entries'].append(dict(zip(QUEUE_OWNERSHIP_COLUMNS, queue_entry)))
+        # The final recovery manifest commits atomically with all queue identities.
+        database.execute('UPDATE repertoires SET source_name=%s WHERE id=%s', (MARKER + ':' + json.dumps(saved), identity))
     return {'identity': identity}
 
 
@@ -100,6 +105,13 @@ def validate_restoration(saved, settings, projection, positions):
     for entry_id, _, installed_position in saved['displaced']:
         if positions.get(entry_id) != installed_position:
             raise RuntimeError(f'Redis fixture restoration conflict: daily_queue entry {entry_id} missing or reordered')
+
+
+def validate_synthetic_queue_ownership(saved, queue_rows):
+    expected = {entry['id']: entry for entry in saved['owned_queue_entries']}
+    actual = {row[0]: dict(zip(QUEUE_OWNERSHIP_COLUMNS, row)) for row in queue_rows}
+    if actual != expected:
+        raise RuntimeError('Redis fixture restoration conflict: synthetic queue ownership missing, reassigned, or additional')
 
 
 def delete_owned_rows(database, identity):
@@ -143,6 +155,13 @@ def cleanup_fixture(database, identity):
             (owned_cards, identity)).fetchone()
         if unrelated_link:
             raise RuntimeError('Redis fixture restoration conflict: synthetic card linked to unrelated repertoire')
+        # Existing FOR UPDATE parent locks block FK-backed inserts until commit;
+        # this SELECT is an ownership check, not a predicate lock for arbitrary SQL.
+        queue_rows = database.execute(
+            'SELECT id,card_id,queue_date,cycle,admission_repertoire_id FROM daily_queue '
+            'WHERE id=ANY(%s) OR card_id=ANY(%s) OR admission_repertoire_id=%s ORDER BY id FOR UPDATE',
+            ([entry['id'] for entry in saved['owned_queue_entries']], owned_cards, identity)).fetchall()
+        validate_synthetic_queue_ownership(saved, queue_rows)
         delete_owned_rows(database, identity)
         if saved['settings_before'] is None:
             database.execute('DELETE FROM settings WHERE id=1')
@@ -167,10 +186,24 @@ def inspect_fixture(database, identity):
     }
 
 
+def audit_fixture(database, identity):
+    """Raw receipt inventory, separate from the fault-state comparison contract."""
+    card_ids(identity)
+    owner = database.execute('SELECT source_name FROM repertoires WHERE id=%s', (identity,)).fetchone()
+    queue_ids = []
+    if owner and owner[0].startswith(MARKER + ':'):
+        saved = json.loads(owner[0][len(MARKER) + 1:])
+        queue_ids = [entry['id'] for entry in saved.get('owned_queue_entries', [])]
+    columns = ('operation_id', 'command_name', 'payload_json', 'state')
+    operations = [dict(zip(columns, row)) for row in database.execute(
+        'SELECT operation_id,command_name,payload_json,state FROM operation_receipts ORDER BY operation_id').fetchall()]
+    return {'queue_entry_ids': queue_ids, 'operations': operations}
+
+
 def main():
     configure()
     action, identity = sys.argv[1:3]
-    actions = {'seed': seed_fixture, 'inspect': inspect_fixture, 'cleanup': cleanup_fixture}
+    actions = {'seed': seed_fixture, 'inspect': inspect_fixture, 'cleanup': cleanup_fixture, 'audit': audit_fixture}
     if action not in actions:
         raise ValueError('Unknown fixture action')
     with psycopg.connect(DSN, connect_timeout=5) as database:
