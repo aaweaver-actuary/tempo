@@ -115,12 +115,20 @@ def test_queue_application_requeue_preserves_origin_cycle_and_issuance(queued_at
         assert [row[0] for row in owned_database.execute('SELECT card_id FROM daily_queue ORDER BY position,id')] == expected_cards
 
 
-@pytest.mark.parametrize('legacy_phase,next_phase', [('prioritized_openings', 'real_game_misses'),
-                                                    ('prioritized_opening_item', 'real_game_misses'),
+@pytest.mark.parametrize('legacy_phase,next_phase', [('prioritized_openings', 'admit_study'),
+                                                    ('prioritized_opening_item', 'admit_study'),
                                                     ('real_game_misses', 'publish_projection'),
                                                     ('randomize_queue', 'publish_projection')])
 def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, legacy_phase, next_phase):
     captured = {}
+    opening_page_reads = []
+    def bounded_opening_read(sql, parameters=(), *, native=False):
+        assert native
+        assert parameters == ('2026-10-12', '2026-10-12')
+        assert 'SELECT EXISTS' in sql
+        opening_page_reads.append(sql)
+        return [(False,)]  # Exhausted allowance: the bounded page resumes admit_study.
+    monkeypatch.setattr(postgres_queue_refresh, '_bounded_read', bounded_opening_read)
     monkeypatch.setattr(postgres_queue_refresh.postgres_store, 'configured', lambda: True)
     @contextmanager
     def owned_connection(**kwargs):
@@ -145,6 +153,16 @@ def test_essential_queue_study_only_resumes_every_legacy_phase(monkeypatch, lega
     assert postgres_queue_refresh.execute_postgres_queue_refresh_slice({'payload': payload}) is True
     assert captured['next_phase'] == next_phase
     assert captured['next_payload']['preserve_through_entry_id'] == 42
+    assert captured['next_payload']['queue_date'] == payload['queue_date']
+    assert len(opening_page_reads) == int(legacy_phase.startswith('prioritized_opening'))
+    if opening_page_reads:
+        assert captured['next_payload']['study_opening_counts']['stop_reason'] == 'daily_allowances_exhausted'
+        assert captured['next_payload']['study_opening_cursor'] == []
+        assert captured['next_payload']['study_opening_upper'] == []
+        assert 'opening_plan' not in captured['next_payload']
+    else:
+        assert captured['next_payload']['quarantine_started'] is True
+        assert captured['next_payload']['after_entry_id'] == 17
 
 
 def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypatch):

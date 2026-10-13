@@ -22,6 +22,10 @@ Retain all existing application/store/source replay and native A1 durability
 regressions. The ownership demonstrations are evidence for #202, not shared
 planner changes or narrower production qualification. See
 [the module contract](../docs/architecture/ci-isolation/scheduling-module-boundary.md).
+## Main CI test repairs after PR #235 (October 13, 2026)
+
+- `backend/tests/test_queue_application_extraction.py::test_essential_queue_study_only_resumes_every_legacy_phase` covers all four legacy checkpoints. Ranked checkpoints now enter the bounded `study_opening_page` path and, with exhausted allowance, continue to `admit_study`. The fixture supplies the bounded allowance read, forbids optional ranking/analysis, and preserves the queue date, recovery boundary, and quarantine cursor. Main `8384aa4d` reproduced two missing-read failures before the fixture repair.
+
 ## Study-only opening introductions — related #194, #220, #223, #230–#232
 
 - `backend/tests/test_study_opening_admission.py`: `test_study_only_replaces_optional_ranked_checkpoint_with_bounded_page`, `test_study_opening_selector_reads_only_one_page_per_slice`, `test_study_opening_graph_order_is_stable_without_analysis_or_postgres`, `test_study_opening_rejected_page_advances_without_starvation`, `test_study_opening_publishes_one_item_then_checkpoints_even_when_mode_resumes`, `test_normal_mode_keeps_existing_priority_preparation`, and pure card-identity/invalid-content cases cover bounded deterministic selection and mode transitions.
