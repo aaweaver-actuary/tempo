@@ -80,10 +80,12 @@ jobs:
         with:
           python-version: '3.12.14'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-test.txt
       - name: Selected Python prerequisites
         if: needs.selection.outputs.python == 'true'
-        run: pip install -r backend/requirements.txt pytest
+        run: pip install -r backend/requirements.txt -r backend/requirements-test.txt pytest
       - run: npm ci
         if: needs.selection.outputs.node == 'true'
       - name: Study browser prerequisites

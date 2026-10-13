@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "module": "scheduling-review",
+  "selection_status": "ownership-contract-only; not wired into shared CI planner",
+  "implementation_module": "app.services.scheduling_review_application",
+  "shared_contract_module": "app.services.scheduling_review_contracts",
+  "owning_tests": [
+    "backend/tests/test_scheduling_boundary.py",
+    "backend/tests/test_scheduling_review_application.py"
+  ],
+  "consumers": {
+    "app.services.scheduling_review_store": [
+      "backend/tests/test_scheduling_review_store.py"
+    ],
+    "app.services.review_service": [
+      "backend/tests/test_scheduling_review_store.py"
+    ],
+    "app.services.study_attempts": [
+      "backend/tests/test_study_durability.py"
+    ],
+    "app.main": [
+      "backend/tests/test_phone_offline_training.py",
+      "backend/tests/test_prepared_review_continuation.py"
+    ]
+  },
+  "unrelated": {
+    "module": "app.services.motif_detectors",
+    "tests": [
+      "backend/tests/test_motif_detectors.py"
+    ]
+  },
+  "allowed_direct_dependencies": {
+    "app.services.scheduling_review_application": [
+      "__future__",
+      "app.services.scheduler",
+      "app.services.scheduling_review_contracts",
+      "datetime",
+      "json"
+    ],
+    "app.services.scheduling_review_contracts": [
+      "__future__",
+      "dataclasses",
+      "datetime",
+      "typing"
+    ],
+    "app.services.scheduler": [
+      "__future__",
+      "dataclasses",
+      "datetime",
+      "fsrs"
+    ],
+    "app": [],
+    "app.services": []
+  },
+  "native_boundaries": {
+    "postgres": "Retain regular A1 rollback/concurrent-replay and review/queue durability proofs; fake stores do not qualify persistence.",
+    "browser_specs": [
+      "tests/browser/post-review-progression.spec.ts",
+      "tests/browser/training-critical-path.spec.ts",
+      "tests/browser/study-only-mode.spec.ts",
+      "tests/browser/studies.spec.ts"
+    ],
+    "browser_reason": "Real server review or study-attempt calls exercise the wrapper. Mocked responses in these or other specs do not prove backend scheduling.",
+    "qualification_owner": "CI; current candidate is FULL because qualification dependencies/workflows change."
+  },
+  "source_paths": {
+    "app.services.scheduling_review_application": "backend/app/services/scheduling_review_application.py",
+    "app.services.scheduling_review_contracts": "backend/app/services/scheduling_review_contracts.py",
+    "app.services.scheduler": "backend/app/services/scheduler.py"
+  }
+}

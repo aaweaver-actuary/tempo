@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from .scheduling_review_application import (
+from .scheduling_review_contracts import (
     CardState, MaturityFacts, OpeningSeedFacts, ReviewRecord, UpdatedCardState,
 )
 
