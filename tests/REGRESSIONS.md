@@ -4304,3 +4304,14 @@ Generic cleanup callback checks in `tests/unit/redis-admission-cleanup-regressio
 Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
 
 - `redis_fixture_native_isolation_regressions_run_in_regular_durability`
+
+## Issue #240 — prefix diagnostics ownership and admitted-read browser contract
+
+Real PostgreSQL browser coverage in `tests/browser/prefix-diagnostics.spec.ts`:
+
+- `PD-240 repeated foreground detail deferrals outlast five seconds then require explicit database retry` — six controlled foreground refusals reproduce the old five-second contract failure (963 ms response-wait timeout); admission remains bounded by the existing 15-second request limit.
+- `PD-240 repeated foreground list deferrals outlast five seconds then require explicit refresh` — same contract for initial listing, with visible database error and explicit Refresh.
+- `PD-240 diagnostics consumes automatic retry responses recorded before UI assertions` and `PD-240 list consumes automatic retry responses recorded before UI assertions` — both deferral and subsequent database refusal arrive before journal consumption; the observer retains them and requires explicit retry.
+- Existing phone/desktop `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence`, repeated database refusals and foreground-then-database refusal cases retain every read-only, unknown-evidence, layout and unchanged settled-queue assertion.
+
+No product deadline, global timeout, test quarantine, PostgreSQL proof or nightly/release coverage was weakened. General fixture classification remains #239-owned.
