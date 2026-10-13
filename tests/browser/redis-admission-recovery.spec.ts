@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, expect } from "./observability";
 import { boardBounds } from "./ui-fixtures";
+import { RedisAdmissionCleanup } from "./support/redis-admission-cleanup";
 
 const execute = promisify(execFile);
 
@@ -31,9 +32,15 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
   // 15-second foreground watchdog bound confirmation without a five-minute lease.
   const recoveryDeadline = 5_000 + 15_000;
   const evidence: unknown[] = [];
-  let stopped = false;
-  let paused = false;
-  try {
+  const cleanup = new RedisAdmissionCleanup({
+    stopRedis: () => docker("stop", "redis"),
+    pauseRedis: () => docker("pause", "redis"),
+    startRedis: () => docker("start", "redis"),
+    unpauseRedis: () => docker("unpause", "redis"),
+    closePage: () => page.close(),
+    cleanupFixture: async () => { if (savedFixture) await fixture("cleanup"); },
+  });
+  await cleanup.run(async () => {
     savedFixture = await fixture("seed");
     for (const fault of ["refusal", "nonreply"] as const) {
       await page.goto("/");
@@ -47,63 +54,58 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
         if (submitted.method() === "POST" && /\/api\/cards\/[^/]+\/review$/.test(new URL(submitted.url()).pathname))
           posts.push({ key: submitted.headers()["idempotency-key"], body: submitted.postData()!, status: response.status(), result: await response.json() });
       };
-      page.on("response", listener);
-      if (fault === "refusal") { await docker("stop", "redis"); stopped = true; }
-      else { await docker("pause", "redis"); paused = true; }
-      const started = Date.now();
-      const board = await boardBounds(page);
-      await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
-      await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
-      await expect.poll(() => posts.length).toBeGreaterThan(0);
-      const delivery = posts[0];
-      expect(delivery.status).toBe(503);
-      expect(delivery.result).toEqual({ detail: "Foreground admission unavailable; check Redis service status and retry with the same Idempotency-Key" });
-      expect(Date.now() - started).toBeLessThan(15_000);
-      const retained = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
-      expect(retained).toHaveLength(1);
-      expect(retained[0].attemptId).toMatch(/^[a-f0-9-]{36}$/);
-      expect(delivery.key).toBe(`review-attempt:${retained[0].attemptId}`);
-      await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", queueEntry!);
-      expect(await fixture("inspect")).toEqual(baseline);
-      await page.reload();
-      await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toEqual(retained);
-      // After a true reload no successor is usable while admission is unavailable.
-      await expect(page.locator(".board-frame[data-input-enabled='true']")).toHaveCount(0);
-      expect(await fixture("inspect")).toEqual(baseline);
-      if (stopped) { await docker("start", "redis"); stopped = false; }
-      if (paused) { await docker("unpause", "redis"); paused = false; }
-      await expect.poll(async () => {
-        try { return (await request.get(`${api}/health`)).ok(); } catch { return false; }
-      }, { timeout: recoveryDeadline }).toBe(true);
-      await page.reload();
-      await expect.poll(async () => (await fixture("inspect")).reviews.length, { timeout: recoveryDeadline }).toBe(baseline.reviews.length + 1);
-      await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]")), { timeout: recoveryDeadline }).toEqual([]);
-      const accepted = await request.post(`${api}/cards/${retained[0].backendId}/review`, { headers: { "Idempotency-Key": delivery.key, "Content-Type": "application/json" }, data: delivery.body });
-      expect(accepted.status()).toBe(200);
-      const acceptedResult = await accepted.json();
-      expect(acceptedResult.persisted).toBe(true);
-      if (!JSON.parse(delivery.body).prepared_next) expect(acceptedResult).not.toHaveProperty("prepared_continuation");
-      const subsequentOperation = randomUUID();
-      const replay = await request.post(`${api}/cards/${retained[0].backendId}/review`, { headers: { "Idempotency-Key": subsequentOperation, "Content-Type": "application/json" }, data: delivery.body });
-      expect(replay.status()).toBe(200);
-      expect(await replay.json()).toEqual(acceptedResult);
-      const recovered = await fixture("inspect");
-      expect(recovered.reviews).toHaveLength(baseline.reviews.length + 1);
-      expect(recovered.receipts).toHaveLength(baseline.receipts.length + 1);
-      expect(recovered.operations.filter((row: string[]) => row[0] === delivery.key || row[0] === subsequentOperation).map((row: string[]) => row[1])).toEqual(["complete", "complete"]);
-      expect(JSON.parse(recovered.receipts.find((row: unknown[]) => row[0] === retained[0].attemptId)[3])).toEqual(acceptedResult);
-      evidence.push({ fault, queueEntry, delivery, retained, acceptedResult, subsequentOperation, recovered });
-      page.off("response", listener);
+      await cleanup.withResponseListener(() => page.off("response", listener), async () => {
+        page.on("response", listener);
+        if (fault === "refusal") await cleanup.stopRedis();
+        else await cleanup.pauseRedis();
+        const started = Date.now();
+        const board = await boardBounds(page);
+        await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 6.5 / 8);
+        await page.mouse.click(board.x + board.width * 4.5 / 8, board.y + board.height * 4.5 / 8);
+        await expect.poll(() => posts.length).toBeGreaterThan(0);
+        const delivery = posts[0];
+        expect(delivery.status).toBe(503);
+        expect(delivery.result).toEqual({ detail: "Foreground admission unavailable; check Redis service status and retry with the same Idempotency-Key" });
+        expect(Date.now() - started).toBeLessThan(15_000);
+        const retained = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
+        expect(retained).toHaveLength(1);
+        expect(retained[0].attemptId).toMatch(/^[a-f0-9-]{36}$/);
+        expect(delivery.key).toBe(`review-attempt:${retained[0].attemptId}`);
+        await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", queueEntry!);
+        expect(await fixture("inspect")).toEqual(baseline);
+        await page.reload();
+        await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toEqual(retained);
+        // After a true reload no successor is usable while admission is unavailable.
+        await expect(page.locator(".board-frame[data-input-enabled='true']")).toHaveCount(0);
+        expect(await fixture("inspect")).toEqual(baseline);
+        await cleanup.restoreRedis();
+        await expect.poll(async () => {
+          try { return (await request.get(`${api}/health`)).ok(); } catch { return false; }
+        }, { timeout: recoveryDeadline }).toBe(true);
+        await page.reload();
+        await expect.poll(async () => (await fixture("inspect")).reviews.length, { timeout: recoveryDeadline }).toBe(baseline.reviews.length + 1);
+        await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]")), { timeout: recoveryDeadline }).toEqual([]);
+        const accepted = await request.post(`${api}/cards/${retained[0].backendId}/review`, { headers: { "Idempotency-Key": delivery.key, "Content-Type": "application/json" }, data: delivery.body });
+        expect(accepted.status()).toBe(200);
+        const acceptedResult = await accepted.json();
+        expect(acceptedResult.persisted).toBe(true);
+        if (!JSON.parse(delivery.body).prepared_next) expect(acceptedResult).not.toHaveProperty("prepared_continuation");
+        const subsequentOperation = randomUUID();
+        const replay = await request.post(`${api}/cards/${retained[0].backendId}/review`, { headers: { "Idempotency-Key": subsequentOperation, "Content-Type": "application/json" }, data: delivery.body });
+        expect(replay.status()).toBe(200);
+        expect(await replay.json()).toEqual(acceptedResult);
+        const recovered = await fixture("inspect");
+        expect(recovered.reviews).toHaveLength(baseline.reviews.length + 1);
+        expect(recovered.receipts).toHaveLength(baseline.receipts.length + 1);
+        expect(recovered.operations.filter((row: string[]) => row[0] === delivery.key || row[0] === subsequentOperation).map((row: string[]) => row[1])).toEqual(["complete", "complete"]);
+        expect(JSON.parse(recovered.receipts.find((row: unknown[]) => row[0] === retained[0].attemptId)[3])).toEqual(acceptedResult);
+        evidence.push({ fault, queueEntry, delivery, retained, acceptedResult, subsequentOperation, recovered });
+      });
     }
     const directory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/issue-225";
     mkdirSync(directory, { recursive: true });
     const proof = JSON.stringify({ project, recoveryDeadline, evidence }, null, 2);
     writeFileSync(join(directory, "native-recovery.json"), proof);
     await testInfo.attach("redis-admission-native-proof", { body: proof, contentType: "application/json" });
-  } finally {
-    if (paused) await docker("unpause", "redis");
-    if (stopped) await docker("start", "redis");
-    await page.close();
-    if (savedFixture) await fixture("cleanup");
-  }
+  });
 });
