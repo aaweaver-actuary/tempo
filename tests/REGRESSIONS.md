@@ -4346,3 +4346,11 @@ The four initial ownership cases failed before the correction. Missing/failed ev
 
 - Existing named browser regression `workspace-flows.spec.ts::training Bury hides the card for today across reload and reports a failed bury` retains every pending-message, disabled-control/board, reload, immutable-operation-ID and native queue assertion. It now waits for real service-worker control, intercepts at browser-context level, and requires the refused operation ID to match the retained/retried ID. CI run 38400712633 demonstrated the old defect: the backend executed `queue.bury` successfully although the page-level fixture purported to return 503. No service worker, assertion, deadline or product behavior was removed or relaxed.
 
+
+## PR #243 focused qualification review — ownership closure
+
+Regular CI fast-lane bridge coverage:
+
+- `PD-243 incomplete diagnostics owner or producer mappings cannot preserve FAST or STUDY` — a structurally valid inventory with its direct-owner mapping removed first selected FAST; the explicit dependency anchors now reject lost direct/producer/caller mappings. The producer omission also reproduced STUDY eligibility before its anchor repair.
+- `PD-243 import and canonical publication callers require diagnostics while isolated readers remain FAST` — PGN import, canonical save, deletion/limits and shared operation receipt helpers select diagnostics qualification; isolated statistics and game comparison remain FAST. The PGN/canonical caller regression first failed on the previous inventory.
+- `PD-243 certified fixture companions cannot override diagnostics qualification` — merged #239's bounded Redis certificate remains FAST alone and cannot downgrade a mixed diagnostics candidate from FULL. Both injection seams and inventory/certificate hashes are preserved.

@@ -144,13 +144,17 @@
     "pinned": ["visual.spec.ts", "performance.spec.ts"]
   },
   "prefixDiagnostics": {
+    "requiredPaths": ["app/components/canonical-prefix-dialog.tsx", "app/components/opening-segmentation.tsx", "app/components/prefix-diagnostics.tsx", "app/components/repertoire-daily-limits.tsx", "app/components/repertoire-delete-dialog.tsx", "app/domain/opening-evidence.ts", "app/domain/opening-segmentation.ts", "app/domain/prefix-diagnostics.ts", "app/hooks/use-opening-evidence-recovery.ts", "app/lib/opening-evidence-journal.ts", "app/lib/opening-evidence-recovery-policy.ts", "app/lib/opening-evidence-review.ts", "app/lib/operation-status-events.ts", "app/lib/operation-status.ts", "app/lib/pgn-import-command.ts", "app/lib/repertoire-settings-save.ts", "backend/app/opening_evidence_api.py", "backend/app/opening_evidence_contracts.py", "backend/app/opening_segmentation_api.py", "backend/app/prefix_diagnostics_api.py", "backend/app/prefix_diagnostics_contracts.py", "backend/app/services/opening_decision_evidence.py", "backend/app/services/opening_segmentation.py", "backend/app/services/postgres_opening_evidence.py", "backend/app/services/postgres_opening_segmentation.py", "backend/app/services/prefix_diagnostics.py"],
     "broadPaths": [
       "app/lib/background-fetch.ts", "app/lib/workspace-data.ts", "app/lib/validated-data.ts",
       "app/lib/browser-activity.ts", "app/lib/performance.ts", "app/lib/background-study.ts",
       "app/hooks/use-study-only-mode.ts",
       "app/page.tsx", "app/layout.tsx", "app/const.ts", "app/globals.css",
       "app/views/home_view.tsx", "app/views/repertoire_view.tsx", "app/views/settings_view.tsx",
-      "app/ImportDialogBox.tsx", "app/lib/pgn-import.ts", "app/components/ui.tsx",
+      "app/ImportDialogBox.tsx", "app/lib/pgn-import.ts", "app/lib/pgn-import-command.ts", "app/components/ui.tsx",
+      "app/components/canonical-prefix-dialog.tsx", "app/components/repertoire-delete-dialog.tsx",
+      "app/components/repertoire-daily-limits.tsx", "app/lib/repertoire-settings-save.ts",
+      "app/lib/operation-status.ts", "app/lib/operation-status-events.ts",
       "app/components/buttons/BaseButton.tsx", "app/components/task-tabs.tsx",
       "app/components/service-status-panel.tsx", "app/lib/service-status.ts", "app/lib/activity-control-command.ts",
       "app/lib/prefix-split-command.ts", "app/lib/canonical-prefix-command.ts",

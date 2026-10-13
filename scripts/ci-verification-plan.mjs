@@ -127,6 +127,12 @@ export function validateInventory(files, sourceInventory = inventory) {
     || broadDiagnosticPaths.some(path => typeof path !== "string" || !path || path.startsWith("/") || path.split("/").includes(".."))
     || !sourceInventory.families?.["prefix-diagnostics"]?.includes("prefix-diagnostics.spec.ts"))
     throw new Error("Missing prefix diagnostics ownership inventory");
+  const requiredDiagnosticPaths = sourceInventory.prefixDiagnostics.requiredPaths;
+  if (!Array.isArray(requiredDiagnosticPaths) || !requiredDiagnosticPaths.length
+    || new Set(requiredDiagnosticPaths).size !== requiredDiagnosticPaths.length
+    || requiredDiagnosticPaths.some(path => typeof path !== "string" || !path || path.startsWith("/") || path.split("/").includes("..")
+      || !(broadDiagnosticPaths.includes(path) || sourceInventory.sources.some(mapping => mapping.paths?.includes(path) && mapping.families?.includes("prefix-diagnostics")))))
+    throw new Error("Missing or incomplete prefix diagnostics dependency mappings");
   const mappedPaths = new Set();
   for (const mapping of sourceInventory.sources) {
     if (!mapping.paths?.length || !mapping.families?.length || new Set(mapping.families).size !== mapping.families.length

@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { makeFastPlan, selectFastLane, validateFastGate, testIdentity, fastInventory } from '../../scripts/ci-fast-lane.mjs';
 import { fastCommands } from '../../scripts/ci-fast-commands.mjs';
 import { verifySelection } from '../../scripts/ci-fast-run.mjs';
-import { changedPathsFromNameStatus, planHash } from '../../scripts/ci-verification-plan.mjs';
+import { changedPathsFromNameStatus, planHash, inventory as browserInventory } from '../../scripts/ci-verification-plan.mjs';
 import { postgresTestStages, executePostgresTestPlan } from '../../scripts/postgres-test-plan.mjs';
 import { parsePostgresTestOptions } from '../../scripts/postgres-test-options.mjs';
 import { certificate, readCertificateSources } from '../../scripts/ci-certified-tests.mjs';
@@ -323,4 +323,29 @@ test('PD-240 diagnostics FULL merge gate rejects absent complete browser qualifi
   for (const result of ['failure','skipped','cancelled',undefined]) {
     assert(validateFastGate(plan,null,{selection:{result:'success'},quality:{result}},pr,execution,completePlan()).includes('Complete qualification did not pass'));
   }
+});
+
+test('PD-243 incomplete diagnostics owner or producer mappings cannot preserve FAST or STUDY', () => {
+  for (const path of ['app/components/prefix-diagnostics.tsx','app/domain/opening-evidence.ts']) {
+    const incomplete = structuredClone(browserInventory);
+    incomplete.sources = incomplete.sources.filter(mapping => !mapping.paths.includes(path));
+    assert.equal(selectFastLane([path], {browserSourceInventory:incomplete}).tier,'FULL',path);
+  }
+  const missingCaller = structuredClone(browserInventory);
+  missingCaller.prefixDiagnostics.broadPaths = missingCaller.prefixDiagnostics.broadPaths.filter(path=>path!=='app/lib/pgn-import-command.ts');
+  assert.equal(selectFastLane(['app/lib/pgn-import-command.ts'],{browserSourceInventory:missingCaller}).tier,'FULL');
+});
+
+test('PD-243 import and canonical publication callers require diagnostics while isolated readers remain FAST', () => {
+  for (const path of ['app/lib/pgn-import-command.ts','app/components/canonical-prefix-dialog.tsx',
+    'app/components/repertoire-delete-dialog.tsx','app/components/repertoire-daily-limits.tsx',
+    'app/lib/repertoire-settings-save.ts','app/lib/operation-status.ts','app/lib/operation-status-events.ts'])
+    assert.equal(selectFastLane([path]).tier,'FULL',path);
+  for (const path of ['app/components/repertoire-statistics.tsx','app/lib/comparison.ts'])
+    assert.equal(selectFastLane([path]).tier,'FAST',path);
+});
+
+test('PD-243 certified fixture companions cannot override diagnostics qualification', () => {
+  assert.equal(selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts']).tier,'FAST');
+  assert.equal(selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts','app/components/prefix-diagnostics.tsx']).tier,'FULL');
 });
