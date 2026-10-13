@@ -19,6 +19,10 @@ export function validateMaiaRatings(ratings) {
 
 function mirrorSquare(square) { return `${square[0]}${9 - Number(square[1])}`; }
 function mirrorMove(move) { return `${mirrorSquare(move.slice(0, 2))}${mirrorSquare(move.slice(2, 4))}${move.slice(4)}`; }
+function matchesLegalMoveUniverse(candidateLegalMoves, sortedExpectedLegalMoves) {
+  return candidateLegalMoves.length === sortedExpectedLegalMoves.length && candidateLegalMoves.toSorted()
+    .every((candidateMove, legalMoveIndex) => candidateMove === sortedExpectedLegalMoves[legalMoveIndex]);
+}
 function mirrorFen(fen) {
   const [placement, active, castling, ep, halfmove, fullmove] = fen.split(" ");
   const swap = (rank) => [...rank].map((piece) =>
@@ -44,7 +48,7 @@ export function prepareMaiaPosition(fen, moveIndex, reversedMoveIndex) {
       throw new Error(`Maia vocabulary omits or mismaps legal move ${modelMove}`);
     return { index, move_uci: sideToMove === "black" ? mirrorMove(modelMove) : modelMove };
   });
-  if (legalEntries.map((entry) => entry.move_uci).sort().join(",") !== originalLegalMoves.join(","))
+  if (!matchesLegalMoveUniverse(legalEntries.map((entry) => entry.move_uci), originalLegalMoves))
     throw new Error("Maia orientation does not preserve the complete legal move universe");
   const tokens = new Float32Array(64 * 12);
   normalizedFen.split(" ")[0].split("/").forEach((rankText, rankFromTop) => {
@@ -87,7 +91,7 @@ export function createMaiaDistributionAdapter({ model, moveIndex, reversedMoveIn
       throw new Error("Maia request requires a canonical four-field position key");
     if (input.expected_side_to_move !== prepared.sideToMove)
       throw new Error("Maia request does not select the expected opponent turn");
-    if (input.position.legal_moves.slice().sort().join(",") !== prepared.originalLegalMoves.join(","))
+    if (!matchesLegalMoveUniverse(input.position.legal_moves, prepared.originalLegalMoves))
       throw new Error("Maia request must contain every legal move exactly once");
     if (!prepared.legalEntries.length) return { status: "terminal", position: input.position, evidence: null };
     const logits = await runLogits(prepared.tokens, input.ratings);

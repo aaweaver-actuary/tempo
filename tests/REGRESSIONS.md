@@ -3925,3 +3925,11 @@ the runner's readiness observation without changing product queue behavior,
 Maia inference or inventory persistence. Regular runner tests exercise repeated
 pending responses, service failure and background failure; real candidate CI
 must freshly pass the full durability stage after this repair.
+
+`maia_distribution_rejects_delimiter_encoded_legal_moves_before_inference` in
+`tests/unit/maia-probability-regressions.test.ts` first failed against the initial
+adapter: replacing two legal UCIs with one comma-containing string preserved a
+joined-text comparison and allowed inference. Exact array length and per-move
+identity now reject that malformed universe before calling the model. The same
+comparison validates orientation. This protects the source boundary independently
+of Python's later strict UCI validation.

@@ -80,6 +80,14 @@ it("maia_distribution_rejects_wrong_side_incomplete_inventory_and_noncanonical_p
   expect(runLogits).not.toHaveBeenCalled();
 });
 
+it("maia_distribution_rejects_delimiter_encoded_legal_moves_before_inference", async () => {
+  const runLogits = vi.fn(async () => new Float32Array(vocabularySize));
+  const request = requestFor();
+  request.position.legal_moves = [request.position.legal_moves.slice(0, 2).join(","), ...request.position.legal_moves.slice(2)];
+  await expect(adapter(runLogits)(request)).rejects.toThrow("every legal move");
+  expect(runLogits).not.toHaveBeenCalled();
+});
+
 it("maia_distribution_rejects_invalid_model_outputs_without_uniform_fallback", () => {
   const prepared = prepareMaiaPosition(fixtures.cases[0].fen, forwardVocabulary, reverseVocabulary);
   for (const invalid of [NaN, Infinity, -Infinity]) {
