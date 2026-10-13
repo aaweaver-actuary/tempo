@@ -1,0 +1,51 @@
+[importlinter]
+root_package = app
+include_external_packages = True
+
+[importlinter:contract:scheduling-outward]
+name = Scheduling imports only its contracts and scheduler
+type = forbidden
+source_modules =
+    app.services.scheduling_review_application
+    app.services.scheduling_review_contracts
+    app.services.scheduler
+forbidden_modules =
+    app.**
+as_packages = False
+ignore_imports =
+    app.services.scheduling_review_application -> app.services.scheduling_review_contracts
+    app.services.scheduling_review_application -> app.services.scheduler
+unmatched_ignore_imports_alerting = error
+
+[importlinter:contract:scheduling-application-owner]
+name = The review wrapper owns scheduling application calls
+type = protected
+protected_modules =
+    app.services.scheduling_review_application
+allowed_importers =
+    app.services.review_service
+
+[importlinter:contract:scheduling-contract-owners]
+name = Scheduling contracts belong to the application and store adapter
+type = protected
+protected_modules =
+    app.services.scheduling_review_contracts
+allowed_importers =
+    app.services.scheduling_review_application
+    app.services.scheduling_review_store
+
+[importlinter:contract:scheduling-no-infrastructure]
+name = Scheduling requires no service infrastructure
+type = forbidden
+source_modules =
+    app.services.scheduling_review_application
+    app.services.scheduling_review_contracts
+    app.services.scheduler
+forbidden_modules =
+    fastapi
+    celery
+    psycopg
+    psycopg_pool
+    redis
+    sqlite3
+    httpx

@@ -166,7 +166,8 @@ def _decoded_evidence(raw, expected_type, label, unavailable):
 
 
 def _project_snapshot(decoded, captured_at, study_day, repertoire_ids, *, production_timezone="America/New_York", policy_id=None):
-    from ..main import _plan_prioritized_opening_admissions
+    from .opening_capacity_frontier import plan_prioritized_opening_admissions
+    from .real_game_feedback import MISS_REASON
     rows = decoded["candidates"]
     if policy_id is not None:
         rows = [row for row in rows if row["repertoire_id"] == policy_id]
@@ -177,8 +178,8 @@ def _project_snapshot(decoded, captured_at, study_day, repertoire_ids, *, produc
     counts = {row["repertoire_id"]: row["count"] for row in decoded["introductions"]}
     limits = {row["id"]: row["daily_limit"] for row in decoded["repertoires"]}
     try:
-        priority_order = _plan_prioritized_opening_admissions(rows, {}, study_day, len(rows))
-        actual_plan = _plan_prioritized_opening_admissions(rows, counts, study_day, limits)
+        priority_order = plan_prioritized_opening_admissions(rows, {}, study_day, len(rows), miss_reason=MISS_REASON)
+        actual_plan = plan_prioritized_opening_admissions(rows, counts, study_day, limits, miss_reason=MISS_REASON)
     except (TypeError, ValueError, KeyError) as error:
         raise OpeningRankingError("invalid_production_input", "Captured inputs cannot reproduce the production planner; repair the stored card/priority evidence.") from error
     metadata_by_card = {}

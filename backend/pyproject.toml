@@ -10,5 +10,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "import-linter==2.15",
+    "grimp==3.17",
     "pytest>=9.1.1",
 ]

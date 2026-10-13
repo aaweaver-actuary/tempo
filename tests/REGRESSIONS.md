@@ -1,3 +1,27 @@
+## Scheduling application module boundary (#192, #200, #202; A1 follow-up)
+
+`backend/tests/test_scheduling_boundary.py` enforces the existing scheduling seam
+without changing review, queue, or transaction semantics. Regular backend pytest
+executes the real Import Linter contracts, adversarial temporary source copies,
+Grimp dependency/ownership checks, public type identity, and a fresh-interpreter
+application suite that rejects startup and service initialization.
+
+- `test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports`
+- `test_scheduling_boundary_rejects_transitive_infrastructure_imports`
+- `test_scheduling_boundary_rejects_unowned_consumers`
+- `test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity`
+- `test_scheduling_boundary_has_no_unrelated_transitive_dependencies`
+- `test_scheduling_boundary_disallows_dynamic_import_loaders`
+- `test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup`
+- `test_scheduling_boundary_runs_without_application_startup_or_services`
+- `test_scheduling_module_change_selects_owning_tests`
+- `test_unrelated_module_change_excludes_scheduling_tests`
+- `test_scheduling_contract_change_expands_consumer_qualification`
+
+Retain all existing application/store/source replay and native A1 durability
+regressions. The ownership demonstrations are evidence for #202, not shared
+planner changes or narrower production qualification. See
+[the module contract](../docs/architecture/ci-isolation/scheduling-module-boundary.md).
 ## Study-only opening introductions — related #194, #220, #223, #230–#232
 
 - `backend/tests/test_study_opening_admission.py`: `test_study_only_replaces_optional_ranked_checkpoint_with_bounded_page`, `test_study_opening_selector_reads_only_one_page_per_slice`, `test_study_opening_graph_order_is_stable_without_analysis_or_postgres`, `test_study_opening_rejected_page_advances_without_starvation`, `test_study_opening_publishes_one_item_then_checkpoints_even_when_mode_resumes`, `test_normal_mode_keeps_existing_priority_preparation`, and pure card-identity/invalid-content cases cover bounded deterministic selection and mode transitions.
@@ -4263,6 +4287,15 @@ Audit CI readiness evidence (existing named browser cases):
   HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
   These are fixture corrections for qualification, not additional product defects.
 
+### Issue #220 — essential queue application ownership
+
+- `test_queue_application_import_does_not_load_http_or_worker_root` parses direct/deferred/dynamic imports of queue owners, their eager dependency closure, and imports in a fresh interpreter. The sole broker-publication adapter exception retains post-commit wakes.
+- `test_queue_ordering_matches_pinned_pre_extraction_fixture` and `test_queue_application_sql_matches_pinned_pre_extraction_literals` preserve main `3f7332399796366eb32f9fcb5e1b5c678a5b1562` ordering/SQL fixtures.
+- `test_queue_application_requeue_preserves_origin_cycle_and_issuance` covers retained origins, insert position, caller rollback and unissued repeat identity.
+- `test_essential_queue_study_only_resumes_every_legacy_phase` and `test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint` preserve historical optional-phase skips and capacity checkpoint payloads.
+- `test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay` in the regular native queue-attempt proof exercises real foreground contention, interruption rollback, pool restart/persisted checkpoint reload, replay and generation/lease fencing. Existing native issuance/receipt and prepared-transition proofs remain required.
+
+- #220 native `test_postgres_shadow_opening_ranking_is_read_only` patches the frontier owner and asserts both planning calls after each capture, preventing a stale compatibility seam from silently bypassing its connection-closure proof.
 ### PR #229 Redis fixture database isolation
 
 Regular PostgreSQL durability runs `scripts/check_postgres_redis_fixture_isolation.py` against migrated PostgreSQL with real triggers and foreign keys. The native PostgreSQL cases below exercise fixture state and recovery. `backend/tests/test_redis_admission_fixture.py` provides focused fixture lifecycle checks; `tests/unit/redis-admission-cleanup-regressions.test.ts` checks the generic teardown callbacks and failure preservation, not native seed-output recovery. The coverage boundaries are detailed in the PR #229 cleanup reliability entry above.

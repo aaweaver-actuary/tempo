@@ -410,7 +410,8 @@ def shadow_proof_admission_configuration():
 
 def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
     """Real SQL enforcement, domain nonmutation, foreground denial and offline replay."""
-    from app import main as product, postgres_store
+    from app import postgres_store
+    from app.services import opening_capacity_frontier
     from app.services import opening_ranking_evaluation as evaluation
     from app.services import opening_ranking_snapshot as snapshot
     from app.services import redis_admission_gate
@@ -432,13 +433,14 @@ def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
         return captured
 
     original_connection = postgres_store.connection
-    original_planner = product._plan_prioritized_opening_admissions
+    original_planner = opening_capacity_frontier.plan_prioritized_opening_admissions
     original_keys = (redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY)
     proof_key = f"tempo:shadow-ranking-proof:{uuid.uuid4().hex}"
     redis_admission_gate._FOREGROUND_KEY = proof_key + ":foreground"
     redis_admission_gate._BACKGROUND_KEY = proof_key + ":background"
     active_connection = False
     opened_connections = 0
+    planner_calls = 0
 
     @contextmanager
     def checked_connection(**options):
@@ -455,9 +457,11 @@ def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
             finally:
                 active_connection = False
 
-    def checked_planner(*arguments):
+    def checked_planner(*arguments, **options):
+        nonlocal planner_calls
+        planner_calls += 1
         assert not active_connection, "Production planning retained the capture connection"
-        return original_planner(*arguments)
+        return original_planner(*arguments, **options)
 
     class CheckedScorer(evaluation.ProductionOrderScorer):
         def score(self, candidate, context):
@@ -474,7 +478,7 @@ def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
             else:
                 raise AssertionError("PostgreSQL allowed a write in the read-only boundary")
         postgres_store.connection = checked_connection
-        product._plan_prioritized_opening_admissions = checked_planner
+        opening_capacity_frontier.plan_prioritized_opening_admissions = checked_planner
         deployed_redis_url = os.environ.pop("TEMPO_REDIS_URL")
         try:
             try:
@@ -496,6 +500,7 @@ def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
         assert opened_connections == 0
         document = snapshot.capture_snapshot(policy_id=repertoire_id)
         assert opened_connections == 1
+        assert planner_calls == 2, "Native proof did not observe both snapshot plans"
         candidates, context = evaluation.load_snapshot(document)
         assert len(candidates) == 2 and len(document["actual_admission_plan"]) == 1
         assert context.evaluation_scope == "selected_policy" and context.policy_id == repertoire_id
@@ -507,12 +512,13 @@ def test_postgres_shadow_opening_ranking_is_read_only(observer) -> None:
         assert opened_connections == 1, "Offline replay contacted PostgreSQL"
         timezone_document = snapshot.capture_snapshot(repertoire_ids=(repertoire_id,), production_timezone="Pacific/Kiritimati")
         expected_day = datetime.fromisoformat(timezone_document["as_of"]).astimezone(ZoneInfo("Pacific/Kiritimati")).date().isoformat()
+        assert planner_calls == 4, "Timezone replay bypassed the checked planner"
         assert timezone_document["study_day"] == expected_day
         assert timezone_document["source_versions"]["production_timezone"] == "Pacific/Kiritimati"
         assert domain_rows() == before, "Shadow capture or comparison mutated production tables"
     finally:
         postgres_store.connection = original_connection
-        product._plan_prioritized_opening_admissions = original_planner
+        opening_capacity_frontier.plan_prioritized_opening_admissions = original_planner
         if redis_admission_gate.configured():
             redis_admission_gate.client().delete(proof_key + ":foreground", proof_key + ":background")
         redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY = original_keys
