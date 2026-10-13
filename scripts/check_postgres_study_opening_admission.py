@@ -242,6 +242,22 @@ def test_postgres_study_only_real_game_miss_retains_quota_exception():
     assert not snapshot()['reviews']
 
 
+def test_postgres_study_only_already_queued_card_does_not_consume_planned_allowance():
+    enable(1)
+    first = worker._prepare_study_opening_page(DAY, {})['items'][0]
+    with postgres_store.connection() as database:
+        database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(?,?,0,'explicit')",
+                         (DAY, first['card_id']))
+    remaining = worker._prepare_study_opening_page(DAY, {})['items']
+    assert len(remaining) == 1 and remaining[0]['card_id'] != first['card_id'], \
+        'Already queued card starved the next eligible opening with unused allowance'
+    refresh()
+    assert len(snapshot()['queue']) == 2
+    with postgres_store.connection(read_only=True) as database:
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=?', (first['card_id'],)).fetchone()[0] is None
+        assert database.execute('SELECT COUNT(*) FROM cards WHERE introduced_at=?', (DAY,)).fetchone()[0] == 1
+
+
 def test_postgres_study_only_foreground_contention_rolls_back_and_resumes():
     enable()
     page = worker._prepare_study_opening_page(DAY, {})
@@ -395,6 +411,7 @@ def run():
              (test_postgres_study_only_shared_memberships_and_route_recheck, [None]),
              (test_postgres_study_only_blocked_pages_advance_in_stable_graph_order, [None]),
              (test_postgres_study_only_real_game_miss_retains_quota_exception, [None]),
+             (test_postgres_study_only_already_queued_card_does_not_consume_planned_allowance, [None]),
              (test_postgres_study_only_foreground_contention_rolls_back_and_resumes, [None])]
     selected = [(test, parameters) for test, parameters in tests if not arguments.case or test.__name__ == arguments.case]
     if not selected:

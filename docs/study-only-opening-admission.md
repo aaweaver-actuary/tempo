@@ -120,7 +120,7 @@ Observed focused results (pytest times, not whole-command wall time):
 | Existing opening-progression file | 15 passed | 0.72 s |
 | Existing PostgreSQL cutover file | 242 passed | 4.25 s |
 | PostgreSQL runner contracts, including restart isolation/routing | 69 passed | 1.56 s |
-| Native admission matrix | 18 cases passed | Per-case times in preserved log |
+| Native admission matrix | 19 cases passed | Per-case times in preserved log |
 | Actual PostgreSQL restart and original-delivery replay | Passed | Wall time not captured |
 | Repository lint | Passed, zero errors / ten existing warnings | Wall time not captured |
 
@@ -152,6 +152,12 @@ cached images, a disposable HTTP stub and an exclusively owned network reproduce
 200 → stale-upstream 502 → 200 after web restart (4.25 s). This isolates routing;
 it does not claim product durability. All fixture containers/network were removed.
 No product/analysis workers were started locally and no readiness timeout changed.
+
+Final review additionally reproduced an explicit already-queued root consuming
+the page's planned allowance, leaving another eligible root unselected. The
+named native starvation test failed before correction. Bounded route validation
+now applies normal admission's current-day queue exclusion before reserving the
+allowance; the explicit entry remains unchanged and the second root is admitted.
 
 ## Rollback and operations
 

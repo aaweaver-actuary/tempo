@@ -96,9 +96,11 @@ def _study_opening_route_still_valid(database, planned: dict, queue_date: str) -
         " AND (c.repertoire_id=step.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards link"
         " WHERE link.card_id=c.id AND link.repertoire_id=step.repertoire_id))"
         " AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block"
-        " WHERE block.repertoire_id=step.repertoire_id AND block.card_id=c.id)",
+        " WHERE block.repertoire_id=step.repertoire_id AND block.card_id=c.id)"
+        " AND NOT EXISTS(SELECT 1 FROM daily_queue queued"
+        " WHERE queued.card_id=c.id AND queued.queue_date=%s)",
         (planned['repertoire_id'], planned_route['generation'], planned_route['line_id'],
-         planned_route['decision_index'], planned['card_id']),
+         planned_route['decision_index'], planned['card_id'], queue_date),
     ).fetchone()
     if current_occurrence is None or list(tuple(current_occurrence)[3:]) != planned_route['content']:
         return False
