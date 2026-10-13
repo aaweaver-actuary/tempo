@@ -82,6 +82,7 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
       expect(accepted.status()).toBe(200);
       const acceptedResult = await accepted.json();
       expect(acceptedResult.persisted).toBe(true);
+      if (!JSON.parse(delivery.body).prepared_next) expect(acceptedResult).not.toHaveProperty("prepared_continuation");
       const subsequentOperation = randomUUID();
       const replay = await request.post(`${api}/cards/${retained[0].backendId}/review`, { headers: { "Idempotency-Key": subsequentOperation, "Content-Type": "application/json" }, data: delivery.body });
       expect(replay.status()).toBe(200);
