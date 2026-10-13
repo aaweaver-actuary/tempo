@@ -1,9 +1,24 @@
-import { expect, test } from "./observability";
+import { expect, test as base } from "./observability";
+import { api } from "./product-fixtures";
+import { assertDisposableTarget } from "./disposable-target";
 import { build } from "esbuild";
 import { readFile } from "node:fs/promises";
 import { writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { relative } from "node:path";
+
+const test = base.extend<{ nativeMeasurementControls: void }>({
+  nativeMeasurementControls: [async ({ request }, runMeasurement) => {
+    assertDisposableTarget(await (await request.get(`${api}/health`)).json());
+    const original = await (await request.get(`${api}/settings`)).json();
+    expect((await request.put(`${api}/settings`, { data: { ...original, study_only_mode: true,
+      optional_analysis_and_imports_enabled: false } })).ok()).toBe(true);
+    // Only the explicit dispatcher workload runs in this native capacity probe.
+    // Full UI qualification separately exercises actual restoration controls.
+    try { await runMeasurement(); }
+    finally { expect((await request.put(`${api}/settings`, { data: original })).ok()).toBe(true); }
+  }, { auto: true }],
+});
 
 // Only the worker asset URL is rebound to a Blob. Dispatcher, computation,
 // position store, validation and cancellation are the actual product modules.
