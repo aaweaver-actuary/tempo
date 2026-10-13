@@ -1,0 +1,2 @@
+# Architecture enforcement only; not installed in production images.
+import-linter==2.15
