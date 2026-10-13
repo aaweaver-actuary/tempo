@@ -2,7 +2,7 @@
 
 ## Decision and boundaries
 
-Baseline: `c5f773b18c4a5b30a3abda84ecac01ab625a3902`. No production source, migration, assertion, browser smoke, or full-boundary coverage changes. This qualification-infrastructure PR itself selects FULL.
+Baseline: `c5f773b18c4a5b30a3abda84ecac01ab625a3902`. No production or migration changes; existing assertions, STUDY browser selection, and full-boundary coverage remain intact. This qualification-infrastructure PR itself selects FULL.
 
 The certificate in `scripts/ci-certified-tests.json` records six exact test/fixture paths, their reviewed import/dynamic dependency lines, SQL relation/identifier dependencies, and literal consumers in tracked and nonignored new Python, JS/TS, shell, Rust and configuration source. Changed dependencies, added consumers, missing source, ambiguous ownership, or unsupported native collection expand to FULL. There is no directory exemption. This is a bounded certificate, not a general dependency resolver. Security-sensitive paths and explicit FULL paths retain precedence. The reviewed exceptions bypass only broad directory classification.
 
