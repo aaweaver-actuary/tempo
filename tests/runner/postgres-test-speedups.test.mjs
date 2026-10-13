@@ -1061,6 +1061,17 @@ test("study_opening_server_restart_quiesces_all_database_clients_before_restart"
   assert(restartProof.includes("await waitForReady()"));
 });
 
+test("study_opening_server_restart_refreshes_proxy_before_public_readiness", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const restartProof = source.slice(source.indexOf("async function verifyStudyOpeningAdmission()"),
+    source.indexOf("function verifyProjectIsUnused()"));
+  const restoreClients = restartProof.indexOf('"up", "--no-build", "-d", "--no-deps", ...postgresClients');
+  const refreshProxy = restartProof.indexOf('"restart", "web"');
+  const publicReadiness = restartProof.indexOf("await waitForReady()");
+  assert(restoreClients >= 0 && refreshProxy > restoreClients && refreshProxy < publicReadiness,
+    "The proxy must resolve the restored API address before public readiness is tested");
+});
+
 test("issue107 process restart and foreground profile proof runs in regular durability upgrade stage", () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  priority_recovery: async () => {"));

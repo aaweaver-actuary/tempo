@@ -119,7 +119,7 @@ Observed focused results (pytest times, not whole-command wall time):
 | Existing capacity-admission file | 36 passed | 6.36 s |
 | Existing opening-progression file | 15 passed | 0.72 s |
 | Existing PostgreSQL cutover file | 242 passed | 4.25 s |
-| PostgreSQL runner contracts, including restart isolation | 68 passed | 2.79 s |
+| PostgreSQL runner contracts, including restart isolation/routing | 69 passed | 1.56 s |
 | Native admission matrix | 18 cases passed | Per-case times in preserved log |
 | Actual PostgreSQL restart and original-delivery replay | Passed | Wall time not captured |
 | Repository lint | Passed, zero errors / ten existing warnings | Wall time not captured |
@@ -142,6 +142,16 @@ runner guard failed for the original sequence and passed after correction.
 The complete new Docker candidate qualification belongs to fresh CI; the failed
 run is not treated as a pass. Production admission code was unchanged by this
 test-isolation correction.
+
+The next draft run `38386679722` then exposed cached proxy routing after API
+restoration: direct API health returned 200 while Nginx used the previous API
+address and public readiness failed. The proof now restarts its owned web proxy
+after restoring API clients and before the original readiness check. The named
+runner guard failed before this correction. A real Docker transport fixture using
+cached images, a disposable HTTP stub and an exclusively owned network reproduced
+200 → stale-upstream 502 → 200 after web restart (4.25 s). This isolates routing;
+it does not claim product durability. All fixture containers/network were removed.
+No product/analysis workers were started locally and no readiness timeout changed.
 
 ## Rollback and operations
 

@@ -109,6 +109,9 @@ async function verifyStudyOpeningAdmission() {
     measureWorkload: () => run("docker", [...compose, "restart", "postgres"]),
     restoreConsumers: async () => {
       run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...postgresClients]);
+      // Nginx resolves its API upstream at startup; restored containers may
+      // receive different addresses even though their service names persist.
+      run("docker", [...compose, "restart", "web"]);
       await waitForReady();
       run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...analysisClients]);
     },
