@@ -78,6 +78,7 @@ const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
   plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
+  native_checks: options.nativeChecks ?? [],
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
 });
@@ -1166,6 +1167,30 @@ const actions = {
         waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
       }),
     });
+  },
+  'redis-fixture-isolation': async () => {
+    let evidence;
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run('docker', [...compose, 'stop', ...workloadConsumers]);
+        verifyWorkloadConsumers('exited');
+      },
+      measureWorkload: () => {
+        const result = run('docker', [...compose, 'run', '--rm', '--no-deps', '-e', `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
+          'schema', 'python', '/source/scripts/ci-native-unittest.py', 'redis-fixture-isolation'],
+        {stdio: ['ignore','pipe','inherit'], encoding: 'utf8'});
+        evidence = JSON.parse(result.stdout);
+        assert(evidence.expected?.length && evidence.tests?.length, 'Native fixture collection did not execute');
+      },
+      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
+        startConsumers: services => run('docker', [...compose, 'up', '--no-build', '-d', '--no-deps', ...services]),
+        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
+      }),
+    });
+    atomicJson(`test-results/native/${project}.json`, {head:candidateRevision,
+      planHash:process.env.TEMPO_CI_PLAN_HASH ?? null, repository:process.env.GITHUB_REPOSITORY ?? null,
+      runId:Number(process.env.GITHUB_RUN_ID), attempt:Number(process.env.GITHUB_RUN_ATTEMPT),
+      checks:{'redis-fixture-isolation':evidence}});
   },
   study_durability: async () => {
     await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);

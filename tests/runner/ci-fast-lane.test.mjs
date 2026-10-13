@@ -7,6 +7,7 @@ import { verifySelection } from '../../scripts/ci-fast-run.mjs';
 import { changedPathsFromNameStatus, planHash } from '../../scripts/ci-verification-plan.mjs';
 import { postgresTestStages, executePostgresTestPlan } from '../../scripts/postgres-test-plan.mjs';
 import { parsePostgresTestOptions } from '../../scripts/postgres-test-options.mjs';
+import { certificate, readCertificateSources } from '../../scripts/ci-certified-tests.mjs';
 const context = {repository:'aaweaver-actuary/tempo',repositoryId:1,pullRequest:217,head:'a'.repeat(40),base:'b'.repeat(40),draft:false};
 const pr = {number:217,state:'open',draft:false,merge_commit_sha:'e'.repeat(40),head:{sha:context.head},base:{sha:context.base,repo:{id:1,full_name:context.repository}}};
 const execution = {id:123,attempt:1};
@@ -21,10 +22,14 @@ function fixture(path = 'app/lib/review-outbox.ts') {
     report[layer] = {expected,tests:expected.map(value => ({...value,status:'passed',retries:0}))};
   }
   if (plan.tier === 'STUDY') {
-    report.studyStages = postgresTestStages({mode:'study'});
+    report.studyStages = postgresTestStages({mode:'study',nativeChecks:plan.nativeChecks});
     report.scenarios = {mode:'study',commit:plan.head,plan_hash:plan.hash,planned_stages:report.studyStages,
       stages:Object.fromEntries(report.studyStages.map(stage => [stage,{exit_code:0}]))};
   }
+  if (plan.nativeChecks?.length) report.native = {head:plan.head,planHash:plan.hash,
+    runId:execution.id,attempt:execution.attempt,repository:plan.repository,
+    checks:Object.fromEntries(plan.nativeChecks.map(check => [check,{expected:['native.fixture.test_case'],
+      tests:[{id:'native.fixture.test_case',status:'passed',retries:0}]}]))};
   return {plan,report,needs:{selection:{result:'success'},fast:{result:'success'}}};
 }
 function completePlan() {
@@ -32,6 +37,84 @@ function completePlan() {
   return {...plan,hash:planHash(plan)};
 }
 const failures = fixture => validateFastGate(fixture.plan,fixture.report,fixture.needs,pr,execution);
+
+test('issue239_cleanup_regression_is_FAST_and_omits_unrelated_tests', () => {
+  const selection = selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts']);
+  assert.equal(selection.tier, 'FAST');
+  assert.deepEqual(selection.frontend, ['tests/unit/redis-admission-cleanup-regressions.test.ts']);
+  assert.deepEqual(selection.backend, []);
+  assert.deepEqual(selection.browser, []);
+});
+test('issue239_fixture_selects_native_proof_and_owning_browser_without_FULL', () => {
+  const selection = selectFastLane(['scripts/check_postgres_redis_admission.py']);
+  assert.equal(selection.tier, 'STUDY');
+  assert.deepEqual(selection.nativeChecks, ['redis-fixture-isolation']);
+  assert(selection.backend.includes('backend/tests/test_redis_admission_fixture.py'));
+  assert(selection.browser.some(value => value.file === 'redis-admission-recovery.spec.ts'));
+  assert.equal(selection.browser.length, fastInventory.studyBrowser.length + 1);
+  assert(!selection.backend.includes('backend/tests/test_game_sync.py'));
+});
+test('issue239_shared_and_unknown_changes_expand_certified_selection', () => {
+  for (const path of ['scripts/test-postgres-docker.mjs', 'scripts/ci-fast-lane-inventory.json',
+    'backend/app/main.py', 'tests/browser/ui-fixtures.ts', 'scripts/unknown-fixture.py']) {
+    assert.equal(selectFastLane(['scripts/check_postgres_redis_admission.py', path]).tier, 'FULL', path);
+  }
+});
+test('issue239_new_callers_imports_dynamic_dependencies_and_browser_cases_fail_closed', () => {
+  const sources = readCertificateSources();
+  const candidate = 'scripts/check_postgres_redis_admission.py';
+  for (const changed of [
+    {...sources,'backend/app/new_consumer.py':'import check_postgres_redis_admission'},
+    {...sources,[candidate]:sources[candidate]+'\nimport new_dependency\n'},
+    {...sources,[candidate]:sources[candidate]+'\n__import__(dependency_name)\n'},
+    {...sources,'tests/browser/redis-admission-recovery.spec.ts':sources['tests/browser/redis-admission-recovery.spec.ts']+'\ntest("new case", async () => {});\n'},
+    {...sources,[candidate]:undefined},
+  ]) assert.equal(selectFastLane([candidate],{certificateSources:changed}).tier,'FULL');
+  assert(Object.keys(certificate.dependencies).includes(candidate));
+});
+test('issue239_mixed_certified_changes_union_evidence_and_complete_boundaries_stay_FULL', () => {
+  const selection = selectFastLane(['tests/browser/support/redis-admission-cleanup.ts','backend/tests/test_redis_admission_fixture.py']);
+  assert.equal(selection.tier,'STUDY');
+  assert.equal(selection.frontend.length,1); assert.equal(selection.backend.length,1);
+  assert.equal(selection.browser.length,11); assert.deepEqual(selection.nativeChecks,['redis-fixture-isolation']);
+  assert.equal(selectFastLane(selection.paths,{complete:true}).tier,'FULL');
+  assert.equal(selectFastLane(selection.paths,{comparisonAvailable:false}).tier,'FULL');
+  assert.equal(selectFastLane(changedPathsFromNameStatus('R100\0scripts/check_postgres_redis_admission.py\0scripts/new-fixture.py\0')).tier,'FULL');
+  const inventory=structuredClone(fastInventory);
+  inventory.certifiedTests[0].frontend=['tests/unit/missing.test.ts'];
+  assert.equal(selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts'],{inventory}).tier,'FULL');
+  inventory.certifiedTests.push(inventory.certifiedTests[0]);
+  assert.equal(selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts'],{inventory}).tier,'FULL');
+});
+test('issue239_native_and_added_browser_evidence_is_mandatory_and_revision_bound', () => {
+  const candidate='scripts/check_postgres_redis_admission.py';
+  assert.deepEqual(failures(fixture(candidate)),[]);
+  for (const mutate of [
+    value => delete value.report.native,
+    value => value.report.native.head='c'.repeat(40),
+    value => value.report.native.planHash='wrong',
+    value => value.report.native.runId++,
+    value => value.report.native.attempt++,
+    value => value.report.native.checks['unexpected']={},
+    value => value.report.native.checks['redis-fixture-isolation'].tests=[],
+    value => value.report.native.checks['redis-fixture-isolation'].tests[0].status='skipped',
+    value => value.report.native.checks['redis-fixture-isolation'].tests[0].status='failed',
+    value => value.report.native.checks['redis-fixture-isolation'].tests[0].retries=1,
+    value => value.report.native.checks['redis-fixture-isolation'].tests.push(value.report.native.checks['redis-fixture-isolation'].tests[0]),
+    value => value.report.browser.tests.pop(),
+    value => delete value.report.scenarios.stages['redis-fixture-isolation'],
+    value => value.report.commands.pop(),
+  ]) {const evidence=fixture(candidate);mutate(evidence);assert(failures(evidence).length);}
+});
+test('issue239_native_runner_option_is_allowlisted_bounded_and_before_browser', () => {
+  const options=parsePostgresTestOptions(['--mode','study','--browser-grep','case','--native-check','redis-fixture-isolation'],{});
+  const stages=postgresTestStages(options);
+  assert(stages.indexOf('redis-fixture-isolation')<stages.indexOf('browser'));
+  assert.equal(stages.at(-1),'cleanup');
+  assert.throws(()=>parsePostgresTestOptions(['--native-check','arbitrary'],{}));
+  assert.throws(()=>parsePostgresTestOptions(['--mode','durability','--native-check','redis-fixture-isolation'],{}));
+  assert.throws(()=>parsePostgresTestOptions(['--mode','browser','--native-check','redis-fixture-isolation','--native-check','redis-fixture-isolation'],{}));
+});
 
 test('emergency_docs_only_changes_do_not_trigger_full_qualification', () => {
   const selection = selectFastLane(['docs/testing.md','docs/database-security.md','.github/workflows/README.md','CONTRIBUTING.md']);

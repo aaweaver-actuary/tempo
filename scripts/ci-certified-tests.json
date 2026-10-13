@@ -1,0 +1,76 @@
+{
+  "dependencies": {
+    "tests/unit/redis-admission-cleanup-regressions.test.ts": [
+      "import { expect, it } from \"vitest\";",
+      "import { RedisAdmissionCleanup } from \"../browser/support/redis-admission-cleanup\";"
+    ],
+    "tests/browser/support/redis-admission-cleanup.ts": [],
+    "tests/browser/redis-admission-recovery.spec.ts": [
+      "import { randomUUID } from \"node:crypto\";",
+      "import { execFile } from \"node:child_process\";",
+      "import { promisify } from \"node:util\";",
+      "import { mkdirSync, writeFileSync } from \"node:fs\";",
+      "import { join } from \"node:path\";",
+      "import { test, expect } from \"./observability\";",
+      "import { boardBounds } from \"./ui-fixtures\";",
+      "import { RedisAdmissionCleanup } from \"./support/redis-admission-cleanup\";",
+      "const execute = promisify(execFile);",
+      "test(\"test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate\", async ({ page, request }, testInfo) => {",
+      "expect(testInfo.config.workers, \"Redis faults require the serial disposable runner\").toBe(1);",
+      "\"schema\", \"python\", \"/source/scripts/check_postgres_redis_admission.py\", action, identity);",
+      "const listener = async (response: import(\"@playwright/test\").Response) => {"
+    ],
+    "scripts/check_postgres_redis_admission.py": [
+      "import json",
+      "import os",
+      "import re",
+      "import sys",
+      "from datetime import date",
+      "import psycopg",
+      "from psycopg import sql",
+      "\"\"\"Raw receipt inventory, separate from the fault-state comparison contract.\"\"\""
+    ],
+    "scripts/check_postgres_redis_fixture_isolation.py": [
+      "import json",
+      "import unittest",
+      "from unittest.mock import patch",
+      "from uuid import uuid4",
+      "import psycopg",
+      "import check_postgres_redis_admission as fixture"
+    ],
+    "backend/tests/test_redis_admission_fixture.py": [
+      "import importlib.util",
+      "import json",
+      "from contextlib import nullcontext",
+      "from pathlib import Path",
+      "import sys",
+      "import pytest",
+      "specification = importlib.util.spec_from_file_location(",
+      "'redis_fixture', Path(__file__).resolve().parents[2] / 'scripts/check_postgres_redis_admission.py')",
+      "specification.loader.exec_module(module)"
+    ]
+  },
+  "consumers": {
+    "redis-admission-cleanup": [
+      "tests/browser/redis-admission-recovery.spec.ts",
+      "tests/runner/ci-fast-lane.test.mjs",
+      "tests/unit/redis-admission-cleanup-regressions.test.ts"
+    ],
+    "check_postgres_redis_admission": [
+      "backend/tests/test_redis_admission_fixture.py",
+      "scripts/check_postgres_redis_fixture_isolation.py",
+      "tests/browser/redis-admission-recovery.spec.ts",
+      "tests/runner/ci-fast-lane.test.mjs"
+    ],
+    "check_postgres_redis_fixture_isolation": [
+      "scripts/ci-native-unittest.py",
+      "scripts/test-postgres-docker.mjs",
+      "tests/runner/postgres-test-speedups.test.mjs"
+    ],
+    "redis-admission-recovery.spec.ts": [
+      "scripts/ci-verification-inventory.json",
+      "tests/runner/ci-fast-lane.test.mjs",
+      "tests/runner/ci-reliability.test.mjs"
+    ]
+  }
+}
