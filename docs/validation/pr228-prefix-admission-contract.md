@@ -58,3 +58,12 @@ The repaired candidate `6ceb1262` passed FULL run [38391570055](https://github.c
 Another actor then merged #229 at `7a68242f` on 2026-10-13 11:59:01 UTC. This task did not merge or deploy it. #229's ready-for-review run [38393068259](https://github.com/aaweaver-actuary/tempo/actions/runs/38393068259) passed its required merge gate using freshly verified same-candidate original evidence from [38391159017](https://github.com/aaweaver-actuary/tempo/actions/runs/38391159017); it supersedes the earlier draft-only status described above.
 
 The earlier #228 pass cannot qualify the advanced base. Integrating main preserves all three browser specs in the training inventory (isolated repertoire worker, restoration qualification, and Redis admission recovery), both regression registries, and the foreground Redis-admission repair. A named inventory regression protects that union. Focused admission/prefix/runner checks and fresh exact-candidate FULL qualification are required for the reconciled candidate. No optional activation or live setting change is part of this integration.
+
+Combined-source local proof at `ecd16612` (before the documentation-only #241 merge):
+
+- `make ui-file FILE=prefix-diagnostics.spec.ts`: six passed; 163.03 seconds wall time, 131.83 seconds browser execution, 4.26 seconds successful owned cleanup.
+- `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_nonblocking_admission.py backend/tests/test_foreground_admission_http.py backend/tests/test_redis_admission_fixture.py -q -o cache_dir=.pytest_cache --rootdir=.`: 44 passed, 3.31 seconds wall time. HTTP refusal peers are invocation-owned loopback listeners.
+- `node --test tests/runner/ci-fast-lane.test.mjs tests/runner/ci-reliability.test.mjs tests/runner/ci-browser-shards.test.mjs tests/runner/ci-development.test.mjs tests/runner/postgres-test-speedups.test.mjs`: 191 passed, zero skipped/cancelled, 8.56 seconds wall time.
+- `npm run typecheck`: passed, 6.64 seconds; `npm run lint`: zero errors / ten existing warnings, 12.24 seconds.
+
+Main then advanced to documentation-only #241 (`c5f773b1`), which is preserved in the final branch. Runtime inputs above are unchanged by that merge. Fresh final CI evidence is required and published on #228; do not relabel the previous successful base/integration as qualification of this candidate.
