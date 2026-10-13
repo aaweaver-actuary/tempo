@@ -4360,3 +4360,10 @@ Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
 ### Issue #239 qualification: burial fault must reach worker-owned requests
 
 - Existing named browser regression `workspace-flows.spec.ts::training Bury hides the card for today across reload and reports a failed bury` retains every pending-message, disabled-control/board, reload, immutable-operation-ID and native queue assertion. It now waits for real service-worker control, intercepts at browser-context level, and requires the refused operation ID to match the retained/retried ID. CI run 38400712633 demonstrated the old defect: the backend executed `queue.bury` successfully although the page-level fixture purported to return 503. No service worker, assertion, deadline or product behavior was removed or relaxed.
+
+When GitHub Actions are explicitly disabled, `source update can explicitly
+select current main without GitHub CI evidence` and `CLI no-ci update
+skips Actions verification and records the explicit policy` prove that only the
+explicit `--no-ci` option bypasses Actions lookup, current main is still
+fast-forwarded under the existing source checks, and the deployment receipt
+records `verification: ci-disabled`.

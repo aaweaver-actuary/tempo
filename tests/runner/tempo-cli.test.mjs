@@ -10,6 +10,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { parseArguments } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -1101,6 +1102,26 @@ test("source update accepts a complete successful exact main run after a failed 
   const fixture = sourceSelectionFixture({ runs: [{ id: 1 }, { id: 2 }], failedRuns: [1] });
   const selected = await selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson);
   assert.equal(selected.evidence.run_id, 2);
+});
+
+test("source update can explicitly select current main without GitHub CI evidence", async () => {
+  const fixture = sourceSelectionFixture({ changedSource: undefined });
+  const selected = await selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson, { noCi: true });
+  assert.deepEqual(selected.evidence, { commit: fixture.revision, verification: "ci-disabled" });
+  assert.equal(fixture.source().head, fixture.revision);
+});
+
+test("CLI no-ci update skips Actions verification and records the explicit policy", t => {
+  const fixture = commandFixture(t, "ci-fail");
+  const result = fixture.command("start", "--no-ci", "--no-open");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const requests = readFileSync(join(fixture.directory, "requests.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+  assert(!requests.some(request => request.url.includes("api.github.com")));
+  const deployment = readFixtureJson(fixture, "deployment.json", true);
+  assert.equal(deployment.evidence.commit, "a".repeat(40));
+  assert.equal(deployment.evidence.verification, "ci-disabled");
+  assert.equal(parseArguments(["start", "--no-ci"]).flags.has("--no-ci"), true);
+  assert.throws(() => parseArguments(["doctor", "--no-ci"]), /Invalid options/);
 });
 
 test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {
