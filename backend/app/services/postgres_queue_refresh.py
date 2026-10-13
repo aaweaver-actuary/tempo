@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from itertools import islice
 import json
+import logging
 from typing import Any
 
 from psycopg.errors import TransactionTimeout
@@ -37,6 +38,170 @@ _UNLOCK_BATCH_SIZE = 8
 _QUARANTINE_READ_BATCH_SIZE = 32
 _OPENING_CANDIDATE_READ_BATCH_SIZE = 16
 _TACTICAL_CANDIDATE_READ_BATCH_SIZE = 16
+_logger = logging.getLogger(__name__)
+
+# Ordering is a published route occurrence, never an analysis score. The cursor
+# advances over rejected occurrences as well as accepted ones.
+_STUDY_OPENING_ORDER = "(repertoire.created_at,repertoire.id,line.created_at,line.id,step.decision_index,c.id)"
+_STUDY_OPENING_ROUTES = """FROM (
+    SELECT id FROM cards WHERE content_type='opening' AND state='new'
+    UNION """ + outstanding_miss_sql(postgres=True, columns='event.card_id') + """
+    UNION SELECT card_id FROM current_repertoire_opportunities
+        WHERE kind='weak_known_decision' AND status='active'
+          AND (evidence_json::jsonb ->> 'analysis_based') IS NULL
+) eligible
+JOIN cards c ON c.id=eligible.id
+JOIN opening_graph_steps step ON step.card_id=c.id
+JOIN opening_graph_publications publication ON step.repertoire_id=publication.repertoire_id
+    AND step.generation=publication.generation
+JOIN repertoires repertoire ON repertoire.id=step.repertoire_id
+JOIN repertoire_lines line ON line.id=step.line_id AND line.repertoire_id=step.repertoire_id
+WHERE publication.state='ready' AND c.content_type='opening'
+  AND c.state IN ('new','locked') AND c.introduced_at IS NULL
+  AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
+  AND c.superseded_by IS NULL
+  AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)"""
+
+
+def _study_opening_content_valid(planned_opening: dict) -> bool:
+    """Pure validation of the authored card against its published occurrence."""
+
+    start_fen, moves_json, trained_color, route_fen, route_moves_json = planned_opening['study_route']['content']
+    try:
+        card_moves = json.loads(moves_json)
+        route_moves = json.loads(route_moves_json)
+        return (isinstance(card_moves, list) and all(isinstance(move, str) for move in card_moves)
+                and card_moves == route_moves
+                and card_id(start_fen, card_moves) == planned_opening['card_id'] == card_id(route_fen, route_moves)
+                and ends_on_trained_move(start_fen, card_moves, trained_color))
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def _study_opening_cursor(opening_occurrence) -> tuple:
+    """Stable repertoire/line/decision order, with IDs only breaking ties."""
+
+    return tuple(opening_occurrence)[:6]
+
+
+def _study_opening_route_still_valid(database, planned: dict, queue_date: str) -> bool:
+    """Recheck the exact current route and exposure at the existing writer."""
+
+    planned_route = planned['study_route']
+    current_occurrence = database.execute_native(
+        "SELECT step.parent_card_id,c.state,c.due_date,c.start_fen,c.moves_json,"
+        "COALESCE(c.trained_color,step.trained_color),step.starting_fen,step.moves_json " + _STUDY_OPENING_ROUTES +
+        " AND step.repertoire_id=%s AND step.generation=%s AND step.line_id=%s"
+        " AND step.decision_index=%s AND c.id=%s"
+        " AND (c.repertoire_id=step.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards link"
+        " WHERE link.card_id=c.id AND link.repertoire_id=step.repertoire_id))"
+        " AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block"
+        " WHERE block.repertoire_id=step.repertoire_id AND block.card_id=c.id)",
+        (planned['repertoire_id'], planned_route['generation'], planned_route['line_id'],
+         planned_route['decision_index'], planned['card_id']),
+    ).fetchone()
+    if current_occurrence is None or list(tuple(current_occurrence)[3:]) != planned_route['content']:
+        return False
+    outstanding = has_outstanding_real_game_miss(database, planned['card_id'])
+    opportunity = database.execute(
+        "SELECT 1 FROM current_repertoire_opportunities WHERE repertoire_id=? AND card_id=? "
+        "AND kind='weak_known_decision' AND status='active' "
+        "AND json_extract(evidence_json,'$.analysis_based') IS NULL LIMIT 1",
+        (planned['repertoire_id'], planned['card_id']),
+    ).fetchone()
+    if outstanding or opportunity:
+        return True
+    if current_occurrence[1] != 'new' or current_occurrence[2] > queue_date:
+        return False
+    return current_occurrence[0] is None or database.execute_native(
+        "SELECT 1 FROM cards parent JOIN reviews review ON review.card_id=parent.id "
+        "WHERE parent.id=%s AND review.source_kind='study' AND review.invalidated_at IS NULL LIMIT 1",
+        (current_occurrence[0],),
+    ).fetchone() is not None
+
+
+def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
+    """Read one finite page, then validate chess content with connections closed."""
+
+    has_opening_allowance = _bounded_read(
+        """SELECT EXISTS(SELECT 1 FROM repertoires r CROSS JOIN settings s
+           WHERE s.id=1 AND EXISTS(SELECT 1 FROM opening_graph_publications publication
+                                  WHERE publication.repertoire_id=r.id AND publication.state='ready')
+             AND COALESCE(r.new_cards_per_day,s.new_cards_per_day) > (
+             SELECT COUNT(DISTINCT c.id) FROM daily_queue q JOIN cards c ON c.id=q.card_id
+             WHERE q.queue_date=%s AND q.cycle=0 AND c.content_type='opening'
+               AND c.introduced_at=%s AND COALESCE(q.admission_repertoire_id,c.repertoire_id)=r.id
+           )) OR EXISTS(""" + outstanding_miss_sql(postgres=True, columns='1') + ' LIMIT 1)',
+        (queue_date, queue_date), native=True,
+    )[0][0]
+    upper_occurrence_cursor = payload.get('study_opening_upper')
+    if not has_opening_allowance:
+        return {'items': [], 'cursor': payload.get('study_opening_cursor', []),
+                'upper': upper_occurrence_cursor or [], 'has_more': False, 'examined': 0,
+                'stop_reason': 'daily_allowances_exhausted'}
+    if upper_occurrence_cursor is None:
+        last_occurrences = _bounded_read("SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,"
+                             "step.decision_index,c.id " + _STUDY_OPENING_ROUTES +
+                             " ORDER BY " + _STUDY_OPENING_ORDER + " DESC LIMIT 1", native=True)
+        upper_occurrence_cursor = list(last_occurrences[0]) if last_occurrences else []
+    if not upper_occurrence_cursor:
+        return {'items': [], 'cursor': [], 'upper': [], 'has_more': False, 'examined': 0,
+                'stop_reason': 'no_unintroduced_graph_candidates'}
+    after_occurrence_cursor = payload.get('study_opening_cursor')
+    cursor_placeholders = "(%s,%s,%s,%s,%s,%s)"
+    cursor_filter = (" AND " + _STUDY_OPENING_ORDER + ">" + cursor_placeholders if after_occurrence_cursor else "")
+    # Each read and result is bounded. No priority publications, probabilities,
+    # engine/network calls or repertoire-wide Python accumulation are involved.
+    opening_occurrences = _bounded_read(
+        "SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,step.decision_index,c.id,"
+        "step.generation,c.start_fen,c.moves_json,COALESCE(c.trained_color,step.trained_color),step.starting_fen,step.moves_json "
+        + _STUDY_OPENING_ROUTES + cursor_filter + " AND " + _STUDY_OPENING_ORDER + "<=" + cursor_placeholders +
+        " ORDER BY " + _STUDY_OPENING_ORDER + " LIMIT %s",
+        (*(tuple(after_occurrence_cursor) if after_occurrence_cursor else ()), *upper_occurrence_cursor,
+         _OPENING_CANDIDATE_READ_BATCH_SIZE), native=True,
+    )
+    opening_occurrences.sort(key=_study_opening_cursor)
+    prepared_openings = []
+    selected_card_ids = set()
+    planned_counts_by_repertoire = {}
+    page_exclusions = {'route_ineligible': 0, 'quota_exhausted': 0, 'invalid_content': 0,
+                  'duplicate_occurrence': 0}
+    for opening_occurrence in opening_occurrences:
+        planned_opening = {'repertoire_id': opening_occurrence[1], 'card_id': opening_occurrence[5], 'reason': None,
+                     'study_route': {'generation': opening_occurrence[6], 'line_id': opening_occurrence[3],
+                                     'decision_index': opening_occurrence[4], 'content': list(tuple(opening_occurrence)[7:])}}
+        if opening_occurrence[5] in selected_card_ids:
+            page_exclusions['duplicate_occurrence'] += 1
+            continue
+        # Apply the same authoritative route predicate in a short read section.
+        with background_read_connection() as database:
+            if not _study_opening_route_still_valid(database, planned_opening, queue_date):
+                page_exclusions['route_ineligible'] += 1
+                continue
+            outstanding = has_outstanding_real_game_miss(database, opening_occurrence[5])
+            if outstanding:
+                planned_opening['reason'] = MISS_REASON
+            remaining_allowance_row = database.execute_native(
+                "SELECT COALESCE(r.new_cards_per_day,s.new_cards_per_day) - ("
+                "SELECT COUNT(DISTINCT c.id) FROM daily_queue q JOIN cards c ON c.id=q.card_id "
+                "WHERE q.queue_date=%s AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=%s "
+                "AND COALESCE(q.admission_repertoire_id,c.repertoire_id)=r.id) "
+                "FROM repertoires r CROSS JOIN settings s WHERE r.id=%s AND s.id=1",
+                (queue_date, queue_date, opening_occurrence[1]),
+            ).fetchone()
+            if remaining_allowance_row is None or (not outstanding and remaining_allowance_row[0] <= planned_counts_by_repertoire.get(opening_occurrence[1], 0)):
+                page_exclusions['quota_exhausted'] += 1
+                continue
+        if not _study_opening_content_valid(planned_opening):
+            page_exclusions['invalid_content'] += 1
+            continue
+        selected_card_ids.add(opening_occurrence[5])
+        planned_counts_by_repertoire[opening_occurrence[1]] = planned_counts_by_repertoire.get(opening_occurrence[1], 0) + 1
+        prepared_openings.append(planned_opening)
+    return {'items': prepared_openings, 'cursor': list(_study_opening_cursor(opening_occurrences[-1])) if opening_occurrences else after_occurrence_cursor or [],
+            'upper': upper_occurrence_cursor, 'has_more': len(opening_occurrences) == _OPENING_CANDIDATE_READ_BATCH_SIZE,
+            'examined': len(opening_occurrences), 'exclusions': page_exclusions,
+            'stop_reason': None if len(opening_occurrences) == _OPENING_CANDIDATE_READ_BATCH_SIZE else 'candidate_range_exhausted'}
 
 _PRIORITY_OPENING_PAGE_SQL = """WITH active_miss AS MATERIALIZED (
     SELECT unnest(%s::text[]) AS card_id
@@ -437,7 +602,7 @@ def _current_opening_limit(database, repertoire_id: str) -> int | None:
     return int(row[0]) if row else None
 
 
-def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> None:
+def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> bool:
     """Publish one still eligible card with the task checkpoint in one transaction."""
 
     card_id = planned["card_id"]
@@ -447,19 +612,19 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
     ).fetchone()
     if (card is None or card[1] is not None or card[2] or card[3]
             or card[0] not in ("new", "locked")):
-        return
+        return False
     queued = database.execute_native(
         "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
         (queue_date, card_id),
     ).fetchone()
     if queued is not None:
-        return
+        return False
     lock_queue_date_for_position(database, queue_date)
     if database.execute_native(
         "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
         (queue_date, card_id),
     ).fetchone():
-        return
+        return False
     # Recheck inside publication: a foreground settings write may have changed
     # the limit after planning, and another slice may have used the allowance.
     daily_limit = _current_opening_limit(database, planned["repertoire_id"])
@@ -477,7 +642,9 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
         (planned["repertoire_id"], card_id),
     ).fetchone()
     if safe_route is None:
-        return
+        return False
+    if 'study_route' in planned and not _study_opening_route_still_valid(database, planned, queue_date):
+        return False
     opportunity = database.execute(
         "SELECT 1 FROM current_repertoire_opportunities WHERE repertoire_id=? AND card_id=? "
         "AND kind='weak_known_decision' AND status='active' "
@@ -488,13 +655,13 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
     if capacity_proposal:
         from .opening_capacity_admission import capacity_route_still_valid
         if not capacity_route_still_valid(database, planned, queue_date):
-            return
+            return False
     if card[0] == 'locked' and not (outstanding or opportunity or capacity_proposal):
-        return
+        return False
     if planned["reason"] == MISS_REASON and not outstanding:
-        return
+        return False
     if daily_limit is None or (admitted_count >= daily_limit and (capacity_proposal or not outstanding)):
-        return
+        return False
     position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
         (queue_date,),
@@ -515,6 +682,7 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
              AND json_extract(evidence_json,'$.analysis_based') IS NULL AND status='active'""",
         (now, now, planned["repertoire_id"], card_id),
     )
+    return True
 
 
 _STUDY_NEW_ELIGIBILITY = """c.content_type='study_exercise' AND c.state='new'
@@ -809,17 +977,22 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
                      "admit_due", "prioritized_openings", "prioritized_opening_item",
+                     "study_opening_page", "study_opening_item",
                      "admit_study", "real_game_misses", "randomize_queue", "quarantine",
                      "publish_projection"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     from .study_mode import study_only_enabled
     minimal_study = study_only_enabled()
     # Resume existing checkpoints without traversing optional admission/ranking.
-    skipped_phases = {"prioritized_openings": "admit_study",
-                      "prioritized_opening_item": "admit_study",
+    skipped_phases = {"prioritized_openings": "study_opening_page",
+                      "prioritized_opening_item": "study_opening_page",
                       "real_game_misses": "quarantine", "randomize_queue": "quarantine"}
     if minimal_study and phase in skipped_phases:
         phase = skipped_phases[phase]
+    study_opening_page = None
+    if phase == 'study_opening_page':
+        activity_gate.wait_for_foreground()
+        study_opening_page = _prepare_study_opening_page(queue_date, payload)
     prepared_tactic = None
     if phase == "tactical_introductions":
         activity_gate.wait_for_foreground()
@@ -886,6 +1059,10 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 raise RuntimeError("Queue projection publication lost its task lease")
             from .prefix_transition_application import enqueue_completion
             enqueue_completion(database, task['id'], int(task['generation']), queue_date)
+            if 'study_opening_counts' in payload:
+                _logger.info('study_opening_admission %s', json.dumps({
+                    'queue_date': queue_date, **payload['study_opening_counts'],
+                }, sort_keys=True))
             return False
         if phase == "unlock_opening":
             next_cursor = main._unlock_eligible_opening_cards(
@@ -940,6 +1117,37 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             next_phase = "prioritized_opening_item" if prioritized_plan else "admit_study"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,
                             "opening_plan": prioritized_plan or [], "opening_index": 0}
+        elif phase == 'study_opening_page':
+            counts = dict(payload.get('study_opening_counts', {}))
+            counts['examined'] = counts.get('examined', 0) + study_opening_page['examined']
+            counts['eligible'] = counts.get('eligible', 0) + len(study_opening_page['items'])
+            counts['excluded_or_no_allowance'] = counts['examined'] - counts['eligible']
+            counts['stop_reason'] = study_opening_page['stop_reason']
+            for reason, excluded_count in study_opening_page.get('exclusions', {}).items():
+                counts[reason] = counts.get(reason, 0) + excluded_count
+            next_phase = ('study_opening_item' if study_opening_page['items'] else
+                          'study_opening_page' if study_opening_page['has_more'] else 'admit_study')
+            next_payload = {'queue_date': queue_date, '_queue_phase': next_phase,
+                            'study_opening_cursor': study_opening_page['cursor'],
+                            'study_opening_upper': study_opening_page['upper'],
+                            'study_opening_more': study_opening_page['has_more'],
+                            'study_opening_items': study_opening_page['items'],
+                            'study_opening_index': 0, 'study_opening_counts': counts}
+        elif phase == 'study_opening_item':
+            items = payload['study_opening_items']
+            item_index = int(payload['study_opening_index'])
+            admitted = _admit_one_prioritized_opening(database, queue_date, items[item_index])
+            counts = dict(payload['study_opening_counts'])
+            counts['admitted'] = counts.get('admitted', 0) + int(bool(admitted))
+            counts['publication_rejected'] = counts.get('publication_rejected', 0) + int(not admitted)
+            item_index += 1
+            next_phase = ('study_opening_item' if item_index < len(items) else
+                          'study_opening_page' if payload['study_opening_more'] else 'admit_study')
+            next_payload = {**payload, '_queue_phase': next_phase,
+                            'study_opening_index': item_index, 'study_opening_counts': counts}
+            if next_phase != 'study_opening_item':
+                next_payload.pop('study_opening_items')
+                next_payload.pop('study_opening_index')
         elif phase == "prioritized_opening_item":
             opening_plan = payload["opening_plan"]
             opening_index = int(payload["opening_index"])
@@ -1001,6 +1209,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         if "preserve_through_entry_id" in payload:
             next_payload["preserve_through_entry_id"] = payload["preserve_through_entry_id"]
+        if 'study_opening_counts' in payload and 'study_opening_counts' not in next_payload:
+            next_payload['study_opening_counts'] = payload['study_opening_counts']
         return advance_task_slice_in_transaction(
             database, task, next_phase=next_phase, next_payload=next_payload,
         )
