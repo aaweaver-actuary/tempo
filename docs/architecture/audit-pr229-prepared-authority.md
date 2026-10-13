@@ -10,6 +10,16 @@ A committed review and its original response stay immutable. A validly issued co
 
 The server projection counter is not an issuance token. It is returned in queue payloads but is neither captured in `PreparedNextIdentity` nor compared by frontend activation. A newer publication can retain the same issued identity. The literal stronger claim that every counter increase revokes every prior continuation is **not implemented or proven**; a newer authoritative response can itself return and authorize the same successor, but that is distinct from fencing the historical continuation by its issuance generation. The absence of a numeric fence is a limitation, not by itself a demonstrated activation of an unauthorized successor. No extra per-review network request or generation schema change was justified by this audit.
 
+## Architectural decision: provisional prepared-continuation authority
+
+**Decision (October 13, 2026):** Preserve provisional authority for an already issued prepared successor. A committed review and its response are immutable historical evidence; the browser may activate the matching issued successor without an additional per-review server round trip **until it observes authoritative invalidation**. After a successfully acquired authoritative queue removes or changes the successor identity, local activation must decline. Independent backend commands must still validate their own current authority; replay of an accepted review must not issue a new successor or duplicate the review.
+
+**Not guaranteed:** Immediate revocation of a prepared successor when the server changes state but the browser has not observed that change. The browser can briefly present a successor that a subsequent backend command rejects. This is a known consistency/UX tradeoff, not a claim of strict current authority. The queue projection publication counter is not an issuance token and is not compared by `PreparedNextIdentity`; a newer publication may legitimately retain the same successor.
+
+**Rationale:** Avoid a new synchronous network dependency on each successful review and preserve responsive study progression. Generation-based strict fencing would require an explicit cross-layer authority contract, not simply comparing a projection counter. Do not add that complexity without a reproduced correctness problem or evidence of materially harmful stale activations.
+
+**Future change criteria:** If stale presentations cause meaningful user-visible failures, measure their frequency and consequences; evaluate a targeted reconciliation or stronger issuance/version contract. Preserve review receipt immutability, backend mutation validation, and the separation between eligibility, ordering, daily admission, and issuance. New queue/admission work must not treat historical issuance or replay as authorization to introduce a new card.
+
 ## Complete path and transition owners
 
 | Transition | Authoritative owner and source |
