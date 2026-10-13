@@ -418,7 +418,7 @@ export async function inspectCandidateSource(target, run, { signal } = {}) {
   return { branch, head, changes, origin, problem, failures };
 }
 
-export async function assessCandidate(target, run, fetchJson, { signal, expectedSource } = {}) {
+export async function assessCandidate(target, run, fetchJson, { signal, expectedSource, noCi = false } = {}) {
   const source = await inspectCandidateSource(target, run, { signal });
   if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.",
@@ -442,10 +442,12 @@ export async function assessCandidate(target, run, fetchJson, { signal, expected
     && (await run("git", ["merge-base", "--is-ancestor", source.head, revision], { allowFailure: true, timeout: 5000 })).code === 1)
     throw new TempoProblem("source_diverged", "Local main has diverged; Tempo will not reset or merge your work.",
       { action: `Next: preserve and reconcile ${target.root} with remote main without discarding local commits.` });
-  return { source, revision, verification: await assessMainVerification(revision, fetchJson, { signal: requestSignal }) };
+  return { source, revision, verification: noCi
+    ? { status: "disabled", revision, message: "GitHub CI evidence was explicitly disabled for this update." }
+    : await assessMainVerification(revision, fetchJson, { signal: requestSignal }) };
 }
 
-export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal } = {}) {
+export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal, noCi = false } = {}) {
   signal?.throwIfAborted();
   if (!target.root) throw new Error("Tempo checkout is not registered.");
   const source = await inspectCandidateSource(target, run, { signal });
@@ -461,7 +463,8 @@ export async function selectCandidate(target, run, fetchJson = githubJson, { exp
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
   if ((await run("git", ["merge-base", "--is-ancestor", current, revision], { allowFailure: true })).code !== 0)
     throw new TempoProblem("source_diverged", "Local main has diverged; Tempo will not reset or merge your work.");
-  const evidence = await verifiedMainEvidence(revision, fetchJson, signal);
+  const evidence = noCi ? { commit: revision, verification: "ci-disabled" }
+    : await verifiedMainEvidence(revision, fetchJson, signal);
   signal?.throwIfAborted();
   if (expectedRevision) {
     const latest = (await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { timeout: 15_000, signal })).stdout.trim().split(/\s+/)[0];

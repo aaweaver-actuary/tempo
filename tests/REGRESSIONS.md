@@ -22,6 +22,11 @@ Retain all existing application/store/source replay and native A1 durability
 regressions. The ownership demonstrations are evidence for #202, not shared
 planner changes or narrower production qualification. See
 [the module contract](../docs/architecture/ci-isolation/scheduling-module-boundary.md).
+## Main CI test repairs after PR #235 (October 13, 2026)
+
+- `backend/tests/test_queue_application_extraction.py::test_essential_queue_study_only_resumes_every_legacy_phase` covers all four legacy checkpoints. Ranked checkpoints now enter the bounded `study_opening_page` path and, with exhausted allowance, continue to `admit_study`. The fixture supplies the bounded allowance read, forbids optional ranking/analysis, and preserves the queue date, recovery boundary, and quarantine cursor. Main `8384aa4d` reproduced two missing-read failures before the fixture repair.
+- `tests/browser/cross-browser.spec.ts`: `critical navigation, board input, split and dialogs work across browser engines` waits for initial repertoire binding and uses the existing orientation-aware `playMove` helper. It retains the positive e4 pawn assertion; main CI run `38422875006` failed that assertion in Firefox with the starting FEN unchanged. No shared helper or production board behavior changes.
+
 ## Study-only opening introductions — related #194, #220, #223, #230–#232
 
 - `backend/tests/test_study_opening_admission.py`: `test_study_only_replaces_optional_ranked_checkpoint_with_bounded_page`, `test_study_opening_selector_reads_only_one_page_per_slice`, `test_study_opening_graph_order_is_stable_without_analysis_or_postgres`, `test_study_opening_rejected_page_advances_without_starvation`, `test_study_opening_publishes_one_item_then_checkpoints_even_when_mode_resumes`, `test_normal_mode_keeps_existing_priority_preparation`, and pure card-identity/invalid-content cases cover bounded deterministic selection and mode transitions.
@@ -4355,3 +4360,10 @@ Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
 ### Issue #239 qualification: burial fault must reach worker-owned requests
 
 - Existing named browser regression `workspace-flows.spec.ts::training Bury hides the card for today across reload and reports a failed bury` retains every pending-message, disabled-control/board, reload, immutable-operation-ID and native queue assertion. It now waits for real service-worker control, intercepts at browser-context level, and requires the refused operation ID to match the retained/retried ID. CI run 38400712633 demonstrated the old defect: the backend executed `queue.bury` successfully although the page-level fixture purported to return 503. No service worker, assertion, deadline or product behavior was removed or relaxed.
+
+When GitHub Actions are explicitly disabled, `source update can explicitly
+select current main without GitHub CI evidence` and `CLI no-ci update
+skips Actions verification and records the explicit policy` prove that only the
+explicit `--no-ci` option bypasses Actions lookup, current main is still
+fast-forwarded under the existing source checks, and the deployment receipt
+records `verification: ci-disabled`.

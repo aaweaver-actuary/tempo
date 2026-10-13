@@ -23,6 +23,7 @@ const help = `Tempo — manage the existing Docker/PostgreSQL installation
 Options: --plan previews maintenance without changing services or source;
          --verbose shows technical evidence and underlying command output;
          --no-wait assesses release checks once without waiting;
+         --no-ci updates to current main without GitHub CI evidence;
          --no-open avoids opening the browser; --retry explicitly retries interrupted
          or failed maintenance after inspection; --config FILE selects a registration.
 
@@ -43,10 +44,11 @@ export function parseArguments(argumentsList) {
   if (["--help", "-h", "help"].includes(command)) return { command: "help", configPath, flags, services };
   if (!["install", "start", "restart", "stop", "status", "doctor", "logs", "backup", "migrate"].includes(command))
     throw new Error(`Unknown Tempo command: ${command}. Run tempo help.`);
-  if ([...flags].some(flag => !["--plan", "--no-open", "--follow", "--retry", "--verbose", "--no-wait"].includes(flag))
+  if ([...flags].some(flag => !["--plan", "--no-open", "--follow", "--retry", "--verbose", "--no-wait", "--no-ci"].includes(flag))
     || (command !== "logs" && services.length) || services.length > 1
     || (flags.has("--follow") && command !== "logs")
-    || (flags.has("--no-wait") && !["start", "restart", "migrate"].includes(command))) throw new Error("Invalid options. Run tempo help.");
+    || (flags.has("--no-wait") && !["start", "restart", "migrate"].includes(command))
+    || (flags.has("--no-ci") && !["start", "restart"].includes(command))) throw new Error("Invalid options. Run tempo help.");
   return { command, configPath, flags, services };
 }
 
@@ -329,9 +331,11 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
       let assessment, blockedProblem = originalSource.problem?.code === "source_unavailable" ? originalSource.problem : undefined;
       if (!blockedProblem) {
         try {
-          assessment = await waitForVerification({ ...verificationWaitOptions, now, assess: signal => assessCandidate(target, run, undefined, { signal, expectedSource: originalSource }),
-            checkUnchanged: async () => { checkUnchanged(); await checkSourceUnchanged(); }, signal: cancellation.signal, deadline, noWait: options.flags.has("--no-wait"), log });
-          if (assessment.verification.status !== "verified") {
+          assessment = options.flags.has("--no-ci")
+            ? await assessCandidate(target, run, undefined, { signal: cancellation.signal, expectedSource: originalSource, noCi: true })
+            : await waitForVerification({ ...verificationWaitOptions, now, assess: signal => assessCandidate(target, run, undefined, { signal, expectedSource: originalSource }),
+              checkUnchanged: async () => { checkUnchanged(); await checkSourceUnchanged(); }, signal: cancellation.signal, deadline, noWait: options.flags.has("--no-wait"), log });
+          if (assessment.verification.status !== "verified" && !options.flags.has("--no-ci")) {
             blockedProblem = verificationProblem(assessment.verification);
             if (assessment.timedOut) {
               blockedProblem.message = "Release checks are still pending after the 30-minute wait. The update has not been applied.";
@@ -353,7 +357,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
         migrationPreflight(runtime, true);
         let candidate;
         if (!blockedProblem) {
-          try { candidate = await selectCandidate(target, run, undefined, { expectedRevision: assessment.revision, expectedSource: originalSource, signal: cancellation.signal }); }
+          try { candidate = await selectCandidate(target, run, undefined, { expectedRevision: assessment.revision, expectedSource: originalSource, signal: cancellation.signal, noCi: options.flags.has("--no-ci") }); }
           catch (error) {
             if (cancellation.signal.aborted) throw new TempoProblem("cancelled", "Waiting cancelled. No deployment was started.", { exitCode: 130 });
             if (error.code === "main_changed" || (error.code === "verification_pending" && !options.flags.has("--no-wait"))) {
@@ -376,7 +380,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
           commandEnvironment.TEMPO_CLI_CONTINUATION = JSON.stringify({ installationState, deadline,
             source: { ...originalSourceFingerprint, head: candidate.revision } });
           release();
-          const child = await execute(process.execPath, [join(target.root, "scripts/tempo-cli.mjs"), ...argumentsList], { allowFailure: true, echo: true });
+          const child = await execute(process.execPath, [fileURLToPath(import.meta.url), ...argumentsList], { allowFailure: true, echo: true });
           return child.code ?? 1;
         }
         if (blockedProblem) {

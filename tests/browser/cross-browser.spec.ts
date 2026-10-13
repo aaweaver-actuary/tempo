@@ -47,16 +47,9 @@ test("critical navigation, board input, split and dialogs work across browser en
   await navigate(page, "Builder");
   const board = page.locator(".board-frame");
   await expect(board).toHaveAttribute("data-input-enabled", "true");
-  const surface = await page.locator(".cg-wrap").boundingBox();
-  if (!surface) throw new Error("Board has no visible surface");
-  for (const [file, rank] of [
-    [4, 6],
-    [4, 4],
-  ])
-    await page.mouse.click(
-      surface.x + ((file + 0.5) * surface.width) / 8,
-      surface.y + ((rank + 0.5) * surface.height) / 8,
-    );
+  // Repertoire binding changes board identity and cancels an in-flight selection.
+  await expect(page.getByRole("combobox", { name: "Active repertoire" })).toHaveValue("visual-repertoire");
+  await playMove(page, board, "e2", "e4");
   await expect(board).toHaveAttribute("data-fen", /4P3/);
   const separator = page.getByRole("separator", { name: "Board size" });
   await separator.focus();
