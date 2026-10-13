@@ -1,3 +1,10 @@
+## PR #229 — independent prepared continuation authority audit
+
+- No production defect was demonstrated under provisional issuance with observed identity invalidation and independent backend mutation validation. Server projection-generation fencing is not implemented and remains explicitly inconclusive in the audit. Review receipts and replay semantics remain unchanged. See [audit and invariant matrix](../docs/architecture/audit-pr229-prepared-authority.md).
+- `tests/unit/prepared-review-continuation-regressions.test.ts`: `pr229_observed_authoritative_invalidation_blocks_delayed_continuation` feeds removal/revision/cycle/replacement/promotion/day changes through authoritative acquisition before releasing a frozen accepted review; activation declines without losing acceptance or issuing another POST. `pr229_new_publication_retaining_authorized_successor_preserves_continuation` distinguishes publication from revocation.
+- `backend/tests/test_prepared_review_continuation.py`: `test_pr229_invalidated_successor_declines_without_duplicate_review` covers actual queue removal/revision/cycle, validation, replacement and blocked-state refusal plus exactly-once replay; `test_pr229_no_hint_receipt_cannot_acquire_continuation_on_replay` forbids adding an absent hint to logical replay; `test_pr229_historical_continuation_does_not_authorize_invalidated_mutation` keeps the original receipt byte-identical while successor commands reject archive/revision/burial/validation/deletion.
+- All 19 added cases pass on unchanged PR production source. SQLite command-adapter coverage does not establish PostgreSQL locking; the report separately links exact-head native CI proof. Neither local attempt generation nor projection publication count proves safety against server invalidation not yet observed by the browser.
+
 ## P0 study restoration — related #186, #190 (October 11, 2026)
 
 - `backend/tests/test_postgres_route_contract.py`: `test_postgres_route_contract_matches_registered_endpoints` failed in repair CI for the missing foreground membership route. Its reader registration now keeps the endpoint inventory and PostgreSQL write-guard audit complete.
