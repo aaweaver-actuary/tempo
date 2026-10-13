@@ -119,7 +119,7 @@ Observed focused results (pytest times, not whole-command wall time):
 | Existing capacity-admission file | 36 passed | 6.36 s |
 | Existing opening-progression file | 15 passed | 0.72 s |
 | Existing PostgreSQL cutover file | 242 passed | 4.25 s |
-| PostgreSQL runner contracts | 67 passed | 2.36 s |
+| PostgreSQL runner contracts, including restart isolation | 68 passed | 2.79 s |
 | Native admission matrix | 18 cases passed | Per-case times in preserved log |
 | Actual PostgreSQL restart and original-delivery replay | Passed | Wall time not captured |
 | Repository lint | Passed, zero errors / ten existing warnings | Wall time not captured |
@@ -129,6 +129,19 @@ Final small-fixture foreground measurement: 30 control queue reads had median
 5.297 ms / p95 20.320 ms, with one background page completed. The whole
 measurement command took 6.35 s. These observations show usable foreground reads
 in this fixture, not a speedup or evidence about production tail latency.
+
+Draft CI run `38384048514` passed every execution layer except PostgreSQL.
+The new native admission matrix and persisted server-restart proof passed;
+the later `test_retained_command_retry_preserves_immutable_identity` encountered
+HTTP 500 because the test server restart left old API/foreground-worker pools
+alive. Its logs recorded `AdminShutdown` on checkout of those stale connections.
+The restart orchestration now uses the existing stop/work/restore boundary:
+quiesce invocation-owned clients, restart PostgreSQL, restore fresh product
+pools and API readiness, then resume dependent producers. A named regular
+runner guard failed for the original sequence and passed after correction.
+The complete new Docker candidate qualification belongs to fresh CI; the failed
+run is not treated as a pass. Production admission code was unchanged by this
+test-isolation correction.
 
 ## Rollback and operations
 

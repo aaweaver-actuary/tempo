@@ -99,10 +99,20 @@ async function verifyStudyOpeningAdmission() {
   const restartDatabaseName = `tempo_study_intros_restart_${randomBytes(16).toString("hex")}`;
   run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
     "--restart-stage", "prepare", "--restart-database", restartDatabaseName]);
-  // Only the invocation-owned PostgreSQL service restarts. The proof database
-  // is isolated from API/worker consumers and retains its committed sentinel.
-  run("docker", [...compose, "restart", "postgres"]);
-  await waitForReady();
+  // Even though the proof database is private, restarting the shared test
+  // server invalidates API/worker pools. Quiesce the invocation's clients and
+  // restore fresh pools before subsequent foreground durability assertions.
+  const postgresClients = ["api", "foreground-worker", "background-worker", "background-scheduler"];
+  const analysisClients = ["defense-engine", "maia-worker"];
+  await executeIsolatedBackgroundWorkload({
+    stopConsumers: () => run("docker", [...compose, "stop", ...postgresClients, ...analysisClients]),
+    measureWorkload: () => run("docker", [...compose, "restart", "postgres"]),
+    restoreConsumers: async () => {
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...postgresClients]);
+      await waitForReady();
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...analysisClients]);
+    },
+  });
   run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
     "--restart-stage", "verify", "--restart-database", restartDatabaseName]);
 }
