@@ -5,6 +5,23 @@
 - `backend/tests/test_prepared_review_continuation.py`: `test_pr229_invalidated_successor_declines_without_duplicate_review` covers actual queue removal/revision/cycle, validation, replacement and blocked-state refusal plus exactly-once replay; `test_pr229_no_hint_receipt_cannot_acquire_continuation_on_replay` forbids adding an absent hint to logical replay; `test_pr229_historical_continuation_does_not_authorize_invalidated_mutation` keeps the original receipt byte-identical while successor commands reject archive/revision/burial/validation/deletion.
 - All 19 added cases pass on unchanged PR production source. SQLite command-adapter coverage does not establish PostgreSQL locking; the report separately links exact-head native CI proof. Neither local attempt generation nor projection publication count proves safety against server invalidation not yet observed by the browser.
 
+## PR #229 — Redis admission proof cleanup reliability
+
+- `tests/unit/redis-admission-cleanup-regressions.test.ts` runs in the regular Vitest suite. `Redis admission start failure still closes page and cleans fixture while retaining assertion` and `Redis admission unpause failure still closes page and cleans fixture while retaining assertion` both failed against the extracted original sequential finalizer: page and fixture cleanup were skipped. The repaired test-specific lifecycle (incorporated into #229 by its fixture owner) independently attempts listener removal, Redis restoration, page closure and fixture cleanup, retaining the original failure and all labelled cleanup failures.
+- The same file covers assertion failures in both fault scenarios, rejected stop/pause commands, fixture/page failures, listener retry, multiple failures, cleared restoration obligations, failed in-scenario restoration, fixture cleanup callback invocation despite failures elsewhere, evidence publication failures and falsy thrown values. `Redis admission committed seed with lost output still attempts identity cleanup` in that file throws a synthetic seed error and checks callback invocation and original-error preservation; despite its title, it does not run a seed command or exercise native identity recovery.
+- Native fixture recovery is covered by `scripts/check_postgres_redis_fixture_isolation.py::RedisFixtureIsolation.test_redis_fixture_committed_seed_output_loss_is_recoverable_and_concurrent_seed_is_rejected`: it commits seed without retaining its return value, cleans by identity from another PostgreSQL connection, checks settings/projection restoration and repeated-cleanup behavior, and rejects a competing seed. This exercises recovery without seed result data, not loss of subprocess stdout in the browser.
+- In the same native file, `test_redis_fixture_setup_failure_rolls_back_every_mutation` injects an initialization failure after snapshot/queue mutations and verifies rollback with no owned rows left. `test_redis_fixture_cleanup_failure_rolls_back_and_can_retry` injects failure after deletion, verifies cleanup rollback and retained ownership, then checks successful retry and idempotent cleanup. These cover transactional partial setup and interrupted cleanup, not cleanup of an arbitrary committed, partially initialized fixture.
+- `tests/browser/redis-admission-recovery.spec.ts::test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate` remains the real PostgreSQL/Redis browser boundary for Redis faults and review recovery; fault/recovery assertions and proof publication are unchanged. It uses identity-based fixture cleanup but does not inject lost seed-command output or partial initialization.
+- Failure matrix, selected commands and fixture-interface history and remaining limitations: [cleanup reliability evidence](../docs/validation/pr229-cleanup-reliability.md).
+
+## Issue #225 — foreground Redis admission failure
+
+- Qualification fixture: `training-critical-path.spec.ts` waits for a new correlated `tempo.queue.processing` measurement and installed head/successor after its synthetic `online` event, then requires the first request and original accepted response to carry the expected continuation. Exact replay retains the positive continuation assertion and equals the original result. `prepared-queue-readiness-regressions.test.ts`: `issue225_loading_review_replay_does_not_invent_prepared_continuation` separately covers a loading submission with no hint: later readiness cannot manufacture a continuation during confirmation or authorize a successor. The native Redis test also explicitly rejects an invented continuation when its original envelope omitted the hint.
+
+- `backend/tests/test_foreground_admission_http.py`: `test_issue225_foreground_redis_failure_refuses_before_dispatch` uses real Redis client I/O against owned loopback refusal and silent nonreply faults. It requires actionable HTTP 503 within the existing socket deadline budget, the same Idempotency-Key retry instruction, no dispatch/database entry, and released local admission state. The refusal case failed before the correction with HTTP 500.
+- `test_issue225_admitted_http_response_is_preserved` and `test_issue225_downstream_redis_error_is_not_reported_as_admission_rejection` keep successful, pending and conflict responses unchanged and forbid classifying a downstream unknown outcome as pre-dispatch rejection.
+- `tests/browser/redis-admission-recovery.spec.ts`: `test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate` is the native acceptance companion using owned Redis stop/pause faults, true reload, retained operation/payload, refused queue advancement, and original/subsequent operation replay checked against PostgreSQL rows. `scripts/check_postgres_redis_admission.py` supplies its small owned fixture. The focused native Mac run passed with current-source API/worker/Vite, PostgreSQL 18.6 and Redis 7 after moving dataless source placeholders into a materialized task-owned checkout. It verifies actual refusal/nonreply, true reload, unchanged PostgreSQL state during failure, and exactly one review/logical receipt per attempt after original/subsequent operation replay. `foreground_redis_admission_native_regression_is_registered_and_selected` protects regular collection and training-family selection. Production startup/lifecycle, pinned Docker images and final candidate qualification remain CI responsibilities.
+
 ## P0 study restoration — related #186, #190 (October 11, 2026)
 
 - `backend/tests/test_postgres_route_contract.py`: `test_postgres_route_contract_matches_registered_endpoints` failed in repair CI for the missing foreground membership route. Its reader registration now keeps the endpoint inventory and PostgreSQL write-guard audit complete.
@@ -4236,3 +4253,54 @@ Audit CI readiness evidence (existing named browser cases):
   The old probe throws on the error envelope; bounded polling now retains its
   HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
   These are fixture corrections for qualification, not additional product defects.
+
+### PR #229 Redis fixture database isolation
+
+Regular PostgreSQL durability runs `scripts/check_postgres_redis_fixture_isolation.py` against migrated PostgreSQL with real triggers and foreign keys. The native PostgreSQL cases below exercise fixture state and recovery. `backend/tests/test_redis_admission_fixture.py` provides focused fixture lifecycle checks; `tests/unit/redis-admission-cleanup-regressions.test.ts` checks the generic teardown callbacks and failure preservation, not native seed-output recovery. The coverage boundaries are detailed in the PR #229 cleanup reliability entry above.
+
+Native PostgreSQL cases in `scripts/check_postgres_redis_fixture_isolation.py`:
+
+- `test_redis_fixture_setup_failure_rolls_back_every_mutation`
+- `test_redis_fixture_cleanup_failure_rolls_back_and_can_retry`
+- `test_redis_fixture_restores_absent_settings_and_projection`
+- `test_redis_fixture_cleanup_detects_settings_conflict_without_partial_deletion`
+- `test_redis_fixture_cleanup_detects_changed_created_settings`
+- `test_redis_fixture_cleanup_detects_missing_and_reordered_queue_entries`
+- `test_redis_fixture_cleanup_detects_projection_conflict`
+- `test_redis_fixture_cleanup_rejects_changed_ownership_before_cascades`
+- `test_redis_fixture_cleanup_removes_owned_receipts_and_preserves_unrelated_records`
+- `test_redis_fixture_committed_seed_output_loss_is_recoverable_and_concurrent_seed_is_rejected`
+- `test_redis_fixture_cleanup_allows_legitimate_mutable_queue_state`
+- `test_redis_fixture_cleanup_rejects_synthetic_queue_reassignment_atomically`
+- `test_redis_fixture_cleanup_rejects_additional_synthetic_queue_relationships`
+- `test_redis_fixture_cleanup_rejects_missing_synthetic_queue_entry`
+- `test_redis_fixture_cleanup_rejects_unsupported_snapshot_version_without_deletion`
+- `test_redis_fixture_manifest_finalization_failure_rolls_back_owned_queue_identities`
+- `test_redis_fixture_parent_locks_fence_concurrent_queue_and_membership_inserts`
+
+The reassignment/additional-relationship cases fail against exact reference fixture
+`ef26a6d9` (six subtest failures) and pass with snapshot v2. They verify atomic
+conflict rollback and survival of unrelated queue state. The parent-lock case uses
+independent PostgreSQL connections and server lock timeouts; it does not simulate
+quiescence or predicate locking. The existing named Redis browser case now records
+raw operation receipts separately, rejects unexpected queue-only ownership, and
+asserts exact captured operation-ID cleanup plus unrelated-ID preservation.
+
+Focused fixture checks in `backend/tests/test_redis_admission_fixture.py`:
+
+- `test_redis_fixture_cleanup_explicitly_removes_non_cascading_receipts`
+- `test_redis_fixture_restoration_conflicts_are_explicit`
+- `test_redis_fixture_unchanged_preexisting_settings_fields_are_preserved`
+- `test_redis_fixture_never_reports_success_before_commit`
+- `test_redis_fixture_rejects_unowned_or_custom_database_before_connect`
+
+Generic cleanup callback checks in `tests/unit/redis-admission-cleanup-regressions.test.ts`:
+
+- `Redis admission start failure still closes page and cleans fixture while retaining assertion`
+- `Redis admission unpause failure still closes page and cleans fixture while retaining assertion`
+- `Redis admission accumulates all cleanup failures after the original failure`
+- `Redis admission committed seed with lost output still attempts identity cleanup`
+
+Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
+
+- `redis_fixture_native_isolation_regressions_run_in_regular_durability`
