@@ -5,25 +5,47 @@ import { fileURLToPath } from 'node:url';
 import { fastCommands } from './ci-fast-commands.mjs';
 import { postgresTestStages } from './postgres-test-plan.mjs';
 import { changedPathsFromNameStatus, planHash, runtime } from './ci-verification-plan.mjs';
+import { certificate, readCertificateSources, validateCertificate, nativeFixtureCases } from './ci-certified-tests.mjs';
 
 export const fastInventory = JSON.parse(readFileSync(new URL('./ci-fast-lane-inventory.json', import.meta.url), 'utf8'));
 const sorted = values => [...new Set(values)].sort();
 export const testIdentity = test => `${test.project}:${test.file}:${test.title}`;
-export function selectFastLane(paths, { comparisonAvailable = true, complete = false, inventory = fastInventory } = {}) {
+export function selectFastLane(paths, { comparisonAvailable = true, complete = false, inventory = fastInventory, certificateSources } = {}) {
   let tier = 'FAST';
-  const frontend = [], backend = [], reasons = [];
+  const frontend = [], backend = [], reasons = [], nativeChecks = [], additionalBrowser = [];
+  let certificateValid;
   const full = reason => { tier = 'FULL'; reasons.push(reason); };
   if (complete || !comparisonAvailable) full(complete ? 'Complete qualification requested' : 'Comparison unavailable');
   for (const path of paths) {
     if (!path || path.startsWith('/') || path.split('/').includes('..')) { full('Invalid path'); continue; }
     const mappings = inventory.sources.filter(mapping => mapping.paths.includes(path));
+    const certifications = (inventory.certifiedTests ?? []).filter(mapping => mapping.paths.includes(path));
     if ((/^docs\/.+\.md$/.test(path) || /(?:^|\/)README\.md$/.test(path)
       || ['AGENTS.md','CONTRIBUTING.md','tests/REGRESSIONS.md','THIRD_PARTY_NOTICES.md'].includes(path))) {
       reasons.push(`${path}: prose`); continue;
     }
-    if (inventory.fullPaths.includes(path) || inventory.fullPrefixes.some(prefix => path.startsWith(prefix))
+    if (inventory.fullPaths.includes(path)
       || /(?:auth|security|database|postgres_store|postgres_readiness|command_executor|redis_admission_gate)/i.test(path)
       || /^docker|\.ya?ml$|\.lock$/.test(path)) { full(`${path}: global invariant or qualification infrastructure`); continue; }
+    if (certifications.length) {
+      try { certificateValid ??= validateCertificate(certificate, certificateSources ?? readCertificateSources()); }
+      catch { certificateValid = false; }
+      const mapping = certifications[0];
+      if (certifications.length !== 1 || mappings.length || !certificateValid || !existsSync(path)
+        || !['FAST','STUDY'].includes(mapping.tier) || !mapping.frontend?.length
+        || !Array.isArray(mapping.backend) || !Array.isArray(mapping.browser) || !Array.isArray(mapping.nativeChecks)
+        || mapping.nativeChecks.some(check => check !== 'redis-fixture-isolation')) {
+        full(`${path}: invalid or changed certified dependency closure`); continue;
+      }
+      if (mapping.tier === 'STUDY' && tier !== 'FULL') tier = 'STUDY';
+      frontend.push(...mapping.frontend); backend.push(...mapping.backend);
+      nativeChecks.push(...mapping.nativeChecks); additionalBrowser.push(...mapping.browser);
+      reasons.push(`${path}: certified ${mapping.tier} dependency closure`);
+      continue;
+    }
+    if (inventory.fullPrefixes.some(prefix => path.startsWith(prefix))) {
+      full(`${path}: shared qualification infrastructure`); continue;
+    }
     if (mappings.length === 1) {
       const mapping = mappings[0];
       if (!['FAST','STUDY'].includes(mapping.tier) || !mapping.frontend?.length && !mapping.backend?.length) { full(`${path}: invalid ownership`); continue; }
@@ -39,12 +61,23 @@ export function selectFastLane(paths, { comparisonAvailable = true, complete = f
     } else full(`${path}: unknown or ambiguous ownership`);
   }
   if ([...frontend,...backend].some(file => !existsSync(file))) full('Selected test file missing');
-  const browser = tier === 'STUDY' ? inventory.studyBrowser : [];
+  const browser = tier === 'STUDY' ? [...inventory.studyBrowser, ...additionalBrowser.filter(
+    (test, index) => !inventory.studyBrowser.some(value => testIdentity(value) === testIdentity(test))
+      && additionalBrowser.findIndex(value => testIdentity(value) === testIdentity(test)) === index)] : [];
   if (tier === 'STUDY' && (!browser.length || new Set(browser.map(testIdentity)).size !== browser.length)) full('Invalid study smoke inventory');
   const node = frontend.length > 0 || tier === 'STUDY';
+  let nativeCases = {};
+  if (nativeChecks.length && tier !== 'FULL') {
+    try { nativeCases = {'redis-fixture-isolation':nativeFixtureCases(
+      certificateSources ? certificateSources['scripts/check_postgres_redis_fixture_isolation.py']
+        : readFileSync('scripts/check_postgres_redis_fixture_isolation.py','utf8'))}; }
+    catch { full('Unknown native fixture collection'); }
+  }
   const python = backend.length > 0 || frontend.some(file => existsSync(file) && /python|backend\/|resolvePython|scripts\//i.test(readFileSync(file,'utf8')));
   return { tier, paths: sorted(paths), frontend: sorted(frontend), backend: sorted(backend), browser: tier === 'FULL' ? [] : browser,
-    node, python, reasons, inventoryHash: createHash('sha256').update(JSON.stringify(inventory)).digest('hex') };
+    nativeChecks: tier === 'FULL' ? [] : sorted(nativeChecks),
+    nativeCases: tier === 'FULL' ? {} : nativeCases,
+    node, python, reasons, inventoryHash: createHash('sha256').update(JSON.stringify({inventory, certificate})).digest('hex') };
 }
 
 export function makeFastPlan(paths, context, options = {}) {
@@ -100,10 +133,28 @@ export function validateFastGate(plan, report, needs, currentPullRequest, execut
   }
   if (plan.tier === 'STUDY') {
     const scenarios = report.scenarios;
+    const stages = postgresTestStages({mode:'study',nativeChecks:plan.nativeChecks});
     if (!scenarios || scenarios.mode !== 'study' || scenarios.commit !== plan.head || scenarios.plan_hash !== plan.hash
-      || JSON.stringify(scenarios.planned_stages) !== JSON.stringify(postgresTestStages({mode:'study'}))
-      || JSON.stringify(Object.keys(scenarios.stages ?? {}).sort()) !== JSON.stringify([...postgresTestStages({mode:'study'})].sort())
-      || postgresTestStages({mode:'study'}).some(stage => scenarios.stages[stage]?.exit_code !== 0)) failures.push('Study durability evidence missing or failed');
+      || JSON.stringify(scenarios.planned_stages) !== JSON.stringify(stages)
+      || JSON.stringify(Object.keys(scenarios.stages ?? {}).sort()) !== JSON.stringify([...stages].sort())
+      || stages.some(stage => scenarios.stages[stage]?.exit_code !== 0)) failures.push('Study durability evidence missing or failed');
+    if ((plan.nativeChecks ?? []).length) {
+      const native = report.native;
+      if (!native || native.head !== plan.head || native.planHash !== plan.hash || native.runId !== execution.id
+        || native.attempt !== execution.attempt || native.repository !== plan.repository
+        || JSON.stringify(Object.keys(native.checks ?? {}).sort()) !== JSON.stringify(plan.nativeChecks)) {
+        failures.push('Missing or stale native fixture evidence');
+      } else for (const check of plan.nativeChecks) {
+        const evidence = native.checks[check];
+        if (!evidence?.expected?.length || !evidence.tests?.length
+          || JSON.stringify(sorted(evidence.expected)) !== JSON.stringify(plan.nativeCases?.[check])
+          || evidence.expected.length !== evidence.tests.length
+          || new Set(evidence.expected).size !== evidence.expected.length
+          || new Set(evidence.tests.map(test => test.id)).size !== evidence.tests.length
+          || JSON.stringify(sorted(evidence.expected)) !== JSON.stringify(sorted(evidence.tests.map(test => test.id)))
+          || evidence.tests.some(test => test.status !== 'passed' || test.retries !== 0)) failures.push('Native fixture cases missing, skipped, duplicated or failed');
+      }
+    }
   }
   return failures;
 }
