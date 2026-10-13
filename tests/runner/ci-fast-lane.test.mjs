@@ -67,7 +67,9 @@ test('issue239_new_callers_imports_dynamic_dependencies_and_browser_cases_fail_c
     {...sources,'backend/app/new_consumer.py':'import check_postgres_redis_admission'},
     {...sources,[candidate]:sources[candidate]+'\nimport new_dependency\n'},
     {...sources,[candidate]:sources[candidate]+'\n__import__(dependency_name)\n'},
+    {...sources,[candidate]:sources[candidate]+'\nquery = "SELECT * FROM unknown_shared_table"\n'},
     {...sources,'tests/browser/redis-admission-recovery.spec.ts':sources['tests/browser/redis-admission-recovery.spec.ts']+'\ntest("new case", async () => {});\n'},
+    {...sources,'scripts/check_postgres_redis_fixture_isolation.py':sources['scripts/check_postgres_redis_fixture_isolation.py']+'\nclass UnexpectedFixture(unittest.TestCase):\n    pass\n'},
     {...sources,[candidate]:undefined},
   ]) assert.equal(selectFastLane([candidate],{certificateSources:changed}).tier,'FULL');
   assert(Object.keys(certificate.dependencies).includes(candidate));

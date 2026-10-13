@@ -13,11 +13,21 @@ export function validateCertificate(certificate, sources) {
   for (const [path, expected] of Object.entries(certificate.dependencies)) {
     if (typeof sources[path] !== 'string' || JSON.stringify(dependencyLines(sources[path])) !== JSON.stringify(expected)) return false;
   }
+  for (const [path, expected] of Object.entries(certificate.sqlRelations ?? {})) {
+    if (JSON.stringify(sqlRelations(sources[path])) !== JSON.stringify(expected)) return false;
+  }
   for (const [token, expected] of Object.entries(certificate.consumers)) {
     const observed = Object.keys(sources).filter(path => sources[path].includes(token)).sort();
     if (JSON.stringify(observed) !== JSON.stringify(expected)) return false;
   }
   return true;
+}
+
+export function sqlRelations(source) {
+  if (typeof source !== 'string') return null;
+  const names = [...source.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN|TRUNCATE|TABLE)\s+([a-z_]\w*)\b/g)].map(match => match[1]);
+  for (const match of source.matchAll(/(?:snapshot_row|restore_row)\([^,]+,\s*['"]([a-z_]\w*)['"]|sql\.Identifier\(['"]([a-z_]\w*)['"]\)/g)) names.push(match[1] ?? match[2]);
+  return [...new Set(names)].sort();
 }
 
 export function readCertificateSources() {
@@ -33,8 +43,10 @@ export const certificate = JSON.parse(readFileSync(new URL('./ci-certified-tests
 
 export function nativeFixtureCases(source) {
   if (typeof source !== 'string' || [...source.matchAll(/^class (\w+)\(unittest\.TestCase\):/gm)]
-    .map(match => match[1]).join() !== 'RedisFixtureIsolation') throw new Error('Unknown native fixture class');
+    .map(match => match[1]).join() !== 'RedisFixtureIsolation'
+    || [...source.matchAll(/^class /gm)].length !== 1) throw new Error('Unknown native fixture class');
   const methods = [...source.matchAll(/^    def (test_\w+)\(self\):/gm)].map(match => match[1]);
-  if (!methods.length || new Set(methods).size !== methods.length) throw new Error('Invalid native fixture cases');
+  if (!methods.length || new Set(methods).size !== methods.length
+    || [...source.matchAll(/^\s+(?:async )?def test_/gm)].length !== methods.length) throw new Error('Invalid native fixture cases');
   return methods.map(method => `check_postgres_redis_fixture_isolation.RedisFixtureIsolation.${method}`).sort();
 }

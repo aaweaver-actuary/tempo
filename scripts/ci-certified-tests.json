@@ -78,12 +78,47 @@
       "scripts/ci-fast-lane.mjs",
       "scripts/ci-native-unittest.py",
       "scripts/test-postgres-docker.mjs",
+      "tests/runner/ci-fast-lane.test.mjs",
       "tests/runner/postgres-test-speedups.test.mjs"
     ],
     "redis-admission-recovery.spec.ts": [
       "scripts/ci-verification-inventory.json",
       "tests/runner/ci-fast-lane.test.mjs",
       "tests/runner/ci-reliability.test.mjs"
+    ]
+  },
+  "sqlRelations": {
+    "scripts/check_postgres_redis_admission.py": [
+      "card_revisions",
+      "cards",
+      "daily_queue",
+      "operation_receipts",
+      "parent",
+      "queue_attempt_origins",
+      "queue_projections",
+      "repertoire_cards",
+      "repertoires",
+      "review_attempt_receipts",
+      "review_schedule_snapshots",
+      "reviews",
+      "settings"
+    ],
+    "scripts/check_postgres_redis_fixture_isolation.py": [
+      "card_revisions",
+      "cards",
+      "daily_queue",
+      "operation_receipts",
+      "queue_attempt_origins",
+      "queue_projections",
+      "repertoire_cards",
+      "repertoires",
+      "review_attempt_receipts",
+      "review_schedule_snapshots",
+      "reviews",
+      "settings"
+    ],
+    "backend/tests/test_redis_admission_fixture.py": [
+      "cards"
     ]
   }
 }
