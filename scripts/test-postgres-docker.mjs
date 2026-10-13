@@ -93,6 +93,33 @@ async function apiRequest(path, options = {}, label = null) {
   return response;
 }
 
+async function verifyStudyOpeningAdmission() {
+  const nativeProofPath = "/source/scripts/check_postgres_study_opening_admission.py";
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath]);
+  const restartDatabaseName = `tempo_study_intros_restart_${randomBytes(16).toString("hex")}`;
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
+    "--restart-stage", "prepare", "--restart-database", restartDatabaseName]);
+  // Even though the proof database is private, restarting the shared test
+  // server invalidates API/worker pools. Quiesce the invocation's clients and
+  // restore fresh pools before subsequent foreground durability assertions.
+  const postgresClients = ["api", "foreground-worker", "background-worker", "background-scheduler"];
+  const analysisClients = ["defense-engine", "maia-worker"];
+  await executeIsolatedBackgroundWorkload({
+    stopConsumers: () => run("docker", [...compose, "stop", ...postgresClients, ...analysisClients]),
+    measureWorkload: () => run("docker", [...compose, "restart", "postgres"]),
+    restoreConsumers: async () => {
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...postgresClients]);
+      // Nginx resolves its API upstream at startup; restored containers may
+      // receive different addresses even though their service names persist.
+      run("docker", [...compose, "restart", "web"]);
+      await waitForReady();
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...analysisClients]);
+    },
+  });
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
+    "--restart-stage", "verify", "--restart-database", restartDatabaseName]);
+}
+
 function verifyProjectIsUnused() {
   for (const [resourceName, argumentsList] of [
     ["container", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`]],
@@ -944,6 +971,7 @@ const actions = {
   schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
+    await verifyStudyOpeningAdmission();
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_upgrade.py"]);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -1152,6 +1180,7 @@ const actions = {
   study_only: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
+    await verifyStudyOpeningAdmission();
   },
   study_queue_receipts: async () => {
     await executeIsolatedBackgroundWorkload({
