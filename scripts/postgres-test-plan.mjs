@@ -1,7 +1,10 @@
 // The executable plan is also the read-only --list output; keep one source of truth.
-export function postgresTestStages({ mode }) {
+export function postgresTestStages({ mode, nativeChecks = [] }) {
+  if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
+    || nativeChecks.some(check => check !== 'redis-fixture-isolation')
+    || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle", "priority-benchmark"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
-  if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", "browser", "cleanup"];
+  if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", ...nativeChecks, "browser", "cleanup"];
   if (mode === "priority-benchmark") {
     return ["compose_config", "image_build", "startup", "service_health", "priority_benchmark", "cleanup"];
   }
@@ -16,7 +19,7 @@ export function postgresTestStages({ mode }) {
   return [
     "compose_config", "image_build", ...(mode === "browser" ? [] : ["maintenance_cli"]),
     "startup", "service_health", ...(mode === "browser" ? [] : durabilityStages),
-    ...(mode === "durability" ? [] : ["browser"]),
+    ...nativeChecks, ...(mode === "durability" ? [] : ["browser"]),
     ...(mode === "full" ? ["study_isolation"] : []),
     ...(mode === "browser" ? [] : ["study_durability"]), "cleanup",
   ];

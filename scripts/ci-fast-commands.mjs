@@ -23,7 +23,8 @@ export function fastCommands(plan) {
   if (plan.tier === 'STUDY') commands.push(
     ['capabilities','node',['scripts/check-test-capabilities.mjs','--docker','--loopback','--workspace-mount']],
     ['browser_inventory','npx',['playwright','test','--list','--reporter=json','--project=chromium',...new Set(plan.browser.map(test => `tests/browser/${test.file}`))]],
-    ['study','node',['scripts/test-postgres-docker.mjs','--mode','study','--browser-grep',studyGrep(plan.browser)]],
+    ['study','node',['scripts/test-postgres-docker.mjs','--mode','study','--browser-grep',studyGrep(plan.browser),
+      ...(plan.nativeChecks ?? []).flatMap(check => ['--native-check',check])]],
   );
   return commands;
 }
