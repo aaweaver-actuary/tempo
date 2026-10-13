@@ -92,3 +92,27 @@ def test_restoration_pause_reads_one_snapshot_during_atomic_control_switch(queue
     assert queries == ['SELECT study_only_mode, optional_analysis_and_imports_enabled FROM settings WHERE id=1']
     with original_reader() as reader:
         assert tuple(reader.execute('SELECT study_only_mode, optional_analysis_and_imports_enabled FROM settings WHERE id=1').fetchone()) == (1, 1)
+
+
+def test_restoration_new_install_does_not_activate_unqualified_preparation(queued_attempts):
+    from app.models import Settings
+    assert Settings().repertoire_preparation_enabled is False
+    assert main.get_settings().repertoire_preparation_enabled is False
+    # This control preserves previously permitted server workloads; it never
+    # overrides the existing emergency pause or subsystem-specific gates.
+    assert main.get_settings().optional_analysis_and_imports_enabled is True
+
+
+@pytest.mark.parametrize("study_only", [False, True])
+@pytest.mark.parametrize("preparation", [False, True])
+@pytest.mark.parametrize("optional", [False, True])
+def test_restoration_independent_control_state_matrix(queued_attempts, study_only, preparation, optional):
+    client = TestClient(main.app)
+    assert client.put('/api/settings', json={'study_only_mode': study_only,
+        'repertoire_preparation_enabled': preparation,
+        'optional_analysis_and_imports_enabled': optional}).status_code == 200
+    with database.read_connection() as reader:
+        assert study_mode.optional_work_paused(reader) is (study_only or not optional)
+    assert study_mode.optional_work_paused() is (study_only or not optional)
+    database.initialize()
+    assert main.get_settings().repertoire_preparation_enabled is preparation

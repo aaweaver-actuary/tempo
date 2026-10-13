@@ -1,4 +1,6 @@
 "use client";
+
+import { announceConfirmedStudyControlsChange } from "../lib/study-controls-change";
 import { setLetterShortcutsEnabled, useLetterShortcutsEnabled } from "../lib/keyboard-shortcuts";
 import { TabList } from "../components/ui";
 import { RepertoireDailyLimits } from "../components/repertoire-daily-limits";
@@ -88,7 +90,7 @@ export default function SettingsView({
     include_defensive_cards_in_daily_stack: true,
     defensive_analysis_enabled: false,
     study_only_mode: false,
-    repertoire_preparation_enabled: true,
+    repertoire_preparation_enabled: false,
     optional_analysis_and_imports_enabled: true,
     discovery_window_days: 90,
     lichess_username: "",
@@ -266,7 +268,7 @@ export default function SettingsView({
       };
       try {
         await saveLocalSettings(backend);
-        window.dispatchEvent(new Event("tempo:study-mode-changed"));
+        announceConfirmedStudyControlsChange();
         setSavedDailyLimit(values.new_cards_per_day);
         invalidateWorkspaceData();
         setStatus("Saved.");

@@ -54,9 +54,11 @@ it.each(["pending", "failed"])("study_only_mode_is_effective_only_after_confirme
     expect(modeChanged).not.toHaveBeenCalled();
     await act(async () => rejectSave(failure === "pending" ? new PendingOperationError("mode-save") : new Error("Save failed")));
     expect(modeChanged).not.toHaveBeenCalled();
+    expect(localStorage.getItem("tempo-confirmed-study-controls-change-v1")).toBeNull();
     vi.mocked(saveLocalSettings).mockResolvedValueOnce();
     fireEvent.click(save);
     await waitFor(() => expect(modeChanged).toHaveBeenCalledTimes(1));
+    expect(localStorage.getItem("tempo-confirmed-study-controls-change-v1")).not.toBeNull();
   } finally { window.removeEventListener("tempo:study-mode-changed", modeChanged); }
 });
 
@@ -96,4 +98,51 @@ it("restoration_confirmed_disable_while_hidden_rejects_an_inflight_enabled_read"
   act(() => document.dispatchEvent(new Event("visibilitychange")));
   await waitFor(() => expect(fetchSettings).toHaveBeenCalledTimes(3));
   expect(screen.getByText("false")).toBeTruthy();
+});
+
+
+it("restoration_confirmed_other_tab_disable_fences_pending_reads_even_while_hidden", async () => {
+  let finishOldRead!: (response: Response) => void;
+  const fetchSettings = vi.fn().mockResolvedValueOnce(Response.json({ study_only_mode: false, repertoire_preparation_enabled: true }))
+    .mockReturnValueOnce(new Promise<Response>(resolve => { finishOldRead = resolve; }))
+    .mockResolvedValueOnce(new Response(null, { status: 503 }));
+  vi.stubGlobal("fetch", fetchSettings);
+  render(<ControlsProbe />);
+  await waitFor(() => expect(screen.getByText("true")).toBeTruthy());
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  act(() => window.dispatchEvent(new StorageEvent("storage", { key: "tempo-confirmed-study-controls-change-v1", newValue: "confirmed-save" })));
+  await act(async () => finishOldRead(Response.json({ study_only_mode: false, repertoire_preparation_enabled: true })));
+  expect(screen.getByText("false")).toBeTruthy();
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  await waitFor(() => expect(fetchSettings).toHaveBeenCalledTimes(3));
+  expect(screen.getByText("false")).toBeTruthy();
+});
+
+it("restoration_legacy_settings_response_does_not_activate_unqualified_preparation", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ study_only_mode: false })));
+  render(<ControlsProbe />);
+  await waitFor(() => expect(screen.getByText("false")).toBeTruthy());
+});
+
+
+it("restoration_rapid_disable_enable_disable_accepts_only_reads_after_latest_confirmation", async () => {
+  let finishEnable!: (response: Response) => void;
+  const fetchSettings = vi.fn().mockResolvedValueOnce(Response.json({ study_only_mode: false, repertoire_preparation_enabled: true }))
+    .mockResolvedValueOnce(Response.json({ study_only_mode: false, repertoire_preparation_enabled: false }))
+    .mockReturnValueOnce(new Promise<Response>(resolve => { finishEnable = resolve; }))
+    .mockResolvedValueOnce(Response.json({ study_only_mode: false, repertoire_preparation_enabled: false }));
+  vi.stubGlobal("fetch", fetchSettings);
+  render(<ControlsProbe />);
+  await waitFor(() => expect(screen.getByText("true")).toBeTruthy());
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  await waitFor(() => expect(screen.getByText("false")).toBeTruthy());
+  await act(async () => undefined);
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  expect(fetchSettings).toHaveBeenCalledTimes(3);
+  act(() => window.dispatchEvent(new Event("tempo:study-mode-changed")));
+  await act(async () => finishEnable(Response.json({ study_only_mode: false, repertoire_preparation_enabled: true })));
+  expect(screen.getByText("false")).toBeTruthy();
+  expect(fetchSettings).toHaveBeenCalledTimes(4);
 });

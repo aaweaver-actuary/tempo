@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { API_URL } from "../const";
+import { confirmedStudyControlsChangeKey, confirmedStudyControlsChangeToken } from "../lib/study-controls-change";
 import { usesLocalApi } from "../utils/local";
 
 // Unknown mode suppresses optional preparation until authoritative settings arrive.
@@ -15,6 +16,7 @@ export function useStudyControls() {
     const refresh = async () => {
       if (document.visibilityState !== "visible") return;
       if (reading) { refreshAgain = true; return; }
+      const confirmedChangeToken = confirmedStudyControlsChangeToken();
       reading = true;
       refreshAgain = false;
       try {
@@ -24,8 +26,9 @@ export function useStudyControls() {
         if (typeof settings.study_only_mode !== "boolean") throw new Error("Study mode settings are unknown");
         if (["study_only_mode", "repertoire_preparation_enabled", "optional_analysis_and_imports_enabled"].some(field => settings[field] !== undefined && typeof settings[field] !== "boolean"))
           throw new Error("Study mode settings are invalid");
+        if (confirmedChangeToken !== confirmedStudyControlsChangeToken()) refreshAgain = true;
         if (!stopped && !refreshAgain) setControls({ studyOnlyMode: settings.study_only_mode === true,
-          repertoirePreparationEnabled: settings.repertoire_preparation_enabled !== false,
+          repertoirePreparationEnabled: settings.repertoire_preparation_enabled === true,
           optionalAnalysisAndImportsEnabled: settings.optional_analysis_and_imports_enabled !== false });
       } catch {
         // Poll failures retain the last read; confirmed changes invalidate it before reading.
@@ -44,13 +47,18 @@ export function useStudyControls() {
         repertoirePreparationEnabled: false, optionalAnalysisAndImportsEnabled: false });
       void refresh();
     };
+    const otherTabChanged = (event: StorageEvent) => {
+      if (event.key === confirmedStudyControlsChangeKey && event.newValue !== null) confirmedChange();
+    };
     const timer = window.setInterval(wake, 30_000);
     window.addEventListener("tempo:study-mode-changed", confirmedChange);
+    window.addEventListener("storage", otherTabChanged);
     document.addEventListener("visibilitychange", wake);
     return () => {
       stopped = true;
       window.clearInterval(timer);
       window.removeEventListener("tempo:study-mode-changed", confirmedChange);
+      window.removeEventListener("storage", otherTabChanged);
       document.removeEventListener("visibilitychange", wake);
     };
   }, []);

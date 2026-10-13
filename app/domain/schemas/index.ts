@@ -316,7 +316,7 @@ export const settingsResponseSchema = z.strictObject({
   include_defensive_cards_in_daily_stack: z.boolean().default(true),
   defensive_analysis_enabled: z.boolean().default(false),
   study_only_mode: z.boolean().default(false),
-  repertoire_preparation_enabled: z.boolean().default(true),
+  repertoire_preparation_enabled: z.boolean().default(false),
   optional_analysis_and_imports_enabled: z.boolean().default(true),
   discovery_window_days: z.union([z.literal(30), z.literal(90)]).default(90),
   lichess_username: z.string(),

@@ -38,9 +38,30 @@ def proof(*, restoration_only=False):
         apply_migrations(owned_url)
         apply_migrations(owned_url)
         with psycopg.connect(owned_url) as upgraded:
-            assert upgraded.execute('SELECT * FROM settings').fetchone() == (*settings_before, 0, 1, 1)
+            assert upgraded.execute('SELECT * FROM settings').fetchone() == (*settings_before, 0, 0, 1)
             assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (48, 48)
         print('PASS additive_migration_48_preserves_schema46_settings_and_replays')
+        if restoration_only:
+            fresh_identity = identity + '_fresh'
+            fresh_url = make_conninfo(parent_url, dbname=fresh_identity)
+            with psycopg.connect(parent_url, autocommit=True) as parent:
+                parent.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(fresh_identity)))
+            try:
+                apply_migrations(fresh_url)
+                apply_migrations(fresh_url)
+                with psycopg.connect(fresh_url) as fresh:
+                    fresh.execute('INSERT INTO settings(id) VALUES(1)')
+                    assert fresh.execute('SELECT study_only_mode,repertoire_preparation_enabled,optional_analysis_and_imports_enabled FROM settings WHERE id=1').fetchone() == (0, 0, 1)
+                    from itertools import product
+                    for study_only, preparation, optional in product((0, 1), repeat=3):
+                        fresh.execute('UPDATE settings SET study_only_mode=%s,repertoire_preparation_enabled=%s,optional_analysis_and_imports_enabled=%s WHERE id=1', (study_only, preparation, optional))
+                        fresh.commit()
+                        assert fresh.execute('SELECT study_only_mode <> 0 OR optional_analysis_and_imports_enabled = 0 FROM settings WHERE id=1').fetchone()[0] == bool(study_only or not optional)
+                print('PASS restoration_fresh_install_is_inactive_and_control_matrix_is_coherent')
+            finally:
+                with psycopg.connect(parent_url, autocommit=True) as parent:
+                    parent.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(fresh_identity)))
+
         postgres_store.close_pools()
         # This exclusive database executes synchronously; its wake must not be
         # delivered to the parent runner's workers connected to another database.
@@ -62,6 +83,22 @@ def proof(*, restoration_only=False):
             print('PASS study_only_toggle_persists_and_omitted_field_preserves_value')
 
             if restoration_only:
+                # Qualification covers every independent-control combination on
+                # the migrated installation, with real committed rows.
+                from itertools import product
+                for study_only, preparation, optional in product((False, True), repeat=3):
+                    controls = main.get_settings().model_dump(mode='json')
+                    controls.update(study_only_mode=study_only,
+                                    repertoire_preparation_enabled=preparation,
+                                    optional_analysis_and_imports_enabled=optional)
+                    execute_command(uuid4().hex, 'settings.update',
+                        {'settings': controls, 'supplied_fields': sorted(controls)})
+                    postgres_store.close_pools()
+                    with postgres_store.read_connection() as reader:
+                        assert study_mode.optional_work_paused(reader) == (study_only or not optional)
+                    assert study_mode.optional_work_paused() == (study_only or not optional)
+                    assert main.get_settings().repertoire_preparation_enabled is preparation
+                print('PASS restoration_migrated_control_matrix_survives_pool_restart')
                 restoration = main.get_settings().model_dump(mode='json')
                 restoration.update(study_only_mode=False, repertoire_preparation_enabled=True,
                                    optional_analysis_and_imports_enabled=False)
