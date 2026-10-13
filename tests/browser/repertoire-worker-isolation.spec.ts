@@ -256,6 +256,10 @@ test(`restoration_native_cancel_during_${phase}_terminates_computation_and_prese
 
 // Real same-origin storage delivery and real PostgreSQL settings receipts.
 // The held read creates the ordering race; the hook and save path are product code.
+test.describe("native settings response ordering", () => {
+  // Routing must observe the settings GET itself; service-worker forwarding
+  // bypasses Playwright page routes in WebKit and cannot create this barrier.
+  test.use({ serviceWorkers: "block" });
 test("restoration_native_two_tab_confirmed_disable_rejects_older_settings_read", async ({ page, context, request }, testInfo) => {
   const original = await (await request.get(`${api}/settings`)).json();
   const enabled = { ...original, study_only_mode: false, repertoire_preparation_enabled: true, optional_analysis_and_imports_enabled: false };
@@ -315,6 +319,7 @@ test("restoration_native_two_tab_confirmed_disable_rejects_older_settings_read",
     await second.close();
     expect((await request.put(`${api}/settings`, { data: original })).ok()).toBe(true);
   }
+});
 });
 
 test("restoration_native_repeated_cancel_replacement_and_crash_retry_release_owned_workers", async ({ page }, testInfo) => {
