@@ -41,8 +41,17 @@ test("training Bury hides the card for today across reload and reports a failed 
   await nav(page, "Train");
   await expect(page.getByRole("heading", { name: "bury-training" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
-  await page.route("**/api/queue/entries/*/bury", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Queue defer unavailable" }) }));
+  // A worker can own the network request and bypass page-level routes. Keep the
+  // real worker active and intercept the actual outgoing command at its context.
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
+  let refusedBurialOperationId: string | undefined;
+  await page.context().route("**/api/queue/entries/*/bury", async route => {
+    expect(route.request().method()).toBe("POST");
+    refusedBurialOperationId = route.request().headers()["idempotency-key"];
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Queue defer unavailable" }) });
+  });
   await page.getByRole("button", { name: "Bury", exact: true }).click();
+  await expect.poll(() => refusedBurialOperationId, { message: "The failed-burial fault must intercept the real command" }).toBeTruthy();
   await expect(page.getByRole("alert")).toContainText("still pending");
   for (const name of ["Bury", "Correct", "Again"]) {
     await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
@@ -62,6 +71,7 @@ test("training Bury hides the card for today across reload and reports a failed 
   });
   expect(storedBurial.entryId).toBeTruthy();
   expect(storedBurial.operationId).toBeTruthy();
+  expect(storedBurial.operationId).toBe(refusedBurialOperationId);
   await page.reload();
   await nav(page, "Train");
   await expect(page.getByRole("button", { name: "Retry bury", exact: true })).toBeEnabled();
@@ -69,7 +79,7 @@ test("training Bury hides the card for today across reload and reports a failed 
     await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
   await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "false");
   expect(await page.evaluate(() => localStorage.getItem(`tempo-bury-operation-${localStorage.getItem("tempo-pending-burial-entry")}`))).toBe(storedBurial.operationId);
-  await page.unroute("**/api/queue/entries/*/bury");
+  await page.context().unroute("**/api/queue/entries/*/bury");
   const retriedBurial = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith("/bury"));
   const before = (await (await request.get(`${api}/queue/today`)).json()).cards;
   await page.getByRole("button", { name: "Retry bury" }).click();
