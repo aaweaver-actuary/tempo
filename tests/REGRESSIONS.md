@@ -4251,3 +4251,8 @@ Audit CI readiness evidence (existing named browser cases):
   The old probe throws on the error envelope; bounded polling now retains its
   HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
   These are fixture corrections for qualification, not additional product defects.
+
+- PR #228 confirmed disable during failed/malformed/timed-out/pending settings refresh: `restoration_confirmed_disable_clears_enabled_controls_before_settings_refresh` in `tests/unit/study-only-settings-regressions.test.tsx`. The committed-save event immediately suppresses optional work until authoritative settings are read.
+- PR #228 settings snapshot: `test_restoration_pause_reads_one_snapshot_during_atomic_control_switch` in `backend/tests/test_restoration_controls.py`. Actual settings reads plus a deterministic independent commit prove coherent pause decisions and one connection/statement. The original recursive recheck already catches a commit before its Study-only read; the corrected race places the commit between its two flag reads.
+- PR #228 hidden-tab stale response: `restoration_confirmed_disable_while_hidden_rejects_an_inflight_enabled_read` in `tests/unit/study-only-settings-regressions.test.tsx`.
+- PR #228 native statement snapshot: `restoration_pause_reads_one_postgres_snapshot_during_atomic_control_switch` in `scripts/check_postgres_study_only.py` (restoration durability invocation). PostgreSQL proof remains pending until the assigned slot or final FULL CI.
