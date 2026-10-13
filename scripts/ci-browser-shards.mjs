@@ -105,8 +105,22 @@ export function validateBrowserShardJobs(plan, reports, jobs) {
     const matching = (jobs ?? []).filter(job => job.name === `browser / shard-${shard.id}`)
       .sort((left, right) => right.run_attempt - left.run_attempt || right.id - left.id);
     const job = matching[0], report = reports.find(item => item.shardId === shard.id);
+    const originalExecution = matching.find(candidate => candidate.run_attempt === report?.execution.attempt);
+    // GitHub may carry an untouched success into a later attempt under a new
+    // job ID. Accept its original report only for the same physical execution.
+    const retainedExecution = originalExecution?.status === "completed" && originalExecution.conclusion === "success"
+      && originalExecution.run_id === report?.execution.runId
+      && Number.isInteger(originalExecution.runner_id) && originalExecution.runner_id > 0
+      && typeof originalExecution.runner_name === "string" && originalExecution.runner_name.length > 0
+      && typeof originalExecution.started_at === "string" && typeof originalExecution.completed_at === "string"
+      && Number.isFinite(Date.parse(originalExecution.started_at)) && Number.isFinite(Date.parse(originalExecution.completed_at))
+      && Date.parse(originalExecution.completed_at) >= Date.parse(originalExecution.started_at)
+      && job?.runner_id === originalExecution.runner_id && job.runner_name === originalExecution.runner_name
+      && job.started_at === originalExecution.started_at && job.completed_at === originalExecution.completed_at
+      && originalExecution.labels?.includes(plan.runtime.runner)
+      && JSON.stringify(job.steps) === JSON.stringify(originalExecution.steps);
     if (!job || job.status !== "completed" || job.conclusion !== "success" || job.run_id !== report?.execution.runId
-      || job.run_attempt !== report.execution.attempt || !job.labels?.includes(plan.runtime.runner)
+      || (job.run_attempt !== report.execution.attempt && !retainedExecution) || !job.labels?.includes(plan.runtime.runner)
       || !job.steps?.some(step => step.name === "Run isolated browser shard" && step.status === "completed" && step.conclusion === "success")) {
       throw new Error(`Browser shard ${shard.id}: latest expected GitHub execution is absent, skipped, cancelled or failed`);
     }

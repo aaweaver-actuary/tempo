@@ -145,7 +145,7 @@ test("browser_partial_rerun_accepts_only_verified_retained_job_aliases", () => {
   }));
   // GitHub carries untouched successes into the new attempt with new job IDs,
   // while artifacts still identify the attempt that physically ran the tests.
-  const carriedJobs = originalJobs.map(job => ({ ...job, id: job.id + 1000, run_attempt: 2 }));
+  const carriedJobs = originalJobs.map(job => ({ ...structuredClone(job), id: job.id + 1000, run_attempt: 2 }));
   reports[2].execution.attempt = 2;
   carriedJobs[2] = { ...carriedJobs[2], runner_id: 900, runner_name: "replacement-host",
     started_at: "2026-10-13T12:02:00Z", completed_at: "2026-10-13T12:03:00Z",
@@ -162,6 +162,7 @@ test("browser_partial_rerun_accepts_only_verified_retained_job_aliases", () => {
     job => { job.started_at = "2026-10-13T12:04:00Z"; },
     job => { job.completed_at = "2026-10-13T12:05:00Z"; },
     job => { delete job.started_at; }, job => { delete job.completed_at; },
+    job => { job.started_at = "invalid timestamp"; },
     job => { job.steps[0].completed_at = "2026-10-13T12:05:00Z"; },
     job => { job.labels = ["wrong-platform"]; },
   ]) {
