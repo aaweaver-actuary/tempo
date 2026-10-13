@@ -94,7 +94,7 @@ def proof(*, restoration_only=False):
                     execute_command(uuid4().hex, 'settings.update',
                         {'settings': controls, 'supplied_fields': sorted(controls)})
                     postgres_store.close_pools()
-                    with postgres_store.read_connection() as reader:
+                    with study_mode.read_connection() as reader:
                         assert study_mode.optional_work_paused(reader) == (study_only or not optional)
                     assert study_mode.optional_work_paused() == (study_only or not optional)
                     assert main.get_settings().repertoire_preparation_enabled is preparation
