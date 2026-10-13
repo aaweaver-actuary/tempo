@@ -50,3 +50,11 @@ Retain diagnostics in its existing repertoire owner and scheduled/full/release c
 Final verdicts require fresh required evidence for the recorded candidate, including head/base/integration and execution provenance. A draft development pass is not ready-for-review qualification. #229 is changing under another active task; earlier `edc07ad` browser/durability/lifecycle artifacts were freshly executed for integration `500f4753`, but its draft merge gate correctly failed readiness. Do not apply that evidence to later heads or overwrite the owning task's unfinished candidate.
 
 No merge, deployment, optional activation, live setting change, shared Docker restart or pruning is authorized. Operational large-workload acceptance remains separate from these correctness tests.
+
+## Main advanced during qualification
+
+The repaired candidate `6ceb1262` passed FULL run [38391570055](https://github.com/aaweaver-actuary/tempo/actions/runs/38391570055): 1,674 frontend tests, 2,611 backend tests, 314 browser cases, builds, native PostgreSQL durability, lifecycle and pinned checks. Its recorded base was `1b213fae` and integration `0035a9e1`.
+
+Another actor then merged #229 at `7a68242f` on 2026-10-13 11:59:01 UTC. This task did not merge or deploy it. #229's ready-for-review run [38393068259](https://github.com/aaweaver-actuary/tempo/actions/runs/38393068259) passed its required merge gate using freshly verified same-candidate original evidence from [38391159017](https://github.com/aaweaver-actuary/tempo/actions/runs/38391159017); it supersedes the earlier draft-only status described above.
+
+The earlier #228 pass cannot qualify the advanced base. Integrating main preserves all three browser specs in the training inventory (isolated repertoire worker, restoration qualification, and Redis admission recovery), both regression registries, and the foreground Redis-admission repair. A named inventory regression protects that union. Focused admission/prefix/runner checks and fresh exact-candidate FULL qualification are required for the reconciled candidate. No optional activation or live setting change is part of this integration.

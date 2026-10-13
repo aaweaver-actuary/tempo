@@ -1053,3 +1053,9 @@ test("issue107 process restart and foreground profile proof runs in regular dura
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
 });
+
+
+test("redis_fixture_native_isolation_regressions_run_in_regular_durability", () => {
+  const runner = readFileSync("scripts/test-postgres-docker.mjs", "utf8");
+  assert(runner.includes('"/source/scripts/check_postgres_redis_fixture_isolation.py"'));
+});

@@ -81,6 +81,33 @@ test("study_only_mode_browser_regression_is_registered_and_selected", () => {
   assert(studyOnlyCases.every(item => item.selected), "Training family must select every study-only workflow case");
 });
 
+test("foreground_redis_admission_native_regression_is_registered_and_selected", () => {
+  const admissionSpec = "redis-admission-recovery.spec.ts";
+  const acceptanceTitle = "test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate";
+  const collected = currentBrowserCases();
+  validateInventory([admissionSpec]);
+  assert(inventory.families.training.includes(admissionSpec));
+  assert(readFileSync("tests/REGRESSIONS.md", "utf8").includes(acceptanceTitle));
+  const selected = verificationPlan({ commit: "revision", paths: [`tests/browser/${admissionSpec}`], files, cases: collected });
+  const acceptance = selected.collection.filter(item => item.file === admissionSpec && item.title === acceptanceTitle);
+  assert.equal(acceptance.length, 1, "Regular Chromium suite must collect the native Redis admission acceptance");
+  assert(acceptance[0].selected, "Training family must execute the native admission acceptance");
+});
+
+test("restoration_and_redis_admission_browser_owners_survive_main_integration", () => {
+  const requiredSpecs = ["repertoire-worker-isolation.spec.ts",
+    "repertoire-restoration-qualification.spec.ts", "redis-admission-recovery.spec.ts"];
+  const collected = currentBrowserCases();
+  const selected = verificationPlan({ commit: "revision", paths: ["backend/app/main.py"], files, cases: collected });
+  for (const spec of requiredSpecs) {
+    assert.equal(inventory.families.training.filter(file => file === spec).length, 1,
+      `${spec} retains exactly one training owner`);
+    const matches = selected.collection.filter(item => item.file === spec);
+    assert(matches.length > 0, `${spec} must collect real browser cases`);
+    assert(matches.every(item => item.selected), `${spec} must execute after shared HTTP integration`);
+  }
+});
+
 test("lifecycle-sensitive changes require deployment lifecycle verification", () => {
   for (const path of ["scripts/tempo-runtime.mjs", "scripts/tempo-deployment.mjs", "scripts/tempo-cli.mjs",
     "scripts/check-tempo-cli.mjs", "docker-compose.yml", "docker-compose.postgres-maintenance.yml",
