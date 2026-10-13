@@ -879,7 +879,91 @@ def test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_e
         print("PASS test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect")
 
 
+def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay():
+    """Exercise the relocated reset inside the real fenced slice transaction."""
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Queue extraction proof requires disposable PostgreSQL')
+    dsn = 'postgresql://postgres@postgres:5432/tempo'
+    os.environ['TEMPO_DATABASE_WRITE_URL'] = dsn
+    os.environ['TEMPO_DATABASE_READ_URL'] = dsn
+    postgres_store.close_pools()
+    from psycopg.errors import LockNotAvailable, TransactionTimeout
+    from app.services import durable_tasks, postgres_queue_refresh
+    identifier = f'queue-extraction-{uuid.uuid4()}'
+    day = '2099-10-12'
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {'queue_date': day, '_queue_phase': 'reset_opening_new',
+               'preserve_through_entry_id': 42}
+    task = None
+    snapshot = None
+    class InterruptedPublication(RuntimeError):
+        pass
+    def interrupted_checkpoint(*args, **kwargs):
+        raise InterruptedPublication('after application effect, before checkpoint')
+    try:
+        with postgres_store.connection() as owned_database:
+            snapshot = snapshot_queue_environment(owned_database, (day, day))
+            owned_database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'synthetic',?)", (identifier, identifier, now))
+            owned_database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?)", (identifier, identifier, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', day))
+            task = durable_tasks.enqueue_task_in_transaction(owned_database, 'daily_queue', identifier, payload)
+            owned_database.execute("UPDATE background_tasks SET state='leased',lease_token=?,lease_expires_at=? WHERE id=?", (identifier, '2099-10-13T00:00:00+00:00', task['id']))
+            task = {**task, 'payload': payload, 'lease_token': identifier}
+        def state():
+            with postgres_store.connection(read_only=True) as observer:
+                card_state = observer.execute('SELECT state FROM cards WHERE id=?', (identifier,)).fetchone()[0]
+                checkpoint = observer.execute('SELECT state,phase,payload_json,generation,lease_token FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+                return card_state, tuple(checkpoint)
+        before = state()
+        # A foreground-owned row blocks the actual relocated background update.
+        with postgres_store.connection() as foreground:
+            foreground.execute('SELECT id FROM cards WHERE id=? FOR UPDATE', (identifier,))
+            try:
+                postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+            except (LockNotAvailable, TransactionTimeout):
+                pass
+            else:
+                raise AssertionError('Background reset did not yield to foreground lock')
+            assert foreground.execute('SELECT state FROM cards WHERE id=?', (identifier,)).fetchone()[0] == 'learning'
+        assert state() == before
+        with patch.object(postgres_queue_refresh, 'advance_task_slice_in_transaction', interrupted_checkpoint):
+            try:
+                postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+            except InterruptedPublication:
+                pass
+            else:
+                raise AssertionError('Interruption did not occur')
+        assert state() == before
+        # Reload the persisted task after closing every process-local pool.
+        postgres_store.close_pools()
+        with postgres_store.connection(read_only=True) as observer:
+            persisted = observer.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+            restarted = {**dict(persisted), 'payload': json.loads(persisted['payload_json'])}
+        assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted)
+        after = state()
+        assert after[0] == 'new'
+        assert after[1][0:2] == ('queued', 'reset_opening_stale')
+        assert json.loads(after[1][2])['preserve_through_entry_id'] == 42
+        assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted) is False
+        assert state() == after
+        with postgres_store.connection() as owned_database:
+            owned_database.execute("UPDATE background_tasks SET generation=generation+1,state='leased',lease_token=? WHERE id=?", ('replacement', task['id']))
+            owned_database.execute("UPDATE cards SET state='learning' WHERE id=?", (identifier,))
+        replaced = state()
+        assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted) is False
+        assert state() == replaced
+        print('PASS test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay')
+    finally:
+        if task:
+            with postgres_store.connection() as owned_database:
+                owned_database.execute('DELETE FROM background_tasks WHERE id=?', (task['id'],))
+                owned_database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
+                if snapshot:
+                    restore_queue_environment(owned_database, snapshot)
+        postgres_store.close_pools()
+
+
 if __name__ == "__main__":
+    test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay()
     test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure()
     test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect()
     test_retained_command_retry_preserves_immutable_identity()

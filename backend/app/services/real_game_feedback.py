@@ -98,7 +98,7 @@ def promote_real_game_card(database, card_id: str, queue_date: str) -> bool:
                         (queue_date, card_id)).fetchone():
         return False
     if outstanding["state"] in ("new", "locked") and outstanding["introduced_at"] is None:
-        from ..queue_commands import request_queue_refresh_in_transaction
+        from .queue_application import request_queue_refresh_in_transaction
         request_queue_refresh_in_transaction(database, queue_date)
         return True
     if outstanding["state"] not in ("learning", "mature"):
