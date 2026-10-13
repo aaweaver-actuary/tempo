@@ -4,7 +4,7 @@
 
 Baseline: `c5f773b18c4a5b30a3abda84ecac01ab625a3902`. No production source, migration, assertion, browser smoke, or full-boundary coverage changes. This qualification-infrastructure PR itself selects FULL.
 
-The certificate in `scripts/ci-certified-tests.json` records six exact test/fixture paths, their reviewed import/dynamic dependency lines, SQL relation/identifier dependencies, and literal consumers in tracked and nonignored new source. Changed dependencies, added consumers, missing source, ambiguous ownership, or unsupported native collection expand to FULL. There is no directory exemption. This is a bounded certificate, not a general dependency resolver. Security-sensitive paths and explicit FULL paths retain precedence. The reviewed exceptions bypass only broad directory classification.
+The certificate in `scripts/ci-certified-tests.json` records six exact test/fixture paths, their reviewed import/dynamic dependency lines, SQL relation/identifier dependencies, and literal consumers in tracked and nonignored new Python, JS/TS, shell, Rust and configuration source. Changed dependencies, added consumers, missing source, ambiguous ownership, or unsupported native collection expand to FULL. There is no directory exemption. This is a bounded certificate, not a general dependency resolver. Security-sensitive paths and explicit FULL paths retain precedence. The reviewed exceptions bypass only broad directory classification.
 
 | Candidate | Behavior and callers | Production impact / shared dependency | Required evidence / decision |
 | --- | --- | --- | --- |
@@ -53,7 +53,7 @@ Initial failing baseline: the first two named issue239 tests reproduced STUDY in
 
 Environment: isolated macOS ARM64 checkout, Node 26.10.0/npm 11.19.1/Python 3.14.8; locked Node dependencies and repository-prescribed backend environment; migrated PostgreSQL 18.6/Redis 7, Docker Python 3.12, pinned browser image.
 
-- `node --test tests/runner/ci-fast-lane.test.mjs tests/runner/postgres-test-speedups.test.mjs`: 101 cases passed; 2.301 seconds after certificate hardening. Added planner tests run through the regular Vitest bridge.
+- `node --test tests/runner/ci-fast-lane.test.mjs tests/runner/postgres-test-speedups.test.mjs`: 102 cases passed after the JavaScript-consumer correction (exact final duration in preserved log). Added planner tests run through the regular Vitest bridge.
 - `node --test tests/runner/ci-reliability.test.mjs tests/runner/ci-development.test.mjs`: 78 passed, 6.78 seconds.
 - `make unit-file FILE=tests/unit/ci-fast-lane-regressions.test.ts`: bridge passed, 2.60 seconds after certificate hardening.
 - `make unit-file FILE=tests/unit/redis-admission-cleanup-regressions.test.ts`: 21 passed, 0.318 seconds Vitest.

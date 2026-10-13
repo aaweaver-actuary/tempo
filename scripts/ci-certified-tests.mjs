@@ -36,7 +36,7 @@ export function readCertificateSources() {
   const listing = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' });
   if (listing.status !== 0) throw new Error('Certificate source inventory unavailable');
   return Object.fromEntries([...new Set(listing.stdout.split('\0'))]
-    .filter(path => /\.(?:py|tsx?|mjs|json|ya?ml)$/.test(path)
+    .filter(path => /\.(?:py|tsx?|jsx?|[cm]js|sh|rs|toml|json|ya?ml)$/.test(path)
       && !['scripts/ci-certified-tests.json', 'scripts/ci-fast-lane-inventory.json', 'package-lock.json'].includes(path))
     .map(path => [path, readFileSync(path, 'utf8')]));
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { makeFastPlan, selectFastLane, validateFastGate, testIdentity, fastInventory } from '../../scripts/ci-fast-lane.mjs';
 import { fastCommands } from '../../scripts/ci-fast-commands.mjs';
 import { verifySelection } from '../../scripts/ci-fast-run.mjs';
@@ -44,6 +44,15 @@ test('issue239_cleanup_regression_is_FAST_and_omits_unrelated_tests', () => {
   assert.deepEqual(selection.frontend, ['tests/unit/redis-admission-cleanup-regressions.test.ts']);
   assert.deepEqual(selection.backend, []);
   assert.deepEqual(selection.browser, []);
+});
+test('issue239_javascript_fixture_consumers_invalidate_dependency_certificate', () => {
+  const consumerPath='tests/issue239-temporary-consumer.js';
+  let consumerCreated=false;
+  try {
+    writeFileSync(consumerPath, 'import "./browser/support/redis-admission-cleanup";\n', {flag:'wx'});
+    consumerCreated=true;
+    assert.equal(selectFastLane(['tests/unit/redis-admission-cleanup-regressions.test.ts']).tier,'FULL');
+  } finally { if (consumerCreated) rmSync(consumerPath); }
 });
 test('issue239_fixture_selects_native_proof_and_owning_browser_without_FULL', () => {
   const selection = selectFastLane(['scripts/check_postgres_redis_admission.py']);
