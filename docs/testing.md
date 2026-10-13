@@ -770,3 +770,47 @@ selections and local browser commands retain one runner. Whole-browser evidence 
 includes the shard assignment and original shard provenance. See
 [browser CI performance](browser-ci-performance.md) for baseline decomposition,
 isolation, tradeoffs, and nested diagnostic timing accounting.
+
+
+### Redis admission fixture ownership (PR #229)
+
+`redis-admission-recovery.spec.ts` uses only the regular PostgreSQL runner.
+`test-postgres-docker.mjs` generates a PID/random Compose project, rejects existing
+containers/volumes/networks for that project, generates fresh credentials, and
+checks project-scoped nonexternal volumes and networks. Schema and API use the
+same project-local PostgreSQL service. Playwright runs with one worker; this
+regression rejects a worker override. Separate runner invocations own separate
+PostgreSQL and Redis volumes. Native Python, custom database URLs and custom
+Compose definitions are not supported by this regression. A project name or
+`TEMPO_TEST_INSTANCE=disposable` alone is not permission to target a real database.
+
+Sequential tests still share database state. Seed atomically stores a versioned
+restoration snapshot in its synthetic repertoire's `source_name`. Short advisory
+transaction locks serialize seed/cleanup, and an active snapshot rejects another
+Redis fixture. No lock remains held during browser/network work. Cleanup runs by
+identity even if committed seed output was lost, and reports success after commit.
+It validates locked settings mode, every displaced queue position, and the full
+installed projection before restoring anything. Changed synthetic ownership or
+links into unrelated repertoires are rejected before destructive cascades. Conflicts roll back cleanup and
+retain its snapshot; they never silently overwrite newer state.
+
+Three synthetic cards cover the two reviews and an unreviewed successor, so
+browser refresh/issuance never advances into the displaced unrelated queue.
+Cleanup restores the original study-only mode (or removes an unchanged settings
+row it created), displaced queue positions, and the original projection or its
+absence. It deletes exact synthetic cards/repertoire/link/queue identities,
+reviews, scheduling snapshots, logical receipts and card-bound operation receipts (including head issuance), retained queue
+origins and card revisions. Queue-origin cleanup follows queue/card deletion
+because deletion triggers retain origins. Tactic fixture cards do not produce
+opening presentation/context records; canonical-source triggers affect only the
+synthetic repertoire. Operation receipt selection parses the payload's exact
+`card_id`, rather than searching arbitrary text. Other settings fields remain
+untouched. PostgreSQL identity sequence increments are intentionally not reversed.
+
+Redis recovery, page closure and SQL cleanup are independently attempted and
+failures are aggregated. The runner always attempts project teardown and verifies
+container/volume removal. Abrupt host termination can leave invocation-owned
+resources; verify ownership before removing them. Identical-value intervening
+writes are not distinguishable by snapshot comparison; the supported runner's
+serial test ownership is the concurrency boundary, while unexpected visible
+application changes produce an explicit restoration conflict.

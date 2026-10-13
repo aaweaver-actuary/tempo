@@ -4237,3 +4237,28 @@ Audit CI readiness evidence (existing named browser cases):
   The old probe throws on the error envelope; bounded polling now retains its
   HTTP diagnostic until genuine readiness. Branch deletion assertions are intact.
   These are fixture corrections for qualification, not additional product defects.
+
+### PR #229 Redis fixture database isolation
+
+Regular PostgreSQL durability runs `scripts/check_postgres_redis_fixture_isolation.py` against migrated PostgreSQL with real triggers and foreign keys. Focused lifecycle checks are in `backend/tests/test_redis_admission_fixture.py`; teardown checks are in `tests/unit/redis-admission-cleanup-regressions.test.ts`, reusing PR #233’s helper and failure matrix.
+
+- `test_redis_fixture_setup_failure_rolls_back_every_mutation`
+- `test_redis_fixture_cleanup_failure_rolls_back_and_can_retry`
+- `test_redis_fixture_restores_absent_settings_and_projection`
+- `test_redis_fixture_cleanup_detects_settings_conflict_without_partial_deletion`
+- `test_redis_fixture_cleanup_detects_changed_created_settings`
+- `test_redis_fixture_cleanup_detects_missing_and_reordered_queue_entries`
+- `test_redis_fixture_cleanup_detects_projection_conflict`
+- `test_redis_fixture_cleanup_rejects_changed_ownership_before_cascades`
+- `test_redis_fixture_cleanup_removes_owned_receipts_and_preserves_unrelated_records`
+- `test_redis_fixture_committed_seed_output_loss_is_recoverable_and_concurrent_seed_is_rejected`
+- `test_redis_fixture_cleanup_explicitly_removes_non_cascading_receipts`
+- `test_redis_fixture_restoration_conflicts_are_explicit`
+- `test_redis_fixture_unchanged_preexisting_settings_fields_are_preserved`
+- `test_redis_fixture_never_reports_success_before_commit`
+- `test_redis_fixture_rejects_unowned_or_custom_database_before_connect`
+- `Redis admission start failure still closes page and cleans fixture while retaining assertion`
+- `Redis admission unpause failure still closes page and cleans fixture while retaining assertion`
+- `Redis admission accumulates all cleanup failures after the original failure`
+- `Redis admission committed seed with lost output still attempts identity cleanup`
+- `redis_fixture_native_isolation_regressions_run_in_regular_durability`
