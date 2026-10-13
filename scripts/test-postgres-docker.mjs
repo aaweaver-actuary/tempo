@@ -78,6 +78,7 @@ const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
   plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
+  native_checks: options.nativeChecks ?? [],
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
 });
@@ -91,6 +92,33 @@ async function apiRequest(path, options = {}, label = null) {
   const response = await fetch(`${origin}/api/${path}`, { signal: AbortSignal.timeout(15_000), ...options });
   if (label) measuredHttpRequests.push({ label, durationMs: performance.now() - startedAt });
   return response;
+}
+
+async function verifyStudyOpeningAdmission() {
+  const nativeProofPath = "/source/scripts/check_postgres_study_opening_admission.py";
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath]);
+  const restartDatabaseName = `tempo_study_intros_restart_${randomBytes(16).toString("hex")}`;
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
+    "--restart-stage", "prepare", "--restart-database", restartDatabaseName]);
+  // Even though the proof database is private, restarting the shared test
+  // server invalidates API/worker pools. Quiesce the invocation's clients and
+  // restore fresh pools before subsequent foreground durability assertions.
+  const postgresClients = ["api", "foreground-worker", "background-worker", "background-scheduler"];
+  const analysisClients = ["defense-engine", "maia-worker"];
+  await executeIsolatedBackgroundWorkload({
+    stopConsumers: () => run("docker", [...compose, "stop", ...postgresClients, ...analysisClients]),
+    measureWorkload: () => run("docker", [...compose, "restart", "postgres"]),
+    restoreConsumers: async () => {
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...postgresClients]);
+      // Nginx resolves its API upstream at startup; restored containers may
+      // receive different addresses even though their service names persist.
+      run("docker", [...compose, "restart", "web"]);
+      await waitForReady();
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...analysisClients]);
+    },
+  });
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
+    "--restart-stage", "verify", "--restart-database", restartDatabaseName]);
 }
 
 function verifyProjectIsUnused() {
@@ -944,6 +972,7 @@ const actions = {
   schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
+    await verifyStudyOpeningAdmission();
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_upgrade.py"]);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -986,6 +1015,8 @@ const actions = {
           "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_training_transition.py", "proof", `training-transition-${randomBytes(16).toString("hex")}`]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
+          "schema", "python", "/source/scripts/check_postgres_redis_fixture_isolation.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_repertoire_limits.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -1150,6 +1181,7 @@ const actions = {
   study_only: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_study_only.py"]);
+    await verifyStudyOpeningAdmission();
   },
   study_queue_receipts: async () => {
     await executeIsolatedBackgroundWorkload({
@@ -1164,6 +1196,30 @@ const actions = {
         waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
       }),
     });
+  },
+  'redis-fixture-isolation': async () => {
+    let evidence;
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run('docker', [...compose, 'stop', ...workloadConsumers]);
+        verifyWorkloadConsumers('exited');
+      },
+      measureWorkload: () => {
+        const result = run('docker', [...compose, 'run', '--rm', '--no-deps', '-e', `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
+          'schema', 'python', '/source/scripts/ci-native-unittest.py', 'redis-fixture-isolation'],
+        {stdio: ['ignore','pipe','inherit'], encoding: 'utf8'});
+        evidence = JSON.parse(result.stdout);
+        assert(evidence.expected?.length && evidence.tests?.length, 'Native fixture collection did not execute');
+      },
+      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
+        startConsumers: services => run('docker', [...compose, 'up', '--no-build', '-d', '--no-deps', ...services]),
+        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
+      }),
+    });
+    atomicJson(`test-results/native/${project}.json`, {head:candidateRevision,
+      planHash:process.env.TEMPO_CI_PLAN_HASH ?? null, repository:process.env.GITHUB_REPOSITORY ?? null,
+      runId:Number(process.env.GITHUB_RUN_ID), attempt:Number(process.env.GITHUB_RUN_ATTEMPT),
+      checks:{'redis-fixture-isolation':evidence}});
   },
   study_durability: async () => {
     await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);

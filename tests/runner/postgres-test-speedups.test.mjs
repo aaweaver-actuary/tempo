@@ -1030,7 +1030,7 @@ test("pr102 background restoration recovers API health before starting dependent
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     ["defense-engine"], "verified all running"]);
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
 });
 
 
@@ -1046,10 +1046,42 @@ test("pr102 background restoration preserves readiness rejection before engine s
 });
 
 
+test("study_opening_server_restart_quiesces_all_database_clients_before_restart", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const restartProof = source.slice(source.indexOf("async function verifyStudyOpeningAdmission()"),
+    source.indexOf("function verifyProjectIsUnused()"));
+  assert(restartProof.includes("executeIsolatedBackgroundWorkload"),
+    "The new database restart must use the existing stop/work/restore boundary");
+  for (const client of ["api", "foreground-worker", "background-worker", "background-scheduler",
+    "defense-engine", "maia-worker"]) assert(restartProof.includes(`"${client}"`),
+    `${client} can retain a stale database connection or submit work during restart`);
+  assert(restartProof.includes('"stop", ...postgresClients'));
+  assert(restartProof.includes('"up", "--no-build", "-d", "--no-deps", ...postgresClients'));
+  assert(restartProof.includes("restoreConsumers: async () =>"));
+  assert(restartProof.includes("await waitForReady()"));
+});
+
+test("study_opening_server_restart_refreshes_proxy_before_public_readiness", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const restartProof = source.slice(source.indexOf("async function verifyStudyOpeningAdmission()"),
+    source.indexOf("function verifyProjectIsUnused()"));
+  const restoreClients = restartProof.indexOf('"up", "--no-build", "-d", "--no-deps", ...postgresClients');
+  const refreshProxy = restartProof.indexOf('"restart", "web"');
+  const publicReadiness = restartProof.indexOf("await waitForReady()");
+  assert(restoreClients >= 0 && refreshProxy > restoreClients && refreshProxy < publicReadiness,
+    "The proxy must resolve the restored API address before public readiness is tested");
+});
+
 test("issue107 process restart and foreground profile proof runs in regular durability upgrade stage", () => {
   const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
   const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  priority_recovery: async () => {"));
   assert(upgradeAction.includes("check_postgres_next_opponent.py"));
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
+});
+
+
+test("redis_fixture_native_isolation_regressions_run_in_regular_durability", () => {
+  const runner = readFileSync("scripts/test-postgres-docker.mjs", "utf8");
+  assert(runner.includes('"/source/scripts/check_postgres_redis_fixture_isolation.py"'));
 });

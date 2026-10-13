@@ -11,7 +11,7 @@ from redis.asyncio import Redis as AsyncRedis
 import time
 import uuid
 from contextlib import asynccontextmanager
-from contextlib import nullcontext
+from contextlib import nullcontext, ExitStack
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Literal
@@ -758,7 +758,17 @@ async def prioritize_foreground_requests(request: Request, call_next):
         if is_background:
             with activity_gate.background_request():
                 return await call_next(request)
-        with activity_gate.foreground():
+        with ExitStack() as foreground_scope:
+            try:
+                foreground_scope.enter_context(activity_gate.foreground())
+            except RedisError:
+                # No command has been dispatched. Keep this catch confined to
+                # admission: downstream failures may have an unknown outcome.
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Foreground admission unavailable; check Redis service status and retry with the same Idempotency-Key"},
+                    headers={"Retry-After": "1"},
+                )
             return await call_next(request)
     finally:
         if (request.url.path.startswith("/api/queue/")

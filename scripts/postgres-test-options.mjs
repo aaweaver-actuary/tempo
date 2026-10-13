@@ -10,6 +10,11 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   for (let argumentIndex = 0; argumentIndex < argumentsList.length; argumentIndex += 1) {
     const argument = argumentsList[argumentIndex];
     if (argument === "--list") options.list = true;
+    else if (argument === '--native-check') {
+      const check = argumentsList[++argumentIndex];
+      if (check !== 'redis-fixture-isolation' || options.nativeChecks?.includes(check)) throw new Error('Unknown or duplicate native check');
+      (options.nativeChecks ??= []).push(check);
+    }
     else if (argument === "--skip-browser") options.skipBrowser = true;
     else if (["--mode", "--browser-file", "--browser-grep"].includes(argument)) {
       const value = argumentsList[argumentIndex + 1];
@@ -36,6 +41,7 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   }
   const hasBrowserFocus = Boolean(options.browserFile || options.browserGrep);
   options.mode ??= options.skipBrowser ? "durability" : hasBrowserFocus ? "browser" : "full";
+  if (options.nativeChecks?.length && !['study','browser'].includes(options.mode)) throw new Error('Native checks require study or browser mode');
   options.skipBrowser = ["durability", "lifecycle"].includes(options.mode);
   if (hasBrowserFocus && !["browser", "study"].includes(options.mode)) {
     throw new Error("Browser focus cannot be combined with non-browser mode or --skip-browser; use --mode browser");
