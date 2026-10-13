@@ -1,4 +1,83 @@
 import { test, expect, api, nav } from "./product-fixtures";
+import type { Page, Request, Response } from "@playwright/test";
+
+/** Observe every response before clicking, including retries during UI assertions. */
+async function readPrefixesWithExplicitRetries(page: Page, matchesPathname: (pathname: string) => boolean,
+  startRead: () => Promise<unknown>, retryRead: () => Promise<unknown>, label: string,
+  maximumDatabaseRefusals: number, isDetail = false) {
+  const responses: Response[] = [];
+  const timeline: { at: string; event: string; status?: number; detail?: string }[] = [];
+  let wakeResponseWaiter: (() => void) | undefined;
+  const observeResponse = (response: Response) => {
+    if (response.request().method() !== "GET" || !matchesPathname(new URL(response.url()).pathname)) return;
+    responses.push(response);
+    timeline.push({ at: new Date().toISOString(), event: "response", status: response.status() });
+    wakeResponseWaiter?.();
+  };
+  const observeActivity = (request: Request) => {
+    if (new URL(request.url()).pathname === "/api/system/browser-activity")
+      timeline.push({ at: new Date().toISOString(), event: "browser activity marker" });
+  };
+  page.on("request", observeActivity);
+  page.on("response", observeResponse);
+  // This is the component's existing per-attempt AbortSignal timeout. A user
+  // retry creates a new request; automatic foreground waits retain its budget.
+  let attemptDeadline = Date.now() + 15_000;
+  const remainingAttemptMilliseconds = () => {
+    const remaining = attemptDeadline - Date.now();
+    expect(remaining, `${label} request settles within its 15-second product deadline`).toBeGreaterThan(0);
+    return remaining;
+  };
+  async function nextResponse() {
+    if (!responses.length) await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        wakeResponseWaiter = undefined;
+        reject(new Error(`${label} has no response before its request deadline`));
+      }, remainingAttemptMilliseconds());
+      wakeResponseWaiter = () => {
+        clearTimeout(timer);
+        wakeResponseWaiter = undefined;
+        resolve();
+      };
+    });
+    return responses.shift()!;
+  }
+  try {
+    timeline.push({ at: new Date().toISOString(), event: "initial click" });
+    await startRead();
+    let databaseRefusals = 0;
+    for (;;) {
+      const response = await nextResponse();
+      if (response.status() !== 503) {
+        expect(response.status()).toBe(200);
+        return;
+      }
+      expect(response.headers()["retry-after"]).toBe("1");
+      const body = await response.json() as { detail: string };
+      timeline.push({ at: new Date().toISOString(), event: "refusal", detail: body.detail });
+      if (body.detail === "Waiting for foreground activity") {
+        await expect(page.getByRole("status")).toContainText("Loading evidence", { timeout: remainingAttemptMilliseconds() });
+        await expect(page.getByRole("alert")).toHaveCount(0);
+        continue;
+      }
+      expect(["Waiting for a database section",
+        "Prefix difficulty is temporarily unavailable. Retry after study work settles."]).toContain(body.detail);
+      databaseRefusals += 1;
+      expect(databaseRefusals, `${label} does not silently retry unlimited database refusals`).toBeLessThanOrEqual(maximumDatabaseRefusals);
+      await expect(page.getByRole("alert")).toContainText(body.detail, { timeout: remainingAttemptMilliseconds() });
+      if (isDetail) await expect(page.getByText("Unknown", { exact: true })).toHaveCount(0);
+      attemptDeadline = Date.now() + 15_000;
+      timeline.push({ at: new Date().toISOString(), event: "explicit retry click" });
+      await retryRead();
+    }
+  } finally {
+    page.off("response", observeResponse);
+    page.off("request", observeActivity);
+    await test.info().attach(`${label}-admission-timeline`, {
+      body: JSON.stringify(timeline, null, 2), contentType: "application/json",
+    });
+  }
+}
 
 for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedListDatabaseRefusals, listRefusalAfterAdmission, title } of [
   ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 0, listRefusalAfterAdmission: false,
@@ -88,42 +167,17 @@ for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedLis
         contentType: "application/json", body: JSON.stringify({ detail: "Waiting for a database section" }) });
     } else await route.continue();
   });
-  await card.locator("details.card-menu summary").click();
-  // Initial listing uses the same admission contract as detail inspection.
-  // A database refusal requires an explicit refresh, within the original
-  // five-second visibility budget; never turn it into automatic product retry.
-  const listingDeadline = Date.now() + 5_000;
-  const remainingListingMilliseconds = () => {
-    const remaining = listingDeadline - Date.now();
-    expect(remaining, "Initial prefix listing succeeds within its existing five-second budget").toBeGreaterThan(0);
-    return remaining;
-  };
-  const isListResponse = (response: import("@playwright/test").Response) =>
-    new URL(response.url()).pathname === `/api/repertoires/${repertoireId}/prefix-diagnostics`
-      && response.request().method() === "GET";
-  let [listResponse] = await Promise.all([
-    page.waitForResponse(isListResponse, { timeout: remainingListingMilliseconds() }),
-    card.getByRole("menuitem", { name: "Prefix difficulty", exact: true }).click(),
-  ]);
-  while (listResponse.status() === 503) {
-    expect(listResponse.headers()["retry-after"]).toBe("1");
-    const body = await listResponse.json();
-    if (body.detail === "Waiting for foreground activity") {
-      await expect(page.getByRole("status")).toContainText("Loading evidence");
-      listResponse = await page.waitForResponse(isListResponse, { timeout: remainingListingMilliseconds() });
-    } else {
-      expect(["Waiting for a database section", "Prefix difficulty is temporarily unavailable. Retry after study work settles."]).toContain(body.detail);
-      await expect(page.getByRole("alert")).toContainText(body.detail, { timeout: remainingListingMilliseconds() });
-      [listResponse] = await Promise.all([
-        page.waitForResponse(isListResponse, { timeout: remainingListingMilliseconds() }),
-        page.getByRole("button", { name: "Refresh prefixes", exact: true }).click({ timeout: remainingListingMilliseconds() }),
-      ]);
-    }
-  }
-  expect(listResponse.status()).toBe(200);
+  await readPrefixesWithExplicitRetries(page, pathname => pathname === `/api/repertoires/${repertoireId}/prefix-diagnostics`,
+    async () => {
+      await card.locator("details.card-menu summary").click();
+      await card.getByRole("menuitem", { name: "Prefix difficulty", exact: true }).click();
+    },
+    () => page.getByRole("button", { name: "Refresh prefixes", exact: true }).click(),
+    "listing", forcedListDatabaseRefusals + 2);
   expect(injectedListDatabaseRefusals).toBe(forcedListDatabaseRefusals);
   const inspectButton = page.getByRole("button", { name: /^Inspect prefix/ });
-  await expect(inspectButton).toBeVisible({ timeout: remainingListingMilliseconds() });
+  // Once admitted, evidence publication retains the original rendering budget.
+  await expect(inspectButton).toBeVisible({ timeout: 5_000 });
   await expect(inspectButton).toBeEnabled();
   let injectedDatabaseRefusals = 0;
   let injectedForegroundDeferrals = 0;
@@ -147,49 +201,11 @@ for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedLis
         contentType: "application/json", body: JSON.stringify({ detail: "Waiting for a database section" }) });
     } else await route.continue();
   });
-  const [initialDetailResponse] = await Promise.all([
-    page.waitForResponse(response => response.url().includes("/prefix-diagnostics/") && response.request().method() === "GET", { timeout: 5_000 }),
-    inspectButton.click(),
-  ]);
-  // Repeated database refusals still require explicit user retries. Share the
-  // existing five-second evidence budget rather than extending any deadline.
-  const inspectionDeadline = Date.now() + 5_000;
-  const remainingInspectionMilliseconds = () => {
-    const remaining = inspectionDeadline - Date.now();
-    expect(remaining, "Prefix inspection succeeds within its existing five-second budget").toBeGreaterThan(0);
-    return remaining;
-  };
-  let detailResponse = initialDetailResponse;
-  while (detailResponse.status() === 503) {
-    expect(detailResponse.headers()["retry-after"]).toBe("1");
-    const body = await detailResponse.json();
-    if (body.detail === "Waiting for foreground activity") {
-      // The same inspection retries admission automatically after release.
-      // A database refusal remains a visible error with explicit user retry.
-      expect(body).toEqual({ detail: "Waiting for foreground activity" });
-      await expect(page.getByRole("status")).toContainText("Loading evidence");
-      await expect(page.getByRole("alert")).toHaveCount(0);
-      // Continue observing the automatic foreground retry: its next response
-      // may be a database refusal that requires an explicit click.
-      detailResponse = await page.waitForResponse(response => response.url() === initialDetailResponse.url()
-        && response.request().method() === "GET", { timeout: remainingInspectionMilliseconds() });
-    } else {
-      const temporaryMessage = "Prefix difficulty is temporarily unavailable. Retry after study work settles.";
-      expect([temporaryMessage, "Waiting for a database section"]).toContain(body.detail);
-      expect(body).toEqual({ detail: body.detail });
-      await expect(page.getByRole("alert")).toContainText(body.detail, { timeout: remainingInspectionMilliseconds() });
-      await expect(page.getByText("Unknown", { exact: true })).toHaveCount(0);
-      [detailResponse] = await Promise.all([
-        page.waitForResponse(response => response.url() === initialDetailResponse.url()
-          && response.request().method() === "GET", { timeout: remainingInspectionMilliseconds() }),
-        inspectButton.click({ timeout: remainingInspectionMilliseconds() }),
-      ]);
-    }
-  }
-  if (detailResponse.status() !== 503) expect(detailResponse.status()).toBe(200);
+  await readPrefixesWithExplicitRetries(page, pathname => pathname.startsWith(`/api/repertoires/${repertoireId}/prefix-diagnostics/`),
+    () => inspectButton.click(), () => inspectButton.click(), "inspection", forcedDatabaseRefusals + 2, true);
   if (forcedDatabaseRefusals) expect(injectedDatabaseRefusals).toBe(forcedDatabaseRefusals);
   expect(injectedForegroundDeferrals).toBe(forcedForegroundDeferrals);
-  await expect(page.getByText("Unknown", { exact: true })).toHaveCount(3, { timeout: remainingInspectionMilliseconds() });
+  await expect(page.getByText("Unknown", { exact: true })).toHaveCount(3, { timeout: 5_000 });
   await expect(page.getByText("No observations for this decision.", { exact: true })).toHaveCount(3);
   await expect(page.getByText(/Latest 0 of up to 100 attempts/)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
