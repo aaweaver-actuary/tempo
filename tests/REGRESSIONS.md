@@ -4319,6 +4319,7 @@ application suite that rejects startup and service initialization.
 - `test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity`
 - `test_scheduling_boundary_has_no_unrelated_transitive_dependencies`
 - `test_scheduling_boundary_disallows_dynamic_import_loaders`
+- `test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup`
 - `test_scheduling_boundary_runs_without_application_startup_or_services`
 - `test_scheduling_module_change_selects_owning_tests`
 - `test_unrelated_module_change_excludes_scheduling_tests`

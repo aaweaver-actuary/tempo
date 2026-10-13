@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 import grimp
 import pytest
@@ -180,3 +181,19 @@ def test_scheduling_contract_change_expands_consumer_qualification(dependency_gr
     assert set(METADATA['owning_tests']) < selected
     for file in selected | set(METADATA['native_boundaries']['browser_specs']):
         assert (REPOSITORY / file).is_file(), file
+
+
+def test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup():
+    """The mandated uv sync must install direct imports used by regular tests."""
+    project = tomllib.loads((REPOSITORY / 'backend/pyproject.toml').read_text())
+    lock = tomllib.loads((REPOSITORY / 'backend/uv.lock').read_text())
+    required_tools = {'import-linter': '2.15', 'grimp': '3.17'}
+    development_requirements = set(project['dependency-groups']['dev'])
+    ci_requirements = set((REPOSITORY / 'backend/requirements-test.txt').read_text().splitlines())
+    backend_package = next(package for package in lock['package'] if package['name'] == 'backend')
+    locked_development_names = {dependency['name'] for dependency in backend_package['dev-dependencies']['dev']}
+    for name, version in required_tools.items():
+        assert f'{name}=={version}' in development_requirements, name
+        assert f'{name}=={version}' in ci_requirements, name
+        assert name in locked_development_names, name
+        assert any(package['name'] == name and package['version'] == version for package in lock['package']), name

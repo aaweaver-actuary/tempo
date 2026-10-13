@@ -67,7 +67,7 @@ branches, transitive bridges, and unowned consumers. A fresh interpreter blocks
 unrelated application/infrastructure imports and service initialization while
 executing all 13 existing application cases. No application startup, database,
 Redis, Docker, credentials, Node dependencies, or browser is needed for this
-independent suite. Pytest, FSRS, and the test-only Import Linter package are the
+independent suite. Pytest, FSRS, and the test-only Import Linter/Grimp packages are the
 required direct dependencies; installed service packages are never initialized.
 
 For the normal development environment, from `backend/` run `uv sync`, then
@@ -81,6 +81,9 @@ make python-file FILE=backend/tests/test_scheduling_review_application.py
 make python-file FILE=backend/tests/test_scheduling_review_store.py
 ```
 
+Canonical `uv sync` installs pinned Import Linter 2.15 and Grimp 3.17 through
+the development group and lockfile. A named regression checks those declarations
+against the CI test requirements, preventing a fresh local collection failure.
 All guards run in regular backend pytest discovery. Python CI installation
 includes `requirements-test.txt`; production requirements/images are unchanged.
 
