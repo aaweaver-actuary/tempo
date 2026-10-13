@@ -1,3 +1,28 @@
+## Scheduling application module boundary (#192, #200, #202; A1 follow-up)
+
+`backend/tests/test_scheduling_boundary.py` enforces the existing scheduling seam
+without changing review, queue, or transaction semantics. Regular backend pytest
+executes the real Import Linter contracts, adversarial temporary source copies,
+Grimp dependency/ownership checks, public type identity, and a fresh-interpreter
+application suite that rejects startup and service initialization.
+
+- `test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports`
+- `test_scheduling_boundary_rejects_transitive_infrastructure_imports`
+- `test_scheduling_boundary_rejects_unowned_consumers`
+- `test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity`
+- `test_scheduling_boundary_has_no_unrelated_transitive_dependencies`
+- `test_scheduling_boundary_disallows_dynamic_import_loaders`
+- `test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup`
+- `test_scheduling_boundary_runs_without_application_startup_or_services`
+- `test_scheduling_module_change_selects_owning_tests`
+- `test_unrelated_module_change_excludes_scheduling_tests`
+- `test_scheduling_contract_change_expands_consumer_qualification`
+
+Retain all existing application/store/source replay and native A1 durability
+regressions. The ownership demonstrations are evidence for #202, not shared
+planner changes or narrower production qualification. See
+[the module contract](../docs/architecture/ci-isolation/scheduling-module-boundary.md).
+
 ## PR #229 — independent prepared continuation authority audit
 
 - No production defect was demonstrated under provisional issuance with observed identity invalidation and independent backend mutation validation. Server projection-generation fencing is not implemented and remains explicitly inconclusive in the audit. Review receipts and replay semantics remain unchanged. See [audit and invariant matrix](../docs/architecture/audit-pr229-prepared-authority.md).
@@ -4304,28 +4329,3 @@ Generic cleanup callback checks in `tests/unit/redis-admission-cleanup-regressio
 Runner registration check in `tests/runner/postgres-test-speedups.test.mjs`:
 
 - `redis_fixture_native_isolation_regressions_run_in_regular_durability`
-
-## Scheduling application module boundary (#192, #200, #202; A1 follow-up)
-
-`backend/tests/test_scheduling_boundary.py` enforces the existing scheduling seam
-without changing review, queue, or transaction semantics. Regular backend pytest
-executes the real Import Linter contracts, adversarial temporary source copies,
-Grimp dependency/ownership checks, public type identity, and a fresh-interpreter
-application suite that rejects startup and service initialization.
-
-- `test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports`
-- `test_scheduling_boundary_rejects_transitive_infrastructure_imports`
-- `test_scheduling_boundary_rejects_unowned_consumers`
-- `test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity`
-- `test_scheduling_boundary_has_no_unrelated_transitive_dependencies`
-- `test_scheduling_boundary_disallows_dynamic_import_loaders`
-- `test_scheduling_boundary_tools_are_declared_for_canonical_uv_setup`
-- `test_scheduling_boundary_runs_without_application_startup_or_services`
-- `test_scheduling_module_change_selects_owning_tests`
-- `test_unrelated_module_change_excludes_scheduling_tests`
-- `test_scheduling_contract_change_expands_consumer_qualification`
-
-Retain all existing application/store/source replay and native A1 durability
-regressions. The ownership demonstrations are evidence for #202, not shared
-planner changes or narrower production qualification. See
-[the module contract](../docs/architecture/ci-isolation/scheduling-module-boundary.md).
