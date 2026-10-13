@@ -1,14 +1,16 @@
 import { test, expect, api, nav } from "./product-fixtures";
 
-for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedListDatabaseRefusals, title } of [
-  ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 0,
+for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedListDatabaseRefusals, listRefusalAfterAdmission, title } of [
+  ...[390, 1280].map(width => ({ width, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 0, listRefusalAfterAdmission: false,
     title: `PD-82 PostgreSQL prefix diagnostics stay read-only and show unknown evidence ${width}` })),
-  { width: 1280, forcedDatabaseRefusals: 2, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 0,
+  { width: 1280, forcedDatabaseRefusals: 2, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 0, listRefusalAfterAdmission: false,
     title: "PD-82 repeated database refusals require explicit read-only inspection retries" },
-  { width: 1280, forcedDatabaseRefusals: 1, forcedForegroundDeferrals: 1, forcedListDatabaseRefusals: 0,
+  { width: 1280, forcedDatabaseRefusals: 1, forcedForegroundDeferrals: 1, forcedListDatabaseRefusals: 0, listRefusalAfterAdmission: false,
     title: "PD-82 foreground deferral followed by database refusal still requires explicit retry" },
-  { width: 390, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 1,
+  { width: 390, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 1, listRefusalAfterAdmission: false,
     title: "PD-82 initial database refusal requires explicit read-only list refresh" },
+  { width: 1280, forcedDatabaseRefusals: 0, forcedForegroundDeferrals: 0, forcedListDatabaseRefusals: 1, listRefusalAfterAdmission: true,
+    title: "PD-82 foreground deferral before a list refusal restarts admission on explicit Refresh" },
 ]) test(title, async ({ page, request }) => {
   const settings = await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`, { data: { ...settings, initial_depth: 3 } });
@@ -72,6 +74,15 @@ for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedLis
   let injectedListDatabaseRefusals = 0;
   if (forcedListDatabaseRefusals) await page.route("**/prefix-diagnostics?*", async route => {
     if (injectedListDatabaseRefusals < forcedListDatabaseRefusals) {
+      if (listRefusalAfterAdmission) {
+        // Retain the real foreground admission path before injecting one
+        // database refusal. Refresh must then traverse real admission again.
+        const admittedResponse = await route.fetch();
+        if (admittedResponse.status() !== 200) {
+          await route.fulfill({ response: admittedResponse });
+          return;
+        }
+      }
       injectedListDatabaseRefusals++;
       await route.fulfill({ status: 503, headers: { "Retry-After": "1" },
         contentType: "application/json", body: JSON.stringify({ detail: "Waiting for a database section" }) });
@@ -122,6 +133,15 @@ for (const { width, forcedDatabaseRefusals, forcedForegroundDeferrals, forcedLis
       await route.fulfill({ status: 503, headers: { "Retry-After": "1" },
         contentType: "application/json", body: JSON.stringify({ detail: "Waiting for foreground activity" }) });
     } else if (injectedDatabaseRefusals < forcedDatabaseRefusals) {
+      if (forcedForegroundDeferrals) {
+        // Once the real read is admitted, inject the database refusal. The
+        // explicit inspection retry must pass through foreground admission anew.
+        const admittedResponse = await route.fetch();
+        if (admittedResponse.status() !== 200) {
+          await route.fulfill({ response: admittedResponse });
+          return;
+        }
+      }
       injectedDatabaseRefusals += 1;
       await route.fulfill({ status: 503, headers: { "Retry-After": "1" },
         contentType: "application/json", body: JSON.stringify({ detail: "Waiting for a database section" }) });
