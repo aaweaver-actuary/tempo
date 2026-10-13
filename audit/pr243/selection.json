@@ -1,0 +1,11 @@
+{
+  "base": "c5f773b18c4a5b30a3abda84ecac01ab625a3902",
+  "head": "d0064e8008213b1a2ceb429e2a48a0b19bc5eee5",
+  "titles": [
+    "test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate",
+    "FEN-only study square exercise is authored enrolled and reviewed through the real workspace",
+    "all five study exercise types can be authored from the workspace",
+    "saved study attempt can retry feedback without a duplicate review"
+  ],
+  "grep": "(?:^| )(test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate|FEN\\-only\\ study\\ square\\ exercise\\ is\\ authored\\ enrolled\\ and\\ reviewed\\ through\\ the\\ real\\ workspace|all\\ five\\ study\\ exercise\\ types\\ can\\ be\\ authored\\ from\\ the\\ workspace|saved\\ study\\ attempt\\ can\\ retry\\ feedback\\ without\\ a\\ duplicate\\ review)$"
+}
