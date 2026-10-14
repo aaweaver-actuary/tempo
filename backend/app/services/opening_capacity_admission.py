@@ -201,6 +201,9 @@ def propose_capacity_expansion_from_priority_rows(
             row["id"],
             row["repertoire_id"],
             (routes_by_membership[row["repertoire_id"], row["id"]],),
+            frozen_rank=dict(row).get("frozen_rank"),
+            frozen_valid=dict(row).get("frozen_valid", True),
+            frozen_token=tuple(dict(row).get("frozen_token", (None, 0))),
             **{
                 field: row[field]
                 for field in (
@@ -235,6 +238,7 @@ def capacity_proposal_payload(proposal) -> dict:
         "card_id": proposal.candidate.card_id,
         "reason": proposal.candidate.gameplay_priority_reason,
         "capacity_route": asdict(proposal.route),
+        **({"frozen_token": list(proposal.candidate.frozen_token)} if proposal.candidate.frozen_token != (None, 0) else {}),
     }
 
 
@@ -280,3 +284,27 @@ def capacity_route_still_valid(database, planned: dict, day: str) -> bool:
         ).fetchone()
         is not None
     )
+
+
+def plan_frozen_with_capacity(day, candidates, counts, limits, routes, capacity_rows, *, miss_reason):
+    """Preserve existing bounded capacity eligibility; prefer ranks after each choice."""
+    from .opening_capacity_frontier import plan_prioritized_opening_admissions
+    selected, consumed = [], dict(counts)
+    chosen_ids = set()
+    while True:
+        remaining = remaining_opening_allowances([], consumed, limits)
+        normal_parents = [(repertoire_id, row) for repertoire_id, row in selected if 'capacity_route' not in row]
+        proposals = propose_capacity_expansion_from_priority_rows(day, normal_parents, remaining, routes, capacity_rows, miss_reason=miss_reason)
+        pool = [row for row in candidates if row['id'] not in chosen_ids]
+        for proposal in proposals:
+            payload = capacity_proposal_payload(proposal)
+            pool.append({**proposal.candidate.priority_row(), **payload})
+        choices = plan_prioritized_opening_admissions(pool, consumed, day, limits, miss_reason=miss_reason)
+        if not choices:
+            return selected
+        repertoire_id, row = choices[0]
+        selected.append((repertoire_id, row))
+        chosen_ids.add(row['id'])
+        consumed[repertoire_id] = consumed.get(repertoire_id, 0) + 1
+        candidates = [row for row in candidates if row['id'] not in chosen_ids]
+        capacity_rows = [row for row in capacity_rows if row['id'] not in chosen_ids]

@@ -4367,3 +4367,23 @@ skips Actions verification and records the explicit policy` prove that only the
 explicit `--no-ci` option bypasses Actions lookup, current main is still
 fast-forwarded under the existing source checks, and the deployment receipt
 records `verification: ci-disabled`.
+
+## Frozen Maia backlog hot fix — related #231, #110, #156
+
+One-time conditional reach and immutable ranking; no live activation is claimed.
+Named owning-suite regressions cover all ten anchors, known versus unknown
+lineage, actual exposure, policy/path independence, marginal coverage, static
+rank precedence, quota/shared admission, issued attempts, stale definitions,
+checkpoint restart and tail fallback.
+
+- `backend/tests/test_frozen_maia_math.py`: `test_all_ten_exact_conditioning_anchors`, `test_prescribed_learner_move_is_not_maia_downweighted_and_anchor_factors_excluded`, `test_kid_first_move_conditioning_retains_later_e4_and_d4_c4`, `test_uniform_distinct_learner_choices_ignore_duplicate_imports_and_outside_mass`, `test_repeated_decisions_and_duplicate_routes_do_not_inflate_first_hit`, `test_ruy_italian_policy_identity_is_independent`, `test_marginal_multidecision_overlap_and_unknown_are_distinct`, `test_missing_inference_is_unknown_not_zero`, `test_mutually_exclusive_transpositions_sum_once_for_shared_decision`, `test_anchor_fen_accepts_transposed_arrivals_without_counting_arrival_mass`, `test_anchor_position_identity_preserves_turn_castling_and_legal_en_passant`, `test_position_probability_is_not_sum_of_repeated_answer_decisions`, `test_explicit_learner_choice_weights_and_invalid_kid_denominator`.
+- `backend/tests/test_frozen_maia_plan.py`: `test_real_plan_partial_teaching_covers_only_the_evidenced_decision`, `test_inventory_classifies_queued_unstarted_and_uncertain_legacy_exposure`, `test_missing_exact_lineage_is_unknown_and_blocks_applyable_plan`, `test_archived_superseded_pending_and_attempted_cards_are_never_activation_targets`, `test_effective_fen_cache_reuses_counter_variants_and_binds_model_identity`, `test_existing_card_prefix_recovers_partial_source_without_game_tree_search`, `test_invalid_prefix_evidence_cannot_supply_an_ancestry_guess`, `test_capture_revalidation_rejects_concurrent_study_changes`, `test_source_starting_at_anchor_needs_no_pre_anchor_move_history`.
+- `backend/tests/test_frozen_opening_order.py`: `test_frozen_ranks_override_generated_scores_breadth_and_ordinary_gameplay`, `test_frozen_global_order_preserves_shared_single_admission_quotas_and_mandatory_miss`, `test_changed_content_is_held_and_new_cards_follow_frozen_backlog`, `test_idempotent_publication_stale_checkpoint_and_rollback_preserve_later_study`, `test_stale_plan_guard_rejects_activation`, `test_unstarted_slots_reorder_without_moving_issued_attempt_or_unrelated_review`, `test_partial_teaching_and_attempted_cards_are_exposure_not_admission`, `test_frozen_capacity_uses_existing_parent_gate_without_disabling_expansion`, `test_frozen_shared_rank_uses_an_unblocked_membership`, `test_override_replacement_restarts_eligibility_before_reusing_old_checkpoint`, `test_post_snapshot_unstarted_openings_follow_captured_slots_without_moving_reviews`, `test_rollback_restores_only_owned_unchanged_queue_permutations`, `test_serving_holds_changed_memberships_and_presentation_kind`, `test_changed_captured_content_preserves_mandatory_remediation`.
+- `tests/unit/frozen-maia-inference-regressions.test.ts`: `bounded Maia helper emits all legal moves for colors castling promotions and en passant without claiming jobs` retains the real-model proof; existing container/browser parity remains.
+- `tests/browser/frozen-opening-order.spec.ts`: `frozen first-study rank survives refresh and replacement preserves the issued board attempt` runs against the owning disposable PostgreSQL product stack.
+- `scripts/test-frozen-postgres.py` supplies focused native migration, adapter, restart, prepare/issue race, stale activation/serving, rollback and static-index evidence. It is an explicit focused command; do not relabel it as a complete product gate.
+
+Legacy mocked orchestration fixtures explicitly declare no accepted snapshot.
+Their existing eligibility/lease/phase assertions remain; the new native and
+owning-suite tests exercise active and retired snapshots. See
+[operation and activation contract](../docs/frozen-maia-order.md).

@@ -1311,6 +1311,8 @@ def initialize() -> None:
         database.execute("PRAGMA journal_mode = WAL")
         database.execute("PRAGMA synchronous = NORMAL")
         database.execute("BEGIN IMMEDIATE")
+        from .services.frozen_opening_order import SCHEMA as frozen_order_schema
+        statements.extend(frozen_order_schema)
         for statement in statements:
             database.execute(statement)
         # Existing local databases are migrated in place; user review history is never rebuilt.
@@ -1750,3 +1752,12 @@ def initialize() -> None:
         database.execute("""CREATE TRIGGER IF NOT EXISTS deleted_card_identity_update_guard
             BEFORE UPDATE OF id ON cards WHEN EXISTS(SELECT 1 FROM deleted_cards WHERE card_id=NEW.id)
             BEGIN SELECT RAISE(ABORT,'This card was permanently deleted and cannot be recreated'); END""")
+
+
+    from .services.frozen_opening_order import SQLITE_GUARDS
+    with connection() as frozen_schema_database:
+        frozen_existing_tables = {row[0] for row in frozen_schema_database.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        for frozen_guard_statement in SQLITE_GUARDS:
+            guarded_table = frozen_guard_statement.split(' ON ', 1)[1].split(' ', 1)[0]
+            if guarded_table in frozen_existing_tables:
+                frozen_schema_database.execute(frozen_guard_statement)
