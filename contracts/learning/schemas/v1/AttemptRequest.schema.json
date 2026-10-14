@@ -1,0 +1,52 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning/v1/AttemptRequest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "card_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Card Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "expected_learning_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Expected Learning Revision",
+      "type": "integer"
+    },
+    "expected_publication_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Expected Publication Generation",
+      "type": "integer"
+    },
+    "request_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "request_id",
+    "card_id",
+    "expected_publication_generation",
+    "expected_learning_revision"
+  ],
+  "title": "AttemptRequest",
+  "type": "object"
+}

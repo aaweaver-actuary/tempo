@@ -1,0 +1,274 @@
+{
+  "$defs": {
+    "ChoiceAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "option_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Option Ids",
+          "type": "array"
+        },
+        "type": {
+          "const": "choice",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "option_ids"
+      ],
+      "title": "ChoiceAnswer",
+      "type": "object"
+    },
+    "ExplanationAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "text": {
+          "maxLength": 10000,
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "explanation",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text",
+        "ready"
+      ],
+      "title": "ExplanationAnswer",
+      "type": "object"
+    },
+    "KnightAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Path",
+          "type": "array"
+        },
+        "reachable": {
+          "title": "Reachable",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "knight_path",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "reachable",
+        "path"
+      ],
+      "title": "KnightAnswer",
+      "type": "object"
+    },
+    "MoveAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "moves": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Moves",
+          "type": "array"
+        },
+        "type": {
+          "const": "move_line",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "moves"
+      ],
+      "title": "MoveAnswer",
+      "type": "object"
+    },
+    "SquareAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "squares": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Squares",
+          "type": "array"
+        },
+        "type": {
+          "const": "square_set",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "squares"
+      ],
+      "title": "SquareAnswer",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/learning/v1/ReviewSubmission.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answer": {
+      "discriminator": {
+        "mapping": {
+          "choice": "#/$defs/ChoiceAnswer",
+          "explanation": "#/$defs/ExplanationAnswer",
+          "knight_path": "#/$defs/KnightAnswer",
+          "move_line": "#/$defs/MoveAnswer",
+          "square_set": "#/$defs/SquareAnswer"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/MoveAnswer"
+        },
+        {
+          "$ref": "#/$defs/SquareAnswer"
+        },
+        {
+          "$ref": "#/$defs/KnightAnswer"
+        },
+        {
+          "$ref": "#/$defs/ChoiceAnswer"
+        },
+        {
+          "$ref": "#/$defs/ExplanationAnswer"
+        }
+      ],
+      "title": "Answer"
+    },
+    "attempt_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "attempt_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Attempt Revision",
+      "type": "integer"
+    },
+    "card_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Card Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "exercise_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Exercise Revision",
+      "type": "integer"
+    },
+    "guided": {
+      "title": "Guided",
+      "type": "boolean"
+    },
+    "outcome": {
+      "enum": [
+        "correct",
+        "again"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "publication_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Publication Generation",
+      "type": "integer"
+    },
+    "publication_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Publication Id",
+      "type": "string"
+    },
+    "queue_entry_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Queue Entry Id",
+      "type": "string"
+    },
+    "queue_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Queue Revision",
+      "type": "integer"
+    },
+    "recorded_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "submission_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Submission Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "submission_id",
+    "attempt_id",
+    "attempt_revision",
+    "card_id",
+    "publication_id",
+    "publication_generation",
+    "exercise_revision",
+    "queue_entry_id",
+    "queue_revision",
+    "answer",
+    "outcome",
+    "guided",
+    "recorded_at"
+  ],
+  "title": "ReviewSubmission",
+  "type": "object"
+}

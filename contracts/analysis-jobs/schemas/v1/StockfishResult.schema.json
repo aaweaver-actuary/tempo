@@ -1,0 +1,226 @@
+{
+  "$defs": {
+    "CentipawnScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "centipawns",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "CentipawnScore",
+      "type": "object"
+    },
+    "MateScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mate",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 1000,
+          "minimum": -1000,
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "MateScore",
+      "type": "object"
+    },
+    "ResultProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "finished_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "implementation_version": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Implementation Version",
+          "type": "string"
+        },
+        "input_digest": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Input Digest",
+          "type": "string"
+        },
+        "runtime_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Runtime Name",
+          "type": "string"
+        },
+        "runtime_version": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Runtime Version",
+          "type": "string"
+        },
+        "started_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Started At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_digest",
+        "runtime_name",
+        "runtime_version",
+        "implementation_version",
+        "started_at",
+        "finished_at"
+      ],
+      "title": "ResultProvenance",
+      "type": "object"
+    },
+    "Variation": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "maximum": 128,
+          "minimum": 1,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "moves": {
+          "items": {
+            "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Moves",
+          "type": "array"
+        },
+        "rank": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "score": {
+          "discriminator": {
+            "mapping": {
+              "centipawns": "#/$defs/CentipawnScore",
+              "mate": "#/$defs/MateScore"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CentipawnScore"
+            },
+            {
+              "$ref": "#/$defs/MateScore"
+            }
+          ],
+          "title": "Score"
+        },
+        "score_perspective": {
+          "const": "side_to_move",
+          "title": "Score Perspective",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rank",
+        "moves",
+        "score",
+        "score_perspective",
+        "depth"
+      ],
+      "title": "Variation",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/analysis-jobs/v1/StockfishResult.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "engine_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Engine Version",
+      "type": "string"
+    },
+    "execution_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Execution Generation",
+      "type": "integer"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/ResultProvenance"
+    },
+    "request_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Request Revision",
+      "type": "integer"
+    },
+    "variations": {
+      "items": {
+        "$ref": "#/$defs/Variation"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Variations",
+      "type": "array"
+    },
+    "worker": {
+      "const": "stockfish",
+      "title": "Worker",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "job_id",
+    "request_revision",
+    "execution_generation",
+    "worker",
+    "provenance",
+    "engine_version",
+    "variations"
+  ],
+  "title": "StockfishResult",
+  "type": "object"
+}

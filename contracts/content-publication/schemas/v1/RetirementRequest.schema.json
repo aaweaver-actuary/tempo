@@ -1,0 +1,80 @@
+{
+  "$id": "https://tempo.invalid/contracts/content-publication/v1/RetirementRequest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "expected_activation_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Expected Activation Revision",
+      "type": "integer"
+    },
+    "publication_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Publication Generation",
+      "type": "integer"
+    },
+    "publication_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Publication Id",
+      "type": "string"
+    },
+    "replacement_generation": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Replacement Generation"
+    },
+    "replacement_publication_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Replacement Publication Id"
+    },
+    "retirement_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Retirement Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "retirement_id",
+    "publication_id",
+    "publication_generation",
+    "expected_activation_revision",
+    "replacement_publication_id",
+    "replacement_generation"
+  ],
+  "title": "RetirementRequest",
+  "type": "object"
+}

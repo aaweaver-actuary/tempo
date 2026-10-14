@@ -1,0 +1,10 @@
+{
+  "model": "QueueRequest",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "request_id": "queue-request-a",
+    "expected_queue_revision": 1,
+    "requested_capacity": 1
+  }
+}

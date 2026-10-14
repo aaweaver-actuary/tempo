@@ -1,0 +1,15 @@
+{
+  "model": "LearningObligation",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "source_kind": "game_evidence",
+    "obligation_id": "obligation-a",
+    "source_evidence_id": "evidence-a",
+    "source_revision": 1,
+    "card_id": "card-a",
+    "decision_id": "decision-a",
+    "publication_generation": 1,
+    "kind": "real_game_miss"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning/v1/LearningState.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "active_publication_generations": {
+      "additionalProperties": {
+        "maximum": 9007199254740991,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Active Publication Generations",
+      "type": "object"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "deterministic_introductions_available": {
+      "title": "Deterministic Introductions Available",
+      "type": "boolean"
+    },
+    "learning_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Learning Revision",
+      "type": "integer"
+    },
+    "pending_obligation_ids": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Pending Obligation Ids",
+      "type": "array"
+    },
+    "queue_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Queue Revision",
+      "type": "integer"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "learning_revision",
+    "queue_revision",
+    "active_publication_generations",
+    "pending_obligation_ids",
+    "deterministic_introductions_available"
+  ],
+  "title": "LearningState",
+  "type": "object"
+}

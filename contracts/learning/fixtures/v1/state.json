@@ -1,0 +1,14 @@
+{
+  "model": "LearningState",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "learning_revision": 1,
+    "queue_revision": 1,
+    "active_publication_generations": {
+      "publication-a": 1
+    },
+    "pending_obligation_ids": [],
+    "deterministic_introductions_available": true
+  }
+}

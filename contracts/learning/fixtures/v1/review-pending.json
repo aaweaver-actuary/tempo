@@ -1,0 +1,12 @@
+{
+  "model": "ReviewSettlement",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "submission_id": "submission-a",
+    "settlement": {
+      "status": "accepted_pending",
+      "operation_id": "operation-a"
+    }
+  }
+}

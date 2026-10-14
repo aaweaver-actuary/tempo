@@ -1,0 +1,26 @@
+{
+  "model": "ReviewSettlement",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "submission_id": "submission-a",
+    "settlement": {
+      "status": "committed",
+      "receipt": {
+        "receipt_id": "receipt-a",
+        "submission_id": "submission-a",
+        "attempt_id": "attempt-a",
+        "card_id": "card-a",
+        "publication_generation": 1,
+        "committed_at": "2026-10-14T12:01:01Z",
+        "learning_revision": 2,
+        "queue_revision": 2,
+        "next_due": "2026-10-15T12:01:01Z",
+        "review_id": "review-a",
+        "required_evidence_ids": [
+          "review-evidence-a"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tempo-intelligence-contracts"
+version = "1.0.0"
+description = "Versioned Tempo intelligence wire contracts; no service implementation"
+requires-python = ">=3.12,<3.15"
+dependencies = ["pydantic==2.12.5"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_intelligence_contracts"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schemas" = "tempo_intelligence_contracts/schemas"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "schemas", "fixtures", "examples", "tests", "pyproject.toml", "README.md", "REGRESSIONS.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib -ra"

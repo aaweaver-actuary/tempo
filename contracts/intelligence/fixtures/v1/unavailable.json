@@ -1,0 +1,10 @@
+{
+  "model": "IntelligenceAvailability",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "status": "unavailable",
+    "publication": null,
+    "reason": "provider_unavailable"
+  }
+}

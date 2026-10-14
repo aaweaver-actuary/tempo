@@ -1,3 +1,13 @@
+## Component contract foundation (#264, M02-B)
+
+The [contract-local registry](../contracts/REGRESSIONS.md) owns named wire,
+producer/consumer, replay, activation/retirement, duplicate-evidence, advisory,
+worker-cancellation, dependency and PostgreSQL-role regressions. Its executable
+suite is `contracts/.venv/bin/python contracts/run_tests.py --typescript`;
+`contracts/.venv/bin/python contracts/database-ownership/run.py` selects the
+separate native PostgreSQL proof. These are reference contract tests, not
+verified conformance of existing production services. Component manifest and
+general discovery integration remain owned by #263/#201.
 ## PR #270 — current package artifacts and actual Node cases (#263, #201)
 
 Regular owner: `tools/component-build/tests/boundaries.test.mjs`, also invoked by

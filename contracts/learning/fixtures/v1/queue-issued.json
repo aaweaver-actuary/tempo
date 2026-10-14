@@ -1,0 +1,41 @@
+{
+  "model": "QueueIssuance",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "request_id": "queue-request-a",
+    "queue_revision": 1,
+    "status": "issued",
+    "attempts": [
+      {
+        "attempt_id": "attempt-a",
+        "attempt_revision": 1,
+        "queue_entry_id": "queue-a",
+        "queue_revision": 1,
+        "issued_at": "2026-10-14T12:00:00Z",
+        "exercise": {
+          "card_id": "card-a",
+          "decision_id": "decision-a",
+          "policy_id": "policy-a",
+          "source_revision": 1,
+          "publication_id": "publication-a",
+          "publication_generation": 1,
+          "exercise_revision": 1,
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "prompt": "Play e4",
+          "specification": {
+            "type": "move_line",
+            "accepted_lines": [
+              [
+                "e2e4"
+              ]
+            ],
+            "mode": "single",
+            "grading_policy": "reference"
+          }
+        }
+      }
+    ],
+    "reason": null
+  }
+}

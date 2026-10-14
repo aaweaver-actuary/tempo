@@ -1,0 +1,62 @@
+{
+  "$id": "https://tempo.invalid/contracts/content-publication/v1/PublicationAcceptance.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "publication_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Publication Generation",
+      "type": "integer"
+    },
+    "publication_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Publication Id",
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reason"
+    },
+    "status": {
+      "enum": [
+        "accepted_pending",
+        "rejected",
+        "retryable_failure"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "publication_id",
+    "publication_generation",
+    "status",
+    "reason"
+  ],
+  "title": "PublicationAcceptance",
+  "type": "object"
+}

@@ -1,0 +1,31 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning/v1/ReceiptQuery.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "submission_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Submission Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "submission_id"
+  ],
+  "title": "ReceiptQuery",
+  "type": "object"
+}

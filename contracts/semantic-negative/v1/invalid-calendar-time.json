@@ -1,0 +1,26 @@
+{
+  "model": "ReviewSubmission",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "submission_id": "submission-a",
+    "attempt_id": "attempt-a",
+    "attempt_revision": 1,
+    "card_id": "card-a",
+    "publication_id": "publication-a",
+    "publication_generation": 1,
+    "exercise_revision": 1,
+    "queue_entry_id": "queue-a",
+    "queue_revision": 1,
+    "answer": {
+      "type": "move_line",
+      "moves": [
+        "e2e4"
+      ]
+    },
+    "outcome": "correct",
+    "guided": false,
+    "recorded_at": "2026-02-30T12:00:00Z"
+  },
+  "package": "learning"
+}

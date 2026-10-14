@@ -1,0 +1,69 @@
+{
+  "$id": "https://tempo.invalid/contracts/analysis-jobs/v1/CancellationAcknowledgement.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acknowledged_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+      "title": "Acknowledged At",
+      "type": "string"
+    },
+    "cancellation_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Cancellation Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "execution_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Execution Generation",
+      "type": "integer"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "request_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Request Revision",
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "requested",
+        "terminated",
+        "already_completed",
+        "stale_generation"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "job_id",
+    "request_revision",
+    "execution_generation",
+    "cancellation_id",
+    "status",
+    "acknowledged_at"
+  ],
+  "title": "CancellationAcknowledgement",
+  "type": "object"
+}
