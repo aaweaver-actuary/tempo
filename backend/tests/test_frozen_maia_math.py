@@ -137,6 +137,20 @@ def test_position_probability_is_not_sum_of_repeated_answer_decisions():
     assert len([key for key,value in result['reach'].items() if value>0])==3
 
 
+def test_transposed_arrivals_share_distinct_learner_policy_weights():
+    paths=[line('Nf3 d5 g3 Nf6 Bg2'),line('g3 d5 Nf3 Nf6 d3','transpose')]
+    def predict(fen):
+        return distribution(fen,{'d7d5':.6} if chess.Board(fen).ply()==1 else {'g8f6':.5})
+    result=represented_reach(scenario(),paths,predict)
+    board=anchor(scenario('Nf3 d5 g3 Nf6'))
+    for move in ('f1g2','d2d3'):
+        assert result['reach'][decision_identity('policy',board.fen(),'white',move)]==pytest.approx(.075)
+    # Each arrival has probability .5*.6*.5=.15; each answer has the same
+    # .5 policy weight, even when one route does not represent its continuation.
+    alternatives=[row for row in result['alternative_assumptions'] if row['moves']==['d2d3','f1g2']]
+    assert len(alternatives)==1 and alternatives[0]['weight']==.5
+
+
 def test_explicit_learner_choice_weights_and_invalid_kid_denominator():
     from app.services.opening_segmentation import opening_position_key
     policy=scenario(choice_weights={opening_position_key(chess.STARTING_FEN):{'e2e4':.8,'d2d4':.2}})

@@ -64,7 +64,10 @@ preserves side to move, castling rights and legal en passant, ignoring clocks.
 KID sidelines conditions
 only the first White move against `e4`, retaining later `e4` and d4/c4 routes.
 Opponent departures retain their mass. Prescribed learner moves have probability
-1; unweighted valid alternatives use a reported mixture over distinct moves.
+1; unweighted valid alternatives use a reported mixture over distinct moves
+at the same canonical position within each repertoire policy. That mixture is
+consistent across transposed arrivals; an unrepresented continuation retains its
+missing mass rather than borrowing a different route history.
 For example, opponent branches 0.60 and 0.50 give reach 0.30 regardless of
 Maia's likelihood for the intervening prescribed learner move.
 The supplied reference-prefix teaching decisions retain the original plan's

@@ -48,6 +48,7 @@ def represented_reach(scenario, lines, predict):
         prefix_board.push(move)
     anchor_key = opening_position_key(prefix_board.fen())
     diagnostics, line_evidence, universe = [], [], set()
+    learner_choices = defaultdict(set)
     for line in lines:
         try:
             board = chess.Board(line['start_fen'])
@@ -87,6 +88,7 @@ def represented_reach(scenario, lines, predict):
                     break
                 node = node['children'].setdefault(uci, {'children': {}, 'decisions': set()})
                 if board.turn == trained_white:
+                    learner_choices[opening_position_key(board.fen())].add(uci)
                     node['decisions'].add(decision_identity(policy_id, board.fen(), scenario['color'], uci))
                 represented.append(uci)
                 board.push(move)
@@ -99,6 +101,7 @@ def represented_reach(scenario, lines, predict):
     distributions = {}
     position_reach, position_fens = {}, {}
     alternative_assumptions = []
+    reported_alternatives = set()
     stack = [(root, prefix_board.copy(), 1.0, frozenset(forced), frozenset())]
     while stack:
         node, board, mass, seen, seen_positions = stack.pop()
@@ -112,12 +115,14 @@ def represented_reach(scenario, lines, predict):
             continue
         learner = board.turn == trained_white
         if learner:
-            weights = scenario.get('choice_weights', {}).get(opening_position_key(board.fen()))
+            valid_choices = learner_choices[position_key]
+            weights = scenario.get('choice_weights', {}).get(position_key)
             if weights is None:
-                weights = {move: 1 / len(children) for move in children}
-                if len(children) > 1:
-                    alternative_assumptions.append({'fen': board.fen(), 'moves': sorted(children), 'weight': 1 / len(children)})
-            if set(weights) != set(children) or any(not math.isfinite(value) or value < 0 for value in weights.values()) or abs(math.fsum(weights.values()) - 1) > 1e-8:
+                weights = {move: 1 / len(valid_choices) for move in valid_choices}
+                if len(valid_choices) > 1 and position_key not in reported_alternatives:
+                    alternative_assumptions.append({'fen': board.fen(), 'moves': sorted(valid_choices), 'weight': 1 / len(valid_choices)})
+                    reported_alternatives.add(position_key)
+            if set(weights) != valid_choices or any(not math.isfinite(value) or value < 0 for value in weights.values()) or abs(math.fsum(weights.values()) - 1) > 1e-8:
                 raise ValueError('Ambiguous learner policy weights')
         else:
             fen = board.fen(en_passant='fen')
