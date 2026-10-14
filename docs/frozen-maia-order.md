@@ -54,7 +54,9 @@ Outputs:
   diagnostic references. `deferred-cards.csv` lists each unscored card, its
   memberships, reason codes, tail rank, null score and source-line references.
 - `diagnostics.json`: counts source-line diagnostics separately from the
-  distinct affected card IDs. `excluded-cases.csv`, `unknown-cases.csv`, prior
+  distinct affected card IDs. Its `summary` (also `diagnostic_summary` in the
+  plan) lists affected scenarios and dispositions, cards with unknown route
+  mass, and any affected scored cards. `excluded-cases.csv`, `unknown-cases.csv`, prior
   ordering, checksums and measured execution counts accompany the plan.
 
 Keep captures private: they contain study history and presentation metadata.
@@ -108,6 +110,9 @@ Only missing exact card lineage, missing represented source ancestry / unknown
 route mass, and localized unknown decision reach may enter the tail. Archived,
 deleted, superseded, pending-validation, invalid, exposed, and uncertain
 legacy-exposure cards remain excluded or protected by existing safeguards.
+An uncertain legacy admission remains protected even after queue trimming or
+an introduction-date reset; a missing current admission does not prove that
+the card was never presented.
 Invalid source evidence, failed Maia inference, a scenario with no effective
 scoring evidence, invalid anchors/configuration, missing model provenance,
 incoherent capture, and target-identity mismatch remain fatal. Lineage
@@ -121,6 +126,17 @@ scenario/system failure; and a deferred fraction at or below 1% of the
 otherwise rankable backlog. The plan records numerator, denominator, fraction,
 threshold, failed scenarios and diagnostic-to-card relationships. If the
 threshold is exceeded, stop and generate no activation-safe plan.
+
+Unknown arrival mass affects every answer at the same policy-specific position
+and its represented descendants, including transpositions. Propagation stops at
+the conditioning anchor, whose mass is fixed at 1. The plan records
+`lineage_uncertainty_policy: represented_position_descendants_v1`; older plans
+must be regenerated before apply. Existing inference results remain reusable
+when their cache identity still matches. A scenario with no represented route
+reaching its anchor is fatal, even if prefix probabilities or zero-valued
+decision placeholders exist. Apply independently checks the actual deferred
+fraction, deterministic tail order, card definitions and dispositions, and
+effective evidence for every configured scenario.
 
 ## Deployment and explicit apply
 

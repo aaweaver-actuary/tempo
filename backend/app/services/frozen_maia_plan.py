@@ -10,10 +10,80 @@ from .frozen_maia_math import anchor, card_decisions, represented_reach, greedy_
 from .opening_segmentation import opening_position_key, decision_identity, stable_key
 
 DEFAULT_DEFERRED_LIMIT = 0.01
+LINEAGE_UNCERTAINTY_POLICY = 'represented_position_descendants_v1'
 LOCALIZED_SCORING_GAPS = frozenset({
     'unknown_route_mass',
     'unknown_decision_reach',
 })
+
+
+def lineage_uncertainty(records, scenarios, source_lines, evidence, diagnostics):
+    """Propagate unknown arrival mass through existing, same-policy positions.
+
+    An arrival belongs to a position, not one answer at that position. Follow
+    only represented continuations; the conditioning anchor resets arrival mass.
+    This does not recover ancestry or invent routes.
+    """
+    successors, decisions_by_position, cards_by_decision = defaultdict(set), defaultdict(set), defaultdict(set)
+    for record in records:
+        for decision in record['decisions']:
+            cards_by_decision[decision].add(record['id'])
+    for family, result in evidence.items():
+        for decision, metadata in result.get('decisions', {}).items():
+            if not metadata.get('within_assumed_prefix'):
+                decisions_by_position[family, opening_position_key(metadata['fen'])].add(decision)
+        for route in result.get('routes', []):
+            board = chess.Board(result['anchor_fen'])
+            for move in route['moves']:
+                position = opening_position_key(board.fen())
+                board.push_uci(move)
+                successors[family, position].add(opening_position_key(board.fen()))
+
+    source_by_id = {line['id']: line for line in source_lines}
+    uncertain_decisions, diagnostic_refs = set(), defaultdict(set)
+    for diagnostic in diagnostics:
+        source = source_by_id.get(diagnostic['line_id'])
+        family = source.get('repertoire_id') if source else None
+        scenario = scenarios.get(family)
+        diagnostic.update(repertoire_id=family, scenario=scenario['name'] if scenario else None,
+                          decision_ids=[], affected_card_ids=[], position_keys=[])
+        if diagnostic.get('reason') != 'Missing initial/anchor lineage' or scenario is None:
+            continue
+        try:
+            board = chess.Board(source['start_fen'])
+            anchor_key = opening_position_key(anchor(scenario).fen())
+            source_decisions, positions = set(), set()
+            for move in json.loads(source['moves_json']):
+                position = opening_position_key(board.fen())
+                if position == anchor_key:
+                    break  # Arrival before the condition cannot change its mass of 1.
+                positions.add(position)
+                if board.turn == (scenario['color'] == 'white'):
+                    source_decisions.add(decision_identity(family, board.fen(), scenario['color'], move))
+                board.push_uci(move)
+            positions.add(opening_position_key(board.fen()))
+        except (ValueError, TypeError, KeyError) as error:
+            diagnostic['uncertainty_error'] = str(error)
+            continue
+        diagnostic['source_decision_ids'] = sorted(source_decisions)
+        diagnostic['position_keys'] = sorted(positions)
+        affected_decisions = {decision for decision in source_decisions
+            if not evidence.get(family, {}).get('decisions', {}).get(decision, {}).get('within_assumed_prefix')}
+        pending, visited = list(positions), set()
+        while pending:
+            position = pending.pop()
+            if position in visited or position == anchor_key:
+                continue
+            visited.add(position)
+            affected_decisions.update(decisions_by_position[family, position])
+            pending.extend(successors[family, position] - visited)
+        affected_cards = {card_id for decision in affected_decisions for card_id in cards_by_decision[decision]}
+        diagnostic['decision_ids'] = sorted(affected_decisions)
+        diagnostic['affected_card_ids'] = sorted(affected_cards)
+        uncertain_decisions.update(affected_decisions)
+        for card_id in affected_cards:
+            diagnostic_refs[card_id].add(diagnostic['line_id'])
+    return uncertain_decisions, diagnostic_refs
 
 
 def recover_lines(lines, prefix_evidence=(), anchor_positions=None):
@@ -96,6 +166,7 @@ def inventory(snapshot, config):
     for row in snapshot['origins']:
         if row.get('issued_as_head') or row['attempt_failed'] or row['review_result_json'] or row['last_status'] == 'complete':
             exposure[row['card_id']].add('issued/attempted')
+    legacy_exposure={row['card_id'] for row in snapshot['origins'] if row['legacy']}
     for row in snapshot['queue']:
         if row['attempt_state'] not in ('clean', 'unstarted') or row['attempt_failed'] or row['review_result_json'] or row['status'] == 'complete':
             exposure[row['card_id']].add('queue attempt')
@@ -125,7 +196,7 @@ def inventory(snapshot, config):
         classification = 'already_studied' if exposure[identifier] else 'admitted_unstarted' if card['introduced_at'] or identifier in queued else 'not_admitted'
         if classification == 'already_studied': reasons.append('already_shown_attempted_reviewed')
         status = 'excluded' if reasons else 'included'
-        if classification == 'admitted_unstarted' and any(origin['card_id']==identifier and origin['legacy'] for origin in snapshot['origins']):
+        if status == 'included' and identifier in legacy_exposure:
             status='unresolved';reasons.append('uncertain_legacy_exposure')
         decisions = set()
         try:
@@ -227,33 +298,6 @@ def create_plan(snapshot, config, predict=None, provenance=None, *, allow_unscor
                     covered.update(card_decisions(presentation, scenario))
                 except ValueError:
                     pass
-    uncertain_decisions=set()
-    line_by_id={line['id']:line for line in snapshot['lines']}
-    diagnostics_by_card=defaultdict(list)
-    for diagnostic in lineage_diagnostics:
-        source=line_by_id.get(diagnostic['line_id'])
-        diagnostic['repertoire_id']=source.get('repertoire_id') if source else None
-        diagnostic['scenario']=scenarios.get(diagnostic['repertoire_id'],{}).get('name')
-        diagnostic['decision_ids']=[]
-        diagnostic['affected_card_ids']=[]
-        if diagnostic.get('reason') != 'Missing initial/anchor lineage':
-            continue
-        try:
-            decisions=card_decisions(source,scenarios[source['repertoire_id']],require_complete=False)
-        except (ValueError, TypeError, KeyError):
-            continue
-        diagnostic['decision_ids']=sorted(decisions)
-        uncertain_decisions.update(decisions)
-        affected=[row for row in records if set(row['decisions']) & decisions]
-        diagnostic['affected_card_ids']=sorted({row['id'] for row in affected})
-        for row in affected:
-            diagnostics_by_card[row['id']].append(diagnostic['line_id'])
-    for row in records:
-        if row['status'] in ('included','unresolved') and set(row['decisions']) & uncertain_decisions:
-            if row['status']=='included':
-                row['status']='unresolved'
-            if 'unknown_route_mass' not in row['reasons']:
-                row['reasons'].append('unknown_route_mass')
     scenario_failures={}
     if predict is not None:
         for scenario in config['scenarios']:
@@ -263,7 +307,7 @@ def create_plan(snapshot, config, predict=None, provenance=None, *, allow_unscor
                 if not family_lines:
                     raise ValueError('No represented source lines for required scenario')
                 result = represented_reach(scenario, family_lines, predict)
-                if not result['reach'] or not result['position_reach']:
+                if result['diagnostics'] or not result['routes'] or not result['reach'] or not result['position_reach']:
                     raise ValueError('Scenario produced no effective scoring evidence')
                 evidence[family] = result
                 for decision, probability in result['reach'].items():
@@ -283,6 +327,13 @@ def create_plan(snapshot, config, predict=None, provenance=None, *, allow_unscor
                 row['status'] = 'unresolved'
                 if 'inference_not_run' not in row['reasons']:
                     row['reasons'].append('inference_not_run')
+    uncertain_decisions, diagnostics_by_card = lineage_uncertainty(
+        records, scenarios, snapshot['lines'], evidence, lineage_diagnostics)
+    for row in records:
+        if row['status'] in ('included','unresolved') and set(row['decisions']) & uncertain_decisions:
+            row['status']='unresolved'
+            if 'unknown_route_mass' not in row['reasons']:
+                row['reasons'].append('unknown_route_mass')
     scored_candidates=[row for row in records if row['status']=='included']
     deferred_candidates=[]
     for row in records:
@@ -324,7 +375,7 @@ def create_plan(snapshot, config, predict=None, provenance=None, *, allow_unscor
     probability_complete=not any(row['status']=='unresolved' for row in records) and not lineage_diagnostics
     target_candidate_count=len(scored_candidates)+len(deferred_candidates)
     deferred_fraction=(len(deferred_candidates)/target_candidate_count) if target_candidate_count else 0.0
-    fatal_diagnostics=[item for item in lineage_diagnostics if item.get('reason')!='Missing initial/anchor lineage']
+    fatal_diagnostics=[item for item in lineage_diagnostics if item.get('reason')!='Missing initial/anchor lineage' or item.get('uncertainty_error')]
     unclassified=[row['id'] for row in records if row['final_disposition']=='unclassified']
     safe_dispositions={'scored','deferred','excluded','protected'}
     all_dispositions_explicit=all(row['final_disposition'] in safe_dispositions for row in records)
@@ -335,12 +386,24 @@ def create_plan(snapshot, config, predict=None, provenance=None, *, allow_unscor
     deferred_cards=[{'id':row['id'],'memberships':row['memberships'],'reason_codes':row['deferred_reasons'],
                      'rank':row['rank'],'scoring_status':row['scoring_status'],'marginal_score':None,
                      'diagnostic_refs':row.get('diagnostic_refs',[])} for row in deferred]
+    affected_card_ids={card_id for item in lineage_diagnostics for card_id in item['affected_card_ids']}
+    affected_scenarios=[]
+    for family in sorted({item['repertoire_id'] for item in lineage_diagnostics if item['repertoire_id'] in scenarios}):
+        affected_ids={card_id for item in lineage_diagnostics if item['repertoire_id']==family for card_id in item['affected_card_ids']}
+        affected_scenarios.append({'repertoire_id':family,'scenario':scenarios[family]['name'],'affected_card_count':len(affected_ids),
+            **{disposition+'_count':sum(records_by_id[identifier]['final_disposition']==disposition for identifier in affected_ids)
+               for disposition in ('scored','deferred','excluded','protected')}})
+    diagnostic_summary={'source_line_count':len({item['line_id'] for item in lineage_diagnostics}),
+        'affected_card_count':len(affected_card_ids),'affected_scenarios':affected_scenarios,
+        'unknown_route_mass_card_ids':sorted(row['id'] for row in records if set(row['decisions']) & uncertain_decisions),
+        'affected_scored_card_ids':sorted(row['id'] for row in scored if row['id'] in affected_card_ids)}
     plan = {'version': VERSION, 'target': snapshot['metadata'][0], 'cutoff': snapshot.get('cutoff'),
             'configuration': config, 'provenance': provenance, 'inventory': records, 'ranks': ranked,
             'decision_evidence': evidence, 'covered_decisions': sorted(covered), 'lineage_diagnostics': lineage_diagnostics,
             'source_fingerprint': source_fingerprint(snapshot), 'input_checksum': stable_key(snapshot),
             'complete': probability_complete, 'probability_complete':probability_complete,
             'activation_safe':activation_safe, 'scoring_policy':'allow_unscored_tail' if allow_unscored_tail else 'strict',
+            'lineage_uncertainty_policy':LINEAGE_UNCERTAINTY_POLICY,
             'deferred_limit':DEFAULT_DEFERRED_LIMIT, 'target_candidate_count':target_candidate_count,
             'scored_count':len(scored), 'deferred_count':len(deferred), 'deferred_fraction':deferred_fraction,
             'deferred_cards':deferred_cards, 'scenario_failures':scenario_failures,
@@ -348,7 +411,7 @@ def create_plan(snapshot, config, predict=None, provenance=None, *, allow_unscor
             'excluded_count':sum(row['final_disposition']=='excluded' for row in records),
             'protected_count':sum(row['final_disposition']=='protected' for row in records),
             'lineage_diagnostic_count':len(lineage_diagnostics),
-            'lineage_affected_card_ids':sorted({card_id for item in lineage_diagnostics for card_id in item.get('affected_card_ids',[])}),
+            'lineage_affected_card_ids':sorted(affected_card_ids), 'diagnostic_summary':diagnostic_summary,
             'unmapped_repertoires': [row for row in snapshot['repertoires'] if row['id'] not in scenarios and not row['id'].startswith('__')],
             'semantics': 'represented paths only; no unrepresented departures/returns; no mastery estimate',
             'per_repertoire_allowances': preview_allowances(snapshot, records, config),

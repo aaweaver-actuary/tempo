@@ -40,6 +40,7 @@ def main():
     suffix=secrets.token_hex(5);container='tempo-frozen-'+suffix;volume=container+'-data'
     password=secrets.token_urlsafe(24)
     started=time.monotonic()
+    (ROOT/'test-results').mkdir(parents=True,exist_ok=True)
     try:
         command(['docker','volume','create','--label','tempo.owner=frozen-maia-order',volume])
         command(['docker','run','-d','--name',container,'--label','tempo.owner=frozen-maia-order','-e','POSTGRES_PASSWORD='+password,'-p','127.0.0.1::5432','-v',volume+':/var/lib/postgresql','postgres:18.6-trixie'])
@@ -162,6 +163,34 @@ def main():
             database.execute("INSERT INTO repertoire_cards(card_id,repertoire_id) VALUES(?,'changed-membership')",(ids[0],))
             assert len(database.execute(_AVAILABLE_ATTEMPT_SQL,(day,)).fetchall())==1
             database.execute("DELETE FROM repertoire_cards WHERE repertoire_id='changed-membership'")
+        # Exercise the actual tail, with earlier locked ranks retaining their gates.
+        tail_day='2026-10-15'
+        final_scored_id=plan['ranks'][-2]['id']
+        tail_ids=[final_scored_id,unknown_id]
+        with psycopg.connect(url) as raw:
+            raw.execute("UPDATE cards SET state='locked' WHERE introduced_at IS NULL AND id<>%s",(final_scored_id,))
+        locked_tail=refresh._prepare_study_opening_page(tail_day,{})
+        assert [item['card_id'] for item in locked_tail['items']]==[final_scored_id]
+        with psycopg.connect(url) as raw:
+            raw.execute("UPDATE cards SET state='new',pending_validation=1 WHERE id=%s",(unknown_id,))
+        assert [item['card_id'] for item in refresh._prepare_study_opening_page(tail_day,{})['items']]==[final_scored_id]
+        with psycopg.connect(url) as raw:
+            raw.execute('UPDATE cards SET pending_validation=0,revision=2 WHERE id=%s',(unknown_id,))
+        assert [item['card_id'] for item in refresh._prepare_study_opening_page(tail_day,{})['items']]==[final_scored_id]
+        with psycopg.connect(url) as raw:
+            raw.execute('UPDATE cards SET revision=1 WHERE id=%s',(unknown_id,))
+        tail_page=refresh._prepare_study_opening_page(tail_day,{})
+        assert [item['card_id'] for item in tail_page['items']]==tail_ids
+        with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
+            database=PostgresConnection(raw)
+            for item in tail_page['items']:assert refresh._admit_one_prioritized_opening(database,tail_day,item)
+            assert not refresh._admit_one_prioritized_opening(database,tail_day,tail_page['items'][-1])
+            database.execute('UPDATE daily_queue SET position=1-position WHERE queue_date=?',(tail_day,))
+        tail_refresh=refresh._prepare_queue_randomization(tail_day)
+        with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
+            database=PostgresConnection(raw)
+            assert refresh._publish_queue_randomization(database,tail_day,tail_refresh)
+            assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position',(tail_day,))]==tail_ids
         # Read-only CLI snapshot uses the owning boundary and stable pagination.
         cli_spec=importlib.util.spec_from_file_location('frozen_cli',ROOT/'scripts/frozen-maia-order.py')
         cli=importlib.util.module_from_spec(cli_spec);cli_spec.loader.exec_module(cli)
@@ -177,17 +206,19 @@ def main():
                 with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
                     database=PostgresConnection(raw)
                     assert order.activation(database)[0]==run_id
-                    assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue ORDER BY position').fetchall()]==list(reversed(ids))
+                    assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position',(day,))]==list(reversed(ids))
+                    assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position',(tail_day,))]==tail_ids
                 break
             except psycopg.OperationalError:time.sleep(.1)
         else:raise RuntimeError('Restart proof timed out')
+        assert not refresh._prepare_study_opening_page('2026-10-16',{})['items']
         with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
             database=PostgresConnection(raw)
             database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,0,1)",(ids[0],day))
             order.rollback_run(database,run_id)
             assert len(order.restore_queue_changes(database,run_id)['queue_conflicts'])==2
             assert database.execute('SELECT COUNT(*) FROM reviews').fetchone()[0]==1
-            assert database.execute('SELECT COUNT(*) FROM daily_queue').fetchone()[0]==2
+            assert database.execute('SELECT COUNT(*) FROM daily_queue').fetchone()[0]==4
         # A separately committed foreground change invalidates a staged publication.
         with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
             database=PostgresConnection(raw)
@@ -214,13 +245,15 @@ def main():
             assert any('Index' in node for node in nodes(explained['Plan'])),explained
             assert explained['Plan']['Actual Rows']==16
             print(json.dumps({'static_rows':35400,'page_rows':16,'server_execution_ms':explained['Execution Time'],'plan_nodes':list(nodes(explained['Plan']))}))
-        print(json.dumps({'result':'PASS','proofs':['schema migration','safe deferred-tail publication','strict incomplete-plan refusal','study-only rank paging','native admission','dedup/idempotency','queue refresh','issued-during-prepare fence','stale-content serving hold','read-only CLI capture','day boundary','restart','rollback preserves study','concurrent stale-plan guard'],'scored':plan['scored_count'],'deferred':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],'deferred_rank':plan['deferred_cards'][0]['rank'],'seconds':round(time.monotonic()-started,2),'container':container,'volume':volume}))
+        print(json.dumps({'result':'PASS','proofs':['schema migration','safe deferred-tail publication','strict incomplete-plan refusal','study-only rank paging','native scored and deferred admission','locked/invalid/changed tail fences','dedup/idempotency','scored and deferred queue refresh','issued-during-prepare fence','stale-content serving hold','read-only CLI capture','tail day boundary and restart','rollback preserves study','concurrent stale-plan guard'],'scored':plan['scored_count'],'deferred':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],'deferred_rank':plan['deferred_cards'][0]['rank'],'seconds':round(time.monotonic()-started,2),'container':container,'volume':volume}))
     finally:
-        diagnostic=subprocess.run(['docker','logs',container],text=True,capture_output=True)
-        (ROOT/'test-results/frozen-postgres-container.log').write_text((diagnostic.stdout+diagnostic.stderr).replace(password,'<redacted>'))
-        close_pools()
-        subprocess.run(['docker','rm','-f',container],check=False,stdout=subprocess.DEVNULL)
-        subprocess.run(['docker','volume','rm',volume],check=False,stdout=subprocess.DEVNULL)
+        try:
+            diagnostic=subprocess.run(['docker','logs',container],text=True,capture_output=True)
+            (ROOT/'test-results/frozen-postgres-container.log').write_text((diagnostic.stdout+diagnostic.stderr).replace(password,'<redacted>'))
+        finally:
+            close_pools()
+            subprocess.run(['docker','rm','-f',container],check=False,stdout=subprocess.DEVNULL)
+            subprocess.run(['docker','volume','rm',volume],check=False,stdout=subprocess.DEVNULL)
         print('Task-owned disposable database removed',flush=True)
 
 

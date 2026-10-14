@@ -14,8 +14,9 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
-from app.services.frozen_maia_plan import create_plan, source_fingerprint
-from app.services.frozen_maia_math import validate_distribution, VERSION
+from app.services.frozen_maia_plan import (create_plan, source_fingerprint, DEFAULT_DEFERRED_LIMIT,
+                                         LOCALIZED_SCORING_GAPS, LINEAGE_UNCERTAINTY_POLICY)
+from app.services.frozen_maia_math import validate_distribution, content_fingerprint, card_decisions, anchor, VERSION
 from app.services.opening_segmentation import stable_key, opening_position_key
 from app.services import frozen_opening_order as order
 from app.database import read_connection, background_connection
@@ -229,6 +230,7 @@ def export(plan, directory):
         'lineage_affected_card_ids':plan['lineage_affected_card_ids'],'scenario_failures':plan['scenario_failures'],
         'scored_count':plan['scored_count'],'deferred_count':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],
         'deferred_limit':plan['deferred_limit'],'activation_safe':plan['activation_safe'],
+        'summary':plan['diagnostic_summary'],
         'lineage':plan['lineage_diagnostics'],'unmapped_repertoires':plan['unmapped_repertoires']}
     for filename,value in (('previous-order.json',plan['previous_order']),('diagnostics.json',diagnostics),('checksums.json',{'plan':plan['checksum'],'source':plan['source_fingerprint'],'input':plan['input_checksum'],'provenance':plan['provenance'],'target':plan['target']})):
         (directory/filename).write_text(json.dumps(value,sort_keys=True,indent=2,allow_nan=False)+'\n')
@@ -259,6 +261,23 @@ def validate_plan(plan):
         raise ValueError('Plan is not activation safe')
     if target.get('database')!=plan.get('configuration',{}).get('expected_database') or target.get('schema')!=plan.get('configuration',{}).get('expected_schema'):
         raise ValueError('Plan target does not match its configuration')
+    configured_scenarios=plan.get('configuration',{}).get('scenarios',[])
+    scenarios={scenario['repertoire_id']:scenario for scenario in configured_scenarios}
+    weights=[scenario.get('weight') for scenario in configured_scenarios]
+    if (not scenarios or len(scenarios)!=len(configured_scenarios)
+        or any(not isinstance(weight,(int,float)) or not math.isfinite(weight) or weight<0 for weight in weights)
+        or abs(math.fsum(weights)-1)>1e-9
+        or any(scenario.get('color') not in ('white','black') for scenario in configured_scenarios)):
+        raise ValueError('Invalid scenario mapping or weights')
+    for scenario in configured_scenarios:
+        anchor(scenario)
+    evidence=plan.get('decision_evidence',{})
+    if set(evidence)!=set(scenarios) or any(result.get('error') or result.get('diagnostics')
+        or not result.get('routes') or not result.get('reach') or not result.get('position_reach')
+        for result in evidence.values()):
+        raise ValueError('A required scenario has no effective scoring evidence')
+    if plan.get('lineage_uncertainty_policy')!=LINEAGE_UNCERTAINTY_POLICY:
+        raise ValueError('Obsolete lineage uncertainty policy; capture a fresh plan')
     provenance=plan.get('provenance') or {}
     model=provenance.get('model') or {}
     expected_model_files={'scripts/maia-inference.mjs','app/lib/all_moves_maia3.json','app/lib/all_moves_maia3_reversed.json',
@@ -289,6 +308,19 @@ def validate_plan(plan):
         raise ValueError('Captured card has no safe final disposition')
     if any(row.get('final_disposition')=='excluded' and row.get('status')!='excluded' for row in inventory):
         raise ValueError('Excluded disposition does not match card lifecycle state')
+    exclusion_reasons={'archived','superseded','deleted','pending_validation','unmapped','already_shown_attempted_reviewed'}
+    for row in inventory:
+        if row.get('final_disposition')!='excluded':
+            continue
+        reasons=row.get('reasons',[])
+        if not reasons or any(reason not in exclusion_reasons and not reason.startswith('invalid_content:') for reason in reasons):
+            raise ValueError('Unexplained exclusion of a captured card')
+        if (('archived' in reasons and not row.get('archived'))
+            or ('superseded' in reasons and not row.get('superseded_by'))
+            or ('pending_validation' in reasons and not row.get('pending_validation'))
+            or ('unmapped' in reasons and row.get('families'))
+            or ('already_shown_attempted_reviewed' in reasons and row.get('classification')!='already_studied')):
+            raise ValueError('Excluded disposition lacks its captured lifecycle/exposure evidence')
     if any(row.get('final_disposition')=='protected' and 'uncertain_legacy_exposure' not in row.get('reasons',[]) for row in inventory):
         raise ValueError('Protected disposition lacks its exposure reason')
     expected_probability_complete=not any(row.get('status')=='unresolved' for row in inventory) and not plan.get('lineage_diagnostics')
@@ -297,17 +329,41 @@ def validate_plan(plan):
     ranks=plan.get('ranks',[])
     rank_ids=[row.get('id') for row in ranks]
     ordinals=[row.get('rank') for row in ranks]
-    if len(set(rank_ids))!=len(rank_ids) or ordinals!=list(range(1,len(ranks)+1)):
+    if (len(set(rank_ids))!=len(rank_ids) or any(type(ordinal) is not int for ordinal in ordinals)
+        or ordinals!=list(range(1,len(ranks)+1))):
         raise ValueError('Final ranking membership or ordinals are not unique and contiguous')
     if set(rank_ids)!={identifier for identifier,row in by_id.items() if row.get('final_disposition') in ('scored','deferred')}:
         raise ValueError('Final ranking omits a scored/deferred card or includes a protected card')
     if plan.get('target_candidate_count')!=len(ranks) or plan.get('scored_count')+plan.get('deferred_count')!=len(ranks):
         raise ValueError('Final ranking does not cover its declared safe target scope')
     seen_deferred=False
+    deferred_rows=[]
+    diagnostic_refs_by_card={identifier:sorted({item['line_id'] for item in plan.get('lineage_diagnostics',[])
+        if identifier in item.get('affected_card_ids',[])}) for identifier in rank_ids}
+    definition_fields=('revision','start_fen','moves_json','trained_color','source_ref','source_fen','kind','content_type')
     for row in ranks:
         inventory_row=by_id[row['id']]
+        if (any(row.get(field)!=inventory_row.get(field) for field in
+            (*definition_fields,'fingerprint','memberships','classification','status','reasons','baseline_order',
+             'decisions','rank','scoring_status','final_disposition'))
+            or content_fingerprint(inventory_row,inventory_row['memberships'])!=row.get('fingerprint')
+            or inventory_row.get('classification') not in ('not_admitted','admitted_unstarted')
+            or inventory_row.get('archived') or inventory_row.get('pending_validation') or inventory_row.get('superseded_by')
+            or inventory_row.get('content_type')!='opening'):
+            raise ValueError('Ranked card is unsafe or does not match its captured definition')
+        families=set(inventory_row.get('families',[]))
+        if families!=set(inventory_row['memberships']) & scenarios.keys() or not families:
+            raise ValueError('Ranked card has an invalid scenario mapping')
+        decisions=set()
+        for family in families:
+            if inventory_row.get('trained_color') not in (None,scenarios[family]['color']):
+                raise ValueError('Ranked card has conflicting trained color')
+            decisions.update(card_decisions(inventory_row,scenarios[family]))
+        if decisions!=set(inventory_row.get('decisions',[])):
+            raise ValueError('Ranked card decisions do not match its captured content')
         if row.get('final_disposition')=='deferred':
             seen_deferred=True
+            deferred_rows.append(row)
             reasons=row.get('deferred_reasons') or []
             inventory_reasons=set(inventory_row.get('reasons',[]))
             if (policy!='allow_unscored_tail' or row.get('scoring_status')!='unscored_deferred'
@@ -315,23 +371,30 @@ def validate_plan(plan):
                 or inventory_row.get('status')!='unresolved' or inventory_row.get('archived') or inventory_row.get('pending_validation')
                 or inventory_row.get('superseded_by') or inventory_reasons & {'already_shown_attempted_reviewed','uncertain_legacy_exposure'}
                 or any(reason.startswith('invalid_content:') for reason in inventory_reasons)
-                or not reasons or any(reason not in {'unknown_route_mass','unknown_decision_reach'} and not reason.startswith('missing_exact_card_lineage:') for reason in reasons)):
+                or not reasons or inventory_reasons!=set(reasons)
+                or any(reason not in LOCALIZED_SCORING_GAPS and not reason.startswith('missing_exact_card_lineage:') for reason in reasons)):
                 raise ValueError('Deferred card is invalid, exposed, or has a non-local scoring failure')
             expected_diagnostics=sorted(set(inventory_row.get('diagnostic_refs',[])))
-            if (row.get('diagnostic_refs')!=expected_diagnostics or row.get('memberships')!=inventory_row.get('memberships')
+            if (row.get('diagnostic_refs')!=expected_diagnostics or expected_diagnostics!=diagnostic_refs_by_card[row['id']]
+                or row.get('memberships')!=inventory_row.get('memberships')
                 or row.get('deferred_reasons')!=inventory_row.get('deferred_reasons') or row.get('rank')!=inventory_row.get('rank')):
                 raise ValueError('Deferred-card audit metadata does not match the immutable inventory')
         elif row.get('final_disposition')=='scored':
             score=row.get('marginal_score')
             if (seen_deferred or row.get('scoring_status')!='scored' or not isinstance(score,(int,float))
-                or not math.isfinite(score) or score<0):
+                or not math.isfinite(score) or score<0 or inventory_row.get('status')!='included'
+                or inventory_row.get('reasons') or diagnostic_refs_by_card[row['id']]
+                or any(not set(card_decisions(inventory_row,scenarios[family])) <= evidence[family]['reach'].keys() for family in families)):
                 raise ValueError('Scored cards must precede the unscored tail and have a numerical score')
         else:
             raise ValueError('Unexpected final disposition in frozen ranks')
+    if deferred_rows!=sorted(deferred_rows,key=lambda row:(tuple(row['baseline_order']),row['id'])):
+        raise ValueError('Deferred tail does not follow deterministic baseline/card-ID order')
     if plan.get('deferred_count')!=sum(row.get('final_disposition')=='deferred' for row in ranks):
         raise ValueError('Deferred-card count does not match final ranks')
     deferred_by_id={row.get('id'):row for row in plan.get('deferred_cards',[])}
-    if len(deferred_by_id)!=plan.get('deferred_count') or set(deferred_by_id)!={row['id'] for row in ranks if row.get('final_disposition')=='deferred'}:
+    if (len(plan.get('deferred_cards',[]))!=len(deferred_by_id) or len(deferred_by_id)!=plan.get('deferred_count')
+        or set(deferred_by_id)!={row['id'] for row in ranks if row.get('final_disposition')=='deferred'}):
         raise ValueError('Deferred-card audit list does not match the final tail')
     for ranked_row in ranks:
         if ranked_row.get('final_disposition')!='deferred':
@@ -343,11 +406,16 @@ def validate_plan(plan):
             raise ValueError('Deferred-card export metadata does not match the ranked tail')
     if plan.get('target_candidate_count')!=plan.get('scored_count')+plan.get('deferred_count'):
         raise ValueError('Target backlog denominator does not match scored and deferred cards')
-    if plan.get('deferred_fraction',0)>plan.get('deferred_limit',0) or plan.get('deferred_limit')!=0.01:
+    actual_fraction=len(deferred_rows)/len(ranks) if ranks else 0.0
+    recorded_fraction=plan.get('deferred_fraction')
+    if (not isinstance(recorded_fraction,(int,float)) or not math.isfinite(recorded_fraction)
+        or not math.isclose(recorded_fraction,actual_fraction,rel_tol=0,abs_tol=1e-12)):
+        raise ValueError('Deferred fraction does not match the ranked backlog')
+    if actual_fraction>DEFAULT_DEFERRED_LIMIT or plan.get('deferred_limit')!=DEFAULT_DEFERRED_LIMIT:
         raise ValueError('Deferred-tail safety bound exceeded or changed')
     if plan.get('scenario_failures'):
         raise ValueError('A required scenario failed; incomplete scenario scoring cannot be deferred')
-    if any(item.get('reason')!='Missing initial/anchor lineage' for item in plan.get('lineage_diagnostics',[])):
+    if any(item.get('reason')!='Missing initial/anchor lineage' or item.get('uncertainty_error') for item in plan.get('lineage_diagnostics',[])):
         raise ValueError('Fatal or unexplained source-lineage diagnostics remain')
     if policy=='strict' and (plan.get('deferred_count') or not plan.get('probability_complete')):
         raise ValueError('Strict scoring policy cannot publish an incomplete probability plan')
