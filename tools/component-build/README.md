@@ -22,7 +22,12 @@ installation prevents its src layout being an ambient runtime dependency.
 
 The legacy root assembly needs its existing Node dependency tree for frontend
 consumer checks. `npm ci` links the declared chess-line workspace; build prerequisites
-compile its public exports. `backend/pyproject.toml` declares a noneditable scheduling
+compile its public exports. Every Vitest component lane runs `build:packages` once
+before execution, including direct `node tools/component-build/test-lane.mjs`
+invocation; a failed build stops the lane. `npm run dev` and `npm run dev:local`
+prepare the initial artifact. Package source edits during a running development
+server may require `npm run build:packages`; continuous package watching is not
+provided. Package-local `npm test` builds chess-line before testing. `backend/pyproject.toml` declares a noneditable scheduling
 path dependency; root CI's `backend/requirements-test.txt` installs that distribution.
 The backend image copies only the declared scheduling package before installing it.
 These adapters do not establish an independently deployable Learning or Study Web.
@@ -41,7 +46,11 @@ Vitest configuration. Integration selections are explicit additional consumer pr
 - `npm run test:component-integration -- [file-substring] [test-name]`
 
 These entry points print selected files and executed passing identities and reject
-empty file or case selection. Producer-parity still consumes legacy Python producers
+empty file or case selection. Node runners require a successful child exit, a valid
+final structured summary, and at least one actual passing case. Suites, TODOs,
+skips and synthetic file records never count as passing cases. Counts for failures,
+skips and TODOs are separate; passing identities include file, source location,
+name, event ordinal and nesting/test number so repeated names remain distinguishable. Producer-parity still consumes legacy Python producers
 and their declared environments; separation of discovery is not certification that
 those services have been extracted. The integration lane currently runs frontend
 adapter proofs; Python adapter/application proofs run separately:

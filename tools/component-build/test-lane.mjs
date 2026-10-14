@@ -1,9 +1,10 @@
-import { readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
+import { realpathSync, readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-const root = resolve(new URL("../../", import.meta.url).pathname);
+import { runNodeFiles } from "./test-node.mjs";
+const root = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 export const inventory = JSON.parse(readFileSync(resolve(root, "tools/component-build/test-inventory.json"), "utf8"));
 export function validateInventory() {
   const declared = ["frontend", "producer-parity", "legacy-runner-wrappers"].flatMap(lane => inventory.lanes[lane]);
@@ -24,13 +25,11 @@ export function runLane(lane, filter, nameFilter) {
   const files = selectFiles(lane, filter);
   console.log(JSON.stringify({ lane, selectedFiles: files }));
   if (lane === "runners") {
-    const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", ...(nameFilter ? ["--test-name-pattern=" + nameFilter] : []), ...files], { cwd: root, encoding: "utf8" });
-    process.stdout.write(result.stdout ?? ""); process.stderr.write(result.stderr ?? "");
-    const passed = [...(result.stdout ?? "").matchAll(/^ok \d+ - (.+)$/gm)].filter(match => !/\.test\.mjs(?: #.*)?$/.test(match[1]) && !match[1].includes("# SKIP")).length;
-    console.log(JSON.stringify({ lane, executedIdentities: [...(result.stdout ?? "").matchAll(/^ok \d+ - (.+)$/gm)].map(match => match[1]), passed }));
-    if (result.status !== 0 || !passed) throw new Error("Runner tests failed or zero selected tests");
+    runNodeFiles(files, nameFilter, { cwd: root, lane });
     return;
   }
+  const build = spawnSync("npm", ["run", "build:packages"], { cwd: root, stdio: "inherit" });
+  if (build.error || build.status !== 0) throw new Error("Component package build failed");
   const directory = mkdtempSync(join(tmpdir(), "tempo-m02-collection-"));
   try {
     const reportPath = join(directory, "vitest.json");
@@ -41,7 +40,7 @@ export function runLane(lane, filter, nameFilter) {
     if (result.status !== 0 || !report.numPassedTests || report.numFailedTests) throw new Error("Vitest failed or zero selected tests");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { runLane(process.argv[2], process.argv[3], process.argv[4]); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }

@@ -1,3 +1,26 @@
+## PR #270 — current package artifacts and actual Node cases (#263, #201)
+
+Regular owner: `tools/component-build/tests/boundaries.test.mjs`, also invoked by
+`tests/unit/component-packaging-regressions.test.ts`.
+
+- `M02 frontend prepares packages once before consumers and rejects failed builds`
+  and its `integration` counterpart prove missing/stale preparation, build ordering,
+  one build per invocation, zero-file rejection before setup, and failure fencing.
+- `M02 development and package test hooks prepare initial artifacts` preserves
+  development commands and package-local preparation without duplicate lane hooks.
+- `M02 generic Node accounting: <scenario>` and `M02 package-local Node accounting: <scenario>`
+  cover ordinary, TODO-only, skip-only, empty suite, unmatched filter, two nested
+  passes, visible failure, mixed outcomes, repeated names/locations, reason-bearing skips/TODOs, and failure mixed with passing cases.
+- `M02 runners lane shares generic Node accounting without building packages`
+  verifies shared reporting, real identities and unmatched-filter rejection.
+- Both runners' `rejects <scenario> reporter output` cases reject missing or malformed
+  summaries and malformed JSON. Fixture subprocesses have bounded deadlines and
+  invocation-owned cleanup; package fixtures have no root tooling dependency.
+
+Node 22.16.0 baseline reproductions at `43706c3d` count TODO-only and empty suites
+as one pass and two nested cases as one suite. Structured events replace TAP
+interpretation; the four package product assertions remain unchanged.
+
 ## Scheduling application module boundary (#192, #200, #202; A1 follow-up)
 
 `backend/tests/test_scheduling_boundary.py` enforces the existing scheduling seam

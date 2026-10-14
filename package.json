@@ -7,6 +7,8 @@
   },
   "scripts": {
     "check:conflicts": "node scripts/check-merge-conflicts.mjs",
+    "predev": "npm run build:packages",
+    "predev:local": "npm run build:packages",
     "dev": "vinext dev",
     "dev:local": "TEMPO_TARGET=local vite --config vite.static.config.ts",
     "build": "vinext build",
