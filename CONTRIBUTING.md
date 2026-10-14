@@ -12,12 +12,21 @@ Start with the adopted [component architecture](docs/architecture/component-reco
 
 ## Changes and review
 
-- Preserve public behavior unless the task explicitly changes it. Keep regression tests with their owning component; record every user-reported defect test in `tests/REGRESSIONS.md`.
+- Preserve public behavior unless the task explicitly changes it. Keep named regression tests in their regular owning component suite and follow [regression ownership and transitional registration](docs/testing.md#regression-ownership-during-reconstruction).
 - Explain why a legacy invariant or implementation detail is retired or moved, identify its new owner, and show the replacement proof. Protect user data, durable study state, and truthful error reporting.
 - Keep PRs focused. Describe the user-visible or architectural result, affected contracts and consumers, exact validation performed, and checks not run with reasons. Separate unrelated failures and name their evidence and owner; do not silently broaden the task to repair unrelated systems.
 - A draft state, issue status, or unrelated advancement of `main` alone does not establish that tests must be repeated. Reuse prior evidence only when the relevant source, dependencies, fixtures, commands, and toolchain inputs are unchanged. Failed, missing, cancelled, or zero-selected required checks never pass.
 - Distinguish implementation completion from hosted merge qualification. Documentation does not change workflows, required checks, or branch protection. Never claim a merge, deployment, or runtime activation that did not occur.
 
+## Task resources and cleanup
+
+- The implementing agent owns cleanup of its disposable resources and eligible development checkout. An open or unmerged PR, pending review, or inconclusive audit is not by itself a reason to retain a redundant checkout.
+- Before removing a checkout, verify that required commits and unique local work are preserved on durable refs or in an appropriate verified artifact; inspect uncommitted, untracked, ignored, stashed, and unpushed work. Preserve necessary logs, traces, reports, and reproduction instructions outside the checkout, with the tested revision and commands recorded.
+- Confirm that no running agent, process, or mounted container still needs the checkout or resource. Uncertain ownership or unpreserved unique state requires retention with an explicit reason. Use `git worktree remove` for registered worktrees after these checks; do not force-remove dirty worktrees or delete branches as part of checkout cleanup.
+- Tear down only verified task-owned disposable resources. Preserve live study data, other tasks' resources, shared base images, and safe reusable caches. Never globally prune Docker resources or erase a volume whose ownership and disposable status are uncertain.
+- Keep inspection proportional to the task. Inspect Docker when the task used it or when a specific cleanup target requires checking container references; a documentation-only task does not need a Docker inventory as a prerequisite. An unavailable daemon is not permission to restart it or touch live services, and it need not block independently verified filesystem cleanup.
+- Report removed and retained resources, preserved evidence and refs, and any remaining cleanup blocker or retention condition. Perform eligible cleanup after preservation; do not leave it as an unspecified task for the user.
+
 ## Handoff
 
-Report the branch/PR, changed ownership boundaries, validation commands and results, remaining implementation or tooling limits, and any exact external blocker. Open one focused PR for one task. Do not merge unless the user explicitly requests it.
+Report the branch/PR, changed ownership boundaries, validation commands and results, remaining implementation or tooling limits, and any exact external blocker. Include removed or retained task resources, preserved evidence and refs, and remaining cleanup conditions. Open one focused PR for one task, or update its existing PR. Do not merge unless the user explicitly requests it.

@@ -9,5 +9,8 @@ checks, browser workflows, visual checks, and Docker persistence checks.
 - `fixtures/` — shared parity and contract data.
 - `REGRESSIONS.md` — named coverage for user-raised defects and refactor risks.
 
-Use `npm test` for the required release-level suite. Use narrower commands for
-iteration, then run the full suite before handing off behavior changes.
+Choose checks using the [affected-component test selection policy](../docs/testing.md#select-the-smallest-relevant-proof).
+Use focused checks for the changed behavior and expand to its actual contract
+and integration boundaries. `npm test` runs the current whole-product gate;
+it is an explicit integration check, not a universal prerequisite for handing
+off a behavior change or releasing an individual component.

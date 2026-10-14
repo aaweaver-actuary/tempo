@@ -15,17 +15,40 @@ suites.
 | Persistence, transaction, migration, receipt, or recovery | Run focused owning-component tests and real tests against that component's PostgreSQL boundary. Mocked or SQLite-only tests do not prove PostgreSQL behavior. |
 | Shared runtime, security, CI selection, build configuration, or cross-component change | Include actual affected consumers and integration boundaries. Broaden for unknown/shared dependencies with a stated reason. |
 
-For a reported defect, add a named regression to the regular owning suite and
-`tests/REGRESSIONS.md`. Verify the intended cases ran: zero-selected, skipped,
-failed, cancelled, or missing required tests are not passes. Diagnose failures
-in the smallest relevant scope. Fix causally related failures with the owning
-change; route unrelated failures to their own owner rather than broadening the
-task automatically.
+For a reported defect, add a named regression to its regular owning suite and
+follow [regression ownership and transitional registration](#regression-ownership-during-reconstruction).
+Verify the intended cases ran: zero-selected, skipped, failed, cancelled, or
+missing required tests are not passes. Diagnose failures in the smallest
+relevant scope. Fix causally related failures with the owning change; route
+unrelated failures to their own owner rather than broadening the task
+automatically.
 
 Reuse passing evidence only when relevant source, dependencies, fixtures,
 commands, and toolchain inputs remain unchanged. Draft status or unrelated
 advancement of `main` alone does not require rerunning all tests. Changed
 relevant inputs require fresh evidence for the affected scope.
+
+## Regression ownership during reconstruction
+
+Every user-reported defect requires a named regression that is discoverable
+and executable through its regular owning suite. A prose entry alone is not
+regression coverage.
+
+For tests still governed by the legacy runner and its registration checks,
+continue to record coverage in `tests/REGRESSIONS.md` until replacement
+discovery and validation are implemented and verified.
+
+The target is component-local regression inventories and test discovery.
+Once an extracted component has verified local discovery and registration,
+its local inventory is authoritative for its tests. The root inventory may
+retain a compatibility index or link where tooling still needs it, but
+duplicating every entry or editing one shared root file must not remain a
+permanent prerequisite for independent component work.
+
+Moving registration must preserve discoverability, relevant invariant
+coverage, and failure reporting. This documentation change does not implement
+local discovery, remove existing registration checks, or authorize bypassing
+them.
 
 ## Commands currently defined in this repository
 
@@ -104,6 +127,11 @@ family, and a failed or unavailable capability leaves the associated tests
 unrun rather than passed.
 
 ## Full gate
+
+This section describes execution of an explicitly selected whole-product
+integration check. It does not add a universal handoff or component-release
+requirement. Use [the selection policy](#select-the-smallest-relevant-proof)
+to decide whether this scope is relevant.
 
 From the repository root, after installing the project prerequisites, run:
 
@@ -188,7 +216,7 @@ make ui-file FILE=games-board-context.spec.ts
 make docker-durability
 ```
 
-These are alternative development scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, the relevant subsystem when stable, and the full gate on the final candidate before release. A passing focused run is not evidence that the full gate passed.
+These are alternative verification scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, then the affected component and relevant contract or integration checks when the change is coherent. Run the whole-product gate only when the selected integration boundary requires it or it is explicitly requested; reaching handoff or releasing an individual component does not by itself require that gate. A passing focused run is not evidence that the full gate passed, and this policy does not bypass actual hosted required checks.
 
 Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. The independent lifecycle mode builds the required current images and maintenance tools, runs the entire CLI rehearsal, and cleans up; it does not start an unused parent application stack. Before the rehearsal, standalone mode acquires PostgreSQL and Redis with `docker compose pull --policy missing postgres redis`: cold dependencies are required, while cached images avoid registry acquisition. Missing-image pull failures still fail verification. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
 
