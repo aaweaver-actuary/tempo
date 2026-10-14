@@ -1,72 +1,871 @@
 # Test selection and qualification
 
-Choose checks from the changed behavior, owning component, and actual dependency/consumer graph. The goal is enough evidence for the affected boundary, not repetition of unrelated suites.
+Choose checks from the changed behavior, owning component, and actual dependency
+and consumer graph. Validate the affected boundary without repeating unrelated
+suites.
 
 ## Select the smallest relevant proof
 
 | Change | Development evidence |
 | --- | --- |
-| Documentation or instructions only | Review the diff and links; verify documented commands against their definitions; run `npm run check:conflicts` and `git diff --check`. No runtime suite is needed unless the edited text is consumed by a test, script, or configuration. |
-| Pure package or module | Run the owning package's tests and relevant import/API contracts. No unrelated database, Python, model-worker, or whole-product suite. |
-| UI-only behavior or rendering | Run affected unit/component checks; add the actual browser spec for browser behavior and visual checks only for rendering changes. UI-only work does not require PostgreSQL, Python, or model-worker suites. |
-| API or shared contract | Test the producer, affected consumers, and contract/error cases. Expand to integration boundaries when unit tests cannot prove the real interaction. |
+| Documentation or instructions only | Review the diff and links; verify documented commands against their definitions; run `npm run check:conflicts` and `git diff --check`. No runtime suite unless edited text is consumed by a test, script, or configuration. |
+| Pure package or module | Run its owning package tests and relevant import/API contracts. No unrelated database, Python, model-worker, or whole-product suite. |
+| UI-only behavior or rendering | Run affected unit/component checks; add the real browser spec for browser behavior and visual checks only for rendering changes. UI-only work does not require PostgreSQL, Python, or model-worker suites. |
+| API or shared contract | Test the producer, affected consumers, and contract/error cases. Add integration boundaries when unit tests cannot prove the real interaction. |
 | Persistence, transaction, migration, receipt, or recovery | Run focused owning-component tests and real tests against that component's PostgreSQL boundary. Mocked or SQLite-only tests do not prove PostgreSQL behavior. |
-| Shared runtime, security, CI selection, build configuration, or cross-component change | Include the actual affected consumers and integration boundaries. Broaden for unknown or shared dependencies with a stated reason. |
+| Shared runtime, security, CI selection, build configuration, or cross-component change | Include actual affected consumers and integration boundaries. Broaden for unknown/shared dependencies with a stated reason. |
 
-For a reported defect, add a named regression to the regular suite and `tests/REGRESSIONS.md`. Verify that the intended cases actually ran; zero-selected, skipped, failed, cancelled, or missing required tests are not passing evidence. Diagnose a failure in its smallest relevant scope. Fix a causally related failure with the owning change; route an unrelated failure to its own owner rather than expanding this task automatically.
+For a reported defect, add a named regression to the regular owning suite and
+`tests/REGRESSIONS.md`. Verify the intended cases ran: zero-selected, skipped,
+failed, cancelled, or missing required tests are not passes. Diagnose failures
+in the smallest relevant scope. Fix causally related failures with the owning
+change; route unrelated failures to their own owner rather than broadening the
+task automatically.
 
-Passing evidence may be reused only if the relevant source, dependencies, fixtures, commands, and toolchain inputs remain unchanged. Draft status or unrelated advancement of `main` alone does not require rerunning all tests. Any changed relevant input requires fresh evidence for its affected scope.
+Reuse passing evidence only when relevant source, dependencies, fixtures,
+commands, and toolchain inputs remain unchanged. Draft status or unrelated
+advancement of `main` alone does not require rerunning all tests. Changed
+relevant inputs require fresh evidence for the affected scope.
 
 ## Commands currently defined in this repository
 
-Use one verification target at a time; the Makefile rejects combined verification targets. These are current monorepo commands, not proof that each future component package or runner has been implemented.
+These are current monorepo commands, not proof that future component packages
+or independent runners are implemented. Check the Makefile and script entry
+points before relying on or documenting a command. Use one Make verification
+target per invocation.
 
-| Scope | Command | Actual declared coverage |
+| Scope | Command | Declared coverage |
 | --- | --- | --- |
-| Frontend unit suite | `make fast` | Vitest unit suite |
-| One frontend unit file | `make unit-file FILE=<path>` | Vitest for the given file |
+| Frontend unit suite / one file | `make fast` / `make unit-file FILE=<path>` | Vitest suite / selected file |
 | Backend suite / one file | `make python` / `make python-file FILE=<path>` | Backend pytest suite / selected file |
-| Rust suite / one test filter | `make rust` / `make rust-case FILTER=<name>` | Rust format, Clippy, workspace tests / filtered workspace test |
-| Backend plus Rust | `make integration` | Defense smoke, backend pytest, Rust checks |
-| Browser suite / one spec | `make browser` / `make ui-file FILE=<spec>` | PostgreSQL-backed regular browser runner / selected browser spec |
+| Rust suite / one test filter | `make rust` / `make rust-case FILTER=<name>` | Format, Clippy, workspace tests / filtered test |
+| Backend and Rust | `make integration` | Defense smoke, backend pytest, Rust checks |
+| Browser suite / one spec | `make browser` / `make ui-file FILE=<spec>` | PostgreSQL browser runner / selected spec |
 | Visual or performance | `make visual` / `make perf` | Pinned visual and performance specs / performance subset |
-| PostgreSQL durability / lifecycle | `make docker-durability` / `make docker-lifecycle` | Disposable PostgreSQL durability / disposable deployment lifecycle runner |
-| Full current product gate | `make full` | Current monorepo stages, including unit, backend, Rust, build, PostgreSQL/browser, and pinned checks |
-| Print plan / capability check | `make plan` / `make preflight` | Print declared full plan / check declared local capabilities |
+| PostgreSQL durability / lifecycle | `make docker-durability` / `make docker-lifecycle` | Disposable PostgreSQL durability / deployment lifecycle runner |
+| Full current product gate | `make full` | Current monorepo units, backend, Rust, builds, PostgreSQL/browser, and pinned checks |
+| Inspect plan / capabilities | `make plan` / `make preflight` | Print declared full plan / check local capabilities |
 
-Check the Makefile and script entry points before documenting or relying on a command. Some Docker/browser targets require Docker and loopback access. Do not run `make full`, broad browser/database suites, Docker builds, or full dependency installation for a documentation or component-local task unless the affected boundary actually requires it.
+Some browser and Docker targets require Docker and loopback access. Do not run
+`make full`, broad browser/database suites, Docker builds, or full dependency
+installation for documentation or component-local work unless its affected
+boundary requires them.
 
-## Desired component policy and current hosted behavior
+## Desired policy and current hosted behavior
 
-The adopted policy in [the architecture guide](architecture/component-reconstruction.md) is component-local qualification plus affected contract and boundary proofs. A full-system run is an explicit integration or periodic checkpoint, not a universal entrance gate. Intermediate assemblies may be incomplete; a component may claim completion only with its own acceptance evidence.
+The adopted policy in [the component architecture guide](architecture/component-reconstruction.md)
+is component-local qualification plus affected contract and boundary proofs.
+Full-system testing is an explicit integration or periodic checkpoint, not a
+universal entrance gate. Intermediate assemblies may be incomplete; a component
+claiming completion still needs its own acceptance evidence.
 
-Current execution is transitional. `.github/workflows/pages.yml`, `verify-layer.yml`, `verify-browser.yml`, the verification planner, and source inventory define the runners and selection behavior that exist in this checkout. In particular, the current workflow still has repository-wide FAST/STUDY/FULL selection and a `quality` job; this documentation does not change those workflows or make their selected checks pass. Hosted branch-protection settings are not represented by these Markdown rules and must be verified directly in GitHub before making claims about the required merge gate. No protection readback was available through the current repository connection for this documentation change.
+Execution remains transitional. `.github/workflows/pages.yml`,
+`verify-layer.yml`, `verify-browser.yml`, the verification planner, and source
+inventory define the runners and selection behavior in this checkout. The
+current workflow still has repository-wide FAST/STUDY/FULL selection and a
+`quality` job; this guide does not change those workflows or make checks pass.
+Hosted branch-protection settings must be verified directly in GitHub before
+claiming which check is required. Documentation does not change branch
+protection or confer passing status.
 
-### Current runner regression inventory
+## Current runner regression inventory
 
-The current ordinary qualification inventory has six global Chromium smoke cases. This records current runner selection, not a promise that these exact cases or tiers must remain permanent as component ownership changes. Preserve their invariants in the appropriate component proof when tests move or are replaced.
+The current ordinary qualification inventory has six global Chromium smoke
+cases. This records current runner selection; the target architecture may move
+tests to their component owners or replace mechanisms with explicitly justified
+equivalent proofs. Preserve the invariant and its owning evidence.
 
 Global critical browser smoke: **6 cases**.
 
-| Spec | Exact case title | Required tier | Invariant retained |
-| --- | --- | --- | --- |
-| `recovery.spec.ts` | `intentional training failure is saved once and reload resumes it without another failure` | global | Browser failure outbox drains once, and reload resumes guided state without a duplicate failure. |
-| `phone-offline-training.spec.ts` | `prepared phone queue and study worker survive full offline reload and sync one review per attempt` | global | Browser shell and storage survive outage/reload; ordered review replay does not repeat after confirmation. |
-| `recovery.spec.ts` | `failed initial loads never display empty records or zero statistics` | global | Service failure shows an actionable error instead of fabricated empty Games/Progress data. |
-| `studies.spec.ts` | `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` | global | A real PostgreSQL-backed Study can be authored, enrolled, answered, and assessed through the workspace. |
-| `training-queue-contention.spec.ts` | `discovery preview backlog leaves a prompt foreground training queue refresh` | global | Background previews retain bounded work while foreground queue refresh completes promptly. |
-| `held-drag-preservation.spec.ts` | `held training drag survives sync, service, notification and parent updates and drops once` | global | A real held piece survives unrelated updates without lease resets and drops exactly once. |
-| `opening-evidence.spec.ts` | `AS-15 a real tab lease releases stranded evidence into a later idle slice` | family | Cross-tab lock release wakes stranded evidence without reconnect; one-journal slices preserve ownership. |
-| `opening-evidence.spec.ts` | `AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive` | family | A stalled optional checkpoint cannot block piece placement or aggregate review. |
-| `opening-evidence.spec.ts` | `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity` | family | Recovered journals wait for startup readiness and browser idle admission. |
-| `opening-evidence.spec.ts` | `AS-16 restarted opening board records guided arrows and retains the prior partial attempt` | family | Restart preserves prior partial evidence and records new rendered guidance as assistance. |
-| `opening-evidence.spec.ts` | `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` | family | Optional-evidence quota fallback preserves the aggregate and journal despite a late receipt. |
-| `opening-evidence.spec.ts` | `AS-16 offline compact quota failure blocks advancement until durable retry` | family | Failure to persist the essential compact phone review blocks advancement until storage retry succeeds. |
-| `opening-evidence.spec.ts` | `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync` | family | Optional-evidence quota permits a durable compact phone review and retained evidence after sync. |
-| `studies.spec.ts` | `prepared study response is graded offline and replayed with its actual squares` | family | Prepared Study grading replays the actual square answer with its revision/queue identity. |
+The preserved runner report below records the exact six global and eight family
+identities, their invariants, and complementary lower-level proofs. The checked-in
+`scripts/ci-verification-inventory.json` remains the source for current titles.
 
-The guided-failure and offline-replay global smokes intercept their save/review API responses; they do not prove authoritative PostgreSQL persistence. The actual PostgreSQL durability checks remain the native proof for review/receipt, restart, replay, and recovery behavior. Tests and reliability mechanisms may move to their component owners when the replacement proof is explicit.
+The guided-failure and offline-replay smokes intercept their save/review API
+responses; they do not prove authoritative PostgreSQL persistence. Existing
+native PostgreSQL checks retain review/receipt, restart, replay, and recovery
+proof. Exact current titles remain owned by `scripts/ci-verification-inventory.json`.
 
-The runner inventory remains the source for exact current titles and families. When a proof moves, retain the user-facing invariant and the owning test evidence; do not preserve an obsolete implementation detail solely because it appears in this table.
+The CI isolation reports and older qualification writeups below describe dated
+baselines. Their findings and implementation details remain evidence, not
+current task-selection or architecture policy; use this guide and
+[the component reconstruction guide](architecture/component-reconstruction.md).
 
-The CI isolation audits and older qualification writeups describe their captured dates and revisions. See their historical notices and use the adopted policy above for current task selection. Documentation edits alone do not certify package independence, alter runner selection, activate Actions, or qualify a PR.
+`npm run check:conflicts` scans tracked text files for unresolved conflict
+artifacts without installing dependencies. It is also called by local gate
+execution and CI planning. The Makefile defines `make full` as the current
+whole-product integration gate. Use `make plan` to print its declared stages;
+do not treat either command as a default component-local check.
+
+For Docker/browser Make targets that need Docker or loopback access, diagnose
+the actual capability requirements. The `make preflight` target checks Docker,
+loopback, and workspace-mount capability. A capability check is not a test
+family, and a failed or unavailable capability leaves the associated tests
+unrun rather than passed.
+
+## Full gate
+
+From the repository root, after installing the project prerequisites, run:
+
+```sh
+make plan
+make full
+```
+
+For a fresh checkout, install Node dependencies with `npm ci`. Create the
+backend environment with `cd backend && uv sync`, then install the pinned
+runtime/test dependencies with `uv pip install --python .venv/bin/python -r
+requirements.txt`; return to the repository root before running Make targets.
+
+The full runner stops at the first failure and writes per-stage timing and exit status to `test-results/performance/test-stages-full.json`. Its ordered stages are:
+
+0. Docker daemon, `127.0.0.1` bind, and checkout bind-mount preflight; no tests have run if this fails.
+1. Frontend Vitest unit suite (`test:unit`).
+2. Defense engine smoke check.
+
+The standalone engine smoke verifies a restricted Stockfish search without connecting to the API. Production engine jobs still poll foreground activity and preempt their background search when needed. The unit regression forces an immediate polling opportunity and checks that smoke mode remains independent of the API.
+3. Python backend pytest suite (`backend/tests`).
+4. Rust format check.
+5. Rust Clippy check.
+6. Rust workspace tests.
+7. Frontend lint.
+8. Typecheck.
+9. WASM build.
+10. Local frontend build.
+11. PostgreSQL disposable stack, including recovery and study durability, plus the regular Playwright browser matrix exactly once.
+12. Pinned Linux visual and performance Playwright specs.
+
+The unit stage also writes one Vitest JSON report to `test-results/performance/unit-files-full.json` during that same test run. `make slow-tests` lists the slowest unit files from it. Use `make slow-tests TIER=fast` after `make fast`; `COUNT=20` shows more files. File wall times include setup and may overlap across workers, so their sum is not the suite wall time.
+
+The regular Playwright specs run **once** in stage 11 on PostgreSQL. Full mode then removes only its unique disposable stack's volumes and starts fresh volumes for study durability. This keeps browser queue entries from affecting commands that require the first active queue entry. `make browser`, `make ui-file`, and `make view` use this same isolated PostgreSQL runner in browser-only mode, without maintenance, backup/restore, or study-durability scenarios. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
+
+For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-results/performance/repeat-<label> make perf`. The directory must be inside the checkout so the Docker runner can write the raw samples there. The ordinary full-run artifacts then remain available for comparison.
+
+## Focused work
+
+| Change area | Command | Coverage |
+| --- | --- | --- |
+| Pure frontend or React logic | `make fast` | Vitest once; no browser or Docker |
+| One unit file | `make unit-file FILE=tests/unit/position-search-regressions.test.ts` | Exact Vitest file |
+| Python backend | `make python` | Backend pytest suite once |
+| One Python file | `make python-file FILE=backend/tests/test_services.py` | Exact pytest file, shared interpreter resolution |
+| Backend with defense engine | `make backend` | Defense smoke and backend pytest once each |
+| Rust | `make rust` | Format, Clippy, and Rust workspace tests once each |
+| One Rust test name | `make rust-case FILTER=card_identity` | Filtered Rust workspace test |
+| Backend and Rust integration | `make integration` | Defense smoke, pytest, and Rust checks once each |
+| UI as a whole | `make ui` | PostgreSQL regular browser matrix plus disjoint pinned visual/performance specs |
+| Regular browser only | `make browser` | PostgreSQL regular Playwright matrix only; no recovery scenarios |
+| One browser spec | `make ui-file FILE=games-board-context.spec.ts` | Exact spec from `tests/browser` |
+| View title filter | `make view VIEW=Builder` | Browser tests whose titles match the pattern; focused subset only |
+| Visual and performance | `make visual` | Pinned visual and performance specs |
+| Performance only | `make perf` | Pinned performance specs; subset of `visual` |
+| PostgreSQL durability only | `make docker-durability` | Ordinary PostgreSQL migrations, recovery, workloads, backup/restore and study durability; no browser or deployment lifecycle |
+| Deployment lifecycle only | `make docker-lifecycle` | Complete CLI migration, backup, Redis loading, deployment and recovery rehearsal on its own disposable project |
+| Legacy SQLite compatibility | `make legacy-sqlite` | Former SQLite runtime/browser runner; optional, outside the default full gate |
+
+`make plan TIER=fast`, `TIER=python`, `TIER=backend`, `TIER=rust`, `TIER=integration`, `TIER=ui`, or `TIER=browser` prints that scope's exact stages. A view title filter is convenient during development but is not a claim of complete coverage for that view; use `make ui` or `make full` for the broader gate. Make rejects multiple verification targets in one invocation so a combined command cannot accidentally repeat a suite.
+
+The focused SQLite snapshot, validation, import-fidelity, source-nonmutation, destination-safeguard, historical-schema, and SQLite-backed product regressions remain part of the normal unit/backend suite. The old complete SQLite runtime runner is optional so the default gate does not execute the regular Playwright matrix twice.
+
+| Retired default SQLite assertion | Replacement or optional route |
+| --- | --- |
+| Regular product workflows and browser recovery | One PostgreSQL-backed regular browser matrix in `make full` |
+| Service recreation, durable receipt replay, queue identity | PostgreSQL study durability scenario in the default runner |
+| SQLite runtime service/browser specifics | `make legacy-sqlite` |
+| SQLite snapshot integrity, import fidelity, and safety guards | Focused SQLite unit/backend regressions remain in `make full` |
+
+Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.mjs --list` to inspect runner stages without starting a stack. The full gate always includes the PostgreSQL browser matrix.
+
+## PostgreSQL execution modes and timings
+
+The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability, deployment lifecycle and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full, durability or lifecycle mode so a filtered run cannot masquerade as a full gate.
+
+```sh
+node scripts/test-postgres-docker.mjs --list --mode browser
+node scripts/test-postgres-docker.mjs --list --mode durability
+node scripts/test-postgres-docker.mjs --list --mode lifecycle
+make ui-file FILE=games-board-context.spec.ts
+make docker-durability
+```
+
+These are alternative development scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, the relevant subsystem when stable, and the full gate on the final candidate before release. A passing focused run is not evidence that the full gate passed.
+
+Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. The independent lifecycle mode builds the required current images and maintenance tools, runs the entire CLI rehearsal, and cleans up; it does not start an unused parent application stack. Before the rehearsal, standalone mode acquires PostgreSQL and Redis with `docker compose pull --policy missing postgres redis`: cold dependencies are required, while cached images avoid registry acquisition. Missing-image pull failures still fail verification. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
+
+The executable scenario plan also drives `--list`. Every invocation writes a separate `postgres-scenarios-<mode>-<project>.json` under `test-results/performance/` (or the explicitly selected `TEMPO_TEST_TIMING_DIR`). It records commit, mode, requested browser filter, planned stages, and measured duration/exit status after each executed stage, including failures and cleanup. It does not copy environment variables or exception payloads into the timing report. Never sum these scenario durations with the enclosing `postgres_docker` duration: they are nested measurements of the same work. CI's existing artifact upload includes the raw scenario reports.
+
+Schema version 2 adds start-ordered `details` beneath the unchanged required stages. Each detail records its stage, parent ID, fixed operation label/category, relative start, duration, completion and outcome. Readiness loops additionally record poll counts and actual timer waiting; process boundaries record numeric exit codes or known termination signals. Durability workload scripts and lifecycle migration, backup, recreation, Redis and child-process boundaries are measured separately. Parent and child durations overlap; concurrent Redis observation also overlaps deployment. Expected rejected migrations and the intentionally interrupted child retain their observed failures while the enclosing scenario must still pass its assertions. These observations do not replace the immutable plan's stage, commit and plan-hash checks. Recording errors fail the invocation, with owned cleanup still required. Python workload-internal SQL/fixture measurements remain in their existing structured log evidence.
+
+## Deployment lifecycle selection
+
+`schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
+
+The existing immutable CI plan adds a blocking `lifecycle` layer. Its sensitivity rules live alongside the browser inventory, but lifecycle selection does not use browser families or rendering breadth. Migrations/schema readiness, PostgreSQL storage/credential infrastructure, Tempo deployment scripts and entrypoints, backup/restore, Redis recovery, Compose/service images, dependencies and lifecycle/verification harness inputs require it. Sensitive matches override ordinary product/prose exemptions; unclassified infrastructure and missing comparison history select it conservatively. Both names of renames/copies and deleted paths remain classified.
+
+The backend ordinary exemption is limited to exact reviewed service files and root domain command handlers, API modules, contracts and models listed in the lifecycle inventory. It does not exempt all of `backend/app/` or `backend/app/services/`, or introduce suffix-based exemptions for future command/API modules. New service or root modules require lifecycle until explicitly reviewed and classified; existing sensitive rules still override exact ordinary exemptions. Normal product tests and `tests/REGRESSIONS.md` remain ordinary companions to domain changes.
+
+Every complete, nightly, main, merge-group, manual and publishing verification requires lifecycle. Ordinary unrelated PRs record it explicitly as inapplicable, with the corresponding workflow skip and aggregate explanation. Broad browser coverage alone does not make overall verification complete: the overall scope is complete only when lifecycle and the existing full browser/pinned coverage are selected. Browser selection, critical cases, pinned applicability and parallelism are unchanged.
+
+The hashed plan captures the expected PostgreSQL mode and ordered scenario inventory. Layer and quality checks require the matching revision, plan hash, exact scenario inventory and successful results including cleanup; a missing, cancelled, unexpectedly skipped, failed or stale selected lifecycle result blocks quality. The release CLI requires `lifecycle / verify` in complete exact-main CI evidence. No previous-revision results are reused.
+
+## Cache behavior and isolation
+
+The PostgreSQL runner invokes the Compose image build once; startup, recovery recreation, and the full-mode fresh study stack explicitly use `--no-build` to reuse those images within the run. Every run still owns fresh project-scoped containers, volumes, network, credentials, and a loopback port. Cleanup remains project-scoped and no production database is reused.
+
+Docker's build context excludes `.tempo-pg-test-secrets-*`, `.dev-copies`, Python bytecode/cache files, and test output. In particular, generated credentials must never enter a `COPY . .` image layer or invalidate an otherwise reusable frontend build layer. Existing local BuildKit cache remains available; this change does not add persistent remote Docker-layer caching.
+
+CI retains npm caching and adds pip downloads plus Rust compiler/dependency caches after toolchain setup. Workflow cancellation is scoped to the same PR or ref, and only superseded PR runs are cancelled. Pages deployment has its own non-cancelling concurrency group. All full-gate stages and pinned visual/performance settings remain required and unchanged. Vitest worker counts and test isolation are intentionally unchanged pending measurements.
+
+## Runner regression coverage
+
+`tests/unit/postgres-test-speedups-regressions.test.ts` runs the dependency-free Node suite in `tests/runner/postgres-test-speedups.test.mjs` as part of the regular frontend gate. The same cases can be run directly with `node --test tests/runner/postgres-test-speedups.test.mjs` while editing the harness. The suite checks executable mode selection, read-only plans, failure/cleanup propagation, timings, fail-fast fixtures, and the Make/CI entry points. These harness tests do not replace live PostgreSQL or browser verification.
+
+## Historical CI reliability and validation evidence
+
+> Sections below preserve earlier runner/qualification audits and task validation records at their captured revisions. Some proposals and merge-policy descriptions were superseded by the October 14 component reconstruction in [#192](https://github.com/aaweaver-actuary/tempo/issues/192). Use the current selection policy and commands at the top of this file and the [component architecture guide](architecture/component-reconstruction.md); do not treat the historical recommendations as active instructions. Original findings and results are retained.
+
+### CI reliability maintenance: decomposition boundary
+
+`scripts/verification-stages.mjs` defines the existing commands for both the
+unchanged local `make full` and independent CI owners: `ci-frontend` (all units,
+lint, typecheck), `ci-backend` (all Python tests and defense-engine smoke), and
+`ci-build` (Rust format/lint/tests, WASM and local build). PostgreSQL durability, independently selected deployment lifecycle,
+regular browser verification and pinned visual/performance remain separate
+runner modes. Splitting durability and browsers gives each its own disposable
+stack; the full runner's intervening study isolation is replaced by separate
+volumes, while all product scenarios remain covered.
+
+`split complete verification matches the existing full command inventory`
+compares the split command union to full, with only report filenames normalized.
+Local proof on main `86daf005`: 12 test-plan regressions passed (5.99s, macOS
+ARM64, Node 26.3.0, Python 3.14.5). `make plan` retains its 13-stage inventory.
+This is inventory proof, not a completed runtime gate; final candidate CI owns
+complete verification. Selection changes follow in a separate commit.
+
+## Complete evidence and merge qualification
+
+The version-3 complete plan records repository name/ID, PR number, draft state,
+head/base/integration SHAs, inventory revision and runner/tool versions. All FULL
+layer and quality checkouts are pinned to that integration SHA. The emergency
+workflow invokes this planner with `--complete`, including for draft FULL PRs;
+its older reduced `development` selection remains available to existing callers
+and contract tests, but does not govern FAST/STUDY qualification.
+
+FULL drafts report execution through `development`; `quality` rejects any draft.
+Ready FULL PRs require all complete layers and refreshed PR metadata. Changed
+head/base/draft/integration context invalidates full qualification. FAST/STUDY
+have their separate exact-head validator described above and do not run these
+complete-report jobs. GitHub itself prevents merging draft PRs.
+
+New test-named files must belong to the regular collection or declare runner
+wrapper ownership. Missing collection, skipped/failed cases and zero execution
+cannot qualify. Vitest uses `--no-static-parse` to expand dynamic/parameterized
+cases before execution; the actual result identities must match collection.
+PostgreSQL evidence remains real disposable-database proof, with migration,
+isolation and cleanup guards preserved. Collection and capability checks alone
+are not execution evidence.
+
+Local development uses the smallest relevant proof; CI owns the selected final
+candidate gate. Do not run an equivalent local full gate concurrently. The
+required GitHub protection is `merge-gate` with strict=false under this emergency
+policy; the prior recommendation to require strict `quality` is superseded.
+FULL still owns complete release/publishing qualification.
+
+### Bounded same-PR suite evidence
+
+Version-2 layer reports separate the current qualification plan hash from a suite execution fingerprint. The fingerprint includes repository/PR, head/base/integration SHAs, inventory revision, exact command arguments, selected tests/scenarios and pinned runtime requirements. Draft/ready state or orchestration metadata alone does not invalidate an identical suite; selective commands cannot match complete commands.
+
+Before expensive setup, `scripts/ci-evidence.mjs` inspects at most 20 recent same-PR workflow runs through the GitHub jobs and artifacts APIs. It requires an original completed passing execution job, the actual execution step, the expected runner, matching report/runtime/inventory/arguments and an unexpired artifact whose downloaded ZIP matches its published SHA-256 digest. A newer matching failure or ambiguous/missing execution prevents fallback to an older pass. Unavailable or invalid reuse executes the suite normally. Receipts retain the original report and plan without rewriting their evidence or creating receipt chains.
+
+The current layer must successfully validate reuse. Aggregation independently validates the original report and refreshes its job, latest attempt and artifact metadata, as well as current PR identity/state/head/base/integration. Missing, cancelled, skipped, filtered, retried, failed, expired or diagnostic-only evidence blocks qualification. Main, merge groups, releases, nightly and manual full requests always execute freshly. No reuse crosses a changed candidate or bypasses migration/schema guards.
+
+
+### Existing complete-verification infrastructure and reliability evidence
+
+The following describes the retained complete validator, not the ordinary
+FAST/STUDY merge gate. The CI workflow preserves local `make full` and uses separate frontend,
+backend/engine, Rust/WASM/build, PostgreSQL durability, source-selected deployment lifecycle, browser, and pinned
+visual/performance jobs. Every FULL PR runs all units and build checks, all
+ordinary PostgreSQL durability scenarios, deployment lifecycle when selected,
+and the global browser smoke below. Each
+PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
+containers and remains serial within its stack. GitHub's **Re-run failed jobs**
+repeats a failed layer and its aggregate without repeating successful layers.
+
+Global critical browser smoke: **6 cases**.
+
+The table audits all 14 cases previously designated critical. A global case
+protects a shared browser invariant needed on ordinary PRs. A family case stays
+unchanged and required whenever its complete family is selected, and at every
+complete boundary. Lower-level coverage is complementary; it does not replace
+the retained browser proof. All listed unit/backend files remain in mandatory
+FULL verification. FAST/STUDY use the emergency selections above.
+
+| Spec | Exact case title | Required tier | Unique browser invariant and decision | Complete family | Existing lower-level coverage |
+| --- | --- | --- | --- | --- | --- |
+| `recovery.spec.ts` | `intentional training failure is saved once and reload resumes it without another failure` | global | Browser failure outbox drains once, and reload resumes guided state without a duplicate failure. Shared save/reload invariant. | training | `tests/unit/training-failure-outbox-regressions.test.ts` |
+| `phone-offline-training.spec.ts` | `prepared phone queue and study worker survive full offline reload and sync one review per attempt` | global | Real browser shell/storage survives outage and reload; ordered review replay does not repeat after confirmation. Shared offline invariant. | training | `tests/unit/offline-shell-regressions.test.ts`, `backend/tests/test_phone_offline_training.py` |
+| `recovery.spec.ts` | `failed initial loads never display empty records or zero statistics` | global | Service failure shows an actionable error instead of fabricated empty Games/Progress data. Shared fail-closed invariant. | training | Complementary validation/error boundaries in `tests/unit/validated-data-regressions.test.ts` and `tests/unit/status-polling-regressions.test.tsx` |
+| `studies.spec.ts` | `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` | global | A real PostgreSQL-backed Study can be authored, enrolled, answered and assessed through the workspace. One shared Study workflow. | studies | `tests/unit/study-exercise-grading.test.ts`, `backend/tests/test_studies.py` |
+| `training-queue-contention.spec.ts` | `discovery preview backlog leaves a prompt foreground training queue refresh` | global | Background previews retain bounded concurrency/work classification while foreground queue refresh completes promptly. Shared foreground priority invariant. | discoveries | `tests/unit/discovery-preview-scheduler-regressions.test.ts` |
+| `held-drag-preservation.spec.ts` | `held training drag survives sync, service, notification and parent updates and drops once` | global | A real held piece survives unrelated updates without lease resets and drops exactly once. Shared input-preservation invariant. | board | `tests/unit/board-drag-preservation-regressions.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-15 a real tab lease releases stranded evidence into a later idle slice` | family | Real cross-tab Web Locks release wakes stranded evidence without reconnect; one-journal slices preserve ownership. Opening-specific recovery. | training | `tests/unit/opening-evidence-recovery-lifecycle.test.tsx`, `tests/unit/opening-evidence-recovery-slices.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive` | family | A stalled optional checkpoint cannot block real piece placement or aggregate review. Opening-specific persistence seam; shared foreground smoke remains global. | training | `tests/unit/opening-evidence-regressions.test.ts`, `tests/unit/opening-evidence-background-admission.test.ts` |
+| `opening-evidence.spec.ts` | `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity` | family | Recovered journals wait for startup readiness and browser idle admission before delivery. Opening-specific admission policy. | training | `tests/unit/opening-evidence-home-lifecycle.test.tsx`, `tests/unit/opening-evidence-recovery-policy.test.tsx` |
+| `opening-evidence.spec.ts` | `AS-16 restarted opening board records guided arrows and retains the prior partial attempt` | family | Restart preserves prior partial evidence and records newly rendered guidance as assistance. Opening-specific provenance. | training | `tests/unit/opening-evidence-home-lifecycle.test.tsx`, `tests/unit/opening-evidence-regressions.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` | family | Optional-evidence quota fallback preserves the aggregate and IndexedDB journal despite a late receipt. Opening-specific quota/recovery boundary. | training | `tests/unit/opening-evidence-regressions.test.ts`, `tests/unit/opening-evidence-review-deadlines.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 offline compact quota failure blocks advancement until durable retry` | family | Failure to persist the essential compact phone review blocks advancement until storage retry succeeds. Opening-specific fallback path. | training | `tests/unit/opening-evidence-offline-quota.test.ts` |
+| `opening-evidence.spec.ts` | `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync` | family | Optional-evidence quota permits a durable compact phone review with stable aggregate-only identity and retained evidence after sync. Opening-specific quota path. | training | `tests/unit/opening-evidence-offline-quota.test.ts`, `tests/unit/opening-evidence-regressions.test.ts` |
+| `studies.spec.ts` | `prepared study response is graded offline and replayed with its actual squares` | family | Prepared Study grading stores and replays the actual square answer with its revision/queue identity. Study-specific grading; shared phone replay remains global. | studies | `tests/unit/study-exercise-grading.test.ts`, `backend/tests/test_phone_offline_training.py`, `backend/tests/test_studies.py` |
+
+The guided-failure smoke intercepts its failure API; it proves browser outbox
+persistence and reload behavior, not authoritative PostgreSQL review persistence.
+The offline replay smoke likewise intercepts its review response. The existing
+always-required PostgreSQL durability layer retains real review/receipt,
+restart, replay and recovery proof. The separate lifecycle boundary retains
+the complete deployment rehearsal when selected.
+
+`scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
+Exact leaf and subsystem mappings add complete consumer families. Study
+contracts/grading select both Studies and training; opening recovery selects
+training; the review-delivery helper also selects defense because it serves
+ordinary defensive-card saves. Backend segmentation helpers additionally
+select training because they build opening-evidence manifests. Mapping reasons
+record these consumers; missing families and duplicate/ambiguous paths fail
+planning. New executable paths do not inherit coverage from a directory prefix.
+
+Ordinary Markdown under `docs/`, repository README files, explicitly listed
+root prose and `tests/REGRESSIONS.md` in qualification retain mandatory core/durability checks
+and the global smoke. Standalone `tests/unit/*.test.ts(x)` and
+`backend/tests/test_*.py` likewise retain the FULL core tests without
+adding browser families. Consequently, adding a feature's regression and
+registration cannot erase its reviewed source selection. Shared helpers,
+fixtures, executable examples/data and runner configuration do not receive
+this exception. Unknown Markdown outside these reviewed prose locations stays
+conservative too.
+
+Shared board/state/contracts, global browser fixtures, runners, dependencies,
+migrations, unknown executable paths and missing comparison history select
+every browser family and pinned checks. Both names of renamed/copied files and
+deleted paths participate in the union. All TSX rendering edits and rendering
+assets retain pinned visual/performance selection. Adding an unclassified
+browser spec fails planning; all regular and pinned specs have exactly one
+family. Unknown or cross-cutting changes remain complete even when another
+changed source has a narrow mapping.
+
+The regular CI reliability suite checks this documented smoke count and the
+exact global titles against the inventory and actual Playwright collection.
+The planner prints the collected global-critical and selected/total counts
+dynamically. Intentional smoke changes must update the inventory, audit and
+regressions together. Complete coverage uses all collected cases rather than
+a frozen numeric total, including Firefox/WebKit cross-browser projects.
+
+The [October 7 browser-selection validation](browser-selection-validation.md)
+records comparable counts/timings, tested revisions, isolation repairs and
+disposable-resource cleanup evidence.
+
+
+The plan job actually collects all regular and pinned cases. Its immutable
+plan and collection report record IDs, projects, titles, selection reasons,
+critical coverage, and complete nightly/release coverage. Layer result reports
+include commands, exits, durations, revision and environment. Units retain
+Vitest JSON and backend JUnit; browsers and pinned tests retain JSON results,
+available traces/screenshots, and timing artifacts. Disposable service logs
+are captured before cleanup even on success; artifact errors cannot prevent
+resource cleanup. Artifacts upload with `always()` and missing reports fail
+`quality`, which also runs with `always()`. Missing/cancelled/unexpectedly
+skipped jobs, absent commands, skipped tests and collection mismatches fail
+aggregation. Only plan-recorded inapplicability allows a skip.
+
+Complete verification runs nightly at **07:00 UTC**, on demand, for merge-group candidates when the owner enables a merge queue, and on main
+before practice-demo publishing. Scheduled runs and manual runs with the
+(default) **verification only** option cannot deploy. Publishing additionally
+requires complete scope and successful `quality` on main. Same-PR runs
+supersede each other; deployment concurrency remains non-cancelling. No
+repository settings were changed by the historical browser-selection work. At
+emergency-policy inspection on October 12, main required `quality` with
+strict=true. The replacement settings and rollback are specified in the
+emergency section above; do not use the historical recommendation as the
+current merge policy.
+
+CI pins demonstrated Node **22.23.3**, Python **3.12.14**, Rust **1.99.0** and
+host wasm-pack **0.15.0**. The existing pinned Playwright Linux ARM64 image and
+Docker build's explicit wasm-pack pin remain unchanged. These pins do not
+attribute historical failures to toolchain drift.
+
+Automatic retries are disabled. Manual diagnostic retry is optional and
+limited to one repeat of the failed command; the first failure remains in
+reports/artifacts and the mandatory job still fails. `scripts/ci-quarantine.json`
+is empty. A future entry must identify an individually confirmed harness
+defect, repair issue, owner, expiry and required replacement coverage. It
+continues in a visibly nonblocking job; critical cases cannot be quarantined.
+Missing quarantine reports still fail aggregation, and expiry fails planning.
+
+### Observed 25-run baseline
+
+The inspected recent sample has **13 successful runs, 11 failed runs and one
+cancellation**, each at attempt 1. These are run outcomes, not a false-failure
+rate. Preserve unresolved failures separately from confirmed repairs:
+
+| Signature | Failed runs | Evidence / disposition |
+| --- | --- | --- |
+| Study authoring captured the shell FEN before its exercise FEN | 36787451501, 36785256539, 36779563054, 36639783560, 36634425515, 36623248337 | Trace-backed synchronization repair `ec03b52`, already on main; waits for exact exercise FEN before capturing unchanged-input invariant. |
+| Background fixture consumer races (`NoneType`) | 36715216550, 36646129188 | Fixture isolation repair `0ac1e0f`, already on main; pauses/verifies consumers while synthetic workload owns its rows. |
+| Discovery second clock jump overlaps second feed response | 36871513621, 36706814147 | Retained PR #50 trace supports synchronization diagnosis; repair `e3856e7` is now on main through merged PR #50. Original exact local case passed; no deterministic local failure is claimed. |
+| Phone and Study initial visibility failures | 36792899240 | Unresolved; no quarantine and no assertion or timeout relaxation. |
+| Same-PR cancellation | 36791648011 | Supersession outcome; not classified as a test failure. |
+
+Run 36871513621 tested synthetic merge `1eb39f202ee0186594980b4083eda812b8597d79`
+(head `26bbf2a`), Linux ARM64, Node 22.23.3, Python 3.12.14, Rust 1.99.0:
+426 frontend cases, 728 backend cases and 8 Rust tests passed; 153/154 regular
+browser cases passed. The fail-fast runner did not reach visual/performance.
+Recorded stage seconds: capabilities 27.52, units 62.58, engine smoke 0.21,
+backend 77.17, Rust format 0.03/lint 14.00/tests 11.40, lint 17.58, typecheck
+11.73, WASM 14.91, local build 1.84, PostgreSQL 596.14 (failed). Nested
+PostgreSQL image build 105.22, browser 382.63 and cleanup 10.82 seconds are
+inside that PostgreSQL stage and must not be added again. Main's prior
+successful reference is run 36857716424. This failed baseline and successful
+focused repeats are not comparable complete throughput measurements. No
+speedup or learning claim follows from them.
+
+Before PR #50 merged, the maintenance measurements below used main-only sources
+without its discovery repair; those historical runs retain their original
+revision labels. PR #50 is now on main at `1151304261e59670847175b07680eb7a101f8211`
+and was integrated into PR #51 by merge `2f5521d`. Current candidate verification
+includes its segmentation, snapshot, migration and discovery regressions.
+
+### Maintenance implementation evidence
+
+Local environment: macOS ARM64, Node 26.3.0, Python 3.14.5, Rust 1.98.1;
+pinned browser image remains Linux ARM64. Measurements below are the maintenance
+patch dirty over decomposition commit `b5d046a`, based solely on main
+`86daf005`; no PR #50 feature or discovery repair was cherry-picked.
+
+- `npm run test:unit -- tests/unit/ci-reliability-regressions.test.ts tests/unit/test-plan-regressions.test.ts tests/unit/postgres-test-speedups-regressions.test.ts tests/unit/postgres-test-runner-regressions.test.ts`: 19 regular cases passed (5.46s). The CI wrapper invokes 14 named native Node regressions; they also pass directly with `node --test tests/runner/ci-reliability.test.mjs`.
+- `node scripts/ci-verification-plan.mjs --base origin/main`: actual maintenance diff selects complete 152-case regular browser inventory and 49 pinned cases. Unknown/missing-history fixtures select the same complete coverage; docs-only fixture selects exactly 7 critical cases.
+- `node scripts/ci-run-layer.mjs frontend`: 424 frontend cases passed in 54.84s, followed by passing lint/typecheck; 75.26s command time. Lint's unrelated existing warnings remain; extracted unused imports were subsequently removed and lint rerun.
+- Elevated `node scripts/ci-run-layer.mjs browser` on the explicitly labelled docs-only selection fixture: 7/7 critical cases passed, 73.95s including preflight/setup/cleanup. Executed IDs match selection; this is main-only critical proof, not the actual maintenance PR's complete browser gate.
+- Elevated `node scripts/ci-run-layer.mjs postgres`: all planned durability scenarios passed, 139.80s including preflight/setup/cleanup. Browser and durability stacks have different fresh resource names and volumes; available diagnostics and machine-readable reports were retained.
+- `node scripts/ci-verification-plan.mjs --complete`, then elevated `node scripts/ci-run-layer.mjs visual`: all 49 pinned visual/performance cases passed, 249.75s test execution / 269.39s including preflight and setup. Report IDs exactly match pinned collection. Baselines were not changed.
+- Typecheck, lint, YAML structure/aggregate dependency inspection and `git diff --check` passed. No local full gate was run: final candidate CI owns that boundary. These focused measurements alone did not validate core backend/Rust/build or complete regular browser runtime; later complete evidence is separately revision-labelled below and in the PR description.
+
+These command times do not project parallel-CI speedups and are not comparable
+to the earlier failed full-run timing. GitHub job reports provide candidate
+revision/toolchain timings and retain unrelated successes for a failed-layer
+rerun. Recovery: inspect the failing layer's result, log and trace; repair the
+specific cause, then run affected proof and current-candidate verification.
+Missing reports are failures. Do not use diagnostic success to release an
+initially failed candidate. Reverting the maintenance commits restores the
+existing complete runner; local `make full` remains available throughout.
+
+Final inventory audit: the initial directory filter could miss a collected `.test.ts`, `.spec.tsx` or nested spec, and basename normalization could incorrectly classify a nested file as its root namesake. The named collected-file regression failed before the fix. Validation now includes all filenames from actual regular/pinned collection and preserves relative paths. The historical 152/49-case collections and selected IDs were unchanged by this fix; new unclassified collected files fail planning. Prior complete run 36887697735 passed maintenance `decf5d6`, synthetic merge `8c088e38c56efb779b8e2dadafc38169634f2a54`, main-only 424 frontend/715 backend/152 browser/49 pinned cases and all Rust/build/durability jobs. Its success is not relabelled as validation of later heads.
+
+Complete browser work now runs without a focus filter. Partial selection retains project/file/title boundaries and permits collected tags at suite/test boundaries; executed IDs must still equal the plan. The inventory/tag regressions brought the native CI harness suite to 16 named cases. Current-main integration adds `current-main integration retains CI and segmentation regression registrations`, bringing it to 17. The existing wrapper keeps all native cases in the regular frontend gate.
+
+### Current-main integration repair
+
+Merge `2f5521d` integrated main `1151304261e59670847175b07680eb7a101f8211`
+without changing product behavior. The PostgreSQL runner retains both PR #50's
+segmentation check inside background workloads and PR #51's diagnostic cleanup.
+Its regression registry resolution dropped four CI registration paragraphs;
+the new named regression reproduces that loss and protects both CI and
+segmentation coverage, including all AS-01–AS-22 entries. Restore the CI entries
+additively rather than replacing either group. Schema 24 remains unchanged.
+Focused harness/collection and disposable durability proofs cover this boundary;
+the final PR description records current head/base/merge SHAs, CI run, collected
+counts, all layer outcomes and any remaining blockers. Older successful runs
+are historical evidence, not validation of the repaired head.
+
+## Repertoire daily-limit validation
+
+The daily opening limit now has an optional repertoire override. Settings → Training
+shows the global default and separately saved repertoire limits. A null override
+inherits the default; integers 0–100 override it, with zero pausing only new cards.
+Changes refresh today's remaining automatic introductions. Completed work and due
+reviews remain. Unused allowance does not accumulate: seven learned out of ten
+still permits up to ten new cards tomorrow.
+
+PostgreSQL migration 29 adds the nullable column. Upgrade with the normal
+stopped-writer migration procedure before starting the API/workers requiring schema
+29. SQLite compatibility initialization adds the same nullable field. Settings
+writes and their queue-refresh generation commit together on PostgreSQL; old worker
+checkpoints cannot publish after that generation changes. Publication rechecks the
+current limit and admissions without reversing the foreground settings/task lock
+order. No new background handler is introduced.
+
+Selected development scope: queue admission/reconciliation, repertoire persistence,
+strict request/response contracts, Settings controls, operation-receipt recovery,
+and the complete Settings/queue browser boundary. Start with
+`make python-file FILE=backend/tests/test_repertoire_settings.py` and
+`make unit-file FILE=tests/unit/repertoire-daily-limits.test.tsx`; then run the existing
+queue regressions, PostgreSQL cutover/candidate-page tests, API schema parity,
+typecheck, lint, and CI/Docker-runner contract tests. These exercise override
+precedence, invalid/zero/null values, attribution of shared cards, day rollover,
+completed reviews, stale publication, persistence, and replay without duplicating
+broad suites.
+
+On a settled candidate, run
+`make ui-file FILE=settings-repertoire-limits.spec.ts`, `make docker-durability`,
+and `make visual` in a Docker/loopback-capable environment. The new durability proof
+is part of `background_workloads`; the existing recreation stage now imports its
+own repertoire and checks override persistence and receipt replay. The pinned
+Settings fixtures include inherited repertoire limits and wait for their controls
+before capture. Review their intentional screenshot changes; do not accept new
+baselines just to clear failures. CI owns final required current-candidate validation.
+
+Implementation evidence (2026-10-02): all executions used the dirty implementation
+checkout `.dev-copies/repertoire-daily-limits`, based on verified remote main
+`dfbb66d67b314357e55c2030ff794a15415f316c`, on branch
+`codex/repertoire-daily-limits`. They were not runs against clean base HEAD. The
+primary checkout and live study service were untouched. Node dependencies were
+installed with `npm ci --offline --ignore-scripts`. Python used an isolated CPython
+3.14.5 environment populated from existing cached project dependencies;
+`uv sync --offline --inexact` succeeded, but the offline requirements install could
+not resolve uncached `python-dotenv`. Container runtime installation is still part
+of CI; these local results are focused evidence only.
+
+| Executed command | Result and observed duration |
+| --- | --- |
+| `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_repertoire_settings.py backend/tests/test_postgres_cutover.py backend/tests/test_postgres_opening_candidate_pages.py backend/tests/test_new_cards_per_repertoire.py backend/tests/test_regressions.py backend/tests/test_introduction_priorities.py -q -o cache_dir=.pytest_cache --rootdir=.` | 239 passed; 8.21 s reported by pytest on final backend sources. |
+| `make unit-file FILE=tests/unit/repertoire-daily-limits.test.tsx` | 5 passed; 1.09 s Vitest duration. |
+| `TEMPO_PYTHON=backend/.venv/bin/python make unit-file FILE=tests/unit/api-schema-parity-regressions.test.ts` | 5 passed; 1.31 s Vitest duration. |
+| `make unit-file FILE=tests/unit/validated-data-regressions.test.ts` | 16 passed; 0.791 s Vitest duration. |
+| `make unit-file FILE=tests/unit/settings-save-pending-regressions.test.ts` | 2 passed; 0.545 s Vitest duration. |
+| `node --test tests/runner/ci-reliability.test.mjs tests/runner/postgres-test-speedups.test.mjs` | 52 passed; 1.983 s runner duration. Browser collection here is static discovery, not browser execution. |
+| `npm run typecheck` | Passed; duration not captured. |
+| `npm run lint` | Passed with 9 pre-existing warnings; duration not captured. |
+| `node --check scripts/test-postgres-docker.mjs` and `PYTHONPATH=backend backend/.venv/bin/python -m py_compile scripts/check_postgres_repertoire_limits.py scripts/check_postgres_upgrade.py` | Static syntax checks passed; duration not captured. |
+| `make plan` and `git diff --check` | Plan inspected and diff clean; no runtime evidence. |
+| `make preflight` | Blocked: Docker socket permission denied and loopback bind EPERM; no Docker/browser tests ran. |
+
+The feature regressions initially failed against the baseline because the override
+endpoint did not exist. The shared-card retry regression separately failed before
+restricting introduction counts to cycle zero. The original no-rollover regression
+passed in the final focused backend run. PostgreSQL durability/recreation, the new
+real browser spec, pinned rendering (including intentional Settings baseline review),
+production builds, and final CI candidate checks remain pending. No CI run was
+started from this local branch and no deployment was performed.
+
+Review-fix evidence (2026-10-02): pulled the reviewed head `b3fe4f4`, which had
+no newer branch commits. Added the staged settings route contract, reused the
+settings system-ID tuple for repertoire listing (including `__defense__`), removed
+owner-integrity exclusions only from four historical consumption queries, and
+initialized Custom from the current global default unless a custom draft exists.
+Named regressions and failing-before evidence are recorded in `tests/REGRESSIONS.md`.
+Candidate eligibility checks, cycle-zero accounting, publication rechecks, and
+queue-generation invalidation remain intact. Older system exclusions in import,
+main selection, comparison, and integrity scanning were inspected but left outside
+this settings/listing fix to avoid changing unrelated repertoire behavior.
+
+Current main `937aee7` was merged into the PR branch, preserving both appended CSS
+sections and both regression inventories. The post-merge executable candidate was
+clean `df5b64ec738972ed58bc01fe19aad61603465324` in the same isolated macOS checkout;
+Python remained CPython 3.14.5. Docker tests used disposable PostgreSQL with Python
+3.12 and the production Compose image build. Test-owned temporary secrets, databases,
+containers and volumes were cleaned by the runners; live study was untouched.
+
+| Post-merge command | Result and observed duration |
+| --- | --- |
+| `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_repertoire_settings.py backend/tests/test_postgres_route_contract.py backend/tests/test_postgres_opening_candidate_pages.py backend/tests/test_new_cards_per_repertoire.py backend/tests/test_regressions.py backend/tests/test_introduction_priorities.py backend/tests/test_postgres_cutover.py::test_postgres_priority_opening_publication_translates_opportunity_json backend/tests/test_postgres_cutover.py::test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering -q -o cache_dir=.pytest_cache --rootdir=.` | 59 passed; 36.37 s pytest duration. Includes all 20 repertoire-settings cases, route-contract matching, and existing publication/reconciliation invariants. |
+| `TEMPO_PYTHON=backend/.venv/bin/python npm run test:unit -- tests/unit/repertoire-daily-limits.test.tsx tests/unit/api-schema-parity-regressions.test.ts tests/unit/tactic-capture-regressions.test.tsx` | 32 passed across 3 files; 15.45 s Vitest duration. Includes 6 repertoire cases, 5 schema cases, and preservation of incoming SAN-entry behavior. |
+| `npm run typecheck` and `npm run lint` | Passed; lint retains 9 existing warnings. Individual durations not captured. |
+| `make docker-durability` (elevated) | Incomplete/failing: repertoire-limit proof, capture contention, schema upgrade, background budgets, and operation recovery passed. Existing `check_postgres_background_workloads.py` second threat claim exceeded its 250 ms transaction budget. Background-workload stage 99.82 s; image build 70.41 s; cleanup 16.38 s. These are stage timings, not a full-gate pass or summed suite wall time. Later threat-upsert, recreation, backup/restore and study-durability stages were not reached. |
+| `make ui-file FILE=settings-repertoire-limits.spec.ts` (elevated) | Passed: 1 Chromium workflow, 31.9 s Playwright duration (30.3 s case). Docker stages: build 19.59 s, startup 33.94 s, browser 34.43 s, cleanup 37.56 s. Proves current-day queue changes, reload persistence, inheritance reset, and failed-save receipt recovery. |
+| `make plan` and `git diff --check` | Coverage inspected; diff clean. Static inspection only. |
+
+Before merging main, `make visual` (elevated, clean `a6eb4bb`) ran the pinned
+Linux ARM64 Playwright 1.63.0 image: 47 passed, 4 Settings screenshots failed,
+11.1 min Playwright duration. All four actual/expected Settings images were
+visually inspected at 390, 768, 1280 and 1920 px. Differences at the first three
+sizes are the intended default label, repertoire controls and resulting page height.
+The 1920 baseline also predates the notification button: its last update is
+`16a845b` (2026-09-26), before notification introduction `a11eed6` (2026-09-27).
+That separate header difference is not approved by this feature request. Performance
+cases passed, but this run overlapped a focused Python check and is not comparative
+performance evidence. Its results are historical pre-merge evidence, not validation
+of the merged candidate.
+
+Post-merge pinned attempts used the same image/config without changing tests.
+The first focused filter was incorrectly anchored against short titles; collection
+returned zero tests and no snapshots changed (not a pass). The corrected attempt
+was killed with exit 137 during `npm ci`, before tests or updates. Docker diagnostics
+showed a shared 6 GB / 4 CPU VM with live Tempo services and another test project;
+no services were stopped, limits increased, or caches pruned. A cache-first install
+with a 512 MB npm heap and bounded download concurrency was selected to reduce setup
+pressure; this does not change browser assertions or performance thresholds.
+
+The bounded/cache-first install was also killed with exit 137 before collection or
+browser execution. No baseline updates occurred in any post-merge attempt. All
+Settings baselines remain unchanged; the reviewed feature additions and separate
+1920 notification-header discrepancy remain visible validation blockers. Stop retrying
+on the loaded shared VM rather than disrupting live study or weakening assertions.
+Post-merge pinned capture/SAN assertions are unrun. `make full` was not run locally:
+CI owns the complete current-candidate gate. This patch is ready for another code
+review, but neither the failed durability run nor historical visual passes establish
+merge/release readiness. Runtime inputs remained `df5b64e`; this documentation-only
+follow-up does not relabel those executions as tests of a later clean commit.
+
+## PR #54 durability isolation validation plan (2026-10-02)
+
+Changed behavior: the repertoire-limit proof must restore the shared disposable
+environment after both success and failure. Risks are lost historical events
+(enqueue prunes to 100), changed singleton identity/lease/generation, present vs
+absent date projections, global rollover changes to unrelated cards, unrelated
+reconciliation, incomplete fixture cascades, and partial cleanup failure.
+
+Smallest proof: named portable SQL regressions in
+`backend/tests/test_repertoire_limit_proof_isolation.py`, followed by
+`node --test tests/runner/postgres-test-speedups.test.mjs` and `git diff --check`.
+The settled candidate then runs elevated `make docker-durability` for PostgreSQL
+FKs/transactions, real command receipts, generation invalidation, and downstream
+threat-claim/recreation/backup/study workflows. The 250 ms threshold is unchanged;
+a persistent threat-claim failure requires a fresh equivalent main comparison.
+CI owns final required PR candidate validation; pinned visuals remain outside
+this harness fix. Identity-sequence gaps are retained rather than resetting
+shared sequences.
+
+## PR #54 durability isolation results (2026-10-02)
+
+Root cause: the real settings command increments/requeues `daily_queue/current`,
+rewrites today's projection and appends/prunes task events. The proof deleted
+only its repertoires and operation receipts. Its global rollover helper also
+changed unrelated learning cards, whose PostgreSQL card-update triggers advance
+owner/shared repertoire priority epochs; its reconciliation could mutate unrelated
+tomorrow entries.
+
+The proof now snapshots every column of the singleton `background_tasks` row,
+its complete `background_task_events` history (an event-ID boundary cannot recover
+pruned events), and `queue_projections` for today/tomorrow. It also snapshots the
+affected unrelated cards' `state`/`introduced_at` and present/absent
+`priority_repertoire_source_epochs` for their owners and shared links. Cleanup in
+`finally` deletes exact fixture repertoire/receipt IDs, restores task/event IDs
+and rows or their original absence, restores card fields then trigger-owned
+epochs, and verifies the snapshot plus zero fixture card/link/review/queue rows
+in one transaction. A cleanup failure rolls back and propagates. Reconciliation
+publishes only fixture entries. Real settings commands, receipt replay and an
+explicit older-checkpoint generation invalidation assertion remain enabled.
+
+Audit: cards, repertoire links, reviews and queue entries cascade from the two
+synthetic repertoires; fixture priority epochs also cascade. Admission's opportunity
+update is restricted to synthetic repertoire/card IDs, which have no opportunity
+rows. Settings and `priority_source_epoch` are read-only in this proof; no other
+task FK exists beyond cascading events. Shared identity sequences are not reset.
+No production implementation or performance threshold changed.
+
+Two later PR-fixture defects surfaced once the threat benchmark passed. The
+recreation PGN `1. e4 e5 *` failed integrity with `missing_response`; adding
+`2. Nf3` supplies the required White move. That fixture then remained at the
+front of the queue and blocked guided failure with HTTP 409. The runner now
+retains the override through recreation/replay and backup comparison, then
+deletes only the owned repertoire through the production command before study
+durability. A runner regression executes those real scenario bodies with I/O
+seams and verifies replay, backup ordering and preservation of unrelated fixtures.
+
+Focused evidence (macOS, Node 26.3.0, CPython 3.14.5):
+
+- `make plan`: inspected the complete scope; no full gate launched locally.
+- `TEMPO_PYTHON=backend/.venv/bin/python make python-file FILE=backend/tests/test_repertoire_limit_proof_isolation.py`: original existing/absent-task cases failed (2 cases, 2.70 s); initial restoration passed. Adding the migration-21 trigger fixture then reproduced four epoch leaks (2.89 s). Final six cases passed in 4.06 s on the `032c68e` working tree with the script/test/registry changes committed as `b12895d`; these Python inputs are unchanged in the final executable candidate.
+- `node --test --test-name-pattern='repertoire limit recreation fixture' tests/runner/postgres-test-speedups.test.mjs`: PGN regression failed (`w !== b`, 0.186 s).
+- `node --test --test-name-pattern='repertoire limit recreation fixture survives' tests/runner/postgres-test-speedups.test.mjs`: lifecycle regression failed on the leftover owned fixture (1.000 s).
+- `/usr/bin/time -p node --test tests/runner/postgres-test-speedups.test.mjs`: 37 passed, 1.12 s wall (1.036 s runner), on `3de1bf6` plus the runner/test/registry changes subsequently committed as `28a3483`.
+- `/usr/bin/time -p npm run lint`: zero errors, nine existing warnings, 20.95 s on that same working tree.
+- `git diff --check`: passed before each candidate commit and the documentation follow-up.
+
+Elevated disposable `make docker-durability` runs:
+
+1. `032c68e`: repertoire/capture proofs passed; 250 ms threat claim committed in
+   129 ms (50 ms baseline timed out and rolled back in 60 ms). Failed at recreation
+   integrity (`missing_response`); backup/study not reached. Its recorded stages
+   total 179.52 s; this is not an independently instrumented command wall time.
+2. `/usr/bin/time -p make docker-durability`, clean `3de1bf6`: repertoire/capture,
+   134 ms threat claim, recreation and backup passed; study failed at guided
+   failure with HTTP 409. 166.54 s wall. Stage times: background workloads 28.61 s,
+   recreation 47.39 s, backup 23.34 s, failed study 8.37 s, cleanup 13.32 s.
+3. `/usr/bin/time -p make docker-durability`, clean executable candidate
+   `28a348354c187a71bb28f53208f0a9a6fcdcba33`: **all 14 stages passed**, 196.36 s
+   wall. PostgreSQL 18.6 disposable project `tempo-pg-regressions-12259-a760b092`.
+   Real 10/5 limits, seven-of-ten daily reset without rollover, stale publication,
+   inheritance, receipt replay, generation invalidation, restoration and capture
+   contention all passed. Threat claim: 20,000 queued requests, one eligible,
+   committed in **65 ms** with transaction=250 ms and lock=25 ms. The 50 ms
+   baseline timed out/rolled back in 52 ms with no persisted lease. No A/B run
+   against main was needed because the benchmark passed after isolation; these
+   runs do not prove that the original timeout was independently pre-existing.
+
+| Final durability stage | Result | Seconds |
+| --- | --- | ---: |
+| compose_config | pass | 0.13 |
+| image_build | pass | 8.23 |
+| maintenance_cli | pass | 3.24 |
+| startup | pass | 14.60 |
+| service_health | pass | 0.41 |
+| background_budget | pass | 3.01 |
+| operation_recovery | pass | 5.91 |
+| schema_upgrade | pass | 13.03 |
+| background_workloads | pass | 28.00 |
+| threat_candidate_upsert | pass | 1.19 |
+| command_recreation | pass | 31.53 |
+| backup_restore | pass | 27.47 |
+| study_durability | pass | 46.19 |
+| cleanup | pass | 12.56 |
+
+Durability timings are in
+`test-results/performance/postgres-scenarios-durability-tempo-pg-regressions-12259-a760b092.json`.
+Raw local logs are retained under `test-results/pr54-isolation/`. Stage sums omit
+some orchestration/preflight overhead; the measured wall time is authoritative.
+The documentation-only follow-up does not relabel runtime evidence as a clean
+pass on a newer commit. Every disposable invocation cleaned its resources; the
+primary checkout and live study services remained untouched.
+
+Remaining gate: this is a complete **durability** pass, not `make full`. Required
+current-candidate CI and post-merge pinned validation remain pending. Historical
+Settings differences, the 1920 notification-header discrepancy and pinned
+installation exit 137 are not resolved by this harness work. No visual baseline,
+timeout or assertion was weakened. PR #54 remains draft and unmerged.
+
+### PR #54 CI repair and current-main integration (2026-10-02)
+
+The tactical migration fixture's five-value positional repertoire insert failed
+against the six-column schema. Its named regression failed before the explicit
+column-list repair, then passed (1.40 s pytest); the whole tactical file passed
+(7 tests, 3.62 s). The audit found six positional repertoire inserts, all in tests;
+each now names the columns of its intentional current, miniature or legacy schema.
+
+Main `072f550` uses migration 26 for background diagnostics. That integration
+renumbers the repertoire migration and schema readiness to 27. The named migration
+regression reproduced the collision. The proof's present/absent restoration cases
+also reproduced leaked diagnostic buckets; restoration now preserves bounded
+`daily_queue` buckets while retaining unrelated kinds. No production queue or
+diagnostic behavior changed. The 32 focused integration cases passed in 7.32 s;
+the final observer additionally verifies an unrelated metric kind and stable order.
+
+Main subsequently advanced to `5dd0815`, introducing handled-discovery migrations
+27 and 28. Both remain intact; the repertoire migration, ledger and schema
+readiness now use 29. The same named numbering regression reproduced the duplicate
+27 before this repair. Current-base CI owns the final combined candidate gate.
+
+`TEMPO_PYTHON=backend/.venv/bin/python make python` passed **844 tests** in
+106.18 s pytest / 108.29 s wall, on `ea74d0f` plus the migration/counter patch
+subsequently committed as `9341eb6`, macOS arm64, CPython 3.14.5. All 37
+`node --test tests/runner/postgres-test-speedups.test.mjs` cases passed in 1.34 s.
+These are backend/runner results, not the complete release gate.
+
+The 1920 Settings baseline independently predates the Notifications header.
+A tracked-source export of current main `072f550` was rendered with the normal
+Playwright 1.63 pinned arm64 image and visual configuration. The single Settings
+1920 probe asserts the Notifications button and captures the page; no product
+source changed. Against the old baseline, raw pixel differences are confined to
+`(1352,13)–(1633,57)` in the header; the complete page body is identical.
+The replacement is committed separately from the repertoire UI snapshots.
+The exact filtered pinned command uses `visual.spec.ts --grep 'Settings 1920'
+--update-snapshots=all`; it passed one test in 6.0 s / 14.49 s wall. The original
+anchored filter matched zero cases and is not passing evidence; a second run
+accepted the old image within tolerance without writing a replacement, so the
+final probe explicitly captured it. Screenshot thresholds remain unchanged.
+The temporary source export was removed after verifying preserved screenshot and
+probe-source hashes. Source, logs, raw comparison and resource records are preserved
+outside the clone in the root checkout's `test-results/2026-10-02-pr54-ci-repair/`;
+the clone's `test-results/pr54-isolation/` also retains local logs.
+
+Expected, Actual and Diff from CI run `36997007615` were manually reviewed for
+all four Settings widths. The accepted feature snapshots add the default-limit
+wording, no-rollover explanation, repertoire heading/row, allowance selector,
+current-limit status and disabled clean Save button. At 390 and 768, the long
+repertoire title wraps within the existing card; the numeric current-limit status
+remains readable below the native selector. At 1280 and 1920, the row fits on
+one line. Existing downstream Training settings and footer move down; typography,
+navigation, alignment and horizontal bounds remain consistent. Only these four
+Settings images change; the independent 1920 header correction is the preceding
+commit. The complete pinned visual/performance gate and required current-candidate
+CI remain separate validation requirements, reported in the PR description.
+
+Complete browser qualification uses four isolated ARM runners when the captured
+selection includes every required regular browser identity. Whole specs are balanced
+by the checked-in historical timing profile; the immutable plan captures the exact
+assignment before execution. `browser / verify` requires every expected latest shard
+execution and the exact aggregate inventory, with zero skips/retries. Targeted
+selections and local browser commands retain one runner. Whole-browser evidence reuse
+includes the shard assignment and original shard provenance. See
+[browser CI performance](browser-ci-performance.md) for baseline decomposition,
+isolation, tradeoffs, and nested diagnostic timing accounting.
+
+
+### Redis admission fixture ownership (PR #229)
+
+`redis-admission-recovery.spec.ts` uses only the regular PostgreSQL runner.
+`test-postgres-docker.mjs` generates a PID/random Compose project, rejects existing
+containers/volumes/networks for that project, generates fresh credentials, and
+checks project-scoped nonexternal volumes and networks. Schema and API use the
+same project-local PostgreSQL service. Playwright runs with one worker; this
+regression rejects a worker override. Separate runner invocations own separate
+PostgreSQL and Redis volumes. Native Python, custom database URLs and custom
+Compose definitions are not supported by this regression. A project name or
+`TEMPO_TEST_INSTANCE=disposable` alone is not permission to target a real database.
+
+Sequential tests still share database state. Seed atomically stores a versioned
+restoration snapshot in its synthetic repertoire's `source_name`. Short advisory
+transaction locks serialize seed/cleanup, and an active snapshot rejects another
+Redis fixture. No lock remains held during browser/network work. Cleanup runs by
+identity even if committed seed output was lost, and reports success after commit.
+It validates locked settings mode, every displaced queue position, and the full
+installed projection before restoring anything. Snapshot version 2 also records
+each seeded queue row’s returned `id`, `card_id`,
+`queue_date`, `cycle` and `admission_repertoire_id`. Cleanup locks the union selected
+by saved IDs, owned cards and owned admission repertoire, then requires exactly
+those stable identities. Missing/reassigned/additional rows and unsupported
+snapshot versions fail visibly. Status, result, attempt flags, position and other
+mutable queue presentation fields may change legitimately. Changed synthetic
+card ownership or links into unrelated repertoires are rejected before destructive
+cascades. Conflicts roll back cleanup and
+retain its snapshot; they never silently overwrite newer state.
+
+Three synthetic cards cover the two reviews and an unreviewed successor, so
+browser refresh/issuance never advances into the displaced unrelated queue.
+Cleanup restores the original study-only mode (or removes an unchanged settings
+row it created), displaced queue positions, and the original projection or its
+absence. It deletes exact synthetic cards/repertoire/link/queue identities,
+reviews, scheduling snapshots, logical receipts and card-bound operation receipts (including head issuance), retained queue
+origins and card revisions. Queue-origin cleanup follows queue/card deletion
+because deletion triggers retain origins. Tactic fixture cards do not produce
+opening presentation/context records; canonical-source triggers affect only the
+synthetic repertoire. Operation receipt selection parses the payload's exact
+`card_id`, rather than searching arbitrary text. Other settings fields remain
+untouched. PostgreSQL identity sequence increments are intentionally not reversed.
+
+Redis recovery, page closure and SQL cleanup are independently attempted and
+failures are aggregated. The runner always attempts project teardown and verifies
+container/volume removal. Abrupt host termination can leave invocation-owned
+resources; verify ownership before removing them. Identical-value intervening
+writes are not distinguishable by snapshot comparison.
+
+The concurrency guarantees have separate boundaries:
+
+- Independent invocations have exclusive ownership of separate disposable stacks.
+- Cooperating fixture operations serialize their short seed/cleanup transactions.
+- Application writers remain active during the browser case. Study-only mode
+  permits essential daily-queue work; it is not complete application quiescence.
+  The native proof in `background_workloads` stops defense-engine,
+  background-worker and background-scheduler, then restores them. Foreground
+  workers are not suspended by that native proof.
+- Cleanup locks the repertoire and cards before examining queue ownership.
+  PostgreSQL FK checks for new queue/membership relationships need parent key
+  locks and wait behind these `FOR UPDATE` locks. A two-connection regression
+  proves that boundary. Existing queue rows and restoration targets are locked.
+  Projection or displaced-position changes visible before validation conflict.
+- These locks do not fence arbitrary SQL writers, all predicates, or new
+  non-FK operation receipts. `daily_queue.admission_repertoire_id` is text without
+  an FK: a concurrent unrelated-card insert naming only that repertoire does not
+  wait on its parent lock. It is not a supported application path for this nonce
+  repertoire (its membership contains only the three owned cards). The browser
+  closes its page before receipt inventory
+  and cleanup, observes completed owned operations, and asserts captured owned
+  operation IDs disappear while unrelated IDs survive. It does not establish
+  general application quiescence or protection from externally injected writers.
+
+Raw browser receipts are captured separately from fault-state comparisons. The
+verified scenario produced four `cards.review` and one `queue.issue_head` owned
+receipts, all with top-level exact `card_id`; the predicate is unchanged. Modern
+attempt-failure calls also carry `card_id`; legacy queue-only failure/burial shapes
+are not produced by this fresh-context successful-review scenario. An observed
+queue-only owned receipt fails the audit before deletion. See
+`docs/validation/pr229-fixture-isolation.md` for source and runtime evidence.
