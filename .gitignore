@@ -58,3 +58,9 @@ tsconfig.tsbuildinfo
 .dev-copies/
 .dev-copies/*
 .dev-copies/**/*
+# Component-local build/environment outputs
+**/node_modules/
+**/.venv/
+/packages/*/dist/
+/packages/*/build/
+*.egg-info/
