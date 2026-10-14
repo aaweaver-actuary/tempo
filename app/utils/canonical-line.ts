@@ -1,69 +1,10 @@
-import { Chess, type Square } from "chess.js";
-import {
-  asUciMove,
-  type CanonicalLine,
-  type AnalysisLine,
-  type LineDiagnostic,
-} from "../types";
+import { canonicalizeMoves as canonicalizePackageMoves } from "@tempo/chess-line";
+import { asUciMove, type AnalysisLine, type CanonicalLine } from "../types";
+export { canonicalFenKey, sanForUci } from "@tempo/chess-line";
 
-const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/i;
-const NULL_MOVES = new Set(["0000", "--", "Z0"]);
-
-export function canonicalFenKey(fen: string): string {
-  return fen.trim().split(/\s+/).slice(0, 4).join(" ");
-}
-
-export function canonicalizeMoves(
-  startingFen: string,
-  inputMoves: readonly string[],
-): { moves: ReturnType<typeof asUciMove>[]; diagnostics: LineDiagnostic[]; finalFen: string } {
-  let board: Chess;
-  try {
-    board = new Chess(startingFen);
-  } catch {
-    board = new Chess();
-    return {
-      moves: [],
-      diagnostics: [
-        { ply: 0, move: "", kind: "invalid", message: "Invalid starting FEN" },
-      ],
-      finalFen: board.fen(),
-    };
-  }
-
-  const moves: ReturnType<typeof asUciMove>[] = [];
-  const diagnostics: LineDiagnostic[] = [];
-  for (let index = 0; index < inputMoves.length; index += 1) {
-    const value = String(inputMoves[index] ?? "").trim();
-    if (NULL_MOVES.has(value)) {
-      diagnostics.push({
-        ply: index,
-        move: value,
-        kind: "null",
-        message: `Stopped at null move ${value}`,
-      });
-      break;
-    }
-    try {
-      const played = UCI_MOVE.test(value)
-        ? board.move({
-            from: value.slice(0, 2).toLowerCase() as Square,
-            to: value.slice(2, 4).toLowerCase() as Square,
-            promotion: value[4]?.toLowerCase() || undefined,
-          })
-        : board.move(value);
-      moves.push(asUciMove(`${played.from}${played.to}${played.promotion ?? ""}`));
-    } catch {
-      diagnostics.push({
-        ply: index,
-        move: value,
-        kind: UCI_MOVE.test(value) ? "illegal" : "invalid",
-        message: `${UCI_MOVE.test(value) ? "Illegal" : "Invalid"} move ${value || "(empty)"}`,
-      });
-      break;
-    }
-  }
-  return { moves, diagnostics, finalFen: board.fen() };
+export function canonicalizeMoves(startingFen: string, inputMoves: readonly string[]) {
+  const result = canonicalizePackageMoves(startingFen, inputMoves);
+  return { ...result, moves: result.moves.map(asUciMove) };
 }
 
 export function canonicalizeLine(line: AnalysisLine): CanonicalLine {
@@ -80,18 +21,4 @@ export function canonicalizeLine(line: AnalysisLine): CanonicalLine {
       diagnostics: result.diagnostics,
     },
   };
-}
-
-export function sanForUci(fen: string, uci: string): string | undefined {
-  try {
-    const board = new Chess(fen);
-    const move = board.move({
-      from: uci.slice(0, 2) as Square,
-      to: uci.slice(2, 4) as Square,
-      promotion: uci[4] || undefined,
-    });
-    return move.san;
-  } catch {
-    return undefined;
-  }
 }

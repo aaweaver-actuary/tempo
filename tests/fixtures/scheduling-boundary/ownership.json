@@ -44,10 +44,7 @@
       "typing"
     ],
     "app.services.scheduler": [
-      "__future__",
-      "dataclasses",
-      "datetime",
-      "fsrs"
+      "tempo_scheduling"
     ],
     "app": [],
     "app.services": []
