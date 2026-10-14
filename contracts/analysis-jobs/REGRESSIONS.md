@@ -13,3 +13,14 @@ Exact collected identities are reported by pytest; empty selection fails.
 Behavior-specific tests document replay, authority, fencing and failure semantics.
 The shared installed-artifact and dependency proof lives in `../tests`;
 TypeScript consumers live in `../consumer-examples`.
+
+## PR #271 timestamp correction
+
+`tests/test_timestamps.py::test_installed_timestamp_validity_and_original_wire_spelling`
+runs this package's own installed public envelope across 37 explicit validity cases,
+including fractions, offsets, Gregorian leap rules, year bounds and malformed input.
+Accepted strings retain their original offset and fractional representation.
+
+`test_execution_microsecond_chronology_preserves_original_wire_spelling` covers
+Stockfish and Maia results finishing one microsecond earlier/equal/later and at an
+equivalent offset instant. No engine or model is started.

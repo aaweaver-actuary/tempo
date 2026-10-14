@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import re
 from typing import Annotated, Literal, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, AfterValidator, model_validator
 
@@ -16,6 +17,27 @@ Square = Annotated[str, Field(pattern=r"^[a-h][1-8]$")]
 
 
 def check_timestamp(value: str) -> str:
+    matches = re.fullmatch(
+        r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})"
+        r"(?:\.([0-9]{1,6}))?(?:Z|([+-])([0-9]{2}):([0-9]{2}))",
+        value,
+    )
+    if matches is None:
+        raise ValueError("timestamp must match the complete timezone-aware wire form")
+    year, month, day, hour, minute, second = map(int, matches.groups()[:6])
+    if not (
+        1 <= year <= 9999
+        and 1 <= month <= 12
+        and 1 <= day <= 31
+        and hour <= 23
+        and minute <= 59
+        and second <= 59
+    ):
+        raise ValueError("timestamp calendar or clock components are out of bounds")
+    if matches[8] is not None and (int(matches[9]) > 23 or int(matches[10]) > 59):
+        raise ValueError("timestamp offset components are out of bounds")
+    # fromisoformat validates the Gregorian day within its month; explicit
+    # bounds above prevent its normalization of malformed offsets such as +00:60.
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.utcoffset() is None:
         raise ValueError("timestamp must include timezone")

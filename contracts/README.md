@@ -52,7 +52,7 @@ Game Evidence assigns stable obligation IDs for the same workspace/game/encounte
 
 ## Advisory and worker boundaries
 
-Intelligence publications bind content generation, Learning revision, policy, source/method versions, input provenance, production time and expiry. Probability `null` means unknown; `0.0` means known zero. Unknown mass is explicit. No expiry means freshness is unknown; conservative reference consumers fall back to deterministic ordering. Unavailable/incompatible/stale advice cannot manufacture eligibility, admission, FSRS updates or review events. Rankings remain subject to current eligibility, quota and card deduplication at Learning's commit boundary.
+Intelligence publications bind content generation, Learning revision, policy, source/method versions, input provenance, production time and expiry. Probability `null` means unknown; `0.0` means known zero. Unknown mass is explicit. No expiry means freshness is unknown; conservative reference consumers fall back to deterministic ordering. Unavailable/incompatible/stale advice cannot manufacture eligibility, admission, FSRS updates or review events. Rankings require the caller's exact expected policy ID and revision, alongside workspace/content/Learning/freshness compatibility. Mismatches use sorted, deduplicated eligible IDs truncated to capacity; matching advice preserves its list order. Rankings remain subject to current eligibility, quota and card deduplication at Learning's commit boundary.
 
 Workers share only identity, request/execution versions, time/memory constraints, lifecycle and cancellation metadata. Stockfish requests include FEN, moves, permitted search moves, depth/node bounds, MultiPV and engine version; results carry ranked variations and side-to-move centipawn/mate scores. Maia requests include FEN, rating, model identity/version and an explicit legal move inventory; results carry normalized probabilities with model/runtime provenance. FEN legality and engine execution belong to implementations, not these packages.
 
@@ -65,3 +65,21 @@ Cancellation `requested` means delivery was acknowledged; `terminated` confirms 
 See [compatibility](COMPATIBILITY.md), [database ownership](OWNERSHIP.md), [regressions](REGRESSIONS.md) and [delivery evidence](VALIDATION.md).
 
 JSON schemas validate wire shape, types, bounds and discriminated variants. Pydantic cross-field validators and independently maintained TypeScript semantic checks enforce additional coherence; schema validation alone is insufficient. Transition/replay examples add protocol checks. All are separate from current producer conformance and runtime enforcement.
+
+
+## PR #271 validation corrections
+
+Standalone advisory publications and publications nested in IntelligenceAvailability
+use the same independent TypeScript semantic checks: expiry, move/card uniqueness,
+known/unknown and coverage normalization (inclusive 1e-9 tolerance), and honest
+unknown probability mass. Availability and workspace binding remain separate checks.
+Structural JSON Schema/AJV acceptance does not establish semantic coherence.
+
+Timestamps require complete timezone-aware wire strings, Gregorian years 0001–9999,
+valid calendar/clock values, and either no fraction or 1–6 digits. Signed offsets
+permit hours 00–23 and minutes 00–59, including +00:00 and -00:00. Malformed offsets,
+hour 24, leap seconds, trailing text/newlines and excess fractions are rejected.
+Python retains aware datetime chronology; TypeScript compares integer microseconds
+with bigint. Expiry is strictly later; execution may finish at the start instant.
+Validation/comparison preserves supplied strings, including offsets and fractional
+zeros: equivalent instants still produce distinct canonical wire payloads.

@@ -20,3 +20,20 @@ Patch versions preserve v1 behavior and schema exports. A change to accepted fie
 Fixture paths are `contracts/<root>/fixtures/v1/*.json`; each file identifies its public model and explicit payload. Examples are hand-authored, not derived from JSON Schema generators. Python consumers and the TypeScript expectation table are separately maintained. `semantic-negative/v1` records cover coherence beyond structural schemas. `schemas/v1/*.schema.json` exports are included in installed artifacts; schema changes cannot silently drift from Pydantic definitions.
 
 `qualify_artifacts.py` copies only declared package inputs to a temporary directory, builds wheels and source distributions, installs wheels into a clean environment, runs suites through isolated Python, and creates metadata-only patch wheels there. Unrelated application, backend, model and provider source directories are absent. All temporary source copies/environments are removed afterward. This is bounded artifact proof, not the other agent's general build/discovery infrastructure.
+
+
+## Correction to the unaccepted 1.0.0 foundation
+
+PR #271's repair keeps artifact 1.0.0 / wire v1 and existing model/envelope names.
+It intentionally stops accepting malformed timestamp components that earlier
+validation could normalize (for example +00:60 and hour 24). This is a correction
+to the unaccepted foundation, not evidence that arbitrary acceptance-changing
+patch releases are compatible. The synthetic 1.0.1 qualification remains a
+metadata-only, unchanged-behavior exercise. The table above records original
+foundation coverage; new repair results are separately recorded in VALIDATION.md.
+
+The reference ordering example now requires caller-supplied expected_policy_id
+and expected_policy_revision; neither has a default and neither comes from incoming
+advice. These are reference-consumer arguments, not new wire fields. Advisory
+semantics apply identically to standalone and nested forms. Timestamp comparisons
+retain all microseconds and offset equivalence without rewriting serialized strings.

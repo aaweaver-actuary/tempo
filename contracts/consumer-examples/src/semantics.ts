@@ -5,17 +5,40 @@ const object = (value:unknown):ObjectValue => value as ObjectValue;
 const items = (value:unknown):ObjectValue[] => value as ObjectValue[];
 const unique = (values:unknown[]) => assert.equal(new Set(values).size,values.length,"duplicate identity");
 const sum = (values:number[]) => values.reduce((total,value)=>total+value,0);
-const mass = (values:number[]) => assert.ok(Math.abs(sum(values)-1)<1e-9,"mass must total one");
+const mass = (values:number[]) => assert.ok(Math.abs(sum(values)-1)<=1e-9,"mass must total one");
 const same = (first:unknown[], second:unknown[]) => assert.deepEqual(first,second,"identity/lineage mismatch");
 
-function timestamp(value:string):void {
-  const matches = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value);
-  assert.ok(matches,"invalid timestamp");
-  const [year,month,day,hour,minute,second] = matches.slice(1,7).map(Number);
-  const leap = year%4===0 && (year%100!==0 || year%400===0);
-  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
-  assert.ok(year>=1 && month>=1 && month<=12 && day>=1 && day<=days[month-1] && hour<=23 && minute<=59 && second<=59,"invalid calendar time");
-  if(matches[7]) assert.ok(Number(matches[7])<=23 && Number(matches[8])<=59,"invalid timezone offset");
+/** Exact Gregorian instant; the original wire spelling is never rewritten. */
+function timestampMicroseconds(value: string): bigint {
+  const matches = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  assert.ok(matches && matches[0] === value, "invalid timestamp");
+  const [year, month, day, hour, minute, second] = matches.slice(1, 7).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  assert.ok(year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= monthDays[month - 1] && hour <= 23 && minute <= 59 && second <= 59, "invalid calendar time");
+  const offsetHours = Number(matches[9] ?? 0);
+  const offsetMinutes = Number(matches[10] ?? 0);
+  assert.ok(offsetHours <= 23 && offsetMinutes <= 59, "invalid timezone offset");
+  const precedingYears = year - 1;
+  const precedingDays = precedingYears * 365 + Math.floor(precedingYears / 4) - Math.floor(precedingYears / 100) + Math.floor(precedingYears / 400)
+    + sum(monthDays.slice(0, month - 1)) + day - 1;
+  const seconds = precedingDays * 86400 + hour * 3600 + minute * 60 + second;
+  const fraction = BigInt((matches[7] ?? "").padEnd(6, "0"));
+  const offsetSign = matches[8] === "-" ? -1n : 1n;
+  const offset = BigInt(offsetHours * 3600 + offsetMinutes * 60) * 1_000_000n * offsetSign;
+  return BigInt(seconds) * 1_000_000n + fraction - offset;
+}
+
+function assertAdvisoryPublicationSemantics(publication: ObjectValue): void {
+  if (publication.valid_until !== null) assert.ok(timestampMicroseconds(publication.valid_until as string) > timestampMicroseconds(publication.produced_at as string), "expiry must follow publication");
+  const advisory = object(publication.advisory);
+  if (advisory.kind === "probabilities") {
+    const moves = items(advisory.moves);
+    unique(moves.map(move => move.move));
+    mass([sum(moves.filter(move => move.probability !== null).map(move => move.probability as number)), advisory.unknown_mass as number]);
+    if (moves.some(move => move.probability === null)) assert.ok((advisory.unknown_mass as number) > 0);
+  } else if (advisory.kind === "ranking") unique(items(advisory.cards).map(card => card.card_id));
+  else if (advisory.kind === "coverage_recommendation") mass([advisory.known_covered_mass, advisory.known_uncovered_mass, advisory.unknown_mass] as number[]);
 }
 
 function nestedChecks(value:unknown):void {
@@ -23,7 +46,7 @@ function nestedChecks(value:unknown):void {
   else if(value && typeof value === "object") {
     const record=object(value);
     for(const [key,child] of Object.entries(record)) {
-      if(child!==null && typeof child === "string" && (key.endsWith("_at") || key==="valid_until" || key==="next_due")) timestamp(child);
+      if(child!==null && typeof child === "string" && (key.endsWith("_at") || key==="valid_until" || key==="next_due")) timestampMicroseconds(child);
       nestedChecks(child);
     }
     if(record.type === "square_set" && "required" in record) unique([...(record.required as string[]),...(record.optional as string[])]);
@@ -72,20 +95,13 @@ export function assertSemantics(model:string,payload:ObjectValue):void {
     }
     case "EvidenceAcknowledgement":assert.equal(payload.status==="completed",payload.learning_revision!==null);unique(payload.accepted_obligation_ids as string[]);
       if(["retryable_failure","terminal_failure","conflict","stale_revision"].includes(payload.status as string)) assert.notEqual(payload.reason,null);break;
-    case "AdvisoryPublication": {
-      if(payload.valid_until!==null) assert.ok(Date.parse(payload.valid_until as string)>Date.parse(payload.produced_at as string));
-      const advisory=object(payload.advisory);
-      if(advisory.kind==="probabilities") {
-        const moves=items(advisory.moves);unique(moves.map(move=>move.move));
-        mass([sum(moves.filter(move=>move.probability!==null).map(move=>move.probability as number)),advisory.unknown_mass as number]);
-        if(moves.some(move=>move.probability===null)) assert.ok((advisory.unknown_mass as number)>0);
-      } else if(advisory.kind==="ranking") unique(items(advisory.cards).map(card=>card.card_id));
-      else if(advisory.kind==="coverage_recommendation") mass([advisory.known_covered_mass,advisory.known_uncovered_mass,advisory.unknown_mass] as number[]);
-      break;
-    }
+    case "AdvisoryPublication": assertAdvisoryPublicationSemantics(payload); break;
     case "IntelligenceAvailability":
       assert.equal(payload.status==="available",payload.publication!==null);
-      if(payload.publication!==null) assert.equal(payload.workspace_id,object(payload.publication).workspace_id);
+      if(payload.publication!==null) {
+        assert.equal(payload.workspace_id,object(payload.publication).workspace_id);
+        assertAdvisoryPublicationSemantics(object(payload.publication));
+      }
       else assert.notEqual(payload.reason,null);break;
     case "JobStatus":if(payload.retryable) assert.equal(payload.status,"failed");if(payload.status==="failed") assert.notEqual(payload.reason,null);break;
     case "StockfishResult": {
@@ -99,6 +115,6 @@ export function assertSemantics(model:string,payload:ObjectValue):void {
   }
   if("provenance" in payload && !Array.isArray(payload.provenance)) {
     const provenance=object(payload.provenance);
-    if("finished_at" in provenance && "started_at" in provenance) assert.ok(Date.parse(provenance.finished_at as string)>=Date.parse(provenance.started_at as string),"execution time reversed");
+    if("finished_at" in provenance && "started_at" in provenance) assert.ok(timestampMicroseconds(provenance.finished_at as string)>=timestampMicroseconds(provenance.started_at as string),"execution time reversed");
   }
 }

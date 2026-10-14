@@ -23,3 +23,15 @@ Every package also supports `python -m pytest contracts/<root>/tests`. Collectio
 | Cross-contract definition/obligation compatibility | Both tests in `tests/test_cross_contracts.py` |
 
 These are new contract/reference invariants. There is no demonstrated failing baseline for the legacy production services, and this registration does not claim those implementations have been repaired. Exact parameterized identities are retained in qualification reports.
+
+## PR #271 repair ownership
+
+All five package suites contain their own installed timestamp validity/serialization
+tests. Intelligence owns exact policy compatibility and standalone/wrapped advice;
+Analysis Jobs owns exact execution chronology. See their local inventories.
+
+`semantic-negative/v1/repair-advisory-*` adds 14 structural-valid/semantic-invalid
+records for both envelope forms, without expanding the positive producer inventory.
+The shared Python negative test's historical name mentions TypeScript, but executes
+Python only. Independent TypeScript execution is registered in `consumer.test.ts`
+under `consumer rejects semantic negative` and `repair:` case names.

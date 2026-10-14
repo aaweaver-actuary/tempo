@@ -118,3 +118,38 @@ def test_same_job_request_replay_and_new_execution_generation_preserve_input(
     assert len(requests) == 1
     with pytest.raises(ValueError, match="payload conflict"):
         receive(requests, job.model_copy(update={"input_digest": "different-input"}))
+
+
+@pytest.mark.parametrize(
+    "worker,result_type", [("stockfish", v1.StockfishResult), ("maia", v1.MaiaResult)]
+)
+@pytest.mark.parametrize(
+    "finished_at,accepted",
+    [
+        ("2026-10-14T12:00:00.000000Z", False),
+        ("2026-10-14T12:00:00.000001Z", True),
+        ("2026-10-14T12:00:00.000002Z", True),
+        ("2026-10-14T14:00:00.000001+02:00", True),
+    ],
+    ids=[
+        "one_microsecond_earlier",
+        "same_instant",
+        "one_microsecond_later",
+        "offset_equivalent_instant",
+    ],
+)
+def test_execution_microsecond_chronology_preserves_original_wire_spelling(
+    worker, result_type, finished_at, accepted
+):
+    import json
+
+    data = load_fixture(worker + "-result")
+    data["provenance"]["started_at"] = "2026-10-14T12:00:00.000001Z"
+    data["provenance"]["finished_at"] = finished_at
+    if not accepted:
+        with pytest.raises(ValidationError, match="execution finishes"):
+            result_type.model_validate(data)
+    else:
+        assert (
+            json.loads(v1.serialize_contract(result_type.model_validate(data))) == data
+        )
