@@ -1,0 +1,13 @@
+{
+  "model": "ReviewSettlement",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "submission_id": "submission-a",
+    "settlement": {
+      "status": "terminal_failure",
+      "code": "invalid_answer",
+      "message": "Answer cannot be accepted"
+    }
+  }
+}

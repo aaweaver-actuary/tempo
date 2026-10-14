@@ -1,0 +1,45 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning/v1/QueueRequest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "expected_queue_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Expected Queue Revision",
+      "type": "integer"
+    },
+    "request_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "requested_capacity": {
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Requested Capacity",
+      "type": "integer"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "request_id",
+    "expected_queue_revision",
+    "requested_capacity"
+  ],
+  "title": "QueueRequest",
+  "type": "object"
+}

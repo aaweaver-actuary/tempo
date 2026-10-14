@@ -1,3 +1,36 @@
+## Component contract foundation (#264, M02-B)
+
+The [contract-local registry](../contracts/REGRESSIONS.md) owns named wire,
+producer/consumer, replay, activation/retirement, duplicate-evidence, advisory,
+worker-cancellation, dependency and PostgreSQL-role regressions. Its executable
+suite is `contracts/.venv/bin/python contracts/run_tests.py --typescript`;
+`contracts/.venv/bin/python contracts/database-ownership/run.py` selects the
+separate native PostgreSQL proof. These are reference contract tests, not
+verified conformance of existing production services. Component manifest and
+general discovery integration remain owned by #263/#201.
+## PR #270 — current package artifacts and actual Node cases (#263, #201)
+
+Regular owner: `tools/component-build/tests/boundaries.test.mjs`, also invoked by
+`tests/unit/component-packaging-regressions.test.ts`.
+
+- `M02 frontend prepares packages once before consumers and rejects failed builds`
+  and its `integration` counterpart prove missing/stale preparation, build ordering,
+  one build per invocation, zero-file rejection before setup, and failure fencing.
+- `M02 development and package test hooks prepare initial artifacts` preserves
+  development commands and package-local preparation without duplicate lane hooks.
+- `M02 generic Node accounting: <scenario>` and `M02 package-local Node accounting: <scenario>`
+  cover ordinary, TODO-only, skip-only, empty suite, unmatched filter, two nested
+  passes, visible failure, mixed outcomes, repeated names/locations, reason-bearing skips/TODOs, and failure mixed with passing cases.
+- `M02 runners lane shares generic Node accounting without building packages`
+  verifies shared reporting, real identities and unmatched-filter rejection.
+- Both runners' `rejects <scenario> reporter output` cases reject missing or malformed
+  summaries and malformed JSON. Fixture subprocesses have bounded deadlines and
+  invocation-owned cleanup; package fixtures have no root tooling dependency.
+
+Node 22.16.0 baseline reproductions at `43706c3d` count TODO-only and empty suites
+as one pass and two nested cases as one suite. Structured events replace TAP
+interpretation; the four package product assertions remain unchanged.
+
 ## Scheduling application module boundary (#192, #200, #202; A1 follow-up)
 
 `backend/tests/test_scheduling_boundary.py` enforces the existing scheduling seam
@@ -4387,3 +4420,17 @@ Legacy mocked orchestration fixtures explicitly declare no accepted snapshot.
 Their existing eligibility/lease/phase assertions remain; the new native and
 owning-suite tests exercise active and retired snapshots. See
 [operation and activation contract](../docs/frozen-maia-order.md).
+
+## M02 independent packaging (#263, #201)
+
+Owning inventories: [chess-line](../packages/chess-line/REGRESSIONS.md),
+[scheduling](../packages/scheduling/REGRESSIONS.md), and
+[packaging tooling](../tools/component-build/tests/boundaries.test.mjs).
+`M02 component packaging negative regressions run in their regular owner` keeps
+the new tool suite discoverable by the transitional global runner.
+`test_scheduling_package_adapter_preserves_public_identity_and_fixed_time_result`
+protects the legacy adapter. Existing frontend/domain and scheduling seam identities
+remain in their regular suites; package inventories own new local cases.
+
+`M02 installed Python scheduling producer retains the fixed-time serialized golden contract`
+is independently selected by the producer-parity lane and consumes the installed public package with Python isolated mode.

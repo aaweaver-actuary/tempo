@@ -1,0 +1,11 @@
+{
+  "model": "PublicationAcceptance",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "publication_id": "publication-a",
+    "publication_generation": 1,
+    "status": "accepted_pending",
+    "reason": "awaiting_activation"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "package": "intelligence",
+  "model": "IntelligenceAvailability",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "status": "available",
+    "publication": {
+      "contract_version": 1,
+      "workspace_id": "workspace-a",
+      "publication_id": "advice-a",
+      "publication_revision": 1,
+      "content_publication_id": "publication-a",
+      "content_publication_generation": 1,
+      "based_on_learning_revision": 1,
+      "produced_at": "2026-10-14T12:00:00Z",
+      "valid_until": "2026-10-15T12:00:00Z",
+      "provenance": [
+        {
+          "source_id": "source-a",
+          "source_revision": 1,
+          "input_digest": "sha256:fixture-a",
+          "method_id": "method-a",
+          "method_version": "1",
+          "limitations": [
+            "small_sample"
+          ]
+        }
+      ],
+      "advisory": {
+        "kind": "ranking",
+        "policy_id": "policy-a",
+        "policy_revision": 1,
+        "cards": [
+          {
+            "card_id": "card-a",
+            "value": 0.9
+          },
+          {
+            "card_id": "card-a",
+            "value": 0.1
+          }
+        ]
+      }
+    },
+    "reason": null
+  }
+}

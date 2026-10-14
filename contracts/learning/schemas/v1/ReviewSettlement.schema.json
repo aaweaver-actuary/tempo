@@ -1,0 +1,344 @@
+{
+  "$defs": {
+    "Committed": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/ReviewReceipt"
+        },
+        "status": {
+          "const": "committed",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "receipt"
+      ],
+      "title": "Committed",
+      "type": "object"
+    },
+    "Conflict": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "identity_payload_conflict",
+            "concurrent_review_conflict"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "status": {
+          "const": "conflict",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "title": "Conflict",
+      "type": "object"
+    },
+    "Pending": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "status": {
+          "const": "accepted_pending",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "operation_id"
+      ],
+      "title": "Pending",
+      "type": "object"
+    },
+    "Received": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "received",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "Received",
+      "type": "object"
+    },
+    "RetryableFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retry_after_ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Retry After Ms",
+          "type": "integer"
+        },
+        "status": {
+          "const": "retryable_failure",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "code",
+        "message",
+        "retry_after_ms"
+      ],
+      "title": "RetryableFailure",
+      "type": "object"
+    },
+    "ReviewReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "card_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Card Id",
+          "type": "string"
+        },
+        "committed_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Committed At",
+          "type": "string"
+        },
+        "learning_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Learning Revision",
+          "type": "integer"
+        },
+        "next_due": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Next Due",
+          "type": "string"
+        },
+        "publication_generation": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Publication Generation",
+          "type": "integer"
+        },
+        "queue_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Queue Revision",
+          "type": "integer"
+        },
+        "receipt_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Receipt Id",
+          "type": "string"
+        },
+        "required_evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Required Evidence Ids",
+          "type": "array"
+        },
+        "review_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Review Id",
+          "type": "string"
+        },
+        "submission_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Submission Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "receipt_id",
+        "submission_id",
+        "attempt_id",
+        "card_id",
+        "publication_generation",
+        "committed_at",
+        "learning_revision",
+        "queue_revision",
+        "next_due",
+        "review_id",
+        "required_evidence_ids"
+      ],
+      "title": "ReviewReceipt",
+      "type": "object"
+    },
+    "Stale": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "retired_publication",
+            "superseded_attempt",
+            "publication_generation_changed",
+            "queue_revision_changed"
+          ],
+          "title": "Code",
+          "type": "string"
+        },
+        "current_learning_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Current Learning Revision",
+          "type": "integer"
+        },
+        "status": {
+          "const": "stale_attempt_version",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "code",
+        "current_learning_revision"
+      ],
+      "title": "Stale",
+      "type": "object"
+    },
+    "TerminalFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "status": {
+          "const": "terminal_failure",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "code",
+        "message"
+      ],
+      "title": "TerminalFailure",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/learning/v1/ReviewSettlement.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "settlement": {
+      "discriminator": {
+        "mapping": {
+          "accepted_pending": "#/$defs/Pending",
+          "committed": "#/$defs/Committed",
+          "conflict": "#/$defs/Conflict",
+          "received": "#/$defs/Received",
+          "retryable_failure": "#/$defs/RetryableFailure",
+          "stale_attempt_version": "#/$defs/Stale",
+          "terminal_failure": "#/$defs/TerminalFailure"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Received"
+        },
+        {
+          "$ref": "#/$defs/Pending"
+        },
+        {
+          "$ref": "#/$defs/Committed"
+        },
+        {
+          "$ref": "#/$defs/RetryableFailure"
+        },
+        {
+          "$ref": "#/$defs/TerminalFailure"
+        },
+        {
+          "$ref": "#/$defs/Conflict"
+        },
+        {
+          "$ref": "#/$defs/Stale"
+        }
+      ],
+      "title": "Settlement"
+    },
+    "submission_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Submission Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "submission_id",
+    "settlement"
+  ],
+  "title": "ReviewSettlement",
+  "type": "object"
+}

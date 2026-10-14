@@ -1,0 +1,42 @@
+{
+  "model": "AdvisoryPublication",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "publication_id": "advice-a",
+    "publication_revision": 1,
+    "content_publication_id": "publication-a",
+    "content_publication_generation": 1,
+    "based_on_learning_revision": 1,
+    "produced_at": "2026-10-14T12:00:00Z",
+    "valid_until": "2026-10-15T12:00:00Z",
+    "provenance": [
+      {
+        "source_id": "source-a",
+        "source_revision": 1,
+        "input_digest": "sha256:fixture-a",
+        "method_id": "method-a",
+        "method_version": "1",
+        "limitations": [
+          "small_sample"
+        ]
+      }
+    ],
+    "advisory": {
+      "kind": "probabilities",
+      "position_key": "initial",
+      "moves": [
+        {
+          "move": "e2e4",
+          "probability": 0.0
+        },
+        {
+          "move": "d2d4",
+          "probability": null
+        }
+      ],
+      "unknown_mass": 0.0
+    }
+  },
+  "package": "intelligence"
+}

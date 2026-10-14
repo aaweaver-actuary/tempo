@@ -1,0 +1,76 @@
+{
+  "$id": "https://tempo.invalid/contracts/analysis-jobs/v1/JobStatus.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "execution_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Execution Generation",
+      "type": "integer"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reason"
+    },
+    "request_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Request Revision",
+      "type": "integer"
+    },
+    "retryable": {
+      "title": "Retryable",
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "job_id",
+    "request_revision",
+    "execution_generation",
+    "status",
+    "retryable",
+    "reason"
+  ],
+  "title": "JobStatus",
+  "type": "object"
+}

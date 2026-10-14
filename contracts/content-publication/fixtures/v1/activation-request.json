@@ -1,0 +1,11 @@
+{
+  "model": "ActivationRequest",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "activation_id": "activation-a",
+    "publication_id": "publication-a",
+    "publication_generation": 1,
+    "expected_activation_revision": 1
+  }
+}

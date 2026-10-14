@@ -897,3 +897,12 @@ attempt-failure calls also carry `card_id`; legacy queue-only failure/burial sha
 are not produced by this fresh-context successful-review scenario. An observed
 queue-only owned receipt fails the audit before deletion. See
 `docs/validation/pr229-fixture-isolation.md` for source and runtime evidence.
+
+
+## M02 package-local transition
+
+Implemented package declarations are in `components.json`; planned targets are not
+independently buildable claims. See [component build/discovery commands](../tools/component-build/README.md)
+for restricted installed-artifact proofs, separate frontend/runner/Python-producer
+lanes, exact file ownership and zero-selection rejection. Existing global wrappers
+remain available; this transition does not alter hosted qualification selection.

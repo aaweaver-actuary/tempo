@@ -1,0 +1,407 @@
+{
+  "$defs": {
+    "CoverageRecommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "coverage_recommendation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "known_covered_mass": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Known Covered Mass",
+          "type": "number"
+        },
+        "known_uncovered_mass": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Known Uncovered Mass",
+          "type": "number"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "recommended_card_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Recommended Card Ids",
+          "type": "array"
+        },
+        "unknown_mass": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Unknown Mass",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "policy_id",
+        "known_covered_mass",
+        "known_uncovered_mass",
+        "unknown_mass",
+        "recommended_card_ids",
+        "evidence_ids"
+      ],
+      "title": "CoverageRecommendation",
+      "type": "object"
+    },
+    "MoveProbability": {
+      "additionalProperties": false,
+      "properties": {
+        "move": {
+          "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+          "title": "Move",
+          "type": "string"
+        },
+        "probability": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Probability"
+        }
+      },
+      "required": [
+        "move",
+        "probability"
+      ],
+      "title": "MoveProbability",
+      "type": "object"
+    },
+    "PolicyRanking": {
+      "additionalProperties": false,
+      "properties": {
+        "cards": {
+          "items": {
+            "$ref": "#/$defs/RankedCard"
+          },
+          "title": "Cards",
+          "type": "array"
+        },
+        "kind": {
+          "const": "ranking",
+          "title": "Kind",
+          "type": "string"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "policy_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Policy Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "policy_id",
+        "policy_revision",
+        "cards"
+      ],
+      "title": "PolicyRanking",
+      "type": "object"
+    },
+    "ProbabilityEstimate": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "probabilities",
+          "title": "Kind",
+          "type": "string"
+        },
+        "moves": {
+          "items": {
+            "$ref": "#/$defs/MoveProbability"
+          },
+          "minItems": 1,
+          "title": "Moves",
+          "type": "array"
+        },
+        "position_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Position Key",
+          "type": "string"
+        },
+        "unknown_mass": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Unknown Mass",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "position_key",
+        "moves",
+        "unknown_mass"
+      ],
+      "title": "ProbabilityEstimate",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "input_digest": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Input Digest",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "method_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Method Id",
+          "type": "string"
+        },
+        "method_version": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Method Version",
+          "type": "string"
+        },
+        "source_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_revision",
+        "input_digest",
+        "method_id",
+        "method_version",
+        "limitations"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "RankedCard": {
+      "additionalProperties": false,
+      "properties": {
+        "card_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Card Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "card_id",
+        "value"
+      ],
+      "title": "RankedCard",
+      "type": "object"
+    },
+    "ReadinessValuation": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "readiness_valuation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "readiness": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Readiness"
+        },
+        "valuation": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valuation"
+        }
+      },
+      "required": [
+        "kind",
+        "decision_id",
+        "readiness",
+        "valuation"
+      ],
+      "title": "ReadinessValuation",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/intelligence/v1/AdvisoryPublication.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "advisory": {
+      "discriminator": {
+        "mapping": {
+          "coverage_recommendation": "#/$defs/CoverageRecommendation",
+          "probabilities": "#/$defs/ProbabilityEstimate",
+          "ranking": "#/$defs/PolicyRanking",
+          "readiness_valuation": "#/$defs/ReadinessValuation"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ProbabilityEstimate"
+        },
+        {
+          "$ref": "#/$defs/PolicyRanking"
+        },
+        {
+          "$ref": "#/$defs/ReadinessValuation"
+        },
+        {
+          "$ref": "#/$defs/CoverageRecommendation"
+        }
+      ],
+      "title": "Advisory"
+    },
+    "based_on_learning_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Based On Learning Revision",
+      "type": "integer"
+    },
+    "content_publication_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Content Publication Generation",
+      "type": "integer"
+    },
+    "content_publication_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Content Publication Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "produced_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "minItems": 1,
+      "title": "Provenance",
+      "type": "array"
+    },
+    "publication_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Publication Id",
+      "type": "string"
+    },
+    "publication_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Publication Revision",
+      "type": "integer"
+    },
+    "valid_until": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Valid Until"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "publication_id",
+    "publication_revision",
+    "content_publication_id",
+    "content_publication_generation",
+    "based_on_learning_revision",
+    "produced_at",
+    "valid_until",
+    "provenance",
+    "advisory"
+  ],
+  "title": "AdvisoryPublication",
+  "type": "object"
+}

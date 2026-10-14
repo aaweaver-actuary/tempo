@@ -105,7 +105,7 @@ def test_scheduling_boundary_has_no_unrelated_transitive_dependencies(dependency
         assert sorted(dependency_graph.find_modules_directly_imported_by(module)) == sorted(expected_imports), module
     reachable = dependency_graph.find_upstream_modules(APPLICATION)
     assert {module for module in reachable if module.startswith('app.')} == {CONTRACTS, SCHEDULER}
-    assert set(reachable) <= set(CERTIFIED_MODULES) | {'__future__', 'dataclasses', 'datetime', 'typing', 'json', 'fsrs'}
+    assert set(reachable) <= set(CERTIFIED_MODULES) | {'__future__', 'dataclasses', 'datetime', 'typing', 'json', 'fsrs', 'tempo_scheduling'}
 
 
 @pytest.mark.parametrize('module', CERTIFIED_MODULES)

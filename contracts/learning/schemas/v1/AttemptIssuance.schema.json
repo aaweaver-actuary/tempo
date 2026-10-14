@@ -1,0 +1,428 @@
+{
+  "$defs": {
+    "Choice": {
+      "additionalProperties": false,
+      "properties": {
+        "correct_option_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Correct Option Ids",
+          "type": "array"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/ChoiceOption"
+          },
+          "maxItems": 12,
+          "minItems": 2,
+          "title": "Options",
+          "type": "array"
+        },
+        "type": {
+          "const": "choice",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "options",
+        "correct_option_ids"
+      ],
+      "title": "Choice",
+      "type": "object"
+    },
+    "ChoiceOption": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "ChoiceOption",
+      "type": "object"
+    },
+    "ExecutableExercise": {
+      "additionalProperties": false,
+      "properties": {
+        "card_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Card Id",
+          "type": "string"
+        },
+        "decision_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "exercise_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Exercise Revision",
+          "type": "integer"
+        },
+        "policy_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "publication_generation": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Publication Generation",
+          "type": "integer"
+        },
+        "publication_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Publication Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Source Revision",
+          "type": "integer"
+        },
+        "specification": {
+          "discriminator": {
+            "mapping": {
+              "choice": "#/$defs/Choice",
+              "explanation": "#/$defs/Explanation",
+              "knight_path": "#/$defs/KnightPath",
+              "move_line": "#/$defs/MoveLine",
+              "square_set": "#/$defs/SquareSet"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/MoveLine"
+            },
+            {
+              "$ref": "#/$defs/SquareSet"
+            },
+            {
+              "$ref": "#/$defs/KnightPath"
+            },
+            {
+              "$ref": "#/$defs/Choice"
+            },
+            {
+              "$ref": "#/$defs/Explanation"
+            }
+          ],
+          "title": "Specification"
+        },
+        "starting_fen": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Starting Fen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "decision_id",
+        "policy_id",
+        "source_revision",
+        "publication_id",
+        "publication_generation",
+        "exercise_revision",
+        "starting_fen",
+        "prompt",
+        "specification"
+      ],
+      "title": "ExecutableExercise",
+      "type": "object"
+    },
+    "Explanation": {
+      "additionalProperties": false,
+      "properties": {
+        "rubric": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Rubric",
+          "type": "string"
+        },
+        "type": {
+          "const": "explanation",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "rubric"
+      ],
+      "title": "Explanation",
+      "type": "object"
+    },
+    "IssuedAttempt": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "attempt_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Attempt Revision",
+          "type": "integer"
+        },
+        "exercise": {
+          "$ref": "#/$defs/ExecutableExercise"
+        },
+        "issued_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "queue_entry_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Queue Entry Id",
+          "type": "string"
+        },
+        "queue_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Queue Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "attempt_revision",
+        "queue_entry_id",
+        "queue_revision",
+        "issued_at",
+        "exercise"
+      ],
+      "title": "IssuedAttempt",
+      "type": "object"
+    },
+    "KnightPath": {
+      "additionalProperties": false,
+      "properties": {
+        "hop_rule": {
+          "enum": [
+            "at_most",
+            "exact"
+          ],
+          "title": "Hop Rule",
+          "type": "string"
+        },
+        "maximum_hops": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Maximum Hops",
+          "type": "integer"
+        },
+        "minimum_hops": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Minimum Hops",
+          "type": "integer"
+        },
+        "occupancy_rule": {
+          "const": "static_non_capturing",
+          "title": "Occupancy Rule",
+          "type": "string"
+        },
+        "start_square": {
+          "pattern": "^[a-h][1-8]$",
+          "title": "Start Square",
+          "type": "string"
+        },
+        "target_squares": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Target Squares",
+          "type": "array"
+        },
+        "type": {
+          "const": "knight_path",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "start_square",
+        "target_squares",
+        "minimum_hops",
+        "maximum_hops",
+        "hop_rule",
+        "occupancy_rule"
+      ],
+      "title": "KnightPath",
+      "type": "object"
+    },
+    "MoveLine": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_lines": {
+          "items": {
+            "items": {
+              "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+              "type": "string"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Accepted Lines",
+          "type": "array"
+        },
+        "grading_policy": {
+          "enum": [
+            "reference",
+            "open_judgment"
+          ],
+          "title": "Grading Policy",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "single",
+            "stepwise_line"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "type": {
+          "const": "move_line",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "accepted_lines",
+        "mode",
+        "grading_policy"
+      ],
+      "title": "MoveLine",
+      "type": "object"
+    },
+    "SquareSet": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "optional": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Optional",
+          "type": "array"
+        },
+        "required": {
+          "items": {
+            "pattern": "^[a-h][1-8]$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Required",
+          "type": "array"
+        },
+        "type": {
+          "const": "square_set",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "required",
+        "optional",
+        "criterion"
+      ],
+      "title": "SquareSet",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/learning/v1/AttemptIssuance.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "$ref": "#/$defs/IssuedAttempt"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "learning_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Learning Revision",
+      "type": "integer"
+    },
+    "request_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "request_id",
+    "learning_revision",
+    "attempt"
+  ],
+  "title": "AttemptIssuance",
+  "type": "object"
+}

@@ -1,0 +1,24 @@
+{
+  "model": "MaiaJob",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "job_id": "job-a",
+    "request_revision": 1,
+    "execution_generation": 1,
+    "input_digest": "sha256:fixture-a",
+    "constraints": {
+      "max_wall_time_ms": 5000,
+      "max_memory_mb": 256
+    },
+    "worker": "maia",
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "rating": 1500,
+    "model_id": "maia-2",
+    "model_version": "fixture-1",
+    "legal_moves": [
+      "e2e4",
+      "d2d4"
+    ]
+  }
+}

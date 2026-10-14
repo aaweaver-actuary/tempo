@@ -1,0 +1,265 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { repository, checkTypeScript, checkConsumer, validateManifest } from "../check-components.mjs";
+const manifest = JSON.parse(readFileSync(resolve(repository, "components.json"), "utf8"));
+const chess = manifest.components.find(component => component.id === "chess-line");
+const scheduling = manifest.components.find(component => component.id === "scheduling");
+const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3";
+// Node marks test children internally; independent CLI fixtures must not inherit it.
+function spawnIsolatedNode(args, options = {}) {
+  const env = { ...process.env, ...options.env };
+  delete env.NODE_TEST_CONTEXT;
+  return spawnSync(process.execPath, args, { ...options, env, timeout: 10_000 });
+}
+function fixture(t, component) {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-m02-boundary-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  cpSync(resolve(repository, component.root, "src"), join(directory, "src"), { recursive: true });
+  if (component === scheduling) cpSync(resolve(repository, component.root, "pyproject.toml"), join(directory, "pyproject.toml"));
+  if (component === chess) {
+    cpSync(resolve(repository, component.root, "package.json"), join(directory, "package.json"));
+    const dependencyRoot = existsSync(resolve(repository, "node_modules/chess.js")) ? "node_modules" : "packages/chess-line/node_modules";
+    symlinkSync(resolve(repository, dependencyRoot), join(directory, "node_modules"));
+  }
+  return directory;
+}
+function checkPython(directory) {
+  return spawnSync(python, [resolve(repository, "tools/component-build/check-python.py"), directory, JSON.stringify(scheduling.dependencies), JSON.stringify(scheduling.publicExports)], { encoding: "utf8" });
+}
+for (const [kind, invalidImport] of [
+  ["direct", 'import "fastapi";'],
+  ["lazy", 'async function hidden() { return import("services/content/internal"); }'],
+  ["conditional", 'if (false) { import("undeclared-analysis"); }'],
+  ["source escape", 'import "../../../app/main";'],
+  ["unresolved dynamic", 'async function hidden(path: string) { return import(path); }'],
+]) test(`M02 TypeScript rejects ${kind} forbidden imports`, t => {
+  const directory = fixture(t, chess);
+  const entry = join(directory, "src/index.ts");
+  writeFileSync(entry, readFileSync(entry, "utf8") + "\n" + invalidImport);
+  assert.throws(() => checkTypeScript(directory, chess), /dependency|escape|loader/i);
+});
+test("M02 TypeScript rejects forbidden transitive imports", t => {
+  const directory = fixture(t, chess);
+  writeFileSync(join(directory, "src/bridge.ts"), 'import "services/learning/private";');
+  const entry = join(directory, "src/index.ts");
+  writeFileSync(entry, readFileSync(entry, "utf8") + '\nimport "./bridge.js";');
+  assert.throws(() => checkTypeScript(directory, chess), /Undeclared dependency/);
+});
+test("M02 TypeScript rejects private exports and undeclared dependency metadata", t => {
+  const directory = fixture(t, chess);
+  const metadataPath = join(directory, "package.json");
+  const metadata = JSON.parse(readFileSync(metadataPath, "utf8"));
+  metadata.exports["./private"] = "./dist/private.js";
+  writeFileSync(metadataPath, JSON.stringify(metadata));
+  assert.throws(() => checkTypeScript(directory, chess), /Private exports/);
+  delete metadata.exports["./private"];
+  metadata.dependencies.react = "19.2.6";
+  writeFileSync(metadataPath, JSON.stringify(metadata));
+  assert.throws(() => checkTypeScript(directory, chess), /Dependencies differ/);
+  assert.throws(() => checkConsumer('import { hidden } from "@tempo/chess-line";', "@tempo/chess-line", chess.publicExports), /Unavailable export/);
+  assert.throws(() => checkConsumer('async function hidden() { return import("@tempo/chess-line/private"); }', "@tempo/chess-line", chess.publicExports), /Private/);
+});
+for (const [kind, invalidImport] of [
+  ["direct", "import fastapi"],
+  ["lazy", "def hidden():\n    import app.main"],
+  ["conditional", "if False:\n    import services.content"],
+  ["source escape", "from ...app import main"],
+  ["unresolved dynamic", "def hidden():\n    __import__('app.main')"],
+  ["dynamic importlib", "import importlib\ndef hidden():\n    importlib.import_module('app.main')"],
+  ["aliased dynamic loader", "from importlib import import_module as loader\ndef hidden():\n    loader('app.main')"],
+]) test(`M02 Python rejects ${kind} forbidden imports`, t => {
+  const directory = fixture(t, scheduling);
+  const implementation = join(directory, "src/tempo_scheduling/_scheduler.py");
+  writeFileSync(implementation, readFileSync(implementation, "utf8") + "\n" + invalidImport + "\n");
+  const result = checkPython(directory);
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stderr, /undeclared|escape|dynamic loader/);
+});
+test("M02 Python rejects forbidden transitive imports", t => {
+  const directory = fixture(t, scheduling);
+  writeFileSync(join(directory, "src/tempo_scheduling/bridge.py"), "import services.content\n");
+  assert.notEqual(checkPython(directory).status, 0);
+});
+test("M02 Python public API policy rejects private and unavailable consumer exports", t => {
+  const directory = fixture(t, scheduling);
+  for (const source of ["from tempo_scheduling._scheduler import Schedule", "from tempo_scheduling import hidden", "def hidden():\n    import tempo_scheduling._scheduler"]) {
+    const consumer = join(directory, "consumer.py");
+    writeFileSync(consumer, source);
+    const result = spawnSync(python, [resolve(repository, "tools/component-build/check-python.py"), "consumer", consumer, "tempo_scheduling", JSON.stringify(scheduling.publicExports)], { encoding: "utf8" });
+    assert.notEqual(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /Private/);
+  }
+});
+test("M02 manifest rejects duplicate missing escaping and false implemented components", () => {
+  for (const change of [copy => copy.components.push(copy.components[0]), copy => delete copy.components[0].maintainer,
+    copy => copy.components[0].root = "../outside", copy => copy.components[0].status = "implemented",
+    copy => copy.components[0].tests = [{ command: "pretend" }]]) {
+    const copy = structuredClone(manifest); change(copy);
+    assert.throws(() => validateManifest(copy));
+  }
+});
+test("M02 zero-selected Node tests fail", t => {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-m02-empty-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const runner = resolve(repository, "tools/component-build/test-node.mjs");
+  assert.notEqual(spawnIsolatedNode([runner, directory]).status, 0);
+  writeFileSync(join(directory, "one.test.mjs"), 'import { test } from "node:test"; test("one", () => {});');
+  const result = spawnIsolatedNode([runner, directory, "never-matches"], { encoding: "utf8" });
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /Zero selected tests/);
+});
+
+test("M02 separate test discovery preserves every legacy unit and runner file", async () => {
+  const { validateInventory, selectFiles } = await import("../test-lane.mjs");
+  const counts = validateInventory();
+  assert.ok(counts.unitFiles > 0 && counts.runnerFiles > 0);
+  assert.ok(selectFiles("producer-parity").includes("tests/unit/api-schema-parity-regressions.test.ts"));
+  assert.ok(selectFiles("runners").includes("tests/runner/tempo-cli.test.mjs"));
+  assert.throws(() => selectFiles("frontend", "does-not-exist"), /Zero selected tests/);
+});
+
+test("M02 Python rejects undeclared dependency metadata and accidental public exports", t => {
+  const directory = fixture(t, scheduling);
+  const metadataPath = join(directory, "pyproject.toml");
+  const original = readFileSync(metadataPath, "utf8");
+  writeFileSync(metadataPath, original.replace('"fsrs==6.3.2"', '"fsrs==6.3.2", "psycopg==3.3.6"'));
+  assert.match(checkPython(directory).stderr, /Dependencies differ/);
+  writeFileSync(metadataPath, original);
+  const entry = join(directory, "src/tempo_scheduling/__init__.py");
+  writeFileSync(entry, readFileSync(entry, "utf8").replace('"unlock_ready"]', '"unlock_ready", "_scheduler"]'));
+  assert.match(checkPython(directory).stderr, /public exports differ/);
+});
+
+// Each fixture runs both entry points without importing package product source.
+const nodeAccountingScenarios = [
+  ["ordinary passing case", 'test("one", () => {});', undefined, 0, 1, 0, 0, 0],
+  ["TODO-only file", 'test.todo("later");', undefined, 1, 0, 0, 0, 1],
+  ["skip-only file", 'test.skip("later");', undefined, 1, 0, 0, 1, 0],
+  ["empty describe suite", 'describe("empty", () => {});', undefined, 1, 0, 0, 0, 0],
+  ["unmatched name filter", 'test("one", () => {});', "never-matches", 1, 0, 0, 0, 0],
+  ["two nested passing cases", 'describe("suite", () => { test("first", () => {}); test("second", () => {}); });', undefined, 0, 2, 0, 0, 0],
+  ["failed case", 'test("broken", () => { throw new Error("visible failure"); });', undefined, 1, 0, 1, 0, 0],
+  ["mixed pass TODO and skip", 'test("one", () => {}); test.todo("later"); test.skip("ignored");', undefined, 0, 1, 0, 1, 1],
+  ["passing case cannot hide failure", 'test("one", () => {}); test("broken", () => { throw new Error("visible failure"); });', undefined, 1, 1, 1, 0, 0],
+  ["skip and TODO reasons", 'test("one", () => {}); test("skip", {skip:"reason"}, () => {}); test("todo", {todo:"reason"}, () => {});', undefined, 0, 1, 0, 1, 1],
+  ["repeated source locations", 'for (const label of ["left", "right"]) describe(label, () => test("same", () => {}));', undefined, 0, 2, 0, 0, 0],
+  ["repeated nested names", 'describe("left", () => test("same", () => {})); describe("right", () => test("same", () => {}));', undefined, 0, 2, 0, 0, 0],
+];
+for (const runnerKind of ["generic", "package-local"]) {
+  for (const [scenario, source, filter, exitCode, passed, failed, skipped, todo] of nodeAccountingScenarios) {
+    test(`M02 ${runnerKind} Node accounting: ${scenario}`, t => {
+      const directory = mkdtempSync(join(tmpdir(), "tempo-m02-accounting-"));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      const testsDirectory = join(directory, "tests");
+      mkdirSync(testsDirectory);
+      writeFileSync(join(testsDirectory, "chess-line.test.mjs"), 'import { test, describe } from "node:test";\n' + source);
+      let runner = resolve(repository, "tools/component-build/test-node.mjs");
+      let args = [runner, testsDirectory, ...(filter ? [filter] : [])];
+      if (runnerKind === "package-local") {
+        cpSync(resolve(repository, "packages/chess-line/test.mjs"), join(directory, "test.mjs"));
+        const reporter = resolve(repository, "packages/chess-line/tests/node-test-reporter.mjs");
+        if (existsSync(reporter)) cpSync(reporter, join(testsDirectory, "node-test-reporter.mjs"));
+        runner = join(directory, "test.mjs");
+        args = [runner, ...(filter ? [filter] : [])];
+      }
+      const result = spawnIsolatedNode(args, { cwd: directory, encoding: "utf8", timeout: 10_000 });
+      assert.ifError(result.error);
+      const diagnostic = result.stdout + result.stderr;
+      const report = result.stdout.trim().split("\n").filter(line => line.startsWith("{")).map(line => JSON.parse(line)).findLast(value => "executedIdentities" in value);
+      assert.ok(report, diagnostic);
+      assert.equal(result.status, exitCode, diagnostic);
+      assert.deepEqual([report.passed, report.failed, report.skipped, report.todo], [passed, failed, skipped, todo], diagnostic);
+      assert.equal(report.executedIdentities.length, passed, diagnostic);
+      assert.equal(new Set(report.executedIdentities).size, passed, diagnostic);
+      for (const identity of report.executedIdentities) assert.match(identity, /chess-line\.test\.mjs:\d+:\d+.*(?:one|first|second|same)/);
+      if (failed) assert.match(diagnostic, /visible failure/);
+    });
+  }
+}
+
+function laneFixture(t) {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-m02-lane-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  for (const child of ["tools/component-build", "tests/unit", "tests/runner", "node_modules/vitest"]) mkdirSync(join(directory, child), { recursive: true });
+  for (const file of ["test-lane.mjs", "test-node.mjs", "node-test-reporter.mjs"]) cpSync(resolve(repository, "tools/component-build", file), join(directory, "tools/component-build", file));
+  writeFileSync(join(directory, "tests/unit/consumer.test.ts"), "");
+  writeFileSync(join(directory, "tests/runner/example.test.mjs"), 'import {test} from "node:test"; test("runner case",()=>{});');
+  writeFileSync(join(directory, "tools/component-build/test-inventory.json"), JSON.stringify({ lanes: {
+    frontend: ["tests/unit/consumer.test.ts"], integration: ["tests/unit/consumer.test.ts"],
+    "producer-parity": [], "legacy-runner-wrappers": [], runners: ["tests/runner/example.test.mjs"],
+  } }));
+  writeFileSync(join(directory, "package.json"), JSON.stringify({ scripts: { "build:packages": "node build.mjs" } }));
+  writeFileSync(join(directory, "build.mjs"), `import {appendFileSync,writeFileSync} from "node:fs";
+appendFileSync("build-calls", "build\\n");
+if (process.env.TEMPO_FIXTURE_BUILD_FAIL) process.exit(1);
+writeFileSync("artifact", "current");`);
+  writeFileSync(join(directory, "node_modules/vitest/vitest.mjs"), `import {readFileSync,writeFileSync} from "node:fs";
+if(readFileSync("artifact", "utf8") !== "current") throw new Error("stale artifact");
+writeFileSync("consumer-ran", "yes");
+writeFileSync(process.argv.find(arg=>arg.startsWith("--outputFile=")).slice(13), JSON.stringify({numPassedTests:1,numFailedTests:0,testResults:[{assertionResults:[{status:"passed",fullName:"consumer"}]}]}));`);
+  return directory;
+}
+for (const lane of ["frontend", "integration"]) test(`M02 ${lane} prepares packages once before consumers and rejects failed builds`, t => {
+  const directory = laneFixture(t);
+  const runner = join(directory, "tools/component-build/test-lane.mjs");
+  const invoke = (filter, env = process.env) => spawnIsolatedNode([runner, lane, filter], { cwd: directory, encoding: "utf8", timeout: 10_000, env });
+  assert.notEqual(invoke("missing").status, 0);
+  assert.equal(existsSync(join(directory, "build-calls")), false);
+  const fresh = invoke("consumer");
+  assert.equal(fresh.status, 0, fresh.stdout + fresh.stderr);
+  assert.equal(readFileSync(join(directory, "build-calls"), "utf8"), "build\n");
+  rmSync(join(directory, "consumer-ran"));
+  writeFileSync(join(directory, "artifact"), "stale");
+  const failed = invoke("consumer", { ...process.env, TEMPO_FIXTURE_BUILD_FAIL: "1" });
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /Component package build failed/);
+  assert.equal(existsSync(join(directory, "consumer-ran")), false);
+  assert.equal(readFileSync(join(directory, "artifact"), "utf8"), "stale");
+  const rebuilt = invoke("consumer");
+  assert.equal(rebuilt.status, 0, rebuilt.stdout + rebuilt.stderr);
+  assert.equal(readFileSync(join(directory, "artifact"), "utf8"), "current");
+});
+test("M02 runners lane shares generic Node accounting without building packages", t => {
+  const directory = laneFixture(t);
+  const runner = join(directory, "tools/component-build/test-lane.mjs");
+  const invoke = filter => spawnIsolatedNode([runner, "runners", "example", ...(filter ? [filter] : [])], { cwd: directory, encoding: "utf8", timeout: 10_000 });
+  const result = invoke();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const report = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  assert.equal(report.passed, 1);
+  assert.match(report.executedIdentities[0], /example.test.mjs:1:.*runner case/);
+  assert.equal(existsSync(join(directory, "build-calls")), false);
+  const unmatched = invoke("never-matches");
+  assert.notEqual(unmatched.status, 0);
+  assert.equal(JSON.parse(unmatched.stdout.trim().split("\n").at(-1)).passed, 0);
+});
+test("M02 development and package test hooks prepare initial artifacts", () => {
+  const scripts = JSON.parse(readFileSync(resolve(repository, "package.json"))).scripts;
+  for (const hook of ["predev", "predev:local"]) assert.equal(scripts[hook], "npm run build:packages");
+  assert.equal(scripts.dev, "vinext dev");
+  assert.equal(scripts["dev:local"], "TEMPO_TARGET=local vite --config vite.static.config.ts");
+  assert.equal(scripts["pretest:frontend"], undefined);
+  assert.equal(scripts["pretest:component-integration"], undefined);
+  assert.equal(JSON.parse(readFileSync(resolve(repository, "packages/chess-line/package.json"))).scripts.pretest, "npm run build");
+});
+for (const runnerKind of ["generic", "package-local"]) {
+  for (const [scenario, output] of [["missing summary", ""], ["malformed JSON", "broken\n"], ["invalid summary", JSON.stringify({type:"test:summary",data:{success:true}})+"\n"]]) {
+    test(`M02 ${runnerKind} rejects ${scenario} reporter output`, t => {
+      const directory = mkdtempSync(join(tmpdir(), "tempo-m02-reporter-"));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      mkdirSync(join(directory, "tests"));
+      writeFileSync(join(directory, "tests/chess-line.test.mjs"), 'import {test} from "node:test";test("one",()=>{});');
+      const destination = runnerKind === "generic" ? directory : join(directory, "tests");
+      if (runnerKind === "generic") cpSync(resolve(repository, "tools/component-build/test-node.mjs"), join(directory, "test.mjs"));
+      else cpSync(resolve(repository, "packages/chess-line/test.mjs"), join(directory, "test.mjs"));
+      writeFileSync(join(destination, "node-test-reporter.mjs"), `export default async function* (events) { for await (const event of events) { void event; } yield ${JSON.stringify(output)}; }`);
+      const result = spawnIsolatedNode([join(directory, "test.mjs"), ...(runnerKind === "generic" ? [join(directory, "tests")] : [])], { cwd: directory, encoding: "utf8", timeout: 10_000 });
+      assert.notEqual(result.status, 0, result.stdout);
+      assert.match(result.stderr, /Malformed|Missing final/);
+    });
+  }
+}

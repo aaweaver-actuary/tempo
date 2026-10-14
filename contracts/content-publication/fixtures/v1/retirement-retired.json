@@ -1,0 +1,14 @@
+{
+  "model": "RetirementAcknowledgement",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "retirement_id": "retirement-a",
+    "publication_id": "publication-a",
+    "publication_generation": 1,
+    "activation_revision": 3,
+    "status": "retired",
+    "stale_attempts_fenced": true,
+    "reason": null
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "model": "StockfishResult",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "job_id": "job-a",
+    "request_revision": 1,
+    "execution_generation": 1,
+    "provenance": {
+      "input_digest": "sha256:fixture-a",
+      "runtime_name": "fixture",
+      "runtime_version": "1",
+      "implementation_version": "1",
+      "started_at": "2026-10-14T12:00:00Z",
+      "finished_at": "2026-10-13T12:00:00Z"
+    },
+    "worker": "stockfish",
+    "engine_version": "18",
+    "variations": [
+      {
+        "rank": 1,
+        "moves": [
+          "e2e4"
+        ],
+        "score": {
+          "kind": "centipawns",
+          "value": 30
+        },
+        "score_perspective": "side_to_move",
+        "depth": 12
+      }
+    ]
+  },
+  "package": "analysis-jobs"
+}

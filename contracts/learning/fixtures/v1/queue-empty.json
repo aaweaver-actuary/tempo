@@ -1,0 +1,12 @@
+{
+  "model": "QueueIssuance",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "request_id": "queue-request-a",
+    "queue_revision": 1,
+    "status": "empty",
+    "attempts": [],
+    "reason": null
+  }
+}

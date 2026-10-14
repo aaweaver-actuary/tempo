@@ -1,0 +1,177 @@
+{
+  "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
+  "contracts": [
+    {
+      "root": "learning",
+      "distribution": "tempo-learning-contracts",
+      "artifact_version": "1.0.0",
+      "wire_version": 1,
+      "public_namespace": "tempo_learning_contracts.v1",
+      "authoritative_owner": "Learning",
+      "consumers": [
+        "study-web",
+        "workbench-web",
+        "game-evidence",
+        "content"
+      ],
+      "models": [
+        "AttemptRequest",
+        "AttemptIssuance",
+        "ReviewSubmission",
+        "ReviewSettlement",
+        "ReceiptQuery",
+        "QueueRequest",
+        "QueueIssuance",
+        "LearningObligation",
+        "LearningState"
+      ],
+      "schema_exports": [
+        "schemas/v1/AttemptRequest.schema.json",
+        "schemas/v1/AttemptIssuance.schema.json",
+        "schemas/v1/ReviewSubmission.schema.json",
+        "schemas/v1/ReviewSettlement.schema.json",
+        "schemas/v1/ReceiptQuery.schema.json",
+        "schemas/v1/QueueRequest.schema.json",
+        "schemas/v1/QueueIssuance.schema.json",
+        "schemas/v1/LearningObligation.schema.json",
+        "schemas/v1/LearningState.schema.json"
+      ],
+      "test_command": "python -m pytest contracts/learning/tests",
+      "runtime_dependencies": [
+        "pydantic==2.12.5"
+      ],
+      "data_ownership": "OWNERSHIP.md",
+      "protocol_semantics": "README.md"
+    },
+    {
+      "root": "content-publication",
+      "distribution": "tempo-content-publication-contracts",
+      "artifact_version": "1.0.0",
+      "wire_version": 1,
+      "public_namespace": "tempo_content_publication_contracts.v1",
+      "authoritative_owner": "Content definitions / Learning activation",
+      "consumers": [
+        "learning",
+        "workbench-web"
+      ],
+      "models": [
+        "Publication",
+        "PublicationValidation",
+        "PublicationAcceptance",
+        "ActivationRequest",
+        "ActivationAcknowledgement",
+        "RetirementRequest",
+        "RetirementAcknowledgement"
+      ],
+      "schema_exports": [
+        "schemas/v1/Publication.schema.json",
+        "schemas/v1/PublicationValidation.schema.json",
+        "schemas/v1/PublicationAcceptance.schema.json",
+        "schemas/v1/ActivationRequest.schema.json",
+        "schemas/v1/ActivationAcknowledgement.schema.json",
+        "schemas/v1/RetirementRequest.schema.json",
+        "schemas/v1/RetirementAcknowledgement.schema.json"
+      ],
+      "test_command": "python -m pytest contracts/content-publication/tests",
+      "runtime_dependencies": [
+        "pydantic==2.12.5"
+      ],
+      "data_ownership": "OWNERSHIP.md",
+      "protocol_semantics": "README.md"
+    },
+    {
+      "root": "game-evidence",
+      "distribution": "tempo-game-evidence-contracts",
+      "artifact_version": "1.0.0",
+      "wire_version": 1,
+      "public_namespace": "tempo_game_evidence_contracts.v1",
+      "authoritative_owner": "Game Evidence observations / Learning obligations",
+      "consumers": [
+        "learning",
+        "intelligence",
+        "workbench-web"
+      ],
+      "models": [
+        "ImportedGame",
+        "EvidenceDelivery",
+        "EvidenceAcknowledgement"
+      ],
+      "schema_exports": [
+        "schemas/v1/ImportedGame.schema.json",
+        "schemas/v1/EvidenceDelivery.schema.json",
+        "schemas/v1/EvidenceAcknowledgement.schema.json"
+      ],
+      "test_command": "python -m pytest contracts/game-evidence/tests",
+      "runtime_dependencies": [
+        "pydantic==2.12.5"
+      ],
+      "data_ownership": "OWNERSHIP.md",
+      "protocol_semantics": "README.md"
+    },
+    {
+      "root": "intelligence",
+      "distribution": "tempo-intelligence-contracts",
+      "artifact_version": "1.0.0",
+      "wire_version": 1,
+      "public_namespace": "tempo_intelligence_contracts.v1",
+      "authoritative_owner": "Intelligence advisory only",
+      "consumers": [
+        "learning",
+        "workbench-web"
+      ],
+      "models": [
+        "AdvisoryPublication",
+        "IntelligenceAvailability"
+      ],
+      "schema_exports": [
+        "schemas/v1/AdvisoryPublication.schema.json",
+        "schemas/v1/IntelligenceAvailability.schema.json"
+      ],
+      "test_command": "python -m pytest contracts/intelligence/tests",
+      "runtime_dependencies": [
+        "pydantic==2.12.5"
+      ],
+      "data_ownership": "OWNERSHIP.md",
+      "protocol_semantics": "README.md"
+    },
+    {
+      "root": "analysis-jobs",
+      "distribution": "tempo-analysis-jobs-contracts",
+      "artifact_version": "1.0.0",
+      "wire_version": 1,
+      "public_namespace": "tempo_analysis_jobs_contracts.v1",
+      "authoritative_owner": "Requesting domain / worker execution",
+      "consumers": [
+        "content",
+        "game-evidence",
+        "intelligence",
+        "stockfish",
+        "maia"
+      ],
+      "models": [
+        "JobStatus",
+        "CancellationRequest",
+        "CancellationAcknowledgement",
+        "StockfishJob",
+        "StockfishResult",
+        "MaiaJob",
+        "MaiaResult"
+      ],
+      "schema_exports": [
+        "schemas/v1/JobStatus.schema.json",
+        "schemas/v1/CancellationRequest.schema.json",
+        "schemas/v1/CancellationAcknowledgement.schema.json",
+        "schemas/v1/StockfishJob.schema.json",
+        "schemas/v1/StockfishResult.schema.json",
+        "schemas/v1/MaiaJob.schema.json",
+        "schemas/v1/MaiaResult.schema.json"
+      ],
+      "test_command": "python -m pytest contracts/analysis-jobs/tests",
+      "runtime_dependencies": [
+        "pydantic==2.12.5"
+      ],
+      "data_ownership": "OWNERSHIP.md",
+      "protocol_semantics": "README.md"
+    }
+  ]
+}
