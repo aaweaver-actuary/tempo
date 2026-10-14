@@ -1,3 +1,14 @@
+## Component contract foundation (#264, M02-B)
+
+The [contract-local registry](../contracts/REGRESSIONS.md) owns named wire,
+producer/consumer, replay, activation/retirement, duplicate-evidence, advisory,
+worker-cancellation, dependency and PostgreSQL-role regressions. Its executable
+suite is `contracts/.venv/bin/python contracts/run_tests.py --typescript`;
+`contracts/.venv/bin/python contracts/database-ownership/run.py` selects the
+separate native PostgreSQL proof. These are reference contract tests, not
+verified conformance of existing production services. Component manifest and
+general discovery integration remain owned by #263/#201.
+
 ## Scheduling application module boundary (#192, #200, #202; A1 follow-up)
 
 `backend/tests/test_scheduling_boundary.py` enforces the existing scheduling seam

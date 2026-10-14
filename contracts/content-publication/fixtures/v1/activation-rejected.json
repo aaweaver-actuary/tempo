@@ -1,0 +1,13 @@
+{
+  "model": "ActivationAcknowledgement",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "activation_id": "activation-a",
+    "publication_id": "publication-a",
+    "publication_generation": 1,
+    "activation_revision": 2,
+    "status": "rejected",
+    "reason": "awaiting_or_rejected"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "ExecutionConstraints": {
+      "additionalProperties": false,
+      "properties": {
+        "max_memory_mb": {
+          "maximum": 65536,
+          "minimum": 1,
+          "title": "Max Memory Mb",
+          "type": "integer"
+        },
+        "max_wall_time_ms": {
+          "maximum": 3600000,
+          "minimum": 1,
+          "title": "Max Wall Time Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_wall_time_ms",
+        "max_memory_mb"
+      ],
+      "title": "ExecutionConstraints",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/analysis-jobs/v1/MaiaJob.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "constraints": {
+      "$ref": "#/$defs/ExecutionConstraints"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "execution_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Execution Generation",
+      "type": "integer"
+    },
+    "fen": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Fen",
+      "type": "string"
+    },
+    "input_digest": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Input Digest",
+      "type": "string"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "legal_moves": {
+      "items": {
+        "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Legal Moves",
+      "type": "array"
+    },
+    "model_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Model Id",
+      "type": "string"
+    },
+    "model_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Model Version",
+      "type": "string"
+    },
+    "rating": {
+      "maximum": 4000,
+      "minimum": 0,
+      "title": "Rating",
+      "type": "integer"
+    },
+    "request_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Request Revision",
+      "type": "integer"
+    },
+    "worker": {
+      "const": "maia",
+      "title": "Worker",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "job_id",
+    "request_revision",
+    "execution_generation",
+    "input_digest",
+    "constraints",
+    "worker",
+    "fen",
+    "rating",
+    "model_id",
+    "model_version",
+    "legal_moves"
+  ],
+  "title": "MaiaJob",
+  "type": "object"
+}

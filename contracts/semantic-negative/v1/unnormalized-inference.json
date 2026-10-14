@@ -1,0 +1,32 @@
+{
+  "model": "MaiaResult",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "job_id": "job-a",
+    "request_revision": 1,
+    "execution_generation": 1,
+    "provenance": {
+      "input_digest": "sha256:fixture-a",
+      "runtime_name": "fixture",
+      "runtime_version": "1",
+      "implementation_version": "1",
+      "started_at": "2026-10-14T12:00:00Z",
+      "finished_at": "2026-10-14T12:00:01Z"
+    },
+    "worker": "maia",
+    "model_id": "maia-2",
+    "model_version": "fixture-1",
+    "predictions": [
+      {
+        "move": "e2e4",
+        "probability": 0.9
+      },
+      {
+        "move": "d2d4",
+        "probability": 0.4
+      }
+    ]
+  },
+  "package": "analysis-jobs"
+}

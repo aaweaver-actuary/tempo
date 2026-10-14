@@ -1,0 +1,81 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning/v1/LearningObligation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "card_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Card Id",
+      "type": "string"
+    },
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "decision_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "real_game_miss",
+        "observed_encounter"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "obligation_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Obligation Id",
+      "type": "string"
+    },
+    "publication_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Publication Generation",
+      "type": "integer"
+    },
+    "source_evidence_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Source Evidence Id",
+      "type": "string"
+    },
+    "source_kind": {
+      "const": "game_evidence",
+      "title": "Source Kind",
+      "type": "string"
+    },
+    "source_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Source Revision",
+      "type": "integer"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "obligation_id",
+    "source_kind",
+    "source_evidence_id",
+    "source_revision",
+    "card_id",
+    "decision_id",
+    "publication_generation",
+    "kind"
+  ],
+  "title": "LearningObligation",
+  "type": "object"
+}

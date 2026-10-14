@@ -1,0 +1,152 @@
+{
+  "$defs": {
+    "PredictedMove": {
+      "additionalProperties": false,
+      "properties": {
+        "move": {
+          "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+          "title": "Move",
+          "type": "string"
+        },
+        "probability": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Probability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "move",
+        "probability"
+      ],
+      "title": "PredictedMove",
+      "type": "object"
+    },
+    "ResultProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "finished_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "implementation_version": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Implementation Version",
+          "type": "string"
+        },
+        "input_digest": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Input Digest",
+          "type": "string"
+        },
+        "runtime_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Runtime Name",
+          "type": "string"
+        },
+        "runtime_version": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Runtime Version",
+          "type": "string"
+        },
+        "started_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Started At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_digest",
+        "runtime_name",
+        "runtime_version",
+        "implementation_version",
+        "started_at",
+        "finished_at"
+      ],
+      "title": "ResultProvenance",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/analysis-jobs/v1/MaiaResult.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "execution_generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Execution Generation",
+      "type": "integer"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "model_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Model Id",
+      "type": "string"
+    },
+    "model_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Model Version",
+      "type": "string"
+    },
+    "predictions": {
+      "items": {
+        "$ref": "#/$defs/PredictedMove"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Predictions",
+      "type": "array"
+    },
+    "provenance": {
+      "$ref": "#/$defs/ResultProvenance"
+    },
+    "request_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Request Revision",
+      "type": "integer"
+    },
+    "worker": {
+      "const": "maia",
+      "title": "Worker",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "job_id",
+    "request_revision",
+    "execution_generation",
+    "worker",
+    "provenance",
+    "model_id",
+    "model_version",
+    "predictions"
+  ],
+  "title": "MaiaResult",
+  "type": "object"
+}

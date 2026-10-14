@@ -1,0 +1,11 @@
+{
+  "model": "AttemptRequest",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "request_id": "request-a",
+    "card_id": "card-a",
+    "expected_publication_generation": 1,
+    "expected_learning_revision": 1
+  }
+}

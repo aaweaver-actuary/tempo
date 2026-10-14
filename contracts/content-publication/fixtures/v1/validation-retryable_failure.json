@@ -1,0 +1,13 @@
+{
+  "model": "PublicationValidation",
+  "payload": {
+    "contract_version": 1,
+    "workspace_id": "workspace-a",
+    "publication_id": "publication-a",
+    "publication_generation": 1,
+    "status": "retryable_failure",
+    "errors": [
+      "build_interrupted"
+    ]
+  }
+}
