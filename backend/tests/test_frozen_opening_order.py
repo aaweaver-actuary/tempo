@@ -51,6 +51,20 @@ def test_frozen_ranks_override_generated_scores_breadth_and_ordinary_gameplay(da
     assert [row['id'] for _,row in selected]==['b','a','c']
 
 
+def test_scored_rank_precedes_deferred_tail_rank_in_actual_admission_selector(database):
+    publication=plan(database)
+    rows_by_id={row['id']:row for row in publication['ranks']}
+    scored={**rows_by_id['a'],'rank':100,'scoring_status':'scored','final_disposition':'scored','marginal_score':0.0}
+    deferred={**rows_by_id['b'],'rank':35379,'scoring_status':'unscored_deferred','final_disposition':'deferred','marginal_score':None}
+    publication['ranks']=[scored,deferred]
+    order.stage_run(database,publication,'today')
+    order.stage_ranks(database,publication,publication['ranks'])
+    order.activate_run(database,publication)
+    candidates=order.annotate(database,[candidate('b'),candidate('a')])
+    selected=plan_prioritized_opening_admissions(candidates,{},'today',2,miss_reason=order.MISS_REASON)
+    assert [row['id'] for _,row in selected]==['a','b']
+
+
 def test_frozen_global_order_preserves_shared_single_admission_quotas_and_mandatory_miss(database):
     activate(database)
     rows=order.annotate(database,[candidate('a'),candidate('b'),candidate('b','shared'),candidate('c',gameplay_priority_reason=order.MISS_REASON)])

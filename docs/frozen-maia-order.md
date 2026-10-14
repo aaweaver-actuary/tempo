@@ -17,8 +17,12 @@ backend/.venv/bin/python scripts/frozen-maia-order.py plan \
   --config scripts/frozen-maia-order.json \
   --docker-container tempo-postgres-1 \
   --foreground-url http://127.0.0.1:3000/api/system/foreground-requests-active \
+  --allow-unscored-tail \
   --output /Users/andy/tempo/test-results/frozen-maia-order
 ```
+
+Omit `--allow-unscored-tail` to keep strict probability completeness as the
+default planning policy.
 
 The Docker bridge is explicitly read-only, opens short read transactions, and
 keeps credentials inside the PostgreSQL container. Alternatively omit
@@ -40,13 +44,18 @@ Outputs:
   Position reach is tracked separately from answer-specific coverage, so repeated
   positions with different answers cannot inflate it.
 - `inventory.csv`: physical cards, effective colors, memberships, lineage,
-  inclusion/exclusion/unknown status, current gates, ranks and marginal scores.
+  inclusion/exclusion/unknown status, final disposition, current gates, ranks,
+  scoring status and marginal scores.
 - `preview.json`: global/family ranks, current introduction allowances and eligible
   admission previews. High-ranked locked cards stay locked. No published graph
   route is a genuine gate, not a successful introduction.
 - `inference-cache/`: resumable, atomically written, identity-checked results.
-- Separate `ranks.csv`, `excluded-cases.csv`, `unknown-cases.csv`, diagnostics,
-  previous ordering, checksums and measured execution counts accompany the plan.
+- `ranks.csv`: includes scoring status, final disposition, defer reasons and
+  diagnostic references. `deferred-cards.csv` lists each unscored card, its
+  memberships, reason codes, tail rank, null score and source-line references.
+- `diagnostics.json`: counts source-line diagnostics separately from the
+  distinct affected card IDs. `excluded-cases.csv`, `unknown-cases.csv`, prior
+  ordering, checksums and measured execution counts accompany the plan.
 
 Keep captures private: they contain study history and presentation metadata.
 Inference runs outside database transactions, uses one bounded headless helper,
@@ -75,11 +84,43 @@ probability-1 convention; that convention does not restrict arrival order or
 assign probabilities to alternative pre-anchor histories. `positions.csv`
 contains only the conditional event and subsequent represented positions.
 
-These are represented-path estimates. Missing prefixes or inference are UNKNOWN.
-A FEN alone cannot establish its encounter probability. The utility uses legal
-stored lines and existing card/published graph prefixes; it does not discover
-new chess routes. A blocked plan may contain inspectable partial ranks, but
-`apply` refuses it. It does not fall back to old scores to claim completeness.
+These are represented-path estimates. Missing probability is unknown, never
+zero. A FEN alone cannot establish its encounter probability. The utility uses
+legal stored lines and existing card/published graph prefixes; it does not
+discover new chess routes.
+
+## Completeness and the optional unscored tail
+
+Planning is strict by default. Without `--allow-unscored-tail`, unresolved
+probability evidence or any lineage diagnostic leaves `probability_complete`
+and its compatibility alias `complete` false; apply refuses the plan.
+`complete` means probability completeness, not activation safety.
+
+With explicit tail mode, safely scorable cards retain the existing Maia
+calculation and greedy marginal-coverage order. Valid, never-studied cards with
+localized evidence gaps follow in stable `baseline_order`, then card-ID order.
+They receive contiguous ranks, `scoring_status: unscored_deferred`,
+`marginal_score: null`, original reason codes and affected source-line
+references. Unknown estimates are not assigned zero and cannot change scored
+card ranks.
+
+Only missing exact card lineage, missing represented source ancestry / unknown
+route mass, and localized unknown decision reach may enter the tail. Archived,
+deleted, superseded, pending-validation, invalid, exposed, and uncertain
+legacy-exposure cards remain excluded or protected by existing safeguards.
+Invalid source evidence, failed Maia inference, a scenario with no effective
+scoring evidence, invalid anchors/configuration, missing model provenance,
+incoherent capture, and target-identity mismatch remain fatal. Lineage
+diagnostics may remain nonblocking only when their effects are localized to
+deferred cards or they affect no card in the frozen target scope.
+
+`activation_safe` is separate from `probability_complete`. It requires every
+captured card to have an explicit scored, deferred, excluded, or protected
+disposition; complete unique ranks for the safe introduction scope; no fatal
+scenario/system failure; and a deferred fraction at or below 1% of the
+otherwise rankable backlog. The plan records numerator, denominator, fraction,
+threshold, failed scenarios and diagnostic-to-card relationships. If the
+threshold is exceeded, stop and generate no activation-safe plan.
 
 ## Deployment and explicit apply
 
@@ -92,7 +133,8 @@ Use the existing stopped-writer migration/deployment procedure in
 `STARTUP-BACKGROUND-RECOVERY.md`, including backup, role/readiness verification
 and coherent API/foreground/background reader deployment. The shared Maia image
 must include `scripts/maia-inference.mjs`. Do not enable paused analysis systems.
-Before applying, inspect the plan's complete scope and exact target identifier.
+Before applying, inspect the plan's scoring policy, scored/deferred/excluded/
+protected counts, diagnostics, complete scope and exact target identifier.
 
 ```sh
 backend/.venv/bin/python scripts/frozen-maia-order.py apply \
@@ -107,13 +149,15 @@ backend/.venv/bin/python scripts/frozen-maia-order.py verify \
 ```
 
 Writes use the existing configured writer/read connections, not the Docker
-bridge. Apply checks completeness/checksum, exact PostgreSQL cluster/database
-identity, reader compatibility, definitions, exposure, membership, lifecycle and
-source inputs. It exports `pre-apply-order.json`, stages inactive rows in bounded
-batches, then activates the pointer and requests the ordinary durable queue
-refresh in one short transaction. Pending-apply guards refuse protected input
-changes during staging. A mutation after activation is handled by current gates,
-content fingerprints and issued-attempt protection. No inference occurs in apply.
+bridge. Apply checks strict probability completeness, or `activation_safe` for an
+explicit deferred-tail plan; it also checks checksum, exact PostgreSQL
+cluster/database identity, reader compatibility, definitions, exposure,
+membership, lifecycle and source inputs. It exports `pre-apply-order.json`,
+stages inactive rows in bounded batches, then activates the pointer and requests
+the ordinary durable queue refresh in one short transaction. Pending-apply guards
+refuse protected input changes during staging. Mutations after activation remain
+fenced by current gates, content fingerprints and issued-attempt protection. No
+inference occurs in apply.
 Reapplying the active plan changes no admissions, allowances or study state.
 
 Mandatory real-game remediation remains separate and higher priority. Ordinary
@@ -123,8 +167,11 @@ Optional capacity expansion keeps its existing parent gates. Already admitted
 membership is retained; only movable unstarted opening slots are reordered,
 with uncaptured ordinary openings afterward. Reviews and issued attempts stay
 protected. Content changes hold the affected unstarted card and require explicit
-rescoring/replacement or retirement. Future ordering implementations must honor
-an active snapshot; a priority rebuild cannot retire it.
+rescoring/replacement or retirement. Re-enabling analysis services, refreshing a
+generated score, or rebuilding priorities does not automatically retire an
+active frozen order. It remains authoritative until an explicit, verified
+replacement or rollback retires its pointer; retirement is separate from
+publishing the replacement.
 
 Verify reports the installed pointer, stale cards and ranked unstarted queue
 order. Inspect the real queue after its durable refresh. An installed pointer or

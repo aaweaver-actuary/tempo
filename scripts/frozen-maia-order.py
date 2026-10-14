@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import csv
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -199,7 +200,7 @@ def export(plan, directory):
             evidence=plan['decision_evidence'].get(scenario['repertoire_id'],{})
             for identifier,probability in evidence.get('reach',{}).items():
                 writer.writerow({'scenario':scenario['name'],'decision_id':identifier,**evidence['decisions'][identifier],'conditional_probability':probability,'scenario_weight':scenario['weight'],'already_covered':identifier in covered})
-    fields = ['id','families','memberships','classification','status','reasons','eligible','blocking_reasons','start_fen','source_ref','source_fen','line_ids','trained_color','effective_trained_colors','fingerprint']
+    fields = ['id','families','memberships','classification','status','final_disposition','scoring_status','deferred_reasons','diagnostic_refs','reasons','eligible','blocking_reasons','start_fen','source_ref','source_fen','line_ids','trained_color','effective_trained_colors','fingerprint']
     rank_by_id = {row['id']:row for row in plan['ranks']}
     with (directory/'inventory.csv').open('w',newline='') as handle:
         writer=csv.DictWriter(handle,fieldnames=[*fields,'rank','marginal_score']);writer.writeheader()
@@ -207,8 +208,9 @@ def export(plan, directory):
             values={field:row.get(field) for field in fields}
             values.update({key:rank_by_id.get(row['id'],{}).get(key) for key in ('rank','marginal_score')})
             writer.writerow({key:json.dumps(value) if isinstance(value,(list,dict)) else value for key,value in values.items()})
-    preview={'allowances':plan['per_repertoire_allowances'], 'global':[{key:row[key] for key in ('id','rank','marginal_score','families','eligible','blocking_reasons')} for row in plan['ranks'][:100]],
-             'families':{scenario['name']:[{key:row[key] for key in ('id','rank','marginal_score','eligible','blocking_reasons')} for row in plan['ranks'] if scenario['repertoire_id'] in row['families']][:10] for scenario in plan['configuration']['scenarios']}}
+    rank_fields=['rank','id','marginal_score','scoring_status','final_disposition','deferred_reasons','diagnostic_refs','families','fingerprint','eligible','blocking_reasons']
+    preview={'allowances':plan['per_repertoire_allowances'], 'global':[{key:row.get(key) for key in ('id','rank','marginal_score','scoring_status','final_disposition','families','eligible','blocking_reasons')} for row in plan['ranks'][:100]],
+             'families':{scenario['name']:[{key:row.get(key) for key in ('id','rank','marginal_score','scoring_status','final_disposition','eligible','blocking_reasons')} for row in plan['ranks'] if scenario['repertoire_id'] in row['families']][:10] for scenario in plan['configuration']['scenarios']}}
     preview['next_admissions_by_family']={scenario['name']:[{'id':row['id'],'rank':row['rank'],'quota_remaining':plan['per_repertoire_allowances'].get(scenario['repertoire_id'],{}).get('remaining')} for row in plan['ranks'] if scenario['repertoire_id'] in row['families'] and row['eligible'] and row['classification']=='not_admitted' and plan['per_repertoire_allowances'].get(scenario['repertoire_id'],{}).get('remaining',0)>0][:10] for scenario in plan['configuration']['scenarios']}
     for filename,status in (('excluded-cases.csv','excluded'),('unknown-cases.csv','unresolved')):
         with (directory/filename).open('w',newline='') as handle:
@@ -216,10 +218,19 @@ def export(plan, directory):
             for row in plan['inventory']:
                 if row['status']==status:writer.writerow({field:json.dumps(row.get(field)) if isinstance(row.get(field),(list,dict)) else row.get(field) for field in fields})
     with (directory/'ranks.csv').open('w',newline='') as handle:
-        rank_fields=['rank','id','marginal_score','families','fingerprint','eligible','blocking_reasons']
         writer=csv.DictWriter(handle,fieldnames=rank_fields);writer.writeheader()
-        for row in plan['ranks']:writer.writerow({field:json.dumps(row[field]) if isinstance(row[field],list) else row[field] for field in rank_fields})
-    for filename,value in (('previous-order.json',plan['previous_order']),('diagnostics.json',{'unknown_count':plan['unknown_count'],'lineage':plan['lineage_diagnostics'],'unmapped_repertoires':plan['unmapped_repertoires']}),('checksums.json',{'plan':plan['checksum'],'source':plan['source_fingerprint'],'input':plan['input_checksum'],'provenance':plan['provenance'],'target':plan['target']})):
+        for row in plan['ranks']:writer.writerow({field:json.dumps(row[field]) if isinstance(row.get(field),list) else row.get(field) for field in rank_fields})
+    with (directory/'deferred-cards.csv').open('w',newline='') as handle:
+        fields=['id','memberships','reason_codes','rank','scoring_status','marginal_score','diagnostic_refs']
+        writer=csv.DictWriter(handle,fieldnames=fields);writer.writeheader()
+        for row in plan['deferred_cards']:
+            writer.writerow({field:json.dumps(row[field]) if isinstance(row.get(field),list) else row.get(field) for field in fields})
+    diagnostics={'unknown_count':plan['unknown_count'],'lineage_diagnostic_count':plan['lineage_diagnostic_count'],
+        'lineage_affected_card_ids':plan['lineage_affected_card_ids'],'scenario_failures':plan['scenario_failures'],
+        'scored_count':plan['scored_count'],'deferred_count':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],
+        'deferred_limit':plan['deferred_limit'],'activation_safe':plan['activation_safe'],
+        'lineage':plan['lineage_diagnostics'],'unmapped_repertoires':plan['unmapped_repertoires']}
+    for filename,value in (('previous-order.json',plan['previous_order']),('diagnostics.json',diagnostics),('checksums.json',{'plan':plan['checksum'],'source':plan['source_fingerprint'],'input':plan['input_checksum'],'provenance':plan['provenance'],'target':plan['target']})):
         (directory/filename).write_text(json.dumps(value,sort_keys=True,indent=2,allow_nan=False)+'\n')
     preview['next_eligible']=[{key:row[key] for key in ('id','rank','families','classification')} for row in plan['ranks'] if row['eligible']][:50]
     (directory/'preview.json').write_text(json.dumps(preview,indent=2)+'\n')
@@ -228,8 +239,118 @@ def export(plan, directory):
 def validate_plan(plan):
     body={key:value for key,value in plan.items() if key not in ('checksum','run_id')}
     if stable_key(body) != plan['checksum'] or plan['run_id'] != plan['checksum']: raise ValueError('Plan checksum mismatch')
-    if not plan['complete']: raise ValueError('Plan incomplete; resolve UNKNOWN cases first')
     if plan['version'] != VERSION: raise ValueError('Incompatible reader contract')
+    if plan.get('complete') != plan.get('probability_complete'):
+        raise ValueError('Plan probability completeness is inconsistent')
+    policy=plan.get('scoring_policy')
+    if policy=='strict':
+        if not plan['probability_complete']:
+            raise ValueError('Plan incomplete; resolve UNKNOWN cases first')
+    elif policy=='allow_unscored_tail':
+        if not plan.get('activation_safe'):
+            raise ValueError('Deferred-tail plan is not activation safe')
+    else:
+        raise ValueError('Unknown frozen-order scoring policy')
+
+    target=plan.get('target') or {}
+    if not target.get('cluster_id') or not target.get('database_oid') or not target.get('database') or not target.get('schema'):
+        raise ValueError('Incomplete target identity; capture a fresh plan')
+    if not plan.get('activation_safe'):
+        raise ValueError('Plan is not activation safe')
+    if target.get('database')!=plan.get('configuration',{}).get('expected_database') or target.get('schema')!=plan.get('configuration',{}).get('expected_schema'):
+        raise ValueError('Plan target does not match its configuration')
+    provenance=plan.get('provenance') or {}
+    model=provenance.get('model') or {}
+    expected_model_files={'scripts/maia-inference.mjs','app/lib/all_moves_maia3.json','app/lib/all_moves_maia3_reversed.json',
+        *(f'public/maia3/parts/part-{index:02d}' for index in range(6))}
+    valid_digest=lambda value:isinstance(value,str) and len(value)==64 and all(character in '0123456789abcdef' for character in value.lower())
+    if (not expected_model_files <= set(model.get('checksums',{}))
+        or any(not valid_digest(model['checksums'][path]) for path in expected_model_files)
+        or not model.get('runtime') or not model.get('node')):
+        raise ValueError('Incomplete Maia model/runtime provenance')
+    expected_implementation_files={'backend/app/services/frozen_maia_math.py','backend/app/services/frozen_maia_plan.py','scripts/frozen-maia-order.py'}
+    implementation_checksums=provenance.get('implementation_checksums') or {}
+    if not expected_implementation_files <= set(implementation_checksums) or any(not valid_digest(implementation_checksums[path]) for path in expected_implementation_files):
+        raise ValueError('Incomplete scoring implementation provenance')
+    rating_self=provenance.get('rating_self');rating_opponent=provenance.get('rating_opponent')
+    configured_override=plan.get('configuration',{}).get('maia_elo_override')
+    configured_rating=target.get('maia_elo') if configured_override is None else configured_override
+    if (not isinstance(rating_self,(int,float)) or not isinstance(rating_opponent,(int,float))
+        or not math.isfinite(rating_self) or not math.isfinite(rating_opponent)
+        or rating_self<=0 or rating_opponent<=0 or rating_self!=configured_rating or rating_opponent!=configured_rating):
+        raise ValueError('Incomplete scoring implementation/rating provenance')
+
+    inventory=plan.get('inventory',[])
+    by_id={row.get('id'):row for row in inventory}
+    if len(by_id)!=len(inventory) or None in by_id:
+        raise ValueError('Duplicate or missing physical card identity')
+    allowed_dispositions={'scored','deferred','excluded','protected'}
+    if any(row.get('final_disposition') not in allowed_dispositions for row in inventory):
+        raise ValueError('Captured card has no safe final disposition')
+    if any(row.get('final_disposition')=='excluded' and row.get('status')!='excluded' for row in inventory):
+        raise ValueError('Excluded disposition does not match card lifecycle state')
+    if any(row.get('final_disposition')=='protected' and 'uncertain_legacy_exposure' not in row.get('reasons',[]) for row in inventory):
+        raise ValueError('Protected disposition lacks its exposure reason')
+    expected_probability_complete=not any(row.get('status')=='unresolved' for row in inventory) and not plan.get('lineage_diagnostics')
+    if bool(plan.get('probability_complete'))!=expected_probability_complete:
+        raise ValueError('Probability completeness does not match captured evidence')
+    ranks=plan.get('ranks',[])
+    rank_ids=[row.get('id') for row in ranks]
+    ordinals=[row.get('rank') for row in ranks]
+    if len(set(rank_ids))!=len(rank_ids) or ordinals!=list(range(1,len(ranks)+1)):
+        raise ValueError('Final ranking membership or ordinals are not unique and contiguous')
+    if set(rank_ids)!={identifier for identifier,row in by_id.items() if row.get('final_disposition') in ('scored','deferred')}:
+        raise ValueError('Final ranking omits a scored/deferred card or includes a protected card')
+    if plan.get('target_candidate_count')!=len(ranks) or plan.get('scored_count')+plan.get('deferred_count')!=len(ranks):
+        raise ValueError('Final ranking does not cover its declared safe target scope')
+    seen_deferred=False
+    for row in ranks:
+        inventory_row=by_id[row['id']]
+        if row.get('final_disposition')=='deferred':
+            seen_deferred=True
+            reasons=row.get('deferred_reasons') or []
+            inventory_reasons=set(inventory_row.get('reasons',[]))
+            if (policy!='allow_unscored_tail' or row.get('scoring_status')!='unscored_deferred'
+                or row.get('marginal_score') is not None or inventory_row.get('classification') not in ('not_admitted','admitted_unstarted')
+                or inventory_row.get('status')!='unresolved' or inventory_row.get('archived') or inventory_row.get('pending_validation')
+                or inventory_row.get('superseded_by') or inventory_reasons & {'already_shown_attempted_reviewed','uncertain_legacy_exposure'}
+                or any(reason.startswith('invalid_content:') for reason in inventory_reasons)
+                or not reasons or any(reason not in {'unknown_route_mass','unknown_decision_reach'} and not reason.startswith('missing_exact_card_lineage:') for reason in reasons)):
+                raise ValueError('Deferred card is invalid, exposed, or has a non-local scoring failure')
+            expected_diagnostics=sorted(set(inventory_row.get('diagnostic_refs',[])))
+            if (row.get('diagnostic_refs')!=expected_diagnostics or row.get('memberships')!=inventory_row.get('memberships')
+                or row.get('deferred_reasons')!=inventory_row.get('deferred_reasons') or row.get('rank')!=inventory_row.get('rank')):
+                raise ValueError('Deferred-card audit metadata does not match the immutable inventory')
+        elif row.get('final_disposition')=='scored':
+            score=row.get('marginal_score')
+            if (seen_deferred or row.get('scoring_status')!='scored' or not isinstance(score,(int,float))
+                or not math.isfinite(score) or score<0):
+                raise ValueError('Scored cards must precede the unscored tail and have a numerical score')
+        else:
+            raise ValueError('Unexpected final disposition in frozen ranks')
+    if plan.get('deferred_count')!=sum(row.get('final_disposition')=='deferred' for row in ranks):
+        raise ValueError('Deferred-card count does not match final ranks')
+    deferred_by_id={row.get('id'):row for row in plan.get('deferred_cards',[])}
+    if len(deferred_by_id)!=plan.get('deferred_count') or set(deferred_by_id)!={row['id'] for row in ranks if row.get('final_disposition')=='deferred'}:
+        raise ValueError('Deferred-card audit list does not match the final tail')
+    for ranked_row in ranks:
+        if ranked_row.get('final_disposition')!='deferred':
+            continue
+        audit=deferred_by_id[ranked_row['id']]
+        if (audit.get('rank')!=ranked_row['rank'] or audit.get('memberships')!=ranked_row.get('memberships')
+            or audit.get('reason_codes')!=ranked_row.get('deferred_reasons') or audit.get('diagnostic_refs')!=ranked_row.get('diagnostic_refs')
+            or audit.get('scoring_status')!='unscored_deferred' or audit.get('marginal_score') is not None):
+            raise ValueError('Deferred-card export metadata does not match the ranked tail')
+    if plan.get('target_candidate_count')!=plan.get('scored_count')+plan.get('deferred_count'):
+        raise ValueError('Target backlog denominator does not match scored and deferred cards')
+    if plan.get('deferred_fraction',0)>plan.get('deferred_limit',0) or plan.get('deferred_limit')!=0.01:
+        raise ValueError('Deferred-tail safety bound exceeded or changed')
+    if plan.get('scenario_failures'):
+        raise ValueError('A required scenario failed; incomplete scenario scoring cannot be deferred')
+    if any(item.get('reason')!='Missing initial/anchor lineage' for item in plan.get('lineage_diagnostics',[])):
+        raise ValueError('Fatal or unexplained source-lineage diagnostics remain')
+    if policy=='strict' and (plan.get('deferred_count') or not plan.get('probability_complete')):
+        raise ValueError('Strict scoring policy cannot publish an incomplete probability plan')
 
 
 def target_id(metadata):
@@ -245,6 +366,7 @@ def main():
     parser.add_argument('--docker-container',help='Read-only plan bridge to the explicitly named PostgreSQL container')
     parser.add_argument('--snapshot-dir',help='Read an exported, opening-only snapshot; apply always rechecks the real target')
     parser.add_argument('--inventory-only',action='store_true',help='Export a blocked inventory without invoking Maia')
+    parser.add_argument('--allow-unscored-tail',action='store_true',help='Append only safely localized, valid scoring-unknown cards after scored ranks (1 percent maximum)')
     parser.add_argument('--application-revision',help='Verified deployed revision captured alongside this snapshot')
     parser.add_argument('--reader-url',help='Deployed API base URL; required for apply compatibility proof')
     parser.add_argument('--foreground-url',default='http://127.0.0.1:3000/api/system/foreground-requests-active',help='Deployed foreground-requests-active URL to yield offline inference')
@@ -266,10 +388,10 @@ def main():
         try:
             from hashlib import sha256
             implementation_checksums={str(path.relative_to(ROOT)):sha256(path.read_bytes()).hexdigest() for path in (ROOT/'backend/app/services/frozen_maia_math.py',ROOT/'backend/app/services/frozen_maia_plan.py',Path(__file__))}
-            plan=create_plan(snapshot,config,inference,{'rating_self':rating,'rating_opponent':rating,'model':inference.provenance if inference else None,'application_revision':args.application_revision,'implementation_checksums':implementation_checksums})
+            plan=create_plan(snapshot,config,inference,{'rating_self':rating,'rating_opponent':rating,'model':inference.provenance if inference else None,'application_revision':args.application_revision,'implementation_checksums':implementation_checksums},allow_unscored_tail=args.allow_unscored_tail)
             export(plan,args.output)
             (Path(args.output)/'execution.json').write_text(json.dumps({'seconds':round(time.monotonic()-started,3),'new_inference_positions':inference.calls if inference else 0,'effective_inference_positions':len(inference.memory) if inference else 0,'run_id':plan['run_id']},indent=2)+'\n')
-            print(json.dumps({'state':'planned' if plan['complete'] else 'blocked','run_id':plan['run_id'],'target':target_id(metadata),'inventory':len(plan['inventory']),'ranked':len(plan['ranks']),'unknown':plan['unknown_count'],'lineage_diagnostics':len(plan['lineage_diagnostics'])}))
+            print(json.dumps({'state':'planned' if plan['activation_safe'] else 'blocked','run_id':plan['run_id'],'target':target_id(metadata),'inventory':len(plan['inventory']),'ranked':len(plan['ranks']),'scored':plan['scored_count'],'deferred':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],'excluded':plan['excluded_count'],'protected':plan['protected_count'],'unknown':plan['unknown_count'],'probability_complete':plan['probability_complete'],'activation_safe':plan['activation_safe'],'lineage_diagnostics':plan['lineage_diagnostic_count'],'lineage_affected_cards':len(plan['lineage_affected_card_ids']),'scenarios_failed':len(plan['scenario_failures'])}))
         finally:
             if inference: inference.close()
         return
