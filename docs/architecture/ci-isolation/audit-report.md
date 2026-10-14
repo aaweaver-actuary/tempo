@@ -1,5 +1,7 @@
 # Tempo CI Isolation and Architecture Dependency Audit
 
+> **Historical audit:** Findings and recommendations below refer to the frozen October 12 baseline. The adopted component architecture and qualification policy are maintained in [the reconstruction guide](../component-reconstruction.md), [docs/testing.md](../../testing.md), and [issue #192](https://github.com/aaweaver-actuary/tempo/issues/192). Retain this report as dated evidence; do not treat superseded recommendations as current execution policy.
+
 **Read-only audit • 12 October 2026 • baseline `622d611a2fc6315163a54d7ae689ce1b97d06122`**
 
 Source was frozen at 10:44:37 UTC (06:44:37 America/New_York). All architectural findings refer to that revision. GitHub observations are retrieval-time facts. Proposed changes and performance ranges are explicitly future work. This document includes sections A–L; separate [issue specifications](issue-specifications.md), [implementation prompts](parallel-agent-prompts.md), and [evidence guide](evidence-guide.md) provide convenient copies and navigation.

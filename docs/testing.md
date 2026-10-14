@@ -1,95 +1,137 @@
-# Test scopes and emergency merge qualification
+# Test selection and qualification
 
-`npm run check:conflicts` checks tracked text files for unresolved merge-conflict
-artifacts without installing dependencies. It also runs before local gate execution
-and before dependencies and browser collection in the CI planning job. Separators,
-quoted marker strings, binary files, and symlinks are not treated as conflicts;
-deliberate complete examples require an exact path and block digest exemption.
+Choose checks from the changed behavior, owning component, and actual dependency
+and consumer graph. Validate the affected boundary without repeating unrelated
+suites.
 
-Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the complete local gate; `npm test` and `npm run test:full` use the same runner. CI owns required final-candidate verification by default; run a local full gate only for the reasons in `AGENTS.md`. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
+## Select the smallest relevant proof
 
-Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.
+| Change | Development evidence |
+| --- | --- |
+| Documentation or instructions only | Review the diff and links; verify documented commands against their definitions; run `npm run check:conflicts` and `git diff --check`. No runtime suite unless edited text is consumed by a test, script, or configuration. |
+| Pure package or module | Run its owning package tests and relevant import/API contracts. No unrelated database, Python, model-worker, or whole-product suite. |
+| UI-only behavior or rendering | Run affected unit/component checks; add the real browser spec for browser behavior and visual checks only for rendering changes. UI-only work does not require PostgreSQL, Python, or model-worker suites. |
+| API or shared contract | Test the producer, affected consumers, and contract/error cases. Add integration boundaries when unit tests cannot prove the real interaction. |
+| Persistence, transaction, migration, receipt, or recovery | Run focused owning-component tests and real tests against that component's PostgreSQL boundary. Mocked or SQLite-only tests do not prove PostgreSQL behavior. |
+| Shared runtime, security, CI selection, build configuration, or cross-component change | Include actual affected consumers and integration boundaries. Broaden for unknown/shared dependencies with a stated reason. |
 
-**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`, plus `make docker-lifecycle`. The default sandbox can deny `127.0.0.1` binding or Docker access. Full, UI, visual, and performance scopes also verify that the pinned container can read the checkout through its Docker bind mount, including `package-lock.json`, before tests begin. This catches isolated checkouts under paths Docker Desktop cannot share. `make preflight` checks all three capabilities alone when diagnosing the environment. This preflight is a capability check, not another test family.
+For a reported defect, add a named regression to its regular owning suite and
+follow [regression ownership and transitional registration](#regression-ownership-during-reconstruction).
+Verify the intended cases ran: zero-selected, skipped, failed, cancelled, or
+missing required tests are not passes. Diagnose failures in the smallest
+relevant scope. Fix causally related failures with the owning change; route
+unrelated failures to their own owner rather than broadening the task
+automatically.
 
-## Emergency merge qualification
+Reuse passing evidence only when relevant source, dependencies, fixtures,
+commands, and toolchain inputs remain unchanged. Draft status or unrelated
+advancement of `main` alone does not require rerunning all tests. Changed
+relevant inputs require fresh evidence for the affected scope.
 
-The emergency policy accepts increased regression risk in inactive subsystems.
-The required PR check is `merge-gate`; `quality` remains the complete-proof check.
-This policy supersedes the selective-CI prerequisites in issues #202 and #203;
-those broader architecture issues remain open.
+## Regression ownership during reconstruction
 
-| Tier | Selection | Required proof | Target |
-| --- | --- | --- | --- |
-| FAST | Reviewed isolated sources and prose | Relevant unit/contract files, applicable lint/typecheck; prose uses conflict, migration inventory and diff checks without dependencies | Under 5 minutes |
-| STUDY | Queue, reviews, grading, admissions, quotas, scheduling, FSRS consumers, offline recovery and study-only mode | Relevant unit/backend files, bounded PostgreSQL study durability and ten named Chromium cases | Under 10 minutes |
-| FULL | Schema/migrations, shared persistence, executable authentication/security, qualification infrastructure, explicit global invariants, unknown ownership/history, or `ci:full` | Existing complete units, builds, PostgreSQL, lifecycle, browser and pinned checks | Measured per candidate |
+Every user-reported defect requires a named regression that is discoverable
+and executable through its regular owning suite. A prose entry alone is not
+regression coverage.
 
-`scripts/ci-fast-lane-inventory.json` contains exact source ownership and browser
-file/title/project identities. Multiple changed paths use the union of selected
-files and the highest tier. Renames classify both paths. Missing tests, ambiguous
-ownership and unavailable history select FULL. A large file or shared frontend
-module does not by itself imply FULL. New unmapped functionality requires an
-explicit ownership review before it can use the fast lane. This inventory asserts
-reviewed ownership; it is not certified reverse dependency closure (#202).
-Documentation-only Markdown, including security and CI documentation, remains
-FAST. Executable configuration, validators, workflows and security code retain
-FULL; changing their documentation does not change the executable policy.
+For tests still governed by the legacy runner and its registration checks,
+continue to record coverage in `tests/REGRESSIONS.md` until replacement
+discovery and validation are implemented and verified.
 
-FAST/STUDY execute the exact PR head and verify selected collection against actual
-passing results. Zero, skipped, retried, missing, failed, cancelled, stale-head or
-other-run evidence cannot pass. Their results remain valid if only main advances;
-there is no cross-run fast-lane evidence reuse. FULL still qualifies the captured
-head/base/integration candidate. Its merge gate reads the same-run immutable
-FULL plan and compares the qualified integration SHA with the fresh PR state,
-while the successful same-run `quality` dependency validates all required layers
-and evidence provenance. Every tier rejects drafts and draft-selected plans;
-becoming ready requires a fresh ready selection and successful qualification.
+The target is component-local regression inventories and test discovery.
+Once an extracted component has verified local discovery and registration,
+its local inventory is authoritative for its tests. The root inventory may
+retain a compatibility index or link where tooling still needs it, but
+duplicating every entry or editing one shared root file must not remain a
+permanent prerequisite for independent component work.
 
-The PostgreSQL `study` runner uses fresh owned databases, credentials and ports.
-It proves queue/attempt receipt recovery, study-only foreground review and
-idempotent replay, real foreground review durability, canonical admission,
-burial quota and blocked-burial recovery. It then recreates fresh volumes before
-the selected browser smoke. Cleanup and missing capabilities remain failures.
-The ten browser identities are recorded in the manifest, covering reload,
-unconfirmed review blocking, wrong-move grading, offline replay/conflicts,
-study-only mode, post-review progression, tactics and opening admission.
+Moving registration must preserve discoverability, relevant invariant
+coverage, and failure reporting. This documentation change does not implement
+local discovery, remove existing registration checks, or authorize bypassing
+them.
 
-FULL remains available via `ci:full`, manual workflow dispatch, nightly at 07:00
-UTC, merge-group, release and main practice-demo publishing boundaries. Its
-failures remain visible in Actions and artifacts; an unrelated FAST/STUDY PR
-has no dependency on those runs. No existing tests or assertions are removed.
+## Commands currently defined in this repository
 
-**GitHub settings:** after validating the new check, set main's required GitHub
-Actions status to `merge-gate` (app ID 15368), remove required `quality`, and
-uncheck **Require branches to be up to date before merging**. Preserve all other
-protections. Read back the required-status-check configuration. Until this change
-is confirmed, the fast lane is implemented but is not operational.
+These are current monorepo commands, not proof that future component packages
+or independent runners are implemented. Check the Makefile and script entry
+points before relying on or documenting a command. Use one Make verification
+target per invocation.
 
-On 2026-10-12, main protection already requires non-strict `merge-gate` and has
-removed required `quality`; at that readback main did not yet contain the new
-workflow. Existing
-PRs with older workflows cannot satisfy that check until they include the new
-workflow. Do not treat this rollout gap as permission to bypass qualification.
+| Scope | Command | Declared coverage |
+| --- | --- | --- |
+| Frontend unit suite / one file | `make fast` / `make unit-file FILE=<path>` | Vitest suite / selected file |
+| Backend suite / one file | `make python` / `make python-file FILE=<path>` | Backend pytest suite / selected file |
+| Rust suite / one test filter | `make rust` / `make rust-case FILTER=<name>` | Format, Clippy, workspace tests / filtered test |
+| Backend and Rust | `make integration` | Defense smoke, backend pytest, Rust checks |
+| Browser suite / one spec | `make browser` / `make ui-file FILE=<spec>` | PostgreSQL browser runner / selected spec |
+| Visual or performance | `make visual` / `make perf` | Pinned visual and performance specs / performance subset |
+| PostgreSQL durability / lifecycle | `make docker-durability` / `make docker-lifecycle` | Disposable PostgreSQL durability / deployment lifecycle runner |
+| Full current product gate | `make full` | Current monorepo units, backend, Rust, builds, PostgreSQL/browser, and pinned checks |
+| Inspect plan / capabilities | `make plan` / `make preflight` | Print declared full plan / check local capabilities |
 
-Rollback procedure (settings changes require explicit authorization):
-1. Add `ci:full` to each ordinary PR and obtain complete current-candidate quality.
-2. Update only main's required-status-checks endpoint, using this payload:
-   `{"strict":true,"checks":[{"context":"quality","app_id":15368}]}`.
-3. Read back that endpoint, verify `quality` and strict=true, and compare all other
-   branch protection fields with the pre-change snapshot. Confirm a current PR's
-   required checks; do not merge using an old candidate's success.
-The rollback payload can be validated locally without applying it. No rollback
-or protection mutation is performed as part of the PR214 correction.
+Some browser and Docker targets require Docker and loopback access. Do not run
+`make full`, broad browser/database suites, Docker builds, or full dependency
+installation for documentation or component-local work unless its affected
+boundary requires them.
 
-Omitted FAST/STUDY coverage includes unrelated analysis/import/model suites,
-full durability and backup/restore, deployment lifecycle, full browser inventory,
-Rust/build inventories and pinned visual/performance. Inactive failures may reach
-main before periodic FULL detects them. Disabling strict freshness also accepts
-interaction risk between individually qualified PR heads; high-risk changes
-retain exact-integration FULL proof. Targets are budgets, not guaranteed timings.
+## Desired policy and current hosted behavior
+
+The adopted policy in [the component architecture guide](architecture/component-reconstruction.md)
+is component-local qualification plus affected contract and boundary proofs.
+Full-system testing is an explicit integration or periodic checkpoint, not a
+universal entrance gate. Intermediate assemblies may be incomplete; a component
+claiming completion still needs its own acceptance evidence.
+
+Execution remains transitional. `.github/workflows/pages.yml`,
+`verify-layer.yml`, `verify-browser.yml`, the verification planner, and source
+inventory define the runners and selection behavior in this checkout. The
+current workflow still has repository-wide FAST/STUDY/FULL selection and a
+`quality` job; this guide does not change those workflows or make checks pass.
+Hosted branch-protection settings must be verified directly in GitHub before
+claiming which check is required. Documentation does not change branch
+protection or confer passing status.
+
+## Current runner regression inventory
+
+The current ordinary qualification inventory has six global Chromium smoke
+cases. This records current runner selection; the target architecture may move
+tests to their component owners or replace mechanisms with explicitly justified
+equivalent proofs. Preserve the invariant and its owning evidence.
+
+Global critical browser smoke: **6 cases**.
+
+The preserved runner report below records the exact six global and eight family
+identities, their invariants, and complementary lower-level proofs. The checked-in
+`scripts/ci-verification-inventory.json` remains the source for current titles.
+
+The guided-failure and offline-replay smokes intercept their save/review API
+responses; they do not prove authoritative PostgreSQL persistence. Existing
+native PostgreSQL checks retain review/receipt, restart, replay, and recovery
+proof. Exact current titles remain owned by `scripts/ci-verification-inventory.json`.
+
+The CI isolation reports and older qualification writeups below describe dated
+baselines. Their findings and implementation details remain evidence, not
+current task-selection or architecture policy; use this guide and
+[the component reconstruction guide](architecture/component-reconstruction.md).
+
+`npm run check:conflicts` scans tracked text files for unresolved conflict
+artifacts without installing dependencies. It is also called by local gate
+execution and CI planning. The Makefile defines `make full` as the current
+whole-product integration gate. Use `make plan` to print its declared stages;
+do not treat either command as a default component-local check.
+
+For Docker/browser Make targets that need Docker or loopback access, diagnose
+the actual capability requirements. The `make preflight` target checks Docker,
+loopback, and workspace-mount capability. A capability check is not a test
+family, and a failed or unavailable capability leaves the associated tests
+unrun rather than passed.
 
 ## Full gate
+
+This section describes execution of an explicitly selected whole-product
+integration check. It does not add a universal handoff or component-release
+requirement. Use [the selection policy](#select-the-smallest-relevant-proof)
+to decide whether this scope is relevant.
 
 From the repository root, after installing the project prerequisites, run:
 
@@ -174,7 +216,7 @@ make ui-file FILE=games-board-context.spec.ts
 make docker-durability
 ```
 
-These are alternative development scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, the relevant subsystem when stable, and the full gate on the final candidate before release. A passing focused run is not evidence that the full gate passed.
+These are alternative verification scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, then the affected component and relevant contract or integration checks when the change is coherent. Run the whole-product gate only when the selected integration boundary requires it or it is explicitly requested; reaching handoff or releasing an individual component does not by itself require that gate. A passing focused run is not evidence that the full gate passed, and this policy does not bypass actual hosted required checks.
 
 Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. The independent lifecycle mode builds the required current images and maintenance tools, runs the entire CLI rehearsal, and cleans up; it does not start an unused parent application stack. Before the rehearsal, standalone mode acquires PostgreSQL and Redis with `docker compose pull --policy missing postgres redis`: cold dependencies are required, while cached images avoid registry acquisition. Missing-image pull failures still fail verification. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
 
@@ -206,7 +248,11 @@ CI retains npm caching and adds pip downloads plus Rust compiler/dependency cach
 
 `tests/unit/postgres-test-speedups-regressions.test.ts` runs the dependency-free Node suite in `tests/runner/postgres-test-speedups.test.mjs` as part of the regular frontend gate. The same cases can be run directly with `node --test tests/runner/postgres-test-speedups.test.mjs` while editing the harness. The suite checks executable mode selection, read-only plans, failure/cleanup propagation, timings, fail-fast fixtures, and the Make/CI entry points. These harness tests do not replace live PostgreSQL or browser verification.
 
-## CI reliability maintenance: decomposition boundary
+## Historical CI reliability and validation evidence
+
+> Sections below preserve earlier runner/qualification audits and task validation records at their captured revisions. Some proposals and merge-policy descriptions were superseded by the October 14 component reconstruction in [#192](https://github.com/aaweaver-actuary/tempo/issues/192). Use the current selection policy and commands at the top of this file and the [component architecture guide](architecture/component-reconstruction.md); do not treat the historical recommendations as active instructions. Original findings and results are retained.
+
+### CI reliability maintenance: decomposition boundary
 
 `scripts/verification-stages.mjs` defines the existing commands for both the
 unchanged local `make full` and independent CI owners: `ci-frontend` (all units,
@@ -262,7 +308,7 @@ Before expensive setup, `scripts/ci-evidence.mjs` inspects at most 20 recent sam
 The current layer must successfully validate reuse. Aggregation independently validates the original report and refreshes its job, latest attempt and artifact metadata, as well as current PR identity/state/head/base/integration. Missing, cancelled, skipped, filtered, retried, failed, expired or diagnostic-only evidence blocks qualification. Main, merge groups, releases, nightly and manual full requests always execute freshly. No reuse crosses a changed candidate or bypasses migration/schema guards.
 
 
-## Existing complete-verification infrastructure and reliability evidence
+### Existing complete-verification infrastructure and reliability evidence
 
 The following describes the retained complete validator, not the ordinary
 FAST/STUDY merge gate. The CI workflow preserves local `make full` and uses separate frontend,

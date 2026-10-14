@@ -1,5 +1,7 @@
 # Issue-ready specifications
 
+> **Historical specifications:** These proposals were written against an earlier CI-isolation audit baseline. Use [the adopted component reconstruction guide](../component-reconstruction.md), [docs/testing.md](../../testing.md), and [issue #192](https://github.com/aaweaver-actuary/tempo/issues/192) for current architecture, ownership, and qualification policy. Original findings and proposals are preserved as evidence.
+
 These are future implementation specifications, not created issues or authorization to change repository settings. Baseline: `622d611a2fc6315163a54d7ae689ce1b97d06122`. Refresh main, issue bodies/discussion, and open PR diffs before implementation. Reference architecture umbrella [#192](https://github.com/aaweaver-actuary/tempo/issues/192) without closing it. [#45](https://github.com/aaweaver-actuary/tempo/issues/45) is closed; preserve its merged follow-on work and use ordinary historical references rather than reopening it or claiming the whole remaining architecture scope is complete.
 
 ## B00 — Qualify current-main study browser failures before structural extraction

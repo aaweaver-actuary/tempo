@@ -1,5 +1,7 @@
 # Tempo CI classification audit — issue #238
 
+> **Historical audit:** Measurements and recommendations below describe their October 13, 2026 cutoff and captured policy. Current component architecture and test selection are in [the reconstruction guide](../component-reconstruction.md), [docs/testing.md](../../testing.md), and [issue #192](https://github.com/aaweaver-actuary/tempo/issues/192). This evidence is preserved; it does not establish today's hosted protection settings or override the adopted task policy.
+
 The 25 substantive PRs consumed **6,181.3 runner minutes (103.0 runner hours)** across 273 qualification attempts. The measured opportunities cover **615.0 deduplicated gross runner minutes, 9.95% of that baseline**. This is an opportunity ceiling, not certified savings: narrower dependency ownership, original-evidence eligibility and new verification costs remain to be proved. Broad classification is only part of the repetition; metadata/readiness events, changed integration candidates, and genuine test failures also matter.
 
 ## Evidence and definitions

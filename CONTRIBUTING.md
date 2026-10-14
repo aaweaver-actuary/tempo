@@ -1,38 +1,32 @@
-# Regression protection
+# Contributing to Tempo
 
-Every user-reported defect must have a named automated regression test before it is considered resolved. First reproduce the behavior in a test, then change the behavior and verify the test passes. Test observable outcomes rather than implementation details.
+## Ownership and coordination
 
-Use a frontend test for state transitions and timing, a backend integration test for persistence and API behavior, and a browser test for board interaction or complete workflows. Add all applicable layers for failures spanning the client and server. Add the issue and its test names to `tests/REGRESSIONS.md`.
+Start with the adopted [component architecture](docs/architecture/component-reconstruction.md) and the [12-phase index and donor map in #192](https://github.com/aaweaver-actuary/tempo/issues/192). Refresh the relevant issue and current source before implementation. Historical audits are evidence about their dated baselines, not current execution policy.
 
-All background analysis is foreground-preemptible. Treat ordinary API requests as foreground by default; browser workers must explicitly mark background requests. Background jobs must be durable and idempotent, process one bounded slice, close the database connection before computation or network work, and use only short background database sections. Never perform a sweep or derived-data rebuild in startup, a queue read, or an interactive request transaction. Add a foreground-concurrency regression whenever a new background handler is introduced.
+- Keep each change bounded to one component and its real dependencies. Preserve existing user work and use an isolated branch based on current `main`; do not develop in the live study checkout.
+- Assign one owner to each shared contract, transaction boundary, migration boundary, and shared build configuration. Other contributors may implement in parallel against the agreed interface and fixtures.
+- Use independent PRs when changes can be reviewed, validated, and merged independently. Use a small explicit stack only when a consumer genuinely depends on a producer's unmerged contract; identify that dependency and validate the resulting integration.
+- Work from actual consumer/provider dependencies, not numbered phase order. Unrelated later work may proceed before an earlier phase is complete. Keep global-budget, learning-weight, probability-driven curriculum, and recurring-pattern features outside core reconstruction acceptance.
+- Do not install all repository dependencies for a local component task. Select the owning package's setup and tests from [docs/testing.md](docs/testing.md).
 
-`make plan` prints the complete local test plan. Ordinary PR qualification uses
-FAST, STUDY or FULL through the required `merge-gate` check, as described in
-[docs/testing.md](docs/testing.md). FAST selects relevant unit/contract tests and
-static checks; STUDY adds bounded PostgreSQL durability and ten named browser
-cases. Schema, shared persistence, executable security, CI qualification infrastructure and
-unknown changes select FULL. This emergency policy accepts regression risk in
-inactive functionality and supersedes the older complete-core requirement for
-all ready PRs and the prerequisites in issues #202/#203.
+## Changes and review
 
-FAST/STUDY verify the exact PR head and selected test execution, allowing base-only
-advancement. FULL preserves exact integration qualification. Complete CI remains
-available through `ci:full`, manual dispatch, nightly, release, merge-group and
-main publishing boundaries. CI owns final required candidate validation; local
-work uses the smallest relevant proof. Never bypass failed or missing selected
-checks, discard existing tests, or substitute mock/SQLite proof for PostgreSQL
-study durability. Full release qualification remains mandatory.
+- Preserve public behavior unless the task explicitly changes it. Keep named regression tests in their regular owning component suite and follow [regression ownership and transitional registration](docs/testing.md#regression-ownership-during-reconstruction).
+- Explain why a legacy invariant or implementation detail is retired or moved, identify its new owner, and show the replacement proof. Protect user data, durable study state, and truthful error reporting.
+- Keep PRs focused. Describe the user-visible or architectural result, affected contracts and consumers, exact validation performed, and checks not run with reasons. Separate unrelated failures and name their evidence and owner; do not silently broaden the task to repair unrelated systems.
+- A draft state, issue status, or unrelated advancement of `main` alone does not establish that tests must be repeated. Reuse prior evidence only when the relevant source, dependencies, fixtures, commands, and toolchain inputs are unchanged. Failed, missing, cancelled, or zero-selected required checks never pass.
+- Distinguish implementation completion from hosted merge qualification. Documentation does not change workflows, required checks, or branch protection. Never claim a merge, deployment, or runtime activation that did not occur.
 
-The full gate and focused Docker/browser Make targets check their required Docker access or loopback bind before running tests. From Codex, start the complete `make full` command with `sandbox_permissions: "require_escalated"`; the same applies to Docker and browser focused targets. Do not run the first stages in the default sandbox and discover a permissions failure at the Docker stage.
+## Task resources and cleanup
 
-Keep each coherent fix in a separate commit. Preserve existing user data and uncommitted work. A failing provider request must report its actual error and must never substitute demonstration data or report false success in local Tempo.
+- The implementing agent owns cleanup of its disposable resources and eligible development checkout. An open or unmerged PR, pending review, or inconclusive audit is not by itself a reason to retain a redundant checkout.
+- Before removing a checkout, verify that required commits and unique local work are preserved on durable refs or in an appropriate verified artifact; inspect uncommitted, untracked, ignored, stashed, and unpushed work. Preserve necessary logs, traces, reports, and reproduction instructions outside the checkout, with the tested revision and commands recorded.
+- Confirm that no running agent, process, or mounted container still needs the checkout or resource. Uncertain ownership or unpreserved unique state requires retention with an explicit reason. Use `git worktree remove` for registered worktrees after these checks; do not force-remove dirty worktrees or delete branches as part of checkout cleanup.
+- Tear down only verified task-owned disposable resources. Preserve live study data, other tasks' resources, shared base images, and safe reusable caches. Never globally prune Docker resources or erase a volume whose ownership and disposable status are uncertain.
+- Keep inspection proportional to the task. Inspect Docker when the task used it or when a specific cleanup target requires checking container references; a documentation-only task does not need a Docker inventory as a prerequisite. An unavailable daemon is not permission to restart it or touch live services, and it need not block independently verified filesystem cleanup.
+- Report removed and retained resources, preserved evidence and refs, and any remaining cleanup blocker or retention condition. Perform eligible cleanup after preservation; do not leave it as an unspecified task for the user.
 
-The responsive UI contract is in `docs/UI-CONTRACT.md`. The regular pipeline now also
-runs pinned Linux ARM64 visual/performance checks; use `npm run test:visual` for a
-comparison and explicitly pass `-- --update` only to prepare candidates for review.
-Never accept screenshots automatically in CI. The quality runner and container
-architecture must match the baseline environment. Browser failures retain screenshots,
-traces, console messages, and geometry under `test-results/`.
+## Handoff
 
-Browser fixture cleanup requires `/api/health` to explicitly identify a disposable
-test instance. Do not set `TEMPO_TEST_INSTANCE=disposable` on a real Tempo database.
+Report the branch/PR, changed ownership boundaries, validation commands and results, remaining implementation or tooling limits, and any exact external blocker. Include removed or retained task resources, preserved evidence and refs, and remaining cleanup conditions. Open one focused PR for one task, or update its existing PR. Do not merge unless the user explicitly requests it.

@@ -1,5 +1,7 @@
 # Code organization audit
 
+> **Historical audit:** This records findings and proposals from September 20, 2026. For the adopted target and current migration sequence, use [the component reconstruction guide](architecture/component-reconstruction.md) and [issue #192](https://github.com/aaweaver-actuary/tempo/issues/192). This audit is retained as evidence, not current architecture policy.
+
 Status: initial documentation pass, 2026-09-20
 
 This is a navigational audit, not a behavior change or a proposed rewrite. It

@@ -1,6 +1,8 @@
 # Ordinary PR browser-selection validation — October 7, 2026
 
-The global smoke changes from 14 to six cases; one representative repertoire PR selects 15 cases. All eight demoted cases remain unchanged in their complete families. See the [14-case audit](testing.md#ci-verification-tiers-and-reliability-evidence) for their invariants and complementary lower-level coverage.
+> **Historical validation:** Results below capture the October 7 runner and policy. Use [the current test guide](testing.md) for desired component-level selection and [its current runner inventory](testing.md#current-runner-regression-inventory) for the retained smoke/family cases.
+
+The global smoke changed from 14 to six cases; one representative repertoire PR selected 15 cases. All eight demoted cases remained unchanged in their complete families. This validation record preserves the exact historical runner comparison and evidence.
 
 ## Comparable local observations
 
