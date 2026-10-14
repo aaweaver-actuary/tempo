@@ -1,6 +1,7 @@
 """Capacity policy meets the existing writers; these are not PostgreSQL durability proofs."""
 
 from datetime import date
+from contextlib import contextmanager
 import json
 
 import chess
@@ -666,3 +667,15 @@ def test_capacity_ready_publication_checks_translate_to_postgres_without_new_sto
         return connection.execute(statement, parameters).fetchall()
 
     assert len(read_capacity_routes(read, "rep", ())) == 8
+
+
+@pytest.fixture(autouse=True)
+def legacy_capacity_checkpoint_has_no_frozen_order(monkeypatch, request):
+    if request.node.name != 'test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease':
+        return
+    from app.services import frozen_opening_order, postgres_queue_refresh
+    monkeypatch.setattr(frozen_opening_order, 'activation', lambda database, **kwargs: (None, 0))
+    @contextmanager
+    def metadata_reader():
+        yield object()
+    monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', metadata_reader)

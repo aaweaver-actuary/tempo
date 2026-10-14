@@ -29,6 +29,29 @@ def plan_prioritized_opening_admissions(
 ) -> list[tuple[str, dict]]:
     """Preserve gameplay, breadth, and global-card ordering outside a transaction."""
 
+    candidates = [dict(row) for row in candidates]
+    if any(row.get("frozen_token", [None])[0] for row in candidates):
+        selected, consumed, planned = set(), dict(introduced_by_repertoire), []
+        obligations = sorted((row for row in candidates if row["gameplay_priority_reason"] == miss_reason),
+                             key=lambda row: (row["id"], row["repertoire_id"]))
+        frozen = sorted((row for row in candidates if row.get("frozen_rank") is not None and row.get("frozen_valid") and row.get("frozen_route_valid", True)),
+                        key=lambda row: (row["frozen_rank"], row["id"], row["repertoire_id"]))
+        for row in obligations + frozen:
+            repertoire_id = row["repertoire_id"]
+            allowance = limit.get(repertoire_id, 0) if isinstance(limit, dict) else limit
+            mandatory = row["gameplay_priority_reason"] == miss_reason
+            if row["id"] in selected or (not mandatory and consumed.get(repertoire_id, 0) >= allowance):
+                continue
+            planned.append((repertoire_id, row))
+            selected.add(row["id"])
+            consumed[repertoire_id] = consumed.get(repertoire_id, 0) + 1
+        fallback = [row for row in candidates if row["id"] not in selected and row.get("frozen_rank") is None]
+        baseline = [{**row, "frozen_token": [None, 0]} for row in fallback]
+        original = {(row["repertoire_id"], row["id"]): row for row in fallback}
+        for repertoire_id, row in plan_prioritized_opening_admissions(baseline, consumed, day, limit, miss_reason=miss_reason):
+            planned.append((repertoire_id, original[repertoire_id, row["id"]]))
+        return planned
+
     by_repertoire: dict[str, list] = {}
     for row in candidates:
         by_repertoire.setdefault(row["repertoire_id"], []).append(row)
@@ -127,6 +150,9 @@ class CapacityCandidate:
     completed_line_ids_json: str | None = None
     frontier_decisions_json: str | None = None
     admissible: bool = True
+    frozen_rank: int | None = None
+    frozen_valid: bool = True
+    frozen_token: tuple = (None, 0)
 
     def priority_row(self) -> dict:
         return {
@@ -138,6 +164,8 @@ class CapacityCandidate:
             "priority_score": self.priority_score,
             "completed_line_ids_json": self.completed_line_ids_json,
             "frontier_decisions_json": self.frontier_decisions_json,
+            "frozen_rank": self.frozen_rank, "frozen_valid": self.frozen_valid,
+            "frozen_token": list(self.frozen_token),
         }
 
 
@@ -208,11 +236,12 @@ def propose_capacity_expansion(
             raise ValueError(f"Conflicting capacity candidate {membership}")
         qualified_by_membership[membership] = proposal
     proposals: list[CapacityProposal] = []
-    for previously_introduced in (True, False):
+    frozen_active = any(candidate.frozen_token[0] is not None for candidate in snapshot.candidates)
+    for previously_introduced in ((None,) if frozen_active else (True, False)):
         tier = {
             membership: proposal
             for membership, proposal in qualified_by_membership.items()
-            if proposal.route.parent_introduced == previously_introduced
+            if (previously_introduced is None or proposal.route.parent_introduced == previously_introduced)
             and proposal.candidate.card_id not in selected_card_ids
         }
         # Stable repertoire order for the new policy only. Normal selection is untouched.

@@ -195,3 +195,16 @@ def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypa
     assert admitted == [proposal]
     assert captured['next_payload'] == {**payload, '_queue_phase': 'admit_study', 'opening_index': 1}
     assert json.loads(json.dumps(captured['next_payload']))['opening_plan'] == [proposal]
+
+
+@pytest.fixture(autouse=True)
+def no_frozen_publication_in_legacy_extraction_fixtures(monkeypatch, request):
+    # This file owns legacy orchestration fixtures; actual order adapters have
+    # separate real-connection regressions in test_frozen_opening_order.py.
+    from app.services import frozen_opening_order
+    monkeypatch.setattr(frozen_opening_order, 'activation', lambda database, **kwargs: (None, 0))
+    if 'test_essential_queue_study_only_resumes_every_legacy_phase' in request.node.name or 'test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint' in request.node.name:
+        @contextmanager
+        def frozen_metadata_reader():
+            yield object()
+        monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', frozen_metadata_reader)

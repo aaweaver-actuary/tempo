@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "name": "Ruy Lopez",
+      "repertoire_id": "3ca4336e-5740-4a32-9460-2cf27d9eb0e8",
+      "color": "white",
+      "prefix": [
+        "e4",
+        "e5",
+        "Nf3",
+        "Nc6",
+        "Bb5"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "Italian",
+      "repertoire_id": "f10bca89-e3ae-4ac0-8628-273700eb3eef",
+      "color": "white",
+      "prefix": [
+        "e4",
+        "e5",
+        "Nf3",
+        "Nc6",
+        "Bc4"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "Najdorf Sicilian",
+      "repertoire_id": "5aec7b61-0fea-47b2-9649-2fa398d94f5a",
+      "color": "black",
+      "prefix": [
+        "e4",
+        "c5"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "KID Sidelines",
+      "repertoire_id": "7f971d2b-0cde-48cb-866f-4011f077b2eb",
+      "color": "black",
+      "prefix": [],
+      "weight": 0.1,
+      "exclude_first": "e2e4"
+    },
+    {
+      "name": "KID vs d4/c4",
+      "repertoire_id": "f91e766f-0d3b-4e8f-abe9-7ce8f9391df4",
+      "color": "black",
+      "prefix": [
+        "d4",
+        "Nf6",
+        "c4",
+        "g6"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "Advance Caro Kann",
+      "repertoire_id": "34ebe0dc-9cdb-4479-81a9-2c5efeaf8e2e",
+      "color": "white",
+      "prefix": [
+        "e4",
+        "c6",
+        "d4",
+        "d5",
+        "e5"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "French Tarrasch",
+      "repertoire_id": "13b82286-c250-43cd-bdab-5c75748c9a1a",
+      "color": "white",
+      "prefix": [
+        "e4",
+        "e6",
+        "d4"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "Scandi",
+      "repertoire_id": "5f1349fa-cac1-4533-9d25-d126e61ecc1d",
+      "color": "white",
+      "prefix": [
+        "e4"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "Rossolimo & Moscow",
+      "repertoire_id": "aea183fe-8eb1-4923-bf4c-60275ed602c9",
+      "color": "white",
+      "prefix": [
+        "e4",
+        "c5",
+        "Nf3"
+      ],
+      "weight": 0.1
+    },
+    {
+      "name": "London System",
+      "repertoire_id": "f1eda915-39e3-490c-94ff-b6dee39845e4",
+      "color": "white",
+      "prefix": [
+        "d4"
+      ],
+      "weight": 0.1
+    }
+  ],
+  "expected_database": "tempo",
+  "expected_schema": "public",
+  "maia_elo_override": null,
+  "study_timezone": "America/New_York"
+}

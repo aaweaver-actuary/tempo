@@ -146,3 +146,22 @@ def test_normal_mode_keeps_existing_priority_preparation(phase_harness, monkeypa
                                                             '_queue_phase': 'prioritized_openings'}})
     assert phase_harness['phase'] == 'prioritized_opening_item'
     assert phase_harness['payload']['opening_plan'] == [{'card_id': 'ranked'}]
+
+
+@pytest.fixture(autouse=True)
+def legacy_study_order_has_no_accepted_snapshot(monkeypatch):
+    from app.services import frozen_opening_order
+    monkeypatch.setattr(frozen_opening_order, 'activation', lambda database, **kwargs: (None, 0))
+    # Existing tests replace the owning reader for route/allowance proofs.
+    # Metadata reads use that seam without introducing provider/model access.
+    original_reader = worker.background_read_connection
+    @contextmanager
+    def metadata_compatible_reader():
+        from app import postgres_store
+        import os
+        if postgres_store.configured() and not os.getenv('TEMPO_DATABASE_READ_URL'):
+            yield object()
+        else:
+            with original_reader() as database:
+                yield database
+    monkeypatch.setattr(worker, 'background_read_connection', metadata_compatible_reader)

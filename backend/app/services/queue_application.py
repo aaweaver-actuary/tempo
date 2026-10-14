@@ -12,6 +12,7 @@ from typing import Any, NotRequired, TypedDict
 from ..postgres_store import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
 from .opening_capacity_frontier import plan_prioritized_opening_admissions
+from . import frozen_opening_order
 from .opening_progression import PRACTICED_OPENING_PARENT_SQL
 from .pgn import ends_on_trained_move
 from .queue_ordering import _queue_membership_hash, _plan_daily_queue_order
@@ -48,6 +49,8 @@ class AdmittedOpeningProposal(TypedDict):
 
 def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     """Trim legacy queues that eagerly admitted every unseen card."""
+    if frozen_opening_order.activation(db)[0] is not None:
+        return
     rows = db.execute(
         """
         SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id FROM daily_queue q
@@ -152,6 +155,7 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
             (day, day),
         ).fetchall()
     )
+    candidates = frozen_opening_order.annotate(db, candidates)
     normal_plan = plan_prioritized_opening_admissions(candidates, introduced_by_repertoire, day, limit, miss_reason=MISS_REASON)
     admission_plan = list(normal_plan)
     from .opening_capacity_admission import (
@@ -165,9 +169,10 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
             limits = limit if isinstance(limit, dict) else {
                 row[0]: limit for row in db.execute('SELECT id FROM repertoires').fetchall()
             }
-            remaining = remaining_opening_allowances(normal_plan, introduced_by_repertoire, limits)
+            frozen_active = frozen_opening_order.activation(db)[0] is not None
+            remaining = remaining_opening_allowances([] if frozen_active else normal_plan, introduced_by_repertoire, limits)
             if any(remaining.values()):
-                normal_parent_ids = tuple(row['id'] for _, row in normal_plan)
+                normal_parent_ids = tuple(row['id'] for row in candidates) if frozen_active else tuple(row['id'] for _, row in normal_plan)
                 routes = tuple(route for repertoire_id in sorted(remaining) if remaining[repertoire_id] > 0
                                for route in read_capacity_routes(
                                    lambda statement, parameters: db.execute(statement, parameters).fetchall(),
@@ -183,13 +188,19 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
                         + ' AND c.id IN (' + ','.join('?' for _ in page) + ')',
                         (MISS_REASON, day, day, day, day, *page),
                     ).fetchall())
-                for proposal in propose_capacity_expansion_from_priority_rows(day, normal_plan, remaining, routes, capacity_rows,
-                                                   miss_reason=MISS_REASON):
+                if frozen_active:
+                    from .opening_capacity_admission import plan_frozen_with_capacity
+                    admission_plan = plan_frozen_with_capacity(day, candidates, introduced_by_repertoire, limits, routes,
+                        frozen_opening_order.annotate(db, capacity_rows), miss_reason=MISS_REASON)
+                for proposal in ([] if frozen_active else propose_capacity_expansion_from_priority_rows(day, normal_plan, remaining, routes, capacity_rows,
+                                                   miss_reason=MISS_REASON)):
                     admission_plan.append((proposal.candidate.repertoire_id, {
                         **proposal.candidate.priority_row(), **capacity_proposal_payload(proposal),
                     }))
     next_position = maximum
     for repertoire_id, choice in admission_plan:
+        if not frozen_opening_order.proposal_valid(db, {**choice, "card_id": choice["id"], "reason": choice["gameplay_priority_reason"]}):
+            continue
         if 'capacity_route' in choice:
             if not capacity_route_still_valid(db, choice, day):
                 continue
@@ -509,18 +520,25 @@ def randomize_daily_queue(db, day: str, *, preserve_through_entry_id: int | None
     saved = db.execute(
         "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)
     ).fetchone()
-    membership_hash = _queue_membership_hash(rows)
-    if saved and saved["membership_hash"] == membership_hash:
+    membership_hash = frozen_opening_order.queue_hash(_queue_membership_hash(rows), frozen_opening_order.activation(db))
+    if saved and saved["membership_hash"] == membership_hash and frozen_opening_order.activation(db)[0] is None:
         prioritize_queued_misses(db, day)
         return
-    seed, membership_hash, ordered = _plan_daily_queue_order(
+    seed, _, ordered = _plan_daily_queue_order(
         rows, day, saved, preserve_through_entry_id=preserve_through_entry_id,
     )
+    if frozen_opening_order.activation(db)[0] is not None:
+        ordered = sorted(rows, key=lambda row: (row["position"], row["id"]))
+    frozen_active = frozen_opening_order.activation(db)[0] is not None
+    positions = sorted(row["position"] for row in rows)
+    ordered = frozen_opening_order.order_queue_slots(db, ordered, preserve_through_entry_id=preserve_through_entry_id)
+    if frozen_active:
+        frozen_opening_order.record_queue_changes(db,day,[{'id':row['id'],'position':positions[index]} for index,row in enumerate(ordered)])
     for position, row in enumerate(ordered):
         db.execute(
             """UPDATE daily_queue SET position=?,card_bucket=?,admission_kind=? WHERE id=?""",
             (
-                position,
+                positions[position] if frozen_active else position,
                 row["content_type"] or "opening",
                 row["admission_kind"],
                 row["id"],
@@ -698,6 +716,7 @@ _AVAILABLE_ATTEMPT_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=
                     AND (q.admission_kind='explicit' OR NOT EXISTS(
                         SELECT 1 FROM study_sibling_burials burial
                         WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))"""
+_AVAILABLE_ATTEMPT_SQL += frozen_opening_order.stale_queue_predicate()
 
 
 def request_queue_refresh_in_transaction(database: PostgresConnection,

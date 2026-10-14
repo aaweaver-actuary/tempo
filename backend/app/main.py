@@ -853,6 +853,12 @@ def health():
     if postgres_store.configured():
         from .postgres_readiness import postgres_health
         response = postgres_health()
+        response["frozen_opening_reader_version"] = "frozen-maia-v1"
+        from .services.opening_segmentation import stable_key
+        with read_connection() as frozen_database:
+            identity = frozen_database.execute_native("SELECT (SELECT system_identifier::text FROM pg_control_system()),(SELECT oid::text FROM pg_database WHERE datname=current_database()),current_database(),current_schema(),(SELECT run_id FROM frozen_opening_activation WHERE id=1)").fetchone()
+        response["frozen_opening_target_id"] = stable_key(*tuple(identity)[:4])
+        response["frozen_opening_active_run"] = identity[4]
         response["test_instance"] = os.getenv("TEMPO_TEST_INSTANCE") == "disposable"
         return response
     with read_connection() as db:
@@ -1423,6 +1429,8 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                                    AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                        WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id)))
                            ORDER BY q.position,q.id"""
+        from .services.frozen_opening_order import stale_queue_predicate
+        queue_sql = queue_sql.replace("ORDER BY q.position,q.id", stale_queue_predicate()+" ORDER BY q.position,q.id")
         if postgres_store.configured():
             # Resolve linked repertoires once as a set. The correlated SQLite
             # lookup makes PostgreSQL scan repertoire_cards thousands of times

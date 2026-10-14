@@ -13,7 +13,7 @@ from psycopg.errors import TransactionTimeout
 from ..database import background_read_connection, connection
 from .. import postgres_store
 from ..queue_position_lock import lock_queue_date_for_position
-from . import queue_application, queue_ordering
+from . import queue_application, queue_ordering, frozen_opening_order
 from .opening_capacity_frontier import plan_prioritized_opening_admissions
 from .queue_application import AdmittedOpeningProposal
 from .cards import card_id
@@ -84,7 +84,8 @@ def _study_opening_content_valid(planned_opening: dict) -> bool:
 def _study_opening_cursor(opening_occurrence) -> tuple:
     """Stable repertoire/line/decision order, with IDs only breaking ties."""
 
-    return tuple(opening_occurrence)[:6]
+    values = tuple(opening_occurrence)
+    return (*values[12:14], *values[:6]) if len(values) == 14 else values[:6]
 
 
 def _study_opening_route_still_valid(database, planned: dict, queue_date: str) -> bool:
@@ -128,6 +129,18 @@ def _study_opening_route_still_valid(database, planned: dict, queue_date: str) -
 def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
     """Read one finite page, then validate chess content with connections closed."""
 
+    with background_read_connection() as frozen_database:
+        frozen_token = frozen_opening_order.activation(frozen_database)
+    frozen_active = frozen_token[0] is not None
+    route_sql = _STUDY_OPENING_ROUTES
+    occurrence_order = _STUDY_OPENING_ORDER
+    order_columns = ''
+    if frozen_active:
+        route_sql = route_sql.replace("WHERE publication.state", "LEFT JOIN frozen_opening_activation foa ON foa.id=1 LEFT JOIN frozen_opening_ranks forank ON forank.run_id=foa.run_id AND forank.card_id=c.id WHERE publication.state")
+        miss_key = "CASE WHEN c.id IN (" + outstanding_miss_sql(postgres=True, columns='event.card_id') + ") THEN 0 ELSE 1 END"
+        rank_key = "COALESCE(forank.ordinal,9223372036854775807)"
+        order_columns = ',' + miss_key + ',' + rank_key
+        occurrence_order = '(' + miss_key + ',' + rank_key + ',' + _STUDY_OPENING_ORDER[1:]
     has_opening_allowance = _bounded_read(
         """SELECT EXISTS(SELECT 1 FROM repertoires r CROSS JOIN settings s
            WHERE s.id=1 AND EXISTS(SELECT 1 FROM opening_graph_publications publication
@@ -146,22 +159,22 @@ def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
                 'stop_reason': 'daily_allowances_exhausted'}
     if upper_occurrence_cursor is None:
         last_occurrences = _bounded_read("SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,"
-                             "step.decision_index,c.id " + _STUDY_OPENING_ROUTES +
-                             " ORDER BY " + _STUDY_OPENING_ORDER + " DESC LIMIT 1", native=True)
-        upper_occurrence_cursor = list(last_occurrences[0]) if last_occurrences else []
+                             "step.decision_index,c.id" + order_columns + " " + route_sql +
+                             " ORDER BY " + occurrence_order + " DESC LIMIT 1", native=True)
+        upper_occurrence_cursor = (list((*tuple(last_occurrences[0])[6:], *tuple(last_occurrences[0])[:6])) if frozen_active else list(last_occurrences[0])) if last_occurrences else []
     if not upper_occurrence_cursor:
         return {'items': [], 'cursor': [], 'upper': [], 'has_more': False, 'examined': 0,
                 'stop_reason': 'no_unintroduced_graph_candidates'}
     after_occurrence_cursor = payload.get('study_opening_cursor')
-    cursor_placeholders = "(%s,%s,%s,%s,%s,%s)"
-    cursor_filter = (" AND " + _STUDY_OPENING_ORDER + ">" + cursor_placeholders if after_occurrence_cursor else "")
+    cursor_placeholders = '(' + ','.join(['%s'] * (8 if frozen_active else 6)) + ')'
+    cursor_filter = (" AND " + occurrence_order + ">" + cursor_placeholders if after_occurrence_cursor else "")
     # Each read and result is bounded. No priority publications, probabilities,
     # engine/network calls or repertoire-wide Python accumulation are involved.
     opening_occurrences = _bounded_read(
         "SELECT repertoire.created_at,repertoire.id,line.created_at,line.id,step.decision_index,c.id,"
-        "step.generation,c.start_fen,c.moves_json,COALESCE(c.trained_color,step.trained_color),step.starting_fen,step.moves_json "
-        + _STUDY_OPENING_ROUTES + cursor_filter + " AND " + _STUDY_OPENING_ORDER + "<=" + cursor_placeholders +
-        " ORDER BY " + _STUDY_OPENING_ORDER + " LIMIT %s",
+        "step.generation,c.start_fen,c.moves_json,COALESCE(c.trained_color,step.trained_color),step.starting_fen,step.moves_json" + order_columns + " "
+        + route_sql + cursor_filter + " AND " + occurrence_order + "<=" + cursor_placeholders +
+        " ORDER BY " + occurrence_order + " LIMIT %s",
         (*(tuple(after_occurrence_cursor) if after_occurrence_cursor else ()), *upper_occurrence_cursor,
          _OPENING_CANDIDATE_READ_BATCH_SIZE), native=True,
     )
@@ -174,18 +187,22 @@ def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
     for opening_occurrence in opening_occurrences:
         planned_opening = {'repertoire_id': opening_occurrence[1], 'card_id': opening_occurrence[5], 'reason': None,
                      'study_route': {'generation': opening_occurrence[6], 'line_id': opening_occurrence[3],
-                                     'decision_index': opening_occurrence[4], 'content': list(tuple(opening_occurrence)[7:])}}
+                                     'decision_index': opening_occurrence[4], 'content': list(tuple(opening_occurrence)[7:12])}}
         if opening_occurrence[5] in selected_card_ids:
             page_exclusions['duplicate_occurrence'] += 1
             continue
         # Apply the same authoritative route predicate in a short read section.
         with background_read_connection() as database:
-            if not _study_opening_route_still_valid(database, planned_opening, queue_date):
-                page_exclusions['route_ineligible'] += 1
-                continue
+            planned_opening = frozen_opening_order.annotate(database, [planned_opening])[0]
             outstanding = has_outstanding_real_game_miss(database, opening_occurrence[5])
             if outstanding:
                 planned_opening['reason'] = MISS_REASON
+            if not frozen_opening_order.proposal_valid(database, planned_opening):
+                page_exclusions['invalid_content'] += 1
+                continue
+            if not _study_opening_route_still_valid(database, planned_opening, queue_date):
+                page_exclusions['route_ineligible'] += 1
+                continue
             remaining_allowance_row = database.execute_native(
                 "SELECT COALESCE(r.new_cards_per_day,s.new_cards_per_day) - ("
                 "SELECT COUNT(DISTINCT c.id) FROM daily_queue q JOIN cards c ON c.id=q.card_id "
@@ -410,6 +427,9 @@ def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
                                    introduced_counts: dict[str, int]) -> tuple[dict | None, int]:
     """Read one unprocessed queue entry and its repertoire's starting count."""
 
+    with background_read_connection() as frozen_database:
+        if frozen_opening_order.activation(frozen_database)[0] is not None:
+            return None, 0
     rows = _bounded_read(
         """SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -524,6 +544,14 @@ def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
     return True
 
 
+def _annotate_frozen_pages(rows):
+    annotated=[]
+    for offset in range(0,len(rows),16):
+        with background_read_connection() as database:
+            annotated.extend(frozen_opening_order.annotate(database,rows[offset:offset+16]))
+    return annotated
+
+
 def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningProposal]:
     """Plan openings using separate bounded reads and no open write transaction."""
 
@@ -559,11 +587,12 @@ def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningPropos
         "SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) "
         "FROM repertoires r CROSS JOIN settings s WHERE s.id=1",
     ))
+    candidates = _annotate_frozen_pages(candidates)
     plan = plan_prioritized_opening_admissions(
         candidates, dict(counts), queue_date, daily_limit, miss_reason=MISS_REASON,
     )
     planned_items = [{"repertoire_id": repertoire_id, "card_id": candidate["id"],
-                      "reason": candidate["gameplay_priority_reason"]}
+                      "reason": candidate["gameplay_priority_reason"], "frozen_token": candidate.get("frozen_token", [None, 0])}
                      for repertoire_id, candidate in plan]
     from .opening_capacity_admission import (
         capacity_expansion_enabled, remaining_opening_allowances, read_capacity_routes,
@@ -574,10 +603,11 @@ def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningPropos
     from .study_mode import study_only_enabled
     if study_only_enabled():
         return planned_items
-    remaining = remaining_opening_allowances(plan, dict(counts), daily_limit)
+    frozen_active = any(row.get("frozen_token", [None])[0] for row in candidates)
+    remaining = remaining_opening_allowances([] if frozen_active else plan, dict(counts), daily_limit)
     if not any(remaining.values()):
         return planned_items
-    normal_parent_ids = tuple(candidate['id'] for _, candidate in plan)
+    normal_parent_ids = tuple(row['id'] for row in candidates) if frozen_active else tuple(candidate['id'] for _, candidate in plan)
     routes = tuple(route for repertoire_id in sorted(remaining) if remaining[repertoire_id] > 0
                    for route in read_capacity_routes(_bounded_read, repertoire_id, normal_parent_ids))
     capacity_rows = []
@@ -588,6 +618,12 @@ def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningPropos
             (active_misses, card_ids[offset:offset + CAPACITY_READ_BATCH_SIZE], MISS_REASON,
              queue_date, queue_date, queue_date, queue_date), native=True,
         ))
+    capacity_rows = _annotate_frozen_pages(capacity_rows)
+    if frozen_active:
+        from .opening_capacity_admission import plan_frozen_with_capacity
+        return [{**row, "card_id": row["id"], "repertoire_id": repertoire_id,
+                 "reason": row["gameplay_priority_reason"]}
+                for repertoire_id, row in plan_frozen_with_capacity(queue_date, candidates, dict(counts), daily_limit, routes, capacity_rows, miss_reason=MISS_REASON)]
     return planned_items + [capacity_proposal_payload(proposal) for proposal in propose_capacity_expansion_from_priority_rows(
         queue_date, plan, remaining, routes, capacity_rows, miss_reason=MISS_REASON,
     )]
@@ -610,12 +646,16 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
     """Publish one still eligible card with the task checkpoint in one transaction."""
 
     card_id = planned["card_id"]
+    if not frozen_opening_order.proposal_valid(database, planned):
+        return False
     card = database.execute_native(
         "SELECT state,introduced_at,archived,pending_validation FROM cards WHERE id=%s FOR UPDATE",
         (card_id,),
     ).fetchone()
     if (card is None or card[1] is not None or card[2] or card[3]
             or card[0] not in ("new", "locked")):
+        return False
+    if not frozen_opening_order.proposal_valid(database,planned):
         return False
     queued = database.execute_native(
         "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
@@ -775,6 +815,9 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
     """Plan a stable queue order without retaining a database transaction."""
 
 
+    with background_read_connection() as frozen_database:
+        initial_token = list(frozen_opening_order.activation(frozen_database))
+        initial_state = frozen_opening_order.queue_state(frozen_database, queue_date) if initial_token[0] is not None else None
     queue_rows = _bounded_read(
         """SELECT q.id,q.card_id,q.position,c.content_type,q.admission_kind,q.gameplay_priority_reason
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -782,7 +825,9 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
         (queue_date,), native=True,
     )
     if not queue_rows:
-        return {"membership_hash": queue_ordering._queue_membership_hash([]), "entries": None}
+        with background_read_connection() as frozen_database:
+            token = list(frozen_opening_order.activation(frozen_database))
+        return {"membership_hash": frozen_opening_order.queue_hash(queue_ordering._queue_membership_hash([]),token), "raw_membership_hash": queue_ordering._queue_membership_hash([]), "frozen_token": token, "entries": None}
     reviewed_card_ids = {row[0] for row in _bounded_read(
         """SELECT DISTINCT card_id FROM reviews
            WHERE card_id=ANY(%s::text[]) AND invalidated_at IS NULL""",
@@ -801,16 +846,39 @@ def _prepare_queue_randomization(queue_date: str, *, preserve_through_entry_id: 
     )
     saved = saved_rows[0] if saved_rows else None
     membership_hash = queue_ordering._queue_membership_hash(rows)
-    if saved and saved["membership_hash"] == membership_hash:
-        return {"membership_hash": membership_hash, "entries": None}
-    seed, membership_hash, ordered = queue_ordering._plan_daily_queue_order(
+    with background_read_connection() as frozen_database:
+        frozen_token = list(frozen_opening_order.activation(frozen_database))
+    raw_membership_hash = membership_hash
+    membership_hash = frozen_opening_order.queue_hash(membership_hash, frozen_token)
+    if saved and saved["membership_hash"] == membership_hash and frozen_token[0] is None:
+        return {"membership_hash": membership_hash, "raw_membership_hash": raw_membership_hash, "frozen_token": frozen_token, "entries": None}
+    seed, _, ordered = queue_ordering._plan_daily_queue_order(
         rows, queue_date, saved, preserve_through_entry_id=preserve_through_entry_id,
     )
+    if frozen_token[0] is not None:
+        current_order = sorted(rows,key=lambda row:(row['position'],row['id']))
+        annotated = _annotate_frozen_pages(current_order)
+        exposed_ids = set()
+        for row in annotated:
+            if row['content_type']=='opening' and row['admission_kind']=='new':
+                with background_read_connection() as frozen_database:
+                    if frozen_opening_order.card_exposed(frozen_database,row['card_id']):
+                        exposed_ids.add(row['card_id'])
+        ordered = frozen_opening_order.order_queue_slots(None, current_order, preserve_through_entry_id=preserve_through_entry_id,
+            annotated=annotated, exposed_ids=exposed_ids)
+    positions = sorted(row["position"] for row in rows)
+    with background_read_connection() as frozen_database:
+        frozen_queue_state = frozen_opening_order.queue_state(frozen_database, queue_date) if frozen_token[0] is not None else None
+    if initial_token != frozen_token or (initial_state is not None and initial_state != frozen_queue_state):
+        return {"retry": True}
     return {
+        "frozen_queue_state": frozen_queue_state,
+        "frozen_token": frozen_token,
+        "raw_membership_hash": raw_membership_hash,
         "seed": seed,
         "membership_hash": membership_hash,
         "entries": [
-            {"id": row["id"], "position": position,
+            {"id": row["id"], "position": positions[position] if frozen_token[0] else position,
              "bucket": row["content_type"] or "opening", "kind": row["admission_kind"]}
             for position, row in enumerate(ordered)
         ],
@@ -821,12 +889,18 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     """Atomically reorder the current membership, or request a new plan."""
 
 
+    if plan.get("retry"):
+        return False
+    if plan.get("frozen_token", [None, 0]) != list(frozen_opening_order.activation(database, lock=True)):
+        return False
     lock_queue_date_for_position(database, queue_date)
+    if plan.get("frozen_queue_state") is not None and plan["frozen_queue_state"] != frozen_opening_order.queue_state(database, queue_date):
+        return False
     current_membership = database.execute_native(
         "SELECT id,card_id FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY id",
         (queue_date,),
     ).fetchall()
-    if queue_ordering._queue_membership_hash(current_membership) != plan["membership_hash"]:
+    if queue_ordering._queue_membership_hash(current_membership) != plan.get("raw_membership_hash", plan["membership_hash"]):
         return False
     if plan["entries"] is None:
         prioritize_queued_misses(database, queue_date)
@@ -835,10 +909,12 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
         "SELECT membership_hash FROM daily_queue_days WHERE queue_date=%s FOR UPDATE",
         (queue_date,),
     ).fetchone()
-    if saved and saved[0] == plan["membership_hash"]:
+    if saved and saved[0] == plan["membership_hash"] and plan.get("frozen_token", [None])[0] is None:
         prioritize_queued_misses(database, queue_date)
         return True
     entries = plan["entries"]
+    if plan.get('frozen_token',[None])[0] is not None:
+        frozen_opening_order.record_queue_changes(database,queue_date,entries)
     updated_count = database.execute_native(
         """UPDATE daily_queue AS queue
            SET position=planned.position,card_bucket=planned.bucket,
@@ -983,10 +1059,18 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     from .study_mode import study_only_enabled
     minimal_study = study_only_enabled()
+    with background_read_connection() as frozen_database:
+        frozen_token = list(frozen_opening_order.activation(frozen_database))
+    if payload.get("frozen_token", [None, 0]) != frozen_token:
+        payload = {"queue_date": queue_date, "_queue_phase": "unlock_opening", "frozen_token": frozen_token, **({"preserve_through_entry_id": payload["preserve_through_entry_id"]} if "preserve_through_entry_id" in payload else {})}
+        phase = payload["_queue_phase"]
     # Resume existing checkpoints without traversing optional admission/ranking.
     skipped_phases = {"prioritized_openings": "study_opening_page",
                       "prioritized_opening_item": "study_opening_page",
                       "real_game_misses": "quarantine", "randomize_queue": "quarantine"}
+    if frozen_token[0] is not None:
+        skipped_phases["real_game_misses"] = "randomize_queue"
+        skipped_phases.pop("randomize_queue")
     if minimal_study and phase in skipped_phases:
         phase = skipped_phases[phase]
     study_opening_page = None
@@ -1042,6 +1126,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
             return False
+        if frozen_token != list(frozen_opening_order.activation(database, lock=True)):
+            return advance_task_slice_in_transaction(database, task, next_phase="unlock_opening", next_payload={"queue_date": queue_date})
         if phase == "publish_projection":
             database.execute_native(
                 """INSERT INTO queue_projections(queue_date,state,generation,
@@ -1211,6 +1297,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             next_payload["preserve_through_entry_id"] = payload["preserve_through_entry_id"]
         if 'study_opening_counts' in payload and 'study_opening_counts' not in next_payload:
             next_payload['study_opening_counts'] = payload['study_opening_counts']
+        if frozen_token != [None, 0]:
+            next_payload["frozen_token"] = frozen_token
         return advance_task_slice_in_transaction(
             database, task, next_phase=next_phase, next_payload=next_payload,
         )
