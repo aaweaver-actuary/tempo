@@ -8,6 +8,8 @@ from .conftest import load_fixture, load_reference
 def order(availability, **changes):
     arguments = dict(
         workspace_id="workspace-a",
+        expected_policy_id="policy-a",
+        expected_policy_revision=1,
         publication_id="publication-a",
         generation=1,
         learning_revision=1,
@@ -72,3 +74,66 @@ def test_unavailable_publication_cannot_manufacture_advice():
     data["status"] = "unavailable"
     with pytest.raises(ValidationError):
         v1.IntelligenceAvailability.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    "expected_policy_id,expected_policy_revision,expected_card,advice_revision",
+    [
+        ("policy-a", 1, "card-b", 1),
+        ("other-policy", 1, "card-a", 1),
+        ("policy-a", 2, "card-a", 1),
+        ("policy-a", 1, "card-a", 2),
+    ],
+    ids=[
+        "matching_policy_identity_and_revision",
+        "wrong_policy_identity",
+        "older_advice_policy_revision",
+        "newer_advice_policy_revision",
+    ],
+)
+def test_ranking_requires_exact_policy_identity_and_revision(
+    expected_policy_id, expected_policy_revision, expected_card, advice_revision
+):
+    payload = load_fixture("available")
+    payload["publication"]["advisory"]["policy_revision"] = advice_revision
+    payload["publication"]["advisory"]["cards"] = [
+        {"card_id": "card-b", "value": 0.9},
+        {"card_id": "card-a", "value": 0.1},
+    ]
+    assert order(
+        v1.IntelligenceAvailability.model_validate(payload),
+        expected_policy_id=expected_policy_id,
+        expected_policy_revision=expected_policy_revision,
+    ) == [expected_card]
+
+
+@pytest.mark.parametrize(
+    "missing_argument", ["expected_policy_id", "expected_policy_revision"]
+)
+def test_ranking_policy_identity_and_revision_arguments_cannot_be_omitted(
+    missing_argument,
+):
+    import inspect
+
+    suggested_order = load_reference().suggested_order
+    for argument in ("expected_policy_id", "expected_policy_revision"):
+        parameter = inspect.signature(suggested_order).parameters[argument]
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        assert parameter.default is inspect.Parameter.empty
+    arguments = dict(
+        workspace_id="workspace-a",
+        publication_id="publication-a",
+        generation=1,
+        learning_revision=1,
+        eligible_card_ids=["card-a", "card-b"],
+        admitted_capacity=1,
+        now=datetime(2026, 10, 14, 13, tzinfo=timezone.utc),
+        expected_policy_id="policy-a",
+        expected_policy_revision=1,
+    )
+    del arguments[missing_argument]
+    with pytest.raises(TypeError, match=missing_argument):
+        suggested_order(
+            v1.IntelligenceAvailability.model_validate(load_fixture("available")),
+            **arguments,
+        )

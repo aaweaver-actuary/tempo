@@ -7,6 +7,8 @@ from tempo_intelligence_contracts import v1
 def suggested_order(
     availability,
     *,
+    expected_policy_id: str,
+    expected_policy_revision: int,
     workspace_id,
     publication_id,
     generation,
@@ -28,7 +30,12 @@ def suggested_order(
         <= now
         < datetime.fromisoformat(advice.valid_until.replace("Z", "+00:00"))
     )
-    if not compatible or not isinstance(advice.advisory, v1.PolicyRanking):
+    if (
+        not compatible
+        or not isinstance(advice.advisory, v1.PolicyRanking)
+        or advice.advisory.policy_id != expected_policy_id
+        or advice.advisory.policy_revision != expected_policy_revision
+    ):
         return deterministic[:admitted_capacity]
     ranked = [
         item.card_id for item in advice.advisory.cards if item.card_id in deterministic
