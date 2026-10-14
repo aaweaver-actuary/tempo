@@ -32,7 +32,19 @@
     "bench:pgn": "node scripts/benchmark-pgn.mjs",
     "bench:graph": "node scripts/benchmark-graph.mjs",
     "bench:motifs": "node scripts/benchmark-motifs.mjs",
-    "bench:writer": "node scripts/benchmark-writer.mjs"
+    "bench:writer": "node scripts/benchmark-writer.mjs",
+    "build:packages": "npm run build --workspace @tempo/chess-line",
+    "pretest:unit": "npm run build:packages",
+    "pretypecheck": "npm run build:packages",
+    "prebuild": "npm run build:packages",
+    "prebuild:local": "npm run build:packages",
+    "prebuild:static": "npm run build:packages",
+    "test:frontend": "node tools/component-build/test-lane.mjs frontend",
+    "test:producer-parity": "node tools/component-build/test-lane.mjs producer-parity",
+    "test:runners": "node tools/component-build/test-lane.mjs runners",
+    "test:component-integration": "node tools/component-build/test-lane.mjs integration",
+    "check:components": "node tools/component-build/check-components.mjs",
+    "test:components": "node tools/component-build/test-node.mjs tools/component-build/tests"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
@@ -43,7 +55,8 @@
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "zod": "4.5.4",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "@tempo/chess-line": "file:packages/chess-line"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -71,5 +84,8 @@
     "vitest": "^5.0.1",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "workspaces": [
+    "packages/chess-line"
+  ]
 }

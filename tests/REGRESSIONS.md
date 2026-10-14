@@ -4367,3 +4367,18 @@ skips Actions verification and records the explicit policy` prove that only the
 explicit `--no-ci` option bypasses Actions lookup, current main is still
 fast-forwarded under the existing source checks, and the deployment receipt
 records `verification: ci-disabled`.
+
+
+## M02 independent packaging (#263, #201)
+
+Owning inventories: [chess-line](../packages/chess-line/REGRESSIONS.md),
+[scheduling](../packages/scheduling/REGRESSIONS.md), and
+[packaging tooling](../tools/component-build/tests/boundaries.test.mjs).
+`M02 component packaging negative regressions run in their regular owner` keeps
+the new tool suite discoverable by the transitional global runner.
+`test_scheduling_package_adapter_preserves_public_identity_and_fixed_time_result`
+protects the legacy adapter. Existing frontend/domain and scheduling seam identities
+remain in their regular suites; package inventories own new local cases.
+
+`M02 installed Python scheduling producer retains the fixed-time serialized golden contract`
+is independently selected by the producer-parity lane and consumes the installed public package with Python isolated mode.

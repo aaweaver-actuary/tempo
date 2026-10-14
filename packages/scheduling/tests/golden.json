@@ -1,0 +1,38 @@
+[
+  {
+    "interval_days": 0,
+    "due_date": "2026-10-14",
+    "fsrs_card_json": "{\"card_id\": 1, \"state\": 2, \"step\": null, \"stability\": 0.212, \"difficulty\": 6.4133, \"due\": \"2026-10-14T12:00:00+00:00\", \"last_review\": \"2026-10-14T12:00:00+00:00\"}",
+    "stability": 0.212,
+    "state": "learning",
+    "requeue_today": true,
+    "requeue_after_cards": 4,
+    "first_correct_at": null,
+    "reinforcement_pending": false,
+    "internal_rating": "again",
+    "scheduling_mode": "normal",
+    "hard_correct_streak": 0,
+    "recent_attempts": [
+      "again"
+    ],
+    "suggest_shorter_prefix": false
+  },
+  {
+    "interval_days": 0,
+    "due_date": "2026-10-14",
+    "fsrs_card_json": "{\"card_id\": 1, \"state\": 2, \"step\": null, \"stability\": 2.3065, \"difficulty\": 2.118103970459016, \"due\": \"2026-10-14T12:00:00+00:00\", \"last_review\": \"2026-10-14T12:00:00+00:00\"}",
+    "stability": 2.3065,
+    "state": "learning",
+    "requeue_today": true,
+    "requeue_after_cards": null,
+    "first_correct_at": "2026-10-14T12:00:00+00:00",
+    "reinforcement_pending": true,
+    "internal_rating": "good",
+    "scheduling_mode": "normal",
+    "hard_correct_streak": 0,
+    "recent_attempts": [
+      "correct"
+    ],
+    "suggest_shorter_prefix": false
+  }
+]

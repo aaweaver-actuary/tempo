@@ -1,0 +1,562 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "id": "study-web",
+      "type": "app",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "apps/study-web",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "workbench-web",
+      "type": "app",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "apps/workbench-web",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "learning",
+      "type": "service",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "services/learning",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "content",
+      "type": "service",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "services/content",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "game-evidence",
+      "type": "service",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "services/game-evidence",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "intelligence",
+      "type": "service",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "services/intelligence",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "stockfish",
+      "type": "worker",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "workers/stockfish",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "maia",
+      "type": "worker",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "workers/maia",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "tempo-cli",
+      "type": "tool",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "tools/tempo-cli",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "integration",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "planned",
+      "root": "integration",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "learning-contracts",
+      "type": "contract",
+      "maintainer": "Tempo / #264",
+      "status": "planned",
+      "root": "contracts/learning",
+      "publicExports": [
+        "tempo_learning_contracts.v1",
+        "schemas/v1/*.json"
+      ],
+      "dependencies": [
+        "pydantic"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": {
+        "name": "tempo-learning-contracts",
+        "version": "1.0.0",
+        "format": "wheel + JSON schema (proposed by #264)"
+      },
+      "tests": [
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "python",
+          "command": "python -m pytest tests"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "typescript",
+          "command": "npm test"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "postgres",
+          "command": "python -m pytest tests/postgres"
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "content-publication-contracts",
+      "type": "contract",
+      "maintainer": "Tempo / #264",
+      "status": "planned",
+      "root": "contracts/content-publication",
+      "publicExports": [
+        "tempo_content_publication_contracts.v1",
+        "schemas/v1/*.json"
+      ],
+      "dependencies": [
+        "pydantic"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": {
+        "name": "tempo-content-publication-contracts",
+        "version": "1.0.0",
+        "format": "wheel + JSON schema (proposed by #264)"
+      },
+      "tests": [
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "python",
+          "command": "python -m pytest tests"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "typescript",
+          "command": "npm test"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "postgres",
+          "command": "python -m pytest tests/postgres"
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "game-evidence-contracts",
+      "type": "contract",
+      "maintainer": "Tempo / #264",
+      "status": "planned",
+      "root": "contracts/game-evidence",
+      "publicExports": [
+        "tempo_game_evidence_contracts.v1",
+        "schemas/v1/*.json"
+      ],
+      "dependencies": [
+        "pydantic"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": {
+        "name": "tempo-game-evidence-contracts",
+        "version": "1.0.0",
+        "format": "wheel + JSON schema (proposed by #264)"
+      },
+      "tests": [
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "python",
+          "command": "python -m pytest tests"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "typescript",
+          "command": "npm test"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "postgres",
+          "command": "python -m pytest tests/postgres"
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "intelligence-contracts",
+      "type": "contract",
+      "maintainer": "Tempo / #264",
+      "status": "planned",
+      "root": "contracts/intelligence",
+      "publicExports": [
+        "tempo_intelligence_contracts.v1",
+        "schemas/v1/*.json"
+      ],
+      "dependencies": [
+        "pydantic"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": {
+        "name": "tempo-intelligence-contracts",
+        "version": "1.0.0",
+        "format": "wheel + JSON schema (proposed by #264)"
+      },
+      "tests": [
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "python",
+          "command": "python -m pytest tests"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "typescript",
+          "command": "npm test"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "postgres",
+          "command": "python -m pytest tests/postgres"
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "analysis-jobs-contracts",
+      "type": "contract",
+      "maintainer": "Tempo / #264",
+      "status": "planned",
+      "root": "contracts/analysis-jobs",
+      "publicExports": [
+        "tempo_analysis_jobs_contracts.v1",
+        "schemas/v1/*.json"
+      ],
+      "dependencies": [
+        "pydantic"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": {
+        "name": "tempo-analysis-jobs-contracts",
+        "version": "1.0.0",
+        "format": "wheel + JSON schema (proposed by #264)"
+      },
+      "tests": [
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "python",
+          "command": "python -m pytest tests"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "typescript",
+          "command": "npm test"
+        },
+        {
+          "owner": "#264",
+          "status": "planned",
+          "kind": "postgres",
+          "command": "python -m pytest tests/postgres"
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#264",
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "chess-line",
+      "type": "library",
+      "maintainer": "Tempo",
+      "status": "implemented",
+      "root": "packages/chess-line",
+      "publicExports": [
+        "canonicalFenKey",
+        "canonicalizeMoves",
+        "sanForUci",
+        "LineDiagnostic"
+      ],
+      "dependencies": [
+        "chess.js"
+      ],
+      "buildInputs": [
+        "package.json",
+        "package-lock.json",
+        "tsconfig.json",
+        "src",
+        "README.md"
+      ],
+      "buildCommand": "npm ci --workspaces=false && npm run build",
+      "artifact": {
+        "name": "@tempo/chess-line",
+        "version": "0.1.0",
+        "format": "npm tarball / ESM + declarations"
+      },
+      "tests": [
+        {
+          "owner": "chess-line",
+          "kind": "frontend",
+          "command": "npm test",
+          "inputs": [
+            "test.mjs",
+            "tests"
+          ]
+        }
+      ],
+      "toolchain": {
+        "node": ">=22.13.0",
+        "qualificationNode": "26.10.0",
+        "typescript": "5.9.3"
+      },
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "scheduling",
+      "type": "library",
+      "maintainer": "Tempo",
+      "status": "implemented",
+      "root": "packages/scheduling",
+      "publicExports": [
+        "Schedule",
+        "schedule_review",
+        "unlock_ready"
+      ],
+      "dependencies": [
+        "fsrs"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "README.md",
+        "REGRESSIONS.md",
+        "tests"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-scheduling",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "scheduling",
+          "kind": "python",
+          "command": "uv run --locked --no-editable python -m pytest tests",
+          "inputs": [
+            "tests"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ],
+        "fsrs": "6.3.2"
+      },
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    }
+  ]
+}
