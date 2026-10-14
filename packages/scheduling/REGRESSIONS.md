@@ -1,6 +1,6 @@
 # Scheduling regression ownership
 
-Owning regular suite: `uv run --locked python -m pytest tests` against the installed wheel.
+Owning regular suite: `uv run --locked --no-editable python -m pytest tests` against the installed wheel.
 
 The five `SchedulerTests` method names are preserved from `backend/tests/test_services.py::SchedulerTests` at main d5f9ef31. Legacy cases remain discoverable during transition; the package is independently executable.
 

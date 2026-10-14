@@ -557,6 +557,158 @@
         "databases": [],
         "migrations": []
       }
+    },
+    {
+      "id": "board-ui",
+      "type": "library",
+      "maintainer": "Tempo / #199",
+      "status": "planned",
+      "root": "packages/board-ui",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "study-session",
+      "type": "library",
+      "maintainer": "Tempo / #219",
+      "status": "planned",
+      "root": "packages/study-session",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "browser-intents",
+      "type": "library",
+      "maintainer": "Tempo / #221",
+      "status": "planned",
+      "root": "packages/browser-intents",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "chess-core",
+      "type": "library",
+      "maintainer": "Tempo / #200",
+      "status": "planned",
+      "root": "packages/chess-core",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "introduction-eligibility",
+      "type": "library",
+      "maintainer": "Tempo / #230",
+      "status": "planned",
+      "root": "packages/introduction-eligibility",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "introduction-ordering",
+      "type": "library",
+      "maintainer": "Tempo / #231",
+      "status": "planned",
+      "root": "packages/introduction-ordering",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "admission-application",
+      "type": "library",
+      "maintainer": "Tempo / #232",
+      "status": "planned",
+      "root": "packages/admission-application",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
+    },
+    {
+      "id": "evidence-math",
+      "type": "library",
+      "maintainer": "Tempo / #156",
+      "status": "planned",
+      "root": "packages/evidence-math",
+      "publicExports": [],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      }
     }
   ]
 }
