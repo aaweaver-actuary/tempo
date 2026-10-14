@@ -20,3 +20,8 @@ playwright-report
 .pytest_cache
 **/__pycache__
 **/*.pyc
+# Component-local generated environments must not enter assembly build contexts.
+**/node_modules
+**/.venv
+packages/*/dist
+**/*.egg-info
