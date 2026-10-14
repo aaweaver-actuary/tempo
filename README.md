@@ -8,7 +8,7 @@ Docker Tempo is the full product. After the [PostgreSQL maintenance cutover](doc
 
 For prepared daily training on an iPhone while the computer is unavailable, see [phone training](docs/PHONE-TRAINING.md).
 
-Every reported defect must have a named regression test before closure. Run `make full` (or `npm test`) for frontend, backend, Rust, one PostgreSQL-backed browser matrix, and Docker durability checks; CI runs the same gate. `make legacy-sqlite` runs the optional full SQLite compatibility runner. See [CONTRIBUTING.md](CONTRIBUTING.md), [testing scopes](docs/testing.md), and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
+Every reported defect must have a named regression test before closure. Select checks for the affected component and contracts; `make full` is the current whole-repository integration gate, not a universal entrance requirement. `make legacy-sqlite` runs the optional full SQLite compatibility runner. See [CONTRIBUTING.md](CONTRIBUTING.md), [testing scopes](docs/testing.md), and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
 
 - Interactive opening and tactics drills using Lichess's Chessground board, with click-to-move or drag-and-drop.
 - Fluid responsive sizing, Cburnett and Merida piece sets, three board palettes, legal-move markers, last-move highlighting, automatic opponent replies, and native SVG teaching arrows.
@@ -96,11 +96,12 @@ docker-compose.yml         PostgreSQL API, web, and Celery workers
 docker-compose.sqlite.yml  Explicit legacy SQLite stack for regression tests
 ```
 
-The [code organization audit](docs/CODE-ORGANIZATION-AUDIT.md) explains the
-current boundaries, the backend service clusters, and a staged path for making
-the code easier to navigate. Maintained source, test, asset, and documentation
-directories also contain a local `README.md`; start with the README closest to
-the code you are changing.
+The [component reconstruction guide](docs/architecture/component-reconstruction.md)
+describes the adopted target, current transition, and migration index. The
+[code organization audit](docs/CODE-ORGANIZATION-AUDIT.md) is historical
+evidence from its dated baseline. Maintained source, test, asset, and
+documentation directories also contain a local `README.md`; start with the
+README closest to the code you are changing.
 
 ## Static build
 
