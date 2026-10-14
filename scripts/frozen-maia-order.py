@@ -14,8 +14,9 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
-from app.services.frozen_maia_plan import create_plan, source_fingerprint
-from app.services.frozen_maia_math import validate_distribution, VERSION
+from app.services.frozen_maia_plan import (create_plan, source_fingerprint, DEFAULT_DEFERRED_LIMIT,
+                                         LOCALIZED_SCORING_GAPS, LINEAGE_UNCERTAINTY_POLICY)
+from app.services.frozen_maia_math import validate_distribution, content_fingerprint, card_decisions, anchor, VERSION, READER_VERSION
 from app.services.opening_segmentation import stable_key, opening_position_key
 from app.services import frozen_opening_order as order
 from app.database import read_connection, background_connection
@@ -27,6 +28,43 @@ TABLES = {'repertoires':'repertoires','cards':'cards','memberships':'repertoire_
           'blocks':'repertoire_integrity_card_blocks','deleted':'deleted_cards','priorities':'current_repertoire_card_introduction_priorities',
           'generated':'current_repertoire_card_priority_generations','priority_publications':'repertoire_priority_publications',
           'gameplay':'current_gameplay_card_priorities','presented_teaching':'teaching_states'}
+VIEW_KEY_SOURCES = {
+    'current_repertoire_card_introduction_priorities': 'repertoire_card_introduction_priorities',
+    'current_repertoire_card_priority_generations': 'repertoire_card_priority_generations',
+    'current_gameplay_card_priorities': 'gameplay_card_priorities',
+}
+
+
+def _capture_key_columns(database, table):
+    key_source = VIEW_KEY_SOURCES.get(table, table)
+    rows = database.execute_native("""SELECT a.attname
+        FROM pg_catalog.pg_constraint AS pk
+        JOIN pg_catalog.pg_class AS rel ON rel.oid = pk.conrelid
+        JOIN pg_catalog.pg_namespace AS ns ON ns.oid = rel.relnamespace
+        CROSS JOIN LATERAL unnest(pk.conkey) WITH ORDINALITY
+            AS key_col(attnum, key_order)
+        JOIN pg_catalog.pg_attribute AS a
+          ON a.attrelid = rel.oid AND a.attnum = key_col.attnum
+        WHERE pk.contype = 'p'
+          AND ns.nspname = current_schema()
+          AND rel.relname = %s
+          AND rel.relkind IN ('r','p')
+          AND NOT a.attisdropped
+        ORDER BY key_col.key_order""", (key_source,)).fetchall()
+    key_columns = [row[0] for row in rows]
+    if not key_columns:
+        raise ValueError(f'No stable primary key for capture relation {table} (key source {key_source})')
+    if table in VIEW_KEY_SOURCES:
+        projected = {row[0] for row in database.execute_native("""SELECT a.attname
+            FROM pg_catalog.pg_class AS rel
+            JOIN pg_catalog.pg_namespace AS ns ON ns.oid=rel.relnamespace
+            JOIN pg_catalog.pg_attribute AS a ON a.attrelid=rel.oid
+            WHERE ns.nspname=current_schema() AND rel.relname=%s
+              AND rel.relkind IN ('v','m') AND a.attnum>0 AND NOT a.attisdropped""", (table,)).fetchall()}
+        missing = [column for column in key_columns if column not in projected]
+        if missing:
+            raise ValueError(f'Capture view {table} no longer projects its base primary key: {missing}')
+    return key_columns
 
 
 class DockerReadCursor:
@@ -69,14 +107,7 @@ def _capture_once(reader_factory=read_connection):
         snapshot['metadata'] = [dict(database.execute_native('SELECT (SELECT system_identifier::text FROM pg_control_system()) AS cluster_id,(SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,current_database() AS database,current_schema() AS schema,(SELECT MAX(version) FROM tempo_schema_migrations) AS schema_version,(SELECT coverage_maia_elo FROM settings WHERE id=1) AS maia_elo,(SELECT study_only_mode FROM settings WHERE id=1) AS study_only_mode').fetchone())]
     for name, table in TABLES.items():
         with reader_factory() as database:
-            key_rows=database.execute_native("""SELECT usage.column_name FROM information_schema.table_constraints constraint_row
-                JOIN information_schema.key_column_usage usage USING(constraint_catalog,constraint_schema,constraint_name)
-                WHERE constraint_row.table_schema=current_schema() AND constraint_row.table_name=%s
-                  AND constraint_row.constraint_type='PRIMARY KEY' ORDER BY usage.ordinal_position""",(table,)).fetchall()
-            if not key_rows:
-                key_rows=database.execute_native('SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=%s ORDER BY ordinal_position',(table,)).fetchall()
-        if not key_rows: raise ValueError(f'Missing snapshot table {table}')
-        key_columns=[row[0] for row in key_rows]
+            key_columns = _capture_key_columns(database, table)
         ordering=','.join('"'+column+'"' for column in key_columns)
         filters=[]
         if name=='cards': filters.append("content_type='opening'")
@@ -92,10 +123,17 @@ def _capture_once(reader_factory=read_connection):
             statement='SELECT row_to_json(snapshot_row)::text FROM (SELECT * FROM '+table+(' WHERE '+' AND '.join(predicates) if predicates else '')+' ORDER BY '+ordering+' LIMIT ?) snapshot_row'
             with reader_factory() as database:
                 page=[json.loads(row[0]) for row in database.execute(statement,(*last_key,128) if last_key else (128,)).fetchall()]
+            previous_key = last_key
+            for row in page:
+                current_key = tuple(row[column] for column in key_columns)
+                if any(value is None for value in current_key):
+                    raise ValueError(f'Null pagination key returned by capture relation {table}')
+                if previous_key is not None and not current_key > previous_key:
+                    raise ValueError(f'Repeated or nonadvancing pagination key for capture relation {table}')
+                previous_key = current_key
             rows.extend(page)
             if len(page)<128:break
             last_key=tuple(page[-1][column] for column in key_columns)
-            if any(value is None for value in last_key): raise ValueError(f'Nullable pagination key: {table}')
         snapshot[name]=rows
     with reader_factory() as database:
         snapshot['limits']=[dict(row) for row in database.execute('SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) AS daily_limit FROM repertoires r CROSS JOIN settings s WHERE s.id=1').fetchall()]
@@ -229,6 +267,7 @@ def export(plan, directory):
         'lineage_affected_card_ids':plan['lineage_affected_card_ids'],'scenario_failures':plan['scenario_failures'],
         'scored_count':plan['scored_count'],'deferred_count':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],
         'deferred_limit':plan['deferred_limit'],'activation_safe':plan['activation_safe'],
+        'summary':plan['diagnostic_summary'],
         'lineage':plan['lineage_diagnostics'],'unmapped_repertoires':plan['unmapped_repertoires']}
     for filename,value in (('previous-order.json',plan['previous_order']),('diagnostics.json',diagnostics),('checksums.json',{'plan':plan['checksum'],'source':plan['source_fingerprint'],'input':plan['input_checksum'],'provenance':plan['provenance'],'target':plan['target']})):
         (directory/filename).write_text(json.dumps(value,sort_keys=True,indent=2,allow_nan=False)+'\n')
@@ -240,6 +279,8 @@ def validate_plan(plan):
     body={key:value for key,value in plan.items() if key not in ('checksum','run_id')}
     if stable_key(body) != plan['checksum'] or plan['run_id'] != plan['checksum']: raise ValueError('Plan checksum mismatch')
     if plan['version'] != VERSION: raise ValueError('Incompatible reader contract')
+    if plan.get('required_reader_version') != READER_VERSION:
+        raise ValueError('Plan requires an incompatible or missing frozen-order reader capability')
     if plan.get('complete') != plan.get('probability_complete'):
         raise ValueError('Plan probability completeness is inconsistent')
     policy=plan.get('scoring_policy')
@@ -259,6 +300,23 @@ def validate_plan(plan):
         raise ValueError('Plan is not activation safe')
     if target.get('database')!=plan.get('configuration',{}).get('expected_database') or target.get('schema')!=plan.get('configuration',{}).get('expected_schema'):
         raise ValueError('Plan target does not match its configuration')
+    configured_scenarios=plan.get('configuration',{}).get('scenarios',[])
+    scenarios={scenario['repertoire_id']:scenario for scenario in configured_scenarios}
+    weights=[scenario.get('weight') for scenario in configured_scenarios]
+    if (not scenarios or len(scenarios)!=len(configured_scenarios)
+        or any(not isinstance(weight,(int,float)) or not math.isfinite(weight) or weight<0 for weight in weights)
+        or abs(math.fsum(weights)-1)>1e-9
+        or any(scenario.get('color') not in ('white','black') for scenario in configured_scenarios)):
+        raise ValueError('Invalid scenario mapping or weights')
+    for scenario in configured_scenarios:
+        anchor(scenario)
+    evidence=plan.get('decision_evidence',{})
+    if set(evidence)!=set(scenarios) or any(result.get('error') or result.get('diagnostics')
+        or not result.get('routes') or not result.get('reach') or not result.get('position_reach')
+        for result in evidence.values()):
+        raise ValueError('A required scenario has no effective scoring evidence')
+    if plan.get('lineage_uncertainty_policy')!=LINEAGE_UNCERTAINTY_POLICY:
+        raise ValueError('Obsolete lineage uncertainty policy; capture a fresh plan')
     provenance=plan.get('provenance') or {}
     model=provenance.get('model') or {}
     expected_model_files={'scripts/maia-inference.mjs','app/lib/all_moves_maia3.json','app/lib/all_moves_maia3_reversed.json',
@@ -289,6 +347,19 @@ def validate_plan(plan):
         raise ValueError('Captured card has no safe final disposition')
     if any(row.get('final_disposition')=='excluded' and row.get('status')!='excluded' for row in inventory):
         raise ValueError('Excluded disposition does not match card lifecycle state')
+    exclusion_reasons={'archived','superseded','deleted','pending_validation','unmapped','already_shown_attempted_reviewed'}
+    for row in inventory:
+        if row.get('final_disposition')!='excluded':
+            continue
+        reasons=row.get('reasons',[])
+        if not reasons or any(reason not in exclusion_reasons and not reason.startswith('invalid_content:') for reason in reasons):
+            raise ValueError('Unexplained exclusion of a captured card')
+        if (('archived' in reasons and not row.get('archived'))
+            or ('superseded' in reasons and not row.get('superseded_by'))
+            or ('pending_validation' in reasons and not row.get('pending_validation'))
+            or ('unmapped' in reasons and row.get('families'))
+            or ('already_shown_attempted_reviewed' in reasons and row.get('classification')!='already_studied')):
+            raise ValueError('Excluded disposition lacks its captured lifecycle/exposure evidence')
     if any(row.get('final_disposition')=='protected' and 'uncertain_legacy_exposure' not in row.get('reasons',[]) for row in inventory):
         raise ValueError('Protected disposition lacks its exposure reason')
     expected_probability_complete=not any(row.get('status')=='unresolved' for row in inventory) and not plan.get('lineage_diagnostics')
@@ -297,17 +368,41 @@ def validate_plan(plan):
     ranks=plan.get('ranks',[])
     rank_ids=[row.get('id') for row in ranks]
     ordinals=[row.get('rank') for row in ranks]
-    if len(set(rank_ids))!=len(rank_ids) or ordinals!=list(range(1,len(ranks)+1)):
+    if (len(set(rank_ids))!=len(rank_ids) or any(type(ordinal) is not int for ordinal in ordinals)
+        or ordinals!=list(range(1,len(ranks)+1))):
         raise ValueError('Final ranking membership or ordinals are not unique and contiguous')
     if set(rank_ids)!={identifier for identifier,row in by_id.items() if row.get('final_disposition') in ('scored','deferred')}:
         raise ValueError('Final ranking omits a scored/deferred card or includes a protected card')
     if plan.get('target_candidate_count')!=len(ranks) or plan.get('scored_count')+plan.get('deferred_count')!=len(ranks):
         raise ValueError('Final ranking does not cover its declared safe target scope')
     seen_deferred=False
+    deferred_rows=[]
+    diagnostic_refs_by_card={identifier:sorted({item['line_id'] for item in plan.get('lineage_diagnostics',[])
+        if identifier in item.get('affected_card_ids',[])}) for identifier in rank_ids}
+    definition_fields=('revision','start_fen','moves_json','trained_color','source_ref','source_fen','kind','content_type')
     for row in ranks:
         inventory_row=by_id[row['id']]
+        if (any(row.get(field)!=inventory_row.get(field) for field in
+            (*definition_fields,'fingerprint','memberships','classification','status','reasons','baseline_order',
+             'decisions','rank','scoring_status','final_disposition'))
+            or content_fingerprint(inventory_row,inventory_row['memberships'])!=row.get('fingerprint')
+            or inventory_row.get('classification') not in ('not_admitted','admitted_unstarted')
+            or inventory_row.get('archived') or inventory_row.get('pending_validation') or inventory_row.get('superseded_by')
+            or inventory_row.get('content_type')!='opening'):
+            raise ValueError('Ranked card is unsafe or does not match its captured definition')
+        families=set(inventory_row.get('families',[]))
+        if families!=set(inventory_row['memberships']) & scenarios.keys() or not families:
+            raise ValueError('Ranked card has an invalid scenario mapping')
+        decisions=set()
+        for family in families:
+            if inventory_row.get('trained_color') not in (None,scenarios[family]['color']):
+                raise ValueError('Ranked card has conflicting trained color')
+            decisions.update(card_decisions(inventory_row,scenarios[family]))
+        if decisions!=set(inventory_row.get('decisions',[])):
+            raise ValueError('Ranked card decisions do not match its captured content')
         if row.get('final_disposition')=='deferred':
             seen_deferred=True
+            deferred_rows.append(row)
             reasons=row.get('deferred_reasons') or []
             inventory_reasons=set(inventory_row.get('reasons',[]))
             if (policy!='allow_unscored_tail' or row.get('scoring_status')!='unscored_deferred'
@@ -315,23 +410,30 @@ def validate_plan(plan):
                 or inventory_row.get('status')!='unresolved' or inventory_row.get('archived') or inventory_row.get('pending_validation')
                 or inventory_row.get('superseded_by') or inventory_reasons & {'already_shown_attempted_reviewed','uncertain_legacy_exposure'}
                 or any(reason.startswith('invalid_content:') for reason in inventory_reasons)
-                or not reasons or any(reason not in {'unknown_route_mass','unknown_decision_reach'} and not reason.startswith('missing_exact_card_lineage:') for reason in reasons)):
+                or not reasons or inventory_reasons!=set(reasons)
+                or any(reason not in LOCALIZED_SCORING_GAPS and not reason.startswith('missing_exact_card_lineage:') for reason in reasons)):
                 raise ValueError('Deferred card is invalid, exposed, or has a non-local scoring failure')
             expected_diagnostics=sorted(set(inventory_row.get('diagnostic_refs',[])))
-            if (row.get('diagnostic_refs')!=expected_diagnostics or row.get('memberships')!=inventory_row.get('memberships')
+            if (row.get('diagnostic_refs')!=expected_diagnostics or expected_diagnostics!=diagnostic_refs_by_card[row['id']]
+                or row.get('memberships')!=inventory_row.get('memberships')
                 or row.get('deferred_reasons')!=inventory_row.get('deferred_reasons') or row.get('rank')!=inventory_row.get('rank')):
                 raise ValueError('Deferred-card audit metadata does not match the immutable inventory')
         elif row.get('final_disposition')=='scored':
             score=row.get('marginal_score')
             if (seen_deferred or row.get('scoring_status')!='scored' or not isinstance(score,(int,float))
-                or not math.isfinite(score) or score<0):
+                or not math.isfinite(score) or score<0 or inventory_row.get('status')!='included'
+                or inventory_row.get('reasons') or diagnostic_refs_by_card[row['id']]
+                or any(not set(card_decisions(inventory_row,scenarios[family])) <= evidence[family]['reach'].keys() for family in families)):
                 raise ValueError('Scored cards must precede the unscored tail and have a numerical score')
         else:
             raise ValueError('Unexpected final disposition in frozen ranks')
+    if deferred_rows!=sorted(deferred_rows,key=lambda row:(tuple(row['baseline_order']),row['id'])):
+        raise ValueError('Deferred tail does not follow deterministic baseline/card-ID order')
     if plan.get('deferred_count')!=sum(row.get('final_disposition')=='deferred' for row in ranks):
         raise ValueError('Deferred-card count does not match final ranks')
     deferred_by_id={row.get('id'):row for row in plan.get('deferred_cards',[])}
-    if len(deferred_by_id)!=plan.get('deferred_count') or set(deferred_by_id)!={row['id'] for row in ranks if row.get('final_disposition')=='deferred'}:
+    if (len(plan.get('deferred_cards',[]))!=len(deferred_by_id) or len(deferred_by_id)!=plan.get('deferred_count')
+        or set(deferred_by_id)!={row['id'] for row in ranks if row.get('final_disposition')=='deferred'}):
         raise ValueError('Deferred-card audit list does not match the final tail')
     for ranked_row in ranks:
         if ranked_row.get('final_disposition')!='deferred':
@@ -343,11 +445,16 @@ def validate_plan(plan):
             raise ValueError('Deferred-card export metadata does not match the ranked tail')
     if plan.get('target_candidate_count')!=plan.get('scored_count')+plan.get('deferred_count'):
         raise ValueError('Target backlog denominator does not match scored and deferred cards')
-    if plan.get('deferred_fraction',0)>plan.get('deferred_limit',0) or plan.get('deferred_limit')!=0.01:
+    actual_fraction=len(deferred_rows)/len(ranks) if ranks else 0.0
+    recorded_fraction=plan.get('deferred_fraction')
+    if (not isinstance(recorded_fraction,(int,float)) or not math.isfinite(recorded_fraction)
+        or not math.isclose(recorded_fraction,actual_fraction,rel_tol=0,abs_tol=1e-12)):
+        raise ValueError('Deferred fraction does not match the ranked backlog')
+    if actual_fraction>DEFAULT_DEFERRED_LIMIT or plan.get('deferred_limit')!=DEFAULT_DEFERRED_LIMIT:
         raise ValueError('Deferred-tail safety bound exceeded or changed')
     if plan.get('scenario_failures'):
         raise ValueError('A required scenario failed; incomplete scenario scoring cannot be deferred')
-    if any(item.get('reason')!='Missing initial/anchor lineage' for item in plan.get('lineage_diagnostics',[])):
+    if any(item.get('reason')!='Missing initial/anchor lineage' or item.get('uncertainty_error') for item in plan.get('lineage_diagnostics',[])):
         raise ValueError('Fatal or unexplained source-lineage diagnostics remain')
     if policy=='strict' and (plan.get('deferred_count') or not plan.get('probability_complete')):
         raise ValueError('Strict scoring policy cannot publish an incomplete probability plan')
@@ -438,7 +545,7 @@ def main():
             import urllib.request
             with urllib.request.urlopen(args.reader_url.rstrip('/')+'/api/health',timeout=5) as response:
                 health=json.load(response)
-            reader_confirmed=health.get('frozen_opening_reader_version')==VERSION and health.get('frozen_opening_target_id')==args.target and health.get('frozen_opening_active_run')==plan['run_id']
+            reader_confirmed=health.get('frozen_opening_reader_version')==plan['required_reader_version'] and health.get('frozen_opening_target_id')==args.target and health.get('frozen_opening_active_run')==plan['run_id']
         ready=bool(projection and projection[0]=='ready' and not projection[1])
         state=('active' if reader_confirmed else 'applied_reader_confirmation_pending') if ready and consumed==sorted(consumed) else 'applied_queue_refresh_pending'
         print(json.dumps({'state':state,'run_id':plan['run_id'],'stale_cards':stale,'reader_confirmed':reader_confirmed,'queued_unstarted':[row['card_id'] for row in unstarted]}));return
@@ -448,7 +555,7 @@ def main():
     import urllib.request
     with urllib.request.urlopen(args.reader_url.rstrip('/')+'/api/health',timeout=5) as response:
         health=json.load(response)
-    if health.get('frozen_opening_reader_version') != VERSION: raise ValueError('Deployed reader lacks frozen ordering contract')
+    if health.get('frozen_opening_reader_version') != plan['required_reader_version']: raise ValueError('Deployed reader lacks the required frozen ordering capability')
     if health.get('frozen_opening_target_id') != args.target: raise ValueError('Reader and writer point to different database instances')
     # Export exact previous metadata before staging any publication.
     backup=Path(args.plan).with_name('pre-apply-order.json')

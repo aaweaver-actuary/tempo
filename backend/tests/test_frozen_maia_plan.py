@@ -49,6 +49,25 @@ def provenance():
             'backend/app/services/frozen_maia_plan.py':'1'*64,'scripts/frozen-maia-order.py':'1'*64}}
 
 
+def plan_cli():
+    import importlib.util
+    from pathlib import Path
+    spec=importlib.util.spec_from_file_location('frozen_cli',Path(__file__).parents[2]/'scripts/frozen-maia-order.py')
+    cli=importlib.util.module_from_spec(spec);spec.loader.exec_module(cli)
+    return cli
+
+
+def refresh_checksum(plan):
+    from app.services.opening_segmentation import stable_key
+    plan['checksum']=stable_key({key:value for key,value in plan.items() if key not in ('checksum','run_id')})
+    plan['run_id']=plan['checksum']
+
+
+def uniform_maia(fen):
+    legal=list(chess.Board(fen).legal_moves)
+    return [{'move_uci':move.uci(),'probability':1/len(legal)} for move in legal]
+
+
 def test_real_plan_partial_teaching_covers_only_the_evidenced_decision():
     data,config=snapshot()
     studied={**data['cards'][0],'id':'studied','moves_json':'["e2e4"]'}
@@ -234,6 +253,22 @@ def test_uncertain_legacy_exposure_is_protected_not_appended_to_tail():
     assert protected['final_disposition']=='protected'
 
 
+@pytest.mark.parametrize('identifier',['scored-000','deferred-000'])
+def test_uncertain_legacy_origin_is_protected_even_after_unadmission(identifier):
+    data,config=localized_tail_snapshot(scored_count=199,deferred_count=1)
+    # An old admission can outlive queue trimming and introduced_at reset. It
+    # cannot prove that the pre-issuance-tracking card was never presented.
+    data['origins']=[{'card_id':identifier,'issued_as_head':0,'attempt_failed':0,
+        'review_result_json':None,'last_status':'queued','legacy':1}]
+    plan=create_plan(data,config,fake_maia,provenance(),allow_unscored_tail=True)
+    protected=next(row for row in plan['inventory'] if row['id']==identifier)
+    assert protected['classification']=='not_admitted'
+    assert protected['final_disposition']=='protected'
+    assert 'uncertain_legacy_exposure' in protected['reasons']
+    assert identifier not in {row['id'] for row in plan['ranks']}
+    assert plan['activation_safe']
+
+
 def test_scenario_wide_inference_failure_or_tail_over_one_percent_blocks_activation():
     data,config=localized_tail_snapshot(scored_count=99,deferred_count=2)
     def failed_maia(_fen):
@@ -272,3 +307,164 @@ def test_export_keeps_zero_marginal_score_distinct_from_unknown(tmp_path):
     assert float(zero['marginal_score'])==0.0
     assert unknown['marginal_score']=='' and unknown['final_disposition']=='deferred'
     assert (tmp_path/'deferred-cards.csv').exists()
+
+
+def test_unrooted_transposition_defers_other_answers_and_represented_descendants():
+    data,config=snapshot()
+    known_moves=['e2e4','e7e5','g1f3','b8c6','f1b5']
+    data['cards'][0]['moves_json']=json.dumps(known_moves)
+    data['lines'][0]['moves_json']=json.dumps(known_moves)
+    descendant=chess.Board()
+    for move in known_moves[:-1]:descendant.push_uci(move)
+    data['cards'].append({**data['cards'][0],'id':'descendant','start_fen':descendant.fen(),'moves_json':'["f1b5"]'})
+    missing=chess.Board()
+    for move in ['e2e4','e7e5','g1f3','b8c6','f3g1']:missing.push_uci(move)
+    data['lines'].append({**data['lines'][0],'id':'unrooted-transposition',
+        'start_fen':missing.fen(),'moves_json':'["c6b8","b1c3"]'})
+    plan=create_plan(data,config,uniform_maia,provenance(),allow_unscored_tail=True)
+    assert {row['id'] for row in plan['deferred_cards']}=={'target','descendant'}
+    assert not plan['activation_safe']  # Both cards exceed the unchanged 1% bound.
+    diagnostic=plan['lineage_diagnostics'][0]
+    assert diagnostic['affected_card_ids']==['descendant','target']
+    assert all('unknown_route_mass' in row['reason_codes'] for row in plan['deferred_cards'])
+    assert plan['diagnostic_summary']['affected_scored_card_ids']==[]
+
+
+def test_required_scenario_with_no_route_to_its_anchor_is_fatal():
+    data,config=snapshot()
+    config['scenarios'][0]['weight']=.5
+    config['scenarios'].append({'name':'Missing anchor','repertoire_id':'other','color':'white','prefix':['d4'],'weight':.5})
+    data['repertoires'].append({'id':'other','name':'Missing anchor','created_at':'today'})
+    data['lines'].append({**data['lines'][0],'id':'outside-condition','repertoire_id':'other'})
+    plan=create_plan(data,config,uniform_maia,provenance(),allow_unscored_tail=True)
+    assert not plan['activation_safe']
+    assert 'other' in plan['scenario_failures']
+
+
+def test_uncertain_arrival_at_conditioning_anchor_does_not_change_known_scores():
+    data,config=snapshot()
+    config['scenarios'][0]['prefix']=['e4','e5']
+    known_moves=['e2e4','e7e5','g1f3','b8c6','f1b5']
+    data['cards'][0]['moves_json']=json.dumps(known_moves)
+    data['lines'][0]['moves_json']=json.dumps(known_moves)
+    baseline=create_plan(data,config,uniform_maia,provenance())
+    missing=chess.Board()
+    for move in ['e2e4','e7e5','g1f3','b8c6','f3g1']:missing.push_uci(move)
+    data['lines'].append({**data['lines'][0],'id':'unrooted-arrival',
+        'start_fen':missing.fen(),'moves_json':'["c6b8"]'})
+    plan=create_plan(data,config,uniform_maia,provenance(),allow_unscored_tail=True)
+    assert plan['activation_safe'] and plan['deferred_count']==0
+    assert plan['lineage_diagnostics'][0]['affected_card_ids']==[]
+    assert [(row['id'],row['marginal_score']) for row in plan['ranks']]==[(row['id'],row['marginal_score']) for row in baseline['ranks']]
+
+
+def test_apply_requires_the_reviewed_uncertainty_policy():
+    data,config=localized_tail_snapshot()
+    plan=create_plan(data,config,fake_maia,provenance(),allow_unscored_tail=True)
+    del plan['lineage_uncertainty_policy']
+    refresh_checksum(plan)
+    with pytest.raises(ValueError,match='uncertainty policy'):
+        plan_cli().validate_plan(plan)
+
+
+@pytest.mark.parametrize('fraction',[0, float('nan')])
+def test_apply_recomputes_deferred_fraction_instead_of_trusting_metadata(fraction):
+    data,config=localized_tail_snapshot(scored_count=99,deferred_count=2)
+    plan=create_plan(data,config,fake_maia,provenance(),allow_unscored_tail=True)
+    plan.update(activation_safe=True,deferred_fraction=fraction)
+    refresh_checksum(plan)
+    with pytest.raises(ValueError,match='[Dd]eferred.*(fraction|bound)'):
+        plan_cli().validate_plan(plan)
+
+
+def test_apply_rejects_a_tail_that_disagrees_with_baseline_order():
+    data,config=localized_tail_snapshot()
+    plan=create_plan(data,config,fake_maia,provenance(),allow_unscored_tail=True)
+    plan['ranks'][-2:]=reversed(plan['ranks'][-2:])
+    ranks_by_id={row['id']:index for index,row in enumerate(plan['ranks'],1)}
+    for collection in ('ranks','inventory','deferred_cards'):
+        for row in plan[collection]:
+            if row['id'] in ranks_by_id:row['rank']=ranks_by_id[row['id']]
+    refresh_checksum(plan)
+    with pytest.raises(ValueError,match='[Dd]eterministic|[Bb]aseline'):
+        plan_cli().validate_plan(plan)
+
+
+@pytest.mark.parametrize('change',['exposed_scored','deleted_deferred','nonlocal_reason','rank_definition','missing_scenario'])
+def test_apply_rechecks_rank_safety_and_evidence_even_with_a_valid_checksum(change):
+    data,config=localized_tail_snapshot()
+    plan=create_plan(data,config,fake_maia,provenance(),allow_unscored_tail=True)
+    inventory_by_id={row['id']:row for row in plan['inventory']}
+    if change=='exposed_scored':
+        inventory_by_id[plan['ranks'][0]['id']].update(classification='already_studied',reasons=['already_shown_attempted_reviewed'])
+    elif change=='deleted_deferred':
+        inventory_by_id[plan['ranks'][-1]['id']]['reasons'].append('deleted')
+    elif change=='nonlocal_reason':
+        inventory_by_id[plan['ranks'][-1]['id']]['reasons'].append('inference_not_run')
+    elif change=='rank_definition':
+        plan['ranks'][0]['moves_json']='["d2d4"]'
+    elif change=='missing_scenario':
+        plan['decision_evidence'].clear()
+    refresh_checksum(plan)
+    with pytest.raises(ValueError):plan_cli().validate_plan(plan)
+
+
+def test_lineage_summary_counts_distinct_cards_and_source_lines(tmp_path):
+    data,config=localized_tail_snapshot(scored_count=199,deferred_count=1)
+    data['lines'].append({**data['lines'][-1],'id':'second-missing-line'})
+    plan=create_plan(data,config,fake_maia,provenance(),allow_unscored_tail=True)
+    summary=plan['diagnostic_summary']
+    assert summary['source_line_count']==2 and summary['affected_card_count']==1
+    assert summary['unknown_route_mass_card_ids']==['deferred-000']
+    assert summary['affected_scenarios']==[{'repertoire_id':'policy','scenario':'Fixture','affected_card_count':1,
+        'scored_count':0,'deferred_count':1,'excluded_count':0,'protected_count':0}]
+    plan_cli().export(plan,tmp_path)
+    assert json.loads((tmp_path/'diagnostics.json').read_text())['summary']==summary
+
+
+def test_reader_capability_is_checksum_bound_and_old_or_missing_markers_are_rejected():
+    from app.services.frozen_maia_math import READER_VERSION, VERSION
+    data,config=snapshot()
+    plan=create_plan(data,config,fake_maia,provenance())
+    assert VERSION=='frozen-maia-v1'
+    assert plan['required_reader_version']==READER_VERSION=='frozen-maia-v2'
+    plan_cli().validate_plan(plan)
+    for marker in (None,'frozen-maia-v1'):
+        incompatible=deepcopy(plan)
+        if marker is None:
+            del incompatible['required_reader_version']
+        else:
+            incompatible['required_reader_version']=marker
+        refresh_checksum(incompatible)
+        with pytest.raises(ValueError,match='reader capability'):
+            plan_cli().validate_plan(incompatible)
+
+
+def test_capture_uses_explicit_view_key_sources_and_never_falls_back_to_all_columns():
+    class Cursor:
+        def __init__(self,rows):self.rows=rows
+        def fetchall(self):return self.rows
+    class Catalog:
+        def __init__(self,keys):self.keys=keys;self.calls=[]
+        def execute_native(self,statement,parameters):
+            self.calls.append((statement,parameters))
+            return Cursor([(key,) for key in self.keys])
+    cli=plan_cli()
+    catalog=Catalog(['repertoire_id','generation'])
+    assert cli._capture_key_columns(catalog,'current_repertoire_card_priority_generations')==['repertoire_id','generation']
+    assert catalog.calls[0][1]==('repertoire_card_priority_generations',)
+    assert 'WITH ORDINALITY' in catalog.calls[0][0] and 'information_schema' not in catalog.calls[0][0]
+    missing=Catalog([])
+    with pytest.raises(ValueError,match='No stable primary key.*current_gameplay_card_priorities'):
+        cli._capture_key_columns(missing,'current_gameplay_card_priorities')
+    assert len(missing.calls)==1
+
+
+def test_apply_rejects_unexplained_exclusion_of_an_otherwise_rankable_card():
+    data,config=snapshot()
+    plan=create_plan(data,config,fake_maia,provenance())
+    plan['inventory'][0].update(final_disposition='excluded',status='excluded',reasons=['unknown_route_mass'])
+    plan.update(ranks=[],scored_count=0,target_candidate_count=0,excluded_count=1)
+    refresh_checksum(plan)
+    with pytest.raises(ValueError,match='Unexplained exclusion'):
+        plan_cli().validate_plan(plan)

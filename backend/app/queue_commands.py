@@ -43,13 +43,16 @@ def _lock_attempt_card(database, entry_id: int) -> None:
 
 _AVAILABLE_ATTEMPT_SQL = queue_application._AVAILABLE_ATTEMPT_SQL
 
+def available_attempt_sql() -> str:
+    return queue_application.available_attempt_sql()
+
 
 def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
     """A retained, identified attempt remains operable after queue promotion."""
     identified = card_id is not None and expected_revision is not None
     lock_clause = " FOR UPDATE OF q,c" if isinstance(database, PostgresConnection) else ""
     available = database.execute(
-        f"""{_AVAILABLE_ATTEMPT_SQL}
+        f"""{available_attempt_sql()}
               {"AND q.id=?" if identified else ""}
             ORDER BY q.position,q.id LIMIT 1{lock_clause}""",
         (date.today().isoformat(), entry_id) if identified else (date.today().isoformat(),),
@@ -60,7 +63,7 @@ def validate_available_attempt(database, entry_id: int, card_id=None, expected_r
     validate_failure_marker(database, entry_id, card_id, expected_revision)
     if identified:
         head = database.execute(
-            f"{_AVAILABLE_ATTEMPT_SQL} ORDER BY q.position,q.id LIMIT 1",
+            f"{available_attempt_sql()} ORDER BY q.position,q.id LIMIT 1",
             (date.today().isoformat(),),
         ).fetchone()
         issued_origin = database.execute(
@@ -81,7 +84,7 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, bool]:
     if isinstance(database, PostgresConnection):
         lock_queue_date_for_position(database, payload["queue_date"])
     head = database.execute(
-        f"{_AVAILABLE_ATTEMPT_SQL} ORDER BY q.position,q.id LIMIT 1",
+        f"{available_attempt_sql()} ORDER BY q.position,q.id LIMIT 1",
         (payload["queue_date"],),
     ).fetchone()
     if not head or head["id"] != entry_id:

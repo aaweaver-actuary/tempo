@@ -17,7 +17,7 @@ def database():
     CREATE TABLE reviews(card_id TEXT);
     CREATE TABLE opening_evidence_attempts(card_id TEXT);
     CREATE TABLE teaching_states(card_id TEXT);
-    CREATE TABLE queue_attempt_origins(card_id TEXT,issued_as_head INTEGER,attempt_failed INTEGER,review_result_json TEXT,last_status TEXT);
+    CREATE TABLE queue_attempt_origins(card_id TEXT,issued_as_head INTEGER,attempt_failed INTEGER,review_result_json TEXT,last_status TEXT,legacy INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE daily_queue(id INTEGER,card_id TEXT,attempt_failed INTEGER,review_result_json TEXT,status TEXT,attempt_state TEXT);
     ''')
     for statement in order.SCHEMA:database.execute(statement)
@@ -103,8 +103,49 @@ def test_unstarted_slots_reorder_without_moving_issued_attempt_or_unrelated_revi
           {'id':2,'card_id':'c','content_type':'opening','admission_kind':'review','gameplay_priority_reason':None},
           {'id':3,'card_id':'b','content_type':'opening','admission_kind':'new','gameplay_priority_reason':None}]
     assert [row['card_id'] for row in order.order_queue_slots(database,rows)]==['b','c','a']
-    database.execute("INSERT INTO queue_attempt_origins VALUES('a',1,0,NULL,'queued')")
+    database.execute("INSERT INTO queue_attempt_origins(card_id,issued_as_head,attempt_failed,review_result_json,last_status) VALUES('a',1,0,NULL,'queued')")
     assert [row['card_id'] for row in order.order_queue_slots(database,rows)]==['a','c','b']
+
+
+def test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains(database):
+    activate(database)
+    database.execute("INSERT INTO queue_attempt_origins(card_id,legacy) VALUES('c',1)")
+    annotated=order.annotate(database,[candidate('c')])[0]
+    assert annotated['frozen_rank'] is None
+    assert annotated['frozen_legacy_protected'] is True and annotated['frozen_valid'] is False
+    assert plan_prioritized_opening_admissions([annotated],{},'today',1,miss_reason=order.MISS_REASON)==[]
+    database.execute("DELETE FROM queue_attempt_origins WHERE card_id='c'")
+    fallback=order.annotate(database,[candidate('c')])[0]
+    assert fallback['frozen_rank'] is None and fallback['frozen_valid'] is True
+    assert [row['id'] for _,row in plan_prioritized_opening_admissions(
+        [fallback],{},'today',1,miss_reason=order.MISS_REASON)]==['c']
+
+
+def test_unranked_legacy_origin_stays_protected_with_ordinary_gameplay_boost(database):
+    activate(database)
+    database.execute("INSERT INTO queue_attempt_origins(card_id,legacy) VALUES('c',1)")
+    annotated=order.annotate(database,[candidate('c',gameplay_priority_reason='ordinary boost')])
+    assert plan_prioritized_opening_admissions(annotated,{},'today',1,miss_reason=order.MISS_REASON)==[]
+
+
+def test_proposal_rechecks_legacy_evidence_and_rejects_forged_miss_reason(database,monkeypatch):
+    activate(database)
+    database.execute("INSERT INTO queue_attempt_origins(card_id,legacy) VALUES('c',1)")
+    old_proposal={**candidate('c'),'card_id':'c','reason':None,
+                  'frozen_token':['run',1]}
+    assert not order.proposal_valid(database,old_proposal)
+    from app.services import real_game_feedback
+    monkeypatch.setattr(real_game_feedback,'has_outstanding_real_game_miss',lambda database,card_id:False)
+    forged={**old_proposal,'reason':order.MISS_REASON}
+    assert not order.proposal_valid(database,forged)
+
+
+def test_legacy_unstarted_queue_slot_is_not_permuted(database):
+    activate(database)
+    database.execute("INSERT INTO queue_attempt_origins(card_id,legacy) VALUES('c',1)")
+    rows=[{'id':1,'card_id':'c','content_type':'opening','admission_kind':'new','gameplay_priority_reason':None},
+          {'id':2,'card_id':'a','content_type':'opening','admission_kind':'new','gameplay_priority_reason':None}]
+    assert [row['card_id'] for row in order.order_queue_slots(database,rows)]==['c','a']
 
 
 def test_partial_teaching_and_attempted_cards_are_exposure_not_admission(database):
@@ -171,6 +212,9 @@ def test_rollback_restores_only_owned_unchanged_queue_permutations(database):
     assert order.restore_queue_changes(database,'run')=={'restored_queue_entries':[1,2],'queue_conflicts':[]}
     assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue ORDER BY position')]==['a','b']
     database.execute('UPDATE daily_queue SET position=1-position')
+    database.execute("INSERT INTO queue_attempt_origins(card_id,legacy) VALUES('a',1)")
+    assert order.restore_queue_changes(database,'run')=={'restored_queue_entries':[],'queue_conflicts':[1,2]}
+    database.execute("DELETE FROM queue_attempt_origins WHERE card_id='a'")
     database.execute("INSERT INTO teaching_states VALUES('a')")
     assert order.restore_queue_changes(database,'run')=={'restored_queue_entries':[],'queue_conflicts':[1,2]}
     assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue ORDER BY position')]==['b','a']
@@ -191,9 +235,11 @@ def test_serving_holds_changed_memberships_and_presentation_kind(database):
     assert not database.execute(statement).fetchall()
 
 
-def test_changed_captured_content_preserves_mandatory_remediation(database):
+def test_changed_captured_content_does_not_trust_a_forged_mandatory_reason(database,monkeypatch):
     activate(database);database.execute("UPDATE cards SET revision=2 WHERE id='b'")
     rows=order.annotate(database,[candidate('a'),candidate('b',gameplay_priority_reason=order.MISS_REASON)])
     selected=plan_prioritized_opening_admissions(rows,{},'today',0,miss_reason=order.MISS_REASON)
     assert [row['id'] for _,row in selected]==['b']
-    assert order.proposal_valid(database,{'card_id':'b','reason':order.MISS_REASON,'frozen_token':['run',1]})
+    from app.services import real_game_feedback
+    monkeypatch.setattr(real_game_feedback,'has_outstanding_real_game_miss',lambda database,card_id:False)
+    assert not order.proposal_valid(database,{'card_id':'b','reason':order.MISS_REASON,'frozen_token':['run',1]})

@@ -99,6 +99,10 @@ _REPLACE_QUERIES = {
 @lru_cache(maxsize=4096)
 def postgres_sql(sqlite_statement: str) -> str | None:
     stripped = sqlite_statement.strip().rstrip(";")
+    stripped = re.sub(
+        r"\breal_game_instant\(([^()]*)\)", r"CAST(\1 AS TIMESTAMPTZ)",
+        stripped, flags=re.IGNORECASE,
+    )
     if stripped.upper() == "BEGIN IMMEDIATE":
         return None
     if re.match(r"^PRAGMA\b", stripped, re.IGNORECASE):
@@ -136,8 +140,9 @@ def postgres_sql(sqlite_statement: str) -> str | None:
 
 
 class PostgresConnection:
-    def __init__(self, database: psycopg.Connection[TempoRow]):
+    def __init__(self, database: psycopg.Connection[TempoRow], *, read_only: bool = False):
         self._database = database
+        self.read_only = read_only
         self._background_metric_deltas: dict[tuple, dict] = {}
 
     @property
@@ -276,7 +281,7 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                                  (f"{lock_limit}ms",))
             configured_at = time.perf_counter()
             try:
-                connection = PostgresConnection(database)
+                connection = PostgresConnection(database, read_only=read_only)
                 yield connection
                 connection.flush_background_metrics()
             finally:
@@ -311,4 +316,4 @@ def diagnostic_read_connection(timeout_seconds: float = 0.1):
     """Bound pool acquisition as well as SQL execution for operational snapshots."""
     with _pool(True).connection(timeout=timeout_seconds) as database:
         database.execute("SET TRANSACTION READ ONLY")
-        yield PostgresConnection(database)
+        yield PostgresConnection(database, read_only=True)

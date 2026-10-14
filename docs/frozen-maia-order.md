@@ -54,7 +54,9 @@ Outputs:
   diagnostic references. `deferred-cards.csv` lists each unscored card, its
   memberships, reason codes, tail rank, null score and source-line references.
 - `diagnostics.json`: counts source-line diagnostics separately from the
-  distinct affected card IDs. `excluded-cases.csv`, `unknown-cases.csv`, prior
+  distinct affected card IDs. Its `summary` (also `diagnostic_summary` in the
+  plan) lists affected scenarios and dispositions, cards with unknown route
+  mass, and any affected scored cards. `excluded-cases.csv`, `unknown-cases.csv`, prior
   ordering, checksums and measured execution counts accompany the plan.
 
 Keep captures private: they contain study history and presentation metadata.
@@ -108,6 +110,9 @@ Only missing exact card lineage, missing represented source ancestry / unknown
 route mass, and localized unknown decision reach may enter the tail. Archived,
 deleted, superseded, pending-validation, invalid, exposed, and uncertain
 legacy-exposure cards remain excluded or protected by existing safeguards.
+An uncertain legacy admission remains protected even after queue trimming or
+an introduction-date reset; a missing current admission does not prove that
+the card was never presented.
 Invalid source evidence, failed Maia inference, a scenario with no effective
 scoring evidence, invalid anchors/configuration, missing model provenance,
 incoherent capture, and target-identity mismatch remain fatal. Lineage
@@ -121,6 +126,17 @@ scenario/system failure; and a deferred fraction at or below 1% of the
 otherwise rankable backlog. The plan records numerator, denominator, fraction,
 threshold, failed scenarios and diagnostic-to-card relationships. If the
 threshold is exceeded, stop and generate no activation-safe plan.
+
+Unknown arrival mass affects every answer at the same policy-specific position
+and its represented descendants, including transpositions. Propagation stops at
+the conditioning anchor, whose mass is fixed at 1. The plan records
+`lineage_uncertainty_policy: represented_position_descendants_v1`; older plans
+must be regenerated before apply. Existing inference results remain reusable
+when their cache identity still matches. A scenario with no represented route
+reaching its anchor is fatal, even if prefix probabilities or zero-valued
+decision placeholders exist. Apply independently checks the actual deferred
+fraction, deterministic tail order, card definitions and dispositions, and
+effective evidence for every configured scenario.
 
 ## Deployment and explicit apply
 
@@ -213,3 +229,36 @@ study, then removes its resources. It also checks indexed 16-row access over
 35,400 static ranks. That server query measurement is not whole-study latency
 or a before/after speedup claim. The browser proof checks actual displayed study
 and preserves an issued board attempt across replacement.
+
+## Runtime protection and reader compatibility
+
+Frozen rank publication does not turn a legacy-origin card into an eligible
+fallback. Runtime annotation, candidate selection, final writer admission, queue
+serving, and rollback restoration consult current `queue_attempt_origins`
+evidence. Valid post-snapshot cards without legacy origins can still use the
+ordinary fallback. Deferred cards remain after scored ranks, and existing
+issued attempts, reviews, explicit/manual admissions, and verified mandatory
+real-game remediation retain their established behavior.
+
+The plan checksum binds `required_reader_version: frozen-maia-v2`. Model and
+inference-cache identity remain `frozen-maia-v1`; a reader capability change
+does not invalidate Maia results. Apply checks API health before staging and
+again verifies the active target/run. Deploy the v2 reader before following the
+activation steps below. A v1 reader or a plan missing this marker is refused.
+
+Capture uses ordered primary keys discovered through PostgreSQL catalogs for
+base tables. Current views have explicit base-table key mappings, validated
+against their projected columns. Capture fails with the relation name if a
+stable key cannot be established; it does not fall back to a full table scan or
+all-column ordering. Pages remain bounded at 128 rows, and two complete passes
+must agree. The SELECT-only `tempo_reader` role is exercised by
+`backend/.venv/bin/python scripts/test-frozen-postgres.py`.
+
+The full disposable command proof is
+`backend/.venv/bin/python scripts/test-frozen-cli.py`. It creates a unique
+PostgreSQL/Redis Compose project, starts the API and foreground/background
+workers, uses separate reader and writer roles, runs real Maia plan/apply,
+repeats apply, waits for ordinary queue refresh, fetches the actual queue to
+issue its head, verifies the publication, and rolls it back. It removes only
+its own project, volumes, and temporary credentials. Do not point either proof
+at the study installation.
