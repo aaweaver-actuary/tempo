@@ -45,7 +45,8 @@ def plan_prioritized_opening_admissions(
             planned.append((repertoire_id, row))
             selected.add(row["id"])
             consumed[repertoire_id] = consumed.get(repertoire_id, 0) + 1
-        fallback = [row for row in candidates if row["id"] not in selected and row.get("frozen_rank") is None]
+        fallback = [row for row in candidates if row["id"] not in selected
+                    and row.get("frozen_rank") is None and row.get("frozen_valid", True)]
         baseline = [{**row, "frozen_token": [None, 0]} for row in fallback]
         original = {(row["repertoire_id"], row["id"]): row for row in fallback}
         for repertoire_id, row in plan_prioritized_opening_admissions(baseline, consumed, day, limit, miss_reason=miss_reason):

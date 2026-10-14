@@ -6,7 +6,7 @@ import json
 import math
 from zoneinfo import ZoneInfo
 import chess
-from .frozen_maia_math import anchor, card_decisions, represented_reach, greedy_order, content_fingerprint, VERSION
+from .frozen_maia_math import anchor, card_decisions, represented_reach, greedy_order, content_fingerprint, VERSION, READER_VERSION
 from .opening_segmentation import opening_position_key, decision_identity, stable_key
 
 DEFAULT_DEFERRED_LIMIT = 0.01
@@ -397,7 +397,8 @@ def create_plan(snapshot, config, predict=None, provenance=None, *, allow_unscor
         'affected_card_count':len(affected_card_ids),'affected_scenarios':affected_scenarios,
         'unknown_route_mass_card_ids':sorted(row['id'] for row in records if set(row['decisions']) & uncertain_decisions),
         'affected_scored_card_ids':sorted(row['id'] for row in scored if row['id'] in affected_card_ids)}
-    plan = {'version': VERSION, 'target': snapshot['metadata'][0], 'cutoff': snapshot.get('cutoff'),
+    plan = {'version': VERSION, 'required_reader_version': READER_VERSION,
+            'target': snapshot['metadata'][0], 'cutoff': snapshot.get('cutoff'),
             'configuration': config, 'provenance': provenance, 'inventory': records, 'ranks': ranked,
             'decision_evidence': evidence, 'covered_decisions': sorted(covered), 'lineage_diagnostics': lineage_diagnostics,
             'source_fingerprint': source_fingerprint(snapshot), 'input_checksum': stable_key(snapshot),

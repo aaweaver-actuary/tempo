@@ -4437,3 +4437,10 @@ remain in their regular suites; package inventories own new local cases.
 
 `M02 installed Python scheduling producer retains the fixed-time serialized golden contract`
 is independently selected by the producer-parity lane and consumes the installed public package with Python isolated mode.
+
+### Frozen Maia runtime reader and legacy-origin protection
+
+- `backend/tests/test_frozen_opening_order.py`: `test_unranked_legacy_origin_is_protected_but_new_unranked_fallback_remains`, `test_unranked_legacy_origin_stays_protected_with_ordinary_gameplay_boost`, `test_proposal_rechecks_legacy_evidence_and_rejects_forged_miss_reason`, and `test_legacy_unstarted_queue_slot_is_not_permuted` cover fresh-origin protection at fallback, proposal, and queue-restoration boundaries while retaining legitimate fallback.
+- `backend/tests/test_frozen_maia_plan.py`: `test_reader_capability_is_checksum_bound_and_old_or_missing_markers_are_rejected` and `test_capture_uses_explicit_view_key_sources_and_never_falls_back_to_all_columns` cover the v2 reader marker and SELECT-only pagination contract. Model/cache identity remains v1.
+- `scripts/test-frozen-postgres.py` proves real reader-role capture, multiple bounded pages including composite and view keys, queue serving and issuance, legacy remediation admission, restart, and rollback preservation against a uniquely named disposable PostgreSQL instance.
+- `scripts/test-frozen-cli.py` drives the actual CLI against disposable PostgreSQL, Redis, API, and workers through plan, apply, repeat apply, queue issuance, verify, and rollback using separate reader/writer roles and real Maia inference.

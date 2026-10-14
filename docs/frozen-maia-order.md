@@ -229,3 +229,36 @@ study, then removes its resources. It also checks indexed 16-row access over
 35,400 static ranks. That server query measurement is not whole-study latency
 or a before/after speedup claim. The browser proof checks actual displayed study
 and preserves an issued board attempt across replacement.
+
+## Runtime protection and reader compatibility
+
+Frozen rank publication does not turn a legacy-origin card into an eligible
+fallback. Runtime annotation, candidate selection, final writer admission, queue
+serving, and rollback restoration consult current `queue_attempt_origins`
+evidence. Valid post-snapshot cards without legacy origins can still use the
+ordinary fallback. Deferred cards remain after scored ranks, and existing
+issued attempts, reviews, explicit/manual admissions, and verified mandatory
+real-game remediation retain their established behavior.
+
+The plan checksum binds `required_reader_version: frozen-maia-v2`. Model and
+inference-cache identity remain `frozen-maia-v1`; a reader capability change
+does not invalidate Maia results. Apply checks API health before staging and
+again verifies the active target/run. Deploy the v2 reader before following the
+activation steps below. A v1 reader or a plan missing this marker is refused.
+
+Capture uses ordered primary keys discovered through PostgreSQL catalogs for
+base tables. Current views have explicit base-table key mappings, validated
+against their projected columns. Capture fails with the relation name if a
+stable key cannot be established; it does not fall back to a full table scan or
+all-column ordering. Pages remain bounded at 128 rows, and two complete passes
+must agree. The SELECT-only `tempo_reader` role is exercised by
+`backend/.venv/bin/python scripts/test-frozen-postgres.py`.
+
+The full disposable command proof is
+`backend/.venv/bin/python scripts/test-frozen-cli.py`. It creates a unique
+PostgreSQL/Redis Compose project, starts the API and foreground/background
+workers, uses separate reader and writer roles, runs real Maia plan/apply,
+repeats apply, waits for ordinary queue refresh, fetches the actual queue to
+issue its head, verifies the publication, and rolls it back. It removes only
+its own project, volumes, and temporary credentials. Do not point either proof
+at the study installation.

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import json
 from typing import Any, NotRequired, TypedDict
 
+from .. import postgres_store
 from ..postgres_store import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
 from .opening_capacity_frontier import plan_prioritized_opening_admissions
@@ -660,7 +661,7 @@ def requeue(db, day, cid, after, attempt):
         ).fetchone()[0]
     else:
         row = db.execute(
-            _AVAILABLE_ATTEMPT_SQL.replace("SELECT q.id FROM", "SELECT q.position FROM", 1)
+            available_attempt_sql().replace("SELECT q.id FROM", "SELECT q.position FROM", 1)
             + " ORDER BY q.position,q.id LIMIT 1 OFFSET ?",
             (day, max(0, after)),
         ).fetchone()
@@ -717,6 +718,12 @@ _AVAILABLE_ATTEMPT_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=
                         SELECT 1 FROM study_sibling_burials burial
                         WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))"""
 _AVAILABLE_ATTEMPT_SQL += frozen_opening_order.stale_queue_predicate()
+
+def available_attempt_sql() -> str:
+    # Frozen publications are PostgreSQL-authoritative. The optional legacy
+    # exposure sources do not exist in SQLite's recovery compatibility schema.
+    return (_AVAILABLE_ATTEMPT_SQL + frozen_opening_order.legacy_queue_predicate()
+            if postgres_store.configured() else _AVAILABLE_ATTEMPT_SQL)
 
 
 def request_queue_refresh_in_transaction(database: PostgresConnection,

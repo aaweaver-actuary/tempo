@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
 from app.services.frozen_maia_plan import (create_plan, source_fingerprint, DEFAULT_DEFERRED_LIMIT,
                                          LOCALIZED_SCORING_GAPS, LINEAGE_UNCERTAINTY_POLICY)
-from app.services.frozen_maia_math import validate_distribution, content_fingerprint, card_decisions, anchor, VERSION
+from app.services.frozen_maia_math import validate_distribution, content_fingerprint, card_decisions, anchor, VERSION, READER_VERSION
 from app.services.opening_segmentation import stable_key, opening_position_key
 from app.services import frozen_opening_order as order
 from app.database import read_connection, background_connection
@@ -28,6 +28,43 @@ TABLES = {'repertoires':'repertoires','cards':'cards','memberships':'repertoire_
           'blocks':'repertoire_integrity_card_blocks','deleted':'deleted_cards','priorities':'current_repertoire_card_introduction_priorities',
           'generated':'current_repertoire_card_priority_generations','priority_publications':'repertoire_priority_publications',
           'gameplay':'current_gameplay_card_priorities','presented_teaching':'teaching_states'}
+VIEW_KEY_SOURCES = {
+    'current_repertoire_card_introduction_priorities': 'repertoire_card_introduction_priorities',
+    'current_repertoire_card_priority_generations': 'repertoire_card_priority_generations',
+    'current_gameplay_card_priorities': 'gameplay_card_priorities',
+}
+
+
+def _capture_key_columns(database, table):
+    key_source = VIEW_KEY_SOURCES.get(table, table)
+    rows = database.execute_native("""SELECT a.attname
+        FROM pg_catalog.pg_constraint AS pk
+        JOIN pg_catalog.pg_class AS rel ON rel.oid = pk.conrelid
+        JOIN pg_catalog.pg_namespace AS ns ON ns.oid = rel.relnamespace
+        CROSS JOIN LATERAL unnest(pk.conkey) WITH ORDINALITY
+            AS key_col(attnum, key_order)
+        JOIN pg_catalog.pg_attribute AS a
+          ON a.attrelid = rel.oid AND a.attnum = key_col.attnum
+        WHERE pk.contype = 'p'
+          AND ns.nspname = current_schema()
+          AND rel.relname = %s
+          AND rel.relkind IN ('r','p')
+          AND NOT a.attisdropped
+        ORDER BY key_col.key_order""", (key_source,)).fetchall()
+    key_columns = [row[0] for row in rows]
+    if not key_columns:
+        raise ValueError(f'No stable primary key for capture relation {table} (key source {key_source})')
+    if table in VIEW_KEY_SOURCES:
+        projected = {row[0] for row in database.execute_native("""SELECT a.attname
+            FROM pg_catalog.pg_class AS rel
+            JOIN pg_catalog.pg_namespace AS ns ON ns.oid=rel.relnamespace
+            JOIN pg_catalog.pg_attribute AS a ON a.attrelid=rel.oid
+            WHERE ns.nspname=current_schema() AND rel.relname=%s
+              AND rel.relkind IN ('v','m') AND a.attnum>0 AND NOT a.attisdropped""", (table,)).fetchall()}
+        missing = [column for column in key_columns if column not in projected]
+        if missing:
+            raise ValueError(f'Capture view {table} no longer projects its base primary key: {missing}')
+    return key_columns
 
 
 class DockerReadCursor:
@@ -70,14 +107,7 @@ def _capture_once(reader_factory=read_connection):
         snapshot['metadata'] = [dict(database.execute_native('SELECT (SELECT system_identifier::text FROM pg_control_system()) AS cluster_id,(SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,current_database() AS database,current_schema() AS schema,(SELECT MAX(version) FROM tempo_schema_migrations) AS schema_version,(SELECT coverage_maia_elo FROM settings WHERE id=1) AS maia_elo,(SELECT study_only_mode FROM settings WHERE id=1) AS study_only_mode').fetchone())]
     for name, table in TABLES.items():
         with reader_factory() as database:
-            key_rows=database.execute_native("""SELECT usage.column_name FROM information_schema.table_constraints constraint_row
-                JOIN information_schema.key_column_usage usage USING(constraint_catalog,constraint_schema,constraint_name)
-                WHERE constraint_row.table_schema=current_schema() AND constraint_row.table_name=%s
-                  AND constraint_row.constraint_type='PRIMARY KEY' ORDER BY usage.ordinal_position""",(table,)).fetchall()
-            if not key_rows:
-                key_rows=database.execute_native('SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=%s ORDER BY ordinal_position',(table,)).fetchall()
-        if not key_rows: raise ValueError(f'Missing snapshot table {table}')
-        key_columns=[row[0] for row in key_rows]
+            key_columns = _capture_key_columns(database, table)
         ordering=','.join('"'+column+'"' for column in key_columns)
         filters=[]
         if name=='cards': filters.append("content_type='opening'")
@@ -93,10 +123,17 @@ def _capture_once(reader_factory=read_connection):
             statement='SELECT row_to_json(snapshot_row)::text FROM (SELECT * FROM '+table+(' WHERE '+' AND '.join(predicates) if predicates else '')+' ORDER BY '+ordering+' LIMIT ?) snapshot_row'
             with reader_factory() as database:
                 page=[json.loads(row[0]) for row in database.execute(statement,(*last_key,128) if last_key else (128,)).fetchall()]
+            previous_key = last_key
+            for row in page:
+                current_key = tuple(row[column] for column in key_columns)
+                if any(value is None for value in current_key):
+                    raise ValueError(f'Null pagination key returned by capture relation {table}')
+                if previous_key is not None and not current_key > previous_key:
+                    raise ValueError(f'Repeated or nonadvancing pagination key for capture relation {table}')
+                previous_key = current_key
             rows.extend(page)
             if len(page)<128:break
             last_key=tuple(page[-1][column] for column in key_columns)
-            if any(value is None for value in last_key): raise ValueError(f'Nullable pagination key: {table}')
         snapshot[name]=rows
     with reader_factory() as database:
         snapshot['limits']=[dict(row) for row in database.execute('SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) AS daily_limit FROM repertoires r CROSS JOIN settings s WHERE s.id=1').fetchall()]
@@ -242,6 +279,8 @@ def validate_plan(plan):
     body={key:value for key,value in plan.items() if key not in ('checksum','run_id')}
     if stable_key(body) != plan['checksum'] or plan['run_id'] != plan['checksum']: raise ValueError('Plan checksum mismatch')
     if plan['version'] != VERSION: raise ValueError('Incompatible reader contract')
+    if plan.get('required_reader_version') != READER_VERSION:
+        raise ValueError('Plan requires an incompatible or missing frozen-order reader capability')
     if plan.get('complete') != plan.get('probability_complete'):
         raise ValueError('Plan probability completeness is inconsistent')
     policy=plan.get('scoring_policy')
@@ -506,7 +545,7 @@ def main():
             import urllib.request
             with urllib.request.urlopen(args.reader_url.rstrip('/')+'/api/health',timeout=5) as response:
                 health=json.load(response)
-            reader_confirmed=health.get('frozen_opening_reader_version')==VERSION and health.get('frozen_opening_target_id')==args.target and health.get('frozen_opening_active_run')==plan['run_id']
+            reader_confirmed=health.get('frozen_opening_reader_version')==plan['required_reader_version'] and health.get('frozen_opening_target_id')==args.target and health.get('frozen_opening_active_run')==plan['run_id']
         ready=bool(projection and projection[0]=='ready' and not projection[1])
         state=('active' if reader_confirmed else 'applied_reader_confirmation_pending') if ready and consumed==sorted(consumed) else 'applied_queue_refresh_pending'
         print(json.dumps({'state':state,'run_id':plan['run_id'],'stale_cards':stale,'reader_confirmed':reader_confirmed,'queued_unstarted':[row['card_id'] for row in unstarted]}));return
@@ -516,7 +555,7 @@ def main():
     import urllib.request
     with urllib.request.urlopen(args.reader_url.rstrip('/')+'/api/health',timeout=5) as response:
         health=json.load(response)
-    if health.get('frozen_opening_reader_version') != VERSION: raise ValueError('Deployed reader lacks frozen ordering contract')
+    if health.get('frozen_opening_reader_version') != plan['required_reader_version']: raise ValueError('Deployed reader lacks the required frozen ordering capability')
     if health.get('frozen_opening_target_id') != args.target: raise ValueError('Reader and writer point to different database instances')
     # Export exact previous metadata before staging any publication.
     backup=Path(args.plan).with_name('pre-apply-order.json')

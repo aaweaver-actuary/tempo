@@ -422,6 +422,44 @@ def test_lineage_summary_counts_distinct_cards_and_source_lines(tmp_path):
     assert json.loads((tmp_path/'diagnostics.json').read_text())['summary']==summary
 
 
+def test_reader_capability_is_checksum_bound_and_old_or_missing_markers_are_rejected():
+    from app.services.frozen_maia_math import READER_VERSION, VERSION
+    data,config=snapshot()
+    plan=create_plan(data,config,fake_maia,provenance())
+    assert VERSION=='frozen-maia-v1'
+    assert plan['required_reader_version']==READER_VERSION=='frozen-maia-v2'
+    plan_cli().validate_plan(plan)
+    for marker in (None,'frozen-maia-v1'):
+        incompatible=deepcopy(plan)
+        if marker is None:
+            del incompatible['required_reader_version']
+        else:
+            incompatible['required_reader_version']=marker
+        refresh_checksum(incompatible)
+        with pytest.raises(ValueError,match='reader capability'):
+            plan_cli().validate_plan(incompatible)
+
+
+def test_capture_uses_explicit_view_key_sources_and_never_falls_back_to_all_columns():
+    class Cursor:
+        def __init__(self,rows):self.rows=rows
+        def fetchall(self):return self.rows
+    class Catalog:
+        def __init__(self,keys):self.keys=keys;self.calls=[]
+        def execute_native(self,statement,parameters):
+            self.calls.append((statement,parameters))
+            return Cursor([(key,) for key in self.keys])
+    cli=plan_cli()
+    catalog=Catalog(['repertoire_id','generation'])
+    assert cli._capture_key_columns(catalog,'current_repertoire_card_priority_generations')==['repertoire_id','generation']
+    assert catalog.calls[0][1]==('repertoire_card_priority_generations',)
+    assert 'WITH ORDINALITY' in catalog.calls[0][0] and 'information_schema' not in catalog.calls[0][0]
+    missing=Catalog([])
+    with pytest.raises(ValueError,match='No stable primary key.*current_gameplay_card_priorities'):
+        cli._capture_key_columns(missing,'current_gameplay_card_priorities')
+    assert len(missing.calls)==1
+
+
 def test_apply_rejects_unexplained_exclusion_of_an_otherwise_rankable_card():
     data,config=snapshot()
     plan=create_plan(data,config,fake_maia,provenance())

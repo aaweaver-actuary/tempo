@@ -4,7 +4,7 @@ Future ordering implementations must honor active snapshots until explicit retir
 """
 from __future__ import annotations
 import json
-from .frozen_maia_math import content_fingerprint, VERSION
+from .frozen_maia_math import content_fingerprint, READER_VERSION
 from .real_game_feedback import MISS_REASON
 
 SCHEMA = [
@@ -19,7 +19,9 @@ SCHEMA = [
 
 def activation(database, *, lock=False, exclusive=False):
     from ..postgres_store import PostgresConnection
-    suffix = (' FOR UPDATE' if exclusive else ' FOR SHARE') if lock and isinstance(database, PostgresConnection) else ''
+    suffix = (' FOR UPDATE' if exclusive else ' FOR SHARE') if (
+        lock and isinstance(database, PostgresConnection) and not database.read_only
+    ) else ''
     row = database.execute('SELECT run_id,epoch FROM frozen_opening_activation WHERE id=1' + suffix).fetchone()
     return (row[0], int(row[1])) if row else (None, 0)
 
@@ -31,6 +33,7 @@ def annotate(database, candidates):
         return [{**row, 'frozen_token': [None, epoch]} for row in result]
     identifiers = sorted({row.get('card_id', row.get('id')) for row in result})
     ranks = {}
+    legacy_cards = set()
     blocked_memberships = set()
     # Bounded indexed reads; connections and transactions belong to the caller.
     for offset in range(0, len(identifiers), 16):
@@ -39,6 +42,10 @@ def annotate(database, candidates):
             continue
         placeholders = ','.join('?' for _ in page)
         blocked_memberships.update((row[0],row[1]) for row in database.execute('SELECT card_id,repertoire_id FROM repertoire_integrity_card_blocks WHERE card_id IN ('+placeholders+')',tuple(page)).fetchall())
+        legacy_cards.update(row[0] for row in database.execute(
+            'SELECT DISTINCT card_id FROM queue_attempt_origins WHERE legacy=1 AND card_id IN (' + placeholders + ')',
+            tuple(page),
+        ).fetchall())
         captured = database.execute(
             'SELECT * FROM frozen_opening_ranks WHERE run_id=? AND card_id IN (' + placeholders + ')',
             (run_id, *page),
@@ -55,7 +62,8 @@ def annotate(database, candidates):
         row['frozen_token'] = [run_id, epoch]
         ordinal, valid = ranks.get(row.get('card_id', row.get('id')), (None, True))
         row['frozen_rank'] = ordinal
-        row['frozen_valid'] = valid
+        row['frozen_legacy_protected'] = row.get('card_id', row.get('id')) in legacy_cards
+        row['frozen_valid'] = valid and not row['frozen_legacy_protected']
         row['frozen_route_valid'] = (row.get('card_id',row.get('id')),row.get('repertoire_id')) not in blocked_memberships
     return result
 
@@ -67,7 +75,8 @@ def proposal_valid(database, planned):
     if token[0] is None:
         return True
     if planned.get('reason') == MISS_REASON:
-        return True
+        from .real_game_feedback import has_outstanding_real_game_miss
+        return has_outstanding_real_game_miss(database, planned['card_id'])
     return annotate(database, [{'card_id': planned['card_id']}])[0]['frozen_valid']
 
 
@@ -107,13 +116,21 @@ def card_exposed(database, card_id):
     return False
 
 
+def has_legacy_origin(database, card_id: str) -> bool:
+    """Whether history prevents proving that this card has never been shown."""
+    return database.execute(
+        "SELECT 1 FROM queue_attempt_origins WHERE card_id=? AND legacy=1 LIMIT 1",
+        (card_id,),
+    ).fetchone() is not None
+
+
 def stage_run(database, plan, now):
     previous, _ = activation(database)
     existing = database.execute('SELECT plan_checksum FROM frozen_opening_runs WHERE run_id=?', (plan['run_id'],)).fetchone()
     if existing and existing[0] != plan['checksum']:
         raise ValueError('Conflicting run identity')
     database.execute('INSERT INTO frozen_opening_runs(run_id,plan_checksum,plan_json,previous_run_id,created_at,reader_version) VALUES(?,?,?,?,?,?) ON CONFLICT(run_id) DO NOTHING',
-                     (plan['run_id'], plan['checksum'], json.dumps({key: value for key, value in plan.items() if key not in ('inventory','ranks','decision_evidence','covered_decisions','previous_order')}, sort_keys=True), previous, now, VERSION))
+                     (plan['run_id'], plan['checksum'], json.dumps({key: value for key, value in plan.items() if key not in ('inventory','ranks','decision_evidence','covered_decisions','previous_order')}, sort_keys=True), previous, now, READER_VERSION))
     database.execute('INSERT INTO frozen_opening_pending(run_id) VALUES(?) ON CONFLICT(run_id) DO NOTHING', (plan['run_id'],))
 
 
@@ -198,7 +215,9 @@ def restore_queue_changes(database, run_id):
         current = database.execute('SELECT q.card_id,q.position,q.status,c.* FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=? AND q.queue_date=?',(change['queue_id'],change['queue_date'])).fetchone()
         valid = current is not None and current[0]==change['card_id'] and current[1]==change['after_position'] and current[2]=='queued'
         if valid:
-            valid = json.loads(change['definition_json'])=={field:current[field] for field in _ROLLBACK_CONTENT_FIELDS} and not card_exposed(database,change['card_id'])
+            valid = (json.loads(change['definition_json'])=={field:current[field] for field in _ROLLBACK_CONTENT_FIELDS}
+                     and not card_exposed(database,change['card_id'])
+                     and not has_legacy_origin(database,change['card_id']))
         if valid:safe[change['queue_id']]=change
         else:conflicts.append(change['queue_id'])
     # A surviving half of a swap must never displace a protected occupant.
@@ -263,3 +282,33 @@ def stale_queue_predicate():
         AND NOT EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id)
         AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
                        WHERE origin.card_id=c.id AND origin.issued_as_head=1)) """
+
+
+def legacy_queue_predicate():
+    """Hold uncertain, unstarted legacy openings while a frozen run is active."""
+    from .real_game_feedback import outstanding_miss_sql
+
+    mandatory_miss = outstanding_miss_sql(
+        columns="1", additional_where="AND card.id=c.id LIMIT 1",
+    )
+    miss_reason = MISS_REASON.replace("'", "''")
+    return """ AND NOT (
+        c.content_type='opening'
+        AND EXISTS(SELECT 1 FROM frozen_opening_activation active
+                   WHERE active.id=1 AND active.run_id IS NOT NULL)
+        AND EXISTS(SELECT 1 FROM queue_attempt_origins legacy_origin
+                   WHERE legacy_origin.card_id=c.id AND legacy_origin.legacy=1)
+        AND COALESCE(q.admission_kind,'')<>'explicit'
+        AND NOT (q.gameplay_priority_reason='""" + miss_reason + "' AND EXISTS(" + mandatory_miss + "))" + """
+        AND NOT EXISTS(SELECT 1 FROM reviews reviewed WHERE reviewed.card_id=c.id)
+        AND NOT EXISTS(SELECT 1 FROM opening_evidence_attempts attempt WHERE attempt.card_id=c.id)
+        AND NOT EXISTS(SELECT 1 FROM teaching_states taught WHERE taught.card_id=c.id)
+        AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins exposed_origin
+            WHERE exposed_origin.card_id=c.id AND
+              (exposed_origin.issued_as_head=1 OR exposed_origin.attempt_failed<>0
+               OR exposed_origin.review_result_json IS NOT NULL OR exposed_origin.last_status='complete'))
+        AND NOT EXISTS(SELECT 1 FROM daily_queue exposed_queue
+            WHERE exposed_queue.card_id=c.id AND
+              (exposed_queue.attempt_failed<>0 OR exposed_queue.review_result_json IS NOT NULL
+               OR exposed_queue.status='complete' OR exposed_queue.attempt_state NOT IN ('clean','unstarted')))
+    ) """

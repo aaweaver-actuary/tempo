@@ -4435,6 +4435,16 @@ def test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma():
         postgres_sql("PRAGMA foreign_keys = ON")
 
 
+def test_postgres_cutover_translates_real_game_instant_for_frozen_serving_predicate():
+    translated = postgres_sql(
+        "SELECT 1 WHERE real_game_instant(review.reviewed_at) >= "
+        "real_game_instant(event.played_at)"
+    )
+    assert "CAST(review.reviewed_at AS TIMESTAMPTZ)" in translated
+    assert "CAST(event.played_at AS TIMESTAMPTZ)" in translated
+    assert "real_game_instant" not in translated
+
+
 def test_postgres_cutover_conflict_target_does_not_include_null_ordering():
     statement = postgres_sql(
         "INSERT INTO queue_projections(queue_date,state) VALUES(?,'refreshing') "
