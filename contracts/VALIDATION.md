@@ -1,5 +1,7 @@
 # M02-B delivery evidence — October 14, 2026
 
+## Historical foundation evidence (3940831d)
+
 ## Scope and source binding
 
 This change adds contract artifacts and reference consumers only. It changes no production routes, transaction implementations, workers, migrations, live roles/data, hosted workflows, Actions settings or protection. `tests/REGRESSIONS.md` gains a compatibility link to the owning registry. Root manifests, workspace files and toolchains remain with #263/#201.
@@ -40,6 +42,100 @@ Review identified the two-pending-submission and completed-evidence replay gaps 
 
 Legacy mapping: `backend/app/study_contracts.py` exposes similar exercise/answer shapes but different endpoint envelopes; `backend/app/models.py::ReviewRequest` contains legacy optional issuance fields and durable-payload rules; `backend/app/review_conflicts.py` uses HTTP exceptions; `backend/app/game_analysis_publication.py` registers commands and writes through application persistence; `app/lib/maia.worker.ts` uses browser message IDs and supersession rather than this job/provenance/cancellation contract. Existing opening probability contracts import chess/application helpers. These are useful foundations, not verified v1 producers.
 
-GitHub readback reports **Actions disabled**. No hosted exact-candidate plan/check execution is claimed. The PR remains draft and **not merge-qualified**; enabling Actions or changing checks/protection is outside this task. No unrelated full, browser, Redis, model, application startup or live database check was run. Current monorepo checks remain unchanged; these focused proofs do not represent their complete gate.
+At the original handoff, Actions was disabled and the PR was draft. No hosted run was claimed. Those observations describe hosted/administrative state, not an engineering defect; the repair status below separates these dimensions. No unrelated full, browser, Redis, model, application startup or live database check ran. Current monorepo checks remain unchanged.
 
 Qualification diagnostics are preserved outside the isolated checkout before cleanup. Task-owned PostgreSQL and temporary restricted environments are removed. The isolated clone can be removed after pushed-source, evidence and activity checks; shared caches and all live study resources remain intact.
+
+
+## PR #271 repair evidence
+
+Repaired source: **665bb63c27535c4d30c9634e812e755fcdbfd6d0**, clean tree.
+Policy compatibility is commit `31c58eab`; advisory/timestamp semantics and
+regressions are commit `665bb63c`. Subsequent handoff-only edits do not change
+package, schema, dependency, example, test or qualification inputs.
+
+### Findings and reproduction
+
+- Nested advice: shared `assertAdvisoryPublicationSemantics` is invoked for both
+  AdvisoryPublication and IntelligenceAvailability, preserving availability and
+  workspace checks. It covers every existing advisory invariant and inclusive
+  1e-9 normalization tolerance. New paired fixtures are structurally valid before
+  semantic rejection; no malformed record enters the positive producer inventory.
+- Policy identity: `suggested_order` requires keyword-only expected_policy_id and
+  expected_policy_revision. Only exact matches use advice, preserving list order.
+  Incompatible policies use the existing sorted/deduplicated capacity-bound fallback.
+- Time: all five package-local check_timestamp validators enforce complete lexical,
+  calendar, clock and offset bounds; Python aware datetime comparisons remain.
+  TypeScript timestampMicroseconds uses Gregorian ordinals and bigint microseconds,
+  with no Date/millisecond/float-epoch chronology path or new dependency. Supplied
+  strings remain untouched, even for offset-equivalent instants.
+
+Before fixes, selected Python timestamp regressions reproduced **15 failures**
+for offset minutes 60/99, with 35 passing controls. Six policy-signature regressions
+failed against the old reference, and a separate old-behavior probe demonstrated
+wrong policy ID/revision still selecting card-b instead of deterministic card-a.
+Selected TypeScript cases reproduced **10 failures / 208 passing controls** for
+nested invalid advice and microsecond chronology. The initial repair iteration
+also found Python 3.14 accepting hour 24; explicit clock bounds corrected it.
+Failed exploratory runs are retained as failure evidence, not passes.
+
+### Final focused acceptance
+
+Observed environment: macOS arm64; Node **26.10.0**, npm **11.19.1**, uv **0.12.22**,
+TypeScript **5.9.3**, AJV **8.20.0**, Pydantic **2.12.5**, pytest **9.1.1**,
+jsonschema **4.25.1**, build **1.4.0**, hatchling **1.27.0**, Ruff **0.14.0**.
+Package builds were reinstalled non-editably after source changes. No root
+PYTHONPATH, editable package leakage or root dependency installation was used.
+
+| Command from checkout root | Actual result | Wall time |
+| --- | --- | ---: |
+| `contracts/.venv/bin/python contracts/export_schemas.py --check` | 28 authoritative schema exports match; schema patterns unchanged, regeneration unnecessary | 0.232 s |
+| `contracts/.venv/bin/python contracts/check_dependencies.py` | Five declared package boundaries pass | 0.039 s |
+| `contracts/.venv/bin/python contracts/run_tests.py --typescript` | **529 Python + 336 TypeScript pass**, zero skips/cancellations | 4.909 s |
+| `contracts/.venv/bin/python contracts/qualify_artifacts.py --python 3.12 --report contracts/qualification/pr271-repair-python312.json` | CPython **3.12.12**, **470 installed tests pass**, five wheel/sdist builds and unchanged metadata-only synthetic patch producer/consumer proof | 5.369 s |
+| Same qualification with `--python 3.14 --report contracts/qualification/pr271-repair-python314.json` | CPython **3.14.8**, **470 installed tests pass**, same restricted proof | 5.725 s |
+| `uvx --from ruff==0.14.0 ruff check contracts` | Pass | 0.087 s |
+| `uvx --from ruff==0.14.0 ruff format --check contracts` | Pass; 70 Python files | 0.024 s |
+| `git diff --check` / `git diff --cached --check` | Pass | 0.013 / 0.012 s |
+
+Python regular scopes: Learning 116, Content 99, Game Evidence 64, Intelligence 99,
+Analysis Jobs 92, shared contract tests 59. Restricted reports record every
+installed identity, actual runtime, stage output/time and artifact hash. Each
+executes all **185 package-local timestamp cases** (37 per package), exact policy
+checks, advisory controls/tolerance/chronology and both workers' provenance cases.
+Both restricted invocations verify temporary resource removal.
+
+TypeScript executes 78 unchanged producer records, 36 semantic negatives and
+222 additional timestamp/advisory cases from the registered consumer.test.ts
+entry point. Outcomes are independently specified in each language. Every semantic
+negative is checked for structural schema acceptance before semantic rejection.
+The shared Python negative test's historical name is not counted as TypeScript
+execution; the independent Node output proves those cases separately.
+
+### Reused evidence and separate status statements
+
+- **Technical implementation/review status:** all three reported findings are
+  fixed and the specified local acceptance matrix passes. No known scoped defect
+  or required local-validation gap remains; human review remains pending.
+- **Hosted qualification:** no hosted run is claimed. Actions was read back as
+  disabled; Actions/protection/workflow settings were untouched. Missing hosted
+  execution is not the remaining engineering blocker for this bounded repair.
+- **Administrative merge status:** PR #271 was observed draft, with GitHub reporting
+  MERGEABLE and no status-check executions. Draft/ready state remains unchanged.
+  No broader protection/ruleset conclusion or merge authorization is inferred.
+- **Production conformance:** production adapters, service extraction, deployed
+  database isolation and runtime enforcement remain unimplemented/uncertified by
+  this foundation; they belong to reconstruction implementation owners.
+
+The original **32-case PostgreSQL ownership** log is available at
+`test-results/issue-264-contracts-20261014/postgres-final.log`. Its source binding
+is 3940831d; hashes of all five fixture/test/requirements inputs were checked
+against the original preservation record and match. The old log also records
+owned-container cleanup. That unchanged-scope evidence is reused, not rerun or
+represented as a fresh repair result. No PostgreSQL, browser, Redis, model, live
+database, migration, deployment or full-product suite ran for this repair.
+
+New diagnostics are preserved outside the disposable checkout under
+`test-results/pr271-contract-repair-20261014`, including baseline failures, actual
+toolchains, acceptance logs/summary, both existing qualification JSON reports and
+unchanged PostgreSQL-input verification. Live study resources are untouched.
