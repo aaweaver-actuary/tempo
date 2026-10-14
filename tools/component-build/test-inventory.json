@@ -165,6 +165,7 @@
       "tests/unit/ci-reliability-regressions.test.ts",
       "tests/unit/defense-engine-smoke-regressions.test.ts",
       "tests/unit/maia-container-parity-regressions.test.ts",
+      "tests/unit/frozen-maia-inference-regressions.test.ts",
       "tests/unit/performance-report-regressions.test.ts",
       "tests/unit/postgres-test-speedups-regressions.test.ts",
       "tests/unit/queue-readiness-diagnostics-regressions.test.ts",
