@@ -25,21 +25,28 @@ export function validateControlledUnitInventory(registeredFiles, directory = roo
 }
 const caseIdentity = (file, title, directory) => `${resolve(directory, file)}|${title}`;
 
-export function verifyControlledUnitResults(report, expected, files, directory = root) {
-  if (!report?.success || !Array.isArray(report.testResults) || report.numFailedTestSuites || report.numFailedTests)
+export function verifyControlledUnitResults(report, expected, files, directory = root, { nameFilter } = {}) {
+  const namePattern = nameFilter === undefined ? undefined : new RegExp(nameFilter);
+  if (report?.success !== true || !Array.isArray(report.testResults) ||
+      ["numFailedTestSuites", "numFailedTests", "numPassedTests", "numTotalTests", "numPendingTests", "numTodoTests"]
+        .some(counter => !Number.isInteger(report[counter]) || report[counter] < 0) ||
+      report.numFailedTestSuites || report.numFailedTests)
     throw new Error("Invalid or failed controlled unit report");
   const reportedFiles = report.testResults.map(file => file.name).sort();
   if (JSON.stringify(reportedFiles) !== JSON.stringify(files.map(file => resolve(directory, file)).sort()))
     throw new Error("Missing/duplicate/unexpected controlled unit result files");
   const selected = new Set(expected);
   const assertions = report.testResults.flatMap(file => file.assertionResults.map(test => ({
-    file: file.name, title: test.fullName, status: test.status,
+    // Vitest collection/filtering use " > "; its JSON reporter's fullName uses spaces.
+    file: file.name, title: Array.isArray(test.ancestorTitles) && typeof test.title === "string"
+      ? [...test.ancestorTitles, test.title].join(" > ") : test.fullName, status: test.status,
   })));
   const identities = assertions.filter(test => selected.has(caseIdentity(test.file, test.title, directory)));
   const excluded = assertions.filter(test => !selected.has(caseIdentity(test.file, test.title, directory)));
   if (!expected.length || selected.size !== expected.length ||
       JSON.stringify(identities.map(test => caseIdentity(test.file, test.title, directory)).sort()) !== JSON.stringify([...expected].sort()) ||
-      identities.some(test => test.status !== "passed") || excluded.some(test => !["pending", "skipped"].includes(test.status)) ||
+      identities.some(test => test.status !== "passed" || (namePattern && !test.title.match(namePattern))) ||
+      excluded.some(test => !namePattern || test.title.match(namePattern) || !["pending", "skipped"].includes(test.status)) ||
       report.numPassedTests !== identities.length || report.numTotalTests !== assertions.length ||
       report.numPendingTests !== excluded.length || report.numTodoTests)
     throw new Error("Controlled unit suite failed, skipped selected cases, or returned incomplete cases");
@@ -80,7 +87,7 @@ export function runControlledUnitSuite(options = {}) {
     const reportPath = join(reports, "vitest.json");
     runNode("execution", [vitest, "run", "--config", config, ...filters, "--reporter=default", "--reporter=json", "--outputFile=" + reportPath]);
     const report = JSON.parse(readFileSync(reportPath, "utf8"));
-    const identities = verifyControlledUnitResults(report, expected, files, directory);
+    const identities = verifyControlledUnitResults(report, expected, files, directory, { nameFilter: options.nameFilter });
     summary = { lane: "controlled-browser-unit", success: true, passed: identities.length, failed: 0,
       skipped: 0, todo: 0, excluded: report.numPendingTests, selectedFiles: files,
       selectedIdentities: expected, executedIdentities: identities, commands, stages };

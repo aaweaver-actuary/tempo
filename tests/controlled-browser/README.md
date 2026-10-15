@@ -35,8 +35,10 @@ configuration and sanitized runner, rather than the generic frontend configurati
 The unit command accepts the existing `[file-substring] [test-name]` filters. It
 builds chess-line once, then expands parameterized case names through executed
 collection and requires the selected identities to match passing results exactly.
-Cases excluded by an explicit name filter are accounted separately from selected
-cases; skipping a selected case fails. Unit case collection imports frontend
+Only names outside an explicit regex filter can be counted as deliberate exclusions;
+unfiltered skips, matching skips, selected TODOs and focused `.only` declarations fail.
+Nested suite names use Vitest's ` > ` separator for filtering and identity comparison,
+including expanded parameterized cases. Unit case collection imports frontend
 consumers and therefore needs the compiled chess-line prerequisite. File listing
 does not compile it. No hosted workflow is introduced here.
 

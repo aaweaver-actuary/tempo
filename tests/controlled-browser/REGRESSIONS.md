@@ -25,6 +25,20 @@ Named families in the owning unit suite:
   exact selected cases, and pre-build invalid file rejection. The alias and missing
   lane regressions failed against the merged implementation before integration.
 
+- `controlled_browser_unit_accounting_rejects_unfiltered_skips_omitted_by_collection`,
+  `controlled_browser_unit_accounting_excludes_only_names_outside_the_explicit_regex`,
+  and `controlled_browser_unit_runner_rejects_skips_omitted_between_collection_and_execution`:
+  a skip omitted by collection cannot become an exclusion without a nonmatching
+  explicit filter. The injectable runner proves report cleanup and absence of a
+  successful summary on rejection; legitimate filtered exclusions remain separate.
+- `controlled_browser_unit_accounting_reconciles_nested_and_parameterized_collection_names`,
+  `controlled_browser_unit_accounting_rejects_failed_todo_zero_and_malformed_results`,
+  `controlled_browser_unit_vitest_collection_preserves_nested_parameterized_filters`,
+  and `controlled_browser_unit_configuration_rejects_focused_tests_and_suites`:
+  exact expanded identities, native Vitest nested-name matching, strict aggregate
+  counters and nonzero selected passes. Temporary fixtures use the production
+  configuration and installed Vitest; both test and suite `.only` declarations fail.
+
 - `controlled_browser_unexpected_api_request_fails_without_live_fallback` and
   `controlled_browser_rejected_traffic_is_fatal_even_if_application_catches_*`:
   origin/method/path/query/body mismatches, duplicate query fields, malformed bodies,

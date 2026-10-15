@@ -74,6 +74,10 @@ New tooling regressions are owned by [REGRESSIONS.md](REGRESSIONS.md).
 The controlled-browser entry delegates to its owning Node runner/configuration,
 with a sanitized environment, one chess-line build and exact selected case accounting.
 Its local file discovery is authoritative; the compatibility index must agree.
+Browser execution is imported only when that lane runs. Generic lanes also work
+in minimal repositories without browser modules. Synchronous inventory validation
+allows an absent browser lane only when both its owning directory and registration
+are absent; a present lane still requires exact, nonempty ownership.
 `controlled-browser --list` reads files only. Production native/visual execution
 uses `npm run test:ui-isolated`; see the [supported browser lane](../../tests/controlled-browser/README.md).
 
