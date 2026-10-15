@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parent
 PACKAGES = (
@@ -129,7 +130,7 @@ def main():
         ]
         execute(
             ["uv", "pip", "install", "--python", python, "--no-deps", *wheels],
-            "install 1.0.0 wheels",
+            "install captured contract wheels",
         )
         shutil.copy2(ROOT / "conftest.py", restricted / "conftest.py")
         shutil.copy2(ROOT / "pytest.ini", restricted / "pytest.ini")
@@ -166,26 +167,33 @@ def main():
             if not baseline[name]:
                 raise RuntimeError("zero patch compatibility fixtures")
             (restricted / name / "baseline.json").write_text(json.dumps(baseline[name]))
+        versions = {}
+        patches_by_package = {}
         for name in PACKAGES:
             namespace = "tempo_" + name.replace("-", "_") + "_contracts"
             project = restricted / name / "pyproject.toml"
+            version = tomllib.loads(project.read_text())["project"]["version"]
+            major, minor, patch = map(int, version.split("."))
+            patch_version = f"{major}.{minor}.{patch + 1}"
+            versions[name] = version
+            patches_by_package[name] = patch_version
             project.write_text(
-                project.read_text().replace('version = "1.0.0"', 'version = "1.0.1"')
+                project.read_text().replace(f'version = "{version}"', f'version = "{patch_version}"')
             )
             init = restricted / name / "src" / namespace / "__init__.py"
-            init.write_text(init.read_text().replace('"1.0.0"', '"1.0.1"'))
+            init.write_text(init.read_text().replace(f'"{version}"', f'"{patch_version}"'))
             execute(
                 [python, "-m", "build", "--wheel", "--no-isolation"],
                 name + " synthetic patch wheel",
                 cwd=restricted / name,
             )
         patches = [
-            str(next((restricted / name / "dist").glob("*1.0.1*.whl")))
+            str(next((restricted / name / "dist").glob("*" + patches_by_package[name] + "*.whl")))
             for name in PACKAGES
         ]
         execute(
             ["uv", "pip", "install", "--python", python, "--no-deps", *patches],
-            "install synthetic 1.0.1 wheels",
+            "install synthetic metadata-only next-patch wheels",
         )
         for name in PACKAGES:
             patch_output = execute(
@@ -200,7 +208,7 @@ def main():
 from pathlib import Path
 from {namespace} import v1
 import {namespace}
-assert {namespace}.__version__ == "1.0.1"
+assert {namespace}.__version__ == {patches_by_package[name]!r}
 root=Path({str(restricted / name)!r})
 spec=importlib.util.spec_from_file_location("consumer",root/"examples/consumer.py")
 consumer=importlib.util.module_from_spec(spec);spec.loader.exec_module(consumer)
@@ -215,10 +223,10 @@ print(str(len(records))+" baseline producer fixtures consumed by synthetic patch
 """
             execute(
                 [python, "-I", "-c", check_script],
-                name + " 1.0.0 producer to 1.0.1 consumer",
+                name + " " + versions[name] + " producer to " + patches_by_package[name] + " consumer",
             )
         report["compatibility"] = (
-            "1.0.0 producer -> synthetic 1.0.1 consumer; patch producer output identical to baseline; wire v1 only"
+            "captured artifacts -> synthetic next-patch consumers; unchanged v1 producer output and schemas; no v2 patch claim"
         )
     report["temporary_resources_removed"] = True
     args.report.parent.mkdir(parents=True, exist_ok=True)

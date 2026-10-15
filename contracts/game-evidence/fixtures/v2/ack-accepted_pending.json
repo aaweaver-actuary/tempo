@@ -1,0 +1,14 @@
+{
+  "model": "EvidenceAcknowledgement",
+  "payload": {
+    "contract_version": 2,
+    "workspace_id": "workspace-a",
+    "delivery_id": "delivery-a",
+    "evidence_id": "evidence-a",
+    "evidence_revision": 1,
+    "status": "accepted_pending",
+    "accepted_obligation_ids": [],
+    "learning_revision": null,
+    "reason": "pending_or_failed"
+  }
+}
