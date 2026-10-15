@@ -1,4 +1,4 @@
-import { realpathSync, readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
+import { realpathSync, readFileSync, readdirSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -12,6 +12,16 @@ export function validateInventory() {
   if (new Set(declared).size !== declared.length || declared.sort().join() !== actual.sort().join()) throw new Error("Missing/duplicate test ownership; update test-inventory.json");
   const runnerFiles = readdirSync(resolve(root, "tests/runner")).filter(name => /\.test\.mjs$/.test(name)).map(name => "tests/runner/" + name);
   if (runnerFiles.sort().join() !== [...inventory.lanes.runners].sort().join()) throw new Error("Missing runner test ownership");
+  // Minimal repositories may omit this lane entirely. Owning files always require registration.
+  const controlledDirectory = "tests/controlled-browser/unit";
+  if (existsSync(resolve(root, controlledDirectory)) || Object.hasOwn(inventory.lanes, "controlled-browser")) {
+    const controlledFiles = readdirSync(resolve(root, controlledDirectory)).filter(name => name.endsWith(".test.ts"))
+      .map(name => controlledDirectory + "/" + name).sort();
+    const registered = inventory.lanes["controlled-browser"];
+    if (!controlledFiles.length || !Array.isArray(registered) || new Set(registered).size !== registered.length ||
+        JSON.stringify([...registered].sort()) !== JSON.stringify(controlledFiles))
+      throw new Error("Missing/duplicate/unexpected controlled unit ownership; update test-inventory.json");
+  }
   return { unitFiles: actual.length, runnerFiles: runnerFiles.length };
 }
 export function selectFiles(lane, filter) {
@@ -24,6 +34,10 @@ export function runLane(lane, filter, nameFilter) {
   console.log(JSON.stringify({ inventory: validateInventory() }));
   const files = selectFiles(lane, filter);
   console.log(JSON.stringify({ lane, selectedFiles: files }));
+  if (lane === "controlled-browser") {
+    return import("../../tests/controlled-browser/test-unit.mjs")
+      .then(({ runControlledUnitSuite }) => runControlledUnitSuite({ files, nameFilter }));
+  }
   if (lane === "runners") {
     runNodeFiles(files, nameFilter, { cwd: root, lane });
     return;
@@ -49,7 +63,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     } else if (argumentsList.includes("--list")) {
       const [lane, filter] = argumentsList.filter(argument => argument !== "--list");
       console.log(JSON.stringify({ inventory: validateInventory(), lane, selectedFiles: selectFiles(lane, filter) }));
-    } else runLane(process.argv[2], process.argv[3], process.argv[4]);
+    } else await runLane(process.argv[2], process.argv[3], process.argv[4]);
   }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }

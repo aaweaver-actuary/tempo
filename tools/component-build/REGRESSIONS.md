@@ -16,3 +16,10 @@ working directories and discovery without setup.
 
 `tests/boundaries.test.mjs` retains the #270 AST/dependency, public API, inventory,
 package prerequisite and structured Node reporter protections unchanged.
+
+The same file owns `M02 unrelated lanes execute without controlled browser modules`,
+`M02 controlled browser inventory distinguishes absent lanes from broken ownership`,
+and `M02 controlled browser dispatch awaits and catches asynchronous failures`.
+These preserve frontend/integration build ordering and runner independence without
+browser dependencies, reject missing/empty/duplicate/stale registrations, and prove
+lazy browser dispatch completes or exits nonzero on import/execution failure.
