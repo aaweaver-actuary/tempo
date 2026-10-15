@@ -31,7 +31,7 @@
      { name = "tempo-scheduling", directory = "../packages/scheduling" },
  ]
 
-@@ -231,6 +233,20 @@
+@@ -249,6 +251,20 @@
  ]
 
  [[package]]
@@ -54,7 +54,7 @@
  source = { directory = "../packages/scheduling" }
 --- a/backend/requirements-test.txt
 +++ b/backend/requirements-test.txt
-@@ -4,3 +4,4 @@
+@@ -6,3 +6,4 @@
 
  # Transitional assembly: install the declared package, not its source via PYTHONPATH.
  ./packages/scheduling
@@ -73,7 +73,7 @@
  COPY public/data/tactics-packs ./public/data/tactics-packs
 --- a/components.json
 +++ b/components.json
-@@ -709,6 +709,78 @@
+@@ -743,6 +743,89 @@
          "databases": [],
          "migrations": []
        }
@@ -123,7 +123,8 @@
 +        {
 +          "owner": "learning-review-application",
 +          "kind": "python",
-+          "command": "uv run --locked --no-editable python -m pytest tests",
++          "cwd": "services/learning/application",
++          "command": "python -m pytest tests -q",
 +          "inputs": [
 +            "tests"
 +          ]
@@ -131,9 +132,18 @@
 +        {
 +          "owner": "learning-review-application",
 +          "kind": "postgres",
-+          "command": "python integration/run_postgres.py",
++          "cwd": ".",
++          "command": "python services/learning/application/integration/run_postgres.py",
 +          "inputs": [
-+            "integration"
++            "services/learning/application/integration",
++            "backend/app",
++            "backend/migrations",
++            "backend/requirements.txt",
++            "scripts/apply_postgres_migrations.py",
++            "scripts/provision_postgres_roles.py",
++            "scripts/check_postgres_training_transition.py",
++            "scripts/check_postgres_daily_study_dispatch.py",
++            "packages/scheduling"
 +          ]
 +        }
 +      ],
@@ -148,7 +158,8 @@
 +        "authority": "#224 application increment; legacy gateway owns transaction",
 +        "databases": [],
 +        "migrations": []
-+      }
++      },
++      "testInventory": "REGRESSIONS.md"
      }
-   ]
- }
+   ],
+   "suites": [

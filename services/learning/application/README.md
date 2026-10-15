@@ -67,8 +67,12 @@ is running; durable queue intent remains asserted. This proves the application
 seam, not broker-free production delivery or independent service authorization.
 
 D owns initial shared manifest/toolchain reconciliation. `registration.patch`
-contains only this component's exact registration and dependency/install additions,
-to apply after that baseline. Until applied, install the package explicitly as above.
+targets D's published #277 baseline `cbc12f77b114c60e91a91d1f9d4b8cb929f4153f`,
+with explicit repository-relative suite cwd and local regression inventory. It
+contains only B's registration and dependency/install additions, to apply after
+that baseline merges. B's owning native runner preserves a JUnit path supplied
+through `PYTEST_ADDOPTS`, including D's structured executed-case reporting.
+Until applied, install the package explicitly as above.
 #224 remains open for thin HTTP composition, essential worker/runtime isolation;
 #194 owns broker-independent foreground delivery. Domain database cutover and full
 production wire-v1 adoption are not delivered by this library.

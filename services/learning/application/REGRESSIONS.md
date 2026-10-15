@@ -16,7 +16,9 @@ ordinary evidence/history/schedule/receipt/queue effects, response loss and logi
 retry, native competing connections, stage failures, handled savepoint conflict,
 stale/deleted/archived distinctions, optional successor failures/lock contention,
 connection termination with rollback and fresh-process replay, and active/inactive
-frozen reader constraints. It never accepts a pre-existing server/database URL.
+frozen reader constraints. It never accepts a pre-existing server/database URL. The unmodified D component
+selector also executes these same 43 pure and 24 native identities in the
+disposable combined context; its externally supplied JUnit receipt is preserved.
 
 Existing backend characterization remains in its regular suite: scheduling review
 application/store, prepared review continuation, queue attempt recovery/issuance,

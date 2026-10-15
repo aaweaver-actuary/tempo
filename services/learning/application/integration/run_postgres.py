@@ -3,10 +3,12 @@ from pathlib import Path
 import json
 import os
 import secrets
+import shlex
 import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as xml
 
 ROOT = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
@@ -48,7 +50,7 @@ def main():
                 if time.monotonic() > deadline:
                     raise RuntimeError("Owned PostgreSQL TCP endpoint did not become ready") from None
                 time.sleep(.1)
-        sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "backend")]
+        sys.path[:0] = [str(ROOT), str(ROOT / "scripts"), str(ROOT / "backend")]
         from apply_postgres_migrations import apply_migrations
         from provision_postgres_roles import provision
         apply_migrations(admin)
@@ -64,14 +66,33 @@ def main():
             TEMPO_TEST_INSTANCE="disposable", TEMPO_POSTGRES_POOL_SIZE="8",
             TEMPO_REDIS_URL="redis://127.0.0.1:1/0",
             PYTHONPATH=os.pathsep.join((str(ROOT/"backend"),str(ROOT/"scripts"))))
+        # D's owning-suite runner supplies its receipt path through pytest's
+        # standard environment option. Preserve it, and retain our own copy.
+        extra_options = shlex.split(os.environ.get("PYTEST_ADDOPTS", ""))
+        external_junit = None
+        for index, option in enumerate(extra_options):
+            if option.startswith(("--junitxml=", "--junit-xml=")):
+                external_junit = Path(option.split("=",1)[1]).resolve()
+            elif option in {"--junitxml", "--junit-xml"} and index+1 < len(extra_options):
+                external_junit = Path(extra_options[index+1]).resolve()
+        junit = external_junit or report_directory/"native.xml"
+        report_option = [] if external_junit else ["--junitxml="+str(junit)]
         result = subprocess.run([sys.executable,"-m","pytest","-c",str(HERE.parent/"pyproject.toml"),
-            str(HERE/"test_postgres.py"),"-v","--tb=short","--junitxml="+str(report_directory/"native.xml")],
+            str(HERE/"test_postgres.py"),"-v","--tb=short",*report_option],
             env=environment, cwd=ROOT, capture_output=True,text=True)
         (report_directory/"native.log").write_text(result.stdout + result.stderr)
         print(result.stdout)
         if result.returncode:
             print(result.stderr)
         returncode = result.returncode
+        if junit.exists():
+            if external_junit:
+                (report_directory/"native.xml").write_bytes(junit.read_bytes())
+            cases = list(xml.parse(junit).iter("testcase"))
+            if not cases or any(case.find(tag) is not None for case in cases for tag in ("failure","error","skipped")):
+                returncode = returncode or 1
+        else:
+            returncode = returncode or 1
     finally:
         if started:
             owner = docker("inspect",identity,"--format",'{{index .Config.Labels "tempo.owner"}}').stdout.strip()
