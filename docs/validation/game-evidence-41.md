@@ -7,14 +7,14 @@ source-bound report fixtures, durable jobs and atomic delivery intent. It never
 imports backend/Learning implementations or accesses another domain's database.
 
 The branch is a genuine dependency stack on **PR #281**, B's evidence-v2 contract
-at `f614e122cb1dcc7d73a3109779f08447b9f5916e`. This PR changes no shared contracts.
+at `110717f322cfe7142e73deae3df12b1b2c2ed2c8`. This PR changes no shared contracts.
 The producer explicitly consumes contract artifact 2.0.0 / wire v2, Content
 1.0.0 / wire v1 and chess-core 0.1.0. Learning/scheduling remain their own owners.
 The original main baseline is `f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4`.
 
 ## Exact final development evidence
 
-Tested implementation revision: `8d6845e4de5adf132f2333b5c0b55c02b7b5481b`.
+Tested implementation revision: `a4a81863ee4b7b0b4095f7298f30236dc2db750c`.
 The handoff documentation added afterward does not alter the package, dependency,
 fixture, runner, manifest or toolchain inputs. The adjacent JSON records source
 hashes and exact artifact identities; local raw evidence is retained outside the
@@ -22,11 +22,11 @@ checkout under `test-results/game-evidence-41/`.
 
 Executed from the isolated checkout (Python 3.14.8, Node 26.10.0):
 
-- `TEMPO_COMPONENT_PYTHON=/Users/andy/tempo/.dev-copies/game-evidence-41/services/game-evidence/.venv/bin/python node tools/component-build/test-lane.mjs --component game-evidence`: **27 unit + 23 native PostgreSQL cases passed**, zero failures/skips/TODOs. This is the actual tracked component selection, including JUnit case identities. Unit suite 0.60s; native tests 12.00s; native setup/execution/verified teardown 13.80s.
-- `contracts/.venv/bin/python -m pytest -c contracts/pytest.ini contracts/game-evidence/tests contracts/content-publication/tests -q --junitxml=/Users/andy/tempo/test-results/game-evidence-41/final-contracts.xml`: **187 passed**, 0.92s. A separate contract-only environment installed the declared schema-test dependencies and the two affected artifacts. Contract source remained B's pinned input.
-- `UV_CACHE_DIR=/Users/andy/tempo/test-results/game-evidence-41/uv-cache services/game-evidence/.venv/bin/python services/game-evidence/integration/qualify_artifacts.py /Users/andy/tempo/test-results/game-evidence-41/qualified-artifacts`: **27 cases passed in each of four clean installs**: wheel and source distribution on Python 3.12 and 3.14. CLI startup and installed migration resources passed; unrelated implementation source was absent.
+- `TEMPO_COMPONENT_PYTHON=/Users/andy/tempo/.dev-copies/game-evidence-41/services/game-evidence/.venv/bin/python node tools/component-build/test-lane.mjs --component game-evidence`: **27 unit + 23 native PostgreSQL cases passed**, zero failures/skips/TODOs. This is the actual tracked component selection, including JUnit case identities. Unit suite 0.60s; native tests 11.62s; native setup/execution/verified teardown 13.37s.
+- `contracts/.venv/bin/python -m pytest -c contracts/pytest.ini contracts/game-evidence/tests contracts/content-publication/tests -q --junitxml=/Users/andy/tempo/test-results/game-evidence-41/integrated-contracts.xml`: **188 passed**, 0.36s. A separate contract-only environment installed the declared schema-test dependencies and the two affected artifacts. Contract source remained B's pinned input.
+- `UV_CACHE_DIR=/Users/andy/tempo/test-results/game-evidence-41/uv-cache services/game-evidence/.venv/bin/python services/game-evidence/integration/qualify_artifacts.py /Users/andy/tempo/test-results/game-evidence-41/integrated-artifacts`: **27 cases passed in each of four clean installs**: wheel and source distribution on Python 3.12 and 3.14. CLI startup and installed migration resources passed; unrelated implementation source was absent.
 - `node tools/component-build/check-components.mjs --component game-evidence`: passed manifest, dependency, public export and source boundary checks.
-- `npm run check:conflicts` and `git diff --check f614e122`: passed.
+- `npm run check:conflicts` and `git diff --check 110717f3`: passed.
 
 Native proofs include PGN-to-findings/CLI output, comparison/outbox rollback,
 commit-before-send, response loss and fresh-process replay, pending/rejected/stale
@@ -82,3 +82,5 @@ the development checkout. Disposable fixture credentials are redacted in reports
 The interrupted temporary checkout was recovered from its preserved source
 distribution into a persistent task checkout and checkpointed on the task branch.
 Final checkout cleanup and remote ref verification are recorded in the handoff.
+
+B advanced during PR publication. The producer integrated 110717f3, preserving both component registrations, then freshly reran the registered producer suites, affected contracts and all four clean installs. This record supersedes the earlier dependency input only where it changed.

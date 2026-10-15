@@ -1,9 +1,9 @@
 {
-  "tested_revision": "8d6845e4de5adf132f2333b5c0b55c02b7b5481b",
-  "dependency_revision": "f614e122cb1dcc7d73a3109779f08447b9f5916e",
+  "tested_revision": "a4a81863ee4b7b0b4095f7298f30236dc2db750c",
+  "dependency_revision": "110717f322cfe7142e73deae3df12b1b2c2ed2c8",
   "component_unit_passed": 27,
   "native_passed": 23,
-  "contract_passed": 187,
+  "contract_passed": 188,
   "artifact_cases": {
     "python-3.12-wheel": 27,
     "python-3.12-sdist": 27,
@@ -14,11 +14,11 @@
     "tempo_game_evidence-0.1.0-py3-none-any.whl": "12dceed24551b79a9e7ba9ee097f616648750113ecb58e2612dbdf63009bf26e",
     "tempo_content_publication_contracts-1.0.0.tar.gz": "d7bb4295e97099fe24a3ba37e4d995dee56707d01a56350a4437ead44332ad12",
     "tempo_chess_core-0.1.0-py3-none-any.whl": "4c644c1d86706ff295438845d329c08b4bb07a55328a1d6ff3620ba5a0648cf5",
-    "tempo_game_evidence_contracts-2.0.0.tar.gz": "e4d571b764af4db748214f9ca949ff2749a33375228321a05e30340ed863ab8a",
-    "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "55ac71291e78dcdbd1ae30ed5a5e670cda48d69953d2cb1352247f91807ac74f",
+    "tempo_game_evidence_contracts-2.0.0.tar.gz": "9ab186e42e682f6dc8f1828778300a1eb2c6ac6fece4e22286727587e27871ff",
+    "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl": "db89ba968cbf6ef67cff65dee83b888eea9ca742903bf093c7a938f2d9efce37",
     "tempo_content_publication_contracts-1.0.0-py3-none-any.whl": "41a126e16deba4a67f659ee0aa3e0d4a598a621a3d67d4e3ed43a656340c7b41",
     "tempo_chess_core-0.1.0.tar.gz": "e5081c3454d708c6bab5564287e7b68ed6980f7119dc757075a1f05b09e5b516",
-    "tempo_game_evidence-0.1.0.tar.gz": "9db1d715e288a96f0aef12dd27ce9306a8bee82e69ff2025c9bd57f98c615b89"
+    "tempo_game_evidence-0.1.0.tar.gz": "1ffe2fa3404fc9a4254ae6c755d4ad82413def8c118f538cd27fd4b8ccec8966"
   },
   "postgres_image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
   "native_container_removed": true,
@@ -27,7 +27,7 @@
     "services/game-evidence/uv.lock": "e70c40e1aac99e538c0d357cdfe28ec8245b3b8c8af08f9a1a0c5f0f7eb382f2",
     "services/game-evidence/REGRESSIONS.md": "0397ec570761f8290e53cb90f08cf6d078d5efe209a2723ac96bce8b034d6b9a",
     "services/game-evidence/pyproject.toml": "3bc4f24d15b76a1ba869d02acb4b3bff54b9a940b4c27fd9ade1dc876b02f133",
-    "services/game-evidence/README.md": "985a8c71213f1bb021ce404c8fd692209804f5ce7f1a0263bbdc082acf6955cd",
+    "services/game-evidence/README.md": "083b519459f8eec6a22f019989828497760aef415ef15f0b7bb95d947a713d59",
     "services/game-evidence/integration/run_postgres.py": "707b2ba884915bda67c051fb1d223f01cf6de813c5e62771fa3a64d5afa6239e",
     "services/game-evidence/integration/qualify_artifacts.py": "84171181009a473547294606b2ba2958230b2e19d800329a5eefcb52d389f1bb",
     "services/game-evidence/integration/test_postgres.py": "b842c82b08f6fb6c3b7749757443bb6fada56159398c65440f20840fde3a82c1",
@@ -113,21 +113,21 @@
     "contracts/content-publication/schemas/v1/Publication.schema.json": "78b8ec7b5e5b5f71f89f3568277152e5600546a61a41f60b4701febd522bcede",
     "contracts/content-publication/schemas/v1/RetirementRequest.schema.json": "4ba6ba9dbef5986d8ae42bf73b3163ccd108e0e4265e7c42cddbff65d59e7871",
     "contracts/game-evidence/PROTOCOL-V2.md": "7cce024f1c912299dc012137155c99d92f447871e8d7556fea1b9891fe5fd1a8",
-    "contracts/game-evidence/REGRESSIONS.md": "4a6354b95afa1d5aada18f168b3d8ebe1e54b889e8655ccbf2fd3ada6de95391",
+    "contracts/game-evidence/REGRESSIONS.md": "4ff53a85f44624ff20b7462b737966005819ba08b3dcfb7e6d6dfdae3c236ba4",
     "contracts/game-evidence/pyproject.toml": "881b5a515d75cb9a1449d8d7089284593fd103190f3c9e8b9437138254426d1b",
-    "contracts/game-evidence/README.md": "a94c8a3ef528846727e507a104487b803e527d8d6f83de739e6d82bed9c5702d",
+    "contracts/game-evidence/README.md": "9df2ac81e7792e7bd99a95eb68be9a03a9e16b0b447cf513d08a7929a3ca4fad",
     "contracts/game-evidence/tests/test_evidence_reference.py": "23bcafe0f74696b8794f87767068a029794d706275648d1d23ec0ade6ac99977",
     "contracts/game-evidence/tests/conftest.py": "e98557752df8559d1e455e6e4bfb9aeaccabeb53aacd0b0088ff5187c6bb0545",
     "contracts/game-evidence/tests/test_timestamps.py": "93f7fdbd609fd8516b5ce83079a4f3d4d080206fed41d7607302ce7d0234bc82",
     "contracts/game-evidence/tests/test_wire.py": "9b53a1b5f2a9bbf610f12dfd3876c4de32dcfc3199d9205d45aaa3b0debcbe04",
-    "contracts/game-evidence/tests/test_v2.py": "057b221424532d9daa4c86ad4e6d91c18138c6c42cde1f1b21261552d6eee6ac",
+    "contracts/game-evidence/tests/test_v2.py": "43fdd6ed3f02f8817ec2cda10559b4d8339d5a68de9e796b8098ddd4e69ce89b",
     "contracts/game-evidence/examples/producer.py": "14a4e79582b7d820df4e3d26092779bb76495330ca2ccf976b8b122ce09095bb",
     "contracts/game-evidence/examples/consumer.py": "877a18ce745814c6b99f1c97fe4f9f7a5b5d2e9f842169d4d81b81e0f6eee05a",
     "contracts/game-evidence/examples/reference.py": "d77880a54f6ee67b8538d4f80d2ca5b4163c8d0649ae8fd09942fc5ab6911d70",
     "contracts/game-evidence/src/tempo_game_evidence_contracts/v1.py": "18a3278062a8204fb4596673f059fc826ecb61af089b60283dc4de1da35985b6",
     "contracts/game-evidence/src/tempo_game_evidence_contracts/__init__.py": "bb5d68012c8c271919b65ce47f9042d56d3e1c37b4098a8a962cc3a1213aa068",
     "contracts/game-evidence/src/tempo_game_evidence_contracts/_wire.py": "96f239290d3bcaca953e61e1551501ba283b993cc21b9ea1a9019fa6fc6d28b2",
-    "contracts/game-evidence/src/tempo_game_evidence_contracts/v2.py": "e0d131778a5860513742983161e0aedb9e8ff830fcf2f64445c04f60997f9bbf",
+    "contracts/game-evidence/src/tempo_game_evidence_contracts/v2.py": "928a78173aabd9520b790903650a3d872e14a5025af03d6b9b6ec434967ab461",
     "contracts/game-evidence/fixtures/v1/ack-stale_revision.json": "348abdcf914d7ea3c85d08f2b9260abf78fe739f6c4f60e19e80869efbc29a89",
     "contracts/game-evidence/fixtures/v1/ack-accepted_pending.json": "8836e5edbd82c0bd7c825d95874cb3404ca0773118a84c8457d7795feec8bda6",
     "contracts/game-evidence/fixtures/v1/ack-retryable_failure.json": "fb27e9184a519143253f0ef22db5efbd56c289d80ec17becff059600007ac1d9",
@@ -151,7 +151,7 @@
     "contracts/game-evidence/schemas/v1/EvidenceDelivery.schema.json": "952f92f801c9b15d51ec294e60e267d0926d3cfcdf1b57229a8737a54767e373",
     "contracts/game-evidence/schemas/v2/EvidenceAcknowledgement.schema.json": "b22bfc31c985bfaebd9038dacf58dcbe9337a64fe058000fac7861db127434c0",
     "contracts/game-evidence/schemas/v2/ImportedGame.schema.json": "c17148fb7745c651708fb5e8babdd4e61138495f6aa5c4aab1aeddf4d1d8046d",
-    "contracts/game-evidence/schemas/v2/EvidenceDelivery.schema.json": "5a57d5b60e5f70fd04fb3d6f5b7cfc5fb719f3f0cf62ceb2eaa9c7baff8bc0d1"
+    "contracts/game-evidence/schemas/v2/EvidenceDelivery.schema.json": "84517de17addc6af9ff782899815444ad89f81dd5c86c66129c3fca1fda0441f"
   },
   "commands": [
     "TEMPO_COMPONENT_PYTHON=<service-venv>/bin/python node tools/component-build/test-lane.mjs --component game-evidence",
@@ -159,6 +159,6 @@
     "UV_CACHE_DIR=<owned-cache> services/game-evidence/.venv/bin/python services/game-evidence/integration/qualify_artifacts.py <evidence-directory>",
     "node tools/component-build/check-components.mjs --component game-evidence",
     "npm run check:conflicts",
-    "git diff --check f614e122"
+    "git diff --check 110717f3"
   ]
 }
