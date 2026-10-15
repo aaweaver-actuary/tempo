@@ -89,7 +89,10 @@ test("issue221 native quota failure aborts the intent and permits recovery", asy
     const result = await page.evaluate(async envelope => {
       const store = (window as unknown as NativeWindow).nativeIntents;
       try { await store.put({ ...envelope, payload: { answer: Array.from({ length: 64 }, () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(65_536))))).join("") } }); return "unexpected success"; }
-      catch { return (await store.get(envelope.key)) ? "unexpected committed record" : "transaction aborted"; }
+      catch (error) {
+        if (!String(error).includes("QuotaExceededError")) throw error;
+        return (await store.get(envelope.key)) ? "unexpected committed record" : "transaction aborted";
+      }
     }, command("quota"));
     expect(result).toBe("transaction aborted");
   } finally { await protocol.send("Storage.overrideQuotaForOrigin", { origin: baseURL! }); await protocol.detach(); }
@@ -228,4 +231,50 @@ test("issue219 two tabs retain competing outcomes on one issued head", async ({ 
   await second.reload();
   expect((await nativeStudyRecords(second)).filter(record => record.kind === "review").map(record => record.state).sort()).toEqual(["committed", "conflicted"]);
   await second.close();
+});
+
+test("issue219 defense recognition survives reload with its immutable assessment", async ({ page }) => {
+  const originalFen = "4k3/8/8/8/1n6/8/P7/R3K3 w Q - 0 1";
+  const card = { ...openingCard("defense-native", "Defensive decision", "a2a3", 971), content_type: "defense",
+    source_ref: "native-candidate", start_fen: originalFen, revision: 2 };
+  const api = await prepareControlledUI(page, [card], false);
+  let recognition: Record<string, unknown> | undefined, posts = 0, reads = 0;
+  const response = () => ({ status: "ready_for_move", recognition_correct: true, feedback: { knight_route: [], sound_moves: [],
+    refutation_uci: [], control_explanation: "The original assessment is saved. Choose a defense." } });
+  api.register({ method: "GET", path: "/api/defense-exercises/native-candidate", query: {} }, route => route.fulfill({ json: {
+    candidate_id: "native-candidate", card_id: "defense-native", exercise_revision: 2, rubric_version: 3,
+    recognition_required: true, proposed_move_uci: "a2a3", proposed_move_san: "a3", preview_fen: "4k3/8/8/8/1n6/P7/8/R3K3 b Q - 0 1",
+  } }));
+  api.register({ method: "POST", path: "/api/defense-exercises/native-candidate/recognition", query: {}, validate: request => {
+    recognition = request.body as Record<string, unknown>; posts++;
+    expect(recognition).toMatchObject({ exercise_revision: 2, rubric_version: 3, queue_entry_id: 971, hinted: false,
+      dangerous_piece_square: "b4", destination_square: "c2", king_square: "e1", major_square: "a1", consequence: "checking_fork" });
+    expect(request.headers["idempotency-key"]).toBe(`defense-recognition:${recognition.attempt_id}`);
+  } }, route => route.abort("connectionfailed"));
+  api.register({ method: "GET", path: () => `/api/operations/${encodeURIComponent(`defense-recognition:${recognition?.attempt_id}`)}`, query: {} }, route => {
+    reads++; return route.fulfill({ json: { state: "complete", response: response() } });
+  });
+  await page.goto("/");
+  for (const [label, square] of [["Dangerous piece", "b4"], ["Destination", "c2"], ["Your king", "e1"], ["Threatened piece", "a1"]]) {
+    await page.getByLabel(`${label} square`, { exact: true }).fill(square);
+    await page.getByLabel(`${label} square`, { exact: true }).press("Enter");
+  }
+  await page.getByRole("combobox", { name: "Consequence", exact: true }).selectOption("checking_fork");
+  await page.getByRole("button", { name: "Submit assessment", exact: true }).click();
+  await expect.poll(() => posts).toBe(1);
+  await expect(page.getByRole("alert").filter({ hasText: /fetch|network/i }).first()).toBeVisible();
+  const frozen = structuredClone(recognition);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Continue to defense", exact: true })).toBeVisible();
+  expect(posts).toBe(1); expect(reads).toBe(1);
+  expect((await nativeStudyRecords(page)).find(record => record.kind === "defense-command")).toMatchObject({ state: "committed", payload: { body: frozen } });
+  api.register({ method: "POST", path: "/api/defense-exercises/native-candidate/attempt", query: {}, validate: request => {
+    expect(request.body).toMatchObject({ exercise_revision: 2, queue_entry_id: 971, move_uci: "a2a4", recognition_attempt_id: recognition?.attempt_id });
+  } }, route => route.fulfill({ json: { status: "needs_analysis" } }));
+  await page.getByRole("button", { name: "Continue to defense", exact: true }).click();
+  await move(page, "a2", "a4");
+  await expect(page.getByText("Analyzing this legal defense. Your study result has not been recorded yet.", { exact: true })).toBeVisible();
+  expect(await nativeStudyRecords(page)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "defense-command", state: "pending",
+    payload: expect.objectContaining({ body: expect.objectContaining({ move_uci: "a2a4", recognition_attempt_id: recognition?.attempt_id }) }) })]));
+  expect(api.traffic.filter(request => /\/api\/(games\/sync|analysis|providers)/.test(request.path))).toEqual([]);
 });

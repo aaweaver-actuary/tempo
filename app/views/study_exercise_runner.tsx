@@ -207,7 +207,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       if (assessment) {
         const response = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
           endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${body.attempt_id}/self-assess`,
-          requestId: assessment.requestId, attemptId: assessment.attemptId, body: assessment.body });
+          requestId: assessment.requestId, attemptId: assessment.attemptId, revision: assessment.revision, body: assessment.body });
         if (active && generation === generationRef.current) setReply(await response.json() as AttemptReply);
       }
       await revealFeedback(body.attempt_id, generation);
@@ -285,7 +285,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       const retained = await retainedStudyRequest(`${requestScope}:self-assess`);
       const confirmed = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
         endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`,
-        requestId: retained?.requestId ?? `${reply.attempt_id}:self-assess`, attemptId: reply.attempt_id, body: retained?.body ?? { rating } });
+        requestId: retained?.requestId ?? `${reply.attempt_id}:self-assess`, attemptId: reply.attempt_id, revision: exercise.revision, body: retained?.body ?? { rating } });
       const body = await confirmed.json() as AttemptReply & { detail?: string };
       if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
       if (generation === generationRef.current) setReply(body);

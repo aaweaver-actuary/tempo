@@ -1,3 +1,4 @@
+import { studyIntentStore } from "../../app/lib/study-intent-storage";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -105,7 +106,7 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/present"))
-      return Response.json({ id: "exercise", revision: 1, type: "explanation",
+      return Response.json({ id: "exercise", revision: 3, type: "explanation",
         prompt: "Explain the plan", hint: "", fen: new Chess().fen() });
     if (url.endsWith("/attempts") && init?.method === "POST") {
       const attempt = JSON.parse(String(init.body)) as { attempt_id: string };
@@ -157,6 +158,7 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
   fireEvent.click(screen.getByRole("button", { name: "Again (self-assessed)" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Correct (self-assessed)" })).toBeNull());
+  expect((await (await studyIntentStore()).list("study-command")).find(record => record.endpoint.endsWith("/self-assess"))?.revision).toBe(3);
   expect(assessmentStatusReads).toBe(2);
   expect(assessmentWrites).toEqual([
     { rating: "correct", key: `${attemptWrites[0].id}:self-assess` },

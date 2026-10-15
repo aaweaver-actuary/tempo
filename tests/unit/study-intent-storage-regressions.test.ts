@@ -124,3 +124,19 @@ it("issue221 concurrent commits publish their pending projection before awaited 
   expect(pendingReviews().map(review => review.attemptId)).toEqual(expect.arrayContaining(["a", "b"]));
   expect(pendingTeachingStates()).toHaveLength(1);
 });
+it.each(["failure", "teaching"])("issue219 migrated %s recovers the original receipt before any replay", async kind => {
+  closeStudyIntentStorage();
+  if (kind === "failure") localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify([{ queueEntryId: 5, operationId: "legacy-original", backendId: "card", expectedRevision: 1 }]));
+  else localStorage.setItem("tempo-pending-teaching-states-v1", JSON.stringify([{ cardId: "card", revision: 1, ply: 0 }]));
+  await initializeStudyIntentStorage(true);
+  const fetcher = vi.fn(async (_input: RequestInfo | URL, options?: RequestInit) => {
+    expect(options?.method).not.toBe("POST");
+    return Response.json({ state: "complete", response: kind === "failure" ? { attempt_failed: true } : { cardId: "card", revision: 1, ply: 0, taughtAt: "2026-10-15T16:00:00Z" } });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  if (kind === "failure") { await flushTrainingFailures(); expect(pendingTrainingFailures()).toEqual([]); }
+  else { await flushTeachingStates(); expect(pendingTeachingStates()).toEqual([]); }
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(String(fetcher.mock.calls[0][0])).toContain(kind === "failure" ? "/api/operations/legacy-original" : "/api/operations/teaching%3Acard%3A1%3A0");
+  vi.unstubAllGlobals();
+});

@@ -39,14 +39,14 @@ async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
 registerStudyDeliveryAdapter("study-command", deliver, checkReceipt);
 registerStudyDeliveryAdapter("defense-command", deliver, checkReceipt);
 
-export async function executeStudyRequest(input: { scope: string; endpoint: string; body: Record<string, unknown>; requestId: string; attemptId?: string; kind?: "study-command" | "defense-command" }): Promise<Response> {
+export async function executeStudyRequest(input: { scope: string; endpoint: string; body: Record<string, unknown>; requestId: string; attemptId?: string; revision?: number; kind?: "study-command" | "defense-command" }): Promise<Response> {
   const store = await studyIntentStore();
   const key = `${input.scope}:${input.requestId}`;
   const previous = await store.get(key);
   const coordinator = await studySession();
   if (coordinator.getSnapshot().key !== key) coordinator.start(key);
   const result = await coordinator.submit({ key, kind: input.kind ?? "study-command", attemptId: input.attemptId ?? String(input.body.attempt_id ?? input.requestId),
-    requestId: input.requestId, endpoint: input.endpoint, revision: Number(input.body.revision ?? input.body.exercise_revision ?? 1),
+    requestId: input.requestId, endpoint: input.endpoint, revision: input.revision ?? Number(input.body.revision ?? input.body.exercise_revision ?? 1),
     createdAt: previous?.createdAt ?? new Date().toISOString(), payload: { body: input.body, scope: input.scope,
       headers: { "Content-Type": "application/json", "Idempotency-Key": input.requestId } } });
   if (!result.receipt) throw new PendingOperationError(input.requestId);
@@ -54,12 +54,12 @@ export async function executeStudyRequest(input: { scope: string; endpoint: stri
 }
 
 /** Restore the last request in an exercise scope without deriving another payload from fresh UI state. */
-export async function retainedStudyRequest(scope: string): Promise<{ requestId: string; attemptId: string; body: Record<string, unknown>; receipt?: unknown } | undefined> {
+export async function retainedStudyRequest(scope: string): Promise<{ requestId: string; attemptId: string; revision?: number; body: Record<string, unknown>; receipt?: unknown } | undefined> {
   const store = await studyIntentStore();
   const after = Number(await store.checkpoint(`practice-reset:${scope}`) ?? 0);
   const retained = (await store.list()).filter(record => ["study-command", "defense-command"].includes(record.kind) &&
     (record.payload as FrozenStudyRequest).scope === scope && record.sequence > after && record.state !== "discarded").at(-1);
-  return retained ? { requestId: retained.requestId, attemptId: retained.attemptId, body: (retained.payload as FrozenStudyRequest).body, receipt: retained.receipt } : undefined;
+  return retained ? { requestId: retained.requestId, attemptId: retained.attemptId, revision: retained.revision, body: (retained.payload as FrozenStudyRequest).body, receipt: retained.receipt } : undefined;
 }
 
 /** Recover original commands even when the authoritative queue has advanced past their component. */

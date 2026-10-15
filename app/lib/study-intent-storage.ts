@@ -96,7 +96,7 @@ async function migrate(store: IntentStore) {
       throw new Error("Saved training failure is invalid. Keep this browser's data.");
     const payload = marker as Record<string, unknown>;
     const key = `failure:${payload.operationId}`;
-    await store.put(legacyEnvelope(key, "failure", payload, `/api/queue/entries/${payload.queueEntryId}/fail`, String(payload.operationId)), payload);
+    await store.put(legacyEnvelope(key, "failure", payload, `/api/queue/entries/${payload.queueEntryId}/fail`, String(payload.operationId)), { ...payload, deliveryStarted: true });
     await imported(legacyStudyKeys[1], key);
   }
   for (const entry of array(legacyStudyKeys[2])) {
@@ -107,6 +107,7 @@ async function migrate(store: IntentStore) {
     await store.addTeachingFact({ key: id, cardId: entry.cardId, revision: Number(payload.revision), ply: Number(payload.ply), kind: "seen" },
       { key: `teaching:${id}`, kind: "teaching", attemptId: id, requestId: `teaching:${id}`, revision: Number(payload.revision),
         endpoint: `/api/cards/${encodeURIComponent(entry.cardId)}/teaching`, createdAt: "teaching-fact", payload });
+    await store.update(`teaching:${id}`, current => current.state === "pending" ? { ...current, data: { started: true } } : current);
     await imported(legacyStudyKeys[2], id);
   }
   for (const entry of array(legacyStudyKeys[3])) {

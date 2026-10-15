@@ -88,7 +88,9 @@ export async function openIntentStore(options: { workspace: string; databaseName
       let result: T;
       let failure: unknown;
       operation.oncomplete = () => { if (mode === "readwrite") changed(); resolve(result); };
-      operation.onabort = operation.onerror = () => reject(failure instanceof IntentIdentityConflict ? failure :
+      // A request error bubbles before the transaction has its final abort/cause.
+      operation.onerror = () => { /* Wait for abort; request errors are not a commit result. */ };
+      operation.onabort = () => reject(failure instanceof IntentIdentityConflict ? failure :
         new IntentStorageError("The browser could not commit study data. Keep this page open and restore storage.", { cause: failure ?? operation.error }));
       void action(operation).then(value => { result = value; }, cause => {
         failure = cause;

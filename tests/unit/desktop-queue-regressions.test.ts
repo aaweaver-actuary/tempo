@@ -1,4 +1,4 @@
-import { settleStudyStorageTasks, advanceStudyTimers } from "./support/study-intent-fixtures";
+import { settleStudyStorageTasks, advanceStudyTimers, withMissingReceipts } from "./support/study-intent-fixtures";
 import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
@@ -308,7 +308,7 @@ it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during
   const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? new Promise<Response>(resolve => { resolveMarker = resolve; })
     : Response.json(legacyMarkerQueuePayload("desktop-active", 1, serverFailed)));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   try {
     await fetchAndInitializeQueue().catch(() => undefined);
     await settleStudyStorageTasks();
@@ -343,7 +343,7 @@ it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration when r
   const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/review")
     ? Response.json({ detail: "Review transport unavailable" }, { status: 503 })
     : Response.json(legacyMarkerQueuePayload()));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await fetchAndInitializeQueue().catch(() => undefined);
   expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/fail"))).toBe(false);
   expectNoCleanLegacyAttempt();
@@ -361,11 +361,11 @@ it("authoritative legacy marker resolution guides a retained active attempt with
   await initializeStudyIntentStorage(true);
   let resolveMarker!: (response: Response) => void;
   let serverFailed = false;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? new Promise<Response>(resolve => { resolveMarker = resolve; })
     : Response.json({ ...legacyMarkerQueuePayload("desktop-active", 1, serverFailed), cards: [{
       ...legacyMarkerQueuePayload("desktop-active", 1, serverFailed).cards[0], moves: ["e2e4", "e7e5", "g1f3"],
-    }] })));
+    }] }))));
   try {
     await fetchAndInitializeQueue().catch(() => undefined);
     expectNoCleanLegacyAttempt();
@@ -395,7 +395,7 @@ it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or repla
       }
       return Response.json(legacyMarkerQueuePayload(cardId, revision));
     });
-    vi.stubGlobal("fetch", fetcher);
+    vi.stubGlobal("fetch", withMissingReceipts(fetcher));
     await fetchAndInitializeQueue().catch(() => undefined);
     await flushTrainingFailures().catch(() => undefined);
     expectNoCleanLegacyAttempt();
@@ -410,15 +410,15 @@ it.each(legacyFailureFormats)("legacy $name marker cannot guide revised or repla
 
 it("modern guided markers hydrate only their exact card and revision", async () => {
   await enqueueTrainingFailure(801, "desktop-active", 1);
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? Response.json({ detail: "Temporarily unavailable" }, { status: 503 })
-    : Response.json(legacyMarkerQueuePayload())));
+    : Response.json(legacyMarkerQueuePayload()))));
   await fetchAndInitializeQueue();
   expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
   useTrainingStore.setState(useTrainingStore.getInitialState(), true);
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? Response.json({ detail: "Temporarily unavailable" }, { status: 503 })
-    : Response.json(legacyMarkerQueuePayload("desktop-active", 2))));
+    : Response.json(legacyMarkerQueuePayload("desktop-active", 2)))));
   await fetchAndInitializeQueue();
   expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
 });
@@ -436,11 +436,11 @@ it.each(legacyFailureFormats)("unresolved legacy $name marker also blocks a prep
 it.each(legacyFailureFormats)("confirmed legacy $name replay accepts a fresh authoritative guided queue in the same hydration", async ({ saved }) => {
   localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify(saved));
   await initializeStudyIntentStorage(true);
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/fail")) return Response.json({ attempt_failed: true });
     await flushTrainingFailures();
     return Response.json(legacyMarkerQueuePayload("desktop-active", 1, true));
-  }));
+  })));
   await fetchAndInitializeQueue();
   expect(pendingTrainingFailures()).toEqual([]);
   expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
