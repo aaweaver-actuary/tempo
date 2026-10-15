@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "snapshot-fixture",
+  "revision": 1,
+  "publication": {
+    "contract_version": 1,
+    "workspace_id": "fixture",
+    "publication_id": "publication-fixture",
+    "source_revision": 1,
+    "publication_generation": 1,
+    "built_at": "2026-10-15T12:00:00Z",
+    "definitions": [
+      {
+        "card_id": "card-shared",
+        "decision_id": "decision-root",
+        "policy_id": "policy-main",
+        "source_revision": 1,
+        "publication_id": "publication-fixture",
+        "publication_generation": 1,
+        "exercise_revision": 1,
+        "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "prompt": "Play your repertoire move",
+        "specification": {
+          "type": "move_line",
+          "accepted_lines": [
+            [
+              "e2e4"
+            ],
+            [
+              "d2d4"
+            ]
+          ],
+          "mode": "single",
+          "grading_policy": "reference"
+        }
+      }
+    ]
+  },
+  "activation": {
+    "contract_version": 1,
+    "workspace_id": "fixture",
+    "activation_id": "activation-fixture",
+    "publication_id": "publication-fixture",
+    "publication_generation": 1,
+    "activation_revision": 1,
+    "status": "activated",
+    "reason": null
+  },
+  "routes": [
+    {
+      "repertoire_id": "repertoire-main",
+      "route_id": "route-main",
+      "learner_color": "white",
+      "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "moves": [
+        "e2e4",
+        "e7e5",
+        "g1f3"
+      ],
+      "bindings": [
+        {
+          "ply": 0,
+          "card_id": "card-shared",
+          "reentry": false
+        }
+      ]
+    }
+  ],
+  "complete": true
+}
