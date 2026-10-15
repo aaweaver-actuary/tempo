@@ -1,5 +1,6 @@
 """Fresh owned cluster + volume. No caller database URL is accepted."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import secrets
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 
 import psycopg
 from psycopg.conninfo import make_conninfo
@@ -35,6 +37,10 @@ def main():
     volume=owner+"-data"
     report={"owner":owner,"complete":False,"container_removed":False,"volume_removed":False,
             "commands":[],"external_database_accepted":False}
+    report["revision"]=subprocess.check_output(["git","rev-parse","HEAD"],cwd=SERVICE,text=True).strip()
+    report["source_inputs"]={str(path.relative_to(SERVICE)):hashlib.sha256(path.read_bytes()).hexdigest()
+        for directory in (SERVICE/"src",SERVICE/"fixtures",HERE) for path in directory.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts}
     created_container=created_volume=False
     secrets_to_redact=[]
     try:
@@ -110,17 +116,20 @@ def main():
         result=subprocess.run(command,env=environment,cwd=SERVICE,capture_output=True,text=True)
         output=result.stdout+result.stderr
         for secret_value in secrets_to_redact:
-            output=output.replace(secret_value,"<disposable-secret-redacted>")
+            output=output.replace(secret_value,"[disposable-secret-redacted]")
         for report_file in [junit, *[Path(value.split("=",1)[1]) for value in command if value.startswith("--junitxml=")]]:
             if report_file.exists():
                 text=report_file.read_text()
                 for secret_value in secrets_to_redact:
-                    text=text.replace(secret_value,"<disposable-secret-redacted>")
+                    text=text.replace(secret_value,"[disposable-secret-redacted]")
                 report_file.write_text(text)
         (directory/"native.log").write_text(output)
         print(output,end="")
         report["pytest_exit_code"]=result.returncode
-        report["complete"]=result.returncode==0
+        actual_junit=Path(next(value.split("=",1)[1] for value in reversed(command) if value.startswith("--junitxml=")))
+        cases=ET.parse(actual_junit).getroot().findall(".//testcase") if actual_junit.exists() else []
+        report["passed"]=sum(not any(case.find(tag) is not None for tag in ("failure","error","skipped")) for case in cases)
+        report["complete"]=result.returncode==0 and bool(cases) and report["passed"]==len(cases)
     except Exception as error:
         report["error"]=type(error).__name__
         print("Owned native proof failed: "+type(error).__name__,file=sys.stderr)

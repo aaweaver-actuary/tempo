@@ -13,6 +13,7 @@ from .delivery import deliver_one
 from .providers import AccountImport, enqueue_import, import_one, cancel_import
 from .snapshot import ComparisonSnapshot
 from .store import EvidenceStore
+from .source import MAX_SOURCE_BYTES
 
 
 def main(arguments=None):
@@ -54,6 +55,8 @@ def main(arguments=None):
             EvidenceStore(migration_url).migrate()
             result = {"migration_version":1}
         elif options.command == "import-pgn":
+            if options.file.stat().st_size>MAX_SOURCE_BYTES:
+                raise ValueError("source_byte_bound_exceeded")
             result = {"game_id":store.import_pgn(options.workspace,options.provider,options.source_id,options.player,options.file.read_bytes())}
         elif options.command == "import-account":
             result = {"import_id":enqueue_import(store,AccountImport.model_validate_json(options.configuration.read_bytes()))}

@@ -32,7 +32,7 @@ def snapshot(*, moves=None, expected=None, fen=chess.STARTING_FEN, color="white"
                                    "mode":"single","grading_policy":"reference"}}
     publication = {"contract_version":1,"workspace_id":workspace,"publication_id":"publication-fixture",
                    "source_revision":1,"publication_generation":1,"built_at":"2026-10-15T12:00:00Z","definitions":[definition]}
-    return {"schema_version":1,"snapshot_id":"snapshot-fixture","revision":1,"publication":publication,
+    return {"schema_version":1,"complete":True,"snapshot_id":"snapshot-fixture","revision":1,"publication":publication,
             "activation":{"contract_version":1,"workspace_id":workspace,"activation_id":"activation-fixture",
                           "publication_id":"publication-fixture","publication_generation":1,"activation_revision":1,
                           "status":"activated","reason":None} if activation else None,

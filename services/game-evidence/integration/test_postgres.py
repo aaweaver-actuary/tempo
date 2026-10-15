@@ -21,7 +21,7 @@ from tempo_game_evidence import EvidenceStore
 from tempo_game_evidence.api import create_app
 from tempo_game_evidence.delivery import deliver_one
 from tempo_game_evidence.providers import AccountImport, enqueue_import, import_one, cancel_import
-from tempo_game_evidence_contracts.v1 import EvidenceDelivery
+from tempo_game_evidence_contracts.v2 import EvidenceDelivery
 
 # This fixture corpus is deliberately local to the owning service.
 FIXTURES=Path(__file__).resolve().parents[1]/"fixtures"
@@ -66,6 +66,8 @@ def learning_receiver(store, *, replies=None, lose_first=False):
     received={}
     requests=[]
     replies=list(replies or ["completed"])
+    heads={}
+    committed={}
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*_):
             pass
@@ -78,16 +80,25 @@ def learning_receiver(store, *, replies=None, lose_first=False):
             assert key not in received or received[key]==document
             received[key]=document
             requests.append(key)
+            status=replies.pop(0) if len(replies)>1 else replies[0]
+            if status=="completed" and key not in committed:
+                for withdrawal in payload.withdrawals:
+                    assert heads[withdrawal.obligation_id]==withdrawal.expected_obligation_revision
+                    del heads[withdrawal.obligation_id]
+                for obligation in payload.obligations:
+                    assert obligation.obligation_revision>heads.get(obligation.obligation_id,0)
+                    heads[obligation.obligation_id]=obligation.obligation_revision
+            acknowledgement=committed.get(key) or {"contract_version":2,"workspace_id":payload.workspace_id,"delivery_id":key,
+                             "evidence_id":payload.evidence_id,"evidence_revision":payload.evidence_revision,
+                             "status":status,"accepted_obligation_ids":[item.obligation_id for item in payload.obligations] if status=="completed" else [],
+                             "learning_revision":1 if status=="completed" else None,
+                             "reason":None if status=="completed" else "receiver_fixture"}
+            if status=="completed":
+                committed[key]=acknowledgement
             if lose_first and len(requests)==1:
                 self.connection.shutdown(socket.SHUT_RDWR)
                 self.connection.close()
                 return
-            status=replies.pop(0) if len(replies)>1 else replies[0]
-            acknowledgement={"contract_version":1,"workspace_id":payload.workspace_id,"delivery_id":key,
-                             "evidence_id":payload.evidence_id,"evidence_revision":payload.evidence_revision,
-                             "status":status,"accepted_obligation_ids":[item.obligation_id for item in payload.obligations],
-                             "learning_revision":1 if status=="completed" else None,
-                             "reason":None if status=="completed" else "receiver_fixture"}
             self.send_response(200)
             self.end_headers()
             self.wfile.write(json.dumps(acknowledgement).encode())
@@ -185,7 +196,7 @@ def test_lost_acknowledgement_and_fresh_process_replay_have_one_logical_effect(s
 
 
 @pytest.mark.parametrize("status",["accepted_pending","terminal_failure","stale_revision","conflict"])
-def test_receiver_states_remain_truthful_and_corrections_are_durable_blocked_intent(state,status):
+def test_receiver_states_remain_truthful_and_corrections_wait_for_receipts(state,status):
     store,workspace,value=state
     game=imported(state)
     with learning_receiver(store,replies=[status]) as (endpoint,_,_):
@@ -195,8 +206,130 @@ def test_receiver_states_remain_truthful_and_corrections_are_durable_blocked_int
     store.load_snapshot(value)
     drain(store)
     report=store.report(workspace,game)
-    assert report["readiness"]=="ready" and report["delivery"]["status"]=="blocked"
-    assert report["delivery"]["reason"]=="shared_correction_protocol_required"
+    assert report["readiness"]=="ready"
+    assert report["delivery"]["status"]==("waiting_predecessor" if status=="accepted_pending" else "pending")
+
+
+@pytest.mark.parametrize("replacement",["alternative","empty"])
+def test_exact_v2_withdrawal_removes_only_the_corrected_source_contribution(state,replacement):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store) as (endpoint,received,requests):
+        assert deliver_one(store,endpoint)
+        store.import_pgn(workspace,"pgn","miss","Learner",(FIXTURES/(replacement+".pgn")).read_bytes())
+        drain(store)
+        assert deliver_one(store,endpoint)
+        assert len(requests)==2
+        old,new=list(received.values())
+        assert new["obligations"]==[] and len(new["withdrawals"])==1
+        assert new["withdrawals"][0]["obligation_id"]==old["obligations"][0]["obligation_id"]
+        assert new["withdrawals"][0]["expected_obligation_revision"]==1
+    assert store.report(workspace,game)["delivery"]["status"]=="completed"
+
+
+def test_partial_snapshot_cannot_imply_withdrawal_of_an_accepted_miss(state):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store) as (endpoint,received,_):
+        assert deliver_one(store,endpoint)
+        value.update(revision=2,complete=False,routes=[])
+        store.load_snapshot(value)
+        drain(store)
+        assert not deliver_one(store,endpoint)
+        assert len(received)==1
+    assert store.report(workspace,game)["delivery"]["status"]=="blocked"
+
+
+def test_source_reversion_retains_revisions_and_cannot_reuse_stale_computation(state):
+    store,workspace,_=state
+    game=imported(state)
+    for source in ("alternative","miss"):
+        store.import_pgn(workspace,"pgn","miss","Learner",(FIXTURES/(source+".pgn")).read_bytes())
+        drain(store)
+    report=store.report(workspace,game)
+    assert report["comparison_revision"]==3 and report["game"]["revision"]==3
+    assert report["findings"][0]["status"]=="missed" and report["delivery"]["status"]=="pending"
+    with store.connect() as database:
+        assert database.execute("SELECT count(*) AS count FROM game_sources WHERE game_id=%s",(game,)).fetchone()["count"]==3
+
+
+def test_bounded_rescope_and_expired_lease_resume_without_lost_jobs(state):
+    store,workspace,value=state
+    for index in range(65):
+        store.import_pgn(workspace,"pgn",str(index),"Learner",(FIXTURES/"empty.pgn").read_bytes())
+    store.load_snapshot(value)
+    assert store.process_one()
+    with store.connect() as database:
+        row=database.execute("SELECT requested,published,cursor FROM jobs WHERE kind='rescope'").fetchone()
+        assert row["requested"]>row["published"] and row["cursor"]
+    job=store.claim_job()
+    with store.connect() as database:
+        database.execute("UPDATE jobs SET leased_until=now()-interval '1 second' WHERE job_key=%s",(job["job_key"],))
+    drain(store)
+    with store.connect() as database:
+        assert database.execute("SELECT count(*) AS count FROM jobs WHERE requested>published").fetchone()["count"]==0
+        assert database.execute("SELECT count(*) AS count FROM comparisons").fetchone()["count"]==65
+
+
+def test_cli_pgn_to_report_and_unknown_source_are_inspectable(state):
+    store,workspace,value=state
+    store.load_snapshot(value)
+    def cli(*arguments):
+        result=subprocess.run([sys.executable,"-m","tempo_game_evidence.cli",*arguments],capture_output=True,text=True)
+        assert result.returncode==0,result.stdout
+        return json.loads(result.stdout)
+    game=cli("import-pgn",str(FIXTURES/"miss.pgn"),"--workspace",workspace,"--player","Learner","--source-id","cli-fixture")["game_id"]
+    cli("work","--max-jobs","64")
+    assert cli("report",game,"--workspace",workspace)["findings"][0]["status"]=="missed"
+    bad=store.import_pgn(workspace,"pgn","invalid","Learner",b"not a PGN")
+    drain(store)
+    assert store.report(workspace,bad)["readiness"]=="unknown"
+
+
+def test_chesscom_saved_month_resumes_in_bounded_slices_without_refetch(state):
+    store,workspace,_=state
+    config=AccountImport(workspace_id=workspace,provider="chess.com",account="Learner",
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc))
+    import_id=enqueue_import(store,config)
+    games=[{"uuid":str(index),"end_time":int(config.since.timestamp()),"pgn":(FIXTURES/"miss.pgn").read_text()} for index in range(65)]
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200,json={"games":games})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert import_one(store,client=client)
+        assert len(store.list_games(workspace,limit=100))==64
+        assert import_one(store,client=client)
+    assert len(calls)==1 and len(store.list_games(workspace,limit=100))==65
+    with store.connect() as database:
+        assert database.execute("SELECT status FROM import_cursors WHERE import_id=%s",(import_id,)).fetchone()["status"]=="completed"
+
+
+def test_rate_limited_provider_persists_retry_after_without_advancing_cursor(state):
+    store,workspace,_=state
+    config=AccountImport(workspace_id=workspace,provider="lichess",account="Learner",
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc))
+    import_id=enqueue_import(store,config)
+    with httpx.Client(transport=httpx.MockTransport(lambda _:httpx.Response(429,headers={"Retry-After":"3600"}))) as client:
+        assert import_one(store,client=client)
+        assert not import_one(store,client=client)
+    with store.connect() as database:
+        row=database.execute("SELECT status,cursor,next_attempt_at FROM import_cursors WHERE import_id=%s",(import_id,)).fetchone()
+        assert row["status"]=="retrying" and row["cursor"]["seen"]==[]
+        assert (row["next_attempt_at"]-datetime.now(timezone.utc)).total_seconds()>3500
+
+
+def test_acknowledgement_mismatch_never_invents_completion(state):
+    store,workspace,_=state
+    game=imported(state)
+    def handler(request):
+        payload=json.loads(request.content)
+        acknowledgement={key:payload[key] for key in ["contract_version","workspace_id","delivery_id","evidence_id","evidence_revision"]}
+        acknowledgement.update(status="completed",learning_revision=1,reason=None,accepted_obligation_ids=[])
+        return httpx.Response(200,json=acknowledgement)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert deliver_one(store,"http://learning.invalid/evidence",client=client)
+    assert store.report(workspace,game)["delivery"]["status"]=="retryable_failure"
 
 
 def test_native_database_restart_preserves_pending_delivery(state):

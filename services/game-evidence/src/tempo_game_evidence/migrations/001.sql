@@ -33,15 +33,15 @@ CREATE TABLE IF NOT EXISTS comparisons(
  report jsonb NOT NULL, PRIMARY KEY(game_id,revision), UNIQUE(game_id,input_token)
 );
 CREATE TABLE IF NOT EXISTS outbox(
- delivery_id text PRIMARY KEY, game_id text NOT NULL REFERENCES games, evidence_revision bigint NOT NULL,
+ delivery_id text PRIMARY KEY, game_id text NOT NULL REFERENCES games, evidence_revision bigint NOT NULL,bucket integer NOT NULL,
  payload jsonb, status text NOT NULL, reason text, acknowledgement jsonb,
  attempts integer NOT NULL DEFAULT 0, next_attempt_at timestamptz NOT NULL DEFAULT now(),
- lease_token text, leased_until timestamptz, UNIQUE(game_id,evidence_revision)
+ lease_token text, leased_until timestamptz, UNIQUE(game_id,evidence_revision,bucket)
 );
 CREATE TABLE IF NOT EXISTS import_cursors(
  import_id text PRIMARY KEY, workspace_id text NOT NULL, configuration jsonb NOT NULL,
  cursor jsonb NOT NULL, next_attempt_at timestamptz NOT NULL DEFAULT now(),
- status text NOT NULL DEFAULT 'pending', reason text, lease_token text, leased_until timestamptz
+ status text NOT NULL DEFAULT 'pending', reason text, lease_token text, leased_until timestamptz,attempts integer NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS import_pages(
  import_id text NOT NULL REFERENCES import_cursors, page_id text NOT NULL,

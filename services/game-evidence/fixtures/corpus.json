@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "snapshot_sha256": "38f015f05c822cd6eac75886645c43755ff6b6cfc7a422afdd633fc5f630e0f7",
+  "cases": [
+    {
+      "source": "miss.pgn",
+      "source_sha256": "28c07bb2e2621e20e5ede1d381b300b5151a1c819326b0833ea40618f8448ffa",
+      "report": "miss-report.json",
+      "report_sha256": "5742486e59a427b61fcbcee18b2a7df7ac8bff794b1bc2d1eca6ea332fe59368"
+    },
+    {
+      "source": "alternative.pgn",
+      "source_sha256": "04e8efcf064e64a69e966c6695c2340c84f2e31a6b875c3d72ff3538c68e2465",
+      "report": "alternative-report.json",
+      "report_sha256": "bc47b78e42a1119db8cb24b1dd94a651009bc5a0561777445e2b57088bc104e8"
+    },
+    {
+      "source": "empty.pgn",
+      "source_sha256": "f728174fb449d938fc5e4d5551530148836ce862ac263472c077062fe10ed2e2",
+      "report": "empty-report.json",
+      "report_sha256": "36de4b0c3058b9921bad4f4e8361acc9712a4cb5a3d174a37782262ea06bc70f"
+    }
+  ]
+}

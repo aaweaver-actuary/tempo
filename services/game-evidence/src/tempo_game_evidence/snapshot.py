@@ -28,6 +28,7 @@ class Route(StrictModel):
 
 class ComparisonSnapshot(StrictModel):
     schema_version: Literal[1]
+    complete: bool = False
     snapshot_id: str = Field(min_length=1)
     revision: int = Field(ge=1)
     publication: Publication
@@ -59,12 +60,15 @@ class ComparisonSnapshot(StrictModel):
             for ply in range(len(route.moves) + 1):
                 if ply in bindings:
                     definition = definitions.get(bindings[ply].card_id)
-                    if definition is None or canonical_fen_key(board.fen(en_passant="fen")) != canonical_fen_key(definition.starting_fen):
+                    if definition is None or canonical_fen_key(board.fen()) != canonical_fen_key(chess.Board(definition.starting_fen).fen()):
                         raise ValueError("binding_missing_definition_or_wrong_position")
                     if board.turn != (route.learner_color == "white"):
                         raise ValueError("binding_is_opponent_move")
                     spec = definition.specification
                     if spec.type == "move_line":
+                        if (spec.grading_policy == "reference" and ply<len(route.moves)
+                                and route.moves[ply] not in {line[0] for line in spec.accepted_lines}):
+                            raise ValueError("route_conflicts_with_accepted_policy")
                         for line in spec.accepted_lines:
                             alternative_board = board.copy()
                             for uci in line:

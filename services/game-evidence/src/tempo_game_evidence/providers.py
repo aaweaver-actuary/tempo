@@ -65,7 +65,7 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
           WHERE provider_leases.leased_until<now() RETURNING token""", (config.provider,token)).fetchone()
         if not locked:
             return False
-        database.execute("UPDATE import_cursors SET lease_token=%s,leased_until=now()+interval '90 seconds' WHERE import_id=%s", (token,row["import_id"]))
+        database.execute("UPDATE import_cursors SET lease_token=%s,leased_until=now()+interval '90 seconds',attempts=attempts+1 WHERE import_id=%s", (token,row["import_id"]))
     owned = client is None
     client = client or httpx.Client(timeout=httpx.Timeout(15,read=10),follow_redirects=False,
                                    headers={"User-Agent":user_agent})
@@ -115,13 +115,14 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
                 for source_id,source_bytes,played_at,document,game_id,source_digest in prepared:
                     store._import(database,config.workspace_id,config.provider,source_id,config.account,source_bytes,
                                   source_digest,identity(source_digest,str(played_at)),game_id,document)
-                database.execute("UPDATE import_cursors SET cursor=%s,status=%s,reason=NULL WHERE import_id=%s",
+                database.execute("UPDATE import_cursors SET cursor=%s,status=%s,reason=NULL,attempts=0 WHERE import_id=%s",
                                  (Jsonb(next_cursor),"completed" if complete else "pending",row["import_id"]))
     except RemoteFailure as error:
         with store.connect() as database:
             database.execute("""UPDATE import_cursors SET status=%s,reason=%s,next_attempt_at=%s
               WHERE import_id=%s AND lease_token=%s AND status!='cancelled'""",
-              ("blocked" if error.terminal else "retrying",error.reason,utc_now()+timedelta(seconds=error.retry_after),row["import_id"],token))
+              ("pending" if error.reason=="import_cancelled" else "blocked" if error.terminal else "retrying",
+               error.reason,utc_now()+timedelta(seconds=max(error.retry_after,min(900,2**min(row["attempts"],10)))),row["import_id"],token))
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         with store.connect() as database:
             database.execute("UPDATE import_cursors SET status='retrying',reason='provider_source_unavailable_or_invalid',next_attempt_at=now()+interval '60 seconds' WHERE import_id=%s AND lease_token=%s AND status!='cancelled'",(row["import_id"],token))

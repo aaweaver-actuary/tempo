@@ -116,3 +116,18 @@ def test_illegal_pgn_and_multiple_games_are_rejected():
         normalize_pgn(pgn(["e2e4"])+pgn(["d2d4"]),"Learner")
     with pytest.raises(ValueError):
         normalize_pgn(b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e5 1-0',"Learner")
+
+
+def test_large_game_evidence_is_split_into_stable_bounded_scopes():
+    from tempo_game_evidence.payloads import make_deliveries
+    route_moves=["g1h3","g8h6","h3g1","h6g8"]*140
+    value=snapshot(moves=route_moves,reentry=True)
+    value["routes"][0]["bindings"]=[{"ply":ply,"card_id":"card-shared","reentry":True} for ply in range(0,560,4)]
+    game,positions=observed(["g1f3","g8f6","f3g1","f6g8"]*140)
+    parsed=ComparisonSnapshot.model_validate(value)
+    findings=compare_game(game,positions,parsed)
+    batches=make_deliveries(game,findings,1,parsed.publication)
+    assert sum(len(payload["obligations"]) for _,payload in batches)==140
+    assert len(batches)>1
+    assert all(len(payload["encounters"])<=32 for _,payload in batches)
+    assert len({payload["evidence_id"] for _,payload in batches})==len(batches)

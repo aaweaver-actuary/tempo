@@ -6,39 +6,13 @@ import uuid
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-from tempo_game_evidence_contracts.v1 import EvidenceDelivery
 
 from .comparison import compare_game
 from .snapshot import ComparisonSnapshot
-from .source import INDEX_VERSION, identity, normalize_pgn, replay_positions, utc_now
+from .source import INDEX_VERSION, MAX_SOURCE_BYTES, identity, normalize_pgn, replay_positions, utc_now
 
 
-def make_delivery(game, findings, revision, publication):
-    known = [item for item in findings if item["status"] != "unknown"]
-    misses = [item for item in known if item["status"] == "missed"]
-    if not misses:
-        return None
-    evidence_id = identity("evidence", game["game_id"])
-    obligations = [{"obligation_id": identity("miss_obligation", item["encounter_id"]),
-                    "source_evidence_id": evidence_id, "source_revision": revision,
-                    "card_id": item["card_id"], "decision_id": item["decision_id"],
-                    "publication_generation": publication.publication_generation, "kind": "real_game_miss"}
-                   for item in misses]
-    return EvidenceDelivery.model_validate({
-        "contract_version": 1, "workspace_id": game["workspace_id"],
-        "delivery_id": identity(evidence_id, revision), "evidence_id": evidence_id,
-        "evidence_revision": revision, "game_id": game["game_id"], "game_revision": game["revision"],
-        "encounters": [{"encounter_id": item["encounter_id"], "ply": item["ply"],
-                        "position_key": item["position_key"], "decision_id": item["decision_id"],
-                        "observed_move": item["move"]} for item in known],
-        "comparisons": [{"encounter_id": item["encounter_id"], "card_id": item["card_id"],
-                         "decision_id": item["decision_id"], "publication_id": publication.publication_id,
-                         "publication_generation": publication.publication_generation,
-                         "expected_moves": item["expected_moves"], "status": item["status"]} for item in known],
-        "misses": [{"miss_id": identity("miss", item["encounter_id"]), "encounter_id": item["encounter_id"],
-                    "decision_id": item["decision_id"], "reason": item["explanation"]} for item in misses],
-        "obligations": obligations,
-    }).model_dump(mode="json")
+from .payloads import make_delivery, make_deliveries
 
 
 class EvidenceStore:
@@ -57,6 +31,8 @@ class EvidenceStore:
             database.execute(Path(__file__).with_name("migrations").joinpath("001.sql").read_text())
 
     def import_pgn(self, workspace, provider, source_id, player, raw, *, played_at=None, database=None):
+        if len(raw)>MAX_SOURCE_BYTES:
+            raise ValueError("source_byte_bound_exceeded")
         if not all(isinstance(value, str) and value.strip() for value in (workspace, provider, source_id, player)):
             raise ValueError("explicit_source_identity_required")
         game_id = identity(workspace, provider, source_id, player.casefold())
@@ -210,7 +186,7 @@ class EvidenceStore:
         positions = row["positions"] if reusable else replay_positions(game) if "source_error" not in game else []
         snapshot = ComparisonSnapshot.model_validate(snapshot_row["document"]) if snapshot_row else None
         findings = compare_game(game, positions, snapshot) if snapshot and positions else []
-        token = identity(row["input_digest"], inputs["snapshot_digest"], INDEX_VERSION)
+        token = identity(row["revision"],row["input_digest"],inputs["epoch"],inputs["snapshot_digest"],INDEX_VERSION)
         if before_publish:
             before_publish()
         # Lock ordering: workspace -> game -> job -> outbox. Imports take game -> job.
@@ -225,15 +201,29 @@ class EvidenceStore:
             existing = database.execute("SELECT 1 FROM comparisons WHERE game_id=%s AND input_token=%s", (job["game_id"],token)).fetchone()
             if not existing:
                 revision = current_game["report_revision"] + 1
-                payload = make_delivery(game, findings, revision, snapshot.publication) if snapshot else None
                 prior = database.execute("SELECT * FROM outbox WHERE game_id=%s FOR UPDATE", (game["game_id"],)).fetchall()
-                corrections_required = any(item["attempts"] > 0 or item["status"] == "blocked" for item in prior)
-                delivery_status = "blocked" if corrections_required else "pending" if payload else "not_required"
-                if corrections_required:
-                    reason = "shared_correction_protocol_required"
-                else:
-                    reason = None
-                    database.execute("UPDATE outbox SET status='superseded' WHERE game_id=%s AND attempts=0 AND status='pending'", (game["game_id"],))
+                payloads = make_deliveries(game,findings,revision,snapshot.publication if snapshot else None,prior)
+                possibly_delivered = [item for item in prior if item["attempts"]>0
+                    and item["status"] not in {"superseded","terminal_failure","conflict","stale_revision"}]
+                incomplete = bool(possibly_delivered) and (not snapshot or not snapshot.activation or not snapshot.complete or "source_error" in game)
+                # Unknown policy/route metadata cannot erase a previous supported
+                # observation at an unchanged source occurrence.
+                known_plies = {item["ply"] for item in findings if item["status"] != "unknown"}
+                current_cards = {item.card_id for item in snapshot.publication.definitions} if snapshot else set()
+                current_obligations = {item["obligation_id"] for _,payload in payloads for item in payload["obligations"]}
+                for previous in possibly_delivered:
+                    encounters = {item["encounter_id"]:item for item in previous["payload"]["encounters"]}
+                    for obligation in previous["payload"]["obligations"]:
+                        encounter = encounters[obligation["encounter_id"]]
+                        ply = encounter["ply"]
+                        unchanged_move = ply<len(positions) and positions[ply]["move"]==encounter["observed_move"]
+                        if (obligation["obligation_id"] not in current_obligations and unchanged_move
+                                and ply not in known_plies and obligation["card_id"] in current_cards):
+                            incomplete = True
+                unresolved = any(item["attempts"]>0 and item["status"] in {"pending","accepted_pending","retryable_failure"} for item in prior)
+                delivery_status = "blocked" if incomplete else "waiting_predecessor" if unresolved else "pending"
+                reason = "comparison_scope_incomplete" if incomplete else "prior_delivery_acknowledgement_required" if unresolved else None
+                database.execute("UPDATE outbox SET status='superseded' WHERE game_id=%s AND attempts=0 AND status IN ('pending','waiting_predecessor')", (game["game_id"],))
                 report = {"schema_version": 1, "game": game, "comparison_revision": revision,
                           "readiness": "unknown" if not snapshot or snapshot.activation is None or "source_error" in game else "ready",
                           "reason": game.get("source_error") or ("snapshot_missing" if not snapshot else None),
@@ -243,8 +233,9 @@ class EvidenceStore:
                               "source_revision": snapshot.publication.source_revision} if snapshot else None,
                           "findings": findings}
                 database.execute("INSERT INTO comparisons VALUES(%s,%s,%s,%s)", (game["game_id"],revision,token,Jsonb(report)))
-                database.execute("INSERT INTO outbox(delivery_id,game_id,evidence_revision,payload,status,reason) VALUES(%s,%s,%s,%s,%s,%s)",
-                                 (payload["delivery_id"] if payload else identity("evidence",game["game_id"],revision),game["game_id"],revision,Jsonb(payload) if payload else None,delivery_status,reason))
+                for bucket,payload in payloads:
+                    database.execute("INSERT INTO outbox(delivery_id,game_id,evidence_revision,bucket,payload,status,reason) VALUES(%s,%s,%s,%s,%s,%s,%s)",
+                                     (payload["delivery_id"],game["game_id"],revision,bucket,Jsonb(payload),delivery_status,reason))
                 database.execute("UPDATE games SET report_revision=%s,positions=%s,index_receipt=%s WHERE game_id=%s",
                                  (revision,Jsonb(positions),Jsonb({"input_digest": row["input_digest"], "version": INDEX_VERSION,
                                   "position_count": len(positions), "complete": "source_error" not in game}),game["game_id"]))
@@ -252,17 +243,19 @@ class EvidenceStore:
 
     def report(self, workspace, game_id):
         with self.connect() as database:
-            row = database.execute("""SELECT game.document,comparison.report,inputs.snapshot_digest AS current_snapshot_digest,outbox.status,outbox.reason,
-              outbox.attempts,outbox.acknowledgement FROM games game
-              LEFT JOIN comparisons comparison ON comparison.game_id=game.game_id AND comparison.revision=game.report_revision
-              LEFT JOIN outbox ON outbox.game_id=game.game_id AND outbox.evidence_revision=game.report_revision
+            row = database.execute("""SELECT game.document,game.report_revision,comparison.report,inputs.snapshot_digest AS current_snapshot_digest
+              FROM games game LEFT JOIN comparisons comparison ON comparison.game_id=game.game_id AND comparison.revision=game.report_revision
               JOIN workspace_inputs inputs ON inputs.workspace_id=game.workspace_id
               WHERE game.game_id=%s AND game.workspace_id=%s""", (game_id,workspace)).fetchone()
-        if not row:
-            raise KeyError(game_id)
-        report = row["report"] or {"schema_version": 1,"game": row["document"],"readiness": "pending","findings": []}
-        report["delivery"] = {"status": row["status"] or "not_ready", "reason": row["reason"],
-                              "attempts": row["attempts"] or 0, "acknowledgement": row["acknowledgement"]}
+            if not row:
+                raise KeyError(game_id)
+            batches = database.execute("SELECT delivery_id,status,reason,attempts,acknowledgement FROM outbox WHERE game_id=%s AND (evidence_revision=%s OR (attempts>0 AND status IN ('pending','accepted_pending','retryable_failure'))) ORDER BY evidence_revision,bucket",
+                                       (game_id,row["report_revision"])).fetchall()
+        report = row["report"] or {"schema_version":1,"game":row["document"],"readiness":"pending","findings":[]}
+        priority = ["blocked","terminal_failure","conflict","stale_revision","retryable_failure","waiting_predecessor","accepted_pending","pending","completed"]
+        status = next((status for status in priority if any(batch["status"]==status for batch in batches)),"not_required" if row["report"] else "not_ready")
+        report["delivery"] = {"status":status,"reason":next((batch["reason"] for batch in batches if batch["reason"]),None),
+                              "attempts":sum(batch["attempts"] for batch in batches),"batches":batches}
         if report["game"]["revision"] != row["document"]["revision"]:
             report["readiness"] = "pending"
             report["reason"] = "source_revision_changed"

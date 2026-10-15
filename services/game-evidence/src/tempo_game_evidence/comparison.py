@@ -1,4 +1,5 @@
 """Policy-aware observations. A repertoire deviation is not an engine error."""
+from tempo_chess_core import canonical_fen_key
 from .source import identity
 
 
@@ -32,7 +33,7 @@ def compare_game(game, positions, snapshot):
                     continue
                 expected = sorted({line[0] for line in spec.accepted_lines})
                 key = (definition.policy_id, definition.decision_id, definition.card_id, tuple(expected))
-                groups.setdefault(key, []).append({"repertoire_id": route.repertoire_id, "route_id": route.route_id})
+                groups.setdefault(key, set()).add((route.repertoire_id,route.route_id))
             accepted = [key for key in groups if position["move"] in key[3]]
             selected = accepted[0] if len(accepted) == 1 else next(iter(groups)) if len(groups) == 1 else None
             finding = {**position, "status": "unknown", "expected_moves": [], "memberships": [],
@@ -44,7 +45,8 @@ def compare_game(game, positions, snapshot):
                 policy_id, decision_id, card_id, expected = selected
                 matched = position["move"] in expected
                 finding.update(status="matched" if matched else "missed", expected_moves=list(expected),
-                               memberships=sorted(groups[selected], key=lambda item: (item["repertoire_id"], item["route_id"])),
+                               decision_position_key=canonical_fen_key(definitions[card_id].starting_fen),
+                               memberships=[{"repertoire_id":repertoire_id,"route_id":route_id} for repertoire_id,route_id in sorted(groups[selected])],
                                card_id=card_id, decision_id=decision_id, policy_id=policy_id,
                                explanation="accepted_repertoire_move" if matched else "defined_repertoire_move_not_played")
             finding["encounter_id"] = identity(game["workspace_id"], game["game_id"], game["player"],

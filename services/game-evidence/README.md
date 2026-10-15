@@ -49,11 +49,13 @@ Reports distinguish comparison readiness from Learning delivery status.
 ## Snapshot and replay semantics
 
 `fixtures/snapshot.json` is **service-local input schema 1**, not an extension
-of shared wire v1. It contains an immutable Content Publication, a matching
+of a shared wire contract. It contains an immutable Content Publication, a matching
 activated acknowledgement, and explicit repertoire routes/card bindings. Each
 binding names a ply on a legal route. `reentry: true` authorizes that route node
 after divergence. Missing or ambiguous route/policy/acceptance evidence stays
 unknown. Only reference-graded move-line decisions are supported.
+`complete: true` explicitly identifies a complete comparison scope. Missing or
+false completeness never authorizes withdrawal of previously delivered facts.
 
 The adapter validates legal routes, binding positions/colors and publication
 lineage. It trusts the explicitly supplied activation receipt; it does not
@@ -105,7 +107,8 @@ Provider references: [Lichess guidance](https://lichess.org/page/api-tips),
 ## Delivery boundary and remaining scope
 
 Set `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` or `work --learning-endpoint URL` to
-an explicit EvidenceDelivery-v1 receiver. The actual receiver is not presumed
+an explicit EvidenceDelivery-v2 receiver. This producer depends on B's published
+contract 2.0.0 in PR #281, pinned at f614e122. The actual receiver is not presumed
 implemented here; tests use a strict fake. Reports and JSON fixtures can be used
 without starting this service.
 
@@ -115,11 +118,12 @@ not completion. Retries back off up to 15 minutes, honoring longer Retry-After.
 Only supported misses generate obligations; empty/no-match comparisons need no
 malformed nonempty payload. Logical identity survives reanalysis/shared routes.
 
-Wire v1 lacks correction/withdrawal semantics. Any previous possibly delivered
-evidence makes reanalysis preserve a durable **blocked replacement intent**, even
-if the new result has no misses. It does not claim withdrawal. B must publish that
-protocol before correction delivery and full acceptance can finish. F owns actual
-C-to-B integration proof. No Learning/Content database is read or written.
+The producer explicitly selects v2. Evidence is split into stable 64-ply scopes,
+each comfortably below the 128-item wire limit. Corrections update exact logical
+obligation revisions or explicitly withdraw the prior contribution; absent items
+never imply withdrawal. Pending earlier acknowledgements are replayed before a
+replacement is sent. Missing/partial comparison scope preserves blocked intent.
+F owns actual C-to-B integration proof. No Learning/Content database is accessed.
 
 ## Checks
 

@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "game": {
+    "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": [
+      "d2d4"
+    ],
+    "observed_color": "white",
+    "player": "learner",
+    "played_at": null,
+    "source_digest": "04e8efcf064e64a69e966c6695c2340c84f2e31a6b875c3d72ff3538c68e2465",
+    "headers": {
+      "Event": "?",
+      "Site": "?",
+      "Date": "2026.10.15",
+      "Round": "?",
+      "White": "Learner",
+      "Black": "Opponent",
+      "Result": "1/2-1/2"
+    },
+    "workspace_id": "fixture",
+    "game_id": "b223bcb7d7d876be61370ef0cec020b51274124bd6bb17a9ea2f201630437277",
+    "revision": 1,
+    "provider": "pgn",
+    "provider_game_id": "alternative",
+    "imported_at": "2026-10-15T12:00:00+00:00"
+  },
+  "comparison_revision": 1,
+  "readiness": "ready",
+  "reason": null,
+  "snapshot": {
+    "digest": "d990d1f87b5e8c398321111734a561359cbd68d5d274078433afebfc3a83f162",
+    "snapshot_id": "snapshot-fixture",
+    "revision": 1,
+    "publication_id": "publication-fixture",
+    "publication_generation": 1,
+    "source_revision": 1
+  },
+  "findings": [
+    {
+      "ply": 0,
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "comparison_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "turn": "white",
+      "move": "d2d4",
+      "status": "matched",
+      "expected_moves": [
+        "d2d4",
+        "e2e4"
+      ],
+      "memberships": [
+        {
+          "repertoire_id": "repertoire-main",
+          "route_id": "route-main"
+        }
+      ],
+      "card_id": "card-shared",
+      "decision_id": "decision-root",
+      "policy_id": "policy-main",
+      "explanation": "accepted_repertoire_move",
+      "decision_position_key": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "encounter_id": "360a791e58968670243210875d40a92811a3ed9b0ef387ced852aaef23c00155"
+    }
+  ],
+  "delivery": {
+    "status": "not_required",
+    "reason": null,
+    "attempts": 0,
+    "batches": []
+  }
+}
