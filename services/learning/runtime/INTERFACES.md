@@ -21,6 +21,10 @@ may acquire a database connection or commit. Registration rejects replacements.
 The default retained receiver/settlement operates on Learning-owned obligations;
 F may install B's module in place of these defaults, never alongside a second writer.
 
+The installed `tempo-game-evidence-contracts==2.0.0` producer retains both versioned
+interfaces. This runtime default still imports `v1`; installing that producer
+does not activate v2 remediation or adopt the separately merged remediation module.
+
 Default evidence ordering uses `(workspace_id, evidence_id)`. Transport identity
 is checked first, so a completed delivery always replays its original result.
 Semantic identity is sorted-key canonical JSON of every delivery field except

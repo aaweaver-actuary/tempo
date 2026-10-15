@@ -1,9 +1,9 @@
 # Independent Learning runtime validation
 
 The original implementation and initial repair evidence are preserved below.
-**Final qualification after independent review** records the latest executed
-76-check source. Earlier 44-check and 74-check results are historical milestones,
-not substitutes for qualification of the reviewed follow-up.
+**Current-main compatibility refresh** records the final producer/tooling update
+after main advanced during publication. Earlier 44-check, 74-check and pre-refresh
+76-check results remain historical milestones with their exact source identities.
 
 Installed artifact qualification: `c4e24327775e478f13cc46fec899775ecf4dacc6`. Final native resource/cleanup qualification: `7fa179b06bae859aeb6e680498e8ae430d4cb3ae`, based on refreshed `main` `f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4`. The intervening runner change confines scratch data to the invocation; runtime package source is unchanged. Subsequent documentation records these results. No live checkout, database, service or development copy was reused.
 
@@ -315,3 +315,20 @@ changing afterward. Refs, pushed PR identity and checkout cleanup are preserved
 in `handoff.json` outside the checkout. All original publication-size, downstream
 integration and provider-truth limits above remain explicit and nonblocking for
 this component pass.
+
+## Current-main compatibility refresh
+
+Before publication, `main` advanced to
+`52f26ee55b08a70d5529847cd5849b10cbd12351` by merging PR #281 (remediation and
+Game Evidence contracts 2.0.0) and PR #282 (browser-lane tooling). Those changes
+affect this PR's actual producer metadata and tooling inputs, so the task branch
+integrated that main revision with a normal merge, preserving both histories.
+The runtime pins the current contracts distribution 2.0.0 while continuing to
+import its retained **v1** interface. No v2 receiver, remediation implementation,
+new admission writer or migration registration was adopted. The component-local
+and affected backend lockfiles are refreshed against the actual producer.
+
+The changed inputs require fresh native, installed, compatibility, boundary and
+component-tooling results below. The earlier 73-tooling result is not reused for
+the newly merged browser-lane tooling. These checks remain component-focused;
+passing them will not claim full browser-lane or remediation integration.
