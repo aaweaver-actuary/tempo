@@ -33,6 +33,7 @@ export function immutableReviewPayload(review: Record<string, unknown>): Record<
 export function studyIntentRecords(kind?: string): IntentRecord[] { requireReady(); return records.filter(record => !kind || record.kind === kind); }
 export function savedTeachingFacts(): TeachingFact[] { requireReady(); return facts; }
 export function legacyStudyCutoverRequired(): boolean { return legacyWriterObserved || (legacyPresent() && localStorage.getItem(acknowledgementKey) !== "acknowledged"); }
+export function isStudyIntentStoreCurrent(store: IntentStore) { return connection === store; }
 export function studyIntentStorageReady() { return Boolean(connection) && !failure && !legacyWriterObserved; }
 export function subscribeStudyIntents(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
 

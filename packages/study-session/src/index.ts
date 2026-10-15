@@ -44,7 +44,10 @@ export function createStudySession(options: {
     const displayedKey = snapshot.key;
     const current = await options.store.get(key);
     if (!current) throw new Error("The original completed study request is unavailable.");
-    if (current.state === "committed" || current.state === "conflicted") return { state: current.state, receipt: current.receipt, data: current.data };
+    if (current.state === "committed" || current.state === "conflicted") {
+      if (key === displayedKey) publish(current.state, generation, displayedKey);
+      return { state: current.state, receipt: current.receipt, data: current.data };
+    }
     if (current.state === "discarded") throw new Error("This study request was explicitly discarded.");
     const token = await options.store.claim(key, owner, now(), options.claimDurationMs ?? 60_000);
     if (!token) {
@@ -86,11 +89,18 @@ export function createStudySession(options: {
       snapshot = { phase: "active", generation: snapshot.generation + 1, key };
       for (const listener of listeners) listener();
     },
-    async submit(envelope: IntentEnvelope, data?: unknown): Promise<Settlement> {
+    async submit(envelope: IntentEnvelope, data?: unknown, submission: { deliver?: boolean } = {}): Promise<Settlement> {
       const generation = snapshot.generation, displayedKey = snapshot.key;
       if (envelope.key === displayedKey) publish("persisting", generation, displayedKey);
-      try { await options.store.put(envelope, data); }
+      let retained: IntentRecord;
+      try { retained = await options.store.put(envelope, data); }
       catch (error) { if (envelope.key === displayedKey) publish("storage-failed", generation, displayedKey, error); throw error; }
+      if (submission.deliver === false) {
+        if (retained.state === "discarded") throw new Error("This study request was explicitly discarded.");
+        const state = retained.state === "committed" || retained.state === "conflicted" ? retained.state : "pending";
+        if (envelope.key === displayedKey) publish(state, generation, displayedKey);
+        return { state, receipt: retained.receipt, data: retained.data };
+      }
       return recover(envelope.key);
     },
     checkSave: recover,

@@ -282,9 +282,10 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     }
     setBusy(true); setSaveError("");
     try {
+      const retained = await retainedStudyRequest(`${requestScope}:self-assess`);
       const confirmed = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
         endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`,
-        requestId: `${reply.attempt_id}:self-assess`, attemptId: reply.attempt_id, body: { rating } });
+        requestId: retained?.requestId ?? `${reply.attempt_id}:self-assess`, attemptId: reply.attempt_id, body: retained?.body ?? { rating } });
       const body = await confirmed.json() as AttemptReply & { detail?: string };
       if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
       if (generation === generationRef.current) setReply(body);

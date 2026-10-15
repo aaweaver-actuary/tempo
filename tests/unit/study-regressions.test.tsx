@@ -1,4 +1,4 @@
-import { advanceStudyTimers } from "./support/study-intent-fixtures";
+import { advanceStudyTimers, settleStudyStorageTasks } from "./support/study-intent-fixtures";
 import {
   act,
   fireEvent,
@@ -213,6 +213,7 @@ describe("reported study regressions", () => {
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([902]);
     await pause(751);
     vi.useRealTimers();
@@ -261,6 +262,7 @@ describe("reported study regressions", () => {
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(911);
     finishFirstReview?.(Response.json({ detail: "Database busy" }, { status: 503 }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([911]);
     fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(912));
@@ -307,6 +309,7 @@ describe("reported study regressions", () => {
     const finalFen = screen.getByTestId("board").getAttribute("data-fen");
     const completedToken = useTrainingStore.getState().attempt;
     expect(new Chess(finalFen!).isCheckmate()).toBe(true);
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews()).toHaveLength(1);
     await act(async () => { await fetchAndInitializeQueue(); });
     expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(finalFen);
@@ -314,6 +317,7 @@ describe("reported study regressions", () => {
     await pause(751);
     await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(812));
     expect(reviews).toHaveLength(1);
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews()).toHaveLength(0);
   });
 
@@ -343,11 +347,13 @@ describe("reported study regressions", () => {
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews()).toHaveLength(1);
     mounted.unmount();
     vi.useRealTimers();
     render(<Home />);
     await waitFor(() => expect(reviewCount).toBe(1));
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews()).toHaveLength(0);
     vi.useFakeTimers();
     await pause(751);
@@ -389,6 +395,7 @@ describe("reported study regressions", () => {
     vi.useRealTimers();
     await waitFor(() => expect(screen.getByRole("button", { name: "Check save" })).toBeTruthy());
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(831);
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews()).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Check save" }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
@@ -425,6 +432,7 @@ describe("reported study regressions", () => {
     vi.useRealTimers();
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry loading the queue" })).toBeTruthy());
     expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(finalFen);
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews()).toHaveLength(0);
   });
   it("connected completion waits for authoritative real-game obligations before starting the next card", async () => {
@@ -583,6 +591,7 @@ describe("reported study regressions", () => {
     await waitFor(() => expect(screen.getByText("Priority review · missed in a recent game")).toBeTruthy());
     expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
     fireEvent.click(screen.getByText("e2e4"));
+    await act(async () => { await settleStudyStorageTasks(); });
     expect(pendingReviews()[0]).toMatchObject({ outcome: "correct", guided: false });
     expect(teachingPosts).toEqual([]);
   });
@@ -1053,12 +1062,12 @@ it("final repair reconciliation immediately loads newly unblocked cards from an 
   await within(dialog).findByText(/All choices queued/);
   fireEvent.click(within(dialog).getByRole("button", { name: "Defer repertoire repair" }));
   vi.useFakeTimers();
-  await act(async () => { await flushIntegrityRepairs(); });
+  await act(async () => { await flushIntegrityRepairs(); await settleStudyStorageTasks(); });
   expect(pendingIntegrityRepairs()).toHaveLength(1);
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ issueId: repairIssue.id, phase: "validating", taskId: submission.task_id });
   const queueReadsBeforeCompletion = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
   repairPublished = true;
-  await act(async () => { await flushIntegrityRepairs(); });
+  await act(async () => { await flushIntegrityRepairs(); await settleStudyStorageTasks(); });
   expect(pendingIntegrityRepairs()).toHaveLength(0);
   expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")))
     .toHaveLength(queueReadsBeforeCompletion + 1);
@@ -1685,7 +1694,7 @@ for (const { title, hasRemainingConflict, crossTab } of [
     studyMove.focus();
     const beforeConfirmation = useTrainingStore.getState();
     const queueReadsBeforeConfirmation = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
-    await act(async () => { await flushIntegrityRepairs(); });
+    await act(async () => { await flushIntegrityRepairs(); await settleStudyStorageTasks(); });
     const countsBeforeCompletion = fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/repertoires")).length;
     serverIssues = hasRemainingConflict ? repairIssues.slice(1) : [];
     if (crossTab) {
@@ -1697,7 +1706,7 @@ for (const { title, hasRemainingConflict, crossTab } of [
         window.dispatchEvent(new StorageEvent("storage", { key: storageKey, oldValue, newValue: null, storageArea: localStorage }));
       });
     } else {
-      await act(async () => { await flushIntegrityRepairs(); });
+      await act(async () => { await flushIntegrityRepairs(); await settleStudyStorageTasks(); });
     }
     // Local validation reads publication once, then Home reconciles once; external removal only reconciles.
     expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/repertoires")))

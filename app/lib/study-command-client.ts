@@ -2,7 +2,7 @@ import { registerStudyDeliveryAdapter, studySession } from "./study-session-runt
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import type { IntentRecord } from "@tempo/browser-intents";
 import { confirmOperationResponse, PendingOperationError, readOperationResponse } from "./operation-status";
-import { studyIntentStore, putStudyIntent } from "./study-intent-storage";
+import { studyIntentStore } from "./study-intent-storage";
 
 type FrozenStudyRequest = { body: Record<string, unknown>; headers: Record<string, string>; scope: string };
 async function deliver(record: IntentRecord, signal: AbortSignal) {
@@ -43,12 +43,12 @@ export async function executeStudyRequest(input: { scope: string; endpoint: stri
   const store = await studyIntentStore();
   const key = `${input.scope}:${input.requestId}`;
   const previous = await store.get(key);
-  await putStudyIntent({ key, kind: input.kind ?? "study-command", attemptId: input.attemptId ?? String(input.body.attempt_id ?? input.requestId),
+  const coordinator = await studySession();
+  if (coordinator.getSnapshot().key !== key) coordinator.start(key);
+  const result = await coordinator.submit({ key, kind: input.kind ?? "study-command", attemptId: input.attemptId ?? String(input.body.attempt_id ?? input.requestId),
     requestId: input.requestId, endpoint: input.endpoint, revision: Number(input.body.revision ?? input.body.exercise_revision ?? 1),
     createdAt: previous?.createdAt ?? new Date().toISOString(), payload: { body: input.body, scope: input.scope,
       headers: { "Content-Type": "application/json", "Idempotency-Key": input.requestId } } });
-  const coordinator = await studySession();
-  const result = await coordinator.checkSave(key);
   if (!result.receipt) throw new PendingOperationError(input.requestId);
   return Response.json(result.receipt);
 }

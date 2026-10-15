@@ -76,7 +76,7 @@ import RepertoireView from "./repertoire_view";
 import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
-import { useGameSync } from "../hooks/use-game-sync";
+import { WorkbenchGameSync } from "../components/workbench-game-sync";
 import { Chess, Move, Square } from "chess.js";
 import {
   useTrainingStore,
@@ -154,7 +154,6 @@ function StudyComposition() {
     };
   }, []);
   const [currentView, setCurrentView] = useState<View>("train");
-  const gameSync = useGameSync(currentView !== "train");
   const [comparisonLaunch, setComparisonLaunch] = useState<ComparisonLaunch>();
   const [comparisonOpenError, setComparisonOpenError] = useState("");
   const [discoveryReturn, setDiscoveryReturn] = useState<{
@@ -469,8 +468,8 @@ function StudyComposition() {
   const refreshDatabaseQueue = useCallback(
     async (advance = false, replaySavedReviews = true) => {
       invalidateWorkspaceData();
-      await fetchAndInitializeQueue(advance, { replaySavedReviews });
-      await checkPendingIntegrity();
+      const result = await fetchAndInitializeQueue(advance, { replaySavedReviews });
+      if (result !== "superseded") await checkPendingIntegrity();
     },
     [checkPendingIntegrity],
   );
@@ -546,7 +545,7 @@ function StudyComposition() {
         updateNotification(notice, { details: { ...details, phase: "authoritative refresh requested", acquisition: acquisition + 1 },
           message: acquisition ? "Result saved. Retrying the next card…" : "Result saved. Loading the next card…", active: true });
         const result = await fetchAndInitializeQueue(true, { replaySavedReviews: false, timeoutMs: 15_000, expectedAttempt, signal });
-        if (!ownsProgression() || result === "superseded") return;
+        if (!ownsProgression() || result === "superseded") { settleSuperseded(); return; }
         setReviewPersistenceState(conflicted ? "conflicted" : "idle");
         setSafeBreakCounter(count => count + 1);
         resolveNotification(notice, { severity: "success", details: { ...details, phase: result === "exhausted" ? "queue exhausted" : "next card installed" },
@@ -1293,6 +1292,7 @@ function StudyComposition() {
         backendId: card.backendId, queueEntryId: card.queueEntryId ?? 0,
         attemptId: useTrainingStore.getState().attempt.attemptId,
       };
+      reviewSaveDiagnosticIdentity.current = saveIdentity;
       const showSubmittedReviewUnconfirmed = () => {
         if (transitionGeneration !== reviewTransitionGeneration.current) return;
         const retainedReviews = pendingReviews();
@@ -2095,7 +2095,7 @@ function StudyComposition() {
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
         )}
         {currentView === "games" && (
-          <>
+          <WorkbenchGameSync>{gameSync => <>
             <GamesView
               initialFenFilter={gamesFenFilter}
               initialRepertoireFilter={gamesRepertoireFilter}
@@ -2137,7 +2137,7 @@ function StudyComposition() {
               pieceSet={pieceSet}
               useSharedBoard
             />
-          </>
+          </>}</WorkbenchGameSync>
         )}
         {currentView === "insights" && (
           <InsightsView

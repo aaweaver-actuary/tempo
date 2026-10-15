@@ -21,7 +21,9 @@ Learning result. Only confirmed Learning responses settle reviews.
 `@tempo/study-session` owns delivery, settlement and bounded progression. The
 application's `study-session-runtime.ts` creates one coordinator per store and
 registers protocol adapters. The coordinator exposes snapshots/subscriptions,
-start, submit, check-save, retry-save, retry-next and disposal. Review/outbox
+start, submit, check-save, retry-save, retry-next and disposal. Submit can capture
+a completion durably while deferring delivery until the existing feedback pause
+ends. It reports pending only after that capture commits. Review/outbox
 presentation, failure/teaching adapters and specialized exercise views use the
 same durable boundary. The training store remains the board projection.
 
@@ -110,6 +112,13 @@ that each waiter receives its own terminal outcome and earlier partial
 settlements survive a later failure. Failure delivery can run alongside queue
 acquisition after earlier review settlement; hydration still uses the retained
 failure fact and never permits a clean attempt on that basis.
+
+The feedback-completion regression formerly treated removal from the pending
+array as an absence of evidence and required a fresh receipt read. Its replacement
+checks the retained committed receipt: later pending/unconfirmed transport state
+cannot undo a known committed result. The missing-identity regression continues
+to reject advancement without a retained completion. Storage-fault diagnostics
+still identify the original attempt and expose the browser's original cause.
 
 The protected phone pilot formerly asserted deletion of a legacy array. Its
 replacement assertion inspects the committed native intent/receipt, because this

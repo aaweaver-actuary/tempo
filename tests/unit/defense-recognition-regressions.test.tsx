@@ -210,3 +210,24 @@ it("reported Rc4 recognition uses the after-move rook square with keyboard and t
   fireEvent.click(screen.getByRole("button", { name: "Continue to defense" }));
   expect(screen.getByTestId("recognition-board").getAttribute("data-fen")).toBe(originalFen);
 });
+
+it("issue219 ambiguous defense retains its original command and permits a new immutable move attempt", async () => {
+  const moves: Record<string, unknown>[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    if (String(input).endsWith("/attempt")) {
+      moves.push(JSON.parse(String(options?.body)));
+      return Response.json({ status: moves.length === 1 ? "ambiguous" : "correct" });
+    }
+    return Response.json({ candidate_id: "candidate", card_id: "defense-card", exercise_revision: 2,
+      rubric_version: 3, recognition_required: false, proposed_move_uci: "a2a3", proposed_move_san: "a3", preview_fen: previewFen });
+  }));
+  render(<DefenseTrainingView card={card} boardTheme="brown" pieceSet="cburnett" useSharedBoard={false} onAdvance={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Play defensive a4" }));
+  await screen.findByText(/too close to the grading threshold/);
+  const first = structuredClone(moves[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Play defensive a4" }));
+  await waitFor(() => expect(moves).toHaveLength(2));
+  expect(moves[0]).toEqual(first);
+  expect(moves[1]).toMatchObject({ exercise_revision: 2, move_uci: "a2a4", queue_entry_id: 7 });
+  expect(moves[1].attempt_id).not.toBe(moves[0].attempt_id);
+});

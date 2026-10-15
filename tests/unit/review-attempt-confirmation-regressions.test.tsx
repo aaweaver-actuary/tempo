@@ -1,4 +1,4 @@
-import { advanceStudyTimers, settleStudyStorageTasks } from "./support/study-intent-fixtures";
+import { advanceStudyTimers, settleStudyStorageTasks, interceptIntentWrites } from "./support/study-intent-fixtures";
 import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -324,7 +324,7 @@ it("issue186_stale_progression_cannot_replace_new_attempt", async () => {
     useTrainingStore.setState({ queueReadiness: "ready" });
   });
   const newerAttempt = useTrainingStore.getState().attempt;
-  await act(async () => { finishQueue(Response.json({ cards: [queueCard("old-next", 13)], count: 1 })); });
+  await act(async () => { finishQueue(Response.json({ cards: [queueCard("old-next", 13)], count: 1 })); await settleStudyStorageTasks(); });
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(99);
   expect(useTrainingStore.getState().attempt).toEqual(newerAttempt);
   expect(useTrainingStore.getState().queueReadiness).toBe("ready");
@@ -702,7 +702,7 @@ it("PR105 foreground saving defers independent idle recovery until the save sett
     ? Response.json({ state: "complete", response: { persisted: true } })
     : new Promise<Response>(resolve => { finishSave = resolve; });
   let saving!: Promise<void>;
-  await act(async () => { saving = trainingProps.rateCard("correct"); });
+  await act(async () => { saving = trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(trainingProps.reviewPersistenceState).toBe("saving");
   await act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "foreground-independent", outcome: "correct", guided: false }));
@@ -732,7 +732,7 @@ it("PR105 a later independent flush failure cannot erase the submitted persisted
     : Response.json({ detail: "Other result invalid", retryable: false }, { status: 422 });
   const submittedAttemptId = useTrainingStore.getState().attempt.attemptId;
   let saving!: Promise<void>;
-  await act(async () => { saving = trainingProps.rateCard("correct"); });
+  await act(async () => { saving = trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   await act(async () => await enqueuePendingReview({ backendId: "card-b", queueEntryId: 13,
     attemptId: "later-independent-failed", outcome: "correct", guided: false }));
   queue = [queueCard("card-c", 14)];
@@ -752,7 +752,7 @@ it("PR105 late foreground persistence cannot advance an unrelated replacement at
   let finishSave!: (response: Response) => void;
   reviewResponse = async () => new Promise<Response>(resolve => { finishSave = resolve; });
   let saving!: Promise<void>;
-  await act(async () => { saving = trainingProps.rateCard("correct"); });
+  await act(async () => { saving = trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   act(() => useTrainingStore.getState().hydrateLocalQueue([mapQueueCardToPracticeCard(queueCard("card-b", 13))], true));
   const activeBeforeSave = snapshotActive();
   queue = [queueCard("card-c", 14)];
@@ -776,7 +776,7 @@ it("PR105 explicit legacy retry credits the normalized attempt without a new ide
   expect(reviewPosts()[0][1]?.headers).toMatchObject({ "Idempotency-Key": "review-attempt:legacy-online:12" });
 });
 
-it.each(["queued", "unconfirmed"])("PR105 completion removed during feedback requires its own persisted receipt state=%s", async receiptState => {
+it.each(["queued", "unconfirmed"])("PR105 committed completion during feedback retains its durable receipt despite later state=%s", async receiptState => {
   await readyHome();
   const position = new Chess(); position.move("e4"); position.move("e5");
   act(() => {
@@ -785,23 +785,19 @@ it.each(["queued", "unconfirmed"])("PR105 completion removed during feedback req
     useTrainingStore.getState().setAttemptPhase("playerTurn");
   });
   const originalAttemptId = useTrainingStore.getState().attempt.attemptId;
-  await act(async () => { trainingProps.onMove("g1", "f3"); });
+  await act(async () => { trainingProps.onMove("g1", "f3"); await settleStudyStorageTasks(); });
   expect(pendingReviews()).toHaveLength(1);
   await act(async () => { await flushPendingReviews(); });
   expect(pendingReviews()).toEqual([]);
   reviewResponse = async () => Response.json(receiptState === "queued"
     ? { state: "queued" } : { state: "complete", response: { persisted: false } });
-  await act(async () => { await advanceStudyTimers(751); });
-  expect(trainingProps.reviewPersistenceState).toBe("pendingConfirmation");
-  expect(useTrainingStore.getState().attempt.attemptId).toBe(originalAttemptId);
-  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(12);
-  expect(reviewPosts()).toHaveLength(1);
-  reviewResponse = async () => Response.json({ state: "complete", response: { persisted: true } });
   queue = [queueCard("card-b", 13)];
-  await act(async () => { trainingProps.retryReviewSave!(); await settleStudyStorageTasks(); });
+  const receiptReadsBefore = fetcher.mock.calls.filter(([url]) => String(url).includes("/api/operations/")).length;
+  await act(async () => { await advanceStudyTimers(751); });
   vi.useRealTimers();
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13));
   expect(reviewPosts()).toHaveLength(1);
+  expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/api/operations/"))).toHaveLength(receiptReadsBefore);
   expect(trainingProps.reviewPersistenceIdentity?.attemptId).toBe(originalAttemptId);
 });
 
@@ -812,11 +808,7 @@ it("PR105 non-replay save failure retains raw diagnostics in one attempt-owned i
   clearDebugErrors();
   const attemptId = useTrainingStore.getState().attempt.attemptId!;
   const failure = new DOMException("Browser denied retaining the completed review", "SecurityError");
-  const originalWrite = Storage.prototype.setItem;
-  const storageWrite = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-    if (key === "tempo-pending-training-reviews-v1") throw failure;
-    originalWrite.call(this, key, value);
-  });
+  const storageWrite = interceptIntentWrites(record => { if (record.kind === "review" && record.state === "pending") throw failure; });
   try {
     await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
@@ -860,11 +852,7 @@ it("PR105 non-replay replacement save failure keeps diagnostics off the prior sa
   const failedAttemptId = useTrainingStore.getState().attempt.attemptId;
   expect(failedAttemptId).not.toBe(earlierAttemptId);
   const failure = new Error("Replacement review retention denied");
-  const originalWrite = Storage.prototype.setItem;
-  const storageWrite = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-    if (key === "tempo-pending-training-reviews-v1") throw failure;
-    originalWrite.call(this, key, value);
-  });
+  const storageWrite = interceptIntentWrites(record => { if (record.kind === "review" && record.state === "pending") throw failure; });
   try {
     await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
     expect(trainingProps.reviewPersistenceState).toBe("saveFailed");

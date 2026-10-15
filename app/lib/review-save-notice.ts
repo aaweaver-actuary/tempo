@@ -1,3 +1,4 @@
+import { IntentStorageError } from "@tempo/browser-intents";
 import { notifications, publishNotification, resolveNotification, updateNotification } from "./notifications";
 import { reportDebugError } from "./debug-reporting";
 import { PendingOperationError } from "./operation-status";
@@ -31,7 +32,8 @@ export function confirmReviewSaveNotice(review: PendingReview): void {
 
 export function reportReviewSaveFailure(error: unknown, review: Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId">): void {
   try {
-    const diagnostic = reportDebugError(error, { source: "training-review-save", operation: "save completed review",
+    const underlying = error instanceof IntentStorageError && error.cause ? error.cause : error;
+    const diagnostic = reportDebugError(underlying, { source: "training-review-save", operation: "save completed review",
       cardId: review.backendId, queueEntryId: review.queueEntryId, attemptId: review.attemptId, notify: false });
     const key = reviewSaveNoticeKey(review);
     const previous = notifications().find(record => record.key === key && !record.resolvedAt);

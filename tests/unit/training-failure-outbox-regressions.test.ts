@@ -1,3 +1,4 @@
+import { withMissingReceipts } from "./support/study-intent-fixtures";
 import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
@@ -17,7 +18,7 @@ it("prefetched guided failure waits for the prior review and survives reload", a
   await enqueueTrainingFailure(42);
   const fetcher = vi.fn(async (url: string) => String(url).endsWith("/review")
     ? Response.json({ persisted: true }) : Response.json({ attempt_failed: true }));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await flushTrainingFailures();
   expect(fetcher).not.toHaveBeenCalled();
   expect(pendingTrainingFailures()).toEqual([42]);
@@ -58,7 +59,7 @@ it("intentional failed attempt survives reload and replays once for its queue en
   const fetcher = vi.fn()
     .mockResolvedValueOnce(Response.json({ detail: "busy" }, { status: 503 }))
     .mockResolvedValueOnce(Response.json({ attempt_failed: true }));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await expect(flushTrainingFailures()).rejects.toThrow("busy");
   expect(pendingTrainingFailures()).toEqual([1974]);
   await flushTrainingFailures();
@@ -76,7 +77,7 @@ it("completed queue entry clears a stale guided marker without another failure",
   const fetcher = vi.fn(async (url: string) => String(url).endsWith("/state")
     ? Response.json({ state: "completed", attempt_failed: true })
     : Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 }));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await flushTrainingFailures();
   expect(pendingTrainingFailures()).toEqual([]);
   expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
@@ -99,7 +100,7 @@ it("guided failure replay preserves its displayed card revision through a transi
   await enqueueTrainingFailure(42, "original-card", 3);
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "busy" }, { status: 503 }))
     .mockResolvedValueOnce(Response.json({ attempt_failed: true }));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await expect(flushTrainingFailures()).rejects.toThrow("busy");
   await flushTrainingFailures();
   expect(fetcher.mock.calls.map(([, request]) => JSON.parse(request.body))).toEqual([
@@ -111,7 +112,7 @@ it("guided failure replay preserves its displayed card revision through a transi
 it("explicit ambiguous guided marker conflict cannot rotate onto replacement content", async () => {
   await enqueueTrainingFailure(42, "original-card", 3);
   const fetcher = vi.fn().mockResolvedValue(Response.json({ code: "queue_attempt_unprovable", detail: "Original attempt changed" }, { status: 409 }));
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await expect(flushTrainingFailures()).rejects.toThrow("Original attempt changed");
   await flushTrainingFailures();
   expect(fetcher).toHaveBeenCalledTimes(1);
@@ -148,7 +149,7 @@ it.each([
     expect(options?.body).toBeUndefined();
     return Response.json({ detail: "Temporarily unavailable" }, { status: 503 });
   });
-  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
   await flushTrainingFailures();
   expect(fetcher).not.toHaveBeenCalled();
   const normalized = pendingTrainingFailureContexts();
@@ -160,9 +161,9 @@ it.each([
   expect(keys).toEqual([normalized[0].operationId, normalized[0].operationId]);
   expect(normalized).toEqual([{ queueEntryId: 42, operationId: expect.any(String) }]);
   let releaseMarker!: (response: Response) => void;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
+  vi.stubGlobal("fetch", withMissingReceipts(vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/fail")
     ? new Promise<Response>(resolve => { releaseMarker = resolve; })
-    : Response.json({ persisted: true })));
+    : Response.json({ persisted: true }))));
   const heldMarkerDelivery = flushTrainingFailures();
   const heldMarkerFailure = expect(heldMarkerDelivery).rejects.toThrow("Temporarily unavailable");
   try {

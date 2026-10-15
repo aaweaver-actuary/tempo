@@ -58,3 +58,8 @@ test('issue219_unexpired_crashed_tab_lease_allows_receipt_confirmation_without_d
     assert.equal(posts, 0); assert.equal(reads, 1); assert.equal((await store.get('review:a')).state, 'committed');
   } finally { session.dispose(); store.close(); }
 });
+test('issue219_capture_commits_before_deferred_feedback_delivery', async () => run(async () => { throw new Error('delivery must wait'); }, async (session, store) => {
+  await session.submit(envelope(), undefined, { deliver: false });
+  assert.equal((await store.get('review:a')).state, 'pending');
+  assert.equal(session.getSnapshot().phase, 'pending');
+}));

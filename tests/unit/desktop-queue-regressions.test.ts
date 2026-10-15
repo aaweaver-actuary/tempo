@@ -321,6 +321,7 @@ it.each(legacyFailureFormats)("legacy $name marker blocks clean hydration during
     await fetchAndInitializeQueue().catch(() => undefined);
     expectNoCleanLegacyAttempt();
     expect(JSON.parse(localStorage.getItem("tempo-pending-training-failures-v1")!)).toEqual(normalized);
+    await settleStudyStorageTasks();
     serverFailed = true;
     resolveMarker(Response.json({ attempt_failed: true }));
     await waitFor(() => expect(pendingTrainingFailures()).toEqual([]));
@@ -368,6 +369,7 @@ it("authoritative legacy marker resolution guides a retained active attempt with
   try {
     await fetchAndInitializeQueue().catch(() => undefined);
     expectNoCleanLegacyAttempt();
+    await settleStudyStorageTasks();
     serverFailed = true;
     resolveMarker(Response.json({ attempt_failed: true }));
     await flushTrainingFailures();

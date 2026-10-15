@@ -1,7 +1,7 @@
 import type { StudySession } from "@tempo/study-session";
 import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 import type { IntentRecord } from "@tempo/browser-intents";
-import { putStudyIntent, studyIntentRecords, studyIntentStore, updateStudyIntent, refreshStudyIntents, immutableReviewPayload } from "./study-intent-storage";
+import { studyIntentRecords, studyIntentStore, updateStudyIntent, refreshStudyIntents, immutableReviewPayload } from "./study-intent-storage";
 import { confirmReviewSaveNotice, reportReviewSaveStatus } from "./review-save-notice";
 import type { PreparedNextIdentity, PreparedContinuation } from "./prepared-review-continuation";
 import { API_URL } from "../const";
@@ -184,9 +184,13 @@ export async function enqueuePendingReview(review: PendingReview): Promise<strin
     return logicalAttemptId(previous);
   }
   const normalizedReview = { ...review, attemptId: review.attemptId ?? crypto.randomUUID(), completedAt: review.completedAt ?? new Date().toISOString() };
-  const retain = (payload: PendingReview) => putStudyIntent({ key: `review:${normalizedReview.attemptId}`, kind: "review", attemptId: normalizedReview.attemptId,
+  const retain = async (payload: PendingReview) => {
+    const coordinator = await reviewStudySession();
+    await coordinator.submit({ key: `review:${normalizedReview.attemptId}`, kind: "review", attemptId: normalizedReview.attemptId,
     requestId: `review-attempt:${normalizedReview.attemptId}`, endpoint: `/api/cards/${encodeURIComponent(review.backendId)}/review`,
-    revision: review.expectedRevision, createdAt: normalizedReview.completedAt, payload: immutableReviewPayload(payload) }, payload);
+    revision: review.expectedRevision, createdAt: normalizedReview.completedAt, payload: immutableReviewPayload(payload) }, payload, { deliver: false });
+    await refreshStudyIntents();
+  };
   try { await retain(normalizedReview); }
   catch (error) {
     const cause = error instanceof IntentStorageError ? error.cause : error;

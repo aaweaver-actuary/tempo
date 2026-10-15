@@ -155,7 +155,7 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
 
   fireEvent.click(screen.getByRole("button", { name: "Correct (self-assessed)" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
-  fireEvent.click(screen.getByRole("button", { name: "Correct (self-assessed)" }));
+  fireEvent.click(screen.getByRole("button", { name: "Again (self-assessed)" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Correct (self-assessed)" })).toBeNull());
   expect(assessmentStatusReads).toBe(2);
   expect(assessmentWrites).toEqual([

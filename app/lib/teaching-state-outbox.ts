@@ -1,11 +1,12 @@
+import type { IntentRecord } from "@tempo/browser-intents";
 import { API_URL } from "../const";
 import { confirmOperationResponse, readOperationResponse, PendingOperationError } from "./operation-status";
-import { rememberTeachingFact, studyIntentRecords, studyIntentStore, updateStudyIntent } from "./study-intent-storage";
+import { rememberTeachingFact, studyIntentRecords, studyIntentStore, refreshStudyIntents } from "./study-intent-storage";
+import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
 
 export type PendingTeachingState = { cardId: string; revision: number; ply: number };
 let activeFlush: Promise<void> | undefined;
 let activeStore: Awaited<ReturnType<typeof studyIntentStore>> | undefined;
-const deliveryOwner = crypto.randomUUID();
 export function pendingTeachingStates(): PendingTeachingState[] {
   return studyIntentRecords("teaching").filter(record => record.state === "pending").map(record => record.payload as PendingTeachingState);
 }
@@ -16,29 +17,34 @@ export async function enqueueTeachingState(state: PendingTeachingState): Promise
   await rememberTeachingFact({ key: id, ...state, kind: "seen" }, { key: `teaching:${id}`, kind: "teaching", attemptId: id, requestId: `teaching:${id}`,
     revision: state.revision, endpoint: `/api/cards/${encodeURIComponent(state.cardId)}/teaching`, createdAt: "teaching-fact", payload: state });
 }
-async function saveTeachingStates(): Promise<void> {
+async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
+  const response = await readOperationResponse(record.requestId, { allowMissing: true, signal });
+  if (response.status === 404) return undefined;
+  return { state: "committed" as const, receipt: await response.json() };
+}
+async function deliver(record: IntentRecord, signal: AbortSignal) {
   const store = await studyIntentStore();
+  const state = record.payload as PendingTeachingState;
+  const started = Boolean((record.data as { started?: boolean } | undefined)?.started);
+  await store.update(record.key, latest => ({ ...latest, data: { started: true } }));
+  if (started) { const receipt = await checkReceipt(record, signal); if (receipt) return receipt; }
+  const response = await confirmOperationResponse(await fetch(`${API_URL}${record.endpoint}`, {
+    method: "POST", signal, headers: { "Content-Type": "application/json", "Idempotency-Key": record.requestId },
+    body: JSON.stringify({ revision: state.revision, ply: state.ply }),
+  }), { signal });
+  if (response.status === 202) throw new PendingOperationError(record.requestId);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { detail?: string };
+    throw new Error(body.detail ?? `Teaching save returned HTTP ${response.status}.`);
+  }
+  return { state: "committed" as const, receipt: await response.json() };
+}
+registerStudyDeliveryAdapter("teaching", deliver, checkReceipt);
+async function saveTeachingStates(): Promise<void> {
+  const coordinator = await studySession();
   for (const state of pendingTeachingStates()) {
-    const id = `teaching:${state.cardId}:${state.revision}:${state.ply}`;
-    const token = await store.claim(id, deliveryOwner, Date.now(), 60_000);
-    if (!token) continue;
-    try {
-      const current = await store.get(id);
-      const started = Boolean((current?.data as { started?: boolean } | undefined)?.started);
-      await store.update(id, latest => ({ ...latest, data: { started: true } }));
-      let response = started ? await readOperationResponse(id, { allowMissing: true }) : new Response(null, { status: 404 });
-      if (response.status === 404) response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(state.cardId)}/teaching`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": id },
-        body: JSON.stringify({ revision: state.revision, ply: state.ply }),
-      });
-      response = await confirmOperationResponse(response);
-      if (response.status === 202) throw new PendingOperationError(id);
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { detail?: string };
-        throw new Error(body.detail ?? `Teaching save returned HTTP ${response.status}.`);
-      }
-      await updateStudyIntent(id, current => ({ ...current, state: "committed", receipt: { confirmed: true } }));
-    } finally { await store.release(id, token); }
+    await coordinator.checkSave(`teaching:${state.cardId}:${state.revision}:${state.ply}`);
+    await refreshStudyIntents();
   }
 }
 export async function flushTeachingStates(): Promise<void> {

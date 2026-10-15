@@ -906,7 +906,7 @@ describe("optimistic training review outbox", () => {
     });
     await enqueuePendingReview(original); write.mockRestore();
     expect(original).toEqual(unchanged);
-    const { openingEvidenceCompletion: _completion, ...aggregate } = unchanged;
+    const aggregate = { ...unchanged }; delete aggregate.openingEvidenceCompletion;
     expect(pendingReviews()).toEqual([{ ...aggregate, evidenceFallbackReason: "local_storage_quota" }]);
     expect(writes).toEqual([unchanged, pendingReviews()[0]]);
     expect(retainEvidence).toHaveBeenCalledExactlyOnceWith(unchanged.openingEvidenceCompletion);

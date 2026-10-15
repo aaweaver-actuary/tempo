@@ -1,3 +1,4 @@
+import { studyIntentStore } from "../../app/lib/study-intent-storage";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Chess, type Square } from "chess.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -221,7 +222,7 @@ it.each([
   await play(uci);
   expect(responseJournal).toHaveBeenLastCalledWith(0, uci, classification);
   expect(useTrainingStore.getState()).toMatchObject({ feedback, isAttemptFailed: failed });
-  expect(Boolean(localStorage.getItem("tempo-pending-training-failures-v1"))).toBe(failed);
+  await waitFor(async () => expect((await (await studyIntentStore()).list("failure")).length > 0).toBe(failed));
   expect(vi.mocked(study.runStudyTask).mock.calls.filter(([task]) => task.kind === "repertoireAlternatives")).toHaveLength(prepareCalls);
   if (classification !== "expected") expect(useTrainingStore.getState().currentFenString).toBe(startFen);
 });

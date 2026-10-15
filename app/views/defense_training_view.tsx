@@ -97,7 +97,7 @@ export default function DefenseTrainingView({
   const pendingRef = useRef<PendingAttempt | null>(null);
   const submittingRef = useRef(false);
   const generationRef = useRef(0);
-  const requestScope = `defense:${candidateId}:${queueEntryId}:${card.revision ?? 1}`;
+  const requestScope = `defense:${candidateId}:${queueEntryId}:${exercise?.exercise_revision ?? card.revision ?? 1}`;
   useEffect(() => { generationRef.current += 1; return () => { generationRef.current += 1; }; }, [requestScope]);
 
   const loadExercise = useCallback(async () => {
@@ -138,7 +138,9 @@ export default function DefenseTrainingView({
     setBusy(true);
     setSaveError("");
     try {
-      const retained = await retainedStudyRequest(`${requestScope}:move`);
+      const saved = await retainedStudyRequest(`${requestScope}:move`);
+      const terminalStatus = (saved?.receipt as { status?: string } | undefined)?.status;
+      const retained = terminalStatus === "ambiguous" || terminalStatus === "illegal" ? undefined : saved;
       const confirmedResponse = await executeStudyRequest({ kind: "defense-command", scope: `${requestScope}:move`,
         endpoint: `${API_URL}/api/defense-exercises/${candidateId}/attempt`, requestId: retained?.requestId ?? `defense-attempt:${attempt.attemptId}`,
         body: retained?.body ?? { attempt_id: attempt.attemptId, exercise_revision: exercise.exercise_revision,

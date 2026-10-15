@@ -38,5 +38,6 @@ export async function settleStudyStorageTasks() {
 export async function advanceStudyTimers(milliseconds: number) {
   await settleStudyStorageTasks();
   await vi.advanceTimersByTimeAsync(milliseconds);
+  for (let turn = 0; turn < 5; turn++) { await settleStudyStorageTasks(); await vi.advanceTimersByTimeAsync(0); }
   await settleStudyStorageTasks();
 }

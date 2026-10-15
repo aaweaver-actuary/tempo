@@ -1,5 +1,5 @@
 import { recoverStudyRequests } from "../lib/study-command-client";
-import { initializeStudyIntentStorage } from "../lib/study-intent-storage";
+import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../lib/study-intent-storage";
 import { API_URL } from "../const";
 import { isIPhoneHomeScreen, localDayKey, usesLocalApi } from "../utils/local";
 import { useTrainingStore } from "../state/training-store";
@@ -268,7 +268,7 @@ export async function fetchAndInitializeQueue(
   let failedEndpoint: string | undefined;
   let queueRequestFailed = false;
   try {
-    await awaitQueueStage(initializeStudyIntentStorage(), controller.signal);
+    const intentStore = await awaitQueueStage(initializeStudyIntentStorage(), controller.signal);
     if (options.replaySavedReviews !== false) await awaitQueueStage(recoverStudyRequests(controller.signal), controller.signal);
     const pendingFailureContexts = pendingTrainingFailureContexts();
     const pendingFailureEntries = new Set(pendingFailureContexts.map((item) => item.queueEntryId));
@@ -356,10 +356,10 @@ export async function fetchAndInitializeQueue(
     updateReviewConflictNotice();
     if (pendingFailureEntries.size)
       void flushTrainingFailures().then(() => {
-        if (generation === requestGeneration) showGuidedAttemptSaveNotice();
+        if (generation === requestGeneration && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice();
       }).catch((error) => {
         failureSaveError = `Could not confirm a guided attempt. Refresh the training queue. ${String(error)}`;
-        if (generation === requestGeneration) showGuidedAttemptSaveNotice(failureSaveError);
+        if (generation === requestGeneration && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice(failureSaveError);
       });
     let raw: QueuePayload;
     try {
