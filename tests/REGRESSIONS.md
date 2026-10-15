@@ -4567,3 +4567,6 @@ the real disposable PostgreSQL integration owner. See
 
 Package-local inventories retain their ownership. Client/double tests do not
 establish PostgreSQL exactly-once effects or offline/service-worker behavior.
+## Independent Learning runtime
+
+`services/learning/runtime/REGRESSIONS.md` owns the installed/runtime, native PostgreSQL and focused Chromium client/API inventory. `backend/tests/test_durable_task_enqueue_identity.py` retains #144 coverage for event/result identity after concurrent UPSERT selection. The component manifest registers the runtime and real client/runner inputs; no complete Study UI or hosted gate qualification follows from these focused checks.

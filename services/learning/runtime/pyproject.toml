@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+[project]
+name = "tempo-learning-runtime"
+version = "0.1.0"
+description = "Workspace-scoped Learning HTTP and PostgreSQL transaction authority"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "tempo-learning-review==0.1.0", "tempo-scheduling==0.2.0", "tempo-chess-core==0.1.0",
+  "tempo-content-publication-contracts==1.0.0", "tempo-game-evidence-contracts==2.0.0",
+  "pydantic==2.12.5", "starlette==0.47.3", "fastapi==0.116.1", "uvicorn==0.35.0", "psycopg[binary]==3.3.6",
+  "psycopg-pool==3.3.3", "sqlglot==30.19.0", "chess==1.11.2", "fsrs==6.3.2", "httpx==0.28.1"
+]
+[project.scripts]
+tempo-learning = "tempo_learning_runtime.cli:main"
+[dependency-groups]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
+[tool.uv.sources]
+tempo-learning-review = { path = "../application" }
+tempo-scheduling = { path = "../../../packages/scheduling" }
+tempo-chess-core = { path = "../../../packages/chess-core" }
+tempo-content-publication-contracts = { path = "../../../contracts/content-publication" }
+tempo-game-evidence-contracts = { path = "../../../contracts/game-evidence" }
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_learning_runtime"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+[tool.hatch.build.targets.wheel.force-include]
+"fixtures" = "tempo_learning_runtime/fixtures"
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "fixtures", "integration", "browser/client.ts", "browser/prove.mjs", "browser/package.json", "browser/package-lock.json", "qualify.py", "pyproject.toml", "uv.lock", "README.md", "REGRESSIONS.md", "INTERFACES.md", "VALIDATION.md", "Dockerfile", "Dockerfile.dockerignore"]
