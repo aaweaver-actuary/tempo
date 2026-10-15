@@ -5,7 +5,14 @@ import hashlib, json
 from typing import Literal
 import chess
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 from tempo_content_publication_contracts.v1 import Publication
 from tempo_chess_core import card_id
 from .study_contracts import ExerciseSpecification
@@ -36,6 +43,13 @@ class ExecutionFacts(BaseModel):
     endgame: dict | None = None
     defense: dict | None = None
 
+    @field_validator("memberships")
+    @classmethod
+    def unique_memberships(cls, memberships):
+        if len(set(memberships)) != len(memberships):
+            raise ValueError("Publication memberships must be unique")
+        return memberships
+
 
 class PublicationBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -52,6 +66,7 @@ class PublicationBundle(BaseModel):
             item.card_id for item in self.facts
         } != set(definitions):
             raise ValueError("Each definition requires exactly one execution fact")
+        opening_routes = set()
         for fact in self.facts:
             definition = definitions[fact.card_id]
             board = chess.Board(definition.starting_fen)
@@ -82,6 +97,14 @@ class PublicationBundle(BaseModel):
                     )
             elif not fact.memberships:
                 raise ValueError("Card requires accepted membership facts")
+            if fact.content_type == "opening":
+                for membership in fact.memberships:
+                    route = (membership, fact.route_order)
+                    if route in opening_routes:
+                        raise ValueError(
+                            "Opening route positions must be unique per repertoire"
+                        )
+                    opening_routes.add(route)
             if fact.content_type in ("opening", "tactic", "middlegame"):
                 if definition.specification.type != "move_line":
                     raise ValueError("Move card requires executable lines")
@@ -92,11 +115,11 @@ class PublicationBundle(BaseModel):
                         if move not in position.legal_moves:
                             raise ValueError("Illegal executable line")
                         position.push(move)
-                if fact.content_type == "opening" and (
-                    fact.trained_color is None
-                    or ("white" if position.turn else "black") == fact.trained_color
-                ):
-                    raise ValueError("Opening must finish on a learner move")
+                    if fact.content_type == "opening" and (
+                        fact.trained_color is None
+                        or ("white" if position.turn else "black") == fact.trained_color
+                    ):
+                        raise ValueError("Opening must finish on a learner move")
                 if (
                     card_id(
                         definition.starting_fen,
@@ -216,6 +239,70 @@ def stage(database, payload, workspace_id):
     }
 
 
+def lock_opening_repertoires(database, publication_id, new_facts=()):
+    """Publication -> sorted repertoire owners -> sorted cards -> queue effects.
+
+    Include removed memberships: a replacement/retirement releases ownership in
+    the same transaction in which a successor is allowed to establish it.
+    Review and admission never acquire repertoire ownership locks after cards.
+    """
+    repertoires = {
+        row[0]
+        for row in database.execute(
+            "SELECT rc.repertoire_id FROM repertoire_cards rc JOIN cards c ON c.id=rc.card_id WHERE c.publication_id=? AND c.content_type='opening' UNION SELECT repertoire_id FROM cards WHERE publication_id=? AND content_type='opening' AND repertoire_id IS NOT NULL",
+            (publication_id, publication_id),
+        ).fetchall()
+    }
+    repertoires.update(
+        membership
+        for fact in new_facts
+        if fact.content_type == "opening"
+        for membership in fact.memberships
+    )
+    for repertoire_id in sorted(repertoires):
+        database.execute_native(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            ("learning:repertoire-owner:" + repertoire_id,),
+        )
+
+
+def verify_opening_graph(database, bundle):
+    """Prove full graph identities and executable facts, not just cardinality."""
+    expected = set()
+    publication = bundle.publication
+    definitions = {item.card_id: item for item in publication.definitions}
+    for fact in bundle.facts:
+        if fact.content_type != "opening":
+            continue
+        definition = definitions[fact.card_id]
+        for membership in fact.memberships:
+            expected.add(
+                (
+                    membership,
+                    publication.publication_generation,
+                    publication.publication_id + ":" + membership,
+                    fact.route_order,
+                    fact.card_id,
+                    fact.parent_card_id,
+                    definition.starting_fen,
+                    tuple(definition.specification.accepted_lines[0]),
+                    fact.trained_color,
+                )
+            )
+    if not expected:
+        return
+    line_ids = sorted({step[2] for step in expected})
+    actual = {
+        (*tuple(row)[:7], tuple(json.loads(row[7])), row[8])
+        for row in database.execute(
+            "SELECT repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,starting_fen,moves_json,trained_color FROM opening_graph_steps WHERE generation=? AND line_id=ANY(?)",
+            (publication.publication_generation, line_ids),
+        ).fetchall()
+    }
+    if actual != expected:
+        raise ValueError("Accepted opening graph does not match executable routes")
+
+
 def activate(database, payload):
     identity = payload["publication_id"]
     generation = payload["publication_generation"]
@@ -257,6 +344,7 @@ def activate(database, payload):
             409, "A newer staged publication supersedes this generation"
         )
     bundle = PublicationBundle.model_validate_json(row[0])
+    lock_opening_repertoires(database, identity, bundle.facts)
     definitions = {item.card_id: item for item in bundle.publication.definitions}
     now = datetime.now(timezone.utc).isoformat()
     # Fence review and publication in the same stable card-before-queue lock order.
@@ -415,7 +503,7 @@ def activate(database, payload):
                     (membership, generation),
                 )
                 database.execute(
-                    "INSERT INTO opening_graph_steps VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+                    "INSERT INTO opening_graph_steps VALUES(?,?,?,?,?,?,?,?,?)",
                     (
                         membership,
                         generation,
@@ -453,6 +541,7 @@ def activate(database, payload):
                     json.dumps(fact.defense),
                 ),
             )
+    verify_opening_graph(database, bundle)
     if bundle.frozen_order:
         from .frozen_maia_math import content_fingerprint
 
@@ -547,6 +636,10 @@ def activate(database, payload):
 def retire(database, payload):
     identity = payload["publication_id"]
     generation = payload["publication_generation"]
+    database.execute_native(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+        ("learning:publication:" + identity,),
+    )
     serving = database.execute(
         "SELECT generation,activation_revision FROM serving_publications WHERE publication_id=? FOR UPDATE",
         (identity,),
@@ -556,6 +649,7 @@ def retire(database, payload):
         payload["expected_activation_revision"],
     ):
         raise HTTPException(409, "Retirement revision changed")
+    lock_opening_repertoires(database, identity)
     for row in database.execute(
         "SELECT id FROM cards WHERE publication_id=? ORDER BY id", (identity,)
     ).fetchall():

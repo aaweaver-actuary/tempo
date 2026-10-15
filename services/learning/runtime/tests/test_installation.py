@@ -15,6 +15,15 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
             metadata.distribution(distribution)
     package = Path(tempo_learning_runtime.__file__).parent
     assert (package / "migrations/manifest.json").is_file()
+    migrations = json.loads((package / "migrations/manifest.json").read_text())
+    assert [entry["id"] for entry in migrations] == [
+        "learning.runtime/0001",
+        "learning.runtime/0002",
+    ]
+    assert migrations[1]["depends_on"] == ["learning.runtime/0001"]
+    assert all(
+        (package / "migrations" / entry["path"]).is_file() for entry in migrations
+    )
     assert (
         json.loads((package / "fixtures/legacy-protocol.json").read_text())["protocol"]
         == "legacy-learning-http"

@@ -5,6 +5,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 import hashlib, json, uuid
 import chess
+import pytest
+from urllib.parse import parse_qs, urlparse
 from fastapi.testclient import TestClient
 from tempo_learning_runtime import create_app
 from tempo_learning_runtime.endgames import generate_position
@@ -43,7 +45,7 @@ def test_offline_endgame_cache_attempt_replay_and_review(case):
     operation = uuid.uuid4().hex
     seed = int.from_bytes(hashlib.sha256(f"{operation}:0".encode()).digest()[:8], "big")
     fen = generate_position("KR", "K", "white", seed=seed)
-    key = " ".join(chess.Board(fen).fen().split()[:4])
+    key = "tb-fen-v2:" + chess.Board(fen).fen()
     data = {"category": "win", "moves": []}
     case.query(
         "INSERT INTO learning.tablebase_cache VALUES(%s,%s,NOW()::text)",
@@ -117,6 +119,82 @@ def test_configured_tablebase_provider_success_cache_and_explicit_failure(case):
                 failure.status_code == 503
                 and "Optional tablebase unavailable" in failure.text
             )
+    finally:
+        provider.shutdown()
+        provider.server_close()
+        worker.join(timeout=3)
+
+
+@pytest.mark.parametrize("clocks", [(0, 99), (99, 0)])
+def test_tablebase_cache_keeps_halfmove_clocks_separate_and_ignores_old_keys(
+    case, clocks
+):
+    requests = []
+    fens = {clock: f"8/8/8/8/8/2k5/7R/K7 w - - {clock} 1" for clock in clocks}
+    responses = {
+        0: {"category": "win", "moves": []},
+        99: {"category": "draw", "moves": []},
+    }
+
+    class Provider(BaseHTTPRequestHandler):
+        def do_GET(self):
+            fen = parse_qs(urlparse(self.path).query)["fen"][0]
+            requests.append(fen)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps(responses[int(fen.split()[4])]).encode())
+
+        def log_message(self, *args):
+            pass
+
+    provider = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    worker = Thread(target=provider.serve_forever, daemon=True)
+    worker.start()
+    old_key = " ".join(chess.Board(fens[clocks[0]]).fen().split()[:4])
+    case.query(
+        "INSERT INTO learning.tablebase_cache VALUES(%s,%s,NOW()::text)",
+        (old_key, json.dumps({"category": "loss", "moves": []})),
+    )
+    configuration = replace(
+        case.configuration,
+        tablebase_url=f"http://127.0.0.1:{provider.server_port}/standard",
+    )
+    try:
+        with TestClient(
+            create_app(configuration), headers=dict(case.client.headers)
+        ) as client:
+            for clock in clocks:
+                response = client.post("/api/endgames/probe", json={"fen": fens[clock]})
+                assert (
+                    response.status_code == 200 and response.json() == responses[clock]
+                )
+            assert requests == [fens[clock] for clock in clocks]
+            for clock in reversed(clocks):
+                assert (
+                    client.post("/api/endgames/probe", json={"fen": fens[clock]}).json()
+                    == responses[clock]
+                )
+            assert len(requests) == 2
+        for clock in clocks:
+            assert (
+                case.client.post(
+                    "/api/endgames/probe", json={"fen": fens[clock]}
+                ).json()
+                == responses[clock]
+            )
+        keys = {
+            row[0] for row in case.query("SELECT fen_key FROM learning.tablebase_cache")
+        }
+        assert keys == {
+            old_key,
+            *("tb-fen-v2:" + chess.Board(fen).fen() for fen in fens.values()),
+        }
+        uncached = fens[clocks[0]].replace(f" {clocks[0]} 1", " 50 1")
+        assert (
+            case.client.post("/api/endgames/probe", json={"fen": uncached}).status_code
+            == 503
+        )
+        assert len(requests) == 2
     finally:
         provider.shutdown()
         provider.server_close()

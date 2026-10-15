@@ -658,7 +658,7 @@ def create_app(configuration: Configuration):
             raise HTTPException(422, "Invalid endgame FEN") from error
         if not position.is_valid() or len(position.piece_map()) > 7:
             raise HTTPException(422, "Unsupported endgame position")
-        key = " ".join(position.fen().split()[:4])
+        key = "tb-fen-v2:" + position.fen()
         with connection(read_only=True) as db:
             row = db.execute(
                 "SELECT response_json FROM tablebase_cache WHERE fen_key=?", (key,)

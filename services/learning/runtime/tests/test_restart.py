@@ -34,6 +34,11 @@ def server(case, tmp_path, maintenance=False):
         TEMPO_LEARNING_MAINTENANCE="1" if maintenance else "0",
         TEMPO_LEARNING_TABLEBASE_URL="",
     )
+    if case.configuration.evidence_token:
+        evidence_token = tmp_path / "evidence-credential"
+        evidence_token.write_text(case.configuration.evidence_token)
+        evidence_token.chmod(0o600)
+        environment["TEMPO_LEARNING_EVIDENCE_TOKEN_FILE"] = str(evidence_token)
     output = (tmp_path / ("server-" + uuid.uuid4().hex + ".log")).open("w+")
     process = subprocess.Popen(
         [
