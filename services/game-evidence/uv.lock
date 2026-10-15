@@ -419,6 +419,7 @@ dev = [
     { name = "build" },
     { name = "hatchling" },
     { name = "pytest" },
+    { name = "tempo-learning-remediation" },
 ]
 
 [package.metadata]
@@ -439,6 +440,7 @@ dev = [
     { name = "build", specifier = "==1.4.0" },
     { name = "hatchling", specifier = "==1.27.0" },
     { name = "pytest", specifier = "==9.1.1" },
+    { name = "tempo-learning-remediation", directory = "../learning/remediation" },
 ]
 
 [[package]]
@@ -451,6 +453,25 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = "==2.12.5" }]
+
+[[package]]
+name = "tempo-learning-remediation"
+version = "0.1.0"
+source = { directory = "../learning/remediation" }
+dependencies = [
+    { name = "tempo-game-evidence-contracts" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tempo-game-evidence-contracts", directory = "../../contracts/game-evidence" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = "==1.4.0" },
+    { name = "hatchling", specifier = "==1.27.0" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
+    { name = "pytest", specifier = "==9.1.1" },
+]
 
 [[package]]
 name = "trove-classifiers"

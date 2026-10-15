@@ -8,11 +8,10 @@ BUCKET_PLIES = 64
 
 def make_deliveries(game, findings, revision, publication, prior=()):
     definitions = {item.card_id:item for item in publication.definitions} if publication else {}
-    # Only possibly accepted contributions are candidates for withdrawal. Omission
-    # in a later publication is never itself a withdrawal.
+    # Only validated completed receipts establish accepted contributions.
     heads = {}
     for previous in sorted(prior,key=lambda item:item["evidence_revision"]):
-        if not previous["attempts"] or previous["status"] == "superseded":
+        if previous["status"] != "completed":
             continue
         payload = previous["payload"]
         if not payload or payload.get("contract_version") != 2:

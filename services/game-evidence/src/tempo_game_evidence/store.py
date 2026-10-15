@@ -12,7 +12,8 @@ from .snapshot import ComparisonSnapshot
 from .source import INDEX_VERSION, MAX_SOURCE_BYTES, identity, normalize_pgn, replay_positions, utc_now
 
 
-from .payloads import make_delivery, make_deliveries
+from .payloads import make_delivery
+from .reconciliation import finalize, request_reconciliation, resume_reconciliation
 
 
 class EvidenceStore:
@@ -28,7 +29,12 @@ class EvidenceStore:
     def migrate(self):
         with self.connect() as database:
             database.execute("SELECT pg_advisory_xact_lock(410001)")
-            database.execute(Path(__file__).with_name("migrations").joinpath("001.sql").read_text())
+            directory = Path(__file__).with_name("migrations")
+            database.execute(directory.joinpath("001.sql").read_text())
+            for migration in sorted(directory.glob("*.sql")):
+                version = int(migration.stem)
+                if not database.execute("SELECT 1 FROM evidence_schema_migrations WHERE version=%s", (version,)).fetchone():
+                    database.execute(migration.read_text())
 
     def import_pgn(self, workspace, provider, source_id, player, raw, *, played_at=None, database=None):
         if len(raw)>MAX_SOURCE_BYTES:
@@ -135,6 +141,8 @@ class EvidenceStore:
         try:
             if job["kind"] == "rescope":
                 self._rescope(job)
+            elif job["kind"] == "reconcile":
+                resume_reconciliation(self, job)
             else:
                 self._compare(job, before_publish)
         except Exception:
@@ -153,9 +161,8 @@ class EvidenceStore:
                 return
             inputs = database.execute("SELECT * FROM workspace_inputs WHERE workspace_id=%s", (job["workspace_id"],)).fetchone()
             games = database.execute("""SELECT game_id FROM games WHERE workspace_id=%s AND game_id>%s
-              AND (positions IS NULL OR EXISTS(SELECT 1 FROM jsonb_array_elements(positions) position
-                WHERE position->>'comparison_key'=ANY(%s))) ORDER BY game_id LIMIT 64""",
-                (job["workspace_id"],job["cursor"],inputs["changed_positions"])).fetchall()
+              ORDER BY game_id LIMIT 64""",
+                (job["workspace_id"],job["cursor"])).fetchall()
             for game in games:
                 self._request(database, job["workspace_id"], game["game_id"])
             database.execute("UPDATE jobs SET cursor=%s,published=%s,lease_token=NULL,leased_until=NULL WHERE job_key=%s",
@@ -201,29 +208,6 @@ class EvidenceStore:
             existing = database.execute("SELECT 1 FROM comparisons WHERE game_id=%s AND input_token=%s", (job["game_id"],token)).fetchone()
             if not existing:
                 revision = current_game["report_revision"] + 1
-                prior = database.execute("SELECT * FROM outbox WHERE game_id=%s FOR UPDATE", (game["game_id"],)).fetchall()
-                payloads = make_deliveries(game,findings,revision,snapshot.publication if snapshot else None,prior)
-                possibly_delivered = [item for item in prior if item["attempts"]>0
-                    and item["status"] not in {"superseded","terminal_failure","conflict","stale_revision"}]
-                incomplete = bool(possibly_delivered) and (not snapshot or not snapshot.activation or not snapshot.complete or "source_error" in game)
-                # Unknown policy/route metadata cannot erase a previous supported
-                # observation at an unchanged source occurrence.
-                known_plies = {item["ply"] for item in findings if item["status"] != "unknown"}
-                current_cards = {item.card_id for item in snapshot.publication.definitions} if snapshot else set()
-                current_obligations = {item["obligation_id"] for _,payload in payloads for item in payload["obligations"]}
-                for previous in possibly_delivered:
-                    encounters = {item["encounter_id"]:item for item in previous["payload"]["encounters"]}
-                    for obligation in previous["payload"]["obligations"]:
-                        encounter = encounters[obligation["encounter_id"]]
-                        ply = encounter["ply"]
-                        unchanged_move = ply<len(positions) and positions[ply]["move"]==encounter["observed_move"]
-                        if (obligation["obligation_id"] not in current_obligations and unchanged_move
-                                and ply not in known_plies and obligation["card_id"] in current_cards):
-                            incomplete = True
-                unresolved = any(item["attempts"]>0 and item["status"] in {"pending","accepted_pending","retryable_failure"} for item in prior)
-                delivery_status = "blocked" if incomplete else "waiting_predecessor" if unresolved else "pending"
-                reason = "comparison_scope_incomplete" if incomplete else "prior_delivery_acknowledgement_required" if unresolved else None
-                database.execute("UPDATE outbox SET status='superseded' WHERE game_id=%s AND attempts=0 AND status IN ('pending','waiting_predecessor')", (game["game_id"],))
                 report = {"schema_version": 1, "game": game, "comparison_revision": revision,
                           "readiness": "unknown" if not snapshot or snapshot.activation is None or "source_error" in game else "ready",
                           "reason": game.get("source_error") or ("snapshot_missing" if not snapshot else None),
@@ -233,28 +217,29 @@ class EvidenceStore:
                               "source_revision": snapshot.publication.source_revision} if snapshot else None,
                           "findings": findings}
                 database.execute("INSERT INTO comparisons VALUES(%s,%s,%s,%s)", (game["game_id"],revision,token,Jsonb(report)))
-                for bucket,payload in payloads:
-                    database.execute("INSERT INTO outbox(delivery_id,game_id,evidence_revision,bucket,payload,status,reason) VALUES(%s,%s,%s,%s,%s,%s,%s)",
-                                     (payload["delivery_id"],game["game_id"],revision,bucket,Jsonb(payload),delivery_status,reason))
                 database.execute("UPDATE games SET report_revision=%s,positions=%s,index_receipt=%s WHERE game_id=%s",
                                  (revision,Jsonb(positions),Jsonb({"input_digest": row["input_digest"], "version": INDEX_VERSION,
                                   "position_count": len(positions), "complete": "source_error" not in game}),game["game_id"]))
+                request_reconciliation(database, job["workspace_id"], game["game_id"])
+                finalize(database, game["game_id"])
             database.execute("UPDATE jobs SET published=requested,lease_token=NULL,leased_until=NULL,error=NULL WHERE job_key=%s", (job["job_key"],))
 
     def report(self, workspace, game_id):
         with self.connect() as database:
-            row = database.execute("""SELECT game.document,game.report_revision,comparison.report,inputs.snapshot_digest AS current_snapshot_digest
+            row = database.execute("""SELECT game.document,game.report_revision,game.reconciliation_status,game.reconciliation_reason,comparison.report,inputs.snapshot_digest AS current_snapshot_digest
               FROM games game LEFT JOIN comparisons comparison ON comparison.game_id=game.game_id AND comparison.revision=game.report_revision
               JOIN workspace_inputs inputs ON inputs.workspace_id=game.workspace_id
               WHERE game.game_id=%s AND game.workspace_id=%s""", (game_id,workspace)).fetchone()
             if not row:
                 raise KeyError(game_id)
-            batches = database.execute("SELECT delivery_id,status,reason,attempts,acknowledgement FROM outbox WHERE game_id=%s AND (evidence_revision=%s OR (attempts>0 AND status IN ('pending','accepted_pending','retryable_failure'))) ORDER BY evidence_revision,bucket",
+            batches = database.execute("SELECT delivery_id,status,reason,attempts,acknowledgement FROM outbox WHERE game_id=%s AND (comparison_revision=%s OR (attempts>0 AND status IN ('pending','accepted_pending','retryable_failure'))) ORDER BY evidence_revision,bucket",
                                        (game_id,row["report_revision"])).fetchall()
         report = row["report"] or {"schema_version":1,"game":row["document"],"readiness":"pending","findings":[]}
         priority = ["blocked","terminal_failure","conflict","stale_revision","retryable_failure","waiting_predecessor","accepted_pending","pending","completed"]
         status = next((status for status in priority if any(batch["status"]==status for batch in batches)),"not_required" if row["report"] else "not_ready")
-        report["delivery"] = {"status":status,"reason":next((batch["reason"] for batch in batches if batch["reason"]),None),
+        if row["reconciliation_status"] in {"pending","waiting_predecessor","blocked"}:
+            status = row["reconciliation_status"]
+        report["delivery"] = {"status":status,"reason":row["reconciliation_reason"] or next((batch["reason"] for batch in batches if batch["reason"]),None),
                               "attempts":sum(batch["attempts"] for batch in batches),"batches":batches}
         if report["game"]["revision"] != row["document"]["revision"]:
             report["readiness"] = "pending"

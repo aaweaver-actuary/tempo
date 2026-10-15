@@ -142,7 +142,10 @@
             "services/game-evidence/src",
             "services/game-evidence/fixtures",
             "services/game-evidence/pyproject.toml",
-            "services/game-evidence/uv.lock"
+            "services/game-evidence/uv.lock",
+            "services/learning/remediation/src",
+            "services/learning/remediation/migrations",
+            "services/learning/remediation/pyproject.toml"
           ]
         }
       ],

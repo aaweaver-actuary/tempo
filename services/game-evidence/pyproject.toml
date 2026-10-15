@@ -18,9 +18,10 @@ dependencies = [
 tempo-game-evidence = "tempo_game_evidence.cli:main"
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0", "tempo-learning-remediation==0.1.0"]
 
 [tool.uv.sources]
+tempo-learning-remediation = { path = "../learning/remediation" }
 tempo-chess-core = { path = "../../packages/chess-core" }
 tempo-content-publication-contracts = { path = "../../contracts/content-publication" }
 tempo-game-evidence-contracts = { path = "../../contracts/game-evidence" }

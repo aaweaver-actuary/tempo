@@ -26,7 +26,11 @@ class AccountImport(StrictModel):
 
     @model_validator(mode="after")
     def bounded_window(self):
-        if not self.since.tzinfo or not self.until.tzinfo or self.until <= self.since:
+        if self.since.utcoffset() is None or self.until.utcoffset() is None:
+            raise ValueError("explicit_ordered_timezone_aware_window_required")
+        self.since = self.since.astimezone(timezone.utc)
+        self.until = self.until.astimezone(timezone.utc)
+        if self.until <= self.since:
             raise ValueError("explicit_ordered_timezone_aware_window_required")
         if self.until-self.since > timedelta(days=366):
             raise ValueError("split_imports_into_windows_at_most_366_days")
@@ -56,13 +60,16 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
     with store.connect() as database:
         row = database.execute("""SELECT * FROM import_cursors WHERE status IN ('pending','retrying')
           AND next_attempt_at<=now() AND (leased_until IS NULL OR leased_until<now())
+          AND NOT EXISTS(SELECT 1 FROM provider_leases provider WHERE provider.provider=configuration->>'provider'
+            AND (provider.cooldown_until>now() OR provider.leased_until>now()))
           ORDER BY import_id LIMIT 1 FOR UPDATE SKIP LOCKED""").fetchone()
         if not row:
             return False
         config = AccountImport.model_validate_json(json.dumps(row["configuration"]))
         locked = database.execute("""INSERT INTO provider_leases(provider,token,leased_until) VALUES(%s,%s,now()+interval '90 seconds')
           ON CONFLICT(provider) DO UPDATE SET token=excluded.token,leased_until=excluded.leased_until
-          WHERE provider_leases.leased_until<now() RETURNING token""", (config.provider,token)).fetchone()
+          WHERE (provider_leases.leased_until IS NULL OR provider_leases.leased_until<now())
+            AND provider_leases.cooldown_until<=now() RETURNING token""", (config.provider,token)).fetchone()
         if not locked:
             return False
         database.execute("UPDATE import_cursors SET lease_token=%s,leased_until=now()+interval '90 seconds',attempts=attempts+1 WHERE import_id=%s", (token,row["import_id"]))
@@ -75,7 +82,7 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
         cursor = row["cursor"]
         page_id = identity({key:value for key,value in cursor.items() if key != "offset"})
         with store.connect() as database:
-            saved = database.execute("SELECT raw_response FROM import_pages WHERE import_id=%s AND page_id=%s", (row["import_id"],page_id)).fetchone()
+            saved = database.execute("SELECT raw_response FROM import_pages WHERE import_id=%s AND page_id=%s AND validation_status!='invalid'", (row["import_id"],page_id)).fetchone()
         if saved:
             raw = bytes(saved["raw_response"])
         else:
@@ -91,10 +98,15 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
             else:
                 raw = request_bytes(client,"GET",f"https://api.chess.com/pub/player/{username}/games/{cursor['year']}/{cursor['month']:02d}",
                                     max_bytes=MAX_SOURCE_BYTES)
-            with store.connect() as database:
-                database.execute("INSERT INTO import_pages VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                                 (row["import_id"],page_id,raw,hashlib.sha256(raw).hexdigest()))
-        records, next_cursor, complete = _page(config,cursor,raw)
+        # Validate the whole bounded page, including unconsumed month entries.
+        try:
+            _validate_page(config,raw)
+            records, next_cursor, complete = _page(config,cursor,raw)
+        except (ValueError, KeyError, TypeError, RemoteFailure) as error:
+            _save_page(store,row,config,token,page_id,raw,'invalid',
+                       error.reason if isinstance(error,RemoteFailure) else 'invalid_provider_page')
+            raise
+        _save_page(store,row,config,token,page_id,raw,'valid')
         prepared = []
         for source_id,pgn,played_at in records:
             if cancelled():
@@ -112,6 +124,9 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
         with store.connect() as database:
             current = database.execute("SELECT status,lease_token FROM import_cursors WHERE import_id=%s FOR UPDATE",(row["import_id"],)).fetchone()
             if current["status"] != "cancelled" and current["lease_token"] == token:
+                provider = database.execute("SELECT token,leased_until>now() AS valid FROM provider_leases WHERE provider=%s FOR UPDATE",(config.provider,)).fetchone()
+                if not provider or provider["token"]!=token or not provider["valid"]:
+                    raise RemoteFailure("provider_lease_expired")
                 for source_id,source_bytes,played_at,document,game_id,source_digest in prepared:
                     store._import(database,config.workspace_id,config.provider,source_id,config.account,source_bytes,
                                   source_digest,identity(source_digest,str(played_at)),game_id,document)
@@ -119,6 +134,9 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
                                  (Jsonb(next_cursor),"completed" if complete else "pending",row["import_id"]))
     except RemoteFailure as error:
         with store.connect() as database:
+            if error.reason == "remote_rate_limited":
+                database.execute("""UPDATE provider_leases SET cooldown_until=greatest(cooldown_until,
+                  now()+%s*interval '1 second') WHERE provider=%s""",(error.retry_after,config.provider))
             database.execute("""UPDATE import_cursors SET status=%s,reason=%s,next_attempt_at=%s
               WHERE import_id=%s AND lease_token=%s AND status!='cancelled'""",
               ("pending" if error.reason=="import_cancelled" else "blocked" if error.terminal else "retrying",
@@ -131,7 +149,7 @@ def import_one(store, *, client=None, user_agent="tempo-game-evidence/0.1.0 (+ht
             client.close()
         with store.connect() as database:
             database.execute("UPDATE import_cursors SET lease_token=NULL,leased_until=NULL WHERE import_id=%s AND lease_token=%s",(row["import_id"],token))
-            database.execute("DELETE FROM provider_leases WHERE provider=%s AND token=%s",(config.provider,token))
+            database.execute("UPDATE provider_leases SET token=NULL,leased_until=NULL WHERE provider=%s AND token=%s",(config.provider,token))
     return True
 
 
@@ -169,3 +187,46 @@ def _page(config, cursor, raw):
         next_cursor = {"year":year,"month":month,"offset":0}
     complete = datetime(next_cursor["year"],next_cursor["month"],1,tzinfo=timezone.utc)>=config.until
     return records,next_cursor,complete
+
+
+def _validate_page(config, raw):
+    """A checkpoint proves structural validity, not PGN legality."""
+    if config.provider == "lichess":
+        games = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        if len(games)>config.page_size:
+            raise RemoteFailure("provider_page_bound_exceeded",terminal=True)
+        timestamp_field, identity_field = "createdAt", "id"
+    else:
+        document = json.loads(raw)
+        games = document["games"]
+        if not isinstance(games,list):
+            raise ValueError("provider_games_list_required")
+        if len(games)>10000:
+            raise RemoteFailure("provider_month_bound_exceeded",terminal=True)
+        timestamp_field, identity_field = "end_time", "uuid"
+    for game in games:
+        if not isinstance(game,dict) or type(game.get(timestamp_field)) is not int:
+            raise ValueError("provider_timestamp_required")
+        source_id = game.get(identity_field) or (game.get("url") if config.provider=="chess.com" else None)
+        if not isinstance(source_id,str) or not source_id or not isinstance(game.get("pgn"),str):
+            raise ValueError("provider_identity_and_pgn_required")
+        try:
+            datetime.fromtimestamp(game[timestamp_field]/(1000 if config.provider=="lichess" else 1),timezone.utc)
+        except (OverflowError,OSError):
+            raise ValueError("provider_timestamp_invalid") from None
+
+
+def _save_page(store,row,config,token,page_id,raw,status,reason=None):
+    # An expired worker may retain its bytes but cannot replace a newer checkpoint.
+    with store.connect() as database:
+        current=database.execute("SELECT status,lease_token,leased_until>now() AS valid FROM import_cursors WHERE import_id=%s FOR UPDATE",(row['import_id'],)).fetchone()
+        provider=database.execute("SELECT token,leased_until>now() AS valid FROM provider_leases WHERE provider=%s",(config.provider,)).fetchone()
+        if current['status']=='cancelled':
+            raise RemoteFailure('import_cancelled',terminal=True)
+        if current['lease_token']!=token or not current['valid'] or not provider or provider['token']!=token or not provider['valid']:
+            raise RemoteFailure('provider_lease_expired')
+        database.execute("""INSERT INTO import_pages(import_id,page_id,raw_response,source_digest,validation_status,validation_reason)
+          VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(import_id,page_id) DO UPDATE SET
+          raw_response=excluded.raw_response,source_digest=excluded.source_digest,
+          validation_status=excluded.validation_status,validation_reason=excluded.validation_reason""",
+          (row['import_id'],page_id,raw,hashlib.sha256(raw).hexdigest(),status,reason))

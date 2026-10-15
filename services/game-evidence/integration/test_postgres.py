@@ -33,7 +33,7 @@ def state():
     store=EvidenceStore(os.environ["TEMPO_GAME_EVIDENCE_DATABASE_URL"])
     # This is exclusively the fresh cluster provisioned by run_postgres.py.
     with psycopg.connect(os.environ["TEMPO_GAME_EVIDENCE_MIGRATION_URL"]) as database:
-        database.execute("TRUNCATE import_pages,import_cursors,provider_leases,outbox,comparisons,jobs,game_sources,games,snapshots,workspace_inputs CASCADE")
+        database.execute("TRUNCATE accepted_heads,import_pages,import_cursors,provider_leases,outbox,comparisons,jobs,game_sources,games,snapshots,workspace_inputs CASCADE")
     workspace=uuid.uuid4().hex
     value=json.loads((FIXTURES/"snapshot.json").read_text())
     value["publication"]["workspace_id"]=workspace
@@ -62,11 +62,14 @@ def ready_outbox(store):
 
 
 @contextmanager
-def learning_receiver(store, *, replies=None, lose_first=False):
-    received={}
+def learning_receiver(store, *, replies=None, lose_first=False, actual_snapshot=None):
+    class Received(dict):
+        pass
+    received=Received()
     requests=[]
     replies=list(replies or ["completed"])
     heads={}
+    received.heads=heads
     committed={}
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*_):
@@ -93,6 +96,28 @@ def learning_receiver(store, *, replies=None, lose_first=False):
                              "status":status,"accepted_obligation_ids":[item.obligation_id for item in payload.obligations] if status=="completed" else [],
                              "learning_revision":1 if status=="completed" else None,
                              "reason":None if status=="completed" else "receiver_fixture"}
+            if actual_snapshot is not None:
+                from tempo_learning_remediation import PostgresRepository
+                from tempo_learning_remediation.models import AcceptedDecision, ReceiveContext
+                from tempo_game_evidence.snapshot import ComparisonSnapshot
+                from tempo_chess_core import canonical_fen_key
+                snapshot=ComparisonSnapshot.model_validate(actual_snapshot)
+                class Authority:
+                    def decision(self,card_id,decision_id,publication_id,publication_generation):
+                        for definition in snapshot.publication.definitions:
+                            if (definition.card_id,definition.decision_id,snapshot.publication.publication_id,snapshot.publication.publication_generation)==(card_id,decision_id,publication_id,publication_generation):
+                                return AcceptedDecision(card_id,definition.exercise_revision,decision_id,publication_id,publication_generation,
+                                    canonical_fen_key(definition.starting_fen),tuple(line[0] for line in definition.specification.accepted_lines),payload.workspace_id)
+                # Explicit synthetic source/content authority; this is a test receiver,
+                # not production authentication or runtime adoption.
+                context=ReceiveContext(snapshot.publication.workspace_id,payload.game_id,payload.game_revision,
+                    payload.evidence_id,payload.evidence_revision,datetime.now(timezone.utc),Authority())
+                with psycopg.connect(os.environ['TEMPO_GAME_EVIDENCE_TEST_LEARNING_URL']) as receiver_database:
+                    receiver_database.execute('SELECT 1')
+                    repository=PostgresRepository(receiver_database,payload.workspace_id)
+                    receipt=(repository.receive(payload,context) if status=='completed' else repository.record_status(payload,status,'fixture_resolution'))
+                    acknowledgement=receipt.model_dump(mode='json')
+                    assert receipt.status==status
             if status=="completed":
                 committed[key]=acknowledgement
             if lose_first and len(requests)==1:
@@ -207,7 +232,12 @@ def test_receiver_states_remain_truthful_and_corrections_wait_for_receipts(state
     drain(store)
     report=store.report(workspace,game)
     assert report["readiness"]=="ready"
-    assert report["delivery"]["status"]==("waiting_predecessor" if status=="accepted_pending" else "pending")
+    assert report["delivery"]["status"]==("waiting_predecessor" if status=="accepted_pending" else "blocked" if status in {"conflict","stale_revision"} else "pending")
+    if status in {"conflict","stale_revision"}:
+        assert report["delivery"]["reason"]=="receiver_authority_unresolved"
+        with learning_receiver(store) as (endpoint,received,_):
+            assert not deliver_one(store,endpoint)
+            assert not received
 
 
 @pytest.mark.parametrize("replacement",["alternative","empty"])
@@ -361,8 +391,11 @@ def test_runtime_role_cannot_migrate_or_connect_to_another_domain(state):
     with store.connect() as database:
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             database.execute("CREATE TABLE forbidden_schema_change(id integer)")
-    with pytest.raises(psycopg.OperationalError):
-        psycopg.connect(make_conninfo(store.database_url,dbname="content_guard"))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        store.migrate()
+    for forbidden_database in ("content_guard","learning_fixture"):
+        with pytest.raises(psycopg.OperationalError):
+            psycopg.connect(make_conninfo(store.database_url,dbname=forbidden_database))
 
 
 def test_read_api_requires_workspace_and_exposes_separate_readiness(state):
@@ -399,3 +432,555 @@ def test_provider_source_checkpoint_retry_and_cancellation(state):
     cancel_import(store,cancelled)
     with httpx.Client(transport=httpx.MockTransport(lambda _:pytest.fail("cancelled_import_made_network_request"))) as client:
         assert not import_one(store,client=client)
+
+
+@pytest.mark.parametrize('resolution,target',[('terminal_failure',1),('completed',2)])
+def test_rejected_replacement_reconciles_exact_accepted_revision(state,resolution,target):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store,replies=['completed','accepted_pending',resolution,'completed']) as (endpoint,received,requests):
+        assert deliver_one(store,endpoint)
+        value['revision']=2
+        store.load_snapshot(value)
+        drain(store)
+        assert deliver_one(store,endpoint)
+        store.import_pgn(workspace,'pgn','miss','Learner',(FIXTURES/'empty.pgn').read_bytes())
+        drain(store)
+        assert not deliver_one(store,endpoint)
+        ready_outbox(store)
+        assert deliver_one(store,endpoint)
+        drain(EvidenceStore(store.database_url))
+        assert deliver_one(store,endpoint)
+        correction=received[requests[-1]]
+        assert correction['withdrawals'][0]['expected_obligation_revision']==target
+        assert store.report(workspace,game)['delivery']['status']=='completed'
+        assert not received.heads
+
+
+def test_rejected_withdrawal_cannot_erase_missing_successor(state):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store,replies=['completed','accepted_pending','terminal_failure','completed']) as (endpoint,received,requests):
+        assert deliver_one(store,endpoint)
+        store.import_pgn(workspace,'pgn','miss','Learner',(FIXTURES/'empty.pgn').read_bytes())
+        drain(store)
+        assert deliver_one(store,endpoint)
+        value['revision']=2
+        store.load_snapshot(value)
+        drain(store)
+        ready_outbox(store)
+        assert deliver_one(store,endpoint)
+        drain(EvidenceStore(store.database_url))
+        assert deliver_one(store,endpoint)
+        assert received[requests[-1]]['withdrawals'][0]['expected_obligation_revision']==1
+        assert store.report(workspace,game)['delivery']['status']=='completed'
+
+
+def test_nonintersecting_snapshot_refresh_converges_without_replay(state,monkeypatch):
+    store,workspace,value=state
+    store.load_snapshot(value)
+    raw=b'[White "Learner"]\n[Black "Other"]\n[Result "1/2-1/2"]\n[SetUp "1"]\n[FEN "8/8/8/8/8/8/4K3/7k w - - 0 1"]\n\n1. Kf3 Kg1 1/2-1/2\n'
+    game=store.import_pgn(workspace,'pgn','custom','Learner',raw)
+    drain(store)
+    assert store.report(workspace,game)['readiness']=='ready'
+    import tempo_game_evidence.store as storage
+    def forbidden(*args,**kwargs):
+        raise AssertionError('verified_index_replayed')
+    monkeypatch.setattr(storage,'replay_positions',forbidden)
+    monkeypatch.setattr(storage,'normalize_pgn',forbidden)
+    value.update(revision=2,routes=[])
+    store.load_snapshot(value)
+    drain(store)
+    assert store.report(workspace,game)['readiness']=='ready'
+    assert store.report(workspace,game)['comparison_revision']==2
+
+
+@pytest.mark.parametrize('invalid',[b'<html>temporary failure</html>',b'{"games":[{}]}'])
+def test_malformed_provider_checkpoint_refetches_valid_page(state,invalid):
+    store,workspace,_=state
+    config=AccountImport(workspace_id=workspace,provider='chess.com',account='Learner',
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc))
+    import_id=enqueue_import(store,config)
+    responses=[invalid,json.dumps({'games':[{'uuid':'fixed','end_time':int(config.since.timestamp()),'pgn':(FIXTURES/'miss.pgn').read_text()}]}).encode()]
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200,content=responses.pop(0))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert import_one(store,client=client)
+        assert store.import_status(workspace,import_id)['cursor']['offset']==0
+        assert store.import_status(workspace,import_id)['status']=='retrying'
+        with store.connect() as database:
+            database.execute('UPDATE import_cursors SET next_attempt_at=now() WHERE import_id=%s',(import_id,))
+        assert import_one(EvidenceStore(store.database_url),client=client)
+    assert len(calls)==2
+    assert store.import_status(workspace,import_id)['status']=='completed'
+    assert len(store.list_games(workspace))==1
+
+
+def test_rate_limit_covers_other_accounts_without_starving_other_provider(state):
+    store,workspace,_=state
+    for account in ('Alpha','Beta'):
+        enqueue_import(store,AccountImport(workspace_id=workspace,provider='lichess',account=account,
+            since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc)))
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(429,headers={'Retry-After':'3600'}) if request.url.host=='lichess.org' else httpx.Response(200,json={'games':[]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert import_one(store,client=client)
+        assert not import_one(EvidenceStore(store.database_url),client=client)
+        enqueue_import(store,AccountImport(workspace_id=workspace,provider='chess.com',account='Other',
+            since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc)))
+        assert import_one(store,client=client)
+    assert [request.url.host for request in calls]==['lichess.org','api.chess.com']
+
+
+@pytest.mark.parametrize('resolution,target',[('terminal_failure',1),('completed',2)])
+def test_real_remediation_reconciles_rejected_or_accepted_intermediate(state,resolution,target):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store,replies=['completed','accepted_pending',resolution,'completed'],actual_snapshot=value) as (endpoint,received,requests):
+        assert deliver_one(store,endpoint)
+        value['revision']=2
+        store.load_snapshot(value)
+        drain(store)
+        assert deliver_one(store,endpoint)
+        store.import_pgn(workspace,'pgn','miss','Learner',(FIXTURES/'empty.pgn').read_bytes())
+        drain(store)
+        ready_outbox(store)
+        assert deliver_one(store,endpoint)
+        # Simulate stopping after the acknowledgement transaction, before finalization.
+        with store.connect() as database:
+            assert database.execute("SELECT count(*) AS count FROM jobs WHERE kind='reconcile' AND published<requested").fetchone()['count']>0
+        result=subprocess.run([sys.executable,'-m','tempo_game_evidence.cli','work','--max-jobs','64','--learning-endpoint',endpoint],capture_output=True,text=True)
+        assert result.returncode==0,result.stdout
+        assert received[requests[-1]]['withdrawals'][0]['expected_obligation_revision']==target
+        assert not received.heads
+    with psycopg.connect(os.environ['TEMPO_GAME_EVIDENCE_TEST_LEARNING_URL']) as database:
+        assert database.execute('SELECT count(*) FROM remediation_obligation_heads WHERE workspace_id=%s AND active',(workspace,)).fetchone()[0]==0
+        assert database.execute('SELECT count(*) FROM remediation_contributions WHERE workspace_id=%s',(workspace,)).fetchone()[0]==(2 if resolution=='completed' else 1)
+    assert store.report(workspace,game)['delivery']['status']=='completed'
+
+
+def test_actual_receiver_lost_response_has_one_contribution(state):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store,lose_first=True,actual_snapshot=value) as (endpoint,received,requests):
+        assert deliver_one(store,endpoint)
+        ready_outbox(store)
+        result=subprocess.run([sys.executable,'-m','tempo_game_evidence.cli','work','--once','--learning-endpoint',endpoint],capture_output=True,text=True)
+        assert result.returncode==0,result.stdout
+        assert len(received)==1 and len(requests)==2
+    with psycopg.connect(os.environ['TEMPO_GAME_EVIDENCE_TEST_LEARNING_URL']) as database:
+        assert database.execute('SELECT count(*) FROM remediation_contributions WHERE workspace_id=%s',(workspace,)).fetchone()[0]==1
+    assert store.report(workspace,game)['delivery']['status']=='completed'
+
+
+def test_multiple_source_changes_while_waiting_use_latest_desired_state(state):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store,replies=['completed','accepted_pending','terminal_failure','completed']) as (endpoint,received,requests):
+        assert deliver_one(store,endpoint)
+        value['revision']=2
+        store.load_snapshot(value)
+        drain(store)
+        assert deliver_one(store,endpoint)
+        for source in ('empty','miss','alternative'):
+            store.import_pgn(workspace,'pgn','miss','Learner',(FIXTURES/(source+'.pgn')).read_bytes())
+            drain(store)
+        with store.connect() as database:
+            assert database.execute('SELECT count(*) AS count FROM outbox WHERE game_id=%s',(game,)).fetchone()['count']==2
+        ready_outbox(store)
+        assert deliver_one(store,endpoint)
+        drain(store)
+        assert deliver_one(store,endpoint)
+        assert received[requests[-1]]['game_revision']==4
+        assert received[requests[-1]]['withdrawals'][0]['expected_obligation_revision']==1
+        assert not received.heads
+
+
+def test_snapshot_change_mid_rescope_and_import_converge_after_restart(state,monkeypatch):
+    store,workspace,value=state
+    for index in range(65):
+        store.import_pgn(workspace,'pgn',str(index),'Learner',(FIXTURES/'empty.pgn').read_bytes())
+    store.load_snapshot(value)
+    assert store.process_one()
+    value.update(revision=2,routes=[])
+    store.load_snapshot(value)
+    added=store.import_pgn(workspace,'pgn','new','Learner',(FIXTURES/'miss.pgn').read_bytes())
+    drain(EvidenceStore(store.database_url))
+    for item in store.list_games(workspace,limit=100):
+        report=store.report(workspace,item['game_id'])
+        assert report['readiness']=='ready' and report['snapshot']['revision']==2
+    assert store.report(workspace,added)['readiness']=='ready'
+
+
+def test_equivalent_windows_share_persisted_identity_and_utc_month(state):
+    store,workspace,_=state
+    arguments=dict(workspace_id=workspace,provider='chess.com',account='Learner')
+    offset=AccountImport(**arguments,since=datetime.fromisoformat('2026-10-01T00:00:00+02:00'),until=datetime.fromisoformat('2026-10-01T01:00:00+02:00'))
+    utc=AccountImport(**arguments,since=offset.since.astimezone(timezone.utc),until=offset.until.astimezone(timezone.utc))
+    import_id=enqueue_import(store,offset)
+    assert enqueue_import(store,utc)==import_id
+    assert store.import_status(workspace,import_id)['cursor']=={'year':2026,'month':9,'offset':0}
+    with store.connect() as database:
+        assert database.execute('SELECT count(*) AS count FROM import_cursors').fetchone()['count']==1
+
+
+def test_concurrent_senders_replay_one_immutable_delivery(state):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    store,workspace,_=state
+    game=imported(state)
+    entered,release=Event(),Event()
+    def handler(request):
+        entered.set()
+        assert release.wait(5)
+        payload=json.loads(request.content)
+        return httpx.Response(200,json={**{key:payload[key] for key in ('contract_version','workspace_id','delivery_id','evidence_id','evidence_revision')},
+            'status':'completed','accepted_obligation_ids':[o['obligation_id'] for o in payload['obligations']],'learning_revision':1,'reason':None})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client,ThreadPoolExecutor(max_workers=2) as workers:
+        first=workers.submit(deliver_one,store,'http://fixture/evidence',client=client)
+        assert entered.wait(5)
+        try:
+            assert not workers.submit(deliver_one,EvidenceStore(store.database_url),'http://fixture/evidence',client=client).result(5)
+        finally:
+            release.set()
+        assert first.result(5)
+    assert store.report(workspace,game)['delivery']['status']=='completed'
+    with store.connect() as database:
+        assert database.execute('SELECT count(*) AS count FROM accepted_heads WHERE active').fetchone()['count']==1
+
+
+def test_concurrent_provider_workers_own_one_request_after_cooldown(state):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    store,workspace,_=state
+    for account in ('A','B'):
+        enqueue_import(store,AccountImport(workspace_id=workspace,provider='lichess',account=account,
+            since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc)))
+    with store.connect() as database:
+        database.execute("INSERT INTO provider_leases(provider,cooldown_until) VALUES('lichess',now()-interval '1 second')")
+    entered,release=Event(),Event()
+    def handler(request):
+        entered.set()
+        assert release.wait(5)
+        return httpx.Response(200,content=b'')
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client,ThreadPoolExecutor(max_workers=2) as workers:
+        first=workers.submit(import_one,store,client=client)
+        assert entered.wait(5)
+        try:
+            assert not workers.submit(import_one,EvidenceStore(store.database_url),client=client).result(5)
+        finally:
+            release.set()
+        assert first.result(5)
+
+
+def test_saved_month_validates_later_slice_and_recovers_after_cancel(state):
+    store,workspace,_=state
+    config=AccountImport(workspace_id=workspace,provider='chess.com',account='Learner',
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc))
+    import_id=enqueue_import(store,config)
+    game={'uuid':'good','end_time':int(config.since.timestamp()),'pgn':(FIXTURES/'miss.pgn').read_text()}
+    responses=[{'games':[game]*64+[{}]},{'games':[game]}]
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200,json=responses.pop(0))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert import_one(store,client=client)
+        assert not store.list_games(workspace)
+        with store.connect() as database:
+            database.execute('UPDATE import_cursors SET next_attempt_at=now()')
+        assert import_one(store,client=client)
+    assert len(calls)==2 and len(store.list_games(workspace))==1
+    assert store.import_status(workspace,import_id)['status']=='completed'
+    cancel_import(store,import_id)
+    with httpx.Client(transport=httpx.MockTransport(lambda _:pytest.fail('cancelled_request'))) as client:
+        assert not import_one(store,client=client)
+
+
+@pytest.mark.parametrize('existing,delay,minimum',[(7200,3600,7100),(3600,7200,7100)])
+def test_rate_limit_deadline_never_shortens_and_extends(state,existing,delay,minimum):
+    store,workspace,_=state
+    enqueue_import(store,AccountImport(workspace_id=workspace,provider='lichess',account='Learner',
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc)))
+    def handler(request):
+        # A second source of provider coordination establishes a deadline while
+        # the first request is in flight. Its later limit must survive release.
+        with store.connect() as database:
+            database.execute("UPDATE provider_leases SET cooldown_until=now()+%s*interval '1 second'",(existing,))
+        return httpx.Response(429,headers={'Retry-After':str(delay)})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert import_one(store,client=client)
+    with store.connect() as database:
+        assert database.execute('SELECT extract(epoch FROM cooldown_until-now()) AS seconds FROM provider_leases').fetchone()['seconds']>minimum
+        row=database.execute('SELECT token,leased_until FROM provider_leases').fetchone()
+        assert row['token'] is None and row['leased_until'] is None
+
+
+def test_multi_bucket_correction_preserves_other_scope_obligations(state):
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('evidence_test_factories',FIXTURES.parent/'tests/factories.py')
+    factories=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(factories)
+    store,workspace,_=state
+    route=['g1h3','g8h6','h3g1','h6g8']*34
+    observed=['g1f3','g8f6','f3g1','f6g8']*34
+    value=factories.snapshot(moves=route,reentry=True,workspace=workspace)
+    value['routes'][0]['bindings']=[{'ply':ply,'card_id':'card-shared','reentry':True} for ply in range(0,136,4)]
+    store.load_snapshot(value)
+    game=store.import_pgn(workspace,'pgn','buckets','Learner',factories.pgn(observed))
+    drain(store)
+    with learning_receiver(store) as (endpoint,received,requests):
+        while deliver_one(store,endpoint):
+            pass
+        assert len(requests)==3 and len(received.heads)==34
+        initial=set(received.heads)
+        store.import_pgn(workspace,'pgn','buckets','Learner',factories.pgn(observed[:-4]+route[-4:]))
+        drain(store)
+        while deliver_one(store,endpoint):
+            pass
+        changes=[received[key] for key in requests[3:]]
+        withdrawals=[item for payload in changes for item in payload['withdrawals']]
+        assert len(withdrawals)==1 and withdrawals[0]['expected_obligation_revision']==1
+        assert len(received.heads)==33
+        assert initial-set(received.heads)=={withdrawals[0]['obligation_id']}
+        corrected=next(payload for payload in changes if payload['withdrawals'])
+        assert all(encounter['ply']>=128 for encounter in corrected['encounters'])
+    assert store.report(workspace,game)['delivery']['status']=='completed'
+
+
+def test_database_restart_preserves_reconciliation_cooldown_and_valid_checkpoint(state):
+    store,workspace,value=state
+    game=imported(state)
+    with learning_receiver(store,replies=['completed','accepted_pending','terminal_failure','completed']) as (endpoint,received,requests):
+        assert deliver_one(store,endpoint)
+        value['revision']=2
+        store.load_snapshot(value)
+        drain(store)
+        assert deliver_one(store,endpoint)
+        store.import_pgn(workspace,'pgn','miss','Learner',(FIXTURES/'empty.pgn').read_bytes())
+        drain(store)
+        month=AccountImport(workspace_id=workspace,provider='chess.com',account='Learner',
+            since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc))
+        month_id=enqueue_import(store,month)
+        games=[{'uuid':str(index),'end_time':int(month.since.timestamp()),'pgn':(FIXTURES/'miss.pgn').read_text()} for index in range(65)]
+        with httpx.Client(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={'games':games}))) as client:
+            assert import_one(store,client=client)
+        enqueue_import(store,AccountImport(workspace_id=workspace,provider='lichess',account='RateLimited',since=month.since,until=month.until))
+        # Cool down Lichess directly in the owning disposable database; its HTTP
+        # path is covered separately and no real wait is needed here.
+        with store.connect() as database:
+            database.execute("INSERT INTO provider_leases(provider,cooldown_until) VALUES('lichess',now()+interval '1 hour')")
+            database.execute("UPDATE jobs SET published=0 WHERE kind='reconcile' AND game_id=%s",(game,))
+        subprocess.run(['docker','restart',os.environ['TEMPO_GAME_EVIDENCE_TEST_CONTAINER']],check=True,capture_output=True)
+        deadline=time.monotonic()+30
+        while True:
+            try:
+                assert store.import_status(workspace,month_id)['cursor']['offset']==64
+                break
+            except psycopg.OperationalError:
+                if time.monotonic()>deadline:
+                    raise
+                time.sleep(.1)
+        with httpx.Client(transport=httpx.MockTransport(lambda _:pytest.fail('durable_checkpoint_or_cooldown_lost'))) as client:
+            assert import_one(EvidenceStore(store.database_url),client=client)
+            assert not import_one(store,client=client)
+        ready_outbox(store)
+        assert deliver_one(store,endpoint)
+        drain(EvidenceStore(store.database_url))
+        # Account imports have their own evidence deliveries; inspect and deliver
+        # the corrected source first by its game, without changing unrelated data.
+        for _ in range(70):
+            if store.report(workspace,game)['delivery']['status']=='completed':
+                break
+            assert deliver_one(store,endpoint)
+        assert store.report(workspace,game)['delivery']['status']=='completed'
+        corrections=[payload for payload in received.values() if payload['game_id']==game and payload['withdrawals']]
+        assert corrections[0]['withdrawals'][0]['expected_obligation_revision']==1
+        assert store.import_status(workspace,month_id)['status']=='completed'
+
+
+def test_version_one_migration_recovers_completed_history_in_bounded_pages(state):
+    from importlib.resources import files
+    from copy import deepcopy
+    from tempo_game_evidence.payloads import make_delivery
+    from tempo_game_evidence.snapshot import ComparisonSnapshot
+    store,workspace,value=state
+    game=imported(state)
+    with store.connect() as database:
+        source=database.execute('SELECT * FROM games WHERE game_id=%s',(game,)).fetchone()
+        report=database.execute('SELECT report FROM comparisons WHERE game_id=%s',(game,)).fetchone()['report']
+    upgrade_url=os.environ['TEMPO_GAME_EVIDENCE_TEST_UPGRADE_URL']
+    upgrade=EvidenceStore(upgrade_url)
+    with upgrade.connect() as database:
+        database.execute(files('tempo_game_evidence').joinpath('migrations/001.sql').read_text())
+        database.execute('INSERT INTO workspace_inputs(workspace_id,snapshot_digest) VALUES(%s,%s)',(workspace,report['snapshot']['digest']))
+        database.execute('INSERT INTO snapshots VALUES(%s,%s,%s,%s,%s)',(report['snapshot']['digest'],workspace,value['snapshot_id'],1,Jsonb(value)))
+        database.execute('INSERT INTO games(game_id,workspace_id,provider,provider_game_id,player,revision,input_digest,source_digest,raw_source,document,positions,index_receipt,report_revision) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,65)',
+            (game,workspace,source['provider'],source['provider_game_id'],source['player'],1,source['input_digest'],source['source_digest'],source['raw_source'],Jsonb(source['document']),Jsonb(source['positions']),Jsonb(source['index_receipt'])))
+        for revision in range(1,66):
+            current=deepcopy(report)
+            current['comparison_revision']=revision
+            database.execute('INSERT INTO comparisons VALUES(%s,%s,%s,%s)',(game,revision,str(revision),Jsonb(current)))
+            payload=make_delivery(source['document'],report['findings'],revision,ComparisonSnapshot.model_validate(value).publication)
+            acknowledgement={**{key:payload[key] for key in ('contract_version','workspace_id','delivery_id','evidence_id','evidence_revision')},'status':'completed','learning_revision':revision,'reason':None,'accepted_obligation_ids':[o['obligation_id'] for o in payload['obligations']]}
+            database.execute("INSERT INTO outbox(delivery_id,game_id,evidence_revision,bucket,payload,status,attempts,acknowledgement) VALUES(%s,%s,%s,0,%s,'completed',1,%s)",(payload['delivery_id'],game,revision,Jsonb(payload),Jsonb(acknowledgement)))
+    upgrade.migrate()
+    upgrade.migrate()
+    assert upgrade.process_one()
+    with upgrade.connect() as database:
+        assert not database.execute('SELECT heads_initialized FROM games').fetchone()['heads_initialized']
+        assert database.execute('SELECT obligation_revision FROM accepted_heads').fetchone()['obligation_revision']==64
+    drain(upgrade)
+    with upgrade.connect() as database:
+        assert database.execute('SELECT heads_initialized FROM games').fetchone()['heads_initialized']
+        assert database.execute('SELECT obligation_revision FROM accepted_heads').fetchone()['obligation_revision']==65
+        assert database.execute('SELECT count(*) AS count FROM evidence_schema_migrations').fetchone()['count']==2
+    upgrade.import_pgn(workspace,'pgn','miss','Learner',(FIXTURES/'empty.pgn').read_bytes())
+    drain(upgrade)
+    with upgrade.connect() as database:
+        correction=database.execute("SELECT payload FROM outbox WHERE status='pending'").fetchone()['payload']
+        assert correction['withdrawals'][0]['expected_obligation_revision']==65
+
+
+def test_expired_provider_worker_cannot_replace_newer_valid_checkpoint(state):
+    store,workspace,_=state
+    config=AccountImport(workspace_id=workspace,provider='chess.com',account='Learner',
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc))
+    import_id=enqueue_import(store,config)
+    def response(source):
+        return httpx.Response(200,json={'games':[{'uuid':source,'end_time':int(config.since.timestamp()),'pgn':(FIXTURES/'miss.pgn').read_text()}]})
+    def old_handler(request):
+        with store.connect() as database:
+            database.execute("UPDATE import_cursors SET leased_until=now()-interval '1 second'")
+            database.execute("UPDATE provider_leases SET leased_until=now()-interval '1 second'")
+        with httpx.Client(transport=httpx.MockTransport(lambda _:response('new-owner'))) as newer:
+            assert import_one(EvidenceStore(store.database_url),client=newer)
+        return response('expired-owner')
+    with httpx.Client(transport=httpx.MockTransport(old_handler)) as client:
+        assert import_one(store,client=client)
+    assert store.import_status(workspace,import_id)['status']=='completed'
+    with store.connect() as database:
+        assert database.execute('SELECT provider_game_id FROM games').fetchone()['provider_game_id']=='new-owner'
+        page=database.execute('SELECT raw_response,validation_status FROM import_pages').fetchone()
+        assert page['validation_status']=='valid' and b'new-owner' in bytes(page['raw_response'])
+
+
+def test_late_rejection_from_expired_sender_cannot_undo_completed_receipt(state):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    store,workspace,_=state
+    game=imported(state)
+    entered,release=Event(),Event()
+    def acknowledgement(request,status):
+        payload=json.loads(request.content)
+        return httpx.Response(200,json={**{key:payload[key] for key in ('contract_version','workspace_id','delivery_id','evidence_id','evidence_revision')},
+            'status':status,'accepted_obligation_ids':[o['obligation_id'] for o in payload['obligations']] if status=='completed' else [],
+            'learning_revision':1 if status=='completed' else None,'reason':None if status=='completed' else 'fixture_rejected'})
+    def old_handler(request):
+        entered.set()
+        assert release.wait(5)
+        return acknowledgement(request,'terminal_failure')
+    with httpx.Client(transport=httpx.MockTransport(old_handler)) as older,ThreadPoolExecutor(max_workers=2) as workers:
+        first=workers.submit(deliver_one,store,'http://fixture/evidence',client=older)
+        assert entered.wait(5)
+        try:
+            with store.connect() as database:
+                database.execute("UPDATE outbox SET leased_until=now()-interval '1 second'")
+            with httpx.Client(transport=httpx.MockTransport(lambda request:acknowledgement(request,'completed'))) as newer:
+                assert deliver_one(EvidenceStore(store.database_url),'http://fixture/evidence',client=newer)
+        finally:
+            release.set()
+        assert first.result(5)
+    drain(store)
+    assert store.report(workspace,game)['delivery']['status']=='completed'
+    with store.connect() as database:
+        assert database.execute('SELECT count(*) AS count FROM accepted_heads WHERE active').fetchone()['count']==1
+
+
+def test_oversized_provider_response_stays_explicitly_blocked(state):
+    from tempo_game_evidence.source import MAX_SOURCE_BYTES
+    store,workspace,_=state
+    import_id=enqueue_import(store,AccountImport(workspace_id=workspace,provider='lichess',account='Learner',
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc)))
+    with httpx.Client(transport=httpx.MockTransport(lambda _:httpx.Response(200,content=b'x'*(MAX_SOURCE_BYTES+1)))) as client:
+        assert import_one(store,client=client)
+        assert not import_one(store,client=client)
+    status=store.import_status(workspace,import_id)
+    assert status['status']=='blocked' and status['reason']=='remote_response_bound_exceeded'
+    assert status['cursor']['seen']==[] and not store.list_games(workspace)
+
+
+def test_invalid_historical_completed_receipt_blocks_projection_recovery(state):
+    store,workspace,_=state
+    game=imported(state)
+    with learning_receiver(store) as (endpoint,_,_):
+        assert deliver_one(store,endpoint)
+    with store.connect() as database:
+        database.execute("UPDATE outbox SET acknowledgement=jsonb_set(acknowledgement,'{accepted_obligation_ids}','[]')")
+        database.execute('DELETE FROM accepted_heads')
+        database.execute('UPDATE games SET heads_initialized=false')
+    drain(store)
+    report=store.report(workspace,game)
+    assert report['delivery']['status']=='blocked' and report['delivery']['reason']=='invalid_accepted_history'
+    with store.connect() as database:
+        assert database.execute('SELECT count(*) AS count FROM accepted_heads').fetchone()['count']==0
+
+
+def test_deferred_game_does_not_starve_other_game_delivery(state):
+    store,workspace,value=state
+    first=imported(state)
+    second=store.import_pgn(workspace,'pgn','second','Learner',(FIXTURES/'miss.pgn').read_bytes())
+    drain(store)
+    earlier,later=sorted([first,second])
+    with store.connect() as database:
+        database.execute("UPDATE outbox SET attempts=1,status='accepted_pending',next_attempt_at=now()+interval '1 hour' WHERE game_id=%s",(earlier,))
+    value['revision']=2
+    store.load_snapshot(value)
+    drain(store)
+    with learning_receiver(store) as (endpoint,received,_):
+        assert deliver_one(store,endpoint)
+        assert next(iter(received.values()))['game_id']==later
+    assert store.report(workspace,earlier)['delivery']['status']=='waiting_predecessor'
+
+
+def test_repeated_malformed_pages_remain_refetchable_until_valid(state):
+    store,workspace,_=state
+    import_id=enqueue_import(store,AccountImport(workspace_id=workspace,provider='lichess',account='Learner',
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc)))
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200,content=b'not-json' if len(calls)<4 else b'')
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        for attempt in range(4):
+            with store.connect() as database:
+                database.execute('UPDATE import_cursors SET next_attempt_at=now()')
+            assert import_one(store,client=client)
+            status=store.import_status(workspace,import_id)
+            assert status['cursor']['seen']==[]
+            assert status['status']==('retrying' if attempt<3 else 'completed')
+    assert len(calls)==4 and not store.list_games(workspace)
+
+
+def test_cancellation_during_invalid_checkpoint_recovery_prevents_commits(state):
+    store,workspace,_=state
+    import_id=enqueue_import(store,AccountImport(workspace_id=workspace,provider='chess.com',account='Learner',
+        since=datetime(2026,10,1,tzinfo=timezone.utc),until=datetime(2026,10,2,tzinfo=timezone.utc)))
+    calls=[]
+    def handler(request):
+        calls.append(request)
+        if len(calls)==1:
+            return httpx.Response(200,content=b'invalid')
+        cancel_import(store,import_id)
+        return httpx.Response(200,json={'games':[{'uuid':'cancelled','end_time':1790812800,'pgn':(FIXTURES/'miss.pgn').read_text()}]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert import_one(store,client=client)
+        with store.connect() as database:
+            database.execute('UPDATE import_cursors SET next_attempt_at=now()')
+        assert import_one(store,client=client)
+    assert store.import_status(workspace,import_id)['status']=='cancelled'
+    assert not store.list_games(workspace)

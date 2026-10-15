@@ -42,6 +42,9 @@ def main():
     report["source_inputs"]={str(path.relative_to(SERVICE)):hashlib.sha256(path.read_bytes()).hexdigest()
         for directory in (SERVICE/"src",SERVICE/"fixtures",HERE) for path in directory.rglob("*")
         if path.is_file() and "__pycache__" not in path.parts}
+    learning=SERVICE.parent/"learning/remediation"
+    report["receiver_inputs"]={str(path.relative_to(learning)):hashlib.sha256(path.read_bytes()).hexdigest()
+        for name in ("src","migrations") for path in (learning/name).rglob("*") if path.is_file() and "__pycache__" not in path.parts}
     created_container=created_volume=False
     secrets_to_redact=[]
     try:
@@ -82,6 +85,8 @@ def main():
             for name,secret_value in (("evidence_owner",owner_password),("evidence_runtime",runtime_password)):
                 database.execute(sql.SQL("CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(sql.Identifier(name),sql.Literal(secret_value)))
             database.execute("CREATE DATABASE game_evidence OWNER evidence_owner")
+            database.execute("CREATE DATABASE evidence_upgrade OWNER evidence_owner")
+            database.execute("REVOKE ALL ON DATABASE evidence_upgrade FROM PUBLIC")
             database.execute("CREATE DATABASE content_guard")
             for name in ("postgres","template1","content_guard","game_evidence"):
                 database.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(name)))
@@ -93,17 +98,39 @@ def main():
         with psycopg.connect(migration_url) as database:
             database.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
             database.execute("GRANT USAGE ON SCHEMA public TO evidence_runtime")
-            database.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO evidence_runtime")
-            database.execute("REVOKE INSERT,UPDATE,DELETE ON evidence_schema_migrations FROM evidence_runtime")
+            database.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON workspace_inputs,snapshots,games,jobs,game_sources,comparisons,outbox,import_cursors,import_pages,provider_leases,accepted_heads TO evidence_runtime")
+            database.execute("GRANT SELECT ON evidence_schema_migrations TO evidence_runtime")
+        learning_owner_password,learning_runtime_password=secrets.token_urlsafe(32),secrets.token_urlsafe(32)
+        secrets_to_redact.extend([learning_owner_password,learning_runtime_password])
+        with psycopg.connect(admin,autocommit=True) as database:
+            for role,secret_value in (("remediation_owner",learning_owner_password),("remediation_runtime",learning_runtime_password)):
+                database.execute(sql.SQL("CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(sql.Identifier(role),sql.Literal(secret_value)))
+            database.execute("CREATE DATABASE learning_fixture OWNER remediation_owner")
+            database.execute("REVOKE ALL ON DATABASE learning_fixture FROM PUBLIC")
+            database.execute("GRANT CONNECT ON DATABASE learning_fixture TO remediation_runtime")
+        learning_migration=make_conninfo(admin,dbname="learning_fixture",user="remediation_owner",password=learning_owner_password)
+        learning_runtime=make_conninfo(admin,dbname="learning_fixture",user="remediation_runtime",password=learning_runtime_password)
+        from importlib.resources import files
+        with psycopg.connect(learning_migration) as database:
+            database.execute(files("tempo_learning_remediation").joinpath("migrations/001_remediation.sql").read_text())
+            database.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
+            database.execute("GRANT USAGE ON SCHEMA public TO remediation_runtime")
+            tables=database.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'").fetchall()
+            for (table,) in tables:
+                database.execute(sql.SQL("GRANT SELECT,INSERT,UPDATE,DELETE ON {} TO remediation_runtime").format(sql.Identifier(table)))
         environment={key:value for key,value in os.environ.items()
                      if not key.startswith(("PG","TEMPO_DATABASE","TEMPO_GAME_EVIDENCE","PYTHONPATH"))}
         environment.update(TEMPO_GAME_EVIDENCE_DATABASE_URL=runtime_url,
                            TEMPO_GAME_EVIDENCE_TEST_CONTAINER=owner,
                            TEMPO_GAME_EVIDENCE_MIGRATION_URL=migration_url,
+                           TEMPO_GAME_EVIDENCE_TEST_LEARNING_URL=learning_runtime,
+                           TEMPO_GAME_EVIDENCE_TEST_UPGRADE_URL=make_conninfo(migration_url,dbname="evidence_upgrade"),
                            PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
         junit=directory/"native.xml"
         command=[sys.executable,"-m","pytest","-c",str(SERVICE/"pyproject.toml"),str(HERE/"test_postgres.py"),
                  "-q","--tb=short","-o","addopts=","--junitxml="+str(junit)]
+        if len(sys.argv)>2:
+            command.extend(["-k",sys.argv[2]])
         external_addopts=os.environ.get("PYTEST_ADDOPTS")
         if external_addopts:
             # The existing component lane supplies its own JUnit destination.

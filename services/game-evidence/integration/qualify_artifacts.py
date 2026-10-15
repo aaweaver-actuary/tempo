@@ -63,7 +63,7 @@ def main():
                     run(["uv","pip","install","--python",python,"--no-build-isolation",artifact],consumer,label+"-install")
                     shutil.copytree(SERVICE/"tests",consumer/"tests",ignore=shutil.ignore_patterns("__pycache__"))
                     shutil.copytree(SERVICE/"fixtures",consumer/"fixtures")
-                    guard="import pathlib,sys; import tempo_game_evidence as p; assert 'site-packages' in p.__file__; assert pathlib.Path(p.__file__).with_name('migrations').joinpath('001.sql').is_file(); assert not any('backend' in x for x in sys.path)"
+                    guard="import pathlib,sys; import tempo_game_evidence as p; assert 'site-packages' in p.__file__; assert all(pathlib.Path(p.__file__).with_name('migrations').joinpath(name).is_file() for name in ('001.sql','002.sql')); assert not any('backend' in x for x in sys.path)"
                     run([python,"-I","-c",guard],consumer,label+"-installed-guard")
                     junit=destination/(label+".xml")
                     run([python,"-I","-m","pytest","tests","--import-mode=importlib","-q","--junitxml="+str(junit)],consumer,label+"-tests")

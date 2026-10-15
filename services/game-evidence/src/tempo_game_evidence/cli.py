@@ -56,7 +56,7 @@ def main(arguments=None):
             # A separate owner credential is used only for this command.
             migration_url = os.environ.get("TEMPO_GAME_EVIDENCE_MIGRATION_URL") or options.database_url
             EvidenceStore(migration_url).migrate()
-            result = {"migration_version":1}
+            result = {"migration_version":2}
         elif options.command == "import-pgn":
             if options.file.stat().st_size>MAX_SOURCE_BYTES:
                 raise ValueError("source_byte_bound_exceeded")
