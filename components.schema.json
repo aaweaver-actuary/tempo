@@ -98,9 +98,20 @@
           },
           "dataOwnership": {
             "type": "object"
+          },
+          "catalog": {
+            "type": "string",
+            "minLength": 1
+          },
+          "testInventory": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }
+    },
+    "suites": {
+      "type": "array"
     }
   }
 }

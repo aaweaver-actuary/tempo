@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 export function testFiles(directory) {
   return readdirSync(directory).sort().flatMap(name => {
     const path = join(directory, name);
-    return statSync(path).isDirectory() ? testFiles(path) : /\.test\.mjs$/.test(name) ? [path] : [];
+    return statSync(path).isDirectory() ? testFiles(path) : /\.test\.[cm]?js$/.test(name) ? [path] : [];
   });
 }
 // Intentionally mirrored in the independently installed chess-line test runner.
