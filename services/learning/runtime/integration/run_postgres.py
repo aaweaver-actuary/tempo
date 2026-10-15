@@ -194,6 +194,7 @@ def main():
                 "addopts=",
                 "-p",
                 "no:cacheprovider",
+                "--basetemp=" + str(evidence / "temporary-test-data"),
                 str(ROOT / "services/learning/runtime/tests"),
                 *extra,
             ]
@@ -229,6 +230,18 @@ def main():
     except BaseException as error:
         report["error"] = str(error)
     finally:
+        try:
+            temporary = evidence / "temporary-test-data"
+            if temporary.exists():
+                retained = evidence / "service-logs"
+                retained.mkdir(exist_ok=True)
+                for source in temporary.rglob("server-*.log"):
+                    shutil.copy2(source, retained / source.name)
+                shutil.rmtree(temporary)
+            report["temporary_test_data_removed"] = not temporary.exists()
+        except BaseException as error:
+            report["cleanup_error"] = str(error)
+            report["complete"] = False
         try:
             if attempted:
                 matches = docker(
