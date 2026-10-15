@@ -135,6 +135,70 @@ its relevant application/build/spec/fixture/package inputs have no differences
 from `fa327f1edf802f14571cde84f2bac650a40fc876`, and recorded runtime/asset identities
 match. The presentation variant was not re-executed during this wiring follow-up.
 
+## PR #282 review repairs — October 15, 2026
+
+Repair implementation: `4fb9d4446bc071f9931b33ffdacbee54d87ee23c`, continuing the
+existing PR branch from reviewed head `12ab6f1a1af00a8b1b9d9309a745c0bbee231dfd`.
+The initial focused shared run reproduced one passing discovery test and the three
+reported failures, each caused by the unconditional browser-runner import in a
+minimal fixture. Six new accounting/configuration checks failed before the repairs.
+
+Vitest 5.0.1 executed collection omits code-skipped and TODO cases. An actual
+one-pass/one-skip fixture was accepted by the original verifier and rejected by the
+repair. Exclusion now requires an explicit regex that does not match the assertion;
+missing and empty filters cannot hide selected skips. Execution names are rebuilt
+from suite titles and leaf titles with Vitest's ` > ` separator, preserving nested
+and expanded parameterized identities. Aggregate counters remain strict, and the
+production configuration prohibits test and suite `.only` declarations.
+
+The dispatcher now imports browser execution only in its selected lane and awaits
+that branch in the CLI error handler. Its synchronous filesystem inventory check
+still rejects missing, empty, duplicate, stale and newly unregistered owning files.
+Only a repository lacking both owning directory and registration omits the lane.
+The three existing shared regressions and their original assertions remain intact.
+
+| Exact command or selection | Outcome |
+| --- | --- |
+| `node tools/component-build/test-lane.mjs controlled-browser` | 53 passed; zero failed/skipped/TODO/excluded; exact selected/executed identities |
+| `node tools/component-build/test-lane.mjs controlled-browser --list` | Three owning files; setup-free guarded listing also passed |
+| `node tools/component-build/test-lane.mjs controlled-browser registration-regressions` | 14 passed on clean repair implementation |
+| `node tools/component-build/test-lane.mjs controlled-browser registration-regressions supported_aliases` | One pass and 13 deliberate exclusions; zero selected skips/TODOs |
+| `node tools/component-build/test-node.mjs tools/component-build/tests 'M02 separate test discovery\|M02 (frontend\|integration) prepares packages once\|M02 runners lane shares generic Node accounting'` | All four passed, including each of the three reported failures |
+| Same shared command additionally selecting `M02 unrelated lanes\|M02 controlled browser` | Seven passed, including dependency isolation, strict inventory and async dispatch |
+| Full `boundaries.test.mjs` through `runNodeFiles` | 57 passed; zero failed/skipped/TODO |
+| `npm run test:ui-isolated:list` | 12 protected identities |
+| `npm run test:ui-isolated` | Nine native and three unchanged visual cases passed; zero retries or API escapes |
+| `node node_modules/typescript/bin/tsc --noEmit --incremental false` | Passed after correcting the new temporary fixture's environment type |
+| Affected ESLint; `npm run check:conflicts`; `git diff --check` | Passed; exact arguments retained in command evidence |
+
+The full-file command supplied for `test-node.mjs` returned `ENOTDIR`: its existing
+CLI accepts a directory. The entire file was then executed successfully through
+its existing exported API:
+
+```sh
+node --input-type=module -e 'import {runNodeFiles} from "./tools/component-build/test-node.mjs"; runNodeFiles(["tools/component-build/tests/boundaries.test.mjs"],undefined,{cwd:process.cwd()});'
+```
+
+The first owning-suite run retained 47 passes and six failures caused by sandboxed
+loopback denial. The unchanged source passed all 53 with permission for disposable
+loopback hosts. No assertion or selected test was weakened. Full-suite and native
+evidence was captured on the reviewed head plus the exact repair overlay; preserved
+file hashes and the patch match the committed repair tree. The 14-case registration
+suite also passed on the clean repair commit. The later validation-record update
+changes documentation only.
+
+Compact evidence is retained at
+`/Users/andy/tempo/test-results/pr282-review-repair/`: commands and exit codes,
+before/after failures, exact selected/executed identities, actual Vitest JSON
+collection/report examples, the source patch and hashes, native reports and launch
+diagnostics, and preservation/cleanup audits. Original PR evidence is preserved.
+Node remains 26.10.0 on macOS ARM64; Vitest is 5.0.1 and Playwright is 1.63.0.
+Both prebuilt chess/WASM digests matched. The native host port was verified closed,
+recorded children exited, and owned build/public outputs were removed. No Docker,
+PostgreSQL, Redis, backend/model worker, live data, CI setting, merge or deployment
+was involved. Full shared boundary validation invokes its existing Python static
+checker; browser commands run no Python producer or backend.
+
 ## Remaining scope
 
 No full gate, original PostgreSQL browser stack, producer Python generation,
