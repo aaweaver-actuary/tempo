@@ -27,4 +27,11 @@ def create_app(store: EvidenceStore):
         except KeyError:
             raise HTTPException(404,"game_not_found") from None
 
+    @app.get("/v1/imports/{import_id}")
+    def import_status(import_id: str,workspace_id: str):
+        try:
+            return store.import_status(workspace_id,import_id)
+        except KeyError:
+            raise HTTPException(404,"import_not_found") from None
+
     return app

@@ -131,3 +131,20 @@ def test_large_game_evidence_is_split_into_stable_bounded_scopes():
     assert len(batches)>1
     assert all(len(payload["encounters"])<=32 for _,payload in batches)
     assert len({payload["evidence_id"] for _,payload in batches})==len(batches)
+
+
+def test_card_replacement_does_not_rebind_an_existing_obligation_identity():
+    from tempo_game_evidence.payloads import make_deliveries
+    game,positions=observed(["c2c4"])
+    old_snapshot=ComparisonSnapshot.model_validate(snapshot())
+    old_findings=compare_game(game,positions,old_snapshot)
+    old_payload=make_delivery(game,old_findings,1,old_snapshot.publication)
+    value=snapshot()
+    value["publication"]["definitions"][0]["card_id"]="replacement-card"
+    value["routes"][0]["bindings"][0]["card_id"]="replacement-card"
+    current=ComparisonSnapshot.model_validate(value)
+    findings=compare_game(game,positions,current)
+    prior=[{"evidence_revision":1,"attempts":1,"status":"completed","payload":old_payload,"bucket":0}]
+    _,payload=make_deliveries(game,findings,2,current.publication,prior)[0]
+    assert payload["obligations"][0]["obligation_id"]!=old_payload["obligations"][0]["obligation_id"]
+    assert payload["withdrawals"][0]["obligation_id"]==old_payload["obligations"][0]["obligation_id"]

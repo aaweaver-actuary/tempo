@@ -45,6 +45,8 @@ The loopback read API offers `/healthz`, `/v1/games?workspace_id=...&after=...&l
 and `/v1/games/{id}/comparison?workspace_id=...`. Workspace filtering is not
 authentication; an authenticated gateway is required before broader exposure.
 Reports distinguish comparison readiness from Learning delivery status.
+`import-status <id> --workspace <workspace>` and
+`GET /v1/imports/{id}?workspace_id=...` expose durable cursor, failure and retry state.
 
 ## Snapshot and replay semantics
 
@@ -124,6 +126,9 @@ obligation revisions or explicitly withdraw the prior contribution; absent items
 never imply withdrawal. Pending earlier acknowledgements are replayed before a
 replacement is sent. Missing/partial comparison scope preserves blocked intent.
 F owns actual C-to-B integration proof. No Learning/Content database is accessed.
+The three source-bound `fixtures/*-report.json` documents and `corpus.json` are
+offline UI fixtures. Their synthetic imported-at timestamp is fixed; the regular
+suite verifies source/report digests and recomputes findings from the actual PGNs.
 
 ## Checks
 

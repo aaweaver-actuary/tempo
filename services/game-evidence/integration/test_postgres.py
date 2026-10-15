@@ -317,6 +317,10 @@ def test_rate_limited_provider_persists_retry_after_without_advancing_cursor(sta
         row=database.execute("SELECT status,cursor,next_attempt_at FROM import_cursors WHERE import_id=%s",(import_id,)).fetchone()
         assert row["status"]=="retrying" and row["cursor"]["seen"]==[]
         assert (row["next_attempt_at"]-datetime.now(timezone.utc)).total_seconds()>3500
+    assert store.import_status(workspace,import_id)["status"]=="retrying"
+    client=TestClient(create_app(store))
+    assert client.get(f"/v1/imports/{import_id}",params={"workspace_id":workspace}).json()["status"]=="retrying"
+    assert client.get(f"/v1/imports/{import_id}",params={"workspace_id":"another"}).status_code==404
 
 
 def test_acknowledgement_mismatch_never_invents_completion(state):

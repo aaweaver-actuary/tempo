@@ -34,7 +34,7 @@ def make_deliveries(game, findings, revision, publication, prior=()):
         known = by_bucket.get(bucket,[])
         misses = [item for item in known if item["status"] == "missed"]
         evidence_id = identity("evidence",game["game_id"],bucket)
-        obligations = [{"obligation_id":identity("miss_obligation",item["encounter_id"]),
+        obligations = [{"obligation_id":identity("miss_obligation",item["encounter_id"],item["card_id"]),
             "obligation_revision":revision,"source_evidence_id":evidence_id,"source_revision":revision,
             "card_id":item["card_id"],"card_revision":definitions[item["card_id"]].exercise_revision,
             "decision_id":item["decision_id"],"publication_id":publication.publication_id,

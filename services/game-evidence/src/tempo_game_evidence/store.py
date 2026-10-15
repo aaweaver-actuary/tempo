@@ -270,3 +270,12 @@ class EvidenceStore:
         with self.connect() as database:
             return database.execute("SELECT game_id,revision,report_revision,document->>'source_error' AS source_error FROM games WHERE workspace_id=%s AND game_id>%s ORDER BY game_id LIMIT %s",
                                     (workspace,after,limit)).fetchall()
+
+    def import_status(self, workspace, import_id):
+        with self.connect() as database:
+            result=database.execute("SELECT import_id,status,reason,cursor,next_attempt_at,attempts FROM import_cursors WHERE workspace_id=%s AND import_id=%s",
+                                    (workspace,import_id)).fetchone()
+        if not result:
+            raise KeyError(import_id)
+        result["next_attempt_at"]=result["next_attempt_at"].isoformat()
+        return result

@@ -31,6 +31,9 @@ def main(arguments=None):
     account.add_argument("configuration",type=Path)
     cancel = commands.add_parser("cancel-import")
     cancel.add_argument("import_id")
+    status=commands.add_parser("import-status")
+    status.add_argument("import_id")
+    status.add_argument("--workspace",required=True)
     snapshot = commands.add_parser("load-snapshot")
     snapshot.add_argument("file",type=Path)
     compare = commands.add_parser("compare")
@@ -63,6 +66,8 @@ def main(arguments=None):
         elif options.command == "cancel-import":
             cancel_import(store,options.import_id)
             result = {"cancelled":options.import_id}
+        elif options.command == "import-status":
+            result = store.import_status(options.workspace,options.import_id)
         elif options.command == "load-snapshot":
             result = {"snapshot_digest":store.load_snapshot(ComparisonSnapshot.model_validate_json(options.file.read_bytes()))}
         elif options.command == "compare":

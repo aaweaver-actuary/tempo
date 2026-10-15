@@ -10,6 +10,8 @@ source bounds and provider cursor/rate-limit behavior.
 atomic comparison/outbox publication, rollback, duplicate sources, verified-index
 reuse, stale source/snapshot fencing, pending/completed/rejected/stale delivery,
 lost acknowledgement with fresh-process replay, durable blocked corrections,
+exact v2 correction/withdrawal, partial-snapshot non-withdrawal, stable bounded
+evidence scopes, source reversion, bounded resumption and durable rate-limit state,
 real database restart, runtime-role restrictions, read API isolation and provider
 source checkpoint/cancellation. These cases run on a newly provisioned component
 database. They never accept a live database URL.
