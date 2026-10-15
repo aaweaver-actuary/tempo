@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 import pytest
+import psycopg, time
 from tempo_learning_runtime.database import connection
 from tempo_learning_runtime.durable_tasks import enqueue_task_in_transaction
 
@@ -12,6 +13,7 @@ def test_waiting_first_enqueue_uses_survivor_after_creator_rolls_back(case):
     waiting = Event()
     release = Event()
     abandoned = []
+    waiter_pid = []
 
     def creator():
         with case.database.scope():
@@ -29,8 +31,11 @@ def test_waiting_first_enqueue_uses_survivor_after_creator_rolls_back(case):
     def survivor():
         assert created.wait(3)
         with case.database.scope(), connection() as db:
+            db.execute_native("SET LOCAL lock_timeout='1500ms'")
+            waiter_pid.append(
+                db.execute_native("SELECT pg_backend_pid()").fetchone()[0]
+            )
             waiting.set()
-            release.set()
             return enqueue_task_in_transaction(
                 db, "daily_queue", "rollback-race", {"queue_date": "2026-10-15"}
             )
@@ -38,6 +43,24 @@ def test_waiting_first_enqueue_uses_survivor_after_creator_rolls_back(case):
     with ThreadPoolExecutor(2) as executor:
         first = executor.submit(creator)
         second = executor.submit(survivor)
+        try:
+            assert waiting.wait(3)
+            with psycopg.connect(case.admin) as inspector:
+                for _ in range(80):
+                    inspector.execute("SELECT pg_stat_clear_snapshot()")
+                    row = inspector.execute(
+                        "SELECT wait_event_type FROM pg_stat_activity WHERE pid=%s",
+                        (waiter_pid[0],),
+                    ).fetchone()
+                    if row and row[0] == "Lock":
+                        break
+                    time.sleep(0.01)
+                else:
+                    raise AssertionError(
+                        "Competing insertion never waited on the speculative creator"
+                    )
+        finally:
+            release.set()
         first.result()
         saved = second.result()
     assert saved["id"] != abandoned[0] and saved["generation"] == 1

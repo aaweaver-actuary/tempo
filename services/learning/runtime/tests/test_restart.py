@@ -195,3 +195,48 @@ def test_owned_database_restart_exposes_unready_then_recovers_existing_receipts(
         )
         assert replayed.status_code == 200, replayed.text
         assert replayed.json() == saved.json()
+
+
+def test_fresh_process_resumes_saved_queue_slice_cursor(case, tmp_path):
+    from test_runtime import bundle
+    from test_publications import stage, activate_generation
+    from tempo_learning_runtime.maintenance import run_once
+
+    payload = bundle(
+        [
+            (
+                "opening",
+                {
+                    "type": "move_line",
+                    "accepted_lines": [[move]],
+                    "mode": "single",
+                    "grading_policy": "reference",
+                },
+            )
+            for move in ("e2e4", "d2d4")
+        ]
+    )
+    assert stage(case, payload).status_code == 200
+    assert activate_generation(case, 1).status_code == 200
+    with case.database.scope():
+        assert run_once() is True
+    checkpoint = case.query("SELECT payload_json FROM learning.background_tasks")[0][0]
+    assert json.loads(checkpoint)["after_order_key"]
+    assert case.query("SELECT COUNT(*) FROM learning.daily_queue")[0][0] == 1
+    with server(case, tmp_path, maintenance=True) as (client, process):
+        for _ in range(80):
+            if (
+                case.query("SELECT state FROM learning.background_tasks")[0][0]
+                == "complete"
+            ):
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("Fresh process did not resume its saved queue cursor")
+    assert case.query("SELECT COUNT(*) FROM learning.daily_queue")[0][0] == 2
+    assert (
+        case.query(
+            "SELECT COUNT(DISTINCT card_id) FROM learning.queue_attempt_origins"
+        )[0][0]
+        == 2
+    )
