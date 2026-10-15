@@ -44,3 +44,38 @@ def test_shared_card_uses_valid_alias_without_losing_frozen_card_position():
     blocked = replace(BASE, route_id="blocked", content_valid=False)
     valid = replace(BASE, route_id="valid")
     assert order_candidates((blocked, valid)) == (valid,)
+
+
+@pytest.mark.parametrize("miss_first", [False, True])
+def test_eligible_miss_duplicate_preserves_priority_and_route_in_either_order(miss_first):
+    ordinary = replace(BASE, outstanding_miss=False, progression_allowed=True, remaining_allowance=1)
+    first = replace(ordinary, card_id="a")
+    duplicate = replace(ordinary, card_id="z", route_id="ordinary-route")
+    miss = replace(duplicate, outstanding_miss=True, route_id="miss-route")
+    representations = (miss, duplicate) if miss_first else (duplicate, miss)
+    assert order_candidates((first, *representations)) == (miss, first)
+    assert propose_admission(order_candidates((first, *representations))[0]).priority == "real_game_miss"
+
+
+@pytest.mark.parametrize("blocked", [dict(current_revision=False), dict(content_valid=False), dict(buried=True)])
+@pytest.mark.parametrize("miss_first", [False, True])
+def test_ineligible_miss_duplicate_never_displaces_eligible_ordinary_route(blocked, miss_first):
+    ordinary = replace(BASE, outstanding_miss=False, progression_allowed=True, remaining_allowance=1)
+    miss = replace(BASE, route_id="blocked-miss-route", **blocked)
+    representations = (miss, ordinary) if miss_first else (ordinary, miss)
+    assert order_candidates(representations) == (ordinary,)
+
+
+@pytest.mark.parametrize("miss_first", [False, True])
+def test_miss_duplicate_cannot_replace_protected_issued_head(miss_first):
+    head = replace(BASE, outstanding_miss=False, protected=True, route_id="issued-route")
+    miss = replace(BASE, route_id="miss-route")
+    representations = (miss, head) if miss_first else (head, miss)
+    assert order_candidates(representations) == (head,)
+    assert propose_admission(head) is None
+
+
+def test_eligible_ordinary_duplicates_keep_first_route_and_frozen_card_order():
+    ordinary = replace(BASE, outstanding_miss=False, progression_allowed=True, remaining_allowance=1)
+    candidates = tuple(replace(ordinary, card_id=name) for name in ("z", "a", "m"))
+    assert order_candidates((*candidates, replace(candidates[0], route_id="later-route"))) == candidates

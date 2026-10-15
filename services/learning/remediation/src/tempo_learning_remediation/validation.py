@@ -37,7 +37,10 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery,
     occurred_at = (datetime.fromisoformat(delivery.occurred_at.replace("Z", "+00:00"))
                    if isinstance(delivery, v2.EvidenceDelivery) and delivery.occurred_at else None)
     if occurred_at is not None:
-        occurred_at = instant(occurred_at)
+        try:
+            occurred_at = instant(occurred_at)
+        except OverflowError as error:
+            raise RemediationError("terminal_failure", "occurrence_out_of_range") from error
         if occurred_at > received_at:
             raise RemediationError("terminal_failure", "occurrence_in_future")
     encounters = {item.encounter_id: item for item in delivery.encounters}

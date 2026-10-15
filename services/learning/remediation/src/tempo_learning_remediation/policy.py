@@ -32,7 +32,13 @@ def order_candidates(candidates: tuple[Candidate, ...]) -> tuple[Candidate, ...]
     preferred = {}
     for candidate in candidates:
         previous = preferred.get(candidate.card_id)
-        if previous is None or (not evaluate_eligibility(previous).eligible and evaluate_eligibility(candidate).eligible):
+        if previous is None:
+            preferred[candidate.card_id] = candidate
+            continue
+        previous_eligible = evaluate_eligibility(previous).eligible
+        candidate_eligible = evaluate_eligibility(candidate).eligible
+        if candidate_eligible and (not previous_eligible or
+                                   (not previous.outstanding_miss and candidate.outstanding_miss)):
             preferred[candidate.card_id] = candidate
     for candidate in preferred.values():
         if candidate.card_id not in selected:

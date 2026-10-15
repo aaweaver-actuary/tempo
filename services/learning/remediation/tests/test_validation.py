@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import datetime, timezone
 import json
 import pytest
 from tempo_game_evidence_contracts import v1, v2
@@ -81,3 +82,30 @@ def test_v1_oversized_batch_and_future_occurrence_are_explicit_failures():
     future=delivery(occurred_at="2027-01-01T00:00:00Z")
     with pytest.raises(RemediationError,match="occurrence_in_future"):
         validate_delivery(future,context(future))
+
+
+@pytest.mark.parametrize("occurred_at", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"])
+def test_wire_valid_occurrence_utc_overflow_is_an_explicit_terminal_failure(occurred_at):
+    value = delivery(occurred_at=occurred_at)
+    assert value.occurred_at == occurred_at
+    with pytest.raises(RemediationError) as failure:
+        validate_delivery(value, context(value))
+    assert failure.value.status == "terminal_failure"
+    assert failure.value.reason == "occurrence_out_of_range"
+
+
+def test_normal_offset_occurrence_preserves_its_utc_instant():
+    value = delivery(occurred_at="2026-10-14T13:00:00+01:00")
+    contribution, = validate_delivery(value, context(value))
+    assert contribution.occurred_at == datetime(2026, 10, 14, 12, tzinfo=timezone.utc)
+    assert contribution.occurred_at.tzinfo is timezone.utc
+
+
+@pytest.mark.parametrize("received_at,error", [
+    (datetime(2026, 10, 15), ValueError),
+    (datetime.fromisoformat("0001-01-01T00:00:00+01:00"), OverflowError),
+])
+def test_invalid_trusted_receive_time_is_not_reclassified_as_a_producer_failure(received_at, error):
+    value = delivery()
+    with pytest.raises(error):
+        validate_delivery(value, context(value, received_at=received_at))

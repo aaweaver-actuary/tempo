@@ -134,6 +134,23 @@ def test_native_stale_or_forged_supported_miss_is_not_accepted(workspace, kind):
         assert not repository.has_outstanding("card")
 
 
+@pytest.mark.parametrize("occurred_at", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"])
+def test_native_occurrence_utc_overflow_returns_terminal_failure_without_acceptance(workspace, occurred_at):
+    data = delivery(occurred_at=occurred_at).model_dump(mode="json")
+    data["workspace_id"] = workspace
+    value = v2.EvidenceDelivery.model_validate(data)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        acknowledgement = accept(repository, value)
+        assert acknowledgement.status == "terminal_failure"
+        assert acknowledgement.reason == "occurrence_out_of_range"
+        assert acknowledgement.accepted_obligation_ids == []
+        assert acknowledgement.learning_revision is None
+        assert repository.receipt(value.delivery_id) is None
+        for table in ("remediation_contributions", "remediation_incident_versions", "remediation_evidence", "remediation_deliveries"):
+            assert count(connection, table, workspace) == 0
+
+
 def test_native_aliases_reanalysis_and_distinct_games_keep_logical_identity(workspace):
     with connect() as connection, connection.transaction():
         repository = PostgresRepository(connection, workspace)
@@ -169,6 +186,51 @@ def test_native_withdrawal_is_source_specific_and_partial_omission_is_additive(w
         assert count(connection, "remediation_contributions", workspace) == 2
 
 
+@pytest.mark.parametrize("publication_id", ["publication", "republished"])
+def test_native_current_publication_review_reports_semantic_settlement(workspace, publication_id):
+    first = scoped(delivery(), workspace)
+    current = replace(DECISION, publication_id=publication_id, publication_generation=2)
+    bound = attempt(publication_id=publication_id, publication_generation=2)
+    completed = review(bound)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        assert accept(repository, first).status == "completed"
+        assert repository.has_outstanding("card")
+        assert repository.bind_attempt(bound, current) == 1
+        assert repository.settle(completed, current) is True
+        assert repository.has_outstanding("card") is False
+    # A new connection proves the truthful receipt and marker survived commit.
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        assert connection.execute("SELECT settled FROM remediation_review_receipts WHERE workspace_id=%s AND review_id=%s",
+                                  (workspace, completed.review_id)).fetchone() == (True,)
+        assert connection.execute("SELECT attempt_id,invalidated FROM remediation_settlements WHERE workspace_id=%s AND review_id=%s",
+                                  (workspace, completed.review_id)).fetchone() == (bound.attempt_id, False)
+        assert repository.settle(completed, current) is True
+        assert repository.has_outstanding("card") is False
+        assert count(connection, "remediation_review_receipts", workspace) == 1
+        assert count(connection, "remediation_settlements", workspace) == 1
+        assert count(connection, "remediation_incident_versions", workspace) == 1
+        assert count(connection, "remediation_contributions", workspace) == 1
+
+
+def test_native_new_card_revision_does_not_settle_old_semantic_work(workspace):
+    current = replace(DECISION, card_revision=2)
+    bound = attempt(card_revision=2)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        assert accept(repository, scoped(delivery(), workspace)).status == "completed"
+        assert repository.bind_attempt(bound, current) == 1
+        assert repository.settle(review(bound), current) is False
+        assert repository.has_outstanding("card") is True
+        assert connection.execute("SELECT settled FROM remediation_review_receipts WHERE workspace_id=%s AND review_id='review'",
+                                  (workspace,)).fetchone() == (False,)
+        assert count(connection, "remediation_settlements", workspace) == 1
+        assert repository.settle(review(bound), current) is False
+        assert count(connection, "remediation_settlements", workspace) == 1
+        assert count(connection, "remediation_incident_versions", workspace) == 1
+
+
 def test_native_equivalent_publication_reanalysis_keeps_satisfied_incident_without_authorizing_stale_attempt(workspace):
     first = scoped(delivery(), workspace)
     with connect() as connection, connection.transaction():
@@ -186,6 +248,11 @@ def test_native_equivalent_publication_reanalysis_keeps_satisfied_incident_witho
         with pytest.raises(RemediationError, match="authority_changed"):
             repository.settle(review(bound), current)
         assert not repository.has_outstanding("card")
+        assert connection.execute("SELECT settled FROM remediation_review_receipts WHERE workspace_id=%s AND review_id='review'",
+                                  (workspace,)).fetchone() == (True,)
+        assert connection.execute("SELECT attempt_id,invalidated FROM remediation_settlements WHERE workspace_id=%s AND review_id='review'",
+                                  (workspace,)).fetchone() == (bound.attempt_id, False)
+        assert count(connection, "remediation_settlements", workspace) == 1
 
 
 def test_native_old_withdrawal_or_review_cannot_clear_corrected_revision(workspace):
@@ -308,6 +375,30 @@ def test_native_new_miss_lookup_does_not_scan_past_review_history(workspace):
                      if node.get("Relation Name") in {"remediation_attempts","remediation_settlements"} else 0)
             return local + sum(scanned(child) for child in node.get("Plans",[]))
         assert scanned(plan) <= 16, plan
+
+
+def test_native_same_frontier_nonsettling_history_lookup_is_bounded(workspace):
+    from tempo_learning_remediation.repository import _OUTSTANDING
+
+    history_count = 1000
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        assert accept(repository, scoped(delivery(), workspace)).status == "completed"
+        connection.execute("""INSERT INTO remediation_attempts
+            SELECT %s,'nonsettling-'||number::text,'card',1,'publication',1,%s,1
+            FROM generate_series(1,%s) number""", (workspace, NOW+timedelta(seconds=1), history_count))
+        connection.execute("""INSERT INTO remediation_review_receipts
+            SELECT %s,'again-'||number::text,'{"outcome":"again"}',false
+            FROM generate_series(1,%s) number""", (workspace, history_count))
+        assert repository.has_outstanding("card")
+        plan = connection.execute("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT EXISTS(SELECT 1" + _OUTSTANDING + ")",
+                                  (workspace, "card")).fetchone()[0][0]["Plan"]
+        (Path(os.environ["TEMPO_REMEDIATION_PLAN_DIR"]) / "same-frontier-lookup-plan.json").write_text(json.dumps(plan, indent=2)+"\n")
+        def scanned(node):
+            local = ((node.get("Actual Rows", 0)+node.get("Rows Removed by Filter", 0))*node.get("Actual Loops", 0)
+                     if node.get("Relation Name") in {"remediation_attempts", "remediation_settlements"} else 0)
+            return local + sum(scanned(child) for child in node.get("Plans", []))
+        assert scanned(plan) <= 2*history_count+16, plan
 
 
 @pytest.mark.parametrize("introduced", [False, True])

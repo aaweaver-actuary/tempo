@@ -11,7 +11,8 @@
       },
       "maxItems": 128,
       "title": "Accepted Obligation Ids",
-      "type": "array"
+      "type": "array",
+      "uniqueItems": true
     },
     "contract_version": {
       "const": 2,
