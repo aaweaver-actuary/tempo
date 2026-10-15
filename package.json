@@ -46,6 +46,8 @@
     "test:runners": "node tools/component-build/test-lane.mjs runners",
     "test:component-integration": "node tools/component-build/test-lane.mjs integration",
     "check:components": "node tools/component-build/check-components.mjs",
+    "test:ui-isolated": "node scripts/test-controlled-browser.mjs",
+    "test:ui-isolated:list": "node scripts/test-controlled-browser.mjs --list",
     "test:components": "node tools/component-build/test-node.mjs tools/component-build/tests",
     "build:components": "node tools/component-build/restricted-build.mjs",
     "test:component": "node tools/component-build/test-lane.mjs"

@@ -1,3 +1,13 @@
+## Supported frontend-only browser lane (#199)
+
+Owning discovery and named regressions: [controlled browser](controlled-browser/REGRESSIONS.md).
+Run `node tools/component-build/test-lane.mjs controlled-browser` and
+`npm run test:ui-isolated`; list with `controlled-browser --list` and
+`npm run test:ui-isolated:list`. The preserved nine native identities and three
+reviewed Chromium visual cases remain separate from PostgreSQL and real
+offline/service-worker proof. Local discovery is authoritative; central registration
+must match it and delegates execution to the dedicated controlled runner.
+
 ## Component contract foundation (#264, M02-B)
 
 The [contract-local registry](../contracts/REGRESSIONS.md) owns named wire,

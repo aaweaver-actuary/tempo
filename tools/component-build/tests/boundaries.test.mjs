@@ -237,6 +237,70 @@ test("M02 runners lane shares generic Node accounting without building packages"
   assert.notEqual(unmatched.status, 0);
   assert.equal(JSON.parse(unmatched.stdout.trim().split("\n").at(-1)).passed, 0);
 });
+test("M02 unrelated lanes execute without controlled browser modules", t => {
+  for (const lane of ["frontend", "integration", "runners"]) {
+    const directory = laneFixture(t);
+    assert.equal(existsSync(join(directory, "tests/controlled-browser")), false);
+    assert.equal(existsSync(join(directory, "scripts/controlled-browser-host.mjs")), false);
+    const result = spawnIsolatedNode([join(directory, "tools/component-build/test-lane.mjs"), lane], { cwd: directory, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(existsSync(join(directory, "build-calls")), lane !== "runners");
+  }
+});
+test("M02 controlled browser inventory distinguishes absent lanes from broken ownership", t => {
+  const directory = laneFixture(t);
+  const inventoryPath = join(directory, "tools/component-build/test-inventory.json");
+  const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
+  const unitDirectory = join(directory, "tests/controlled-browser/unit");
+  const file = "tests/controlled-browser/unit/owned.test.ts";
+  const invoke = () => spawnIsolatedNode([join(directory, "tools/component-build/test-lane.mjs"), "runners", "--list"], { cwd: directory, encoding: "utf8" });
+  assert.equal(invoke().status, 0);
+  inventory.lanes["controlled-browser"] = [file];
+  writeFileSync(inventoryPath, JSON.stringify(inventory));
+  assert.notEqual(invoke().status, 0); // Registered lane without its owning directory.
+  mkdirSync(unitDirectory, { recursive: true });
+  assert.notEqual(invoke().status, 0); // Empty owning directory.
+  writeFileSync(join(directory, file), "");
+  for (const registered of [undefined, [], [file, file], [file, "tests/controlled-browser/unit/stale.test.ts"]]) {
+    if (registered === undefined) delete inventory.lanes["controlled-browser"];
+    else inventory.lanes["controlled-browser"] = registered;
+    writeFileSync(inventoryPath, JSON.stringify(inventory));
+    assert.notEqual(invoke().status, 0);
+  }
+  inventory.lanes["controlled-browser"] = [file];
+  writeFileSync(inventoryPath, JSON.stringify(inventory));
+  assert.equal(invoke().status, 0); // Validation needs no browser execution module.
+  writeFileSync(join(unitDirectory, "new.test.ts"), "");
+  assert.notEqual(invoke().status, 0);
+  assert.equal(existsSync(join(directory, "build-calls")), false);
+});
+test("M02 controlled browser dispatch awaits and catches asynchronous failures", t => {
+  const directory = laneFixture(t);
+  const inventoryPath = join(directory, "tools/component-build/test-inventory.json");
+  const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
+  const file = "tests/controlled-browser/unit/owned.test.ts";
+  mkdirSync(join(directory, "tests/controlled-browser/unit"), { recursive: true });
+  writeFileSync(join(directory, file), "");
+  inventory.lanes["controlled-browser"] = [file];
+  writeFileSync(inventoryPath, JSON.stringify(inventory));
+  const runner = join(directory, "tools/component-build/test-lane.mjs");
+  const invoke = () => spawnIsolatedNode([runner, "controlled-browser"], { cwd: directory, encoding: "utf8" });
+  const missing = invoke();
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /Cannot find module/);
+  writeFileSync(join(directory, "tests/controlled-browser/test-unit.mjs"),
+    'export async function runControlledUnitSuite() { await new Promise(resolve => setTimeout(resolve, 10)); throw new Error("owned async failure"); }');
+  const failed = invoke();
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /owned async failure/);
+  assert.doesNotMatch(failed.stderr, /UnhandledPromiseRejection/);
+  writeFileSync(join(directory, "tests/controlled-browser/test-unit.mjs"),
+    'export async function runControlledUnitSuite() { await new Promise(resolve => setTimeout(resolve, 10)); console.log("owned async completion"); }');
+  const completed = invoke();
+  assert.equal(completed.status, 0, completed.stderr);
+  assert.match(completed.stdout, /owned async completion/);
+  assert.equal(existsSync(join(directory, "build-calls")), false);
+});
 test("M02 development and package test hooks prepare initial artifacts", () => {
   const scripts = JSON.parse(readFileSync(resolve(repository, "package.json"))).scripts;
   for (const hook of ["predev", "predev:local"]) assert.equal(scripts[hook], "npm run build:packages");
