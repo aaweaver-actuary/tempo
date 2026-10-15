@@ -95,6 +95,46 @@ the exact tested revision and outcomes. The historical presentation proof above
 is reusable only for unchanged relevant sources, fixtures, assets and toolchain;
 command registration is tested freshly through the actual aliases.
 
+## Follow-up validation — October 15, 2026
+
+Clean tested implementation: `9f36b09327f3820dbf00b375a2a97db63d622c52`.
+Node 26.10.0, macOS ARM64, Playwright 1.63.0; native browser revisions remain
+Chromium 1243, Firefox 1543 and WebKit 2359. Both chess/WASM digests match the
+unchanged input declaration.
+
+| Exact command or selection | Outcome |
+| --- | --- |
+| `npm run test:ui-isolated:list` | 12 exact protected identities; no output/build changes |
+| `node tools/component-build/test-lane.mjs controlled-browser --list` | Three locally discovered owning files; no setup |
+| `node tools/component-build/test-lane.mjs controlled-browser` | 46 passed, zero failed/skipped/TODO/excluded; selected/executed sets agree |
+| `node tools/component-build/test-lane.mjs controlled-browser registration-regressions supported_aliases` | One selected case passed; six deliberately excluded cases accounted separately |
+| `npm run test:ui-isolated` | Nine native and three reviewed visual cases passed, no retries or API escapes; owned cleanup verified |
+| `node node_modules/typescript/bin/tsc --noEmit --incremental false` | Passed |
+| Affected ESLint, `npm run check:conflicts`, `git diff --check origin/main...HEAD` | Passed; exact ESLint arguments are in `commands.json` |
+
+The shared discovery regression also passed through the existing generic Node
+reporter. Five actual npm executions rejected impossible project/spec, unknown
+spec, duplicate spec, snapshot-update and empty-grep selections before provisioning.
+The before/after generated-output inventory is identical. Named guarded regressions
+independently forbid service/output allocation during listing and rejection.
+
+The first sandboxed owning-suite run had 40 passing and six failing cases because
+loopback binding was denied (`listen EPERM`); it is retained as failed evidence.
+The authorized disposable-loopback rerun passed all 46 cases without source changes.
+
+Native run `run-wommQo` stage seconds: setup 0.164, chess-line build 1.046,
+production build 2.707, host startup 0.026, browser execution 24.225, cleanup 0.014.
+These are separate measured stages, not a full-product speedup comparison.
+Recorded launches are the three Node stages and native browser processes; task-local
+executable guards recorded no PostgreSQL, Redis, Python, model or Rust-compiler
+attempts. Build/public outputs were removed and the owned host port closed.
+
+The three unchanged visual baselines were inspected again; no automatic snapshot
+updates were used. The earlier presentation variant remains source-bound evidence:
+its relevant application/build/spec/fixture/package inputs have no differences
+from `fa327f1edf802f14571cde84f2bac650a40fc876`, and recorded runtime/asset identities
+match. The presentation variant was not re-executed during this wiring follow-up.
+
 ## Remaining scope
 
 No full gate, original PostgreSQL browser stack, producer Python generation,
