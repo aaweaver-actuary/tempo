@@ -4448,3 +4448,25 @@ is independently selected by the producer-parity lane and consumes the installed
 ### Frozen Maia production capture under locale collation
 
 - `backend/tests/test_frozen_maia_plan.py::test_capture_uses_database_collation_for_composite_pagination_keys` reproduces the production capture failure on built-in underscore-prefixed repertoire IDs under `en_US.utf8`. PostgreSQL validates advancement using the same native collation as ordering and seek predicates. The regression spans the 128-row boundary with numeric composite keys and rejects invalid database advancement flags.
+
+### Frozen Maia CLI foreground admission
+
+- `backend/tests/test_frozen_maia_plan.py::test_frozen_cli_waits_for_admission_without_holding_a_connection_or_replaying_writes` protects bounded staging against transient foreground admission deferrals while retaining foreground priority and one execution of the write body.
+- `test_frozen_cli_admission_wait_times_out_without_opening_a_write` bounds waiting outside a database connection; `test_frozen_cli_does_not_replay_a_write_body_that_raises_admission_error` preserves errors after the transaction body starts. Both remain in `backend/tests/test_frozen_maia_plan.py`.
+
+## Failed first opening publication recovery (Advance Caro Kann)
+
+- `backend/tests/test_opening_graph_recovery.py::test_maintenance_claim_refuses_wrong_scope_generation_lease_or_checkpoint` guards exact maintenance task authority without resetting the saved publication phase. `test_maintenance_preflight_and_release_yield_to_foreground` protects admission-denied reads and lease-release retries.
+- Regular PostgreSQL durability owner: `scripts/check_postgres_opening_graph_recovery.py`, registered in `scripts/test-postgres-docker.mjs`. Named cases `test_failed_first_publication_recovery_unlocks_practiced_parent_and_admits_maia_rank`, `test_recovery_refuses_mismatched_source_and_target`, and `test_scoped_recovery_claim_preserves_publish_and_fences_other_tasks` cover first-publication failure, source/identity validation, generation/lease fences, study-only recovery, integrity completion, parent exposure, rank preference, quotas, and preservation of reviews, ranks, and unrelated jobs. The proof owns a fresh database in the regular runner; `--disposable` owns and cleans up dedicated PostgreSQL/Redis containers for focused local execution.
+
+## #200 pure scheduling and stable identity
+
+- Package-local scheduling regressions: [owning inventory](../packages/scheduling/REGRESSIONS.md).
+- Package-local stable identity regressions: [owning inventory](../packages/chess-core/REGRESSIONS.md).
+- Legacy adapter compatibility: `backend/tests/test_scheduling_package_adapter.py` (complete legacy signature,
+  Schedule class identity, forwarding/result parity, controlled clocks/local day, naive UTC handling,
+  initial FSRS identity generation, and unchanged shared card digests).
+- Pure import rejection: `backend/tests/test_scheduling_boundary.py::test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imports`.
+- Installed producer parity: `tests/unit/scheduling-producer-parity-regressions.test.ts` in the existing
+  producer-parity lane; no Python dependency is added to frontend-only collection.
+- Declared installed distributions: `backend/tests/test_scheduling_package_adapter.py::test_backend_declares_installed_noneditable_pure_packages` verifies backend pins, package versions and noneditable import origins for both packages.

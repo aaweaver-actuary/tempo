@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 
-def check_python(root, dependencies, exports):
+def check_python(root, dependencies, exports, artifact=None):
     root = Path(root).resolve()
     sources = root / "src"
     allowed_external = set(dependencies)
@@ -18,6 +18,8 @@ def check_python(root, dependencies, exports):
     package = package_directories[0]
     problems = []
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
+    if artifact and any(metadata["project"][key] != artifact[key] for key in ("name", "version")):
+        problems.append("Python artifact identity differs from manifest")
     declared_dependencies = {re.split(r"[<>=!~;\[]", requirement)[0].replace("-", "_") for requirement in metadata["project"].get("dependencies", [])}
     if declared_dependencies != allowed_external:
         problems.append("Dependencies differ from manifest")
@@ -62,7 +64,7 @@ def check_python(root, dependencies, exports):
         problems.append("Python public exports differ from manifest")
     if problems:
         raise ValueError("\n".join(problems))
-    return {"files": len(list(package.rglob("*.py"))), "exports": declared_exports}
+    return {"files": len(list(package.rglob("*.py"))), "exports": declared_exports, "package": package.name}
 
 
 def check_consumer(source, package_name, exports):
@@ -85,7 +87,7 @@ if __name__ == "__main__":
             check_consumer(Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(sys.argv[4]))
             print(json.dumps({"consumer": "valid"}))
         else:
-            print(json.dumps(check_python(sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]))))
+            print(json.dumps(check_python(sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), json.loads(sys.argv[4]) if len(sys.argv) > 4 else None)))
     except (ValueError, SyntaxError) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

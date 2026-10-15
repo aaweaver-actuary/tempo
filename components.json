@@ -195,7 +195,7 @@
       "id": "learning-contracts",
       "type": "contract",
       "maintainer": "Tempo / #264",
-      "status": "planned",
+      "status": "implemented",
       "root": "contracts/learning",
       "publicExports": [
         "tempo_learning_contracts.v1",
@@ -204,31 +204,31 @@
       "dependencies": [
         "pydantic"
       ],
-      "buildInputs": [],
-      "buildCommand": null,
+      "buildInputs": [
+        "pyproject.toml",
+        "src",
+        "schemas",
+        "fixtures",
+        "examples",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "python -m build --no-isolation",
       "artifact": {
         "name": "tempo-learning-contracts",
         "version": "1.0.0",
-        "format": "wheel + JSON schema (proposed by #264)"
+        "format": "wheel + sdist + packaged JSON schema"
       },
       "tests": [
         {
-          "owner": "#264",
-          "status": "planned",
+          "owner": "learning-contracts",
           "kind": "python",
-          "command": "python -m pytest tests"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "typescript",
-          "command": "npm test"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "postgres",
-          "command": "python -m pytest tests/postgres"
+          "cwd": "contracts/learning",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests"
+          ]
         }
       ],
       "toolchain": {
@@ -241,14 +241,20 @@
       "dataOwnership": {
         "authority": "#264",
         "databases": [],
-        "migrations": []
-      }
+        "migrations": [],
+        "documents": [
+          "contracts/OWNERSHIP.md"
+        ],
+        "productionAdoption": false
+      },
+      "catalog": "contracts/catalog.json",
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "content-publication-contracts",
       "type": "contract",
       "maintainer": "Tempo / #264",
-      "status": "planned",
+      "status": "implemented",
       "root": "contracts/content-publication",
       "publicExports": [
         "tempo_content_publication_contracts.v1",
@@ -257,31 +263,31 @@
       "dependencies": [
         "pydantic"
       ],
-      "buildInputs": [],
-      "buildCommand": null,
+      "buildInputs": [
+        "pyproject.toml",
+        "src",
+        "schemas",
+        "fixtures",
+        "examples",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "python -m build --no-isolation",
       "artifact": {
         "name": "tempo-content-publication-contracts",
         "version": "1.0.0",
-        "format": "wheel + JSON schema (proposed by #264)"
+        "format": "wheel + sdist + packaged JSON schema"
       },
       "tests": [
         {
-          "owner": "#264",
-          "status": "planned",
+          "owner": "content-publication-contracts",
           "kind": "python",
-          "command": "python -m pytest tests"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "typescript",
-          "command": "npm test"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "postgres",
-          "command": "python -m pytest tests/postgres"
+          "cwd": "contracts/content-publication",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests"
+          ]
         }
       ],
       "toolchain": {
@@ -294,14 +300,20 @@
       "dataOwnership": {
         "authority": "#264",
         "databases": [],
-        "migrations": []
-      }
+        "migrations": [],
+        "documents": [
+          "contracts/OWNERSHIP.md"
+        ],
+        "productionAdoption": false
+      },
+      "catalog": "contracts/catalog.json",
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "game-evidence-contracts",
       "type": "contract",
       "maintainer": "Tempo / #264",
-      "status": "planned",
+      "status": "implemented",
       "root": "contracts/game-evidence",
       "publicExports": [
         "tempo_game_evidence_contracts.v1",
@@ -310,31 +322,31 @@
       "dependencies": [
         "pydantic"
       ],
-      "buildInputs": [],
-      "buildCommand": null,
+      "buildInputs": [
+        "pyproject.toml",
+        "src",
+        "schemas",
+        "fixtures",
+        "examples",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "python -m build --no-isolation",
       "artifact": {
         "name": "tempo-game-evidence-contracts",
         "version": "1.0.0",
-        "format": "wheel + JSON schema (proposed by #264)"
+        "format": "wheel + sdist + packaged JSON schema"
       },
       "tests": [
         {
-          "owner": "#264",
-          "status": "planned",
+          "owner": "game-evidence-contracts",
           "kind": "python",
-          "command": "python -m pytest tests"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "typescript",
-          "command": "npm test"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "postgres",
-          "command": "python -m pytest tests/postgres"
+          "cwd": "contracts/game-evidence",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests"
+          ]
         }
       ],
       "toolchain": {
@@ -347,14 +359,20 @@
       "dataOwnership": {
         "authority": "#264",
         "databases": [],
-        "migrations": []
-      }
+        "migrations": [],
+        "documents": [
+          "contracts/OWNERSHIP.md"
+        ],
+        "productionAdoption": false
+      },
+      "catalog": "contracts/catalog.json",
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "intelligence-contracts",
       "type": "contract",
       "maintainer": "Tempo / #264",
-      "status": "planned",
+      "status": "implemented",
       "root": "contracts/intelligence",
       "publicExports": [
         "tempo_intelligence_contracts.v1",
@@ -363,31 +381,31 @@
       "dependencies": [
         "pydantic"
       ],
-      "buildInputs": [],
-      "buildCommand": null,
+      "buildInputs": [
+        "pyproject.toml",
+        "src",
+        "schemas",
+        "fixtures",
+        "examples",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "python -m build --no-isolation",
       "artifact": {
         "name": "tempo-intelligence-contracts",
         "version": "1.0.0",
-        "format": "wheel + JSON schema (proposed by #264)"
+        "format": "wheel + sdist + packaged JSON schema"
       },
       "tests": [
         {
-          "owner": "#264",
-          "status": "planned",
+          "owner": "intelligence-contracts",
           "kind": "python",
-          "command": "python -m pytest tests"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "typescript",
-          "command": "npm test"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "postgres",
-          "command": "python -m pytest tests/postgres"
+          "cwd": "contracts/intelligence",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests"
+          ]
         }
       ],
       "toolchain": {
@@ -400,47 +418,55 @@
       "dataOwnership": {
         "authority": "#264",
         "databases": [],
-        "migrations": []
-      }
+        "migrations": [],
+        "documents": [
+          "contracts/OWNERSHIP.md"
+        ],
+        "productionAdoption": false
+      },
+      "catalog": "contracts/catalog.json",
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "analysis-jobs-contracts",
       "type": "contract",
       "maintainer": "Tempo / #264",
-      "status": "planned",
+      "status": "implemented",
       "root": "contracts/analysis-jobs",
       "publicExports": [
         "tempo_analysis_jobs_contracts.v1",
+        "tempo_analysis_jobs_contracts.stockfish",
+        "tempo_analysis_jobs_contracts.maia",
         "schemas/v1/*.json"
       ],
       "dependencies": [
         "pydantic"
       ],
-      "buildInputs": [],
-      "buildCommand": null,
+      "buildInputs": [
+        "pyproject.toml",
+        "src",
+        "schemas",
+        "fixtures",
+        "examples",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "python -m build --no-isolation",
       "artifact": {
         "name": "tempo-analysis-jobs-contracts",
         "version": "1.0.0",
-        "format": "wheel + JSON schema (proposed by #264)"
+        "format": "wheel + sdist + packaged JSON schema"
       },
       "tests": [
         {
-          "owner": "#264",
-          "status": "planned",
+          "owner": "analysis-jobs-contracts",
           "kind": "python",
-          "command": "python -m pytest tests"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "typescript",
-          "command": "npm test"
-        },
-        {
-          "owner": "#264",
-          "status": "planned",
-          "kind": "postgres",
-          "command": "python -m pytest tests/postgres"
+          "cwd": "contracts/analysis-jobs",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests"
+          ]
         }
       ],
       "toolchain": {
@@ -453,8 +479,14 @@
       "dataOwnership": {
         "authority": "#264",
         "databases": [],
-        "migrations": []
-      }
+        "migrations": [],
+        "documents": [
+          "contracts/OWNERSHIP.md"
+        ],
+        "productionAdoption": false
+      },
+      "catalog": "contracts/catalog.json",
+      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "chess-line",
@@ -492,7 +524,8 @@
           "inputs": [
             "test.mjs",
             "tests"
-          ]
+          ],
+          "cwd": "packages/chess-line"
         }
       ],
       "toolchain": {
@@ -531,7 +564,7 @@
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {
         "name": "tempo-scheduling",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "format": "wheel + sdist"
       },
       "tests": [
@@ -541,7 +574,8 @@
           "command": "uv run --locked --no-editable python -m pytest tests",
           "inputs": [
             "tests"
-          ]
+          ],
+          "cwd": "packages/scheduling"
         }
       ],
       "toolchain": {
@@ -618,16 +652,46 @@
     {
       "id": "chess-core",
       "type": "library",
-      "maintainer": "Tempo / #200",
-      "status": "planned",
+      "maintainer": "Tempo / #200 (stable identity)",
+      "status": "implemented",
       "root": "packages/chess-core",
-      "publicExports": [],
+      "publicExports": [
+        "canonical_fen_key",
+        "card_id"
+      ],
       "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "README.md",
+        "REGRESSIONS.md",
+        "tests"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-chess-core",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "chess-core",
+          "kind": "python",
+          "command": "uv run --locked --no-editable python -m pytest tests",
+          "inputs": [
+            "tests"
+          ],
+          "cwd": "packages/chess-core"
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
       "dataOwnership": {
         "authority": null,
         "databases": [],
@@ -709,6 +773,35 @@
         "databases": [],
         "migrations": []
       }
+    }
+  ],
+  "suites": [
+    {
+      "id": "contract-exchange",
+      "owner": "#264",
+      "kind": "contract-exchange",
+      "cwd": "contracts",
+      "command": "python run_tests.py --typescript",
+      "inputs": [
+        "run_tests.py",
+        "consumer-examples/package.json",
+        "consumer-examples/tsconfig.json",
+        "consumer-examples/src",
+        "tests"
+      ]
+    },
+    {
+      "id": "contract-ownership",
+      "owner": "#264",
+      "kind": "postgres",
+      "cwd": "contracts",
+      "command": "python database-ownership/run.py",
+      "inputs": [
+        "database-ownership/run.py",
+        "database-ownership/fixture.py",
+        "database-ownership/tests",
+        "database-ownership/requirements-test.txt"
+      ]
     }
   ]
 }

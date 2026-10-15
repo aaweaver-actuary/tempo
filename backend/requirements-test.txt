@@ -1,6 +1,9 @@
+# Install this file from the repository root; local paths are relative to cwd.
+# Minimal seam setup: uv sync --project backend --locked --no-editable --python 3.12
 # Architecture enforcement only; not installed in production images.
 import-linter==2.15
 grimp==3.17
 
 # Transitional assembly: install the declared package, not its source via PYTHONPATH.
 ./packages/scheduling
+./packages/chess-core

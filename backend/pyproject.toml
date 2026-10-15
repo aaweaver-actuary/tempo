@@ -3,10 +3,11 @@ name = "backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "python-chess>=1.999",
-    "tempo-scheduling==0.1.0",
+    "tempo-scheduling==0.2.0",
+    "tempo-chess-core==0.1.0",
 ]
 
 [dependency-groups]
@@ -18,3 +19,4 @@ dev = [
 
 [tool.uv.sources]
 tempo-scheduling = { path = "../packages/scheduling" }
+tempo-chess-core = { path = "../packages/chess-core" }

@@ -190,6 +190,7 @@
   "notes": {
     "producer-parity": "Existing TypeScript consumer assertions with genuine Python producers; legacy backend dependencies remain declared.",
     "legacy-runner-wrappers": "Preserved global Vitest wrappers; run the Node owners directly via runners for independent runner collection.",
-    "integration": "Frontend adapter checks plus separately invoked backend scheduling seam. Contract suites remain planned under #264."
+    "integration": "Frontend adapter checks plus separately invoked backend scheduling seam. Implemented contracts use catalog-backed component suites and explicit shared exchange/native ownership suites in components.json.",
+    "component-local": "Component tests and regression inventories are registered by components.json; package-local discovery remains authoritative, without adding package cases to these legacy file lists."
   }
 }
