@@ -82,9 +82,9 @@
     {
       "root": "game-evidence",
       "distribution": "tempo-game-evidence-contracts",
-      "artifact_version": "1.0.0",
-      "wire_version": 1,
-      "public_namespace": "tempo_game_evidence_contracts.v1",
+      "artifact_version": "2.0.0",
+      "wire_version": 2,
+      "public_namespace": "tempo_game_evidence_contracts.v2",
       "authoritative_owner": "Game Evidence observations / Learning obligations",
       "consumers": [
         "learning",
@@ -99,14 +99,21 @@
       "schema_exports": [
         "schemas/v1/ImportedGame.schema.json",
         "schemas/v1/EvidenceDelivery.schema.json",
-        "schemas/v1/EvidenceAcknowledgement.schema.json"
+        "schemas/v1/EvidenceAcknowledgement.schema.json",
+        "schemas/v2/ImportedGame.schema.json",
+        "schemas/v2/EvidenceDelivery.schema.json",
+        "schemas/v2/EvidenceAcknowledgement.schema.json"
       ],
       "test_command": "python -m pytest contracts/game-evidence/tests",
       "runtime_dependencies": [
         "pydantic==2.12.5"
       ],
       "data_ownership": "OWNERSHIP.md",
-      "protocol_semantics": "README.md"
+      "protocol_semantics": "README.md",
+      "supported_wire_versions": [
+        1,
+        2
+      ]
     },
     {
       "root": "intelligence",

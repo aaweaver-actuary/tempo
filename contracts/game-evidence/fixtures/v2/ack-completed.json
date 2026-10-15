@@ -1,0 +1,16 @@
+{
+  "model": "EvidenceAcknowledgement",
+  "payload": {
+    "contract_version": 2,
+    "workspace_id": "workspace-a",
+    "delivery_id": "delivery-a",
+    "evidence_id": "evidence-a",
+    "evidence_revision": 1,
+    "status": "completed",
+    "accepted_obligation_ids": [
+      "obligation-a"
+    ],
+    "learning_revision": 2,
+    "reason": null
+  }
+}

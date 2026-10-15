@@ -20,19 +20,27 @@ to accept an unknown artifact. Other staged assets are explicitly listed there.
 From the repository root:
 
 ```sh
-node scripts/test-controlled-browser.mjs --list
-node tests/controlled-browser/test-unit.mjs
-node scripts/test-controlled-browser.mjs
-node scripts/test-controlled-browser.mjs phone.spec.ts
-node scripts/test-controlled-browser.mjs interaction.spec.ts --project=webkit --grep='tablet menu'
+npm run test:ui-isolated:list
+node tools/component-build/test-lane.mjs controlled-browser --list
+node tools/component-build/test-lane.mjs controlled-browser
+npm run test:ui-isolated
+npm run test:ui-isolated -- phone.spec.ts
+npm run test:ui-isolated -- interaction.spec.ts --project=webkit --grep='tablet menu'
 ```
 
-The direct runner is the normal supported command. The exact shared registration
-patch in `registration.patch` adds `npm run test:ui-isolated` and
-`npm run test:ui-isolated:list`, the central component-lane index, and the root
-regression backlink. Apply these only after D's initial integration baseline is
-merged, reconciling its convention first. That small shared integration remains
-pending; no competing schema/checker or hosted workflow is introduced here.
+The npm aliases invoke the existing runner directly, with no setup lifecycle hooks.
+The direct Node commands remain supported. Central unit registration is a compatibility
+index checked against local discovery; execution delegates to this feature's Node
+configuration and sanitized runner, rather than the generic frontend configuration.
+The unit command accepts the existing `[file-substring] [test-name]` filters. It
+builds chess-line once, then expands parameterized case names through executed
+collection and requires the selected identities to match passing results exactly.
+Only names outside an explicit regex filter can be counted as deliberate exclusions;
+unfiltered skips, matching skips, selected TODOs and focused `.only` declarations fail.
+Nested suite names use Vitest's ` > ` separator for filtering and identity comparison,
+including expanded parameterized cases. Unit case collection imports frontend
+consumers and therefore needs the compiled chess-line prerequisite. File listing
+does not compile it. No hosted workflow is introduced here.
 
 Listing collects exact file/title/project identities without building assets,
 starting a host/browser, or creating a run directory. File selectors are explicit

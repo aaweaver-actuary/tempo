@@ -1,3 +1,3 @@
-"""Version-addressable public contracts; import the v1 namespace."""
+"""Version-addressable public contracts; v1 additive and v2 explicit correction."""
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"

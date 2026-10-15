@@ -20,3 +20,22 @@ TypeScript consumers live in `../consumer-examples`.
 runs this package's own installed public envelope across 37 explicit validity cases,
 including fractions, offsets, Gregorian leap rules, year bounds and malformed input.
 Accepted strings retain their original offset and fractional representation.
+
+## V2 correction and chronology (#41 / #230–232)
+
+`tests/test_v2.py` owns independently authored v2 round trips/schema parity,
+withdrawal-only deliveries, required nullable occurrence time, explicit
+encounter/miss/publication/revision linkage, list bounds, and rejection of
+implicit withdrawals, inconsistent references and cross-version negotiation.
+Existing v1 fixtures, schema and producer output remain unchanged. The installed
+Learning remediation suite owns semantic validation against authoritative content;
+contract fixtures alone do not establish production adoption or supported misses.
+
+## PR #281 acknowledgement repair
+
+`test_v2_acknowledgement_rejects_duplicate_obligation_ids` rejects independently
+authored duplicate IDs through both Pydantic and the committed Draft 2020-12
+schema. `test_v2_acknowledgement_preserves_valid_ordered_or_empty_ids` preserves
+list order, empty lists and serialization. The parameterized
+`test_v2_acknowledgement_retains_status_bounds_and_strict_validation` guards the
+existing status/revision/reason rules, batch limit and strict field validation.
