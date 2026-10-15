@@ -762,17 +762,10 @@ function StudyComposition() {
         setPracticeCards([]);
         setDailyQueue([]);
         setImportedRepertoires([]);
-        setSeenMoves(
-          new Set(
-            (
-              readStoredValue(
-                localStorage,
-                "tempo-seen-moves",
-                z.array(z.string()),
-              ) ?? []
-            ).map(asTeachingMoveKey),
-          ),
-        );
+        setSeenMoves(current => new Set([
+          ...current,
+          ...(readStoredValue(localStorage, "tempo-seen-moves", z.array(z.string())) ?? []).map(asTeachingMoveKey),
+        ]));
         setBoardTheme(
           (localStorage.getItem("tempo-board-theme") as BoardTheme) ?? "brown",
         );
@@ -797,26 +790,14 @@ function StudyComposition() {
       }
       setCardsLeft(Number(localStorage.getItem("tempo-cards-left") ?? 12));
       setReviewed(Number(localStorage.getItem("tempo-reviewed") ?? 0));
-      setSeenMoves(
-        new Set(
-          (
-            readStoredValue(
-              localStorage,
-              "tempo-seen-moves",
-              z.array(z.string()),
-            ) ?? []
-          ).map(asTeachingMoveKey),
-        ),
-      );
-      setFirstCleanPasses(
-        new Set(
-          readStoredValue(
-            localStorage,
-            "tempo-first-clean-passes",
-            z.array(z.string()),
-          ) ?? [],
-        ),
-      );
+      setSeenMoves(current => new Set([
+        ...current,
+        ...(readStoredValue(localStorage, "tempo-seen-moves", z.array(z.string())) ?? []).map(asTeachingMoveKey),
+      ]));
+      setFirstCleanPasses(current => new Set([
+        ...current,
+        ...(readStoredValue(localStorage, "tempo-first-clean-passes", z.array(z.string())) ?? []),
+      ]));
       const savedRepertoires = validRecords(
         localRepertoireSchema,
         readStoredValue(
@@ -1442,10 +1423,6 @@ function StudyComposition() {
       nextQueue.push(activeCardIndex);
       const nextPasses = new Set(firstCleanPasses).add(card.id);
       setFirstCleanPasses(nextPasses);
-      localStorage.setItem(
-        "tempo-first-clean-passes",
-        JSON.stringify([...nextPasses]),
-      );
       setQueueNotice("");
     } else setQueueNotice("");
     setDailyQueue(nextQueue);
@@ -1557,9 +1534,7 @@ function StudyComposition() {
         setSeenMoves(
           (current) =>
             new Set(
-              [...current]
-                .filter((key) => !key.startsWith(`${card.backendId}:`))
-                .concat(
+              [...current].concat(
                   states.map((state) =>
                     asTeachingMoveKey(
                       `${card.backendId}:${state.revision}:${state.ply}`,

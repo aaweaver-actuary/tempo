@@ -4528,7 +4528,17 @@ the real disposable PostgreSQL integration owner. See
   in the regular frontend lane.
 - `repertoire-alternative-home-regressions.test.tsx`:
   `pr285_teaching_cross_tab_committed_facts_update_the_mounted_home` verifies both
-  seen and first-clean changes in the mounted Home store projection.
+  seen and first-clean changes in the mounted Home store projection; sibling
+  `pr285_teaching_cross_tab_*` cases preserve IndexedDB-only facts during startup
+  and stale server snapshots. `review-attempt-confirmation-regressions.test.tsx`
+  verifies modern demo completion does not write a legacy cutover source.
+- `review-outbox-regressions.test.ts`:
+  `pr285_discarded_review_race_never_reports_a_saved_grade_or_clears_failure_evidence`
+  places a terminal discard before an actual delayed successful network response.
+  Neither the losing response nor its caller may report persistence.
+- `study-intent-storage-regressions.test.ts` also owns malformed legacy review and
+  failure rejection, structured failed-operation detail after reopen, and the
+  distinction between a hidden factory and an already usable database connection.
 - `tests/controlled-browser/study-intents.spec.ts`: five `pr285` native identities
   cover actual reload after rejection, late transaction failure and retry, legacy
   sequence-two recovery, cross-tab practice reset and targeted teaching messages.

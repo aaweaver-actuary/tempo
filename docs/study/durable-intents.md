@@ -159,6 +159,10 @@ Legacy conflict state is installed atomically with first insertion. Reimport
 validates immutable identity and preserves every mutable field of an existing
 record, including reconciliation sequence, receipts, claims and suppression.
 Legacy arrays are retained and the explicit old-tab cutover policy remains.
+`study-legacy-validation.ts` owns the shared runtime validation used by migration
+and diagnostic archives, including review evidence, prepared identities, conflict
+shape and positive failure identifiers. Malformed sources remain retained and
+block readiness before delivery.
 
 Practice answer and self-assessment scopes share their parent's sequence boundary.
 A transaction checks all relevant work is settled and advances that one marker.
@@ -185,3 +189,12 @@ The application coalesces targeted reads and Home subscribes to incremental
 teaching updates. Initial hydration reads history once; ordinary delivery claims,
 checkpoint changes and teaching moves do not enumerate or rewrite historical
 teaching facts. Both seen and first-clean facts use this path.
+Home unions retained legacy and server snapshots with committed facts, so a stale
+snapshot cannot erase newer evidence. Modern demo completion writes its durable
+fact without writing the watched legacy cutover source.
+
+A terminal discard that wins against a delayed review response cannot produce
+saved-grade UI, persisted-attempt IDs or failure-evidence clearing. Those effects
+require the actual durable committed settlement and its `persisted:true` receipt.
+Failed-operation validation detail is retained in the structured rejection receipt
+alongside its original identity, HTTP status and authoritative message.

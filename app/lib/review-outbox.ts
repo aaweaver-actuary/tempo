@@ -10,7 +10,7 @@ import { publishNotification, notifications, resolveNotification } from "./notif
 import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
-import { openingEvidenceCheckpointSchema } from "../domain/opening-evidence";
+import { validLegacyReview, validConflict } from "./study-legacy-validation";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
 import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { IntentStorageError } from "@tempo/browser-intents";
@@ -110,39 +110,9 @@ function readStoredReviews(key: string): PendingReview[] {
   const stored = localStorage.getItem(key);
   if (!stored) return [];
   const parsed: unknown = JSON.parse(stored);
-  if (!Array.isArray(parsed) || parsed.some((item) =>
-    !item || typeof item !== "object" ||
-    typeof item.backendId !== "string" ||
-    !Number.isSafeInteger(item.queueEntryId) || item.queueEntryId <= 0 ||
-    !["again", "correct"].includes(item.outcome) ||
-    typeof item.guided !== "boolean" ||
-    (item.attemptId !== undefined && (typeof item.attemptId !== "string" || !item.attemptId)) ||
-    (item.completedAt !== undefined && typeof item.completedAt !== "string") ||
-    (item.openingEvidenceCompletion !== undefined && !openingEvidenceCheckpointSchema.safeParse(item.openingEvidenceCompletion).success) ||
-    (item.evidenceRejected !== undefined && typeof item.evidenceRejected !== "string") ||
-    (item.evidenceFallbackReason !== undefined && item.evidenceFallbackReason !== "local_storage_quota") ||
-    (item.expectedRevision !== undefined && (!Number.isSafeInteger(item.expectedRevision) || item.expectedRevision < 1)) ||
-    (item.preparedNext !== undefined && !validPreparedIdentity(item.preparedNext)) ||
-    (item.reconciliationSequence !== undefined && (!Number.isSafeInteger(item.reconciliationSequence) || item.reconciliationSequence < 1)) ||
-    (item.automaticRecoverySuppressed !== undefined && !["failed", "blocked"].includes(item.automaticRecoverySuppressed)) ||
-    (item.state !== undefined && !["pending", "reconciling", "conflicted"].includes(item.state)) ||
-    (item.state === "conflicted" && !validConflict(item.conflict)))) {
+  if (!Array.isArray(parsed) || parsed.some(item => !validLegacyReview(item)))
     throw new Error("The saved training review is invalid. Restore your data before continuing.");
-  }
   return parsed as PendingReview[];
-}
-
-function validConflict(value: unknown): value is ReviewConflictInformation {
-  return !!value && typeof value === "object" && "code" in value && typeof value.code === "string" &&
-    "message" in value && typeof value.message === "string" && "retryable" in value && typeof value.retryable === "boolean";
-}
-
-function validPreparedIdentity(value: unknown): value is PreparedNextIdentity {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as PreparedNextIdentity;
-  return Number.isSafeInteger(candidate.queue_entry_id) && candidate.queue_entry_id > 0 &&
-    typeof candidate.card_id === "string" && !!candidate.card_id && Number.isSafeInteger(candidate.revision) && candidate.revision > 0 &&
-    Number.isSafeInteger(candidate.cycle) && candidate.cycle >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(candidate.local_date);
 }
 
 export function pendingReviews(): PendingReview[] {
@@ -430,7 +400,10 @@ async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst 
         await clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
         result.conflictedAttemptIds.push(attemptId); updateReviewConflictNotice(); publishFlushProgress(result); continue;
       }
-      const persisted = settlement.receipt as LegacyReviewReceipt;
+      if (settlement.state === "discarded") continue;
+      const persisted = settlement.receipt as LegacyReviewReceipt | undefined;
+      if (settlement.state !== "committed" || persisted?.persisted !== true)
+        throw new Error("The service did not confirm a persisted review. Retry its original receipt.");
       confirmReviewSaveNotice(review);
       if (review.openingEvidenceCompletion)
         void acknowledgeOpeningReview(attemptId).catch(() => undefined);

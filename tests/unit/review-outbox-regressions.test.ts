@@ -1302,3 +1302,25 @@ it("PR105 guided recovery consumes a complete review receipt despite an unavaila
   expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toEqual([]);
   expect(pendingReviews()).toEqual([]);
 });
+
+it("pr285_discarded_review_race_never_reports_a_saved_grade_or_clears_failure_evidence", async () => {
+  const { reviewStudySession } = await import("../../app/lib/review-outbox");
+  const { studyIntentStore } = await import("../../app/lib/study-intent-storage");
+  const { enqueueTrainingFailure, pendingTrainingFailures } = await import("../../app/lib/training-failure-outbox");
+  const original = { ...auditReview("discard-race", 777, "race-card"), expectedRevision: 1 };
+  await enqueueTrainingFailure(777, "race-card", 1); await enqueuePendingReview(original);
+  await reviewStudySession();
+  const selected = auditDeferred<void>(), release = auditDeferred<Response>();
+  const fetcher = vi.fn(async () => { selected.resolve(); return release.promise; });
+  vi.stubGlobal("fetch", withMissingReceipts(fetcher));
+  const flushing = flushPendingReviews(); await selected.promise;
+  const store = await studyIntentStore();
+  await store.update("review:discard-race", current => ({ ...current, state: "conflicted", receipt: { persisted: false, conflict: { code: "competing_review" } } }));
+  await store.update("review:discard-race", current => ({ ...current, state: "discarded" }));
+  release.resolve(Response.json({ persisted: true }));
+  expect(await flushing).toMatchObject({ persistedAttemptIds: [], conflictedAttemptIds: [] });
+  expect(pendingTrainingFailures()).toContain(777);
+  expect(notificationModule.notifications().some(notice => notice.key === "review-save:discard-race" && notice.severity === "success")).toBe(false);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(await store.get("review:discard-race")).toMatchObject({ state: "discarded", receipt: { persisted: false } });
+});

@@ -9,6 +9,7 @@ export function StudyStorageBoundary({ children }: { children: ReactNode }) {
   const [cutover, setCutover] = useState(false);
   const request = useRef(0);
   const mounted = useRef(false);
+  const invalidateRequest = useCallback(() => { request.current++; }, []);
   const open = useCallback(async (acknowledge = false) => {
     const generation = ++request.current;
     if (!studyIntentStorageReady()) setReady(false);
@@ -25,13 +26,13 @@ export function StudyStorageBoundary({ children }: { children: ReactNode }) {
     queueMicrotask(() => { if (mounted.current) void open(); });
     const unsubscribe = subscribeStudyIntents(() => {
       if (!studyIntentStorageReady()) {
-        request.current++;
+        invalidateRequest();
         setReady(false); setCutover(legacyStudyCutoverRequired());
         setError(String(studyIntentStorageError() ?? "Close older Tempo tabs and reopen before continuing study."));
       }
     });
-    return () => { mounted.current = false; request.current++; unsubscribe(); };
-  }, [open]);
+    return () => { mounted.current = false; invalidateRequest(); unsubscribe(); };
+  }, [open, invalidateRequest]);
   if (ready) return children;
   return <main><p role={error ? "alert" : "status"}>{error || "Loading saved study work…"}</p>
     {error && <><Button onClick={() => void open(cutover)}>{cutover ? "Older tabs are closed — recover study work" : "Retry study storage"}</Button>

@@ -1,4 +1,5 @@
 import { openIntentStore, type IntentChange, type IntentEnvelope, type IntentRecord, type IntentStore, type TeachingFact } from "@tempo/browser-intents";
+import { validLegacyReview, validLegacyFailure } from "./study-legacy-validation";
 import { API_URL } from "../const";
 
 export const legacyStudyKeys = ["tempo-pending-training-reviews-v1", "tempo-pending-training-failures-v1", "tempo-pending-teaching-states-v1", "tempo-seen-moves", "tempo-first-clean-passes"] as const;
@@ -116,7 +117,7 @@ async function migrate(store: IntentStore) {
   for (const entry of array(legacyStudyKeys[0])) {
     if (!entry || typeof entry !== "object") throw new Error("Saved training review is invalid. Keep this browser's data.");
     const review = entry as Record<string, unknown>;
-    if (typeof review.backendId !== "string" || !Number.isSafeInteger(review.queueEntryId) || !["correct", "again"].includes(String(review.outcome)) || typeof review.guided !== "boolean")
+    if (!validLegacyReview(review))
       throw new Error("Saved training review is invalid. Keep this browser's data.");
     const id = String(review.attemptId ?? `legacy-online:${review.queueEntryId}`);
     const key = `review:${id}`;
@@ -125,6 +126,7 @@ async function migrate(store: IntentStore) {
     await imported(legacyStudyKeys[0], key);
   }
   for (const entry of array(legacyStudyKeys[1])) {
+    if (!validLegacyFailure(entry)) throw new Error("Saved training failure is invalid. Keep this browser's data.");
     const marker = typeof entry === "number" ? { queueEntryId: entry, operationId: `legacy-failure:${entry}` } : entry;
     if (!marker || typeof marker !== "object" || !("queueEntryId" in marker) || !Number.isSafeInteger(marker.queueEntryId) || !("operationId" in marker) || typeof marker.operationId !== "string")
       throw new Error("Saved training failure is invalid. Keep this browser's data.");
@@ -161,7 +163,7 @@ async function migrate(store: IntentStore) {
 }
 
 export async function initializeStudyIntentStorage(acknowledgeOlderTabsClosed = false): Promise<IntentStore> {
-  if (factory !== globalThis.indexedDB) { closeStudyIntentStorage(); factory = globalThis.indexedDB; legacyWriterObserved = false; }
+  if (globalThis.indexedDB && factory !== globalThis.indexedDB) { closeStudyIntentStorage(); factory = globalThis.indexedDB; legacyWriterObserved = false; }
   if (acknowledgeOlderTabsClosed) {
     localStorage.setItem(acknowledgementKey, "acknowledged"); legacyWriterObserved = false;
     if (connection) closeStudyIntentStorage();

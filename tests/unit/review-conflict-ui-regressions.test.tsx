@@ -1,3 +1,4 @@
+import { withMissingReceipts } from "./support/study-intent-fixtures";
 import { initializeStudyIntentStorage } from "../../app/lib/study-intent-storage";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -36,7 +37,7 @@ it("online conflict dialog explicitly retries the immutable logical attempt", as
   localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict]));
   await initializeStudyIntentStorage(true);
   const fetchMock = vi.fn().mockResolvedValue(Response.json({ persisted: true }));
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", withMissingReceipts(fetchMock));
   render(<OfflineReviewConflicts />);
   fireEvent.click(await screen.findByRole("button", { name: "Review conflicts (1)" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry saved result" }));

@@ -312,3 +312,45 @@ it("pr285_rejected_answer_failed_receipt_can_settle_under_another_tabs_lease", a
   await recoverStudyRequests(); expect(await store.get(`${repairScope}:leased`)).toMatchObject({ state: "discarded", receipt: { type: "rejected", requestId: "leased" } });
   vi.unstubAllGlobals();
 });
+
+it("pr285_storage_retry_live_database_connection_survives_hidden_factory_but_closed_store_cannot", async () => {
+  const store = await studyIntentStore(); const factory = indexedDB;
+  vi.stubGlobal("indexedDB", undefined);
+  try {
+    const current = await studyIntentStore(); expect(current).toBe(store);
+    await current.put(repairCommand("live-database"));
+    closeStudyIntentStorage(); await expect(initializeStudyIntentStorage()).rejects.toThrow("unavailable");
+  } finally { vi.stubGlobal("indexedDB", factory); }
+  expect(await (await initializeStudyIntentStorage()).get(`${repairScope}:live-database`)).toBeDefined();
+  vi.unstubAllGlobals();
+});
+
+it.each([
+  { queueEntryId: -1 }, { queueEntryId: 0 }, { expectedRevision: 0 }, { openingEvidenceCompletion: { bad: "shape" } },
+  { state: "conflicted", conflict: { bad: "shape" } }, { preparedNext: { bad: "shape" } }, { reconciliationSequence: 0 },
+])("pr285_legacy_conflict_malformed_review_stays_blocked_and_retained (%j)", async invalid => {
+  const store = await studyIntentStore(); await store.put(repairCommand("unrelated")); closeStudyIntentStorage();
+  const source = JSON.stringify([{ ...legacyReview("a"), ...invalid }]); localStorage.setItem("tempo-pending-training-reviews-v1", source);
+  await expect(initializeStudyIntentStorage(true)).rejects.toThrow("invalid");
+  expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(source);
+  localStorage.setItem("tempo-pending-training-reviews-v1", "[]");
+  expect(await (await initializeStudyIntentStorage(true)).get(`${repairScope}:unrelated`)).toBeDefined();
+});
+
+it.each([0, -1, { queueEntryId: 1, operationId: "" }, { queueEntryId: 1, operationId: "x".repeat(129) },
+  { queueEntryId: 1, operationId: "original", backendId: "" }, { queueEntryId: 1, operationId: "original", expectedRevision: 0 }])(
+  "pr285_legacy_conflict_malformed_failure_stays_blocked_and_retained (%j)", async invalid => {
+    closeStudyIntentStorage(); const source = JSON.stringify([invalid]); localStorage.setItem("tempo-pending-training-failures-v1", source);
+    await expect(initializeStudyIntentStorage(true)).rejects.toThrow("invalid"); expect(localStorage.getItem("tempo-pending-training-failures-v1")).toBe(source);
+  });
+
+it("pr285_rejected_answer_failed_receipt_preserves_structured_validation_detail_after_reload", async () => {
+  const detail = [{ loc: ["answer", "moves"], msg: "Submit one move", type: "invalid_submission" }];
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
+    ? Response.json({ operation_id: "detailed-rejection" }, { status: 202 })
+    : Response.json({ state: "failed", error: { status_code: 422, code: "invalid_answer", message: "Submit one move", detail, retryable: false } })));
+  await expect(executeStudyRequest({ scope: repairScope, endpoint: "/attempts", requestId: "detailed-rejection", body: { attempt_id: "detailed-rejection" } })).rejects.toThrow("Submit one move");
+  closeStudyIntentStorage(); await initializeStudyIntentStorage();
+  expect(await (await studyIntentStore()).get(`${repairScope}:detailed-rejection`)).toMatchObject({ state: "discarded", receipt: { details: { detail, code: "invalid_answer", retryable: false } } });
+  vi.unstubAllGlobals();
+});

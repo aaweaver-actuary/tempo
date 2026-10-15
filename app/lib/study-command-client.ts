@@ -14,7 +14,7 @@ function rejected(record: IntentRecord, status: number, message: string, details
 }
 function rejectionFromError(record: IntentRecord, error: unknown) {
   if (record.kind === "study-command" && error instanceof FailedOperationError && error.operationId === record.requestId && error.status === 422 && error.retryable !== true)
-    return rejected(record, 422, error.message, { code: error.code, retryable: error.retryable });
+    return rejected(record, 422, error.message, { code: error.code, retryable: error.retryable, detail: error.detail });
   throw error;
 }
 async function predecessorSettled(record: IntentRecord, store: IntentStore): Promise<boolean> {
