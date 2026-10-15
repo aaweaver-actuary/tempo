@@ -20,12 +20,11 @@ many contributions uses bounded explicit withdrawals, not a silent replacement.
 A supplies authenticated `ReceiveContext` independently of request declarations,
 and a `ContentAuthority` backed by accepted, active, fenced Learning definitions.
 The authority maps route aliases to canonical card IDs and supplies the complete
-accepted alternatives at the specific position/decision. This library validates
+accepted alternatives at the specific position/decision. The library checks
 the accepted fact's workspace and explicit allowed aliases as well as the
 decision position, publication and card revision. An unrelated incoming card ID
 cannot become an alias merely because a lookup returns a valid definition.
-The library validates
-the coherent observation against those facts; C remains responsible for source
+It validates the coherent observation against those facts; C owns source
 game computation, and A for authentication/current source authority. These ports
 do not establish current production adoption of the Content contract.
 
@@ -59,13 +58,17 @@ reviews qualify. Again, guided, failed, invalidated and pre-issuance outcomes do
 not. Review invalidation calls `invalidate_settlement` in A's transaction.
 
 Logical work identity is canonical `(workspace, game, ply, card)`, with immutable
-semantic versions (position, observed action, accepted alternatives, content
-identity and occurrence time). Equivalent reanalysis and aliases reuse their
+semantic versions (position, observed action, accepted alternatives, exercise
+revision and occurrence time). Equivalent reanalysis and aliases reuse their
 work sequence, even under new transport/obligation IDs. Meaningful corrections
 receive a new sequence. Distinct games or plies remain distinct provenance.
 Settlement records cover only a bound sequence frontier and compatible content;
 they never update all incident rows. Late imports require a fresh bound attempt.
 Unknown times may settle only after durable acceptance precedes issuance.
+A new publication reference alone does not erase genuine completed study of an
+identical exercise revision. Historical satisfaction follows the immutable
+semantic work sequence; new review completion still requires exact current
+publication/attempt authority.
 
 `pending_page` scans 16 card identities, including rejected/settled cards, and
 returns the last scanned cursor. `prepare_admissions` scans at most four pages;
@@ -76,6 +79,10 @@ writer. New cards use introduction; studied/future-due cards use review promotio
 The real-game exception bypasses ordinary cap/progression only, including zero
 allowance; it cannot bypass validity, revisions, burial, retirement or deletion.
 Ordinary candidate input order, including frozen ranks, remains authoritative.
+The parameterized frontier lookup deliberately precedes settlement joins;
+`test_native_new_miss_lookup_does_not_scan_past_review_history` preserves this
+query-plan invariant against accumulated historical reviews. Keep its actual-row
+bound when changing the SQL or replacing the mechanism.
 
 Old game/content revisions remain visible as outstanding retained provenance,
 but `has_current_miss` fences them from gameplay admission. A raw game revision

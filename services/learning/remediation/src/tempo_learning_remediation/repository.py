@@ -18,21 +18,27 @@ _OUTSTANDING = """
  WHERE head.workspace_id=%s AND head.card_id=%s AND head.active
    AND contribution.kind='real_game_miss'
    AND NOT EXISTS (
-     SELECT 1 FROM remediation_settlements settlement
-     JOIN remediation_attempts attempt USING(workspace_id,attempt_id)
-     WHERE settlement.workspace_id=head.workspace_id AND settlement.card_id=head.card_id
-       AND NOT settlement.invalidated
-       AND incident.work_sequence<=attempt.frontier_sequence
-       AND incident.accepted_at<=attempt.issued_at
-       AND contribution.card_revision=attempt.card_revision
-       AND contribution.publication_id=attempt.publication_id
-       AND contribution.publication_generation=attempt.publication_generation
-       AND EXISTS(SELECT 1 FROM remediation_game_heads game
-           WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
-             AND game.game_revision=contribution.game_revision)
-       AND settlement.reviewed_at>=attempt.issued_at
-       AND (contribution.occurred_at IS NULL OR contribution.occurred_at<=settlement.reviewed_at))
+     SELECT 1 FROM LATERAL (
+       SELECT attempt_id,issued_at FROM remediation_attempts
+       WHERE workspace_id=head.workspace_id AND card_id=head.card_id
+         AND card_revision=contribution.card_revision
+         AND frontier_sequence>=incident.work_sequence AND issued_at>=incident.accepted_at
+       OFFSET 0
+     ) attempt CROSS JOIN LATERAL (
+       SELECT 1 FROM remediation_settlements settlement
+       WHERE settlement.workspace_id=head.workspace_id AND settlement.card_id=head.card_id
+         AND settlement.attempt_id=attempt.attempt_id AND NOT settlement.invalidated
+         AND settlement.reviewed_at>=attempt.issued_at
+         AND (contribution.occurred_at IS NULL OR contribution.occurred_at<=settlement.reviewed_at)
+         AND EXISTS(SELECT 1 FROM remediation_game_heads game
+             WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
+               AND game.game_revision=contribution.game_revision)
+       LIMIT 1
+     ) settlement_match)
 """
+# The parameterized OFFSET/LATERAL boundary is intentional: first reject old
+# frontiers using the frontier index, then inspect a matching attempt's marker.
+# An ordinary flattened anti-join can scan historical review pairs per incident.
 
 
 class PostgresRepository:

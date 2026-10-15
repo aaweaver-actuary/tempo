@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import timedelta
 import importlib.util
+import json
 import os
 from pathlib import Path
 from threading import Event
@@ -168,6 +169,25 @@ def test_native_withdrawal_is_source_specific_and_partial_omission_is_additive(w
         assert count(connection, "remediation_contributions", workspace) == 2
 
 
+def test_native_equivalent_publication_reanalysis_keeps_satisfied_incident_without_authorizing_stale_attempt(workspace):
+    first = scoped(delivery(), workspace)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        accept(repository, first)
+        bound = attempt(); repository.bind_attempt(bound, DECISION)
+        assert repository.settle(review(bound), DECISION)
+        data = scoped(delivery(revision=2, transport="reanalysis"), workspace).model_dump(mode="json")
+        data["obligations"][0]["publication_generation"] = 2
+        data["comparisons"][0]["publication_generation"] = 2
+        current = replace(DECISION, publication_generation=2)
+        assert accept(repository, v2.EvidenceDelivery.model_validate(data), accepted=current).status == "completed"
+        assert count(connection, "remediation_incident_versions", workspace) == 1
+        assert not repository.has_outstanding("card")
+        with pytest.raises(RemediationError, match="authority_changed"):
+            repository.settle(review(bound), current)
+        assert not repository.has_outstanding("card")
+
+
 def test_native_old_withdrawal_or_review_cannot_clear_corrected_revision(workspace):
     first = scoped(delivery(), workspace)
     with connect() as connection, connection.transaction():
@@ -257,6 +277,37 @@ def test_native_rejected_pages_advance_with_a_four_page_bound(workspace):
         assert facts.sizes == [16]*4 and prepared.candidates == ()
         last = prepare_admissions(repository, facts, prepared.cursor)
         assert not last.has_more and last.cursor == "card-069" and last.examined_pages == 1
+
+
+def test_native_new_miss_lookup_does_not_scan_past_review_history(workspace):
+    class ObservedConnection:
+        def __init__(self, connection):
+            self.connection, self.info, self.last = connection, connection.info, None
+        def execute(self, statement, parameters=()):
+            self.last = (statement, parameters)
+            return self.connection.execute(statement, parameters)
+    with connect() as connection, connection.transaction():
+        repository = PostgresRepository(connection, workspace)
+        old = scoped(delivery(), workspace); accept(repository, old)
+        # Owned fixture history, never product review/FSRS tables.
+        connection.execute("""INSERT INTO remediation_attempts
+            SELECT %s,'history-'||number::text,'card',1,'publication',1,%s,1
+            FROM generate_series(1,1000) number""", (workspace, NOW+timedelta(seconds=1)))
+        connection.execute("""INSERT INTO remediation_settlements(workspace_id,review_id,attempt_id,card_id,reviewed_at)
+            SELECT %s,'history-review-'||number::text,'history-'||number::text,'card',%s
+            FROM generate_series(1,1000) number""", (workspace, NOW+timedelta(seconds=2)))
+        assert accept(repository, withdrawal(old)).status == "completed"
+        accept(repository, scoped(delivery(game="later", evidence="later", obligation="later", transport="later"), workspace))
+        observed = ObservedConnection(connection)
+        assert PostgresRepository(observed, workspace).has_outstanding("card")
+        statement, parameters = observed.last
+        plan = connection.execute("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + statement, parameters).fetchone()[0][0]["Plan"]
+        (Path(os.environ["TEMPO_REMEDIATION_PLAN_DIR"]) / "pending-lookup-plan.json").write_text(json.dumps(plan,indent=2)+"\n")
+        def scanned(node):
+            local = ((node.get("Actual Rows",0)+node.get("Rows Removed by Filter",0))*node.get("Actual Loops",0)
+                     if node.get("Relation Name") in {"remediation_attempts","remediation_settlements"} else 0)
+            return local + sum(scanned(child) for child in node.get("Plans",[]))
+        assert scanned(plan) <= 16, plan
 
 
 @pytest.mark.parametrize("introduced", [False, True])

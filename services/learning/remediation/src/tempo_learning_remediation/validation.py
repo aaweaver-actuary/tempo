@@ -101,8 +101,9 @@ def validate_delivery(delivery: v1.EvidenceDelivery | v2.EvidenceDelivery,
 
 def logical_hash(contribution: Contribution) -> str:
     payload = json.loads(contribution.payload_json)
-    return digest([contribution.incident_id, contribution.card_revision, contribution.publication_id,
-                   contribution.publication_generation, contribution.kind,
+    # A new publication reference is not new work when the immutable exercise
+    # revision and supported decision semantics are unchanged.
+    return digest([contribution.incident_id, contribution.card_revision, contribution.kind,
                    contribution.occurred_at.isoformat() if contribution.occurred_at else None,
                    payload["encounter"]["position_key"], payload["encounter"]["observed_move"],
                    sorted(set(payload["comparison"]["expected_moves"]))])
