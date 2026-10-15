@@ -353,3 +353,91 @@ def test_registered_receiver_retains_sole_revision_authority(case, monkeypatch):
         case.query("SELECT COUNT(*) FROM learning.accepted_evidence_revisions")[0][0]
         == 0
     )
+
+
+@pytest.mark.parametrize("identity_kind", ["obligation", "delivery"])
+def test_cross_evidence_identity_reuse_conflicts_atomically(
+    case, monkeypatch, identity_kind
+):
+    from test_publications import opening_bundle
+
+    if identity_kind == "obligation":
+        payload = activate(case, opening_bundle())
+        cards = [fact["card_id"] for fact in payload["facts"]]
+        first_payload = delivery(cards[0], transport="first-delivery")
+        second_payload = delivery(cards[1], transport="second-delivery")
+        second_payload["obligations"][0]["source_evidence_id"] = "evidence-b"
+        gated_insert = "INSERT INTO learning_obligations"
+    else:
+        first_payload = delivery(
+            "unused", transport="shared-delivery", obligations=False
+        )
+        second_payload = deepcopy(first_payload)
+        gated_insert = "INSERT INTO evidence_deliveries"
+    second_payload["evidence_id"] = "evidence-b"
+    second_payload["game_id"] = "game-b"
+    inserted, release, contender_started = Event(), Event(), Event()
+    contender_backend = []
+    execute = PostgresConnection.execute
+
+    def gate_creator_after_insert(self, statement, parameters=()):
+        cursor = execute(self, statement, parameters)
+        if statement.startswith(gated_insert):
+            evidence_id = (
+                parameters[1]
+                if identity_kind == "obligation"
+                else json.loads(parameters[2])["evidence_id"]
+            )
+            if evidence_id == "evidence-a":
+                inserted.set()
+                assert release.wait(3)
+        return cursor
+
+    monkeypatch.setattr(PostgresConnection, "execute", gate_creator_after_insert)
+
+    def receive(payload, contender=False):
+        try:
+            with case.database.scope(), connection() as database:
+                extend_gate_budget(database)
+                if contender:
+                    contender_backend.append(
+                        database.execute_native("SELECT pg_backend_pid()").fetchone()[0]
+                    )
+                    contender_started.set()
+                result = receivers.receive(database, payload, "workspace-a")
+            return 200, result
+        except HTTPException as error:
+            return error.status_code, error.detail
+
+    with ThreadPoolExecutor(2) as executor:
+        creator = executor.submit(receive, first_payload)
+        try:
+            assert inserted.wait(3)
+            contender = executor.submit(receive, second_payload, True)
+            assert contender_started.wait(3)
+            wait_for_lock(case, contender_backend[0])
+        finally:
+            release.set()
+        assert creator.result()[0] == 200
+        assert contender.result()[0] == 409
+    assert [
+        tuple(row)
+        for row in case.query(
+            "SELECT evidence_id FROM learning.accepted_evidence_revisions"
+        )
+    ] == [("evidence-a",)]
+    assert case.query("SELECT COUNT(*) FROM learning.evidence_deliveries")[0][0] == 1
+    if identity_kind == "obligation":
+        assert [
+            tuple(row)
+            for row in case.query(
+                "SELECT source_evidence_id,card_id FROM learning.learning_obligations"
+            )
+        ] == [("evidence-a", cards[0])]
+        assert (
+            case.query(
+                "SELECT COUNT(*) FROM learning.daily_queue WHERE card_id=%s AND gameplay_priority_reason IS NOT NULL",
+                (cards[1],),
+            )[0][0]
+            == 0
+        )
