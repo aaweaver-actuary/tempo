@@ -1,0 +1,60 @@
+{
+  "model": "EvidenceDelivery",
+  "payload": {
+    "contract_version": 2,
+    "workspace_id": "workspace-a",
+    "delivery_id": "delivery-a",
+    "evidence_id": "evidence-a",
+    "evidence_revision": 1,
+    "game_id": "game-a",
+    "game_revision": 1,
+    "encounters": [
+      {
+        "encounter_id": "encounter-a",
+        "ply": 0,
+        "position_key": "initial",
+        "decision_id": "decision-a",
+        "observed_move": "d2d4"
+      }
+    ],
+    "comparisons": [
+      {
+        "encounter_id": "encounter-a",
+        "card_id": "card-a",
+        "decision_id": "decision-a",
+        "publication_id": "publication-a",
+        "publication_generation": 1,
+        "expected_moves": [
+          "e2e4"
+        ],
+        "status": "missed"
+      }
+    ],
+    "misses": [
+      {
+        "miss_id": "miss-a",
+        "encounter_id": "encounter-a",
+        "decision_id": "decision-a",
+        "reason": "outside_repertoire"
+      }
+    ],
+    "obligations": [
+      {
+        "obligation_id": "obligation-a",
+        "source_evidence_id": "evidence-a",
+        "source_revision": 1,
+        "card_id": "card-a",
+        "decision_id": "decision-a",
+        "publication_generation": 1,
+        "kind": "real_game_miss",
+        "obligation_revision": 1,
+        "card_revision": 1,
+        "publication_id": "publication-a",
+        "encounter_id": "encounter-a",
+        "miss_id": "miss-a"
+      }
+    ],
+    "occurred_at": "2026-10-14T12:00:00Z",
+    "withdrawals": []
+  }
+}

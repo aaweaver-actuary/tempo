@@ -1,0 +1,24 @@
+{
+  "model": "EvidenceDelivery",
+  "payload": {
+    "contract_version": 2,
+    "workspace_id": "workspace-a",
+    "delivery_id": "withdrawal-a",
+    "evidence_id": "evidence-a",
+    "evidence_revision": 2,
+    "game_id": "game-a",
+    "game_revision": 1,
+    "encounters": [],
+    "comparisons": [],
+    "misses": [],
+    "obligations": [],
+    "occurred_at": "2026-10-14T12:00:00Z",
+    "withdrawals": [
+      {
+        "obligation_id": "obligation-a",
+        "expected_obligation_revision": 1,
+        "reason": "source_corrected"
+      }
+    ]
+  }
+}

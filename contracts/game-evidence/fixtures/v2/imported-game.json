@@ -1,0 +1,22 @@
+{
+  "model": "ImportedGame",
+  "payload": {
+    "contract_version": 2,
+    "workspace_id": "workspace-a",
+    "game_id": "game-a",
+    "game_revision": 1,
+    "provenance": {
+      "provider": "lichess",
+      "provider_game_id": "external-a",
+      "source_digest": "sha256:fixture-a",
+      "imported_at": "2026-10-14T12:00:00Z"
+    },
+    "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": [
+      "e2e4",
+      "e7e5"
+    ],
+    "played_at": null,
+    "observed_color": "white"
+  }
+}

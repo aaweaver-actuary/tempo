@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "GameProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "imported_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Imported At",
+          "type": "string"
+        },
+        "provider": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_game_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Provider Game Id",
+          "type": "string"
+        },
+        "source_digest": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "provider_game_id",
+        "source_digest",
+        "imported_at"
+      ],
+      "title": "GameProvenance",
+      "type": "object"
+    }
+  },
+  "$id": "https://tempo.invalid/contracts/game-evidence/v2/ImportedGame.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": 2,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "game_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Game Id",
+      "type": "string"
+    },
+    "game_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Game Revision",
+      "type": "integer"
+    },
+    "moves": {
+      "items": {
+        "pattern": "^[a-h][1-8][a-h][1-8][qrbn]?$",
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "title": "Moves",
+      "type": "array"
+    },
+    "observed_color": {
+      "enum": [
+        "white",
+        "black"
+      ],
+      "title": "Observed Color",
+      "type": "string"
+    },
+    "played_at": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Played At"
+    },
+    "provenance": {
+      "$ref": "#/$defs/GameProvenance"
+    },
+    "starting_fen": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Starting Fen",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "game_id",
+    "game_revision",
+    "provenance",
+    "starting_fen",
+    "moves",
+    "played_at",
+    "observed_color"
+  ],
+  "title": "ImportedGame",
+  "type": "object"
+}

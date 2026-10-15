@@ -1,0 +1,97 @@
+{
+  "$id": "https://tempo.invalid/contracts/game-evidence/v2/EvidenceAcknowledgement.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted_obligation_ids": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Accepted Obligation Ids",
+      "type": "array"
+    },
+    "contract_version": {
+      "const": 2,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "delivery_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Delivery Id",
+      "type": "string"
+    },
+    "evidence_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "evidence_revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Evidence Revision",
+      "type": "integer"
+    },
+    "learning_revision": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Learning Revision"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reason"
+    },
+    "status": {
+      "enum": [
+        "accepted_pending",
+        "completed",
+        "retryable_failure",
+        "terminal_failure",
+        "conflict",
+        "stale_revision"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "workspace_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "workspace_id",
+    "delivery_id",
+    "evidence_id",
+    "evidence_revision",
+    "status",
+    "accepted_obligation_ids",
+    "learning_revision",
+    "reason"
+  ],
+  "title": "EvidenceAcknowledgement",
+  "type": "object"
+}
