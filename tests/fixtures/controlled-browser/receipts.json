@@ -1,0 +1,76 @@
+{
+  "blocked": {
+    "attempt_count": 1,
+    "cycle_attempt_count": 1,
+    "message": "Automatic retries stopped. Retry this operation with the same Idempotency-Key after checking the reported error.",
+    "operation_id": "review-attempt:fixture-original",
+    "retry_cycle": 0,
+    "state": "blocked"
+  },
+  "complete": {
+    "attempt_count": 1,
+    "cycle_attempt_count": 1,
+    "operation_id": "review-attempt:fixture-original",
+    "response": {
+      "persisted": true,
+      "review_id": 88
+    },
+    "retry_cycle": 0,
+    "state": "complete"
+  },
+  "executing": {
+    "attempt_count": 1,
+    "cycle_attempt_count": 1,
+    "operation_id": "review-attempt:fixture-original",
+    "retry_cycle": 0,
+    "state": "executing"
+  },
+  "failed": {
+    "attempt_count": 1,
+    "cycle_attempt_count": 1,
+    "error": {
+      "code": "queue_attempt_retired",
+      "message": "Original entry retired",
+      "retryable": false,
+      "status_code": 409
+    },
+    "operation_id": "review-attempt:fixture-original",
+    "retry_cycle": 0,
+    "state": "failed"
+  },
+  "pending": {
+    "attempt_count": 1,
+    "cycle_attempt_count": 1,
+    "operation_id": "review-attempt:fixture-original",
+    "retry_cycle": 0,
+    "state": "pending"
+  },
+  "queued": {
+    "attempt_count": 1,
+    "cycle_attempt_count": 1,
+    "operation_id": "review-attempt:fixture-original",
+    "retry_cycle": 0,
+    "state": "queued"
+  },
+  "retrying": {
+    "attempt_count": 1,
+    "cycle_attempt_count": 1,
+    "operation_id": "review-attempt:fixture-original",
+    "retry_cycle": 0,
+    "state": "retrying"
+  },
+  "review_request": {
+    "attempt_id": "fixture-original",
+    "expected_review_id": null,
+    "expected_revision": null,
+    "guided": false,
+    "outcome": "correct",
+    "queue_entry_id": 41,
+    "recorded_at": "2026-09-18T16:00:00Z"
+  },
+  "unknown": {
+    "message": "No durable receipt exists yet. Retry with the same Idempotency-Key.",
+    "operation_id": "review-attempt:fixture-original",
+    "state": "unknown"
+  }
+}

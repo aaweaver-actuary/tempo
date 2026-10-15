@@ -1,0 +1,166 @@
+// @vitest-environment node
+import { afterEach, expect, it } from "vitest";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { startControlledHost, controlledEnvironment } from "../../../scripts/controlled-browser-host.mjs";
+import { verifyPilotSource, verifyPilotResults, pilotLedger } from "../../../scripts/controlled-browser-inventory.mjs";
+import type { BrowserContext, Route } from "@playwright/test";
+import { chromium } from "@playwright/test";
+import { ControlledApi, finishControlledContext } from "../strict-api";
+import { matchesContract, validateReview, receiptResponse } from "../contracts";
+import { tacticalCatalogSchema } from "../../../app/lib/tactical-catalog";
+import { backgroundDiagnosticsSchema } from "../../../app/domain/schemas/background-diagnostics";
+import { queueEnvelopeSchema, queueCardSchema, settingsResponseSchema, repertoiresResponseSchema,
+  repertoireLinesResponseSchema, motifRecommendationsSchema, tacticProgressSchema, syncStatusSchema,
+  gamesSummarySchema, discoveriesFeedSchema, progressResponseSchema, teachingResponseSchema } from "../../../app/domain/schemas";
+
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+async function ownedHost() {
+  const directory = await mkdtemp(join(tmpdir(), "tempo-b01-host-"));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "index.html"), "local product shell");
+  const host = await startControlledHost(directory, "unit-owned-host");
+  cleanups.push(() => host.close());
+  return host;
+}
+it("controlled_browser_unexpected_api_request_fails_without_live_fallback", async () => {
+  const host = await ownedHost();
+  for (const path of ["/api", "/api/unknown?extra=1", "/api%2Funknown"]) {
+    const response = await fetch(`${host.origin}${path}`);
+    expect(response.status).toBe(501);
+    expect(await response.text()).not.toContain("local product shell");
+  }
+  expect(host.apiEscapes).toHaveLength(3);
+  const api = new ControlledApi(host.origin);
+  let intercept!: (route: Route) => Promise<void>;
+  await api.install({ routeWebSocket: async () => {}, route: async (_pattern: string, handler: typeof intercept) => { intercept = handler; } } as unknown as BrowserContext);
+  let aborted = false;
+  await intercept({ request: () => ({ url: () => `${host.origin}/api/missing`, method: () => "GET", headers: () => ({}), postData: () => null }), abort: async () => { aborted = true; } } as unknown as Route);
+  expect(aborted).toBe(true);
+  expect(() => api.assertClean()).toThrow("GET");
+  const contract = { method: "GET", path: "/api/queue/window", query: { limit: "20" } };
+  const input = { url: `${host.origin}/api/queue/window?limit=20`, method: "GET", headers: {}, body: null };
+  expect(matchesContract(contract, input, host.origin)).toBe(true);
+  for (const change of [{ method: "POST" }, { url: `${input.url}&unknown=1` }, { url: `${input.url}&limit=20` },
+    { url: "http://127.0.0.1:8000/api/queue/window?limit=20" }, { url: `${host.origin}/api/queue/window?limit=10` }])
+    expect(matchesContract(contract, { ...input, ...change }, host.origin)).toBe(false);
+});
+it("controlled_browser_local_host_preserves_product_mode_and_contract_errors", async () => {
+  const host = await ownedHost();
+  expect(await (await fetch(`${host.origin}/__controlled_host/ready`)).json()).toEqual({ host: "controlled-frontend-only", run_id: "unit-owned-host", backend_services: [] });
+  expect(await (await fetch(host.origin)).text()).toBe("local product shell");
+  expect((await fetch(`${host.origin}/missing.js`)).status).toBe(404);
+  expect((await fetch(host.origin, { method: "POST" })).status).toBe(405);
+  const environment = controlledEnvironment({ PATH: "/bin", HOME: "/tmp/user", DATABASE_URL: "secret", TEMPO_DOCKER_URL: "live", TEMPO_PROXY_API: "live", NEXT_PUBLIC_API_URL: "live", TEMPO_REDIS_URL: "secret", PGHOST: "live" });
+  expect(environment).toEqual({ PATH: "/bin", HOME: "/tmp/user", TZ: "America/New_York" });
+  const config = readFileSync("vite.controlled.config.ts", "utf8");
+  expect(config).toContain('__TEMPO_DEMO__: "false"');
+  expect(config).toContain('__TEMPO_API_URL__: JSON.stringify("")');
+  expect(config).not.toMatch(/proxy|8000|vite\.static/);
+});
+it("controlled_browser_review_receipt_uses_original_intent_and_authorized_continuation", async () => {
+  const request = { method: "POST", url: "http://127.0.0.1:1234/api/cards/card-a/review", headers: { "idempotency-key": "review-attempt:original" },
+    body: { outcome: "correct", guided: false, queue_entry_id: 41, attempt_id: "original", recorded_at: "2026-09-18T16:00:00Z" } };
+  expect(() => validateReview(request, "card-a", 41)).not.toThrow();
+  for (const bodyChange of [{ attempt_id: "replaced" }, { queue_entry_id: 42 }, { unexpected: true }, { expected_revision: 2 }, { recorded_at: "not-a-timestamp" }, { prepared_next: { card_id: "invented" } }])
+    expect(() => validateReview({ ...request, body: { ...request.body, ...bodyChange } }, "card-a", 41)).toThrow("Original review intent");
+  const { readOperationResponse, PendingOperationError, FailedOperationError } = await import("../../../app/lib/operation-status");
+  for (const state of ["queued", "pending", "executing", "retrying", "blocked"])
+    await expect(readOperationResponse("review-attempt:original", { fetch: async () => Response.json({ state }) })).rejects.toBeInstanceOf(PendingOperationError);
+  await expect(readOperationResponse("review-attempt:original", { fetch: async () => Response.json({ state: "failed", error: { status_code: 409, code: "queue_attempt_retired", retryable: false } }) })).rejects.toBeInstanceOf(FailedOperationError);
+  const continuation = { queue_entry_id: 42, card_id: "card-b", revision: 1, cycle: 0, local_date: "2026-09-18" };
+  const response = await readOperationResponse("review-attempt:original", { fetch: async () => Response.json({ state: "complete", response: { persisted: true, prepared_continuation: continuation } }) });
+  expect(await response.json()).toEqual({ persisted: true, prepared_continuation: continuation });
+});
+it("controlled_browser_movement_preserves_exact_case_inventory", async () => {
+  expect(verifyPilotSource()).toHaveLength(9);
+  const changedCase = pilotLedger.cases[1];
+  const originalPath = changedCase.newFile;
+  const directory = await mkdtemp(join(tmpdir(), "tempo-b01-proof-"));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  const changedPath = join(directory, "literal-drift.spec.ts");
+  const originalSource = readFileSync(originalPath, "utf8");
+  const changedSource = originalSource.replace("R7/8/8/8 w - -", "R7/8/8/8 w  - -");
+  expect(changedSource).not.toBe(originalSource);
+  await writeFile(changedPath, changedSource);
+  changedCase.newFile = changedPath;
+  try { expect(() => verifyPilotSource()).toThrow("Assertion/native interaction drift"); }
+  finally { changedCase.newFile = originalPath; }
+  const report = { suites: [{ specs: pilotLedger.cases.map((entry: { newFile: string; newTitle: string; projects: string[] }) => ({ file: entry.newFile, title: entry.newTitle,
+    tests: entry.projects.map(projectName => ({ projectName, expectedStatus: "passed", results: [{ status: "passed" }] })) })) }], errors: [], stats: { expected: 9, unexpected: 0, flaky: 0, skipped: 0 } };
+  expect(verifyPilotResults(report)).toHaveLength(9);
+  for (const mutate of [(r: typeof report) => r.suites[0].specs.pop(), (r: typeof report) => r.suites[0].specs.push(r.suites[0].specs[0]),
+    (r: typeof report) => { r.suites[0].specs[0].tests[0].results[0].status = "skipped"; }, (r: typeof report) => { r.suites = []; }]) {
+    const badReport = structuredClone(report); mutate(badReport); expect(() => verifyPilotResults(badReport)).toThrow();
+  }
+});
+it("controlled_browser_owned_port_closes_and_cannot_be_reused_as_a_live_server", async () => {
+  const host = await ownedHost();
+  await cleanups.pop()!();
+  await expect(fetch(host.origin)).rejects.toThrow();
+});
+
+it("controlled_browser_delayed_response_waits_for_explicit_release", async () => {
+  const api = new ControlledApi("http://127.0.0.1:1234");
+  let intercept!: (route: Route) => Promise<void>;
+  await api.install({ routeWebSocket: async () => {}, route: async (_pattern: string, handler: typeof intercept) => { intercept = handler; } } as unknown as BrowserContext);
+  let release!: () => void;
+  const deferred = new Promise<void>(resolve => { release = resolve; });
+  let fulfilled = false;
+  api.register({ method: "GET", path: "/api/settings", query: {} }, async route => { await deferred; await route.fulfill({ status: 503, json: { detail: "Controlled unavailable service" } }); });
+  const handling = intercept({ request: () => ({ url: () => "http://127.0.0.1:1234/api/settings", method: () => "GET", headers: () => ({}), postData: () => null }), fulfill: async () => { fulfilled = true; } } as unknown as Route);
+  await Promise.resolve();
+  expect(fulfilled).toBe(false);
+  release(); await handling;
+  expect(fulfilled).toBe(true); api.assertClean();
+});
+
+it("controlled_browser_legacy_fixtures_validate_current_consumers_without_python", () => {
+  const receiptExamples = JSON.parse(readFileSync("tests/fixtures/controlled-browser/receipts.json", "utf8"));
+  for (const state of ["queued", "pending", "executing", "retrying", "blocked", "failed", "complete", "unknown"] as const)
+    expect(receiptResponse(state, "review-attempt:new" )).toEqual({ ...receiptExamples[state], operation_id: "review-attempt:new" });
+  const fixture = JSON.parse(readFileSync("tests/fixtures/controlled-browser/startup.json", "utf8"));
+  backgroundDiagnosticsSchema.parse(fixture["/api/system/background-diagnostics"]);
+  settingsResponseSchema.parse(fixture["/api/settings"]);
+  expect(settingsResponseSchema.safeParse({ ...fixture["/api/settings"], new_cards_per_day: "10" }).success).toBe(false);
+  expect(queueEnvelopeSchema.safeParse({ cards: [], count: -1 }).success).toBe(false);
+  repertoiresResponseSchema.parse(fixture["/api/repertoires"]);
+  repertoireLinesResponseSchema.parse(fixture["/api/repertoire/lines"]);
+  queueEnvelopeSchema.parse(fixture["/api/queue/window"]);
+  for (const card of fixture["/api/queue/window"].cards) queueCardSchema.parse(card);
+  tacticalCatalogSchema.parse(fixture["/api/tactics/catalog"]);
+  gamesSummarySchema.parse(fixture["/api/games/summary"]);
+  discoveriesFeedSchema.parse(fixture["/api/discoveries"]);
+  progressResponseSchema.parse(fixture["/api/progress"]);
+  expect(teachingResponseSchema.parse({ states: [] })).toEqual({ states: [] });
+
+  syncStatusSchema.parse(fixture["/api/games/sync/status"]);
+  motifRecommendationsSchema.parse(fixture["/api/game-insights/motifs"]);
+  tacticProgressSchema.parse(fixture["/api/tactics/progress"]);
+});
+
+it("controlled_browser_context_teardown_fences_native_polling_before_releasing_interception", async () => {
+  const host = await ownedHost();
+  const browser = await chromium.launch({ headless: true });
+  cleanups.push(() => browser.close());
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  const api = new ControlledApi(host.origin);
+  await api.install(context);
+  api.register({ method: "GET", path: "/api/late-poll", query: {} }, route => route.fulfill({ json: { active: true } }));
+  const page = await context.newPage();
+  await page.goto(host.origin);
+  await page.evaluate(() => { setInterval(() => { void fetch("/api/late-poll").catch(() => {}); }, 10); });
+  await expect.poll(() => api.traffic.some(request => request.path.endsWith("/api/late-poll"))).toBe(true);
+  // A native poll can run immediately after interception is removed. Make that
+  // scheduling window deterministic: the former unroute-first teardown escapes.
+  const releaseRoutes = context.unrouteAll.bind(context);
+  context.unrouteAll = async options => {
+    await releaseRoutes(options);
+    await page.evaluate(async () => { await fetch("/api/late-poll"); });
+  };
+  await finishControlledContext(context, api);
+  expect(host.apiEscapes).toEqual([]);
+});

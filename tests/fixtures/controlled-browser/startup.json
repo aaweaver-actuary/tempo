@@ -1,0 +1,378 @@
+{
+  "/api/settings": {
+    "auto_sync_minutes": 3,
+    "chesscom_username": "",
+    "coverage_cumulative_target": 95,
+    "coverage_horizon_fullmoves": 15,
+    "coverage_maia_elo": 1500,
+    "coverage_path_floor": 0.0005,
+    "coverage_reply_denominator": 100,
+    "defense_new_cards_per_day": 5,
+    "defensive_analysis_enabled": false,
+    "discovery_window_days": 90,
+    "draw_hold_user_moves": 20,
+    "engine_line_window_cp": 30,
+    "include_defensive_cards_in_daily_stack": true,
+    "initial_depth": 6,
+    "lichess_username": "",
+    "light_first_interval_days": 7,
+    "major_mistake_cp": 100,
+    "new_cards_per_day": 10,
+    "study_new_per_day": 2,
+    "study_only_mode": false,
+    "tactics_new_per_day": 5,
+    "timezone": "America/New_York"
+  },
+  "/api/queue/window": {
+    "cards": [
+      {
+        "admission_kind": null,
+        "admission_source": null,
+        "archived": 0,
+        "attempt_failed": 0,
+        "attempt_state": "clean",
+        "canonical_route_source": 1,
+        "content_type": "opening",
+        "cycle": 0,
+        "due_date": "2026-09-18",
+        "ease": 2.5,
+        "encounter_badges": [],
+        "encounter_count_30d": 0,
+        "first_correct_at": "2026-09-17T12:00:00Z",
+        "fsrs_card_json": null,
+        "gameplay_priority_reason": null,
+        "guided_review": 0,
+        "hard_correct_streak": 0,
+        "has_study_review": 0,
+        "id": "visual-card",
+        "interval_days": 0,
+        "introduced_at": null,
+        "is_main": 0,
+        "kind": "prefix",
+        "lapses": 0,
+        "last_encountered_at": null,
+        "latest_failed_review_id": 0,
+        "latest_review_id": 0,
+        "maximum_interval": 365,
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5"
+        ],
+        "pending_validation": 0,
+        "position": 0,
+        "prefix_split_offer_available": true,
+        "prefix_split_rejected_after_review_id": -1,
+        "queue_entry_id": 1,
+        "recent_attempts_json": "[]",
+        "reinforcement_pending": 0,
+        "repertoire_id": "visual-repertoire",
+        "repertoire_name": "Spanish opening — tournament preparation",
+        "repertoire_source": "Spanish.pgn",
+        "repetitions": 0,
+        "revision": 1,
+        "scheduling_mode": "normal",
+        "source_fen": null,
+        "source_ref": null,
+        "stability": 0,
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "state": "learning",
+        "study_exercise_id": null,
+        "study_id": null,
+        "study_review_count": 0,
+        "superseded_by": null,
+        "trained_color": "white",
+        "unlock_after_card_id": null
+      }
+    ],
+    "count": 1,
+    "diagnostics": [],
+    "local_date": "2026-09-18",
+    "projection": {
+      "blocked_count": 0,
+      "generation": 0,
+      "last_error": null,
+      "refresh_pending": 1,
+      "state": "refreshing",
+      "updated_at": null
+    }
+  },
+  "/api/repertoires": {
+    "repertoires": [
+      {
+        "active_prefix_count": 0,
+        "blocked_card_count": 0,
+        "blocked_due_count": 0,
+        "canonical_prefix": {
+          "ending_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          "moves_uci": [],
+          "revision": 0,
+          "san": ""
+        },
+        "card_count": 1,
+        "conflict_count": 0,
+        "created_at": "2026-09-18T12:00:00Z",
+        "due_count": 1,
+        "effective_new_cards_per_day": 10,
+        "graph_error": null,
+        "graph_generation": 0,
+        "graph_state": "refreshing",
+        "graph_updated_at": null,
+        "id": "visual-repertoire",
+        "integrity_first_issue_id": null,
+        "integrity_issue_count": 0,
+        "integrity_scan_error": null,
+        "integrity_scan_status": "idle",
+        "integrity_status": "unchecked",
+        "introduction_priority": {
+          "error": null,
+          "explorer": "unknown",
+          "maia": "unknown",
+          "personal_games": 0,
+          "state": "fallback",
+          "updated_at": null
+        },
+        "is_main": 0,
+        "line_count": 1,
+        "name": "Spanish opening — tournament preparation",
+        "new_cards_per_day": null,
+        "source_name": "Spanish.pgn",
+        "trained_color": "white"
+      }
+    ]
+  },
+  "/api/repertoire/lines": {
+    "lines": [
+      {
+        "id": "visual-line",
+        "is_main": 0,
+        "moves": [
+          "e2e4",
+          "e7e5",
+          "g1f3",
+          "b8c6",
+          "f1b5"
+        ],
+        "moves_json": "[\"e2e4\", \"e7e5\", \"g1f3\", \"b8c6\", \"f1b5\"]",
+        "name": "Main line",
+        "repertoire_id": "visual-repertoire",
+        "repertoire_name": "Spanish opening — tournament preparation",
+        "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "trained_color": "white"
+      }
+    ]
+  },
+  "/api/progress": {
+    "activity": [
+      {
+        "count": 0,
+        "date": "2026-09-12"
+      },
+      {
+        "count": 0,
+        "date": "2026-09-13"
+      },
+      {
+        "count": 0,
+        "date": "2026-09-14"
+      },
+      {
+        "count": 0,
+        "date": "2026-09-15"
+      },
+      {
+        "count": 0,
+        "date": "2026-09-16"
+      },
+      {
+        "count": 0,
+        "date": "2026-09-17"
+      },
+      {
+        "count": 0,
+        "date": "2026-09-18"
+      }
+    ],
+    "blockedDue": 0,
+    "cleanCards": 0,
+    "dueToday": 1,
+    "reviewedToday": 0,
+    "states": {
+      "learning": 1
+    },
+    "totalCards": 1
+  },
+  "/api/tactics/catalog": {
+    "groups": [
+      {
+        "id": "basic",
+        "name": "Basic motifs"
+      },
+      {
+        "id": "advanced",
+        "name": "Advanced motifs"
+      },
+      {
+        "id": "calculation",
+        "name": "Calculation"
+      },
+      {
+        "id": "mating-depth",
+        "name": "Mating depth"
+      },
+      {
+        "id": "endgames",
+        "name": "Endgame tactics"
+      },
+      {
+        "id": "named-mates",
+        "name": "Named mates"
+      }
+    ],
+    "packs": [
+      {
+        "active": false,
+        "asset": "data/tactics-packs/hangingPiece-easy-01.json",
+        "clean": 0,
+        "count": 25,
+        "difficulty": "easy",
+        "due": 0,
+        "group": "basic",
+        "id": "hangingPiece-easy-01",
+        "introduced": 0,
+        "legacyDeckId": "hangingPiece-easy",
+        "maxRating": 1100,
+        "minRating": 706,
+        "ordinal": 1,
+        "theme": "hangingPiece"
+      },
+      {
+        "active": false,
+        "asset": "data/tactics-packs/hangingPiece-easy-02.json",
+        "clean": 0,
+        "count": 25,
+        "difficulty": "easy",
+        "due": 0,
+        "group": "basic",
+        "id": "hangingPiece-easy-02",
+        "introduced": 0,
+        "legacyDeckId": "hangingPiece-easy",
+        "maxRating": 1099,
+        "minRating": 729,
+        "ordinal": 2,
+        "theme": "hangingPiece"
+      },
+      {
+        "active": false,
+        "asset": "data/tactics-packs/hangingPiece-easy-03.json",
+        "clean": 0,
+        "count": 25,
+        "difficulty": "easy",
+        "due": 0,
+        "group": "basic",
+        "id": "hangingPiece-easy-03",
+        "introduced": 0,
+        "legacyDeckId": "hangingPiece-easy",
+        "maxRating": 1089,
+        "minRating": 708,
+        "ordinal": 3,
+        "theme": "hangingPiece"
+      },
+      {
+        "active": false,
+        "asset": "data/tactics-packs/hangingPiece-easy-04.json",
+        "clean": 0,
+        "count": 25,
+        "difficulty": "easy",
+        "due": 0,
+        "group": "basic",
+        "id": "hangingPiece-easy-04",
+        "introduced": 0,
+        "legacyDeckId": "hangingPiece-easy",
+        "maxRating": 1079,
+        "minRating": 719,
+        "ordinal": 4,
+        "theme": "hangingPiece"
+      }
+    ],
+    "source": {
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-09-14",
+      "selection": "Existing positions preserved. New themes allocated by ascending export frequency; general candidates in rating/ID order, capped at 30 candidates per rating. Named mates: 50 lowest and 50 highest rated eligible legal records. Global PuzzleId uniqueness.",
+      "sha256": "95fd454bec9efe8f940d5863d5db4c57474f281a865834997bd8cb5d6a149bb9",
+      "url": "https://database.lichess.org/lichess_db_puzzle.csv.zst"
+    },
+    "themes": [
+      {
+        "group": "basic",
+        "id": "hangingPiece",
+        "name": "Hanging pieces"
+      }
+    ],
+    "version": 1
+  },
+  "/api/tactics/progress": {},
+  "/api/system/activity": {
+    "counts": {
+      "failed": 0,
+      "paused": 0,
+      "queued": 0,
+      "running": 0
+    },
+    "items": [],
+    "next_offset": null,
+    "total": 0
+  },
+  "/api/games/sync/status": {
+    "active_filters": {
+      "days": 90,
+      "rated_only": true,
+      "speeds": [
+        "blitz",
+        "rapid",
+        "classical"
+      ]
+    },
+    "active_job": null,
+    "providers": []
+  },
+  "/api/discoveries": {
+    "discoveries": [],
+    "next_offset": null,
+    "total": 0,
+    "unread_count": 0
+  },
+  "/api/games/summary": {
+    "aggregates": {
+      "page_count": 0
+    },
+    "games": [],
+    "next_cursor": null,
+    "total": 0
+  },
+  "/api/game-insights/motifs": {
+    "recommendations": []
+  },
+  "/api/system/background-diagnostics": {
+    "available": false,
+    "bucket_seconds": 300,
+    "collection_started_at": null,
+    "counters": [],
+    "generated_at": "2026-09-18T16:00:00+00:00",
+    "query_duration_seconds": 0,
+    "queues": [],
+    "retention_seconds": 86400,
+    "runtime": {
+      "available": false,
+      "coverage": "fixed_slots_latest_samples",
+      "retention_seconds": 15,
+      "workers": []
+    },
+    "schema_version": 1,
+    "unavailable_reason": "storage_unavailable",
+    "window_end": "2026-09-18T16:00:00+00:00",
+    "window_start": "2026-09-17T16:05:00+00:00"
+  }
+}
