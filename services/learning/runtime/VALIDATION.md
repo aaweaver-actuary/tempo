@@ -332,3 +332,53 @@ The changed inputs require fresh native, installed, compatibility, boundary and
 component-tooling results below. The earlier 73-tooling result is not reused for
 the newly merged browser-lane tooling. These checks remain component-focused;
 passing them will not claim full browser-lane or remediation integration.
+
+All refreshed checks were personally executed at
+`563a04095d439d8c9e28a43585959b210a240104`, which includes current main
+`52f26ee5`. With the same evidence root and working directories documented above:
+
+| Exact current-main check | Actual result |
+| --- | --- |
+| `PYTEST_ADDOPTS=--junitxml=$evidence/native-current.xml services/learning/runtime/.venv/bin/python services/learning/runtime/integration/run_postgres.py $evidence/native-current` | **76 passed in 30.18 s**, zero required failures/skips/deselections, including both Chromium cases. PostgreSQL 18.6, native Python 3.14.8; collection/execution/JUnit agree. |
+| `services/learning/runtime/.venv/bin/python services/learning/runtime/qualify.py $evidence/installed-current` | **2 passed on Python 3.12.12 and 2 on Python 3.14.8**, all six fresh wheel/sdist pairs built, source removed, installed closure/migrations checked, both zero-selected negatives exited 5. |
+| `TEMPO_COMPONENT_PYTHON=$PWD/services/learning/runtime/.venv/bin/python node tools/component-build/check-components.mjs --component learning` | Passed Learning plus five dependencies; current Game Evidence producer exports and schemas match metadata. |
+| `TEMPO_COMPONENT_PYTHON=$PWD/services/learning/runtime/.venv/bin/python node tools/component-build/test-node.mjs tools/component-build/tests` | **76 passed**, zero failures/skips/TODOs, including the three newly merged tooling cases. |
+| `/Users/andy/.local/bin/ruff check services/learning/runtime/src services/learning/runtime/tests --select F821,F822,F823 --no-cache --output-format concise` | Passed focused undefined-name check. |
+| `npm run check:conflicts` | Passed. |
+| `git diff origin/main --check` | Passed against `origin/main` `52f26ee5`. |
+
+The exact ten-file legacy command above ran again with
+`--junitxml=/private/tmp/tempo-pr284-evidence-20261015/legacy-current.xml`:
+**110 passed in 4.38 s**. `legacy-current.json` preserves the entire command and
+environment; every other current check likewise has its own JSON/log receipt.
+Clean/upgrade migration integrity and restricted-role regressions remain part
+of the passing native suite; packaged migration order/resources and the actual
+producer distribution version are checked by both installed consumers.
+
+Latest qualified artifact hashes:
+
+- Runtime wheel: SHA-256 `fb555e047a3e77932cd999c6683e859f415225a0c5206c550269191ca9b31acf`.
+- Runtime sdist: SHA-256 `8438f2e3a032ece46bef49a0e8c3973ca739c739e866af75367919747697a5bb`.
+- Game Evidence contracts 2.0.0 wheel: SHA-256 `bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777`.
+- Tested runtime container: `sha256:7a1fb07e598ff01890be960eacd8b96087c21cf1c81a09e42db34eed1d8e8ed5`.
+- PostgreSQL fixture: `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`.
+
+The final invocation `tempo-learning-44b2bee6537968a8` recorded container, volume,
+image-tag and scratch removal. Installed consumer/build workspaces were removed.
+`native-current/native.json`, `installed-current/installed.json`, JUnit and logs
+retain all identities and hashes. `input-equivalence-current.json` verifies
+current package bytes against the qualified wheel and allows only later edits
+to this validation record. The runtime correction source remains identical to
+the source already independently reviewed; the current-main metadata/producer
+refresh received a separate final review readback before publication. No v2
+receiver adoption, live migration, merge of this PR or deployment was performed.
+
+The independent reviewer inspected the actual refreshed diff and producer/wheel
+metadata at `563a0409` and verified the fresh 76 native, 76 tooling, 110 legacy
+and both installed consumer results, negative probes, inputs, artifact hashes and
+all 56 runtime/fixture wheel files. Result: **no new scoped P1/P2/P3 findings**;
+the prior correctness review conclusions remain valid. This third bounded review
+is retained as `independent-review-current.json`. Its same coverage limits apply:
+saved execution evidence was reviewed, not rerun, and native Python 3.12 or
+whole-product/hosted CI coverage is not claimed. Subsequent commits change only
+this validation record; final current input equivalence is verified after commit.
