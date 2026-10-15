@@ -7,8 +7,23 @@ import sys
 import pytest
 
 PROBE = '''
-import sys, json
+import sys, json, datetime, time, uuid, random
 from importlib.abc import MetaPathFinder
+class NoClockDatetime(datetime.datetime):
+    @classmethod
+    def now(cls, *args, **kwargs):
+        raise AssertionError('ambient datetime.now')
+    today = utcnow = now
+class NoClockDate(datetime.date):
+    @classmethod
+    def today(cls):
+        raise AssertionError('ambient date.today')
+def reject_environment(*args, **kwargs):
+    raise AssertionError('ambient clock/ID/sleep/randomness')
+datetime.datetime = NoClockDatetime
+datetime.date = NoClockDate
+time.time = time.time_ns = time.sleep = reject_environment
+uuid.uuid1 = uuid.uuid4 = random.random = reject_environment
 class Guard(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname.split('.')[0] not in sys.stdlib_module_names | {'tempo_chess_core'}:
