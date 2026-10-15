@@ -158,3 +158,71 @@ repair commit; earlier results remain historical unless explicitly verified reus
 
 Follow-up raw evidence is stored outside tracked source at
 `/Users/andy/tempo/test-results/pr278-qualification-repair-20261015/`.
+
+
+### Follow-up final results
+
+**All three review findings resolved; ready for final independent review.**
+Tested executable revision: `9e14bd103c020a95b4cd436e91d444af854fb4c4`.
+The later evidence commit changes only this validation document and
+[the qualification repair record](evidence/qualification-repair.json); the external
+final-state receipt verifies all other tracked inputs remain byte-identical.
+
+| Fresh check | Actual result |
+| --- | --- |
+| Source-free installed wheel, CPython 3.12.12 | 43 passed; exact inventory and existing service guards |
+| Source-free installed wheel, CPython 3.14.8 | 43 passed; exact inventory and existing service guards |
+| Actual normal component lane | 43 application + 101 tooling/installation + 24 native passed |
+| Owning tooling regressions | 100 runner/lifecycle cases + 1 backend installed-origin case, all passed through the controlled wrapper |
+| Actual component lane with reproduced inherited selector | Rejected with exit 1 before native provisioning; no component/native evidence allocation |
+| Actual component lane with no-match inherited selector | Rejected with exit 1 before native provisioning; no component/native evidence allocation |
+| Native PostgreSQL 18.6 | All 24 required identities passed; pytest and qualification exits both 0; ownership-checked removal and absence verified |
+| External JUnit contract | Normal component tooling consumed all three suite reports; native external output also retained in its own invocation/root evidence copies |
+| Component checker/listing, lock verification, conflict and whitespace checks | Passed |
+| Fresh real backend Dockerfile build/import smoke | Passed; all three local packages noneditable with expected versions/origins |
+
+The selector probes use:
+
+```sh
+PYTEST_ADDOPTS="-k 'ordinary_review_sequence or full_qualification_requires_exact_complete_normal_inventory'" TEMPO_COMPONENT_PYTHON="$PWD/backend/.venv/bin/python" node tools/component-build/test-lane.mjs --component learning-review-application
+PYTEST_ADDOPTS="-k no_such_required_identity" TEMPO_COMPONENT_PYTHON="$PWD/backend/.venv/bin/python" node tools/component-build/test-lane.mjs --component learning-review-application
+```
+
+Both are intentional negative checks, not failed qualification attempts.
+The full positive lane clears inherited selectors and uses
+`TEMPO_LEARNING_EVIDENCE_DIR` for external raw evidence. Its new wrappers independently
+collect and execute the exact identity sets, validate successful setup/call/teardown
+phases and preserve the shared JUnit destination. Suite counts come from collection,
+not fixed acceptance totals.
+
+Native container `tempo224-e16d11554644c7f9` was removed and absence verified before
+publishing `complete: true`. Every invocation has its own receipt/log directory;
+root summaries now separate `pytest_exit_code` from overall qualification status.
+Unit fault fixtures prove failed starts after creation are cleaned, mismatched
+resources are retained, inspection errors never become absence, and failed cleanup
+cannot publish success. Success-then-failure fixtures preserve earlier evidence
+while invalidating the current success marker. These simulations created no real
+containers and do not substitute for the fresh 24-case native execution.
+
+The backend image was rebuilt because Docker COPY inputs include the changed tooling.
+Image identity: `sha256:3c146064335ee556c96d0774ad0d7b3211fda1fad2846f744167491933ddc059`.
+Its guarded, network-disabled/read-only import smoke passed; its temporary tag and
+smoke container were removed. The wheel hash remains
+`f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce`.
+The new record preserves exact build/test commands, Python versions, installed
+artifacts, node IDs, per-phase receipts, image identity and cleanup evidence.
+
+### Explicitly reused evidence
+
+The earlier **199 affected legacy** and **55 additional legacy** passing results
+were not rerun. All **599** tracked inputs under backend, scheduling, chess-core,
+scripts and shared component tooling match their tested hashes. The CPython 3.12.12
+backend environment's pinned distribution versions also match the prior record.
+No review/scheduling application source, backend fixture, package dependency,
+production Dockerfile or shared component runner changed in this follow-up.
+`reuse-proof.json` and the full source snapshots in the external evidence directory
+preserve this comparison. The prior production-image result was not reused.
+
+No final positive check failed or skipped required cases. The qualification fixes
+remain Learning-owned; no shared CI behavior, application/API semantics, GitHub
+settings, live database/schema, frozen ordering, merge or deployment changed.
