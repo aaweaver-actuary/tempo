@@ -79,6 +79,10 @@ writer. New cards use introduction; studied/future-due cards use review promotio
 The real-game exception bypasses ordinary cap/progression only, including zero
 allowance; it cannot bypass validity, revisions, burial, retirement or deletion.
 Ordinary candidate input order, including frozen ranks, remains authoritative.
+The parameterized frontier lookup deliberately precedes settlement joins;
+`test_native_new_miss_lookup_does_not_scan_past_review_history` preserves this
+query-plan invariant against accumulated historical reviews. Keep its actual-row
+bound when changing the SQL or replacing the mechanism.
 
 Old game/content revisions remain visible as outstanding retained provenance,
 but `has_current_miss` fences them from gameplay admission. A raw game revision

@@ -37,7 +37,7 @@ _OUTSTANDING = """
      ) settlement_match)
 """
 # The parameterized OFFSET/LATERAL boundary is intentional: first reject old
-# frontiers using the covering index, then inspect a matching attempt's marker.
+# frontiers using the frontier index, then inspect a matching attempt's marker.
 # An ordinary flattened anti-join can scan historical review pairs per incident.
 
 
