@@ -98,7 +98,7 @@ export default function DefenseTrainingView({
   const submittingRef = useRef(false);
   const generationRef = useRef(0);
   const requestScope = `defense:${candidateId}:${queueEntryId}:${exercise?.exercise_revision ?? card.revision ?? 1}`;
-  useEffect(() => { generationRef.current += 1; return () => { generationRef.current += 1; }; }, [requestScope]);
+  useEffect(() => { generationRef.current += 1; return () => { generationRef.current += 1; }; }, [candidateId, queueEntryId, card.revision]);
 
   const loadExercise = useCallback(async () => {
     if (!candidateId) {
@@ -116,6 +116,7 @@ export default function DefenseTrainingView({
         throw new Error("This exercise needs a refreshed board preview. Retry loading the exercise.");
       }
       if (loadedRevision.current !== null && loadedRevision.current !== body.exercise_revision) {
+        generationRef.current += 1; submittingRef.current = false; setBusy(false);
         setGrade(null); setRecognitionResult(null); setRecognitionDone(false); setDefenseReady(false);
         setSelectedSquares([]); setActiveSelection(0); setAssessmentDone(false);
         setNoConcreteThreat(false); setConsequence(""); setHintRevealed(false);
@@ -125,6 +126,7 @@ export default function DefenseTrainingView({
       setExercise(body);
       setLoadError("");
     } catch (reason) {
+      if (generation !== generationRef.current) return;
       setLoadError(reason instanceof Error ? reason.message : "Could not load the exercise.");
     }
   }, [candidateId, card.backendId]);
