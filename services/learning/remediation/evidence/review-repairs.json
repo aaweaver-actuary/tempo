@@ -1,0 +1,364 @@
+{
+  "starting_head": "1bcc084983cfb479d78fe5ddffa68ec1506cef9e",
+  "tested_implementation": "c3a956b310f195c57291a5ea46591b61acbd7123",
+  "evidence_directory": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015",
+  "status": "READY FOR INDEPENDENT RE-REVIEW",
+  "checks": [
+    {
+      "command": [
+        "node",
+        "tools/component-build/test-lane.mjs",
+        "--component",
+        "learning-remediation"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 7.552068125000005,
+      "environment": {
+        "TEMPO_COMPONENT_PYTHON": "/private/tmp/tempo-pr281-review-repairs/services/learning/remediation/.venv/bin/python",
+        "TEMPO_REMEDIATION_EVIDENCE_DIR": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/native-final"
+      },
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/registered-remediation.log"
+    },
+    {
+      "command": [
+        "node",
+        "tools/component-build/test-lane.mjs",
+        "--component",
+        "game-evidence-contracts"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 0.8395108330005314,
+      "environment": {
+        "TEMPO_COMPONENT_PYTHON": "/private/tmp/tempo-pr281-review-repairs/contracts/.venv/bin/python"
+      },
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/registered-game-evidence.log"
+    },
+    {
+      "command": [
+        "contracts/.venv/bin/python",
+        "-m",
+        "pytest",
+        "contracts/tests",
+        "--import-mode=importlib",
+        "-q",
+        "--junitxml=/Users/andy/tempo/test-results/remediation-281-repairs-20261015/shared-contracts.xml"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 1.7695818339998368,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/shared-contracts.log"
+    },
+    {
+      "command": [
+        "contracts/.venv/bin/python",
+        "contracts/export_schemas.py",
+        "--check"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 0.22553570899981423,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/schemas.log"
+    },
+    {
+      "command": [
+        "contracts/.venv/bin/python",
+        "contracts/check_dependencies.py"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 0.05593149999913294,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/contract-dependencies.log"
+    },
+    {
+      "command": [
+        "node",
+        "tools/component-build/check-components.mjs",
+        "--component",
+        "learning-remediation",
+        "--component",
+        "game-evidence-contracts"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 0.4051936250016297,
+      "environment": {
+        "TEMPO_COMPONENT_PYTHON": "/private/tmp/tempo-pr281-review-repairs/contracts/.venv/bin/python"
+      },
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/component-metadata.log"
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "check:conflicts"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 0.7596988329987653,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/conflicts.log"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 0.024918082999647595,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/diff-whitespace.log"
+    },
+    {
+      "command": [
+        "services/learning/remediation/.venv/bin/python",
+        "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/verify_installed.py"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 18.501106249999793,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/installed-artifacts.log"
+    },
+    {
+      "command": [
+        "contracts/.venv/bin/python",
+        "contracts/qualify_artifacts.py",
+        "--python",
+        "3.12",
+        "--report",
+        "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/contracts-312.json"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 11.30641687500065,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/contract-artifacts-312.log"
+    },
+    {
+      "command": [
+        "contracts/.venv/bin/python",
+        "contracts/qualify_artifacts.py",
+        "--python",
+        "3.14",
+        "--report",
+        "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/contracts-314.json"
+      ],
+      "cwd": "/private/tmp/tempo-pr281-review-repairs",
+      "revision": "c3a956b310f195c57291a5ea46591b61acbd7123",
+      "dirty": "",
+      "exit_code": 0,
+      "seconds": 13.102490041001147,
+      "environment": {},
+      "log": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/contract-artifacts-314.log"
+    }
+  ],
+  "registered_lanes": [
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/run_suite.py pure",
+      "passed": 52,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/run_suite.py tooling",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "learning-remediation",
+      "command": "python services/learning/remediation/integration/run_postgres.py",
+      "passed": 47,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "game-evidence-contracts",
+      "command": "python -m pytest tests --import-mode=importlib -q",
+      "passed": 99,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "native": {
+    "complete": true,
+    "exit_code": 0,
+    "fixture": "tempo264-4de635e990b94b5ea2a23fda3b9e8d65",
+    "image": "sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
+    "cleanup_verified": true,
+    "passed": 47,
+    "revision": "c3a956b310f195c57291a5ea46591b61acbd7123"
+  },
+  "query_plans": {
+    "pending-lookup-plan.json": {
+      "visited_history_rows": 0.0,
+      "sha256": "7e7e93a8b7c913efef4f60248578fb514348686d12d2401adafae0cf39c5e785"
+    },
+    "same-frontier-lookup-plan.json": {
+      "visited_history_rows": 1000.0,
+      "sha256": "3bd6f4c71a8a3b8334e257641d3a4c0fe0d5263c160637fa267b637cd2fd9506"
+    }
+  },
+  "artifacts": [
+    {
+      "name": "tempo_game_evidence_contracts-2.0.0.tar.gz",
+      "sha256": "13f2a2e04ae15f95c73a9edfbd5f1fe3e8cf99640d2094b1f286df4a3cba18e4"
+    },
+    {
+      "name": "tempo_game_evidence_contracts-2.0.0-py3-none-any.whl",
+      "sha256": "bdffa6ef5ef37e9b7a24fe3546b0b6e8b4b2968ed75af708f504125ace231777"
+    },
+    {
+      "name": "tempo_learning_remediation-0.1.0-py3-none-any.whl",
+      "sha256": "563826e0668c0cccd48bfb09c6e20e815e0257b230829364355a52f020bea894"
+    },
+    {
+      "name": "tempo_learning_remediation-0.1.0.tar.gz",
+      "sha256": "07aa54c0896955a8057ab404edf8aa5d2f074e6dd1469b263231b1bd0970752b"
+    }
+  ],
+  "installed_consumers": [
+    {
+      "python": "3.12",
+      "format": "wheel",
+      "suite": "module",
+      "passed": 52
+    },
+    {
+      "python": "3.12",
+      "format": "wheel",
+      "suite": "contract",
+      "passed": 99
+    },
+    {
+      "python": "3.12",
+      "format": "sdist",
+      "suite": "module",
+      "passed": 52
+    },
+    {
+      "python": "3.12",
+      "format": "sdist",
+      "suite": "contract",
+      "passed": 99
+    },
+    {
+      "python": "3.14",
+      "format": "wheel",
+      "suite": "module",
+      "passed": 52
+    },
+    {
+      "python": "3.14",
+      "format": "wheel",
+      "suite": "contract",
+      "passed": 99
+    },
+    {
+      "python": "3.14",
+      "format": "sdist",
+      "suite": "module",
+      "passed": 52
+    },
+    {
+      "python": "3.14",
+      "format": "sdist",
+      "suite": "contract",
+      "passed": 99
+    }
+  ],
+  "declared_build_inputs_match_tested_artifacts": true,
+  "retained_reports": {
+    "installed-proof/installed-artifacts.json": {
+      "path": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/installed-proof/installed-artifacts.json",
+      "sha256": "b17cc9373923a7378adb9adaff6e1c477eeb224810a41ee179da7f1bc5728ac5"
+    },
+    "native-final/native.json": {
+      "path": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/native-final/native.json",
+      "sha256": "69457ad2e8a9d7c5240530de4f8d7d68660b21f8f92533161d0a373ddaa1d4bf"
+    },
+    "contracts-312.json": {
+      "path": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/contracts-312.json",
+      "sha256": "40ecbd5b65d8eb01e2e390a64f25eb2a22aa27ae99cf45183883f46db8f4e3ef"
+    },
+    "contracts-314.json": {
+      "path": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/contracts-314.json",
+      "sha256": "ca3c46416cdf2d951e2d383263e36dfac5191da48f2d26707b17447fe3bf553d"
+    },
+    "verify_installed.py": {
+      "path": "/Users/andy/tempo/test-results/remediation-281-repairs-20261015/verify_installed.py",
+      "sha256": "9d243a525a77f6a4a7bb43c1cba26ddaed968a8ae7443bcaa0e924f18a8a97b5"
+    }
+  },
+  "preserved_paths": [
+    "contracts/game-evidence/src/tempo_game_evidence_contracts/v1.py",
+    "contracts/game-evidence/schemas/v1",
+    "contracts/game-evidence/fixtures/v1",
+    "contracts/game-evidence/examples/producer.py",
+    "services/learning/remediation/migrations/001_remediation.sql"
+  ],
+  "source_free_cleanup_verified": true,
+  "contract_artifact_qualification": [
+    {
+      "python": "Python 3.12.12",
+      "passed": 505,
+      "temporary_resources_removed": true
+    },
+    {
+      "python": "Python 3.14.8",
+      "passed": 505,
+      "temporary_resources_removed": true
+    }
+  ],
+  "regression_reproductions": {
+    "pure": {
+      "failed": 3,
+      "passed": 49
+    },
+    "v2": {
+      "failed": 1,
+      "passed": 34
+    },
+    "native": {
+      "failed": 4,
+      "passed": 43,
+      "cleanup_verified": true
+    }
+  },
+  "tooling_failure": "First registered-lane invocation could not import typescript. Installed only tools/component-build locked dependency typescript 5.9.3; subsequent complete registered lane passed.",
+  "reused_evidence": [],
+  "limitations": [
+    "No full-system or hosted merge qualification",
+    "No production A/C/F adoption, live migration, deployment, browser session or wire-v2 activation"
+  ],
+  "downstream": "PR #283 must incorporate the repaired #281 head later; not modified by this task"
+}

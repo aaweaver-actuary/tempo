@@ -69,6 +69,8 @@ A new publication reference alone does not erase genuine completed study of an
 identical exercise revision. Historical satisfaction follows the immutable
 semantic work sequence; new review completion still requires exact current
 publication/attempt authority.
+The settlement result and durable review receipt use that same immutable card
+revision, even when the accepted miss named an earlier publication reference.
 
 `pending_page` scans 16 card identities, including rejected/settled cards, and
 returns the last scanned cursor. `prepare_admissions` scans at most four pages;
@@ -79,6 +81,9 @@ writer. New cards use introduction; studied/future-due cards use review promotio
 The real-game exception bypasses ordinary cap/progression only, including zero
 allowance; it cannot bypass validity, revisions, burial, retirement or deletion.
 Ordinary candidate input order, including frozen ranks, remains authoritative.
+Duplicate canonical cards retain a protected issued head, otherwise prefer an
+eligible route, then prefer eligible current-miss support over an eligible
+ordinary route. The selected route retains its supplied authority facts.
 The parameterized frontier lookup deliberately precedes settlement joins;
 `test_native_new_miss_lookup_does_not_scan_past_review_history` preserves this
 query-plan invariant against accumulated historical reviews. Keep its actual-row

@@ -112,7 +112,8 @@ class EvidenceAcknowledgement(WireModel):
     evidence_id: Identifier
     evidence_revision: Revision
     status: Literal["accepted_pending", "completed", "retryable_failure", "terminal_failure", "conflict", "stale_revision"]
-    accepted_obligation_ids: list[Identifier] = Field(max_length=MAX_BATCH_ITEMS)
+    accepted_obligation_ids: list[Identifier] = Field(
+        max_length=MAX_BATCH_ITEMS, json_schema_extra={"uniqueItems": True})
     learning_revision: Revision | None
     reason: Identifier | None
 
@@ -124,6 +125,8 @@ class EvidenceAcknowledgement(WireModel):
             raise ValueError("incomplete delivery requires a reason")
         if self.status != "completed" and self.accepted_obligation_ids:
             raise ValueError("incomplete delivery cannot claim accepted obligations")
+        if len(set(self.accepted_obligation_ids)) != len(self.accepted_obligation_ids):
+            raise ValueError("duplicate obligation acknowledgement")
         return self
 
 

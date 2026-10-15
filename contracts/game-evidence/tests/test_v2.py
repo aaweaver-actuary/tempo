@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as SchemaValidationError
 from pydantic import ValidationError
 from tempo_game_evidence_contracts import v1, v2
 
@@ -67,3 +68,44 @@ def test_v1_rejects_v2_and_v2_requires_explicit_chronology_and_linkage():
     with pytest.raises(ValidationError): v1.EvidenceDelivery.model_validate(base())
     old=json.loads((ROOT/"fixtures/v1/delivery.json").read_text())["payload"]
     with pytest.raises(ValidationError): v2.EvidenceDelivery.model_validate({**old,"contract_version":2})
+
+
+def acknowledgement():
+    return json.loads((ROOT / "fixtures/v2/ack-completed.json").read_text())["payload"]
+
+
+def acknowledgement_schema():
+    return json.loads((ROOT / "schemas/v2/EvidenceAcknowledgement.schema.json").read_text())
+
+
+def test_v2_acknowledgement_rejects_duplicate_obligation_ids():
+    data = acknowledgement()
+    data["accepted_obligation_ids"] = ["obligation-a", "obligation-a"]
+    with pytest.raises(ValidationError, match="duplicate obligation acknowledgement"):
+        v2.EvidenceAcknowledgement.model_validate(data)
+    with pytest.raises(SchemaValidationError, match="non-unique"):
+        Draft202012Validator(acknowledgement_schema()).validate(data)
+
+
+@pytest.mark.parametrize("identifiers", [[], ["obligation-z", "obligation-a"]])
+def test_v2_acknowledgement_preserves_valid_ordered_or_empty_ids(identifiers):
+    data = acknowledgement()
+    data["accepted_obligation_ids"] = identifiers
+    value = v2.EvidenceAcknowledgement.model_validate(data)
+    assert value.accepted_obligation_ids == identifiers
+    assert json.loads(v2.serialize_contract(value)) == data
+    Draft202012Validator(acknowledgement_schema()).validate(data)
+
+
+@pytest.mark.parametrize("change", [
+    dict(learning_revision=None),
+    dict(status="accepted_pending", learning_revision=1, accepted_obligation_ids=[], reason="pending"),
+    dict(status="accepted_pending", learning_revision=None, accepted_obligation_ids=[], reason=None),
+    dict(status="accepted_pending", learning_revision=None, reason="pending"),
+    dict(accepted_obligation_ids=["obligation-" + str(index) for index in range(129)]),
+    dict(accepted_obligation_ids="obligation-a"),
+    dict(unexpected=True),
+])
+def test_v2_acknowledgement_retains_status_bounds_and_strict_validation(change):
+    with pytest.raises(ValidationError):
+        v2.EvidenceAcknowledgement.model_validate({**acknowledgement(), **change})

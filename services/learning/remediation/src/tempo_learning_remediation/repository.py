@@ -304,14 +304,13 @@ class PostgresRepository:
         if qualifies:
             settled = self._execute("SELECT EXISTS(SELECT 1" + _OUTSTANDING + """
                 AND incident.work_sequence<=%s AND incident.accepted_at<=%s
-                AND contribution.card_revision=%s AND contribution.publication_id=%s
-                AND contribution.publication_generation=%s
+                AND contribution.card_revision=%s
                 AND EXISTS(SELECT 1 FROM remediation_game_heads game
                     WHERE game.workspace_id=head.workspace_id AND game.game_id=contribution.game_id
                       AND game.game_revision=contribution.game_revision)
                 AND (contribution.occurred_at IS NULL OR contribution.occurred_at<=%s))""",
                 (self.workspace_id, review.attempt.card_id, attempt[5], instant(review.attempt.issued_at),
-                 review.attempt.card_revision, review.attempt.publication_id, review.attempt.publication_generation,
+                 review.attempt.card_revision,
                  instant(review.reviewed_at))).fetchone()[0]
             self._execute("INSERT INTO remediation_settlements(workspace_id,review_id,attempt_id,card_id,reviewed_at) VALUES(%s,%s,%s,%s,%s)",
                           (self.workspace_id, review.review_id, review.attempt.attempt_id, review.attempt.card_id, instant(review.reviewed_at)))
