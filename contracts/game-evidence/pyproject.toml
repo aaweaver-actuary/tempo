@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tempo-game-evidence-contracts"
-version = "1.0.0"
+version = "2.0.0"
 description = "Versioned Tempo game-evidence wire contracts; no service implementation"
 requires-python = ">=3.12,<3.15"
 dependencies = ["pydantic==2.12.5"]

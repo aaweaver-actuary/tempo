@@ -1,5 +1,15 @@
 # Supported producer/consumer combinations
 
+## Game Evidence artifact 2.0.0
+
+The Game Evidence artifact additionally exports explicit wire v2 alongside
+unchanged v1. Its primary catalog namespace is v2; `supported_wire_versions`
+enumerates both. V2 positive/negative fixtures and installed Learning semantic
+consumer tests own correction, nullable chronology, exact provenance and bounds.
+V1 parser/schema/serialization and the existing v1 TypeScript exchange remain
+unchanged. No v2 TypeScript compatibility or production adoption is claimed.
+The historical foundation matrix below continues to describe its dated baseline.
+
 The first reusable artifact revision is **1.0.0**, wire **v1**. Every envelope requires integer version `1`; boolean/string versions, future version `2`, missing required fields and unknown fields are rejected. There is no negotiation fallback to an older shape or sample result.
 
 | Producer | Consumer | Exact coverage | Status |
