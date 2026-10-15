@@ -89,10 +89,10 @@ index de8923087077977a6bdc01eba43335665d7c091d..d32830e857d2f35bf631563f1b37ce77
 +    "tempo-scheduling==0.2.0",
 +    "tempo-chess-core==0.1.0",
  ]
- 
+
  [dependency-groups]
 @@ -18,3 +19,4 @@
- 
+
  [tool.uv.sources]
  tempo-scheduling = { path = "../packages/scheduling" }
 +tempo-chess-core = { path = "../packages/chess-core" }
@@ -107,7 +107,7 @@ index 53dade2cdcf72cd176ba8510249e0f1c4e7a8a47..a8a246bba1c0c8e83415016da49a3fd5
 +    { name = "tempo-chess-core" },
      { name = "tempo-scheduling" },
  ]
- 
+
 @@ -21,6 +22,7 @@
  [package.metadata]
  requires-dist = [
@@ -115,10 +115,10 @@ index 53dade2cdcf72cd176ba8510249e0f1c4e7a8a47..a8a246bba1c0c8e83415016da49a3fd5
 +    { name = "tempo-chess-core", directory = "../packages/chess-core" },
      { name = "tempo-scheduling", directory = "../packages/scheduling" },
  ]
- 
+
 @@ -231,15 +233,11 @@
  ]
- 
+
  [[package]]
 -name = "tempo-scheduling"
 +name = "tempo-chess-core"
@@ -128,15 +128,15 @@ index 53dade2cdcf72cd176ba8510249e0f1c4e7a8a47..a8a246bba1c0c8e83415016da49a3fd5
 -    { name = "fsrs" },
 -]
 +source = { directory = "../packages/chess-core" }
- 
+
  [package.metadata]
 -requires-dist = [{ name = "fsrs", specifier = "==6.3.2" }]
- 
+
  [package.metadata.requires-dev]
  dev = [
 @@ -249,6 +247,24 @@
  ]
- 
+
  [[package]]
 +name = "tempo-scheduling"
 +version = "0.2.0"
@@ -164,7 +164,7 @@ index a92c5ae6fe0fc3bf95a00ee3bb81315677e7447d..117c14fcb3edf5c5b3fe0b3adcf0aefd
 --- a/backend/requirements-test.txt
 +++ b/backend/requirements-test.txt
 @@ -4,3 +4,4 @@
- 
+
  # Transitional assembly: install the declared package, not its source via PYTHONPATH.
  ./packages/scheduling
 +./packages/chess-core
@@ -188,7 +188,7 @@ index 022be20c589b1a4ba887ce73fd2ea352b08c4bdb..c992cfa996fba76391c94e2b0b93f19d
 +++ b/tests/REGRESSIONS.md
 @@ -4448,3 +4448,15 @@
  ### Frozen Maia production capture under locale collation
- 
+
  - `backend/tests/test_frozen_maia_plan.py::test_capture_uses_database_collation_for_composite_pagination_keys` reproduces the production capture failure on built-in underscore-prefixed repertoire IDs under `en_US.utf8`. PostgreSQL validates advancement using the same native collation as ordering and seek predicates. The regression spans the 128-row boundary with numeric composite keys and rejects invalid database advancement flags.
 +
 +
