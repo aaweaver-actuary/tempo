@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import timedelta
 import importlib.util
+import json
 import os
 from pathlib import Path
 from threading import Event
@@ -301,6 +302,7 @@ def test_native_new_miss_lookup_does_not_scan_past_review_history(workspace):
         assert PostgresRepository(observed, workspace).has_outstanding("card")
         statement, parameters = observed.last
         plan = connection.execute("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + statement, parameters).fetchone()[0][0]["Plan"]
+        (Path(os.environ["TEMPO_REMEDIATION_PLAN_DIR"]) / "pending-lookup-plan.json").write_text(json.dumps(plan,indent=2)+"\n")
         def scanned(node):
             local = ((node.get("Actual Rows",0)+node.get("Rows Removed by Filter",0))*node.get("Actual Loops",0)
                      if node.get("Relation Name") in {"remediation_attempts","remediation_settlements"} else 0)

@@ -50,7 +50,7 @@ def main():
                 CREATE TABLE remediation_test_queue(workspace_id text,card_id text,position integer,
                 protected boolean DEFAULT false,PRIMARY KEY(workspace_id,card_id));""")
         environment = qualification.controlled_environment()
-        environment.update(TEMPO_REMEDIATION_OWNED=fixture.identity,
+        environment.update(TEMPO_REMEDIATION_OWNED=fixture.identity,TEMPO_REMEDIATION_PLAN_DIR=str(run),
             TEMPO_REMEDIATION_DATABASE=make_conninfo(host="127.0.0.1", port=fixture.port, dbname="learning",
                 user="learning_runtime", password=fixture.passwords["learning"], options="-c search_path=domain,pg_catalog"))
         environment.pop("PYTEST_ADDOPTS", None)
