@@ -341,6 +341,7 @@ describe("review attempt reliability", () => {
       expect(installed.getCard().queueEntryId).toBe(44);
       expect(await intentStore.get(command.key)).toMatchObject({ ...command, state: "committed" });
       await first.outcome;
+      await Promise.all(recoveries.outcomes);
       expect(useTrainingStore.getState().attempt).toEqual(installed.attempt);
       expect(useTrainingStore.getState().boardAttempt).toBe(installed.boardAttempt);
       expect(posts).toBe(0);
