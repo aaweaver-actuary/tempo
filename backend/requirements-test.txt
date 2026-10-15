@@ -6,3 +6,4 @@ grimp==3.17
 
 # Transitional assembly: install the declared package, not its source via PYTHONPATH.
 ./packages/scheduling
+./packages/chess-core

@@ -1,9 +1,13 @@
 """Legacy defaults stay outside the strict, installed scheduling package."""
 from datetime import date, datetime, timezone
+import importlib
+from importlib import metadata
 import inspect
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import sys
+import tomllib
 
 from fsrs import Card
 import fsrs.card
@@ -14,6 +18,29 @@ from app.services import scheduler
 REVIEWED_AT = datetime(2026, 10, 15, 2, 30, tzinfo=timezone.utc)
 INITIAL_CARD = Card(card_id=1, due=REVIEWED_AT).to_json()
 LOCAL_DAY = date(2026, 10, 14)
+
+
+@pytest.mark.parametrize('distribution_name,module_name,package_directory', [
+    ('tempo-scheduling', 'tempo_scheduling', 'scheduling'),
+    ('tempo-chess-core', 'tempo_chess_core', 'chess-core'),
+])
+def test_backend_declares_installed_noneditable_pure_packages(
+    distribution_name, module_name, package_directory,
+):
+    repository = Path(__file__).resolve().parents[2]
+    backend_project = tomllib.loads((repository / 'backend/pyproject.toml').read_text())
+    package_project = tomllib.loads(
+        (repository / 'packages' / package_directory / 'pyproject.toml').read_text()
+    )
+    distribution = metadata.distribution(distribution_name)
+    assert distribution.version == package_project['project']['version']
+    assert f'{distribution_name}=={distribution.version}' in backend_project['project']['dependencies']
+    module = importlib.import_module(module_name)
+    installed_entry = Path(distribution.locate_file(f'{module_name}/__init__.py')).resolve()
+    assert Path(module.__file__).resolve() == installed_entry
+    assert installed_entry.is_relative_to(Path(sys.prefix).resolve())
+    direct_url = json.loads(distribution.read_text('direct_url.json'))
+    assert not direct_url.get('dir_info', {}).get('editable', False)
 
 
 def test_backend_scheduler_keeps_package_class_identity_and_equivalent_results():

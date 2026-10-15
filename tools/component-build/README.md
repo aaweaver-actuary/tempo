@@ -49,9 +49,9 @@ before execution, including direct `node tools/component-build/test-lane.mjs`
 invocation; a failed build stops the lane. `npm run dev` and `npm run dev:local`
 prepare the initial artifact. Package source edits during a running development
 server may require `npm run build:packages`; continuous package watching is not
-provided. Package-local `npm test` builds chess-line before testing. `backend/pyproject.toml` declares a noneditable scheduling
-path dependency; root CI's `backend/requirements-test.txt` installs that distribution.
-The backend image copies only the declared scheduling package before installing it.
+provided. Package-local `npm test` builds chess-line before testing. `backend/pyproject.toml` declares noneditable scheduling and chess-core
+path dependencies; root CI's `backend/requirements-test.txt` installs both distributions.
+The backend image copies only the declared scheduling and chess-core packages before installing them.
 These adapters do not establish an independently deployable Learning or Study Web.
 
 ## Test lanes and identities
@@ -99,14 +99,15 @@ Scheduling and backend metadata target Python >=3.12,<3.15, with FSRS 6.3.2.
 The legacy assembly baseline and backend interpreter selector are 3.12, matching
 the unchanged production image. The minimal clean seam setup from the checkout
 root is `uv sync --project backend --locked --no-editable --python 3.12`.
-It installs the local scheduling distribution and declared test/boundary tools;
+It installs the local scheduling and chess-core distributions and declared test/boundary tools;
 it does not install the full backend runtime stack. `backend/requirements-test.txt`
 retains repository-root-relative local paths, as used by existing hosted commands.
 Python 3.14 is an additional package/seam qualification runtime, not a full-backend
 compatibility claim. The lock was regenerated normally without version upgrades.
-The package retains clock defaults and FSRS's clock-based initial card identity;
-fixed-as-of golden tests supply both a review time and an explicit serialized card.
-#200 owns removing those compatibility exceptions. Algorithms and atomic transaction
+Scheduling 0.2.0 requires explicit time, calendar day and serialized card inputs.
+The legacy backend adapter owns clock defaults and FSRS's clock-based initial card
+identity; fixed-as-of package golden tests supply all inputs explicitly. Chess-core
+0.1.0 preserves stable card digests and first-four-field FEN keys with stdlib only. Algorithms and atomic transaction
 ownership are unchanged. No artificial WASM dependency was introduced.
 
 Actions and required-check settings are untouched. Local component passes do not

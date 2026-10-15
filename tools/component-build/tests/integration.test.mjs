@@ -8,6 +8,21 @@ import { checkComponents, repository, validateManifest } from "../check-componen
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
 const original = JSON.parse(readFileSync(join(repository, "components.json")));
+test("#200 registered pure packages validate and list their actual owning suites without setup", () => {
+  const componentIds = ["scheduling", "chess-core"];
+  const checked = checkComponents(repository, python, { componentIds });
+  assert.deepEqual(checked.map(component => component.id), componentIds);
+  const environment = { ...process.env, TEMPO_COMPONENT_PYTHON: "/python-must-not-run" };
+  delete environment.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [join(repository, "tools/component-build/test-lane.mjs"),
+    "--component", "scheduling", "--component", "chess-core", "--list"],
+  { env: environment, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const { selected } = JSON.parse(result.stdout);
+  assert.deepEqual(selected.map(suite => [suite.id, suite.owner, suite.cwd]),
+    componentIds.map(id => [id, id, `packages/${id}`]));
+});
+
 function contractFixture(context) {
   const root = mkdtempSync(join(tmpdir(), "tempo-d-contract-"));
   context.after(() => rmSync(root, { recursive: true, force: true }));
