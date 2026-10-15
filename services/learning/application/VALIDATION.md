@@ -47,3 +47,98 @@ patch archive are kept outside the tracked checkout at:
 No merge, deployment, live-data/schema change, full historical CI, browser, model,
 Rust or Maia workload is part of this qualification. No standalone Learning
 service, domain database cutover or production wire-v1 adoption is claimed.
+
+
+## Final integrated results
+
+**READY FOR MERGE — SUBJECT TO FINAL INDEPENDENT REVIEW.** Tested executable
+revision: `16402a9d83d3376cea5af999f81b8477cbf9c5e8`. The final evidence follow-up
+changes only this validation document and the new
+[integration qualification record](evidence/integration-qualification.json).
+The external final-state receipt verifies that all previously tracked inputs,
+including executable source, fixtures, manifests, locks, runner scripts and the
+README/regression build inputs, remain byte-identical to the tested revision.
+
+| Check | Actual integrated result |
+| --- | --- |
+| Source-free wheel, CPython 3.12.12 | 43 passed; exact collected/executed identities, guarded imports/connections |
+| Source-free wheel, CPython 3.14.8 | 43 passed; same completeness and guard requirements |
+| Native PostgreSQL 18.6 through normal component lane | 24 passed; real transactions/concurrency/recovery/frozen-admission cases |
+| Local-day compatibility regression | Named case passes; #275 resolves the historical missing `scheduler.date` seam |
+| Ten-file affected legacy selection | 199 passed; independently collected identity set matches JUnit |
+| Evidence/deletion/lock-order selection | 55 passed; independently collected identity set matches JUnit |
+| New runner and installed-backend regression suite | 53 passed in the normal component lane (52 runner cases + 1 installation case) |
+| Component checker and declared suite listing | Pass; only Learning application owner selected, three suites |
+| Normal owning component lane | 43 application + 53 tooling/installation + 24 native passes; external JUnit receipt preserved |
+| Existing component-tooling suite | 72 passed, zero failures/skips/TODOs after declared fixture dependency setup |
+| Consumer public-import boundary | Pass using existing Python boundary checker |
+| Fresh noneditable backend install | Learning 0.1.0, scheduling 0.2.0, chess-core 0.1.0 in environment site-packages; direct-url editable flag absent/false |
+| Production backend Dockerfile | Build and network-disabled/read-only import smoke pass; same versions and noneditable installed origins |
+| Lock, registration preservation, conflict artifacts and diff whitespace | Pass; all unrelated lock entries and prior component/shared-suite declarations unchanged |
+
+No qualifying selection has skipped, deselected, missing, duplicate, failed or
+errored required cases. Counts reflect current collection, not fixed historical
+totals. Setup/call/teardown receipts are retained for installed/native suites.
+Installed-wheel SHA-256 remains
+`f7063555a77da85e991cc91ac79980784a23208f7433a207a56d68feabf228ce`.
+Production image identity:
+`sha256:4e0870ba2dbdac6d74a9deb5d46c293768460c0388425cdd1420b207c74e0e52`.
+Task-owned native container `tempo224-3e23744a30c04a26` was removed and absence
+verified; its PostgreSQL image is recorded in the machine-readable report.
+Temporary production image and smoke container were also removed. Shared images,
+volumes, caches, checkouts and running services were not cleaned or restarted.
+
+### Commands and identity evidence
+
+The new JSON record contains exact qualification/setup commands, runtimes,
+installed dependencies, collected/executed case identities, package input/artifact
+hashes, image commands and resource evidence. Raw logs remain at the external
+path above. Its `installed/installed.json` contains every build/consumer command;
+`native/native.json` contains controlled collection/execution commands and external
+JUnit routing. `installation-final.log` preserves all three distribution origins
+and direct-url metadata. `legacy-inventories.json` contains exact independent
+collection commands and identity comparisons. The additional tooling commands were:
+
+```sh
+node tools/component-build/test-node.mjs tools/component-build/tests
+TEMPO_COMPONENT_PYTHON="$PWD/backend/.venv/bin/python" node tools/component-build/test-node.mjs tools/component-build/tests
+```
+
+The consumer proof invokes `tools/component-build/check-python.py consumers
+backend/app tempo_learning_review EXPORTS_JSON` with the actual public `__all__`.
+The normal owning lane uses `TEMPO_COMPONENT_PYTHON` for the installed backend
+interpreter and `TEMPO_LEARNING_EVIDENCE_DIR` for external native evidence.
+All legacy selections clear ambient database and Redis targets and use a task-owned
+`TEMPO_DB_PATH`; package source directories are never added to `PYTHONPATH`.
+
+### Failed setup attempts, corrected without code changes
+
+The first legacy runs supplied an erroneous unavailable Redis URL in the task
+harness: affected selection **155 passed / 44 failed**, additional selection
+**54 passed / 1 failed**. HTTP middleware correctly returned admission-unavailable
+503 responses. Removing that task-supplied Redis override restored the normal
+SQLite test environment; the unchanged executable revision then passed all
+199 and 55 cases. Both original failure logs and corrected reports are retained.
+
+An additional component-tooling run initially produced **67 passed / 5 failed**
+because its TypeScript boundary fixtures lacked their declared `chess.js`
+dependency. Installing only `packages/chess-line` dependencies restored all 72
+passes. No assertions, product code, fixture behavior, or runner code changed.
+Legacy HTTP tests retain an existing Starlette/AnyIO deprecation warning.
+
+### Selection and hosted limits
+
+The existing component tooling accepts explicit component/suite IDs. Its actual
+Learning selection executes the three registered suites. Declared build/test
+inputs cover Learning source and backend adapter consumers; an unrelated
+`docs/frozen-maia-order.md` control has no Learning owner. These declaration checks
+are preserved in `selection-proof.json`. There is no automatic changed-file
+component dispatcher to certify. The separate historical CI planner conservatively
+falls back to FULL for unknown source paths; it is unchanged and was not executed.
+This existing planner behavior is not a prerequisite for the bounded component proof.
+
+GitHub Actions remains disabled, the PR has no hosted check results, main branch
+protection returned 404, and repository rulesets were empty when inspected. No
+GitHub settings changed. This is completed engineering qualification for the
+specified integration, subject to final independent review; it is not a full-product
+or deployment qualification. No outstanding code or integration blocker is known.
