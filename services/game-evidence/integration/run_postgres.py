@@ -4,6 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -127,6 +128,8 @@ def main():
         print(output,end="")
         report["pytest_exit_code"]=result.returncode
         actual_junit=Path(next(value.split("=",1)[1] for value in reversed(command) if value.startswith("--junitxml=")))
+        if actual_junit.exists() and actual_junit!=junit:
+            shutil.copy2(actual_junit,junit)
         cases=ET.parse(actual_junit).getroot().findall(".//testcase") if actual_junit.exists() else []
         report["passed"]=sum(not any(case.find(tag) is not None for tag in ("failure","error","skipped")) for case in cases)
         report["complete"]=result.returncode==0 and bool(cases) and report["passed"]==len(cases)
