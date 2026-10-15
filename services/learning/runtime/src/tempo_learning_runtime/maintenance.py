@@ -18,10 +18,19 @@ def run_once():
 
     with connection(read_only=True, background=True) as database:
         operation = database.execute_native(
-            "SELECT operation_id FROM operation_receipts WHERE state='queued' ORDER BY created_at,operation_id LIMIT 1"
+            "SELECT operation_id FROM operation_receipts WHERE state='queued' AND (next_retry_at IS NULL OR next_retry_at<=NOW()) ORDER BY created_at,operation_id LIMIT 1"
         ).fetchone()
     if operation:
-        execute(operation[0])
+        try:
+            execute(operation[0], background=True)
+        except Exception:
+            # A retained intent must not starve queue maintenance while a card is busy.
+            logger.exception("Essential command yielded; original identity retained")
+            with connection(background=True) as database:
+                database.execute_native(
+                    "UPDATE operation_receipts SET next_retry_at=NOW()+INTERVAL '1 second' WHERE operation_id=%s AND state='queued'",
+                    (operation[0],),
+                )
         return True
     with connection(background=True) as database:
         task = claim(database)

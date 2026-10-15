@@ -20,16 +20,6 @@ from .review_service import preserve_daily_queue_order
 _QUEUE_REFRESH_PROJECTION_SQL = queue_application._QUEUE_REFRESH_PROJECTION_SQL
 
 
-def warm_queue_refresh_sql() -> None:
-    """Prepare the queue-refresh statement outside a bounded transaction."""
-
-    from .postgres_store import postgres_sql
-    from .durable_tasks import warm_completion_sql
-
-    warm_completion_sql()
-    postgres_sql(_QUEUE_REFRESH_PROJECTION_SQL)
-
-
 def _lock_attempt_card(database, entry_id: int) -> None:
     """Follow review's card-before-queue lock order for retained commands."""
     if not isinstance(database, PostgresConnection):
@@ -231,7 +221,8 @@ def request_queue_refresh_in_transaction(
     )
 
 
-register_command("queue.issue_head", issue_queue_head)
-register_command("queue.attempt_failed", mark_attempt_failed)
-register_command("queue.bury", bury_queue_entry)
-register_command("queue.ensure_current", ensure_current_queue)
+def register_handlers():
+    register_command("queue.issue_head", issue_queue_head)
+    register_command("queue.attempt_failed", mark_attempt_failed)
+    register_command("queue.bury", bury_queue_entry)
+    register_command("queue.ensure_current", ensure_current_queue)

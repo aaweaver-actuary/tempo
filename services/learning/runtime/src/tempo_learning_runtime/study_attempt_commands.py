@@ -260,5 +260,6 @@ def self_assess_study_attempt(
     return result
 
 
-register_command("studies.attempts.submit", submit_study_attempt)
-register_command("studies.attempts.self_assess", self_assess_study_attempt)
+def register_handlers():
+    register_command("studies.attempts.submit", submit_study_attempt)
+    register_command("studies.attempts.self_assess", self_assess_study_attempt)

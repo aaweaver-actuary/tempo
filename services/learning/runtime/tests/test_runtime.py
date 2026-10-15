@@ -30,7 +30,7 @@ def bundle(specifications=None):
     for index, (kind, specification) in enumerate(specifications):
         identifier = (
             card_id(chess.STARTING_FEN, specification["accepted_lines"][0])
-            if kind == "opening"
+            if kind in ("opening", "tactic", "middlegame")
             else f"card-{index}"
         )
         definitions.append(

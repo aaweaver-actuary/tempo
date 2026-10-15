@@ -48,8 +48,8 @@ def record_intent(operation_id, name, payload):
             )
 
 
-def execute(operation_id):
-    with connection() as database:
+def execute(operation_id, *, background=False):
+    with connection(background=background) as database:
         database.execute_native(
             "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (operation_id,)
         )

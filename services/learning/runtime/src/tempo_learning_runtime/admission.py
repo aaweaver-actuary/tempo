@@ -8,7 +8,7 @@ import json
 from .clock import date
 from .queue_position_lock import lock_queue_date_for_position
 from . import frozen_opening_order
-from .real_game_feedback import MISS_REASON
+from .real_game_feedback import MISS_REASON, has_outstanding_real_game_miss
 
 
 def admit(database, card_id, queue_day, reason=None):
@@ -31,6 +31,14 @@ def admit(database, card_id, queue_day, reason=None):
         "SELECT 1 FROM deleted_cards WHERE card_id=?", (card_id,)
     ).fetchone():
         return False
+    if reason == MISS_REASON:
+        if not has_outstanding_real_game_miss(database, card_id):
+            return False
+        if card["introduced_at"] is None or card["state"] in ("new", "locked"):
+            from .queue_application import request_queue_refresh_in_transaction
+
+            request_queue_refresh_in_transaction(database, queue_day)
+            return False
     if card["due_date"] > queue_day and reason is None:
         return False
     if card["state"] == "locked":
@@ -71,6 +79,23 @@ def admit(database, card_id, queue_day, reason=None):
     else:
         membership = card["repertoire_id"]
     lock_queue_date_for_position(database, queue_day)
+    if reason == MISS_REASON:
+        if database.execute(
+            "SELECT 1 FROM daily_queue WHERE card_id=? AND queue_date=? AND status='buried'",
+            (card_id, queue_day),
+        ).fetchone():
+            return False
+        from .review_service import ensure_card_queued_after
+
+        ensure_card_queued_after(
+            database,
+            card_id,
+            after_cards=0,
+            attempt_state="gameplay",
+            priority_reason=reason,
+            queue_date=queue_day,
+        )
+        return True
     if database.execute(
         "SELECT 1 FROM daily_queue WHERE card_id=? AND queue_date=?",
         (card_id, queue_day),

@@ -76,7 +76,7 @@ def test_frozen_ranks_control_introductions_without_score_producers(case):
             "start_fen": chess.STARTING_FEN,
             "moves_json": json.dumps(definition["specification"]["accepted_lines"][0]),
             "trained_color": "white",
-            "kind": "response",
+            "kind": "checkpoint",
             "content_type": "opening",
             "source_ref": None,
             "source_fen": None,
@@ -105,6 +105,12 @@ def test_workspace_binding_migration_history_and_admin_credentials_fail_readines
 
     with TestClient(
         create_app(replace(case.configuration, workspace_id="wrong-workspace"))
+    ) as client:
+        assert client.get("/health/ready").status_code == 503
+    with TestClient(
+        create_app(
+            replace(case.configuration, database_url=case.admin, reader_url=case.admin)
+        )
     ) as client:
         assert client.get("/health/ready").status_code == 503
     with psycopg.connect(case.admin) as database:

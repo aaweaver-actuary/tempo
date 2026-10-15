@@ -1,7 +1,7 @@
 # Learning runtime integration surface
 
 Artifact: `tempo-learning-runtime` 0.1.0; workspace: one configured identity per database.
-All API routes except health require `Authorization: Bearer <workspace credential>`.
+All API routes except health require a workspace-scoped bearer credential. Study routes use the study token; `/internal/publications/*` requires the separate operator token and `/internal/evidence` requires the separate evidence token. Missing integration tokens disable those endpoints.
 Browser requests also require an exact configured Origin. Existing request bodies,
 Idempotency-Key values and durable payload normalization remain legacy protocol.
 
@@ -32,3 +32,19 @@ Authoring, live import/cutover, worker credentials and producer scheduling remai
 outside the Learning API. Endgame cache misses may use the configured online
 provider; missing providers and uncovered defense analysis are explicit failures
 or durable needs-analysis states, never successful grades.
+
+
+The checked file adapter accepts the same JSON as the publication HTTP commands:
+`tempo-learning stage --file bundle.json`, `activate --file activation.json`, and
+`retire --file retirement.json`. The latter two require immutable command IDs and
+expected activation revisions. Each opening repertoire has one active publication
+owner. A publication contains at most 128 definitions; newer executable revisions
+retain family, Study identity and source identity. Frozen reader version and exact
+content/membership fingerprints are rechecked on activation. No ordering scores
+are recalculated by Learning.
+
+`fixtures/legacy-protocol.json` publishes authentication, queue, review, transport,
+conflict and unavailable envelopes. The existing strict client schemas and review
+outbox consume these HTTP shapes in the native Chromium suite. Native tests also
+cover all family-specific requests/responses against their existing Pydantic
+models. Successful migration/install/startup is not wire-v1 or product acceptance.

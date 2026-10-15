@@ -19,6 +19,7 @@ class Database:
             timeout=0.25,
             kwargs={"row_factory": tempo_row_factory, "connect_timeout": 2},
             open=True,
+            check=ConnectionPool.check_connection,
         )
         self.reader = ConnectionPool(
             configuration.reader_url,
@@ -27,6 +28,7 @@ class Database:
             timeout=0.25,
             kwargs={"row_factory": tempo_row_factory, "connect_timeout": 2},
             open=True,
+            check=ConnectionPool.check_connection,
         )
         self.maintenance = ConnectionPool(
             configuration.database_url,
@@ -35,6 +37,7 @@ class Database:
             timeout=0.1,
             kwargs={"row_factory": tempo_row_factory, "connect_timeout": 2},
             open=True,
+            check=ConnectionPool.check_connection,
         )
 
     @contextmanager
@@ -73,8 +76,14 @@ class Database:
                 raise RuntimeError(
                     "Learning startup requires a restricted runtime/reader role"
                 )
-            row = raw.execute("SELECT workspace_id FROM instance WHERE id=1").fetchone()
-            if row is None or row[0] != self.configuration.workspace_id:
+            row = raw.execute(
+                "SELECT instance.workspace_id,settings.timezone FROM instance JOIN settings ON settings.id=instance.id WHERE instance.id=1"
+            ).fetchone()
+            if (
+                row is None
+                or row[0] != self.configuration.workspace_id
+                or row[1] != self.configuration.timezone
+            ):
                 raise RuntimeError(
                     "Learning database workspace does not match configuration"
                 )

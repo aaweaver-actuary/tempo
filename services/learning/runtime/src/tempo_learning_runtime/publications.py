@@ -110,6 +110,11 @@ class PublicationBundle(BaseModel):
                     raise ValueError("Endgame template facts missing")
                 from .endgames import normalized_material
 
+                if (
+                    not {"name", "white_material", "black_material"}
+                    <= fact.endgame.keys()
+                ):
+                    raise ValueError("Incomplete endgame template")
                 white = normalized_material(fact.endgame["white_material"])
                 black = normalized_material(fact.endgame["black_material"])
                 if (
@@ -124,7 +129,19 @@ class PublicationBundle(BaseModel):
                     raise ValueError("Defense rubric facts missing")
                 from .defense import exercise_from_definition
 
-                exercise_from_definition(fact.defense)
+                try:
+                    exercise = exercise_from_definition(fact.defense)
+                    if (
+                        exercise.exercise_revision != definition.exercise_revision
+                        or exercise.anchor.position.start_fen != definition.starting_fen
+                    ):
+                        raise ValueError(
+                            "Defense rubric and executable definition disagree"
+                        )
+                except (KeyError, TypeError, ValueError) as error:
+                    raise ValueError(
+                        "Invalid accepted defense rubric: " + str(error)
+                    ) from error
         if self.frozen_order:
             if self.frozen_order.get("reader_version") != "frozen-maia-v2":
                 raise ValueError("Incompatible frozen reader")
@@ -266,16 +283,40 @@ def activate(database, payload):
     for fact in sorted(bundle.facts, key=lambda item: item.parent_card_id is not None):
         definition = definitions[fact.card_id]
         conflicting = database.execute(
-            "SELECT publication_id,revision FROM cards WHERE id=?", (fact.card_id,)
+            "SELECT publication_id,revision,content_type,study_exercise_id,source_ref FROM cards WHERE id=?",
+            (fact.card_id,),
         ).fetchone()
         if conflicting and (
-            conflicting[0] != identity or definition.exercise_revision <= conflicting[1]
+            conflicting[0] != identity
+            or definition.exercise_revision <= conflicting[1]
+            or conflicting[2] != fact.content_type
+            or conflicting[3] != fact.exercise_id
+            or conflicting[4] != fact.source_ref
         ):
             raise HTTPException(
                 409,
                 "Existing executable identity needs a newer revision in its owning publication",
             )
+        if fact.defense:
+            previous_defense = database.execute(
+                "SELECT candidate_id FROM accepted_defense_exercises WHERE card_id=?",
+                (fact.card_id,),
+            ).fetchone()
+            if previous_defense and previous_defense[0] != fact.defense["candidate_id"]:
+                raise HTTPException(
+                    409, "Defense identity changed within an executable card"
+                )
         for membership in fact.memberships:
+            if (
+                fact.content_type == "opening"
+                and database.execute(
+                    "SELECT 1 FROM cards c JOIN repertoire_cards rc ON rc.card_id=c.id WHERE rc.repertoire_id=? AND c.content_type='opening' AND c.publication_id!=? AND c.serving_active=1 LIMIT 1",
+                    (membership, identity),
+                ).fetchone()
+            ):
+                raise HTTPException(
+                    409, "Opening repertoire already has an active publication owner"
+                )
             database.execute(
                 "INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,?, ?,?) ON CONFLICT(id) DO UPDATE SET new_cards_per_day=excluded.new_cards_per_day",
                 (
@@ -344,6 +385,10 @@ def activate(database, payload):
             ),
         )
         database.execute(
+            "UPDATE cards SET pending_validation=? WHERE id=?",
+            (int(not fact.integrity_allowed), fact.card_id),
+        )
+        database.execute(
             "DELETE FROM repertoire_cards WHERE card_id=?", (fact.card_id,)
         )
         database.execute(
@@ -386,7 +431,7 @@ def activate(database, payload):
         if fact.endgame:
             template = fact.endgame
             database.execute(
-                "INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET enabled=1",
+                "INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,white_material=excluded.white_material,black_material=excluded.black_material,trained_color=excluded.trained_color,goal_mix=excluded.goal_mix,enabled=1",
                 (
                     fact.source_ref or fact.card_id,
                     fact.card_id,

@@ -231,7 +231,7 @@ def _validate_checkpoint_scope(
     # Lock the original identity before attempt/queue rows, just as aggregate
     # reviews do. Never follow superseded_by to another presentation.
     card = database.execute_native(
-        "SELECT revision,archived FROM cards WHERE id=%s FOR UPDATE",
+        "SELECT revision,archived,serving_active FROM cards WHERE id=%s FOR UPDATE",
         (manifest.card_id,),
     ).fetchone()
     completed = (
@@ -244,7 +244,7 @@ def _validate_checkpoint_scope(
         if completing_review
         else None
     )
-    if not completed and (card is None or card["archived"]):
+    if not completed and (card is None or card["archived"] or not card["serving_active"]):
         raise HTTPException(
             409,
             {
@@ -482,10 +482,10 @@ def _read_checkpoint_source(
 
 def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
     """Read one bounded source, release PostgreSQL, then validate/reduce it."""
-    from ..database import background_read_connection
+    from .database import read_connection as background_read_connection
 
     request = OpeningEvidenceCheckpoint.model_validate(payload["checkpoint"])
-    with background_read_connection(authoritative=True) as database:
+    with background_read_connection() as database:
         row = database.execute_native(
             "SELECT snapshot.*,context.effective_trained_color FROM opening_evidence_presentations snapshot "
             "JOIN opening_evidence_queue_contexts context ON context.presentation_snapshot_id=snapshot.id "

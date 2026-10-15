@@ -1,6 +1,6 @@
 """Learning-only HTTP composition. Authentication precedes database access."""
 
-import asyncio, hashlib, hmac, json, uuid
+import asyncio, hashlib, hmac, json, uuid, time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
@@ -38,6 +38,7 @@ from .defense import (
 )
 from .endgames import generate_position, category_for_player
 from .receivers import receive
+from tempo_game_evidence_contracts.v1 import EvidenceDelivery
 
 
 def reconcile(database, payload):
@@ -87,6 +88,10 @@ def save_endgame_attempt(db, payload):
 
 
 def register_handlers():
+    if "queue.issue_head" not in gateway._handlers:
+        queue_commands.register_handlers()
+    if "studies.attempts.submit" not in gateway._handlers:
+        study_attempt_commands.register_handlers()
     handlers = {
         "cards.review": submit_legacy_review,
         "cards.review.reconcile": reconcile,
@@ -729,7 +734,13 @@ def create_app(configuration: Configuration):
             ).fetchone()
         if not template:
             raise HTTPException(404, "Endgame template not found")
+        deadline = time.monotonic() + 5
         for index in range(80):
+            if time.monotonic() > deadline:
+                raise HTTPException(
+                    503,
+                    "Endgame preparation budget exhausted; retry the same operation",
+                )
             seed = int.from_bytes(
                 hashlib.sha256(f"{operation_id}:{index}".encode()).digest()[:8], "big"
             )
@@ -777,8 +788,10 @@ def create_app(configuration: Configuration):
         )
 
     @app.post("/internal/evidence")
-    def evidence_receive(payload: dict):
+    def evidence_receive(payload: EvidenceDelivery):
         with connection() as db:
-            return receive(db, payload, configuration.workspace_id)
+            return receive(
+                db, payload.model_dump(mode="json"), configuration.workspace_id
+            )
 
     return app

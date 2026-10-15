@@ -32,5 +32,5 @@ def test_native_existing_review_client_progression_and_recovery(case, tmp_path, 
         assert proof["complete"] is True
     assert case.query("SELECT COUNT(*) FROM learning.reviews")[0][0] == 1
     assert (
-        case.query("SELECT COUNT(*) FROM learning.logical_review_receipts")[0][0] == 1
+        case.query("SELECT COUNT(*) FROM learning.review_attempt_receipts")[0][0] == 1
     )

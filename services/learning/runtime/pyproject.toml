@@ -27,3 +27,7 @@ packages = ["src/tempo_learning_runtime"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+[tool.hatch.build.targets.wheel.force-include]
+"fixtures" = "tempo_learning_runtime/fixtures"
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "fixtures", "integration", "browser/client.ts", "browser/prove.mjs", "browser/package.json", "browser/package-lock.json", "qualify.py", "pyproject.toml", "uv.lock", "README.md", "REGRESSIONS.md", "INTERFACES.md", "VALIDATION.md", "Dockerfile", "Dockerfile.dockerignore"]

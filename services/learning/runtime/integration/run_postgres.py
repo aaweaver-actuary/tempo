@@ -1,7 +1,7 @@
 """Only invocation-owned PostgreSQL: no external database argument or live Compose."""
 
 from pathlib import Path
-import json, os, secrets, subprocess, sys, time, shutil, hashlib
+import json, os, secrets, subprocess, sys, time, shutil, hashlib, socket
 
 ROOT = Path(__file__).resolve().parents[4]
 APPLICATION = ROOT / "services/learning/application"
@@ -26,9 +26,15 @@ def main():
     evidence = Path(
         sys.argv[1]
         if len(sys.argv) == 2
-        else "/Users/andy/.codex/worktrees/learning-runtime-recovery/tempo-evidence"
+        else os.environ.get(
+            "TEMPO_LEARNING_EVIDENCE_DIR", str(ROOT / "test-results/learning-runtime")
+        )
     ).resolve()
     evidence.mkdir(parents=True, exist_ok=True)
+    write_json(
+        evidence / "native.json",
+        {"complete": False, "pending": "validating invocation"},
+    )
     external_junit = junit_destination(
         os.environ.get("PYTEST_ADDOPTS", ""), allow_junit=True
     )
@@ -54,7 +60,7 @@ def main():
         for path in sorted((ROOT / "services/learning/runtime").rglob("*"))
         if path.is_file()
         and not any(
-            part in {".venv", "__pycache__", "dist", ".pytest_cache"}
+            part in {".venv", "__pycache__", "dist", ".pytest_cache", "node_modules"}
             for part in path.parts
         )
     }
@@ -62,10 +68,37 @@ def main():
     report["evidence"] = str(evidence)
     attempted = False
     volume_attempted = False
+    runtime_image_attempted = False
     try:
         image = docker(
             "image", "inspect", "postgres:18.6-trixie", "--format", "{{.Id}}"
         )
+        runtime_tag = "tempo-learning:" + identity
+        runtime_image_attempted = True
+        built = subprocess.run(
+            [
+                "docker",
+                "build",
+                "-f",
+                "services/learning/runtime/Dockerfile",
+                "--label",
+                "tempo.owner=" + identity,
+                "-t",
+                runtime_tag,
+                ".",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        (evidence / "container-build.log").write_text(built.stdout + built.stderr)
+        if built.returncode:
+            raise RuntimeError(
+                "Minimal runtime image build failed; see container-build.log"
+            )
+        runtime_image = docker("image", "inspect", runtime_tag, "--format", "{{.Id}}")
+        report["runtime_image"] = runtime_image
+
         report["image"] = image
         volume_attempted = True
         docker(
@@ -77,6 +110,10 @@ def main():
             "tempo.disposable=true",
             identity + "-data",
         )
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        fixture_port = listener.getsockname()[1]
+        listener.close()
         attempted = True
         docker(
             "run",
@@ -94,7 +131,7 @@ def main():
             "--mount",
             "type=volume,source=" + identity + "-data,target=/var/lib/postgresql",
             "--publish",
-            "127.0.0.1::5432",
+            f"127.0.0.1:{fixture_port}:5432",
             "--env",
             "POSTGRES_PASSWORD=" + password,
             image,
@@ -134,6 +171,7 @@ def main():
         }
         environment.update(
             TEMPO_LEARNING_TEST_FIXTURE=identity,
+            TEMPO_LEARNING_TEST_IMAGE=runtime_image,
             TEMPO_LEARNING_TEST_ADMIN=admin,
             PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
         )
@@ -261,6 +299,28 @@ def main():
         except BaseException as error:
             report["cleanup_error"] = str(error)
             report["complete"] = False
+        try:
+            if runtime_image_attempted:
+                inspected = subprocess.run(
+                    [
+                        "docker",
+                        "image",
+                        "inspect",
+                        runtime_tag,
+                        "--format",
+                        "{{json .Config.Labels}}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if inspected.returncode == 0:
+                    if json.loads(inspected.stdout).get("tempo.owner") != identity:
+                        raise RuntimeError("Runtime image cleanup ownership mismatch")
+                    docker("image", "rm", runtime_tag)
+                report["runtime_image_tag_removed"] = True
+        except BaseException as error:
+            report["cleanup_error"] = str(error)
+            report["complete"] = False
         write_json(evidence / "native.json", report)
         write_json(evidence_root / "native.json", report)
     if not report["complete"]:
@@ -269,7 +329,7 @@ def main():
                 {
                     key: value
                     for key, value in report.items()
-                    if key not in ("commands", "identities")
+                    if key not in ("commands", "identities", "source_inputs")
                 }
             ),
             file=sys.stderr,

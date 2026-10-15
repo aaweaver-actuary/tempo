@@ -263,3 +263,10 @@ for (const runnerKind of ["generic", "package-local"]) {
     });
   }
 }
+
+test("Python normalized distribution dependencies select their real component producers", async () => {
+  const { selectComponents } = await import("../selection.mjs");
+  const selected = selectComponents(manifest, ["learning"]);
+  for (const owner of ["learning", "learning-review-application", "scheduling", "chess-core", "content-publication-contracts", "game-evidence-contracts"])
+    assert.ok(selected.some(component => component.id === owner), "Missing declared producer: " + owner);
+});
