@@ -460,6 +460,58 @@ def test_capture_uses_explicit_view_key_sources_and_never_falls_back_to_all_colu
     assert len(missing.calls)==1
 
 
+@pytest.mark.parametrize('invalid_key_order',[False,True])
+def test_capture_uses_database_collation_for_composite_pagination_keys(monkeypatch,invalid_key_order):
+    from contextlib import contextmanager
+
+    cli=plan_cli()
+    source_rows=[{'id':f'a{index:03d}','sequence':1} for index in range(126)]
+    source_rows.extend([{'id':'a125','sequence':2},{'id':'a125','sequence':10},
+                        {'id':'__captured_tactics__','sequence':1},
+                        {'id':'__tactics__','sequence':1}])
+
+    class Cursor:
+        def __init__(self,rows):self.rows=rows
+        def fetchall(self):return self.rows
+        def fetchone(self):return self.rows[0]
+
+    class LocaleDatabase:
+        def __init__(self):self.page_statements=[]
+        def execute_native(self,statement,parameters=()):
+            if 'system_identifier' in statement:
+                return Cursor([{'database':'tempo','schema':'public'}])
+            raise AssertionError(statement)
+        def execute(self,statement,parameters=()):
+            if 'CROSS JOIN settings' in statement:return Cursor([])
+            self.page_statements.append(statement)
+            key=lambda row:(row['id'].strip('_'),row['sequence'])
+            ordered=sorted(source_rows,key=key)
+            if len(parameters)>1:
+                previous={'id':parameters[0],'sequence':parameters[1]}
+                ordered=[row for row in ordered if key(row)>key(previous)]
+            return Cursor([(json.dumps(row),not invalid_key_order) for row in ordered[:parameters[-1]]])
+
+    database=LocaleDatabase()
+    @contextmanager
+    def reader():yield database
+
+    monkeypatch.setattr(cli,'TABLES',{'repertoires':'repertoires'})
+    monkeypatch.setattr(cli,'_capture_key_columns',lambda database,table:['id','sequence'])
+    if invalid_key_order:
+        with pytest.raises(ValueError,match='Repeated or nonadvancing pagination key'):
+            cli._capture_once(reader)
+        return
+    captured=cli._capture_once(reader)
+    assert captured['repertoires']==sorted(source_rows,key=lambda row:(row['id'].strip('_'),row['sequence']))
+    assert len(database.page_statements)==2
+    assert all('ORDER BY "id","sequence" LIMIT ?' in statement
+               for statement in database.page_statements)
+    assert '("id","sequence")>(?,?)' in database.page_statements[1]
+    assert all('(LAG("id") OVER capture_order,LAG("sequence") OVER capture_order)' in statement
+               and 'WINDOW capture_order AS (ORDER BY "id","sequence")' in statement
+               and 'COLLATE' not in statement for statement in database.page_statements)
+
+
 def test_apply_rejects_unexplained_exclusion_of_an_otherwise_rankable_card():
     data,config=snapshot()
     plan=create_plan(data,config,fake_maia,provenance())

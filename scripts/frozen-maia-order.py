@@ -109,6 +109,7 @@ def _capture_once(reader_factory=read_connection):
         with reader_factory() as database:
             key_columns = _capture_key_columns(database, table)
         ordering=','.join('"'+column+'"' for column in key_columns)
+        previous_key_expressions=','.join('LAG("'+column+'") OVER capture_order' for column in key_columns)
         filters=[]
         if name=='cards': filters.append("content_type='opening'")
         if name=='origins': filters.append("content_type='opening'")
@@ -120,15 +121,20 @@ def _capture_once(reader_factory=read_connection):
         while True:
             cursor_filter=('('+ordering+')>('+','.join('?' for _ in key_columns)+')') if last_key else None
             predicates=[*filters,*([cursor_filter] if cursor_filter else [])]
-            statement='SELECT row_to_json(snapshot_row)::text FROM (SELECT * FROM '+table+(' WHERE '+' AND '.join(predicates) if predicates else '')+' ORDER BY '+ordering+' LIMIT ?) snapshot_row'
+            # Validate keys under PostgreSQL's native collation, preserving its
+            # indexed seek order. Python string order can differ for text IDs.
+            statement='SELECT row_to_json(snapshot_row)::text, CASE WHEN ROW_NUMBER() OVER capture_order=1 THEN TRUE ELSE ('+ordering+')>('+previous_key_expressions+') END AS capture_key_advances FROM (SELECT * FROM '+table+(' WHERE '+' AND '.join(predicates) if predicates else '')+' ORDER BY '+ordering+' LIMIT ?) snapshot_row WINDOW capture_order AS (ORDER BY '+ordering+') ORDER BY '+ordering
             with reader_factory() as database:
-                page=[json.loads(row[0]) for row in database.execute(statement,(*last_key,128) if last_key else (128,)).fetchall()]
+                captured_rows=database.execute(statement,(*last_key,128) if last_key else (128,)).fetchall()
+            if any(row[1] is not True for row in captured_rows):
+                raise ValueError(f'Repeated or nonadvancing pagination key for capture relation {table}')
+            page=[json.loads(row[0]) for row in captured_rows]
             previous_key = last_key
             for row in page:
                 current_key = tuple(row[column] for column in key_columns)
                 if any(value is None for value in current_key):
                     raise ValueError(f'Null pagination key returned by capture relation {table}')
-                if previous_key is not None and not current_key > previous_key:
+                if previous_key is not None and current_key == previous_key:
                     raise ValueError(f'Repeated or nonadvancing pagination key for capture relation {table}')
                 previous_key = current_key
             rows.extend(page)

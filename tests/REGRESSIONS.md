@@ -4444,3 +4444,7 @@ is independently selected by the producer-parity lane and consumes the installed
 - `backend/tests/test_frozen_maia_plan.py`: `test_reader_capability_is_checksum_bound_and_old_or_missing_markers_are_rejected` and `test_capture_uses_explicit_view_key_sources_and_never_falls_back_to_all_columns` cover the v2 reader marker and SELECT-only pagination contract. Model/cache identity remains v1.
 - `scripts/test-frozen-postgres.py` proves real reader-role capture, multiple bounded pages including composite and view keys, queue serving and issuance, legacy remediation admission, restart, and rollback preservation against a uniquely named disposable PostgreSQL instance.
 - `scripts/test-frozen-cli.py` drives the actual CLI against disposable PostgreSQL, Redis, API, and workers through plan, apply, repeat apply, queue issuance, verify, and rollback using separate reader/writer roles and real Maia inference.
+
+### Frozen Maia production capture under locale collation
+
+- `backend/tests/test_frozen_maia_plan.py::test_capture_uses_database_collation_for_composite_pagination_keys` reproduces the production capture failure on built-in underscore-prefixed repertoire IDs under `en_US.utf8`. PostgreSQL validates advancement using the same native collation as ordering and seek predicates. The regression spans the 128-row boundary with numeric composite keys and rejects invalid database advancement flags.
