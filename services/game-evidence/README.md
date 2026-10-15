@@ -121,7 +121,7 @@ Provider references: [Lichess guidance](https://lichess.org/page/api-tips),
 
 Set `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` or `work --learning-endpoint URL` to
 an explicit EvidenceDelivery-v2 receiver. This producer depends on B's published
-contract 2.0.0 in PR #281, integrated at 1bcc0849. Native tests use a strict
+contract 2.0.0 in PR #281, integrated at c4384c16. Native tests use a strict
 receiver and a test-only installed remediation repository in a separate disposable
 Learning database. This does not provide a production receiver or authentication. Reports and JSON fixtures can be used
 without starting this service.
