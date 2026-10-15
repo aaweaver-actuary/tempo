@@ -241,7 +241,10 @@ def test_every_opening_line_finishes_on_the_trained_learner_move(
         )
         presented = head(case)
         assert presented["id"] == identifier
-        assert json.loads(presented["moves_json"]) == lines[0]
+        stored_moves = case.query(
+            "SELECT moves_json FROM learning.cards WHERE id=%s", (identifier,)
+        )[0][0]
+        assert json.loads(stored_moves) == lines[0]
         assert presented["opening_decision_manifest"]["card_id"] == identifier
     else:
         assert (
