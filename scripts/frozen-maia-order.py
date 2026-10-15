@@ -2,7 +2,7 @@
 """One-time conditional Maia ordering. Default operation is read-only planning."""
 from __future__ import annotations
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
 import csv
 import json
@@ -20,6 +20,7 @@ from app.services.frozen_maia_math import validate_distribution, content_fingerp
 from app.services.opening_segmentation import stable_key, opening_position_key
 from app.services import frozen_opening_order as order
 from app.database import read_connection, background_connection
+from app.services.redis_admission_gate import BackgroundAdmissionDeferred
 
 TABLES = {'repertoires':'repertoires','cards':'cards','memberships':'repertoire_cards','lines':'repertoire_lines',
           'graphs':'opening_graph_steps','publications':'opening_graph_publications','reviews':'reviews',
@@ -33,6 +34,26 @@ VIEW_KEY_SOURCES = {
     'current_repertoire_card_priority_generations': 'repertoire_card_priority_generations',
     'current_gameplay_card_priorities': 'gameplay_card_priorities',
 }
+
+
+@contextmanager
+def _ordering_write_connection(timeout_seconds=30.0):
+    deadline=time.monotonic()+timeout_seconds
+    wait_reported=False
+    with ExitStack() as connections:
+        while True:
+            try:
+                database=connections.enter_context(background_connection())
+                break
+            except BackgroundAdmissionDeferred:
+                remaining_seconds=deadline-time.monotonic()
+                if remaining_seconds<=0:raise
+                if not wait_reported:
+                    print('Waiting for foreground activity before the next write slice',file=sys.stderr,flush=True)
+                    wait_reported=True
+                time.sleep(min(.1,remaining_seconds))
+        # The body is outside the retry loop: never replay a started write.
+        yield database
 
 
 def _capture_key_columns(database, table):
@@ -519,7 +540,7 @@ def main():
     refresh_day=datetime.now(timezone.utc).astimezone(ZoneInfo('America/New_York')).date().isoformat()
     if args.operation == 'rollback':
         if not args.run_id: raise ValueError('--run-id required')
-        with background_connection() as database:
+        with _ordering_write_connection() as database:
             was_active=order.activation(database)[0]==args.run_id
             if was_active:request_queue_refresh_in_transaction(database,refresh_day)
             previous_run=order.rollback_run(database,args.run_id)
@@ -568,10 +589,10 @@ def main():
     with read_connection() as database:
         previous={'activation':current,'queue':[dict(row) for row in database.execute('SELECT * FROM daily_queue ORDER BY id').fetchall()]}
     backup.write_text(json.dumps(previous,sort_keys=True,indent=2))
-    with background_connection() as database:
+    with _ordering_write_connection() as database:
         order.stage_run(database,plan,datetime.now(timezone.utc).isoformat())
     for offset in range(0,len(plan['ranks']),16):
-        with background_connection() as database:
+        with _ordering_write_connection() as database:
             order.stage_ranks(database,plan,plan['ranks'][offset:offset+16])
     # Recheck all candidate and source inputs; never infer or silently generate a replacement.
     fresh=capture()
@@ -582,7 +603,7 @@ def main():
         actual=fresh_records.get(expected['id'])
         if not actual or actual['status'] != 'included' or actual['fingerprint'] != expected['fingerprint'] or actual['state'] != expected['state'] or actual['introduced_at'] != expected['introduced_at']:
             raise ValueError(f'Stale card or exposure: {expected["id"]}')
-    with background_connection() as database:
+    with _ordering_write_connection() as database:
         # Writer lock shares the admission fence; activating never admits or reorders rows.
         request_queue_refresh_in_transaction(database,refresh_day)
         database.execute_native('SELECT id FROM frozen_opening_activation WHERE id=1 FOR UPDATE')

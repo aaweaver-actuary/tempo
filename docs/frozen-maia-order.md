@@ -176,6 +176,13 @@ fenced by current gates, content fingerprints and issued-attempt protection. No
 inference occurs in apply.
 Reapplying the active plan changes no admissions, allowances or study state.
 
+Before each bounded write slice, the CLI waits up to 30 seconds for foreground
+admission. Waiting holds no database connection, and a started write body is
+never replayed. Persistent activity still stops the command with its original
+admission error and preserves inactive staging for inspection or explicit abort.
+Use a short quiet window for activation: study or source writes during staging
+still invalidate the pending run, including writes completed between slices.
+
 Mandatory real-game remediation remains separate and higher priority. Ordinary
 boosts, generated/legacy scores, breadth, depth and import order cannot displace
 eligible frozen cards. Existing quotas and shared-card single admission remain.

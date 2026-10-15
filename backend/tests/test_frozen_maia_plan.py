@@ -512,6 +512,74 @@ def test_capture_uses_database_collation_for_composite_pagination_keys(monkeypat
                and 'COLLATE' not in statement for statement in database.page_statements)
 
 
+def test_frozen_cli_waits_for_admission_without_holding_a_connection_or_replaying_writes(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+
+    cli=plan_cli()
+    state={'attempts':0,'held':False,'writes':0,'clock':0.0}
+    @contextmanager
+    def connection():
+        state['attempts']+=1
+        if state['attempts']<3:raise BackgroundAdmissionDeferred('Waiting for foreground activity')
+        state['held']=True
+        try:yield 'database'
+        finally:state['held']=False
+    def sleep(seconds):
+        assert not state['held']
+        state['clock']+=seconds
+    monkeypatch.setattr(cli,'background_connection',connection)
+    monkeypatch.setattr(cli,'time',SimpleNamespace(monotonic=lambda:state['clock'],sleep=sleep))
+    writer=getattr(cli,'_ordering_write_connection',cli.background_connection)
+    with writer() as database:
+        assert database=='database' and state['held']
+        state['writes']+=1
+    assert state['attempts']==3 and state['writes']==1 and not state['held']
+
+
+def test_frozen_cli_admission_wait_times_out_without_opening_a_write(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+
+    cli=plan_cli()
+    state={'clock':0.0,'attempts':0,'writes':0}
+    @contextmanager
+    def connection():
+        state['attempts']+=1
+        raise BackgroundAdmissionDeferred('Waiting for foreground activity')
+        yield  # The failed admission must never reach a database body.
+    monkeypatch.setattr(cli,'background_connection',connection)
+    monkeypatch.setattr(cli,'time',SimpleNamespace(monotonic=lambda:state['clock'],
+        sleep=lambda seconds:state.update(clock=state['clock']+seconds)))
+    with pytest.raises(BackgroundAdmissionDeferred):
+        with cli._ordering_write_connection(timeout_seconds=.2):state['writes']+=1
+    assert state['clock']==pytest.approx(.2) and state['attempts']==3 and state['writes']==0
+
+
+def test_frozen_cli_does_not_replay_a_write_body_that_raises_admission_error(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+
+    cli=plan_cli()
+    state={'attempts':0,'writes':0,'closed':0}
+    @contextmanager
+    def connection():
+        state['attempts']+=1
+        try:yield 'database'
+        finally:state['closed']+=1
+    def unexpected_sleep(seconds):raise AssertionError('A started write must not be retried')
+    monkeypatch.setattr(cli,'background_connection',connection)
+    monkeypatch.setattr(cli,'time',SimpleNamespace(monotonic=lambda:0,sleep=unexpected_sleep))
+    with pytest.raises(BackgroundAdmissionDeferred,match='body failure'):
+        with cli._ordering_write_connection():
+            state['writes']+=1
+            raise BackgroundAdmissionDeferred('body failure')
+    assert state=={'attempts':1,'writes':1,'closed':1}
+
+
 def test_apply_rejects_unexplained_exclusion_of_an_otherwise_rankable_card():
     data,config=snapshot()
     plan=create_plan(data,config,fake_maia,provenance())
