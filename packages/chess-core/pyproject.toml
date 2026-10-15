@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tempo-chess-core"
+version = "0.1.0"
+description = "Tempo's stable chess-card identity primitives"
+requires-python = ">=3.12,<3.15"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tempo_chess_core"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "pyproject.toml", "uv.lock", "README.md", "REGRESSIONS.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
