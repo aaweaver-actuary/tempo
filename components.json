@@ -773,6 +773,109 @@
         "databases": [],
         "migrations": []
       }
+    },
+    {
+      "id": "learning-review-application",
+      "type": "library",
+      "maintainer": "Tempo / #224",
+      "status": "implemented",
+      "root": "services/learning/application",
+      "publicExports": [
+        "apply_review",
+        "review_context",
+        "submit_review",
+        "register_review_commands",
+        "ReviewConflict",
+        "ReviewFailure",
+        "AttemptReceipt",
+        "CardFacts",
+        "ContinuationFacts",
+        "EvidenceCompletion",
+        "PreparedNext",
+        "QueueAttempt",
+        "ReviewCommand",
+        "ReviewContext",
+        "ReviewPolicy",
+        "ReviewResult",
+        "ReviewStore",
+        "ReviewSubmissionStore"
+      ],
+      "dependencies": [],
+      "buildInputs": [
+        "pyproject.toml",
+        "uv.lock",
+        "src",
+        "README.md",
+        "REGRESSIONS.md",
+        "tests",
+        "qualification.py",
+        "qualify.py"
+      ],
+      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
+      "artifact": {
+        "name": "tempo-learning-review",
+        "version": "0.1.0",
+        "format": "wheel + sdist"
+      },
+      "tests": [
+        {
+          "owner": "learning-review-application",
+          "kind": "python",
+          "cwd": "services/learning/application",
+          "command": "python -m pytest tests -q",
+          "inputs": [
+            "tests"
+          ]
+        },
+        {
+          "owner": "learning-review-application",
+          "kind": "python",
+          "cwd": ".",
+          "command": "python -m pytest services/learning/application/integration/test_qualification_runners.py backend/tests/test_learning_package_installation.py -q",
+          "inputs": [
+            "services/learning/application/qualification.py",
+            "services/learning/application/qualify.py",
+            "services/learning/application/integration/test_qualification_runners.py",
+            "services/learning/application/integration/run_postgres.py",
+            "backend/tests/test_learning_package_installation.py",
+            "backend/pyproject.toml",
+            "backend/requirements-test.txt",
+            "backend/Dockerfile"
+          ]
+        },
+        {
+          "owner": "learning-review-application",
+          "kind": "postgres",
+          "cwd": ".",
+          "command": "python services/learning/application/integration/run_postgres.py",
+          "inputs": [
+            "services/learning/application/integration",
+            "backend/app",
+            "backend/migrations",
+            "backend/requirements.txt",
+            "scripts/apply_postgres_migrations.py",
+            "scripts/provision_postgres_roles.py",
+            "scripts/check_postgres_training_transition.py",
+            "scripts/check_postgres_daily_study_dispatch.py",
+            "packages/scheduling",
+            "services/learning/application/qualification.py",
+            "packages/chess-core"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.12",
+          "3.14"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#224 application increment; legacy gateway owns transaction",
+        "databases": [],
+        "migrations": []
+      },
+      "testInventory": "REGRESSIONS.md"
     }
   ],
   "suites": [

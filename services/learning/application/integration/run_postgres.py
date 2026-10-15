@@ -3,15 +3,16 @@ from pathlib import Path
 import json
 import os
 import secrets
-import shlex
 import subprocess
 import sys
 import tempfile
 import time
-import xml.etree.ElementTree as xml
+
 
 ROOT = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+from qualification import controlled_environment, junit_destination, validate_inventory
 
 
 def docker(*arguments, check=True):
@@ -19,10 +20,11 @@ def docker(*arguments, check=True):
 
 
 def main():
+    external_junit = junit_destination(os.environ.get("PYTEST_ADDOPTS", ""), allow_junit=True)
     identity = "tempo224-" + secrets.token_hex(8)
     password = secrets.token_urlsafe(32)
     image = docker("image", "inspect", "postgres:18.6-trixie", "--format", "{{.Id}}").stdout.strip()
-    report_directory = Path(sys.argv[1]).resolve() if len(sys.argv) == 2 else ROOT / "test-results/learning-review-224"
+    report_directory = Path(sys.argv[1]).resolve() if len(sys.argv) == 2 else Path(os.environ.get("TEMPO_LEARNING_EVIDENCE_DIR", str(ROOT / "test-results/learning-review-224"))).resolve()
     report_directory.mkdir(parents=True, exist_ok=True)
     started = False
     try:
@@ -58,7 +60,7 @@ def main():
         provision(admin, reader_password, writer_password)
         with psycopg.connect(admin) as database:
             database.execute("INSERT INTO settings(id) VALUES(1)")
-        environment = {key:value for key,value in os.environ.items()
+        environment = {key:value for key,value in controlled_environment().items()
                        if not key.startswith(("TEMPO_DATABASE_", "TEMPO224_", "PG", "TEMPO_REDIS_URL", "CELERY_"))}
         environment.update(TEMPO224_FIXTURE=identity, TEMPO224_ADMIN=admin,
             TEMPO_DATABASE_READ_URL=make_conninfo(admin,user="tempo_reader",password=reader_password),
@@ -66,33 +68,34 @@ def main():
             TEMPO_TEST_INSTANCE="disposable", TEMPO_POSTGRES_POOL_SIZE="8",
             TEMPO_REDIS_URL="redis://127.0.0.1:1/0",
             PYTHONPATH=os.pathsep.join((str(ROOT/"backend"),str(ROOT/"scripts"))))
-        # D's owning-suite runner supplies its receipt path through pytest's
-        # standard environment option. Preserve it, and retain our own copy.
-        extra_options = shlex.split(os.environ.get("PYTEST_ADDOPTS", ""))
-        external_junit = None
-        for index, option in enumerate(extra_options):
-            if option.startswith(("--junitxml=", "--junit-xml=")):
-                external_junit = Path(option.split("=",1)[1]).resolve()
-            elif option in {"--junitxml", "--junit-xml"} and index+1 < len(extra_options):
-                external_junit = Path(extra_options[index+1]).resolve()
         junit = external_junit or report_directory/"native.xml"
-        report_option = [] if external_junit else ["--junitxml="+str(junit)]
-        result = subprocess.run([sys.executable,"-m","pytest","-c",str(HERE.parent/"pyproject.toml"),
-            str(HERE/"test_postgres.py"),"-v","--tb=short",*report_option],
+        junit.parent.mkdir(parents=True, exist_ok=True)
+        helper = HERE.parent/"qualification.py"
+        arguments = ["-c",str(HERE.parent/"pyproject.toml"),"-o","addopts=",
+                     "-p","no:cacheprovider",str(HERE/"test_postgres.py")]
+        collection = report_directory/"native-collected.json"
+        execution = report_directory/"native-executed.json"
+        collected = subprocess.run([sys.executable,str(helper),str(collection),*arguments,"--collect-only","-q"],
+            env=environment, cwd=ROOT, capture_output=True,text=True)
+        (report_directory/"native-collection.log").write_text(collected.stdout+collected.stderr)
+        if collected.returncode:
+            raise RuntimeError("Native inventory collection failed; see native-collection.log")
+        result = subprocess.run([sys.executable,str(helper),str(execution),*arguments,
+            "-v","--tb=short","--junitxml="+str(junit)],
             env=environment, cwd=ROOT, capture_output=True,text=True)
         (report_directory/"native.log").write_text(result.stdout + result.stderr)
         print(result.stdout)
         if result.returncode:
             print(result.stderr)
         returncode = result.returncode
-        if junit.exists():
-            if external_junit:
-                (report_directory/"native.xml").write_bytes(junit.read_bytes())
-            cases = list(xml.parse(junit).iter("testcase"))
-            if not cases or any(case.find(tag) is not None for case in cases for tag in ("failure","error","skipped")):
-                returncode = returncode or 1
-        else:
-            returncode = returncode or 1
+        if external_junit and junit.exists() and junit != report_directory/"native.xml":
+            (report_directory/"native.xml").write_bytes(junit.read_bytes())
+        identities = validate_inventory(json.loads(collection.read_text()), json.loads(execution.read_text()), junit)
+        (report_directory/"native.json").write_text(json.dumps({
+            "revision":subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),
+            "runtime":sys.version,"identities":identities,"passed":len(identities),
+            "external_junit":str(external_junit) if external_junit else None,
+            "commands":[collected.args,result.args],"complete":True},indent=2)+"\n")
     finally:
         if started:
             owner = docker("inspect",identity,"--format",'{{index .Config.Labels "tempo.owner"}}').stdout.strip()

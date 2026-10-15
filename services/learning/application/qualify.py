@@ -8,14 +8,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import xml.etree.ElementTree as xml
+from qualification import controlled_environment, junit_destination, validate_inventory
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-INPUTS = ("pyproject.toml","uv.lock","src","README.md","REGRESSIONS.md","tests")
+INPUTS = ("pyproject.toml","uv.lock","src","README.md","REGRESSIONS.md","tests","qualify.py","qualification.py")
 
 
 def main():
+    junit_destination(os.environ.get("PYTEST_ADDOPTS", ""))
+    environment = controlled_environment()
+    environment.pop("PYTHONPATH", None)
     destination = Path(sys.argv[1]).resolve()
     destination.mkdir(parents=True,exist_ok=True)
     report = {"revision":subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),
@@ -23,7 +26,7 @@ def main():
     def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
     def run(arguments,cwd,expected=0):
         completed = subprocess.run([str(value) for value in arguments],cwd=cwd,
-            capture_output=True,text=True)
+            capture_output=True,text=True,env=environment)
         index = len(report["commands"])
         (destination/f"command-{index:02d}.log").write_text(completed.stdout+completed.stderr)
         report["commands"].append({"command":[str(value) for value in arguments],"cwd":str(cwd),
@@ -69,6 +72,8 @@ def main():
                 run(["uv","venv","--python",version,consumer/".venv"],consumer)
                 run(["uv","pip","install","--python",python,"-r",temporary/"requirements.txt",wheels[0]],consumer)
                 shutil.copytree(build/"tests",consumer/"tests")
+                shutil.copy2(build/"qualification.py", consumer/"qualification.py")
+                shutil.copy2(build/"pyproject.toml", consumer/"pyproject.toml")
                 guard = '''import sys
 from importlib.abc import MetaPathFinder
 class RejectServices(MetaPathFinder):
@@ -83,17 +88,18 @@ sys.addaudithook(reject_connections)
 import tempo_learning_review as review
 assert 'site-packages' in review.__file__
 assert all(REPOSITORY not in path for path in sys.path)
-import pytest
-raise SystemExit(pytest.main(sys.argv[1:]))
-'''.replace("REPOSITORY",repr(str(ROOT)))
+import runpy
+runpy.run_path(HELPER, run_name="__main__")
+'''.replace("REPOSITORY",repr(str(ROOT))).replace("HELPER", repr(str(consumer/"qualification.py")))
                 junit = destination/("installed-"+version+".xml")
-                run([python,"-I","-c",guard,"tests","-v","--junitxml="+str(junit)],consumer)
-                suites = xml.parse(junit).getroot()
-                cases = list(suites.iter("testcase"))
-                if not cases or any(case.find(tag) is not None for case in cases for tag in ("failure","error","skipped")):
-                    raise RuntimeError("Installed suite did not execute all required cases")
+                collection = destination/("collected-"+version+".json")
+                execution = destination/("executed-"+version+".json")
+                arguments = ["-c", str(consumer/"pyproject.toml"), "-o", "addopts=", "-p", "no:cacheprovider", "tests"]
+                run([python,"-I","-c",guard,collection,*arguments,"--collect-only","-q"],consumer)
+                run([python,"-I","-c",guard,execution,*arguments,"-v","--junitxml="+str(junit)],consumer)
+                identities = validate_inventory(json.loads(collection.read_text()), json.loads(execution.read_text()), junit)
                 report["consumers"][version] = {"runtime":run([python,"--version"],consumer).strip(),
-                    "passed":len(cases),"identities":[case.attrib for case in cases],
+                    "passed":len(identities),"identities":identities,
                     "dependencies":run(["uv","pip","freeze","--python",python],consumer).splitlines()}
                 run([python,"-I","-m","pytest","tests","-k","no_such_required_identity","-q"],consumer,expected=5)
             report["complete"] = True

@@ -4470,3 +4470,11 @@ is independently selected by the producer-parity lane and consumes the installed
 - Installed producer parity: `tests/unit/scheduling-producer-parity-regressions.test.ts` in the existing
   producer-parity lane; no Python dependency is added to frontend-only collection.
 - Declared installed distributions: `backend/tests/test_scheduling_package_adapter.py::test_backend_declares_installed_noneditable_pure_packages` verifies backend pins, package versions and noneditable import origins for both packages.
+
+### PR #278 Learning installation integration
+
+`backend/tests/test_learning_package_installation.py::test_backend_learning_distribution_and_command_import_need_no_source_or_services`
+requires noneditable installed Learning 0.1.0, scheduling 0.2.0 and chess-core 0.1.0,
+verifies origins and explicit review command assembly, and rejects import-time
+service connections. Learning-owned qualification runner regressions are registered
+in `services/learning/application/REGRESSIONS.md` and its implemented component lane.

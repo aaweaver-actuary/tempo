@@ -6,7 +6,7 @@ artifact. All parametrized identities in `tests/test_application.py` and
 legacy broader projection replay, changed request binding, recorded clocks, guided
 failure, recovered chronology, explicit registration, evidence and continuation.
 `qualify.py` runs the same suite in source-free Python 3.12/3.14 consumers with
-service guards. A failed, skipped or zero-selected suite is not qualification.
+service guards. A failed, skipped, deselected, incomplete or zero-selected suite is not qualification.
 
 The separate owning native command is `python integration/run_postgres.py DIR` in
 a legacy test environment containing installed tempo-learning-review and
@@ -26,3 +26,28 @@ phone offline training and relevant study durability. The existing native traini
 transition regression injects the relocated adapter issuance seam without weakening
 its deletion/revision contention assertions. Scheduler package/adapter/boundary
 tests remain with C and are not edited here.
+
+## Integration and qualification regressions (PR #278)
+
+`integration/test_qualification_runners.py` is a separate regular owning tooling
+suite, registered alongside the package and native suites in `components.json`.
+It requires no PostgreSQL cluster and stays outside the guarded application tests.
+
+- `test_full_qualification_rejects_inherited_partial_selection`: selectors,
+  ignore options, early exits and plugin injection cannot become qualification.
+- `test_qualifier_rejects_selectors_before_build_and_native_before_docker`: a
+  no-match inherited selector fails before creating build/database resources.
+- `test_native_preserves_external_junit_destination_with_spaces` and
+  `test_native_rejects_invalid_reporting_or_reporting_with_selection`: both
+  supported spellings/forms preserve reporting; malformed/duplicate destinations
+  and JUnit plus deselection are rejected.
+- `test_full_qualification_requires_exact_complete_normal_inventory` and
+  `test_full_qualification_rejects_missing_skipped_failed_or_duplicate_required_cases`:
+  nonempty exact collected/executed identities, all successful execution phases,
+  zero deselections, and complete passing JUnit are mandatory.
+- `test_full_qualification_removes_external_plugin_and_environment_injection` and
+  `test_actual_controlled_collection_execution_and_external_junit_ignore_plugin_injection`:
+  sanitized actual pytest subprocesses execute the full fixture and write JUnit.
+- `backend/tests/test_learning_package_installation.py::test_backend_learning_distribution_and_command_import_need_no_source_or_services`:
+  declared installed package versions/origins, noneditable metadata and explicit
+  command registration work without import-time database/network initialization.

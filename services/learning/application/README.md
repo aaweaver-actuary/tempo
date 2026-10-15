@@ -55,7 +55,6 @@ image; no Node dependencies or model assets. From the checkout root:
 ```sh
 uv venv --python 3.14 .venv
 uv pip install --python .venv/bin/python -r backend/requirements.txt -r backend/requirements-test.txt pytest==9.1.1
-uv pip install --python .venv/bin/python ./services/learning/application
 .venv/bin/python services/learning/application/integration/run_postgres.py /absolute/evidence/directory
 ```
 
@@ -66,13 +65,31 @@ owned-container removal. Advisory post-commit broker wakes may fail when no brok
 is running; durable queue intent remains asserted. This proves the application
 seam, not broker-free production delivery or independent service authorization.
 
-D owns initial shared manifest/toolchain reconciliation. `registration.patch`
-targets D's published #277 baseline `cbc12f77b114c60e91a91d1f9d4b8cb929f4153f`,
-with explicit repository-relative suite cwd and local regression inventory. It
-contains only B's registration and dependency/install additions, to apply after
-that baseline merges. B's owning native runner preserves a JUnit path supplied
-through `PYTEST_ADDOPTS`, including D's structured executed-case reporting.
-Until applied, install the package explicitly as above.
+The merged #275/#277 foundation is incorporated into the backend dependency,
+lockfile, test installation, production image and implemented component manifest.
+Fresh backend setup installs Learning 0.1.0, scheduling 0.2.0 and chess-core 0.1.0
+noneditably. No deferred registration patch is required.
+
+Both qualification runners compare an independent controlled collection with
+executed node IDs and all setup/call/teardown phases, plus JUnit results. Missing,
+duplicate, deselected, skipped, failed or errored tests fail qualification. External
+pytest plugin autoloading and `PYTEST_PLUGINS` injection are disabled.
+`qualify.py` rejects any nonempty inherited `PYTEST_ADDOPTS`. The native runner
+allows only one `--junitxml` / `--junit-xml` destination, separated or equals syntax;
+all other inherited options are rejected before creating a container. Quote paths
+containing spaces. The external result file and native evidence copy are retained.
+
+Runner regressions run without PostgreSQL:
+
+```sh
+backend/.venv/bin/python -m pytest services/learning/application/integration/test_qualification_runners.py backend/tests/test_learning_package_installation.py -q
+TEMPO_COMPONENT_PYTHON="$PWD/backend/.venv/bin/python" node tools/component-build/test-lane.mjs --component learning-review-application
+```
+
+The component lane runs package tests, runner/backend installation regressions and
+the native suite sequentially. `TEMPO_LEARNING_EVIDENCE_DIR` can place native logs
+outside the checkout; it does not accept or configure an external database.
+
 #224 remains open for thin HTTP composition, essential worker/runtime isolation;
 #194 owns broker-independent foreground delivery. Domain database cutover and full
 production wire-v1 adoption are not delivered by this library.
