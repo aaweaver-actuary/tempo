@@ -37,7 +37,7 @@ _TASK_UPSERT_SQL = """INSERT INTO background_tasks(
                    created_at,started_at,completed_at,updated_at
                ) VALUES(?,?,?,?,?,'queued','queued',1,?,0,?,?,NULL,NULL,NULL,?,NULL,NULL,?)
                ON CONFLICT(kind,deduplication_key) DO UPDATE SET
-                   generation=excluded.generation,
+                   generation=CASE WHEN background_tasks.generation>=excluded.generation THEN background_tasks.generation+1 ELSE excluded.generation END,
                    priority=MIN(background_tasks.priority,excluded.priority),
                    state='queued',phase='queued',payload_version=excluded.payload_version,
                    payload_json=excluded.payload_json,attempt_count=0,
@@ -175,8 +175,8 @@ def enqueue_task_in_transaction(
     )
     next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
     created_at = existing["created_at"] if existing else _iso(now)
-    database.execute(
-            _TASK_UPSERT_SQL,
+    queued_row = database.execute(
+            _TASK_UPSERT_SQL + " RETURNING *",
             (
                 task_id,
                 kind,
@@ -189,9 +189,9 @@ def enqueue_task_in_transaction(
                 created_at,
                 _iso(now),
             ),
-    )
+    ).fetchone()
+    task_id, generation = queued_row["id"], queued_row["generation"]
     _record_event(database, task_id, generation, "enqueued", "queued", kind=kind)
-    queued_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
     if queued_row["replaced_pending_generation"]:
         _record_event(database, task_id, generation, "generation_replaced", "queued", kind=kind)
     if kind == "daily_queue":
