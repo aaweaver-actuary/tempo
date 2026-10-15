@@ -1,4 +1,116 @@
-# Durable Study intents: implementation evidence
+# Durable Study intents: PR #285 repair qualification
+
+**FUNCTIONALLY READY — QUALIFICATION INCOMPLETE.** All five mandatory repairs
+and the scoped teaching-cache repair pass local acceptance. Hosted qualification
+is unavailable: the final GitHub policy read reports Actions disabled, no check
+results or reviews, no branch rules and a 404 for required-status-check protection.
+No settings were changed. This is not approval to merge.
+
+## Repair source and reproducibility
+
+Reviewed source was `f0558a81194d6ea13336a2eaf03f728c72c5b861`. Main was initially
+refreshed to `f8839ce385177c460a8db1c5c32293329181bf45` and merged without rewriting
+PR history. During final qualification main advanced to
+`52f26ee55b08a70d5529847cd5849b10cbd12351` (#281). Merge
+`cc290d3d7c6262243793e614eb545afa47f6c5d8` integrates that revision; the application,
+backend, npm packages, browser fixtures, build tools and lockfiles are identical
+to the qualified product commit `8740a3b5570a46495dac0f46ce5ef7a56a09e85b`.
+The shared component manifest was rechecked after merging.
+
+| Final product input | Identity |
+| --- | --- |
+| application source tree | `3a21b1a21d157df1cbf3327e99ead5c313cacd38` |
+| browser-intents source tree | `5a8f47b518761dda9a3b13d6cd55f0d0a20dce9d` |
+| study-session source tree | `07a986ca4440547099f27e4dc62963ef54abc863` |
+| browser-intents tarball SHA-256 | `a28155eac9c02927951e00de993bca69cd5b3aba3568649e166828359fcd647e` |
+| study-session tarball SHA-256 | `a5cdcefe43244c9db9c27de3ca22da1d00fc7a0020c79bcb2c4ae24b9db53bc9` |
+
+Evidence is preserved separately from the earlier implementation evidence:
+`/Users/andy/tempo/.dev-copies/study-intents-evidence/pr285-repair-20261015`.
+`commands.jsonl` records exact argument arrays, source commits, overlay hashes,
+times, logs and exit codes. `frontend-selection.txt` records the ordered 25-file
+selection; JSON reports retain every executed identity. The source patch, native
+reports/traces, PostgreSQL ownership/timings, artifacts and cleanup audit are also
+retained there. No earlier evidence has been relabeled as a repair execution.
+
+## Findings and owning proofs
+
+The six characterization cases selected in `baseline-regressions.json` all failed
+against the reviewed product source plus the first main integration: rejection
+remained pending, retry stayed unready, migration rolled reconciliation backward,
+reset wrote separate markers, record 21 starved, and peer teaching facts did not
+reach the projection. Fourteen cases outside that explicit filter were excluded,
+not treated as executed. Reset coverage was then strengthened from detecting
+separate writes to a real IndexedDB transaction fault and both race orders.
+
+| Finding | Repair and regular regression owner | Result |
+| --- | --- | --- |
+| Definitive rejection traps correction | Discarded terminal rejection receipt; fresh explicit correction identity. `pr285_rejected_answer_*` in storage and runner suites, session package, native true reload. | Passed |
+| Cached storage retry falsely mounts Study | Current-generation opening/hydration and actual boundary readiness. `pr285_storage_retry_*`, including real request failures, superseded opening, unmount, version change and closed-store conflict completion. | Passed |
+| Legacy import rolls back reconciliation | Initial state only in insertion transaction; existing equivalent records untouched. `pr285_legacy_conflict_*` and package tombstone/concurrent-import cases. | Passed |
+| Reset separates practice generations | One atomic parent boundary and insertion precondition. `pr285_practice_generation_*`, package races/abort and native peer/reload proof. | Passed |
+| Oldest twenty starve later commands | Persisted CAS recovery cursor, wraparound, twenty-candidate bound and dependency deferral. `pr285_recovery_cursor_*`. | Passed |
+| Teaching facts miss mounted Home | Committed keyed notifications, targeted reads and monotonic Home projections. `pr285_teaching_cross_tab_*` and native peer proof. | Passed |
+
+A separate read-only reviewer examined the complete production diff and acceptance
+criteria, then reproduced four additional issues: discarded reviews reporting
+saved success, Home erasing durable facts, weak legacy validation and lost rejection
+detail. All were repaired with named owning regressions. The final asynchronous
+follow-up guards a conflict dialog's final storage read. The reviewer also caught
+and corrected an insufficient test-completion barrier. Final review reports no
+remaining actionable correctness finding; its scope and experiments are retained
+in `independent-review.md`. Review does not substitute for integrated qualification.
+
+## Repair checks and limits
+
+| Exact command / recorded selection | Result |
+| --- | --- |
+| `npm test --prefix packages/browser-intents` | 15 passed, no skips/TODOs |
+| `npm test --prefix packages/study-session` | 10 passed, no skips/TODOs |
+| `node tools/component-build/restricted-build.mjs --component browser-intents --component study-session /Users/andy/tempo/.dev-copies/study-intents-evidence/pr285-repair-20261015/artifact-qualified-final.json` | Complete; 25 source-absent installed tests, clean consumers, dependency inventories and both required zero-selection failures; temporary workspace removed |
+| `node tools/component-build/check-components.mjs --component browser-intents --component study-session --consumers` | Passed again after final main integration |
+| `npm run test:components` | 75 passed, no skips/TODOs; final manifest integration passed |
+| `node tools/component-build/test-lane.mjs controlled-browser` | 53 owning host/runner cases passed; exact nonzero selection, one compiler invocation and strict accounting preserved |
+| `node_modules/.bin/vitest run` + the 25 ordered files in `frontend-selection.txt` + `--reporter=default --reporter=json --outputFile=/Users/andy/tempo/.dev-copies/study-intents-evidence/pr285-repair-20261015/frontend-qualified.json` | 546 passed, 0 failures/skips/TODOs/unhandled errors; includes affected Study/Home/outboxes and Workbench/status/packaging consumers |
+| `node scripts/test-controlled-browser.mjs` | All 27 registered identities passed; zero retries/skips/API escapes; native run `run-1iEvp1`, clean product source, cleanup true |
+| `make ui-file FILE=post-review-progression.spec.ts` | 4 passed; project `tempo-pg-regressions-69653-4cf2938f`, cleanup exit 0 |
+| `npm run typecheck` | Passed on final product source |
+| `npm run lint` | 0 errors, 9 existing warnings |
+| `npm run check:conflicts`; `git diff --check` | Passed |
+
+Package and controlled-runner proofs were not needlessly repeated: their exact
+declared source/test inputs are unchanged from their qualified executions. The
+later main merge adds independently owned remediation/contracts and manifest
+registrations; it changes no affected product or test input. Component/consumer,
+conflict and whitespace checks ran again against that merged source.
+
+Development failures remain preserved. In particular, a first restricted build
+hit shared npm-cache permissions; the qualified run used a task-owned cache.
+The stricter runner caught a duplicate compiler invocation and passed after one
+multi-project invocation preserved both prerequisite and accounting contracts.
+Native development failures exposed fixture interception/locator assumptions.
+The initial broad frontend run exposed sixteen hidden-factory fixtures and a
+legacy-receipt fixture; the repaired code preserves an already usable connection
+and the fixture models its required missing receipt. Two later runs passed all
+assertions but exited nonzero due to unhandled asynchronous errors; they are not
+counted as qualification. Request-start and full-dialog-completion barriers plus
+the guarded storage read resolved both; the final 546-case process exited zero.
+No timeout was raised and no owning assertion was skipped, removed or weakened.
+
+These are focused local proofs, not a full-system or hosted merge gate. Controlled
+contexts block service workers; offline-shell/service-worker qualification remains
+unclaimed. Client fixtures do not establish production exactly-once database
+effects. Existing grading/queue authority and Study's optional-Workbench isolation
+remain unchanged. No live study database or browser profile was used or migrated.
+
+The repair uses one disposable checkout, three uniquely owned PostgreSQL projects
+and controlled native contexts. All evidence and commits are preserved before
+checkout removal; the final PR handoff records the independent resource inventory
+and completed cleanup. Existing main/development checkouts, user changes, stash,
+live data and shared caches remain outside task cleanup ownership. No deployment,
+merge, Actions enablement, settings change or global cleanup occurred.
+
+## Earlier implementation evidence (historical)
 
 Product source: `18057fb4bd47f0375ef310dd88da75203b65408a`, based on current
 main `f43b5f7fb4d7ddafeb3124a95f4fa3d64556abc4`. Main was refreshed and remained
