@@ -167,8 +167,9 @@ def test_component_wrapper_runs_complete_fixture_and_preserves_external_junit(mo
     collections = list((tmp_path/'evidence').rglob('collected.json'))
     executions = list((tmp_path/'evidence').rglob('executed.json'))
     assert len(collections) == len(executions) == 1
-    assert len(qualification.validate_inventory(json.loads(collections[0].read_text()),
-        json.loads(executions[0].read_text()), junit)) == 2
+    identities = qualification.validate_inventory(json.loads(collections[0].read_text()),
+        json.loads(executions[0].read_text()), junit)
+    assert identities == ['test_small.py::test_one', 'test_small.py::test_two']
 
 
 @pytest.mark.parametrize('arguments', [

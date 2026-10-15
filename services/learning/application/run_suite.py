@@ -47,7 +47,7 @@ def main(arguments=None):
         junit = external_junit or directory/'cases.xml'
         junit.parent.mkdir(parents=True, exist_ok=True)
         cwd, paths = suite_inputs(options.suite)
-        flags = ['-c',str(HERE/'pyproject.toml'),'-o','addopts=','-p','no:cacheprovider',
+        flags = ['-c',str(HERE/'pyproject.toml'),'-o','addopts=','-p','no:cacheprovider','--rootdir',str(cwd),
                  *[str(path) for path in paths]]
         receipts = {}
         for stage, extra in (('collected',['--collect-only','-q']),
